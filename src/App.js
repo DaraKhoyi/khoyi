@@ -548,6 +548,107 @@ function DashboardView({ tasks, emails, user, setView, robots }) {
 // ─────────────────────────────────────────
 // DRAFT VIEW (2D drafting)
 // ─────────────────────────────────────────
+
+// Unit helpers
+const UNIT_LABEL = { ft: 'ft', in: 'in', m: 'm', mm: 'mm' };
+
+function formatLength(px, units, pxPerUnit) {
+  const u = px / pxPerUnit;
+  if (units === 'ft') {
+    // Format as feet and inches, e.g., 24'-6"
+    const totalIn = u * 12;
+    const ft = Math.floor(totalIn / 12);
+    const inches = totalIn - ft * 12;
+    const inRounded = Math.round(inches * 10) / 10;
+    if (Math.abs(inRounded) < 0.05) return `${ft}'-0"`;
+    if (inRounded === 12) return `${ft + 1}'-0"`;
+    return `${ft}'-${inRounded % 1 === 0 ? inRounded.toFixed(0) : inRounded.toFixed(1)}"`;
+  }
+  if (units === 'in') return `${u.toFixed(2)}"`;
+  if (units === 'm') return `${u.toFixed(2)} m`;
+  if (units === 'mm') return `${Math.round(u)} mm`;
+  return `${u.toFixed(2)} ${units}`;
+}
+
+// Build a flat list of snap candidates for all shapes
+// Each candidate: { x, y, kind: 'endpoint' | 'midpoint' | 'center' | 'quadrant' | 'vertex' | 'intersection' }
+function getSnapPoints(shapes, isShapeVisible) {
+  const pts = [];
+  for (const s of shapes) {
+    if (!isShapeVisible(s)) continue;
+    if (s.type === 'line' || s.type === 'dimension') {
+      pts.push({ x: s.x1, y: s.y1, kind: 'endpoint' });
+      pts.push({ x: s.x2, y: s.y2, kind: 'endpoint' });
+      pts.push({ x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2, kind: 'midpoint' });
+    } else if (s.type === 'rect') {
+      const x2 = s.x + s.w, y2 = s.y + s.h;
+      pts.push({ x: s.x, y: s.y, kind: 'endpoint' });
+      pts.push({ x: x2, y: s.y, kind: 'endpoint' });
+      pts.push({ x: x2, y: y2, kind: 'endpoint' });
+      pts.push({ x: s.x, y: y2, kind: 'endpoint' });
+      pts.push({ x: s.x + s.w / 2, y: s.y, kind: 'midpoint' });
+      pts.push({ x: x2, y: s.y + s.h / 2, kind: 'midpoint' });
+      pts.push({ x: s.x + s.w / 2, y: y2, kind: 'midpoint' });
+      pts.push({ x: s.x, y: s.y + s.h / 2, kind: 'midpoint' });
+      pts.push({ x: s.x + s.w / 2, y: s.y + s.h / 2, kind: 'center' });
+    } else if (s.type === 'circle') {
+      pts.push({ x: s.cx, y: s.cy, kind: 'center' });
+      pts.push({ x: s.cx + s.r, y: s.cy, kind: 'quadrant' });
+      pts.push({ x: s.cx - s.r, y: s.cy, kind: 'quadrant' });
+      pts.push({ x: s.cx, y: s.cy + s.r, kind: 'quadrant' });
+      pts.push({ x: s.cx, y: s.cy - s.r, kind: 'quadrant' });
+    } else if (s.type === 'polyline' || s.type === 'freehand') {
+      if (!s.points) continue;
+      for (let i = 0; i < s.points.length; i++) {
+        pts.push({ x: s.points[i].x, y: s.points[i].y, kind: 'vertex' });
+        if (i < s.points.length - 1) {
+          const a = s.points[i], b = s.points[i + 1];
+          pts.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, kind: 'midpoint' });
+        }
+      }
+    } else if (s.type === 'bezier') {
+      pts.push({ x: s.x1, y: s.y1, kind: 'endpoint' });
+      pts.push({ x: s.x2, y: s.y2, kind: 'endpoint' });
+    } else if (s.type === 'text') {
+      pts.push({ x: s.x, y: s.y, kind: 'vertex' });
+    }
+  }
+  return pts;
+}
+
+// Find the closest snap point within worldTol of p
+function findSnap(p, snapPoints, worldTol) {
+  let best = null;
+  let bestD = worldTol;
+  for (const sp of snapPoints) {
+    const d = Math.hypot(sp.x - p.x, sp.y - p.y);
+    if (d < bestD) { bestD = d; best = sp; }
+  }
+  return best;
+}
+
+// Apply ortho constraint: lock p to horizontal or vertical from anchor
+function applyOrtho(anchor, p) {
+  if (!anchor) return p;
+  const dx = Math.abs(p.x - anchor.x);
+  const dy = Math.abs(p.y - anchor.y);
+  if (dx > dy) return { x: p.x, y: anchor.y };
+  return { x: anchor.x, y: p.y };
+}
+
+// Line-line intersection. Returns {x,y,tA,tB} or null. tA/tB are parameters along each line.
+function lineIntersect(a1, a2, b1, b2) {
+  const d = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
+  if (Math.abs(d) < 1e-9) return null; // parallel
+  const tA = ((b1.x - a1.x) * (b2.y - b1.y) - (b1.y - a1.y) * (b2.x - b1.x)) / d;
+  const tB = ((b1.x - a1.x) * (a2.y - a1.y) - (b1.y - a1.y) * (a2.x - a1.x)) / d;
+  return {
+    x: a1.x + tA * (a2.x - a1.x),
+    y: a1.y + tA * (a2.y - a1.y),
+    tA, tB,
+  };
+}
+
 function DraftView({ drawings, setDrawings, userId }) {
   const [activeId, setActiveId] = useState(null);
   const [tool, setTool] = useState('select');
@@ -565,6 +666,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [offsetMode, setOffsetMode] = useState(false); // when true, next click defines offset vector
   const [offsetAnchor, setOffsetAnchor] = useState(null); // {x,y} reference point for offset
   const [showLayersPanel, setShowLayersPanel] = useState(false);
+  const [units, setUnits] = useState('ft');
+  const [pxPerUnit, setPxPerUnit] = useState(20);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [orthoEnabled, setOrthoEnabled] = useState(false);
+  const [snapHit, setSnapHit] = useState(null); // {x,y,kind} when cursor is near a snap target
+  const [trimMode, setTrimMode] = useState(false);
+  const [extendMode, setExtendMode] = useState(null); // null | { stage: 'pickEnd', shapeId, endpointKey } | { stage: 'pickTarget', ... }
   const [selectedId, setSelectedId] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -582,26 +690,15 @@ function DraftView({ drawings, setDrawings, userId }) {
   useEffect(() => {
     if (active) {
       const raw = active.shapes;
-      // Backward compat: shapes was [], now it's { shapes: [], layers: [] }
-      if (Array.isArray(raw)) {
-        setShapes(raw.map(s => ({ ...s, layer: s.layer || 'default' })));
-        setLayers([{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }]);
-      } else if (raw && typeof raw === 'object') {
-        const loadedShapes = Array.isArray(raw.shapes) ? raw.shapes : [];
-        const loadedLayers = Array.isArray(raw.layers) && raw.layers.length
-          ? raw.layers
-          : [{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }];
-        setShapes(loadedShapes.map(s => ({ ...s, layer: s.layer || loadedLayers[0].id })));
-        setLayers(loadedLayers);
-      } else {
-        setShapes([]);
-        setLayers([{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }]);
-      }
-      setActiveLayerId(prev => {
-        // Reset to first available layer
-        const ls = Array.isArray(raw?.layers) && raw.layers.length ? raw.layers : null;
-        return ls ? ls[0].id : 'default';
-      });
+      const loadedShapes = (raw && Array.isArray(raw.shapes)) ? raw.shapes : (Array.isArray(raw) ? raw : []);
+      const loadedLayers = (raw && Array.isArray(raw.layers) && raw.layers.length)
+        ? raw.layers
+        : [{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }];
+      setShapes(loadedShapes.map(s => ({ ...s, layer: s.layer || loadedLayers[0].id })));
+      setLayers(loadedLayers);
+      setActiveLayerId(loadedLayers[0].id);
+      setUnits(active.units || 'ft');
+      setPxPerUnit(active.px_per_unit || 20);
       setTitle(active.title || 'Untitled Drawing');
       setDirty(false);
       setSelectedId(null);
@@ -623,6 +720,49 @@ function DraftView({ drawings, setDrawings, userId }) {
     return { x, y };
   }
 
+  // World tolerance for snapping: 10 screen px → world px = 10 * (viewBox.w / svgWidth)
+  function worldSnapTolerance() {
+    const svg = svgRef.current;
+    if (!svg) return 10;
+    const r = svg.getBoundingClientRect();
+    return (10 * viewBox.w) / r.width;
+  }
+
+  // Resolve a raw mouse event into a final point, applying:
+  //   1. Object snap (if enabled and a candidate is within tolerance) — takes priority
+  //   2. Otherwise, ortho lock against `orthoAnchor` (if active)
+  //   3. Otherwise, grid snap (if enabled and not in select mode)
+  // Also updates the snap-hit indicator.
+  function resolvePoint(e, orthoAnchor) {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const rect = svg.getBoundingClientRect();
+    const clientX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
+    const clientY = e.clientY ?? (e.touches && e.touches[0]?.clientY);
+    const rawX = viewBox.x + ((clientX - rect.left) / rect.width) * viewBox.w;
+    const rawY = viewBox.y + ((clientY - rect.top) / rect.height) * viewBox.h;
+    let p = { x: rawX, y: rawY };
+
+    if (snapEnabled) {
+      const snaps = getSnapPoints(shapes, isShapeVisible);
+      const hit = findSnap(p, snaps, worldSnapTolerance());
+      if (hit) {
+        setSnapHit(hit);
+        return { x: hit.x, y: hit.y, _snapped: true };
+      }
+    }
+    setSnapHit(null);
+
+    if (orthoEnabled && orthoAnchor) {
+      p = applyOrtho(orthoAnchor, p);
+    }
+
+    if (snapToGrid && tool !== 'select') {
+      p = { x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID };
+    }
+    return p;
+  }
+
   // Layer helpers
   function layerById(id) { return layers.find(l => l.id === id); }
   function isShapeInteractable(s) {
@@ -639,7 +779,29 @@ function DraftView({ drawings, setDrawings, userId }) {
       panStart.current = { mx: e.clientX, my: e.clientY, vx: viewBox.x, vy: viewBox.y };
       return;
     }
-    const p = svgPoint(e);
+
+    // Determine ortho anchor (the "previous point") for this click
+    let orthoAnchor = null;
+    if (polyPending) {
+      if (polyPending.type === 'polyline' && polyPending.points.length > 0) {
+        orthoAnchor = polyPending.points[polyPending.points.length - 1];
+      } else if (polyPending.type === 'dimension') {
+        orthoAnchor = { x: polyPending.x1, y: polyPending.y1 };
+      } else if (polyPending.type === 'bezier' && polyPending.stage === 1) {
+        orthoAnchor = { x: polyPending.x1, y: polyPending.y1 };
+      }
+    }
+    const p = resolvePoint(e, orthoAnchor);
+
+    // Trim mode: click on a line to trim it
+    if (trimMode) {
+      handleTrimClick(p);
+      return;
+    }
+    if (extendMode) {
+      handleExtendClick(p);
+      return;
+    }
 
     // Offset mode: this click defines the offset vector
     if (offsetMode && selectedId && offsetAnchor) {
@@ -662,7 +824,6 @@ function DraftView({ drawings, setDrawings, userId }) {
       const hit = [...shapes].reverse().find(s => isShapeInteractable(s) && hitTest(s, p));
       if (hit) {
         setSelectedId(hit.id);
-        // Begin move-drag
         setMoving({
           startX: p.x, startY: p.y,
           originalById: { [hit.id]: hit },
@@ -700,7 +861,6 @@ function DraftView({ drawings, setDrawings, userId }) {
       return;
     }
     if (tool === 'bezier') {
-      // Stage 1: click start. Stage 2: click end. Stage 3: click control point.
       if (!polyPending) {
         setPolyPending({ id, type: 'bezier', stage: 1, x1: p.x, y1: p.y, x2: p.x, y2: p.y, cx: p.x, cy: p.y, stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
       } else if (polyPending.stage === 1) {
@@ -737,15 +897,34 @@ function DraftView({ drawings, setDrawings, userId }) {
       setViewBox(v => ({ ...v, x: panStart.current.vx - dx, y: panStart.current.vy - dy }));
       return;
     }
+    // Determine ortho anchor for in-flight tools
+    let orthoAnchor = null;
+    if (draft) {
+      if (draft.type === 'line') orthoAnchor = { x: draft.x1, y: draft.y1 };
+      else if (draft.type === 'rect') orthoAnchor = { x: draft.x, y: draft.y };
+      else if (draft.type === 'circle') orthoAnchor = { x: draft.cx, y: draft.cy };
+    } else if (polyPending) {
+      if (polyPending.type === 'polyline' && polyPending.points.length > 0) {
+        orthoAnchor = polyPending.points[polyPending.points.length - 1];
+      } else if (polyPending.type === 'dimension') {
+        orthoAnchor = { x: polyPending.x1, y: polyPending.y1 };
+      } else if (polyPending.type === 'bezier' && polyPending.stage === 1) {
+        orthoAnchor = { x: polyPending.x1, y: polyPending.y1 };
+      }
+    } else if (moving) {
+      orthoAnchor = { x: moving.startX, y: moving.startY };
+    } else if (offsetMode) {
+      orthoAnchor = offsetAnchor;
+    }
     // Track mouse for offset preview
     if (offsetMode) {
-      const p = svgPoint(e);
+      const p = resolvePoint(e, orthoAnchor);
       setPreviewPoint(p);
       return;
     }
     // Dragging a shape (move)
     if (moving) {
-      const p = svgPoint(e);
+      const p = resolvePoint(e, orthoAnchor);
       const dx = p.x - moving.startX;
       const dy = p.y - moving.startY;
       setShapes(prev => prev.map(s => {
@@ -754,10 +933,9 @@ function DraftView({ drawings, setDrawings, userId }) {
       }));
       return;
     }
-    // Freehand stroke
+    // Freehand stroke (no snap/ortho — purpose is to be organic)
     if (freehandPoints) {
       const p = svgPoint(e);
-      // throttle: only add if moved at least 2px
       const last = freehandPoints[freehandPoints.length - 1];
       if (Math.hypot(p.x - last.x, p.y - last.y) >= 2) {
         setFreehandPoints(prev => [...prev, p]);
@@ -765,12 +943,26 @@ function DraftView({ drawings, setDrawings, userId }) {
       return;
     }
     if (polyPending) {
-      const p = svgPoint(e);
+      const p = resolvePoint(e, orthoAnchor);
       setPreviewPoint(p);
       return;
     }
-    if (!draft) return;
-    const p = svgPoint(e);
+    if (!draft) {
+      // Idle: still show snap indicator under cursor
+      if (snapEnabled) {
+        const svg = svgRef.current;
+        if (svg) {
+          const rect = svg.getBoundingClientRect();
+          const rawX = viewBox.x + ((e.clientX - rect.left) / rect.width) * viewBox.w;
+          const rawY = viewBox.y + ((e.clientY - rect.top) / rect.height) * viewBox.h;
+          const snaps = getSnapPoints(shapes, isShapeVisible);
+          const hit = findSnap({ x: rawX, y: rawY }, snaps, worldSnapTolerance());
+          setSnapHit(hit);
+        }
+      }
+      return;
+    }
+    const p = resolvePoint(e, orthoAnchor);
     if (draft.type === 'line') setDraft({ ...draft, x2: p.x, y2: p.y });
     if (draft.type === 'rect') setDraft({ ...draft, w: p.x - draft.x, h: p.y - draft.y });
     if (draft.type === 'circle') {
@@ -911,6 +1103,113 @@ function DraftView({ drawings, setDrawings, userId }) {
     return false;
   }
 
+  // ─── Trim ───
+  // Click on a line. Find the click parameter tClick along the line, and the two intersection
+  // params (with other lines) closest to tClick on either side. Remove the segment between
+  // those bounds. If only one bound exists, just shorten that end. If none, do nothing.
+  function handleTrimClick(p) {
+    // Find line under cursor
+    const target = [...shapes].reverse().find(s =>
+      s.type === 'line' && isShapeInteractable(s) && hitTest(s, p)
+    );
+    if (!target) return;
+
+    const a1 = { x: target.x1, y: target.y1 };
+    const a2 = { x: target.x2, y: target.y2 };
+    const dx = a2.x - a1.x, dy = a2.y - a1.y;
+    const len2 = dx*dx + dy*dy || 1;
+    const tClick = ((p.x - a1.x) * dx + (p.y - a1.y) * dy) / len2;
+
+    // Collect all intersection parameters with other lines that lie within target's segment
+    const intersections = [];
+    for (const other of shapes) {
+      if (other.id === target.id) continue;
+      if (other.type !== 'line') continue;
+      if (!isShapeVisible(other)) continue;
+      const b1 = { x: other.x1, y: other.y1 };
+      const b2 = { x: other.x2, y: other.y2 };
+      const xx = lineIntersect(a1, a2, b1, b2);
+      if (!xx) continue;
+      // Must lie on the OTHER segment (0..1) and on TARGET segment (0..1)
+      if (xx.tA <= 0 || xx.tA >= 1) continue;
+      if (xx.tB < -1e-6 || xx.tB > 1 + 1e-6) continue;
+      intersections.push(xx.tA);
+    }
+
+    if (intersections.length === 0) return; // no cutter
+
+    // Find bounds: nearest intersection below tClick and nearest above
+    let lower = null, upper = null;
+    for (const t of intersections) {
+      if (t < tClick) { if (lower === null || t > lower) lower = t; }
+      if (t > tClick) { if (upper === null || t < upper) upper = t; }
+    }
+
+    setShapes(prev => {
+      const next = prev.filter(s => s.id !== target.id);
+      if (lower !== null && upper !== null) {
+        // Split into two pieces: [0, lower] and [upper, 1]
+        const pLow = { x: a1.x + lower * dx, y: a1.y + lower * dy };
+        const pUp = { x: a1.x + upper * dx, y: a1.y + upper * dy };
+        next.push({ ...target, id: 'sh_' + Date.now() + '_a', x2: pLow.x, y2: pLow.y });
+        next.push({ ...target, id: 'sh_' + Date.now() + '_b', x1: pUp.x, y1: pUp.y });
+      } else if (upper !== null) {
+        // Click was before the first intersection: keep right side
+        const pUp = { x: a1.x + upper * dx, y: a1.y + upper * dy };
+        next.push({ ...target, x1: pUp.x, y1: pUp.y });
+      } else if (lower !== null) {
+        // Click was after the last intersection: keep left side
+        const pLow = { x: a1.x + lower * dx, y: a1.y + lower * dy };
+        next.push({ ...target, x2: pLow.x, y2: pLow.y });
+      }
+      return next;
+    });
+    setDirty(true);
+  }
+
+  // ─── Extend ───
+  // Stage 1: click near an endpoint of a line — store which endpoint.
+  // Stage 2: click a target line — extend the chosen endpoint to the intersection with target.
+  function handleExtendClick(p) {
+    if (!extendMode || extendMode.stage === 'pickEnd') {
+      // Find the nearest line endpoint to p
+      let best = null, bestD = worldSnapTolerance() * 3;
+      for (const s of shapes) {
+        if (s.type !== 'line') continue;
+        if (!isShapeInteractable(s)) continue;
+        const dStart = Math.hypot(p.x - s.x1, p.y - s.y1);
+        const dEnd = Math.hypot(p.x - s.x2, p.y - s.y2);
+        if (dStart < bestD) { bestD = dStart; best = { shape: s, endpoint: 'start' }; }
+        if (dEnd < bestD) { bestD = dEnd; best = { shape: s, endpoint: 'end' }; }
+      }
+      if (best) {
+        setExtendMode({ stage: 'pickTarget', shapeId: best.shape.id, endpoint: best.endpoint });
+      }
+      return;
+    }
+    if (extendMode.stage === 'pickTarget') {
+      const src = shapes.find(s => s.id === extendMode.shapeId);
+      if (!src) { setExtendMode(null); return; }
+      const target = [...shapes].reverse().find(s =>
+        s.id !== src.id && s.type === 'line' && isShapeInteractable(s) && hitTest(s, p)
+      );
+      if (!target) return;
+      const xx = lineIntersect(
+        { x: src.x1, y: src.y1 }, { x: src.x2, y: src.y2 },
+        { x: target.x1, y: target.y1 }, { x: target.x2, y: target.y2 }
+      );
+      if (!xx) return;
+      const newPoint = { x: xx.x, y: xx.y };
+      setShapes(prev => prev.map(s => {
+        if (s.id !== src.id) return s;
+        if (extendMode.endpoint === 'start') return { ...s, x1: newPoint.x, y1: newPoint.y };
+        return { ...s, x2: newPoint.x, y2: newPoint.y };
+      }));
+      setDirty(true);
+      setExtendMode(null);
+    }
+  }
+
   function startOffset() {
     if (!selectedId) return;
     const sel = shapes.find(s => s.id === selectedId);
@@ -1041,6 +1340,8 @@ function DraftView({ drawings, setDrawings, userId }) {
       if (e.key === 'Escape') {
         setSelectedId(null); setDraft(null); cancelPoly(); setEditingTextId(null);
         if (offsetMode) { setOffsetMode(false); setOffsetAnchor(null); }
+        if (trimMode) setTrimMode(false);
+        if (extendMode) setExtendMode(null);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -1076,7 +1377,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     setSaving(true);
     const payload = { shapes, layers };
     const { data } = await supabase.from('drawings').update({
-      title, shapes: payload
+      title, units, px_per_unit: pxPerUnit, shapes: payload
     }).eq('id', active.id).select().single();
     if (data) {
       setDrawings(prev => prev.map(d => d.id === data.id ? data : d));
@@ -1196,6 +1497,34 @@ function DraftView({ drawings, setDrawings, userId }) {
             onChange={e => { setTitle(e.target.value); setDirty(true); }}
           />
           {dirty && <span style={{color:'var(--yellow)',fontSize:'12px'}}>● unsaved</span>}
+          <div style={{display:'flex',alignItems:'center',gap:'4px',marginLeft:'auto',fontSize:'12px',color:'var(--text-2)'}}>
+            <span>Units</span>
+            <select
+              value={units}
+              onChange={e => { setUnits(e.target.value); setDirty(true); }}
+              className="form-input"
+              style={{padding:'2px 6px',fontSize:'12px',width:'auto'}}
+            >
+              <option value="ft">ft (feet/inches)</option>
+              <option value="in">in (inches)</option>
+              <option value="m">m (meters)</option>
+              <option value="mm">mm (millimeters)</option>
+            </select>
+            <span style={{marginLeft:'8px'}}>1 {UNIT_LABEL[units]} =</span>
+            <input
+              type="number"
+              value={pxPerUnit}
+              onChange={e => {
+                const v = Number(e.target.value);
+                if (v > 0) { setPxPerUnit(v); setDirty(true); }
+              }}
+              min="0.1"
+              step="0.1"
+              className="form-input"
+              style={{padding:'2px 6px',fontSize:'12px',width:'60px'}}
+            />
+            <span>px</span>
+          </div>
         </div>
         <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
           <button className="btn btn-sm btn-ghost" onClick={exportPNG}>⬇ PNG</button>
@@ -1229,7 +1558,12 @@ function DraftView({ drawings, setDrawings, userId }) {
           <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
           <button className={`btn btn-sm ${showGrid?'btn-primary':'btn-ghost'}`} onClick={() => setShowGrid(g => !g)} title="Toggle grid">⊞</button>
           <button className={`btn btn-sm ${snapToGrid?'btn-primary':'btn-ghost'}`} onClick={() => setSnapToGrid(s => !s)} title="Snap to grid">⊕</button>
+          <button className={`btn btn-sm ${snapEnabled?'btn-primary':'btn-ghost'}`} onClick={() => setSnapEnabled(s => !s)} title="Object snap (endpoints, midpoints, centers)">◈</button>
+          <button className={`btn btn-sm ${orthoEnabled?'btn-primary':'btn-ghost'}`} onClick={() => setOrthoEnabled(o => !o)} title="Ortho mode — constrain to 0°/90°">⊥</button>
           <button className={`btn btn-sm ${panMode?'btn-primary':'btn-ghost'}`} onClick={() => setPanMode(p => !p)} title="Pan mode (or hold Shift)">✋</button>
+          <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
+          <button className={`btn btn-sm ${trimMode?'btn-primary':'btn-ghost'}`} onClick={() => { setTrimMode(t => !t); setExtendMode(null); }} title="Trim — click a line to cut it at intersections">✂</button>
+          <button className={`btn btn-sm ${extendMode?'btn-primary':'btn-ghost'}`} onClick={() => { setExtendMode(extendMode ? null : { stage: 'pickEnd' }); setTrimMode(false); }} title="Extend — click line endpoint, then click target line">↦</button>
           <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
           <button className="btn btn-sm btn-ghost" onClick={undo} title="Undo (Ctrl+Z)">↶</button>
           <button className="btn btn-sm btn-ghost" onClick={duplicateSelected} disabled={!selectedId} title="Duplicate (Ctrl/Cmd+D)">⎘</button>
@@ -1251,7 +1585,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               display:'block',
               width:'100%',
               height:'min(70vh, 700px)',
-              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : moving ? 'move' : offsetMode ? 'copy' : tool==='select' ? 'default' : 'crosshair',
+              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : moving ? 'move' : (trimMode || extendMode) ? 'pointer' : offsetMode ? 'copy' : tool==='select' ? 'default' : 'crosshair',
               touchAction:'none',
               userSelect:'none',
             }}
@@ -1276,8 +1610,8 @@ function DraftView({ drawings, setDrawings, userId }) {
             </defs>
             {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
 
-            {shapes.filter(isShapeVisible).map(s => renderShape(s, s.id === selectedId))}
-            {draft && renderShape(draft, false)}
+            {shapes.filter(isShapeVisible).map(s => renderShape(s, s.id === selectedId, { units, pxPerUnit }))}
+            {draft && renderShape(draft, false, { units, pxPerUnit })}
             {polyPending && polyPending.type === 'polyline' && (
               <>
                 <polyline
@@ -1299,7 +1633,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               </>
             )}
             {polyPending && polyPending.type === 'dimension' && previewPoint && (
-              renderShape({ ...polyPending, x2: previewPoint.x, y2: previewPoint.y }, false)
+              renderShape({ ...polyPending, x2: previewPoint.x, y2: previewPoint.y }, false, { units, pxPerUnit })
             )}
             {polyPending && polyPending.type === 'bezier' && previewPoint && (() => {
               if (polyPending.stage === 1) {
@@ -1335,7 +1669,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               const ghost = translateShape(sel, dx, dy);
               return (
                 <g opacity="0.5">
-                  {renderShape({ ...ghost, id: ghost.id + '_ghost', stroke: '#22c55e' }, false)}
+                  {renderShape({ ...ghost, id: ghost.id + '_ghost', stroke: '#22c55e' }, false, { units, pxPerUnit })}
                   <line
                     x1={offsetAnchor.x} y1={offsetAnchor.y} x2={previewPoint.x} y2={previewPoint.y}
                     stroke="#22c55e" strokeWidth="1" strokeDasharray="4,4"
@@ -1344,9 +1678,57 @@ function DraftView({ drawings, setDrawings, userId }) {
                 </g>
               );
             })()}
+            {snapHit && snapEnabled && (() => {
+              // Marker size scales with zoom so it's always ~10 screen px
+              const sz = worldSnapTolerance() * 0.8;
+              if (snapHit.kind === 'endpoint' || snapHit.kind === 'vertex') {
+                // Square
+                return <rect
+                  x={snapHit.x - sz/2} y={snapHit.y - sz/2}
+                  width={sz} height={sz}
+                  fill="none" stroke="#22c55e" strokeWidth={sz * 0.15}
+                  pointerEvents="none"
+                />;
+              }
+              if (snapHit.kind === 'midpoint') {
+                // Triangle
+                const h = sz;
+                return <polygon
+                  points={`${snapHit.x},${snapHit.y - h*0.6} ${snapHit.x - h*0.6},${snapHit.y + h*0.4} ${snapHit.x + h*0.6},${snapHit.y + h*0.4}`}
+                  fill="none" stroke="#22c55e" strokeWidth={sz * 0.15}
+                  pointerEvents="none"
+                />;
+              }
+              if (snapHit.kind === 'center' || snapHit.kind === 'quadrant') {
+                // Circle
+                return <circle
+                  cx={snapHit.x} cy={snapHit.y} r={sz * 0.5}
+                  fill="none" stroke="#22c55e" strokeWidth={sz * 0.15}
+                  pointerEvents="none"
+                />;
+              }
+              return null;
+            })()}
           </svg>
         </div>
       </div>
+
+      {/* Mode banners */}
+      {(trimMode || extendMode) && (
+        <div style={{
+          position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)',
+          background:'var(--bg-card)', border:'1px solid var(--accent)', borderRadius:'8px',
+          padding:'10px 16px', zIndex:60, fontSize:'13px',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            {trimMode && <span style={{color:'var(--accent)'}}>✂ Trim — click a line to remove the segment between intersections</span>}
+            {extendMode && extendMode.stage === 'pickEnd' && <span style={{color:'var(--accent)'}}>↦ Extend — click near a line endpoint</span>}
+            {extendMode && extendMode.stage === 'pickTarget' && <span style={{color:'var(--accent)'}}>↦ Extend — now click the target line to extend to</span>}
+            <button className="btn btn-sm btn-ghost" onClick={() => { setTrimMode(false); setExtendMode(null); }}>Exit</button>
+          </div>
+        </div>
+      )}
 
       {showLayersPanel && (
         <div style={{
@@ -1505,7 +1887,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
@@ -1542,7 +1924,7 @@ function cloneShapeWithNewId(s) {
   return { ...s, id };
 }
 
-function renderShape(s, selected) {
+function renderShape(s, selected, ctx) {
   const stroke = selected ? '#6c63ff' : s.stroke;
   const sw = selected ? (s.strokeWidth || 2) + 1.5 : s.strokeWidth;
   const common = { stroke, strokeWidth: sw, fill: s.fill || 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };
@@ -1561,17 +1943,17 @@ function renderShape(s, selected) {
   }
   if (s.type === 'dimension') {
     const { x1, y1, x2, y2 } = s;
-    const len = Math.hypot(x2 - x1, y2 - y1);
+    const lenPx = Math.hypot(x2 - x1, y2 - y1);
+    const label = ctx && ctx.units && ctx.pxPerUnit
+      ? formatLength(lenPx, ctx.units, ctx.pxPerUnit)
+      : `${Math.round(lenPx)} px`;
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    // perpendicular offset for tick marks
     const angle = Math.atan2(y2 - y1, x2 - x1);
     const tick = 8;
     const px = Math.cos(angle + Math.PI / 2) * tick;
     const py = Math.sin(angle + Math.PI / 2) * tick;
-    // label offset above the line
     const lx = mx + Math.cos(angle + Math.PI / 2) * 14;
     const ly = my + Math.sin(angle + Math.PI / 2) * 14;
-    // rotate label to follow line; flip if upside down
     let deg = (angle * 180) / Math.PI;
     if (deg > 90 || deg < -90) deg += 180;
     return (
@@ -1587,7 +1969,7 @@ function renderShape(s, selected) {
           dominantBaseline="middle"
           transform={`rotate(${deg} ${lx} ${ly})`}
           style={{userSelect:'none',pointerEvents:'none'}}
-        >{Math.round(len)} px</text>
+        >{label}</text>
       </g>
     );
   }
