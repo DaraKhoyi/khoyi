@@ -558,6 +558,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [polyPending, setPolyPending] = useState(null); // active polyline being built (multi-click)
   const [previewPoint, setPreviewPoint] = useState(null); // cursor pos for poly preview segment
   const [editingTextId, setEditingTextId] = useState(null);
+  const [layers, setLayers] = useState([{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }]);
+  const [activeLayerId, setActiveLayerId] = useState('default');
+  const [moving, setMoving] = useState(null); // { startX, startY, originalShapes: [...] } during drag
+  const [freehandPoints, setFreehandPoints] = useState(null); // array of points during freehand stroke
+  const [offsetMode, setOffsetMode] = useState(false); // when true, next click defines offset vector
+  const [offsetAnchor, setOffsetAnchor] = useState(null); // {x,y} reference point for offset
+  const [showLayersPanel, setShowLayersPanel] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -574,7 +581,27 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   useEffect(() => {
     if (active) {
-      setShapes(Array.isArray(active.shapes) ? active.shapes : []);
+      const raw = active.shapes;
+      // Backward compat: shapes was [], now it's { shapes: [], layers: [] }
+      if (Array.isArray(raw)) {
+        setShapes(raw.map(s => ({ ...s, layer: s.layer || 'default' })));
+        setLayers([{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }]);
+      } else if (raw && typeof raw === 'object') {
+        const loadedShapes = Array.isArray(raw.shapes) ? raw.shapes : [];
+        const loadedLayers = Array.isArray(raw.layers) && raw.layers.length
+          ? raw.layers
+          : [{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }];
+        setShapes(loadedShapes.map(s => ({ ...s, layer: s.layer || loadedLayers[0].id })));
+        setLayers(loadedLayers);
+      } else {
+        setShapes([]);
+        setLayers([{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }]);
+      }
+      setActiveLayerId(prev => {
+        // Reset to first available layer
+        const ls = Array.isArray(raw?.layers) && raw.layers.length ? raw.layers : null;
+        return ls ? ls[0].id : 'default';
+      });
       setTitle(active.title || 'Untitled Drawing');
       setDirty(false);
       setSelectedId(null);
@@ -596,33 +623,70 @@ function DraftView({ drawings, setDrawings, userId }) {
     return { x, y };
   }
 
+  // Layer helpers
+  function layerById(id) { return layers.find(l => l.id === id); }
+  function isShapeInteractable(s) {
+    const l = layerById(s.layer || 'default');
+    return l ? (l.visible && !l.locked) : true;
+  }
+  function isShapeVisible(s) {
+    const l = layerById(s.layer || 'default');
+    return l ? l.visible : true;
+  }
+
   function handleMouseDown(e) {
     if (panMode || e.button === 1 || (e.button === 0 && e.shiftKey)) {
       panStart.current = { mx: e.clientX, my: e.clientY, vx: viewBox.x, vy: viewBox.y };
       return;
     }
     const p = svgPoint(e);
-    if (tool === 'select') {
-      const hit = [...shapes].reverse().find(s => hitTest(s, p));
-      setSelectedId(hit ? hit.id : null);
+
+    // Offset mode: this click defines the offset vector
+    if (offsetMode && selectedId && offsetAnchor) {
+      const dx = p.x - offsetAnchor.x;
+      const dy = p.y - offsetAnchor.y;
+      const original = shapes.find(s => s.id === selectedId);
+      if (original && (dx !== 0 || dy !== 0)) {
+        const copy = cloneShapeWithNewId(translateShape(original, dx, dy));
+        copy.layer = activeLayerId;
+        setShapes(prev => [...prev, copy]);
+        setSelectedId(copy.id);
+        setDirty(true);
+      }
+      setOffsetMode(false);
+      setOffsetAnchor(null);
       return;
     }
+
+    if (tool === 'select') {
+      const hit = [...shapes].reverse().find(s => isShapeInteractable(s) && hitTest(s, p));
+      if (hit) {
+        setSelectedId(hit.id);
+        // Begin move-drag
+        setMoving({
+          startX: p.x, startY: p.y,
+          originalById: { [hit.id]: hit },
+        });
+      } else {
+        setSelectedId(null);
+      }
+      return;
+    }
+
     const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    if (tool === 'line') setDraft({ id, type: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth });
-    if (tool === 'rect') setDraft({ id, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, stroke: color, strokeWidth, fill: 'none' });
-    if (tool === 'circle') setDraft({ id, type: 'circle', cx: p.x, cy: p.y, r: 0, stroke: color, strokeWidth, fill: 'none' });
+    if (tool === 'line') setDraft({ id, type: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth, layer: activeLayerId });
+    if (tool === 'rect') setDraft({ id, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
+    if (tool === 'circle') setDraft({ id, type: 'circle', cx: p.x, cy: p.y, r: 0, stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
     if (tool === 'polyline') {
       if (polyPending) {
-        // add another vertex
         setPolyPending({ ...polyPending, points: [...polyPending.points, p] });
       } else {
-        setPolyPending({ id, type: 'polyline', points: [p], stroke: color, strokeWidth, fill: 'none' });
+        setPolyPending({ id, type: 'polyline', points: [p], stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
       }
       return;
     }
     if (tool === 'dimension') {
       if (polyPending && polyPending.type === 'dimension') {
-        // second click: commit
         const finished = { ...polyPending, x2: p.x, y2: p.y };
         const len = Math.hypot(finished.x2 - finished.x1, finished.y2 - finished.y1);
         if (len > 0) {
@@ -631,12 +695,31 @@ function DraftView({ drawings, setDrawings, userId }) {
         }
         setPolyPending(null);
       } else {
-        setPolyPending({ id, type: 'dimension', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth });
+        setPolyPending({ id, type: 'dimension', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth, layer: activeLayerId });
       }
       return;
     }
+    if (tool === 'bezier') {
+      // Stage 1: click start. Stage 2: click end. Stage 3: click control point.
+      if (!polyPending) {
+        setPolyPending({ id, type: 'bezier', stage: 1, x1: p.x, y1: p.y, x2: p.x, y2: p.y, cx: p.x, cy: p.y, stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
+      } else if (polyPending.stage === 1) {
+        setPolyPending({ ...polyPending, stage: 2, x2: p.x, y2: p.y });
+      } else if (polyPending.stage === 2) {
+        const finished = { ...polyPending, cx: p.x, cy: p.y };
+        delete finished.stage;
+        setShapes(prev => [...prev, finished]);
+        setDirty(true);
+        setPolyPending(null);
+      }
+      return;
+    }
+    if (tool === 'freehand') {
+      setFreehandPoints([p]);
+      return;
+    }
     if (tool === 'text') {
-      const newText = { id, type: 'text', x: p.x, y: p.y, text: 'Text', stroke: color, fontSize: Math.max(14, strokeWidth * 6) };
+      const newText = { id, type: 'text', x: p.x, y: p.y, text: 'Text', stroke: color, fontSize: Math.max(14, strokeWidth * 6), layer: activeLayerId };
       setShapes(prev => [...prev, newText]);
       setSelectedId(id);
       setEditingTextId(id);
@@ -652,6 +735,33 @@ function DraftView({ drawings, setDrawings, userId }) {
       const dx = ((e.clientX - panStart.current.mx) / rect.width) * viewBox.w;
       const dy = ((e.clientY - panStart.current.my) / rect.height) * viewBox.h;
       setViewBox(v => ({ ...v, x: panStart.current.vx - dx, y: panStart.current.vy - dy }));
+      return;
+    }
+    // Track mouse for offset preview
+    if (offsetMode) {
+      const p = svgPoint(e);
+      setPreviewPoint(p);
+      return;
+    }
+    // Dragging a shape (move)
+    if (moving) {
+      const p = svgPoint(e);
+      const dx = p.x - moving.startX;
+      const dy = p.y - moving.startY;
+      setShapes(prev => prev.map(s => {
+        const original = moving.originalById[s.id];
+        return original ? translateShape(original, dx, dy) : s;
+      }));
+      return;
+    }
+    // Freehand stroke
+    if (freehandPoints) {
+      const p = svgPoint(e);
+      // throttle: only add if moved at least 2px
+      const last = freehandPoints[freehandPoints.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) >= 2) {
+        setFreehandPoints(prev => [...prev, p]);
+      }
       return;
     }
     if (polyPending) {
@@ -671,6 +781,41 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function handleMouseUp() {
     if (panStart.current) { panStart.current = null; return; }
+    if (moving) {
+      // Detect actual movement vs a click that didn't drag
+      const ids = Object.keys(moving.originalById);
+      let actuallyMoved = false;
+      for (const id of ids) {
+        const original = moving.originalById[id];
+        const current = shapes.find(s => s.id === id);
+        if (!current) continue;
+        // Crude: compare a single representative field
+        if (current.type === 'rect' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
+        else if (current.type === 'circle' && (current.cx !== original.cx || current.cy !== original.cy)) actuallyMoved = true;
+        else if ((current.type === 'line' || current.type === 'dimension') && (current.x1 !== original.x1 || current.y1 !== original.y1)) actuallyMoved = true;
+        else if (current.type === 'text' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
+        else if (current.type === 'bezier' && (current.x1 !== original.x1 || current.y1 !== original.y1)) actuallyMoved = true;
+        else if ((current.type === 'polyline' || current.type === 'freehand') && current.points[0] && original.points[0] && (current.points[0].x !== original.points[0].x)) actuallyMoved = true;
+      }
+      if (actuallyMoved) setDirty(true);
+      setMoving(null);
+      return;
+    }
+    if (freehandPoints) {
+      if (freehandPoints.length >= 2) {
+        const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        setShapes(prev => [...prev, {
+          id, type: 'freehand',
+          points: freehandPoints,
+          stroke: color, strokeWidth,
+          fill: 'none',
+          layer: activeLayerId,
+        }]);
+        setDirty(true);
+      }
+      setFreehandPoints(null);
+      return;
+    }
     if (!draft) return;
     let final = draft;
     if (draft.type === 'rect' && (draft.w < 0 || draft.h < 0)) {
@@ -740,7 +885,104 @@ function DraftView({ drawings, setDrawings, userId }) {
       return p.x >= s.x - tol && p.x <= s.x + w + tol
           && p.y >= s.y - fs/2 - tol && p.y <= s.y + fs/2 + tol;
     }
+    if (s.type === 'bezier') {
+      // Sample 30 points along the quadratic curve and check distance
+      for (let i = 0; i <= 30; i++) {
+        const t = i / 30;
+        const mt = 1 - t;
+        const x = mt*mt*s.x1 + 2*mt*t*s.cx + t*t*s.x2;
+        const y = mt*mt*s.y1 + 2*mt*t*s.cy + t*t*s.y2;
+        if (Math.hypot(p.x - x, p.y - y) <= tol) return true;
+      }
+      return false;
+    }
+    if (s.type === 'freehand') {
+      if (!s.points) return false;
+      for (let i = 0; i < s.points.length - 1; i++) {
+        const a = s.points[i], b = s.points[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len2 = dx*dx + dy*dy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+        const px = a.x + t * dx, py = a.y + t * dy;
+        if (Math.hypot(p.x - px, p.y - py) <= tol) return true;
+      }
+      return false;
+    }
     return false;
+  }
+
+  function startOffset() {
+    if (!selectedId) return;
+    const sel = shapes.find(s => s.id === selectedId);
+    if (!sel) return;
+    // Anchor = a natural reference point on the shape
+    let anchor;
+    switch (sel.type) {
+      case 'rect': anchor = { x: sel.x, y: sel.y }; break;
+      case 'circle': anchor = { x: sel.cx, y: sel.cy }; break;
+      case 'line':
+      case 'dimension': anchor = { x: (sel.x1 + sel.x2) / 2, y: (sel.y1 + sel.y2) / 2 }; break;
+      case 'bezier': anchor = { x: (sel.x1 + sel.x2) / 2, y: (sel.y1 + sel.y2) / 2 }; break;
+      case 'text': anchor = { x: sel.x, y: sel.y }; break;
+      case 'polyline':
+      case 'freehand': anchor = sel.points[0]; break;
+      default: anchor = { x: 0, y: 0 };
+    }
+    setOffsetAnchor(anchor);
+    setOffsetMode(true);
+    setTool('select');
+  }
+
+  function offsetByVector(dx, dy) {
+    if (!selectedId) return;
+    const original = shapes.find(s => s.id === selectedId);
+    if (!original) return;
+    const copy = cloneShapeWithNewId(translateShape(original, dx, dy));
+    copy.layer = activeLayerId;
+    setShapes(prev => [...prev, copy]);
+    setSelectedId(copy.id);
+    setDirty(true);
+  }
+
+  function duplicateSelected() {
+    if (!selectedId) return;
+    const original = shapes.find(s => s.id === selectedId);
+    if (!original) return;
+    const copy = cloneShapeWithNewId(translateShape(original, 20, 20));
+    copy.layer = activeLayerId;
+    setShapes(prev => [...prev, copy]);
+    setSelectedId(copy.id);
+    setDirty(true);
+  }
+
+  // Layer ops
+  function addLayer() {
+    const n = layers.length + 1;
+    const newL = { id: 'l_' + Date.now(), name: `Layer ${n}`, color: '#e8eaf0', visible: true, locked: false };
+    setLayers(prev => [...prev, newL]);
+    setActiveLayerId(newL.id);
+    setDirty(true);
+  }
+  function deleteLayer(id) {
+    if (layers.length <= 1) return;
+    if (!window.confirm('Delete this layer and all its shapes?')) return;
+    setShapes(prev => prev.filter(s => (s.layer || 'default') !== id));
+    setLayers(prev => prev.filter(l => l.id !== id));
+    if (activeLayerId === id) {
+      const remaining = layers.filter(l => l.id !== id);
+      setActiveLayerId(remaining[0].id);
+    }
+    setDirty(true);
+  }
+  function toggleLayerVisible(id) {
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l));
+  }
+  function toggleLayerLocked(id) {
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, locked: !l.locked } : l));
+  }
+  function renameLayer(id, name) {
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, name } : l));
+    setDirty(true);
   }
 
   function finalizePoly() {
@@ -791,8 +1033,15 @@ function DraftView({ drawings, setDrawings, userId }) {
       if (e.key === 'p') setTool('polyline');
       if (e.key === 'd') setTool('dimension');
       if (e.key === 't') setTool('text');
+      if (e.key === 'a') setTool('bezier');
+      if (e.key === 'f') setTool('freehand');
+      if (e.key === 'o' && selectedId) startOffset();
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedId) { e.preventDefault(); duplicateSelected(); }
       if (e.key === 'Enter') { e.preventDefault(); finalizePoly(); }
-      if (e.key === 'Escape') { setSelectedId(null); setDraft(null); cancelPoly(); setEditingTextId(null); }
+      if (e.key === 'Escape') {
+        setSelectedId(null); setDraft(null); cancelPoly(); setEditingTextId(null);
+        if (offsetMode) { setOffsetMode(false); setOffsetAnchor(null); }
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -825,8 +1074,9 @@ function DraftView({ drawings, setDrawings, userId }) {
   async function saveDrawing() {
     if (!active) return;
     setSaving(true);
+    const payload = { shapes, layers };
     const { data } = await supabase.from('drawings').update({
-      title, shapes
+      title, shapes: payload
     }).eq('id', active.id).select().single();
     if (data) {
       setDrawings(prev => prev.map(d => d.id === data.id ? data : d));
@@ -903,7 +1153,12 @@ function DraftView({ drawings, setDrawings, userId }) {
                         ✏️ {d.title}
                       </span>
                       <div className="task-meta">
-                        <span className="task-due">{(Array.isArray(d.shapes) ? d.shapes.length : 0)} shapes</span>
+                        <span className="task-due">{(() => {
+                          const r = d.shapes;
+                          if (Array.isArray(r)) return r.length;
+                          if (r && Array.isArray(r.shapes)) return r.shapes.length;
+                          return 0;
+                        })()} shapes</span>
                         <span className="task-due">{new Date(d.updated_at).toLocaleDateString()}</span>
                         <button className="task-delete" onClick={() => deleteDrawing(d.id)}>×</button>
                       </div>
@@ -918,11 +1173,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   const tools = [
-    { id: 'select',    icon: '↖',  label: 'Select (V)' },
+    { id: 'select',    icon: '↖',  label: 'Select (V) — drag to move' },
     { id: 'line',      icon: '╱',  label: 'Line (L)' },
     { id: 'rect',      icon: '▭',  label: 'Rectangle (R)' },
     { id: 'circle',    icon: '○',  label: 'Circle (C)' },
-    { id: 'polyline',  icon: '⌒',  label: 'Polyline (P) — click to add points, Enter or double-click to finish' },
+    { id: 'polyline',  icon: '⌒',  label: 'Polyline (P) — click points, Enter or double-click to finish' },
+    { id: 'bezier',    icon: '∿',  label: 'Curve (A) — click start, end, then control point' },
+    { id: 'freehand',  icon: '✎',  label: 'Freehand (F) — click and drag to draw' },
     { id: 'dimension', icon: '↔',  label: 'Dimension (D) — click two points to measure' },
     { id: 'text',      icon: 'T',  label: 'Text (T) — click to place' },
   ];
@@ -975,8 +1232,11 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button className={`btn btn-sm ${panMode?'btn-primary':'btn-ghost'}`} onClick={() => setPanMode(p => !p)} title="Pan mode (or hold Shift)">✋</button>
           <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
           <button className="btn btn-sm btn-ghost" onClick={undo} title="Undo (Ctrl+Z)">↶</button>
+          <button className="btn btn-sm btn-ghost" onClick={duplicateSelected} disabled={!selectedId} title="Duplicate (Ctrl/Cmd+D)">⎘</button>
+          <button className={`btn btn-sm ${offsetMode?'btn-primary':'btn-ghost'}`} onClick={startOffset} disabled={!selectedId} title="Offset copy (O) — click on canvas to place duplicate">↗</button>
           <button className="btn btn-sm btn-ghost" onClick={deleteSelected} disabled={!selectedId}>Delete</button>
           <button className="btn btn-sm btn-ghost" onClick={clearAll}>Clear</button>
+          <button className={`btn btn-sm ${showLayersPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowLayersPanel(s => !s)} title="Layers">▤</button>
           <button className="btn btn-sm btn-ghost" onClick={resetView} title="Reset view">⌂</button>
           <span style={{marginLeft:'auto',fontSize:'11px',color:'var(--text-3)'}}>
             {shapes.length} shape{shapes.length===1?'':'s'} · zoom {Math.round(1200/viewBox.w*100)}%
@@ -991,7 +1251,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               display:'block',
               width:'100%',
               height:'min(70vh, 700px)',
-              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : tool==='select' ? 'default' : 'crosshair',
+              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : moving ? 'move' : offsetMode ? 'copy' : tool==='select' ? 'default' : 'crosshair',
               touchAction:'none',
               userSelect:'none',
             }}
@@ -1016,7 +1276,7 @@ function DraftView({ drawings, setDrawings, userId }) {
             </defs>
             {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
 
-            {shapes.map(s => renderShape(s, s.id === selectedId))}
+            {shapes.filter(isShapeVisible).map(s => renderShape(s, s.id === selectedId))}
             {draft && renderShape(draft, false)}
             {polyPending && polyPending.type === 'polyline' && (
               <>
@@ -1041,9 +1301,173 @@ function DraftView({ drawings, setDrawings, userId }) {
             {polyPending && polyPending.type === 'dimension' && previewPoint && (
               renderShape({ ...polyPending, x2: previewPoint.x, y2: previewPoint.y }, false)
             )}
+            {polyPending && polyPending.type === 'bezier' && previewPoint && (() => {
+              if (polyPending.stage === 1) {
+                // Show straight preview line to cursor
+                return <line x1={polyPending.x1} y1={polyPending.y1} x2={previewPoint.x} y2={previewPoint.y}
+                  stroke={polyPending.stroke} strokeWidth={polyPending.strokeWidth} strokeDasharray="5,5" opacity="0.6" />;
+              }
+              if (polyPending.stage === 2) {
+                // Show curve with cursor as control point
+                return (
+                  <>
+                    <path d={`M ${polyPending.x1} ${polyPending.y1} Q ${previewPoint.x} ${previewPoint.y} ${polyPending.x2} ${polyPending.y2}`}
+                      fill="none" stroke={polyPending.stroke} strokeWidth={polyPending.strokeWidth} strokeLinecap="round" />
+                    <circle cx={polyPending.x1} cy={polyPending.y1} r="3" fill="#6c63ff" />
+                    <circle cx={polyPending.x2} cy={polyPending.y2} r="3" fill="#6c63ff" />
+                    <circle cx={previewPoint.x} cy={previewPoint.y} r="3" fill="#22c55e" />
+                  </>
+                );
+              }
+              return null;
+            })()}
+            {freehandPoints && freehandPoints.length >= 2 && (
+              <path
+                d={'M ' + freehandPoints.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')}
+                fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+              />
+            )}
+            {offsetMode && offsetAnchor && previewPoint && selectedId && (() => {
+              const sel = shapes.find(s => s.id === selectedId);
+              if (!sel) return null;
+              const dx = previewPoint.x - offsetAnchor.x;
+              const dy = previewPoint.y - offsetAnchor.y;
+              const ghost = translateShape(sel, dx, dy);
+              return (
+                <g opacity="0.5">
+                  {renderShape({ ...ghost, id: ghost.id + '_ghost', stroke: '#22c55e' }, false)}
+                  <line
+                    x1={offsetAnchor.x} y1={offsetAnchor.y} x2={previewPoint.x} y2={previewPoint.y}
+                    stroke="#22c55e" strokeWidth="1" strokeDasharray="4,4"
+                  />
+                  <circle cx={offsetAnchor.x} cy={offsetAnchor.y} r="3" fill="#22c55e" />
+                </g>
+              );
+            })()}
           </svg>
         </div>
       </div>
+
+      {showLayersPanel && (
+        <div style={{
+          position:'fixed', top:'80px', right:'20px', width:'280px',
+          background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px',
+          padding:'12px', zIndex:50, maxHeight:'70vh', overflowY:'auto',
+          boxShadow:'0 8px 24px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+            <h3 style={{margin:0,fontSize:'14px'}}>Layers</h3>
+            <button className="btn btn-sm btn-ghost" onClick={() => setShowLayersPanel(false)}>×</button>
+          </div>
+          <button className="btn btn-sm btn-primary" onClick={addLayer} style={{width:'100%',marginBottom:'10px'}}>+ Add Layer</button>
+          <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+            {layers.map(l => (
+              <div key={l.id}
+                onClick={() => setActiveLayerId(l.id)}
+                style={{
+                  display:'flex',alignItems:'center',gap:'6px',padding:'6px 8px',
+                  borderRadius:'4px',cursor:'pointer',
+                  background: activeLayerId === l.id ? 'var(--bg-hover)' : 'transparent',
+                  border: activeLayerId === l.id ? '1px solid var(--accent)' : '1px solid transparent',
+                }}>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  onClick={(e) => { e.stopPropagation(); toggleLayerVisible(l.id); }}
+                  title={l.visible ? 'Hide' : 'Show'}
+                  style={{minWidth:'24px',padding:'2px 4px',opacity: l.visible ? 1 : 0.4}}
+                >{l.visible ? '👁' : '⊘'}</button>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  onClick={(e) => { e.stopPropagation(); toggleLayerLocked(l.id); }}
+                  title={l.locked ? 'Unlock' : 'Lock'}
+                  style={{minWidth:'24px',padding:'2px 4px'}}
+                >{l.locked ? '🔒' : '🔓'}</button>
+                <input
+                  value={l.name}
+                  onChange={e => renameLayer(l.id, e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  className="form-input"
+                  style={{flex:1,padding:'2px 6px',fontSize:'12px',minWidth:0}}
+                />
+                <span style={{fontSize:'10px',color:'var(--text-3)'}}>
+                  {shapes.filter(s => (s.layer || 'default') === l.id).length}
+                </span>
+                {layers.length > 1 && (
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={(e) => { e.stopPropagation(); deleteLayer(l.id); }}
+                    style={{minWidth:'20px',padding:'2px 4px',color:'var(--red)'}}
+                    title="Delete layer"
+                  >×</button>
+                )}
+              </div>
+            ))}
+          </div>
+          {selectedId && (() => {
+            const sel = shapes.find(s => s.id === selectedId);
+            if (!sel) return null;
+            return (
+              <div style={{marginTop:'12px',paddingTop:'10px',borderTop:'1px solid var(--border)'}}>
+                <div style={{fontSize:'11px',color:'var(--text-2)',marginBottom:'4px'}}>Move selection to:</div>
+                <select
+                  value={sel.layer || 'default'}
+                  onChange={e => {
+                    setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, layer: e.target.value } : s));
+                    setDirty(true);
+                  }}
+                  className="form-input"
+                  style={{width:'100%',fontSize:'12px',padding:'4px 8px'}}
+                >
+                  {layers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {offsetMode && (
+        <div style={{
+          position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)',
+          background:'var(--bg-card)', border:'1px solid var(--accent)', borderRadius:'8px',
+          padding:'10px 16px', zIndex:60, fontSize:'13px',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <span style={{color:'var(--accent)'}}>↗ Offset mode</span>
+            <span style={{color:'var(--text-2)'}}>Click on the canvas to place the duplicate. Or:</span>
+            <input
+              type="number" placeholder="dx"
+              id="offset-dx"
+              className="form-input"
+              style={{width:'60px',padding:'4px 6px',fontSize:'12px'}}
+            />
+            <input
+              type="number" placeholder="dy"
+              id="offset-dy"
+              className="form-input"
+              style={{width:'60px',padding:'4px 6px',fontSize:'12px'}}
+            />
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                const dxEl = document.getElementById('offset-dx');
+                const dyEl = document.getElementById('offset-dy');
+                const dx = Number(dxEl?.value) || 0;
+                const dy = Number(dyEl?.value) || 0;
+                if (dx === 0 && dy === 0) return;
+                offsetByVector(dx, dy);
+                setOffsetMode(false);
+                setOffsetAnchor(null);
+              }}
+            >Apply</button>
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => { setOffsetMode(false); setOffsetAnchor(null); }}
+            >Cancel</button>
+          </div>
+        </div>
+      )}
 
       {editingTextId && (() => {
         const t = shapes.find(s => s.id === editingTextId);
@@ -1081,10 +1505,41 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select · L line · R rect · C circle · P polyline · D dimension · T text · Enter to finish · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
+}
+
+function translateShape(s, dx, dy) {
+  switch (s.type) {
+    case 'line':
+    case 'dimension':
+      return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
+    case 'rect':
+      return { ...s, x: s.x + dx, y: s.y + dy };
+    case 'circle':
+      return { ...s, cx: s.cx + dx, cy: s.cy + dy };
+    case 'text':
+      return { ...s, x: s.x + dx, y: s.y + dy };
+    case 'polyline':
+    case 'freehand':
+      return { ...s, points: s.points.map(p => ({ x: p.x + dx, y: p.y + dy })) };
+    case 'bezier':
+      return {
+        ...s,
+        x1: s.x1 + dx, y1: s.y1 + dy,
+        x2: s.x2 + dx, y2: s.y2 + dy,
+        cx: s.cx + dx, cy: s.cy + dy,
+      };
+    default:
+      return s;
+  }
+}
+
+function cloneShapeWithNewId(s) {
+  const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  return { ...s, id };
 }
 
 function renderShape(s, selected) {
@@ -1146,6 +1601,17 @@ function renderShape(s, selected) {
         style={{userSelect:'none'}}
       >{s.text}</text>
     );
+  }
+  if (s.type === 'bezier') {
+    return <path key={s.id}
+      d={`M ${s.x1} ${s.y1} Q ${s.cx} ${s.cy} ${s.x2} ${s.y2}`}
+      {...common}
+    />;
+  }
+  if (s.type === 'freehand') {
+    if (!s.points || s.points.length < 2) return null;
+    const d = 'M ' + s.points.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ');
+    return <path key={s.id} d={d} {...common} />;
   }
   return null;
 }
