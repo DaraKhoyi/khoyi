@@ -546,6 +546,408 @@ function DashboardView({ tasks, emails, user, setView, robots }) {
 }
 
 // ─────────────────────────────────────────
+// DRAFT VIEW (2D drafting)
+// ─────────────────────────────────────────
+function DraftView({ drawings, setDrawings, userId }) {
+  const [activeId, setActiveId] = useState(null);
+  const [tool, setTool] = useState('select');
+  const [color, setColor] = useState('#e8eaf0');
+  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [shapes, setShapes] = useState([]);
+  const [draft, setDraft] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [title, setTitle] = useState('Untitled Drawing');
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 1200, h: 800 });
+  const [showGrid, setShowGrid] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [panMode, setPanMode] = useState(false);
+  const svgRef = useRef(null);
+  const panStart = useRef(null);
+
+  const active = drawings.find(d => d.id === activeId);
+  const GRID = 20;
+
+  useEffect(() => {
+    if (active) {
+      setShapes(Array.isArray(active.shapes) ? active.shapes : []);
+      setTitle(active.title || 'Untitled Drawing');
+      setDirty(false);
+      setSelectedId(null);
+      setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
+    }
+  }, [activeId]); // eslint-disable-line
+
+  function svgPoint(e) {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const rect = svg.getBoundingClientRect();
+    const clientX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
+    const clientY = e.clientY ?? (e.touches && e.touches[0]?.clientY);
+    const x = viewBox.x + ((clientX - rect.left) / rect.width) * viewBox.w;
+    const y = viewBox.y + ((clientY - rect.top) / rect.height) * viewBox.h;
+    if (snapToGrid && tool !== 'select') {
+      return { x: Math.round(x / GRID) * GRID, y: Math.round(y / GRID) * GRID };
+    }
+    return { x, y };
+  }
+
+  function handleMouseDown(e) {
+    if (panMode || e.button === 1 || (e.button === 0 && e.shiftKey)) {
+      panStart.current = { mx: e.clientX, my: e.clientY, vx: viewBox.x, vy: viewBox.y };
+      return;
+    }
+    const p = svgPoint(e);
+    if (tool === 'select') {
+      const hit = [...shapes].reverse().find(s => hitTest(s, p));
+      setSelectedId(hit ? hit.id : null);
+      return;
+    }
+    const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    if (tool === 'line') setDraft({ id, type: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth });
+    if (tool === 'rect') setDraft({ id, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, stroke: color, strokeWidth, fill: 'none' });
+    if (tool === 'circle') setDraft({ id, type: 'circle', cx: p.x, cy: p.y, r: 0, stroke: color, strokeWidth, fill: 'none' });
+  }
+
+  function handleMouseMove(e) {
+    if (panStart.current && svgRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      const dx = ((e.clientX - panStart.current.mx) / rect.width) * viewBox.w;
+      const dy = ((e.clientY - panStart.current.my) / rect.height) * viewBox.h;
+      setViewBox(v => ({ ...v, x: panStart.current.vx - dx, y: panStart.current.vy - dy }));
+      return;
+    }
+    if (!draft) return;
+    const p = svgPoint(e);
+    if (draft.type === 'line') setDraft({ ...draft, x2: p.x, y2: p.y });
+    if (draft.type === 'rect') setDraft({ ...draft, w: p.x - draft.x, h: p.y - draft.y });
+    if (draft.type === 'circle') {
+      const r = Math.hypot(p.x - draft.cx, p.y - draft.cy);
+      setDraft({ ...draft, r });
+    }
+  }
+
+  function handleMouseUp() {
+    if (panStart.current) { panStart.current = null; return; }
+    if (!draft) return;
+    let final = draft;
+    if (draft.type === 'rect' && (draft.w < 0 || draft.h < 0)) {
+      final = {
+        ...draft,
+        x: draft.w < 0 ? draft.x + draft.w : draft.x,
+        y: draft.h < 0 ? draft.y + draft.h : draft.y,
+        w: Math.abs(draft.w),
+        h: Math.abs(draft.h),
+      };
+    }
+    const isZero = (final.type === 'line' && final.x1 === final.x2 && final.y1 === final.y2)
+                || (final.type === 'rect' && (final.w === 0 || final.h === 0))
+                || (final.type === 'circle' && final.r === 0);
+    if (!isZero) {
+      setShapes(prev => [...prev, final]);
+      setDirty(true);
+    }
+    setDraft(null);
+  }
+
+  function hitTest(s, p) {
+    const tol = 8;
+    if (s.type === 'line') {
+      const { x1, y1, x2, y2 } = s;
+      const dx = x2 - x1, dy = y2 - y1;
+      const len2 = dx*dx + dy*dy || 1;
+      const t = Math.max(0, Math.min(1, ((p.x-x1)*dx + (p.y-y1)*dy) / len2));
+      const px = x1 + t*dx, py = y1 + t*dy;
+      return Math.hypot(p.x - px, p.y - py) <= tol;
+    }
+    if (s.type === 'rect') {
+      const on = (a, b) => Math.abs(a - b) <= tol;
+      const inX = p.x >= s.x - tol && p.x <= s.x + s.w + tol;
+      const inY = p.y >= s.y - tol && p.y <= s.y + s.h + tol;
+      if (!inX || !inY) return false;
+      return on(p.x, s.x) || on(p.x, s.x + s.w) || on(p.y, s.y) || on(p.y, s.y + s.h);
+    }
+    if (s.type === 'circle') {
+      const d = Math.hypot(p.x - s.cx, p.y - s.cy);
+      return Math.abs(d - s.r) <= tol;
+    }
+    return false;
+  }
+
+  function deleteSelected() {
+    if (!selectedId) return;
+    setShapes(prev => prev.filter(s => s.id !== selectedId));
+    setSelectedId(null);
+    setDirty(true);
+  }
+
+  function clearAll() {
+    if (!window.confirm('Clear all shapes?')) return;
+    setShapes([]);
+    setSelectedId(null);
+    setDirty(true);
+  }
+
+  function undo() {
+    if (shapes.length === 0) return;
+    setShapes(prev => prev.slice(0, -1));
+    setDirty(true);
+  }
+
+  useEffect(() => {
+    function onKey(e) {
+      if (!active) return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+      if (e.key === 'v') setTool('select');
+      if (e.key === 'l') setTool('line');
+      if (e.key === 'r') setTool('rect');
+      if (e.key === 'c') setTool('circle');
+      if (e.key === 'Escape') { setSelectedId(null); setDraft(null); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }); // eslint-disable-line
+
+  function handleWheel(e) {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 1.1 : 0.9;
+    const rect = svgRef.current.getBoundingClientRect();
+    const mx = viewBox.x + ((e.clientX - rect.left) / rect.width) * viewBox.w;
+    const my = viewBox.y + ((e.clientY - rect.top) / rect.height) * viewBox.h;
+    setViewBox({
+      x: mx - (mx - viewBox.x) * factor,
+      y: my - (my - viewBox.y) * factor,
+      w: viewBox.w * factor,
+      h: viewBox.h * factor,
+    });
+  }
+
+  async function newDrawing() {
+    const { data } = await supabase.from('drawings').insert({
+      user_id: userId, title: 'Untitled Drawing', shapes: []
+    }).select().single();
+    if (data) {
+      setDrawings(prev => [data, ...prev]);
+      setActiveId(data.id);
+    }
+  }
+
+  async function saveDrawing() {
+    if (!active) return;
+    setSaving(true);
+    const { data } = await supabase.from('drawings').update({
+      title, shapes
+    }).eq('id', active.id).select().single();
+    if (data) {
+      setDrawings(prev => prev.map(d => d.id === data.id ? data : d));
+      setDirty(false);
+    }
+    setSaving(false);
+  }
+
+  async function deleteDrawing(id) {
+    if (!window.confirm('Delete this drawing?')) return;
+    await supabase.from('drawings').delete().eq('id', id);
+    setDrawings(prev => prev.filter(d => d.id !== id));
+    if (activeId === id) setActiveId(null);
+  }
+
+  function exportPNG() {
+    if (!svgRef.current) return;
+    const svgEl = svgRef.current.cloneNode(true);
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('x', viewBox.x);
+    bg.setAttribute('y', viewBox.y);
+    bg.setAttribute('width', viewBox.w);
+    bg.setAttribute('height', viewBox.h);
+    bg.setAttribute('fill', 'white');
+    svgEl.insertBefore(bg, svgEl.firstChild);
+    svgEl.querySelectorAll('[stroke]').forEach(n => {
+      const s = n.getAttribute('stroke');
+      if (s === '#e8eaf0') n.setAttribute('stroke', '#111');
+    });
+    const xml = new XMLSerializer().serializeToString(svgEl);
+    const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const scale = 2;
+      canvas.width = viewBox.w * scale;
+      canvas.height = viewBox.h * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${title.replace(/[^a-z0-9]+/gi, '_')}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    img.src = url;
+  }
+
+  function resetView() {
+    setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
+  }
+
+  if (!active) {
+    return (
+      <div>
+        <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+          <div><h2>Draft</h2><p>{drawings.length} {drawings.length === 1 ? 'drawing' : 'drawings'}</p></div>
+          <button className="btn btn-primary" onClick={newDrawing}>+ New Drawing</button>
+        </div>
+        <div className="panel">
+          <div className="panel-header"><h3>Drawings</h3></div>
+          <div className="panel-body">
+            {drawings.length === 0
+              ? <div className="empty-state"><div className="empty-icon">✏️</div><p>No drawings yet. Create one to start sketching.</p></div>
+              : <div className="task-list">
+                  {drawings.map(d => (
+                    <div key={d.id} className="task-item">
+                      <span className="task-text" style={{cursor:'pointer'}} onClick={() => setActiveId(d.id)}>
+                        ✏️ {d.title}
+                      </span>
+                      <div className="task-meta">
+                        <span className="task-due">{(Array.isArray(d.shapes) ? d.shapes.length : 0)} shapes</span>
+                        <span className="task-due">{new Date(d.updated_at).toLocaleDateString()}</span>
+                        <button className="task-delete" onClick={() => deleteDrawing(d.id)}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+            }
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const tools = [
+    { id: 'select', icon: '↖', label: 'Select (V)' },
+    { id: 'line',   icon: '╱', label: 'Line (L)' },
+    { id: 'rect',   icon: '▭', label: 'Rectangle (R)' },
+    { id: 'circle', icon: '○', label: 'Circle (C)' },
+  ];
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
+          <button className="btn btn-ghost btn-sm" onClick={() => { if (dirty && !window.confirm('Discard unsaved changes?')) return; setActiveId(null); }}>← Back</button>
+          <input
+            className="form-input"
+            style={{width:'auto',minWidth:'200px',fontSize:'18px',fontWeight:600}}
+            value={title}
+            onChange={e => { setTitle(e.target.value); setDirty(true); }}
+          />
+          {dirty && <span style={{color:'var(--yellow)',fontSize:'12px'}}>● unsaved</span>}
+        </div>
+        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+          <button className="btn btn-sm btn-ghost" onClick={exportPNG}>⬇ PNG</button>
+          <button className="btn btn-sm btn-primary" onClick={saveDrawing} disabled={saving || !dirty}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      <div className="panel" style={{padding:0,overflow:'hidden'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 12px',borderBottom:'1px solid var(--border)',flexWrap:'wrap',background:'var(--bg-base)'}}>
+          {tools.map(t => (
+            <button
+              key={t.id}
+              title={t.label}
+              className={`btn btn-sm ${tool===t.id?'btn-primary':'btn-ghost'}`}
+              onClick={() => setTool(t.id)}
+              style={{minWidth:'36px',fontSize:'16px'}}
+            >{t.icon}</button>
+          ))}
+          <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
+          <label style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'var(--text-2)'}}>
+            Color
+            <input type="color" value={color} onChange={e => setColor(e.target.value)} style={{width:'28px',height:'28px',border:'none',background:'transparent',cursor:'pointer',padding:0}} />
+          </label>
+          <label style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'var(--text-2)'}}>
+            Width
+            <input type="range" min="1" max="10" value={strokeWidth} onChange={e => setStrokeWidth(Number(e.target.value))} style={{width:'70px'}} />
+            <span style={{width:'14px',textAlign:'right'}}>{strokeWidth}</span>
+          </label>
+          <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
+          <button className={`btn btn-sm ${showGrid?'btn-primary':'btn-ghost'}`} onClick={() => setShowGrid(g => !g)} title="Toggle grid">⊞</button>
+          <button className={`btn btn-sm ${snapToGrid?'btn-primary':'btn-ghost'}`} onClick={() => setSnapToGrid(s => !s)} title="Snap to grid">⊕</button>
+          <button className={`btn btn-sm ${panMode?'btn-primary':'btn-ghost'}`} onClick={() => setPanMode(p => !p)} title="Pan mode (or hold Shift)">✋</button>
+          <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
+          <button className="btn btn-sm btn-ghost" onClick={undo} title="Undo (Ctrl+Z)">↶</button>
+          <button className="btn btn-sm btn-ghost" onClick={deleteSelected} disabled={!selectedId}>Delete</button>
+          <button className="btn btn-sm btn-ghost" onClick={clearAll}>Clear</button>
+          <button className="btn btn-sm btn-ghost" onClick={resetView} title="Reset view">⌂</button>
+          <span style={{marginLeft:'auto',fontSize:'11px',color:'var(--text-3)'}}>
+            {shapes.length} shape{shapes.length===1?'':'s'} · zoom {Math.round(1200/viewBox.w*100)}%
+          </span>
+        </div>
+
+        <div style={{background:'var(--bg-base)',position:'relative'}}>
+          <svg
+            ref={svgRef}
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+            style={{
+              display:'block',
+              width:'100%',
+              height:'min(70vh, 700px)',
+              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : tool==='select' ? 'default' : 'crosshair',
+              touchAction:'none',
+              userSelect:'none',
+            }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onWheel={handleWheel}
+          >
+            <defs>
+              <pattern id="grid" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
+                <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#252a38" strokeWidth="0.5" opacity="0.6" />
+              </pattern>
+            </defs>
+            {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
+
+            {shapes.map(s => renderShape(s, s.id === selectedId))}
+            {draft && renderShape(draft, false)}
+          </svg>
+        </div>
+      </div>
+
+      <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
+        Shortcuts: V select · L line · R rectangle · C circle · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
+      </p>
+    </div>
+  );
+}
+
+function renderShape(s, selected) {
+  const stroke = selected ? '#6c63ff' : s.stroke;
+  const sw = selected ? (s.strokeWidth || 2) + 1.5 : s.strokeWidth;
+  const common = { stroke, strokeWidth: sw, fill: s.fill || 'none', strokeLinecap: 'round' };
+  if (s.type === 'line') {
+    return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} {...common} />;
+  }
+  if (s.type === 'rect') {
+    return <rect key={s.id} x={s.x} y={s.y} width={s.w} height={s.h} {...common} />;
+  }
+  if (s.type === 'circle') {
+    return <circle key={s.id} cx={s.cx} cy={s.cy} r={s.r} {...common} />;
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────
 // SETTINGS VIEW
 // ─────────────────────────────────────────
 function SettingsView({ user }) {
@@ -597,6 +999,7 @@ export default function App() {
   const [tasks, setTasks] = useState([]);
   const [emails, setEmails] = useState([]);
   const [robots, setRobots] = useState([]);
+  const [drawings, setDrawings] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -608,14 +1011,16 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
+      supabase.from('drawings').select('*').order('updated_at', { ascending: false }),
     ]);
     if (tasksRes.data) setTasks(tasksRes.data);
     if (emailsRes.data) setEmails(emailsRes.data);
     if (robotsRes.data) setRobots(robotsRes.data);
+    if (drawingsRes.data) setDrawings(drawingsRes.data);
     setDataLoaded(true);
   }, [session]);
 
@@ -623,7 +1028,7 @@ export default function App() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    setTasks([]); setEmails([]); setRobots([]); setDataLoaded(false);
+    setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setDataLoaded(false);
   }
 
   const navigate = (id) => { setView(id); setSidebarOpen(false); };
@@ -639,6 +1044,7 @@ export default function App() {
     { id: 'dashboard', icon: '⚡', label: 'Dashboard' },
     { id: 'tasks',     icon: '✅', label: 'Tasks',     badge: openTaskCount || null },
     { id: 'inbox',     icon: '📬', label: 'Inbox',     badge: unreadCount || null },
+    { id: 'draft',     icon: '✏️', label: 'Draft' },
     { id: 'chat',      icon: '✦',  label: 'Ari',       badge: null },
     { id: 'settings',  icon: '⚙️',  label: 'Settings' },
   ];
@@ -692,6 +1098,7 @@ export default function App() {
             : view==='dashboard' ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
             : view==='tasks'     ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id}/>
             : view==='inbox'     ? <InboxView emails={emails} setEmails={setEmails} userId={user.id}/>
+            : view==='draft'     ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
             : view==='chat'      ? <ChatView robots={robots} userId={user.id}/>
             : view==='settings'  ? <SettingsView user={user}/>
             : null
