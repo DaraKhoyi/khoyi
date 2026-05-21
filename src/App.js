@@ -555,6 +555,9 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [shapes, setShapes] = useState([]);
   const [draft, setDraft] = useState(null);
+  const [polyPending, setPolyPending] = useState(null); // active polyline being built (multi-click)
+  const [previewPoint, setPreviewPoint] = useState(null); // cursor pos for poly preview segment
+  const [editingTextId, setEditingTextId] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -608,6 +611,39 @@ function DraftView({ drawings, setDrawings, userId }) {
     if (tool === 'line') setDraft({ id, type: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth });
     if (tool === 'rect') setDraft({ id, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, stroke: color, strokeWidth, fill: 'none' });
     if (tool === 'circle') setDraft({ id, type: 'circle', cx: p.x, cy: p.y, r: 0, stroke: color, strokeWidth, fill: 'none' });
+    if (tool === 'polyline') {
+      if (polyPending) {
+        // add another vertex
+        setPolyPending({ ...polyPending, points: [...polyPending.points, p] });
+      } else {
+        setPolyPending({ id, type: 'polyline', points: [p], stroke: color, strokeWidth, fill: 'none' });
+      }
+      return;
+    }
+    if (tool === 'dimension') {
+      if (polyPending && polyPending.type === 'dimension') {
+        // second click: commit
+        const finished = { ...polyPending, x2: p.x, y2: p.y };
+        const len = Math.hypot(finished.x2 - finished.x1, finished.y2 - finished.y1);
+        if (len > 0) {
+          setShapes(prev => [...prev, finished]);
+          setDirty(true);
+        }
+        setPolyPending(null);
+      } else {
+        setPolyPending({ id, type: 'dimension', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth });
+      }
+      return;
+    }
+    if (tool === 'text') {
+      const newText = { id, type: 'text', x: p.x, y: p.y, text: 'Text', stroke: color, fontSize: Math.max(14, strokeWidth * 6) };
+      setShapes(prev => [...prev, newText]);
+      setSelectedId(id);
+      setEditingTextId(id);
+      setDirty(true);
+      setTool('select');
+      return;
+    }
   }
 
   function handleMouseMove(e) {
@@ -616,6 +652,11 @@ function DraftView({ drawings, setDrawings, userId }) {
       const dx = ((e.clientX - panStart.current.mx) / rect.width) * viewBox.w;
       const dy = ((e.clientY - panStart.current.my) / rect.height) * viewBox.h;
       setViewBox(v => ({ ...v, x: panStart.current.vx - dx, y: panStart.current.vy - dy }));
+      return;
+    }
+    if (polyPending) {
+      const p = svgPoint(e);
+      setPreviewPoint(p);
       return;
     }
     if (!draft) return;
@@ -672,7 +713,49 @@ function DraftView({ drawings, setDrawings, userId }) {
       const d = Math.hypot(p.x - s.cx, p.y - s.cy);
       return Math.abs(d - s.r) <= tol;
     }
+    if (s.type === 'polyline') {
+      // hit if near any segment
+      for (let i = 0; i < s.points.length - 1; i++) {
+        const a = s.points[i], b = s.points[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len2 = dx*dx + dy*dy || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+        const px = a.x + t * dx, py = a.y + t * dy;
+        if (Math.hypot(p.x - px, p.y - py) <= tol) return true;
+      }
+      return false;
+    }
+    if (s.type === 'dimension') {
+      const { x1, y1, x2, y2 } = s;
+      const dx = x2 - x1, dy = y2 - y1;
+      const len2 = dx*dx + dy*dy || 1;
+      const t = Math.max(0, Math.min(1, ((p.x-x1)*dx + (p.y-y1)*dy) / len2));
+      const px = x1 + t*dx, py = y1 + t*dy;
+      return Math.hypot(p.x - px, p.y - py) <= tol;
+    }
+    if (s.type === 'text') {
+      // approximate bbox: ~0.6 * fontSize per char, fontSize tall, centered vertically
+      const fs = s.fontSize || 18;
+      const w = (s.text?.length || 1) * fs * 0.6;
+      return p.x >= s.x - tol && p.x <= s.x + w + tol
+          && p.y >= s.y - fs/2 - tol && p.y <= s.y + fs/2 + tol;
+    }
     return false;
+  }
+
+  function finalizePoly() {
+    if (!polyPending) return;
+    if (polyPending.type === 'polyline' && polyPending.points.length >= 2) {
+      setShapes(prev => [...prev, polyPending]);
+      setDirty(true);
+    }
+    setPolyPending(null);
+    setPreviewPoint(null);
+  }
+
+  function cancelPoly() {
+    setPolyPending(null);
+    setPreviewPoint(null);
   }
 
   function deleteSelected() {
@@ -705,7 +788,11 @@ function DraftView({ drawings, setDrawings, userId }) {
       if (e.key === 'l') setTool('line');
       if (e.key === 'r') setTool('rect');
       if (e.key === 'c') setTool('circle');
-      if (e.key === 'Escape') { setSelectedId(null); setDraft(null); }
+      if (e.key === 'p') setTool('polyline');
+      if (e.key === 'd') setTool('dimension');
+      if (e.key === 't') setTool('text');
+      if (e.key === 'Enter') { e.preventDefault(); finalizePoly(); }
+      if (e.key === 'Escape') { setSelectedId(null); setDraft(null); cancelPoly(); setEditingTextId(null); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -831,10 +918,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   const tools = [
-    { id: 'select', icon: '↖', label: 'Select (V)' },
-    { id: 'line',   icon: '╱', label: 'Line (L)' },
-    { id: 'rect',   icon: '▭', label: 'Rectangle (R)' },
-    { id: 'circle', icon: '○', label: 'Circle (C)' },
+    { id: 'select',    icon: '↖',  label: 'Select (V)' },
+    { id: 'line',      icon: '╱',  label: 'Line (L)' },
+    { id: 'rect',      icon: '▭',  label: 'Rectangle (R)' },
+    { id: 'circle',    icon: '○',  label: 'Circle (C)' },
+    { id: 'polyline',  icon: '⌒',  label: 'Polyline (P) — click to add points, Enter or double-click to finish' },
+    { id: 'dimension', icon: '↔',  label: 'Dimension (D) — click two points to measure' },
+    { id: 'text',      icon: 'T',  label: 'Text (T) — click to place' },
   ];
 
   return (
@@ -865,7 +955,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               key={t.id}
               title={t.label}
               className={`btn btn-sm ${tool===t.id?'btn-primary':'btn-ghost'}`}
-              onClick={() => setTool(t.id)}
+              onClick={() => { if (polyPending) cancelPoly(); setTool(t.id); }}
               style={{minWidth:'36px',fontSize:'16px'}}
             >{t.icon}</button>
           ))}
@@ -909,6 +999,14 @@ function DraftView({ drawings, setDrawings, userId }) {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onDoubleClick={(e) => {
+              if (polyPending) { finalizePoly(); return; }
+              if (tool === 'select') {
+                const p = svgPoint(e);
+                const hit = [...shapes].reverse().find(s => s.type === 'text' && hitTest(s, p));
+                if (hit) { setSelectedId(hit.id); setEditingTextId(hit.id); }
+              }
+            }}
             onWheel={handleWheel}
           >
             <defs>
@@ -920,12 +1018,70 @@ function DraftView({ drawings, setDrawings, userId }) {
 
             {shapes.map(s => renderShape(s, s.id === selectedId))}
             {draft && renderShape(draft, false)}
+            {polyPending && polyPending.type === 'polyline' && (
+              <>
+                <polyline
+                  points={polyPending.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="none" stroke={polyPending.stroke} strokeWidth={polyPending.strokeWidth}
+                  strokeLinecap="round" strokeLinejoin="round"
+                />
+                {previewPoint && polyPending.points.length > 0 && (() => {
+                  const last = polyPending.points[polyPending.points.length - 1];
+                  return <line
+                    x1={last.x} y1={last.y} x2={previewPoint.x} y2={previewPoint.y}
+                    stroke={polyPending.stroke} strokeWidth={polyPending.strokeWidth}
+                    strokeDasharray="5,5" opacity="0.6"
+                  />;
+                })()}
+                {polyPending.points.map((p, i) => (
+                  <circle key={i} cx={p.x} cy={p.y} r="3" fill="#6c63ff" />
+                ))}
+              </>
+            )}
+            {polyPending && polyPending.type === 'dimension' && previewPoint && (
+              renderShape({ ...polyPending, x2: previewPoint.x, y2: previewPoint.y }, false)
+            )}
           </svg>
         </div>
       </div>
 
+      {editingTextId && (() => {
+        const t = shapes.find(s => s.id === editingTextId);
+        if (!t) return null;
+        return (
+          <div style={{
+            position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+            display:'flex', alignItems:'center', justifyContent:'center', zIndex:100
+          }} onClick={() => setEditingTextId(null)}>
+            <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'300px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+              <h3 style={{margin:'0 0 12px 0'}}>Edit text</h3>
+              <input
+                className="form-input"
+                autoFocus
+                value={t.text}
+                onChange={e => {
+                  setShapes(prev => prev.map(s => s.id === editingTextId ? { ...s, text: e.target.value } : s));
+                  setDirty(true);
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') setEditingTextId(null); }}
+                style={{width:'100%'}}
+              />
+              <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'12px'}}>
+                <button className="btn btn-sm btn-ghost" onClick={() => {
+                  // delete if empty
+                  if (!t.text.trim()) {
+                    setShapes(prev => prev.filter(s => s.id !== editingTextId));
+                  }
+                  setEditingTextId(null);
+                }}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select · L line · R rectangle · C circle · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select · L line · R rect · C circle · P polyline · D dimension · T text · Enter to finish · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
@@ -934,7 +1090,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 function renderShape(s, selected) {
   const stroke = selected ? '#6c63ff' : s.stroke;
   const sw = selected ? (s.strokeWidth || 2) + 1.5 : s.strokeWidth;
-  const common = { stroke, strokeWidth: sw, fill: s.fill || 'none', strokeLinecap: 'round' };
+  const common = { stroke, strokeWidth: sw, fill: s.fill || 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };
   if (s.type === 'line') {
     return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} {...common} />;
   }
@@ -943,6 +1099,53 @@ function renderShape(s, selected) {
   }
   if (s.type === 'circle') {
     return <circle key={s.id} cx={s.cx} cy={s.cy} r={s.r} {...common} />;
+  }
+  if (s.type === 'polyline') {
+    const pts = s.points.map(p => `${p.x},${p.y}`).join(' ');
+    return <polyline key={s.id} points={pts} {...common} />;
+  }
+  if (s.type === 'dimension') {
+    const { x1, y1, x2, y2 } = s;
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    // perpendicular offset for tick marks
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const tick = 8;
+    const px = Math.cos(angle + Math.PI / 2) * tick;
+    const py = Math.sin(angle + Math.PI / 2) * tick;
+    // label offset above the line
+    const lx = mx + Math.cos(angle + Math.PI / 2) * 14;
+    const ly = my + Math.sin(angle + Math.PI / 2) * 14;
+    // rotate label to follow line; flip if upside down
+    let deg = (angle * 180) / Math.PI;
+    if (deg > 90 || deg < -90) deg += 180;
+    return (
+      <g key={s.id}>
+        <line x1={x1} y1={y1} x2={x2} y2={y2} {...common} />
+        <line x1={x1 - px} y1={y1 - py} x2={x1 + px} y2={y1 + py} {...common} />
+        <line x1={x2 - px} y1={y2 - py} x2={x2 + px} y2={y2 + py} {...common} />
+        <text
+          x={lx} y={ly}
+          fill={stroke}
+          fontSize="14"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          transform={`rotate(${deg} ${lx} ${ly})`}
+          style={{userSelect:'none',pointerEvents:'none'}}
+        >{Math.round(len)} px</text>
+      </g>
+    );
+  }
+  if (s.type === 'text') {
+    return (
+      <text key={s.id}
+        x={s.x} y={s.y}
+        fill={stroke}
+        fontSize={s.fontSize || 18}
+        dominantBaseline="middle"
+        style={{userSelect:'none'}}
+      >{s.text}</text>
+    );
   }
   return null;
 }
