@@ -1055,6 +1055,15 @@ function DraftView({ drawings, setDrawings, userId }) {
   // O(1) selection lookups during render — avoids selectedIds.includes per shape.
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
+  // O(1) shape lookups by id — replaces the dozen shapes.find(s => s.id === ...)
+  // calls scattered through mutation handlers and render-time dialogs. Rebuilt
+  // only when shapes change.
+  const shapeById = useMemo(() => {
+    const m = new Map();
+    for (const s of shapes) m.set(s.id, s);
+    return m;
+  }, [shapes]);
+
   function handleMouseDown(e) {
     if (panMode || e.button === 1 || (e.button === 0 && e.altKey)) {
       panStart.current = { mx: e.clientX, my: e.clientY, vx: viewBox.x, vy: viewBox.y };
@@ -1090,7 +1099,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         return;
       }
       if (mirrorMode.stage === 'pickP2') {
-        const original = shapes.find(s => s.id === selectedId);
+        const original = shapeById.get(selectedId);
         if (original && (p.x !== mirrorMode.p1.x || p.y !== mirrorMode.p1.y)) {
           pushHistory();
           const reflected = cloneShapeWithNewId(mirrorShape(original, { a: mirrorMode.p1, b: p }));
@@ -1124,7 +1133,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     if (offsetMode && selectedId && offsetAnchor) {
       const dx = p.x - offsetAnchor.x;
       const dy = p.y - offsetAnchor.y;
-      const original = shapes.find(s => s.id === selectedId);
+      const original = shapeById.get(selectedId);
       if (original && (dx !== 0 || dy !== 0)) {
         pushHistory();
         const copy = cloneShapeWithNewId(translateShape(original, dx, dy));
@@ -1157,7 +1166,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         setSelectedIds(newSelection);
         const originalById = {};
         for (const id of newSelection) {
-          const s = shapes.find(sh => sh.id === id);
+          const s = shapeById.get(id);
           if (s) originalById[id] = s;
         }
         setMoving({ startX: p.x, startY: p.y, originalById, preDragSnap: deepSnap() });
@@ -1364,7 +1373,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       let actuallyMoved = false;
       for (const id of ids) {
         const original = moving.originalById[id];
-        const current = shapes.find(s => s.id === id);
+        const current = shapeById.get(id);
         if (!current) continue;
         if (current.type === 'rect' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
         else if (current.type === 'circle' && (current.cx !== original.cx || current.cy !== original.cy)) actuallyMoved = true;
@@ -1372,7 +1381,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         else if (current.type === 'text' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
         else if (current.type === 'bezier' && (current.x1 !== original.x1 || current.y1 !== original.y1)) actuallyMoved = true;
         else if (current.type === 'instance' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
-        else if ((current.type === 'polyline' || current.type === 'freehand') && current.points[0] && original.points[0] && (current.points[0].x !== original.points[0].x)) actuallyMoved = true;
+        else if ((current.type === 'polyline' || current.type === 'freehand') && current.points[0] && original.points[0] && (current.points[0].x !== original.points[0].x || current.points[0].y !== original.points[0].y)) actuallyMoved = true;
       }
       if (actuallyMoved) {
         if (moving.preDragSnap) {
@@ -1607,7 +1616,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       return;
     }
     if (extendMode.stage === 'pickTarget') {
-      const src = shapes.find(s => s.id === extendMode.shapeId);
+      const src = shapeById.get(extendMode.shapeId);
       if (!src) { setExtendMode(null); return; }
       const target = [...shapes].reverse().find(s =>
         s.id !== src.id && s.type === 'line' && isShapeInteractable(s) && hitTest(s, p)
@@ -1711,13 +1720,13 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function startOffset() {
     if (!selectedId) return;
-    const sel = shapes.find(s => s.id === selectedId);
+    const sel = shapeById.get(selectedId);
     if (!sel) return;
     // Anchor = a natural reference point on the shape
     let anchor;
     switch (sel.type) {
       case 'instance': anchor = { x: sel.x, y: sel.y }; break;
-      case 'rect': anchor = { x: sel.x, y: sel.y }; break;
+      case 'rect': anchor = { x: sel.x + sel.w / 2, y: sel.y + sel.h / 2 }; break;
       case 'circle': anchor = { x: sel.cx, y: sel.cy }; break;
       case 'line':
       case 'dimension': anchor = { x: (sel.x1 + sel.x2) / 2, y: (sel.y1 + sel.y2) / 2 }; break;
@@ -1734,7 +1743,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function offsetByVector(dx, dy) {
     if (!selectedId) return;
-    const original = shapes.find(s => s.id === selectedId);
+    const original = shapeById.get(selectedId);
     if (!original) return;
     pushHistory();
     const copy = cloneShapeWithNewId(translateShape(original, dx, dy));
@@ -1748,7 +1757,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     if (selectedIds.length === 0) return;
     const newCopies = [];
     for (const id of selectedIds) {
-      const original = shapes.find(s => s.id === id);
+      const original = shapeById.get(id);
       if (!original) continue;
       const copy = cloneShapeWithNewId(translateShape(original, 20, 20));
       copy.layer = activeLayerId;
@@ -1785,10 +1794,12 @@ function DraftView({ drawings, setDrawings, userId }) {
   function toggleLayerVisible(id) {
     pushHistory();
     setLayers(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l));
+    setDirty(true);
   }
   function toggleLayerLocked(id) {
     pushHistory();
     setLayers(prev => prev.map(l => l.id === id ? { ...l, locked: !l.locked } : l));
+    setDirty(true);
   }
   function renameLayer(id, name) {
     pushHistory();
@@ -1850,20 +1861,31 @@ function DraftView({ drawings, setDrawings, userId }) {
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
       if ((e.ctrlKey || e.metaKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) { e.preventDefault(); redo(); }
-      if (e.key === 'v') setTool('select');
-      if (e.key === 'l') setTool('line');
-      if (e.key === 'r') setTool('rect');
-      if (e.key === 'c') setTool('circle');
-      if (e.key === 'p') setTool('polyline');
-      if (e.key === 'd') setTool('dimension');
-      if (e.key === 't') setTool('text');
-      if (e.key === 'a') setTool('bezier');
-      if (e.key === 'f') setTool('freehand');
-      if (e.key === 'z' && !e.ctrlKey && !e.metaKey) fitToView();
-      if (e.key === 'o' && selectedId) startOffset();
       if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedId) { e.preventDefault(); duplicateSelected(); }
+      // Bare-letter shortcuts: skip when Ctrl/Cmd is held so browser shortcuts
+      // (Ctrl+R reload, Ctrl+F find, Ctrl+D bookmark, etc.) work normally and
+      // don't silently flip the active tool.
+      if (!e.ctrlKey && !e.metaKey) {
+        if (e.key === 'v') setTool('select');
+        if (e.key === 'l') setTool('line');
+        if (e.key === 'r') setTool('rect');
+        if (e.key === 'c') setTool('circle');
+        if (e.key === 'p') setTool('polyline');
+        if (e.key === 'd') setTool('dimension');
+        if (e.key === 't') setTool('text');
+        if (e.key === 'a') setTool('bezier');
+        if (e.key === 'f') setTool('freehand');
+        if (e.key === 'z') fitToView();
+        if (e.key === 'o' && selectedId) startOffset();
+      }
       if (e.key === 'Enter') { e.preventDefault(); finalizePoly(); }
       if (e.key === 'Escape') {
+        // If editing a block, Escape cancels the edit (discards changes).
+        // Do this first since other state may also be set during a block edit.
+        if (blockEditMode) {
+          exitBlockEdit(false);
+          return;
+        }
         setSelectedId(null); setDraft(null); cancelPoly(); setEditingTextId(null);
         if (offsetMode) { setOffsetMode(false); setOffsetAnchor(null); }
         if (trimMode) setTrimMode(false);
@@ -1871,6 +1893,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         if (mirrorMode) setMirrorMode(null);
         if (paramInput) setParamInput(null);
         if (insertBlockId) setInsertBlockId(null);
+        if (panMode) setPanMode(false);
         if (moving) {
           // Revert in-progress drag to original positions
           setShapes(prev => prev.map(s => moving.originalById[s.id] || s));
@@ -1899,12 +1922,20 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   async function newDrawing() {
-    const { data } = await supabase.from('drawings').insert({
-      user_id: userId, title: 'Untitled Drawing', shapes: []
-    }).select().single();
-    if (data) {
-      setDrawings(prev => [data, ...prev]);
-      setActiveId(data.id);
+    try {
+      const { data, error } = await supabase.from('drawings').insert({
+        user_id: userId, title: 'Untitled Drawing', shapes: []
+      }).select().single();
+      if (error) {
+        window.alert(`Could not create drawing: ${error.message}.`);
+        return;
+      }
+      if (data) {
+        setDrawings(prev => [data, ...prev]);
+        setActiveId(data.id);
+      }
+    } catch (err) {
+      window.alert(`Could not create drawing: ${err.message}.`);
     }
   }
 
@@ -1935,9 +1966,17 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   async function deleteDrawing(id) {
     if (!window.confirm('Delete this drawing?')) return;
-    await supabase.from('drawings').delete().eq('id', id);
-    setDrawings(prev => prev.filter(d => d.id !== id));
-    if (activeId === id) setActiveId(null);
+    try {
+      const { error } = await supabase.from('drawings').delete().eq('id', id);
+      if (error) {
+        window.alert(`Delete failed: ${error.message}. The drawing is still here — try again in a moment.`);
+        return;
+      }
+      setDrawings(prev => prev.filter(d => d.id !== id));
+      if (activeId === id) setActiveId(null);
+    } catch (err) {
+      window.alert(`Delete failed: ${err.message}. The drawing is still here — try again in a moment.`);
+    }
   }
 
   function exportPNG() {
@@ -2051,7 +2090,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function createBlockFromSelection(name) {
     if (!selectedId) return;
-    const sel = shapes.find(s => s.id === selectedId);
+    const sel = shapeById.get(selectedId);
     if (!sel) return;
     if (sel.type === 'instance') {
       window.alert('Cannot create a block from an instance. Select a regular shape.');
@@ -2568,7 +2607,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               />
             )}
             {offsetMode && offsetAnchor && previewPoint && selectedId && (() => {
-              const sel = shapes.find(s => s.id === selectedId);
+              const sel = shapeById.get(selectedId);
               if (!sel) return null;
               const dx = previewPoint.x - offsetAnchor.x;
               const dy = previewPoint.y - offsetAnchor.y;
@@ -2586,7 +2625,7 @@ function DraftView({ drawings, setDrawings, userId }) {
             })()}
             {/* Mirror preview */}
             {mirrorMode && mirrorMode.stage === 'pickP2' && previewPoint && selectedId && (() => {
-              const sel = shapes.find(s => s.id === selectedId);
+              const sel = shapeById.get(selectedId);
               if (!sel) return null;
               const reflected = mirrorShape(sel, { a: mirrorMode.p1, b: previewPoint });
               // Extend axis line for visual clarity
@@ -2708,7 +2747,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       )}
 
       {showArrayDialog && selectedId && (() => {
-        const sel = shapes.find(s => s.id === selectedId);
+        const sel = shapeById.get(selectedId);
         if (!sel) return null;
         return <ArrayDialog
           shape={sel}
@@ -2728,7 +2767,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       {showRotateDialog && selectedId && (() => {
-        const sel = shapes.find(s => s.id === selectedId);
+        const sel = shapeById.get(selectedId);
         if (!sel) return null;
         return <RotateDialog
           shape={sel}
@@ -2783,9 +2822,9 @@ function DraftView({ drawings, setDrawings, userId }) {
                     border: insertBlockId === b.id ? '1px solid var(--accent)' : '1px solid var(--border)',
                   }}>
                     <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
-                      <input
+                      <InlineRenameInput
                         value={b.name}
-                        onChange={e => renameBlock(b.id, e.target.value)}
+                        onCommit={(newName) => renameBlock(b.id, newName)}
                         disabled={!!blockEditMode}
                         className="form-input"
                         style={{flex:1,padding:'2px 6px',fontSize:'12px',minWidth:0,opacity: blockEditMode ? 0.4 : 1}}
@@ -2948,10 +2987,9 @@ function DraftView({ drawings, setDrawings, userId }) {
                   title={l.locked ? 'Unlock' : 'Lock'}
                   style={{minWidth:'24px',padding:'2px 4px'}}
                 >{l.locked ? '🔒' : '🔓'}</button>
-                <input
+                <InlineRenameInput
                   value={l.name}
-                  onChange={e => renameLayer(l.id, e.target.value)}
-                  onClick={e => e.stopPropagation()}
+                  onCommit={(newName) => renameLayer(l.id, newName)}
                   className="form-input"
                   style={{flex:1,padding:'2px 6px',fontSize:'12px',minWidth:0}}
                 />
@@ -2970,7 +3008,7 @@ function DraftView({ drawings, setDrawings, userId }) {
             ))}
           </div>
           {selectedId && (() => {
-            const sel = shapes.find(s => s.id === selectedId);
+            const sel = shapeById.get(selectedId);
             if (!sel) return null;
             return (
               <div style={{marginTop:'12px',paddingTop:'10px',borderTop:'1px solid var(--border)'}}>
@@ -3073,38 +3111,28 @@ function DraftView({ drawings, setDrawings, userId }) {
       )}
 
       {editingTextId && (() => {
-        const t = shapes.find(s => s.id === editingTextId);
+        const t = shapeById.get(editingTextId);
         if (!t) return null;
-        return (
-          <div style={{
-            position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
-            display:'flex', alignItems:'center', justifyContent:'center', zIndex:100
-          }} onClick={() => setEditingTextId(null)}>
-            <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'300px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
-              <h3 style={{margin:'0 0 12px 0'}}>Edit text</h3>
-              <input
-                className="form-input"
-                autoFocus
-                value={t.text}
-                onChange={e => {
-                  setShapes(prev => prev.map(s => s.id === editingTextId ? { ...s, text: e.target.value } : s));
-                  setDirty(true);
-                }}
-                onKeyDown={e => { if (e.key === 'Enter') setEditingTextId(null); }}
-                style={{width:'100%'}}
-              />
-              <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'12px'}}>
-                <button className="btn btn-sm btn-ghost" onClick={() => {
-                  // delete if empty
-                  if (!t.text.trim()) {
-                    setShapes(prev => prev.filter(s => s.id !== editingTextId));
-                  }
-                  setEditingTextId(null);
-                }}>Done</button>
-              </div>
-            </div>
-          </div>
-        );
+        return <TextEditDialog
+          shape={t}
+          onCancel={() => setEditingTextId(null)}
+          onCommit={(newText) => {
+            const originalText = t.text;
+            if (newText === originalText) {
+              // No-op: just close
+              setEditingTextId(null);
+              return;
+            }
+            pushHistory();
+            if (!newText.trim()) {
+              setShapes(prev => prev.filter(s => s.id !== editingTextId));
+            } else {
+              setShapes(prev => prev.map(s => s.id === editingTextId ? { ...s, text: newText } : s));
+            }
+            setDirty(true);
+            setEditingTextId(null);
+          }}
+        />;
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
@@ -3193,14 +3221,20 @@ function mirrorShape(s, axis) {
       return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
     }
     case 'rect': {
-      const c1 = ref({ x: s.x, y: s.y });
-      const c2 = ref({ x: s.x + s.w, y: s.y });
-      const c3 = ref({ x: s.x + s.w, y: s.y + s.h });
-      const c4 = ref({ x: s.x, y: s.y + s.h });
-      const xs = [c1.x, c2.x, c3.x, c4.x];
-      const ys = [c1.y, c2.y, c3.y, c4.y];
-      const nx = Math.min(...xs), ny = Math.min(...ys);
-      return { ...s, x: nx, y: ny, w: Math.max(...xs) - nx, h: Math.max(...ys) - ny };
+      // Reflect the rect's center; new rotation = 2·(axis angle) − θ.
+      // Axis angle in our CCW-y-down convention: atan2(-(b.y - a.y), b.x - a.x).
+      const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+      const newC = ref({ x: cx, y: cy });
+      const dx = axis.b.x - axis.a.x, dy = axis.b.y - axis.a.y;
+      const phi = Math.atan2(-dy, dx) * 180 / Math.PI;
+      const theta = s.rotation || 0;
+      const newRot = 2 * phi - theta;
+      return {
+        ...s,
+        x: newC.x - s.w / 2,
+        y: newC.y - s.h / 2,
+        rotation: newRot,
+      };
     }
     case 'circle': {
       const c = ref({ x: s.cx, y: s.cy });
@@ -3652,6 +3686,68 @@ function RotateDialog({ shape, onCancel, onApply }) {
         <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
           <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
           <button className="btn btn-sm btn-primary" onClick={() => onApply(angle, keepOriginal)}>Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Input that owns its text locally and only commits on blur or Enter. Prevents
+// per-keystroke pushHistory floods. Pass commit(newName) which the parent uses
+// to pushHistory + update state once. Falls back to the original value if the
+// user blurs with empty text (preserving the prior name).
+function InlineRenameInput({ value, onCommit, disabled, className, style, title }) {
+  const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
+  // Re-sync when the underlying value changes (e.g. undo)
+  useEffect(() => { if (!focused) setDraft(value); }, [value, focused]);
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed === '' || trimmed === value) {
+      setDraft(value);
+      return;
+    }
+    onCommit(trimmed);
+  }
+  return (
+    <input
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => { setFocused(false); commit(); }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.target.blur(); }
+        if (e.key === 'Escape') { setDraft(value); e.target.blur(); }
+      }}
+      onClick={e => e.stopPropagation()}
+      disabled={disabled}
+      className={className}
+      style={style}
+      title={title}
+    />
+  );
+}
+
+function TextEditDialog({ shape, onCancel, onCommit }) {
+  const [text, setText] = useState(shape.text || '');
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:100
+    }} onClick={onCancel}>
+      <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'300px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+        <h3 style={{margin:'0 0 12px 0'}}>Edit text</h3>
+        <input
+          className="form-input"
+          autoFocus
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onCommit(text); }}
+          style={{width:'100%'}}
+        />
+        <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'12px'}}>
+          <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-sm btn-primary" onClick={() => onCommit(text)}>Done</button>
         </div>
       </div>
     </div>
