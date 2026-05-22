@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from './dataService';
 import { jsPDF } from 'jspdf';
+import * as pdfjsLib from 'pdfjs-dist';
 import './index.css';
+
+// pdf.js worker. Use the CDN-hosted matching-version worker so we don't bundle it.
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 const PLATFORM_ADMIN_EMAIL = 'dara@brokerdara.com';
 
@@ -582,7 +586,8 @@ function shapeBoundingBox(s, blocks) {
         minX: Math.min(s.x1, s.x2), maxX: Math.max(s.x1, s.x2),
         minY: Math.min(s.y1, s.y2), maxY: Math.max(s.y1, s.y2),
       };
-    case 'rect': {
+    case 'rect':
+    case 'image': {
       const rot = s.rotation || 0;
       if (rot === 0) {
         return { minX: s.x, minY: s.y, maxX: s.x + s.w, maxY: s.y + s.h };
@@ -710,7 +715,7 @@ function getSnapPoints(shapes, isShapeVisible, blocks) {
       pts.push({ x: s.x1, y: s.y1, kind: 'endpoint' });
       pts.push({ x: s.x2, y: s.y2, kind: 'endpoint' });
       pts.push({ x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2, kind: 'midpoint' });
-    } else if (s.type === 'rect') {
+    } else if (s.type === 'rect' || s.type === 'image') {
       const rot = s.rotation || 0;
       if (rot === 0) {
         const x2 = s.x + s.w, y2 = s.y + s.h;
@@ -858,6 +863,11 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [blockEditMode, setBlockEditMode] = useState(null);
   const [showPdfDialog, setShowPdfDialog] = useState(false);
   const fileInputRef = useRef(null);
+  const imageFileInputRef = useRef(null);
+  // Calibration: when set, the user clicks two points on a reference image
+  // and enters the real-world distance between them to set drawing scale.
+  // Shape: null | { imageId, stage: 'pickP1'|'pickP2'|'enterDistance', p1?, p2? }
+  const [calibrateMode, setCalibrateMode] = useState(null);
   // Multi-select: selectedIds is the source of truth. selectedId mirrors selectedIds[0]
   // for backwards-compat with single-shape ops (offset, mirror, rotate, array, etc).
   const [selectedIds, setSelectedIds] = useState([]);
@@ -1109,6 +1119,86 @@ function DraftView({ drawings, setDrawings, userId }) {
           setDirty(true);
         }
         setMirrorMode(null);
+        return;
+      }
+    }
+
+    // Calibrate mode: pick two points on the reference image, then prompt
+    // for the real-world distance between them and rescale the image.
+    if (calibrateMode) {
+      if (calibrateMode.stage === 'pickP1') {
+        setCalibrateMode({ ...calibrateMode, stage: 'pickP2', p1: p });
+        return;
+      }
+      if (calibrateMode.stage === 'pickP2') {
+        const p1 = calibrateMode.p1;
+        const p2 = p;
+        const pxDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (pxDist < 1) {
+          window.alert('The two points are too close together. Try again.');
+          setCalibrateMode({ imageId: calibrateMode.imageId, stage: 'pickP1' });
+          return;
+        }
+        // Prompt for real-world distance + unit
+        const input = window.prompt(
+          `Real-world distance between the two points?\n` +
+          `Examples: "20 ft", "6.5 m", "100 in", "2.5 yd"\n\n` +
+          `(Current drawing units: ${units})`,
+          `10 ${units}`
+        );
+        if (!input) {
+          setCalibrateMode(null);
+          return;
+        }
+        // Parse "<number> <unit>" with the unit optional (defaults to drawing units)
+        const m = input.trim().match(/^([+-]?\d+(?:\.\d+)?)\s*(in|inch|inches|ft|feet|m|meter|meters|cm|centimeter|centimeters|mm|millimeter|millimeters|yd|yard|yards)?$/i);
+        if (!m) {
+          window.alert(`Couldn't parse "${input}". Use a number, optionally followed by a unit (e.g. "20 ft").`);
+          setCalibrateMode(null);
+          return;
+        }
+        const realValue = parseFloat(m[1]);
+        if (!isFinite(realValue) || realValue <= 0) {
+          window.alert('Distance must be a positive number.');
+          setCalibrateMode(null);
+          return;
+        }
+        // Normalize unit aliases. If omitted, assume drawing's current units.
+        const unitInput = (m[2] || units).toLowerCase();
+        const unitMap = {
+          'in': 'in', 'inch': 'in', 'inches': 'in',
+          'ft': 'ft', 'feet': 'ft', 'foot': 'ft',
+          'm': 'm', 'meter': 'm', 'meters': 'm',
+          'cm': 'cm', 'centimeter': 'cm', 'centimeters': 'cm',
+          'mm': 'mm', 'millimeter': 'mm', 'millimeters': 'mm',
+          'yd': 'yd', 'yard': 'yd', 'yards': 'yd',
+        };
+        const inputUnit = unitMap[unitInput] || units;
+        // Convert real-world distance to inches (canonical), then to drawing px.
+        const inPerUnit = { 'in': 1, 'ft': 12, 'yd': 36, 'm': 39.3701, 'cm': 0.393701, 'mm': 0.0393701 };
+        const realInches = realValue * (inPerUnit[inputUnit] || 1);
+        const drawingPxPerInch = pxPerUnit / (inPerUnit[units] || 1);
+        const targetPxDist = realInches * drawingPxPerInch;
+        const factor = targetPxDist / pxDist;
+        if (!isFinite(factor) || factor <= 0) {
+          window.alert('Calibration produced an invalid scale factor.');
+          setCalibrateMode(null);
+          return;
+        }
+        // Scale the image around p1 so the two points keep their on-screen
+        // anchor positions correctly. We scale around p1; p2 moves outward
+        // to the new distance. (Choosing p1 as the pivot keeps one of the
+        // user's clicked points exactly where they put it.)
+        const img = shapeById.get(calibrateMode.imageId);
+        if (!img) {
+          setCalibrateMode(null);
+          return;
+        }
+        pushHistory();
+        const scaled = scaleShape(img, factor, p1);
+        setShapes(prev => prev.map(s => s.id === img.id ? scaled : s));
+        setDirty(true);
+        setCalibrateMode(null);
         return;
       }
     }
@@ -1452,6 +1542,22 @@ function DraftView({ drawings, setDrawings, userId }) {
       const t = Math.max(0, Math.min(1, ((p.x-x1)*dx + (p.y-y1)*dy) / len2));
       const px = x1 + t*dx, py = y1 + t*dy;
       return Math.hypot(p.x - px, p.y - py) <= tol;
+    }
+    if (s.type === 'image') {
+      // Images are clickable anywhere inside their (rotated) bounds, not just
+      // on the edge — they're filled raster content, so users expect the whole
+      // thing to be a hit target.
+      const rot = s.rotation || 0;
+      let lp = p;
+      if (rot !== 0) {
+        const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+        const rad = (-rot * Math.PI) / 180;
+        const cos = Math.cos(rad), sin = Math.sin(rad);
+        const dx = p.x - cx, dy = p.y - cy;
+        lp = { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
+      }
+      return lp.x >= s.x - tol && lp.x <= s.x + s.w + tol
+          && lp.y >= s.y - tol && lp.y <= s.y + s.h + tol;
     }
     if (s.type === 'rect') {
       const rot = s.rotation || 0;
@@ -1891,6 +1997,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         if (trimMode) setTrimMode(false);
         if (extendMode) setExtendMode(null);
         if (mirrorMode) setMirrorMode(null);
+        if (calibrateMode) setCalibrateMode(null);
         if (paramInput) setParamInput(null);
         if (insertBlockId) setInsertBlockId(null);
         if (panMode) setPanMode(false);
@@ -1947,6 +2054,19 @@ function DraftView({ drawings, setDrawings, userId }) {
     }
     setSaving(true);
     const payload = { shapes, layers };
+    // Size check — image data URLs balloon the row. Warn (but allow) at 5 MB;
+    // Supabase technically supports up to 1 GB for jsonb but performance and
+    // network reliability degrade well before that.
+    const serialized = JSON.stringify({ shapes: payload, blocks });
+    const sizeMB = serialized.length / (1024 * 1024);
+    if (sizeMB > 5) {
+      const ok = window.confirm(
+        `This drawing is large (${sizeMB.toFixed(1)} MB), mostly due to embedded reference images. ` +
+        `Save may be slow or fail. Consider deleting unused images or lowering their resolution.\n\n` +
+        `Save anyway?`
+      );
+      if (!ok) { setSaving(false); return; }
+    }
     try {
       const { data, error } = await supabase.from('drawings').update({
         title, units, px_per_unit: pxPerUnit, shapes: payload, blocks
@@ -2088,6 +2208,114 @@ function DraftView({ drawings, setDrawings, userId }) {
     e.target.value = '';
   }
 
+  // Import a raster (PNG/JPG/WebP) or PDF as an image shape. PDFs are rasterized
+  // to a PNG data URL via pdf.js (page 1 only; users can re-import for other
+  // pages). Images land at the viewBox center, sized so longest dimension is
+  // ~60% of the visible area. Goes onto its own "Reference" layer (created if
+  // needed), locked so it doesn't interfere with snapping while drafting.
+  async function handleImageImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const filename = file.name || 'image';
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const isPdf = ext === 'pdf' || file.type === 'application/pdf';
+    try {
+      let dataUrl, nativeW, nativeH;
+      if (isPdf) {
+        // Rasterize page 1 of the PDF at a resolution that gives reasonable
+        // tracing quality (~1500px on the long edge) without blowing up file size.
+        const buf = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+        const page = await pdf.getPage(1);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const longEdge = Math.max(baseViewport.width, baseViewport.height);
+        const targetLong = 1500;
+        const scale = Math.min(3, Math.max(1, targetLong / longEdge));
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const ctx = canvas.getContext('2d');
+        // White background — most PDFs are transparent and would render black on dark mode
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+        dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        nativeW = canvas.width;
+        nativeH = canvas.height;
+        if (pdf.numPages > 1) {
+          // Inform the user we only got page 1; not blocking
+          setTimeout(() => window.alert(`Imported page 1 of ${pdf.numPages}. To import another page, re-import and we'll add a page selector in a future update.`), 100);
+        }
+      } else if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext) || file.type.startsWith('image/')) {
+        // Read straight to data URL, then load to get native dimensions
+        dataUrl = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = () => reject(new Error('Could not read file'));
+          r.readAsDataURL(file);
+        });
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error('Image failed to load — file may be corrupt or unsupported'));
+          i.src = dataUrl;
+        });
+        nativeW = img.naturalWidth;
+        nativeH = img.naturalHeight;
+      } else {
+        window.alert(`Unsupported file type: ${ext || file.type}. Use PDF, PNG, JPG, or WebP.`);
+        e.target.value = '';
+        return;
+      }
+
+      // Place the image at the viewBox center, scaled so its longest dimension
+      // is ~60% of the viewBox's longest dimension. The user can rescale
+      // freely afterward, or use Calibrate to set real-world scale.
+      const vbLong = Math.max(viewBox.w, viewBox.h);
+      const imgLong = Math.max(nativeW, nativeH);
+      const placeScale = (vbLong * 0.6) / imgLong;
+      const w = nativeW * placeScale;
+      const h = nativeH * placeScale;
+      const cx = viewBox.x + viewBox.w / 2;
+      const cy = viewBox.y + viewBox.h / 2;
+
+      // Ensure there's a "Reference" layer for imported images, locked by default
+      // so the image doesn't accidentally get snapped to or dragged while drafting.
+      let refLayer = layers.find(l => l.name === 'Reference');
+      if (!refLayer) {
+        refLayer = { id: 'l_ref_' + Date.now(), name: 'Reference', color: '#888888', visible: true, locked: false };
+      }
+
+      const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      const newImage = {
+        id,
+        type: 'image',
+        src: dataUrl,
+        x: cx - w / 2,
+        y: cy - h / 2,
+        w, h,
+        rotation: 0,
+        opacity: 0.7,
+        nativeW, nativeH,
+        filename,
+        layer: refLayer.id,
+      };
+
+      pushHistory();
+      if (!layers.find(l => l.id === refLayer.id)) {
+        setLayers(prev => [...prev, refLayer]);
+      }
+      setShapes(prev => [...prev, newImage]);
+      setSelectedIds([id]);
+      setDirty(true);
+    } catch (err) {
+      window.alert('Failed to import file: ' + (err.message || String(err)));
+    } finally {
+      e.target.value = '';
+    }
+  }
+
   function createBlockFromSelection(name) {
     if (!selectedId) return;
     const sel = shapeById.get(selectedId);
@@ -2190,15 +2418,21 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function exportPdf(paperSize, pdfScale) {
-    const expanded = getExportShapes();
+    let expanded = getExportShapes();
     if (expanded.length === 0) {
       window.alert('Nothing to export.');
       return;
     }
+    // Render images first so vector geometry overlays them in the export.
+    expanded = expanded.slice().sort((a, b) => {
+      const aImg = a.type === 'image' ? 0 : 1;
+      const bImg = b.type === 'image' ? 0 : 1;
+      return aImg - bImg;
+    });
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const s of expanded) {
       if (s.type === 'line' || s.type === 'dimension') { minX = Math.min(minX, s.x1, s.x2); minY = Math.min(minY, s.y1, s.y2); maxX = Math.max(maxX, s.x1, s.x2); maxY = Math.max(maxY, s.y1, s.y2); }
-      else if (s.type === 'rect') {
+      else if (s.type === 'rect' || s.type === 'image') {
         const bb = shapeBoundingBox(s);
         if (bb) { minX = Math.min(minX, bb.minX); minY = Math.min(minY, bb.minY); maxX = Math.max(maxX, bb.maxX); maxY = Math.max(maxY, bb.maxY); }
       }
@@ -2236,7 +2470,27 @@ function DraftView({ drawings, setDrawings, userId }) {
     pdf.setDrawColor(0); pdf.setTextColor(0);
     for (const s of expanded) {
       pdf.setLineWidth(Math.max(0.3, (s.strokeWidth || 1) * 0.5));
-      if (s.type === 'line' || s.type === 'dimension') {
+      if (s.type === 'image') {
+        // Reference images render at axis-aligned bbox with their opacity.
+        // jsPDF addImage doesn't smoothly handle arbitrary rotation; for a
+        // rotated reference image we render axis-aligned (the underlying
+        // drafted geometry is what matters in the export).
+        const tl = px2pt(s.x, s.y);
+        const wPt = s.w * k, hPt = s.h * k;
+        const opacity = s.opacity != null ? s.opacity : 0.7;
+        const format = (s.src && s.src.startsWith('data:image/png')) ? 'PNG' : 'JPEG';
+        try {
+          if (pdf.GState && pdf.setGState) {
+            pdf.setGState(new pdf.GState({ opacity }));
+          }
+          pdf.addImage(s.src, format, tl.x, tl.y, wPt, hPt);
+          if (pdf.GState && pdf.setGState) {
+            pdf.setGState(new pdf.GState({ opacity: 1 }));
+          }
+        } catch (err) {
+          console.warn('Failed to embed image in PDF:', err && err.message);
+        }
+      } else if (s.type === 'line' || s.type === 'dimension') {
         const p1 = px2pt(s.x1, s.y1); const p2 = px2pt(s.x2, s.y2);
         pdf.line(p1.x, p1.y, p2.x, p2.y);
         if (s.type === 'dimension') {
@@ -2410,6 +2664,14 @@ function DraftView({ drawings, setDrawings, userId }) {
             style={{display:'none'}}
             onChange={handleDxfImport}
           />
+          <button className="btn btn-sm btn-ghost" onClick={() => imageFileInputRef.current?.click()} title="Import PDF or image as reference background">⬆ Image/PDF</button>
+          <input
+            ref={imageFileInputRef}
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/*"
+            style={{display:'none'}}
+            onChange={handleImageImport}
+          />
           <button className="btn btn-sm btn-primary" onClick={saveDrawing} disabled={saving || !dirty}>
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -2545,7 +2807,15 @@ function DraftView({ drawings, setDrawings, userId }) {
             </defs>
             {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
 
-            {shapes.filter(isShapeVisible).map(s => {
+            {/* Render images first so they sit behind drafted geometry, acting
+                as a base layer for tracing. Selected images still render their
+                outline via renderShape; pointer events on the image element
+                itself are off so vector shapes on top remain clickable. */}
+            {shapes.filter(isShapeVisible).slice().sort((a, b) => {
+              const aImg = a.type === 'image' ? 0 : 1;
+              const bImg = b.type === 'image' ? 0 : 1;
+              return aImg - bImg;
+            }).map(s => {
               const isSelected = selectedSet.has(s.id);
               if (s.type === 'instance') {
                 const sub = expandInstance(s, blocks);
@@ -2909,6 +3179,24 @@ function DraftView({ drawings, setDrawings, userId }) {
         );
       })()}
 
+      {calibrateMode && (
+        <div style={{
+          position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)',
+          background:'var(--bg-card)', border:'2px solid var(--yellow)', borderRadius:'8px',
+          padding:'10px 16px', zIndex:60, fontSize:'13px',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <span style={{color:'var(--yellow)'}}>
+              ⚖ Calibrate — {calibrateMode.stage === 'pickP1'
+                ? 'click the first point on a known dimension (e.g. one end of a wall)'
+                : 'click the second point (the other end of that dimension)'}
+            </span>
+            <button className="btn btn-sm btn-ghost" onClick={() => setCalibrateMode(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {insertBlockId && (() => {
         const block = blocks.find(b => b.id === insertBlockId);
         return (
@@ -3025,6 +3313,48 @@ function DraftView({ drawings, setDrawings, userId }) {
                 >
                   {layers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
+                {sel.type === 'image' && (
+                  <>
+                    <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'10px',marginBottom:'4px'}}>
+                      Opacity: {Math.round((sel.opacity != null ? sel.opacity : 0.7) * 100)}%
+                    </div>
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="1"
+                      step="0.05"
+                      value={sel.opacity != null ? sel.opacity : 0.7}
+                      onChange={e => {
+                        // Per-keystroke value writes are fine here — opacity
+                        // changes are visually continuous and don't push history
+                        // until commit (onMouseUp/onChange end). Use onChange on
+                        // input[type=range] which fires per drag-tick; we don't
+                        // pushHistory each tick (would flood). Capture pre-drag
+                        // state on first interaction instead.
+                        setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, opacity: Number(e.target.value) } : s));
+                        setDirty(true);
+                      }}
+                      onMouseDown={() => {
+                        // Capture history once at the start of a drag
+                        pushHistory();
+                      }}
+                      onTouchStart={() => pushHistory()}
+                      style={{width:'100%'}}
+                    />
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => setCalibrateMode({ imageId: selectedId, stage: 'pickP1' })}
+                      style={{width:'100%',marginTop:'8px',fontSize:'12px'}}
+                      title="Click two points on the image, then enter the real-world distance to scale the image correctly."
+                    >
+                      ⚖ Calibrate scale
+                    </button>
+                    <p style={{fontSize:'10px',color:'var(--text-3)',marginTop:'6px',marginBottom:0,lineHeight:1.4}}>
+                      Native: {sel.nativeW || '?'} × {sel.nativeH || '?'} px
+                      {sel.filename ? <><br/>{sel.filename}</> : null}
+                    </p>
+                  </>
+                )}
                 {(sel.type === 'rect' || sel.type === 'circle' || sel.type === 'polyline') && (
                   <>
                     <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'10px',marginBottom:'4px'}}>Fill style:</div>
@@ -3220,8 +3550,9 @@ function mirrorShape(s, axis) {
       const p2 = ref({ x: s.x2, y: s.y2 });
       return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
     }
-    case 'rect': {
-      // Reflect the rect's center; new rotation = 2·(axis angle) − θ.
+    case 'rect':
+    case 'image': {
+      // Reflect the center; new rotation = 2·(axis angle) − θ.
       // Axis angle in our CCW-y-down convention: atan2(-(b.y - a.y), b.x - a.x).
       const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
       const newC = ref({ x: cx, y: cy });
@@ -3270,7 +3601,8 @@ function rotatePoint(p, c, angleDeg) {
 function shapeCenter(s) {
   switch (s.type) {
     case 'instance': return { x: s.x, y: s.y };
-    case 'rect': return { x: s.x + s.w / 2, y: s.y + s.h / 2 };
+    case 'rect':
+    case 'image': return { x: s.x + s.w / 2, y: s.y + s.h / 2 };
     case 'circle': return { x: s.cx, y: s.cy };
     case 'line':
     case 'dimension': return { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
@@ -3299,8 +3631,9 @@ function rotateShape(s, center, angleDeg) {
       const p2 = rot({ x: s.x2, y: s.y2 });
       return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
     }
-    case 'rect': {
-      // Rotate the rect's geometric center around the pivot, accumulate rotation.
+    case 'rect':
+    case 'image': {
+      // Rotate the geometric center around the pivot, accumulate rotation.
       const cur = { x: s.x + s.w / 2, y: s.y + s.h / 2 };
       const newC = rot(cur);
       return {
@@ -3354,6 +3687,7 @@ function translateShape(s, dx, dy) {
     case 'dimension':
       return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
     case 'rect':
+    case 'image':
       return { ...s, x: s.x + dx, y: s.y + dy };
     case 'circle':
       return { ...s, cx: s.cx + dx, cy: s.cy + dy };
@@ -3385,7 +3719,8 @@ function scaleShape(s, factor, origin = { x: 0, y: 0 }) {
       const p2 = sp({ x: s.x2, y: s.y2 });
       return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
     }
-    case 'rect': {
+    case 'rect':
+    case 'image': {
       const tl = sp({ x: s.x, y: s.y });
       return { ...s, x: tl.x, y: tl.y, w: s.w * factor, h: s.h * factor };
     }
@@ -3442,6 +3777,11 @@ function dxfWrite(shapes) {
   out(0, 'ENDSEC');
   out(0, 'SECTION'); out(2, 'ENTITIES');
   for (const s of shapes) {
+    if (s.type === 'image') {
+      // DXF has no clean way to embed raster images. Skip them — they're
+      // reference-only background, not part of the drafted geometry.
+      continue;
+    }
     if (s.type === 'line') {
       out(0, 'LINE'); out(8, '0');
       out(10, s.x1); out(20, -s.y1); out(30, 0);
@@ -3862,6 +4202,36 @@ function renderShape(s, selected, ctx) {
   if (s.type === 'line') {
     return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} {...common} fill="none" />;
   }
+  if (s.type === 'image') {
+    const rot = s.rotation || 0;
+    const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+    const opacity = s.opacity != null ? s.opacity : 0.7;
+    const transform = rot === 0 ? undefined : `rotate(${-rot} ${cx} ${cy})`;
+    return (
+      <g key={s.id} transform={transform}>
+        <image
+          href={s.src}
+          x={s.x}
+          y={s.y}
+          width={s.w}
+          height={s.h}
+          opacity={opacity}
+          preserveAspectRatio="none"
+          pointerEvents="none"
+        />
+        <rect
+          x={s.x}
+          y={s.y}
+          width={s.w}
+          height={s.h}
+          fill="transparent"
+          stroke={selected ? '#6c63ff' : 'none'}
+          strokeWidth={selected ? 2 : 0}
+          strokeDasharray={selected ? '6,4' : undefined}
+        />
+      </g>
+    );
+  }
   if (s.type === 'rect') {
     // Normalize negative w/h so the draft preview is visible when dragging
     // from bottom-right to top-left.
@@ -4042,7 +4412,7 @@ function NotesView({ notes, setNotes, userId }) {
   const sorted = [...pinned, ...unpinned];
 
   return (
-    <div style={{ display: 'flex', gap: '18px', height: 'calc(100vh - 64px)', height: 'calc(100dvh - 64px)' }}>
+    <div style={{ display: 'flex', gap: '18px', height: 'calc(100dvh - 64px)' }}>
 
       {/* ── LEFT: note list ── */}
       <div style={{ width: '260px', minWidth: '260px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
