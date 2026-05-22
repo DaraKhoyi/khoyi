@@ -4,8 +4,11 @@ import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
 import './index.css';
 
-// pdf.js worker. Use the CDN-hosted matching-version worker so we don't bundle it.
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// pdf.js worker. We serve the worker from /public/pdf.worker.min.mjs so it
+// loads same-origin and doesn't depend on a third-party CDN. The file is
+// copied from node_modules/pdfjs-dist/build/pdf.worker.min.mjs at commit time.
+// If you bump pdfjs-dist, also re-copy public/pdf.worker.min.mjs.
+pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL || ''}/pdf.worker.min.mjs`;
 
 const PLATFORM_ADMIN_EMAIL = 'dara@brokerdara.com';
 
@@ -715,7 +718,12 @@ function getSnapPoints(shapes, isShapeVisible, blocks) {
       pts.push({ x: s.x1, y: s.y1, kind: 'endpoint' });
       pts.push({ x: s.x2, y: s.y2, kind: 'endpoint' });
       pts.push({ x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2, kind: 'midpoint' });
-    } else if (s.type === 'rect' || s.type === 'image') {
+    } else if (s.type === 'image') {
+      // Skip images for snapping — they're reference backgrounds, not
+      // geometry. Snapping to image corners while drafting would pull the
+      // cursor away from the user's intended drawing.
+      return;
+    } else if (s.type === 'rect') {
       const rot = s.rotation || 0;
       if (rot === 0) {
         const x2 = s.x + s.w, y2 = s.y + s.h;
@@ -1238,7 +1246,14 @@ function DraftView({ drawings, setDrawings, userId }) {
     }
 
     if (tool === 'select') {
-      const hit = [...shapes].reverse().find(s => isShapeInteractable(s) && hitTest(s, p));
+      // Hit-test priority matches render z-order: non-images first (reverse
+      // insertion order = visually-on-top first), images last (since they
+      // render behind everything else as base/reference layers). Without this,
+      // clicking a vector shape that visually overlaps an image could still
+      // hit the image first if the image happens to come later in `shapes`.
+      const nonImages = [...shapes].filter(s => s.type !== 'image').reverse();
+      const images = [...shapes].filter(s => s.type === 'image').reverse();
+      const hit = [...nonImages, ...images].find(s => isShapeInteractable(s) && hitTest(s, p));
       const additive = e.shiftKey || e.metaKey || e.ctrlKey;
       if (hit) {
         let newSelection;
@@ -2054,12 +2069,14 @@ function DraftView({ drawings, setDrawings, userId }) {
     }
     setSaving(true);
     const payload = { shapes, layers };
-    // Size check — image data URLs balloon the row. Warn (but allow) at 5 MB;
-    // Supabase technically supports up to 1 GB for jsonb but performance and
-    // network reliability degrade well before that.
-    const serialized = JSON.stringify({ shapes: payload, blocks });
+    // Size check — image data URLs balloon the row. Compute size from the
+    // actual payload sent to Supabase (title/units/px_per_unit/shapes/blocks).
+    // Warn (but allow) at 4 MB; Supabase REST request body limits + network
+    // reliability degrade above this for typical connections.
+    const fullPayload = { title, units, px_per_unit: pxPerUnit, shapes: payload, blocks };
+    const serialized = JSON.stringify(fullPayload);
     const sizeMB = serialized.length / (1024 * 1024);
-    if (sizeMB > 5) {
+    if (sizeMB > 4) {
       const ok = window.confirm(
         `This drawing is large (${sizeMB.toFixed(1)} MB), mostly due to embedded reference images. ` +
         `Save may be slow or fail. Consider deleting unused images or lowering their resolution.\n\n` +
@@ -2280,12 +2297,25 @@ function DraftView({ drawings, setDrawings, userId }) {
       const cx = viewBox.x + viewBox.w / 2;
       const cy = viewBox.y + viewBox.h / 2;
 
-      // Ensure there's a "Reference" layer for imported images, locked by default
-      // so the image doesn't accidentally get snapped to or dragged while drafting.
-      let refLayer = layers.find(l => l.name === 'Reference');
-      if (!refLayer) {
-        refLayer = { id: 'l_ref_' + Date.now(), name: 'Reference', color: '#888888', visible: true, locked: false };
-      }
+      // Ensure there's a "Reference" layer for imported images. Use a
+      // functional setLayers so two rapid imports (the second running before
+      // React has flushed the first's setLayers) don't both create a new
+      // layer. We assign the new layer's id BEFORE setLayers in case we
+      // create it; the functional update is the source of truth for whether
+      // it actually gets added.
+      const refLayerCandidateId = 'l_ref_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      let refLayerIdToUse = refLayerCandidateId;
+      const refLayerCandidate = {
+        id: refLayerCandidateId,
+        name: 'Reference',
+        color: '#888888',
+        visible: true,
+        locked: false,
+      };
+      // Check current state (closure) for the most-likely-correct id to assign
+      // to the image. setLayers below will reconcile if the closure was stale.
+      const existingInClosure = layers.find(l => l.name === 'Reference');
+      if (existingInClosure) refLayerIdToUse = existingInClosure.id;
 
       const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
       const newImage = {
@@ -2299,14 +2329,27 @@ function DraftView({ drawings, setDrawings, userId }) {
         opacity: 0.7,
         nativeW, nativeH,
         filename,
-        layer: refLayer.id,
+        layer: refLayerIdToUse,
       };
 
       pushHistory();
-      if (!layers.find(l => l.id === refLayer.id)) {
-        setLayers(prev => [...prev, refLayer]);
-      }
-      setShapes(prev => [...prev, newImage]);
+      // Functional update: if a Reference layer already exists in the latest
+      // state, keep it; otherwise add ours. If the layer already exists with
+      // a DIFFERENT id than the closure-derived one we assigned to the image,
+      // we need to relabel the image's layer to match. Do that by reading
+      // the resolved id from the setLayers updater and applying it to the
+      // shape via setShapes (also functional).
+      let resolvedRefLayerId = refLayerIdToUse;
+      setLayers(prev => {
+        const existing = prev.find(l => l.name === 'Reference');
+        if (existing) {
+          resolvedRefLayerId = existing.id;
+          return prev;
+        }
+        resolvedRefLayerId = refLayerCandidate.id;
+        return [...prev, refLayerCandidate];
+      });
+      setShapes(prev => [...prev, { ...newImage, layer: resolvedRefLayerId }]);
       setSelectedIds([id]);
       setDirty(true);
     } catch (err) {
@@ -3550,8 +3593,13 @@ function mirrorShape(s, axis) {
       const p2 = ref({ x: s.x2, y: s.y2 });
       return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
     }
-    case 'rect':
-    case 'image': {
+    case 'image':
+      // Mirroring a reference image isn't well-defined — the raster content
+      // would need its own flip (SVG scale(-1, 1)) to truly mirror, and most
+      // users mirror to build symmetric geometry, not to flip a photo. Leave
+      // the image untouched.
+      return s;
+    case 'rect': {
       // Reflect the center; new rotation = 2·(axis angle) − θ.
       // Axis angle in our CCW-y-down convention: atan2(-(b.y - a.y), b.x - a.x).
       const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
