@@ -3783,30 +3783,49 @@ function DraftView({ drawings, setDrawings, userId }) {
           padding:'10px 16px', zIndex:60, fontSize:'13px',
           boxShadow:'0 4px 16px rgba(0,0,0,0.4)'
         }}>
-          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
             <span style={{color:'var(--accent)'}}>↗ Offset mode</span>
-            <span style={{color:'var(--text-2)'}}>Click on the canvas to place the duplicate. Or:</span>
-            <input
-              type="number" placeholder="dx"
-              id="offset-dx"
-              className="form-input"
-              style={{width:'60px',padding:'4px 6px',fontSize:'12px'}}
-            />
-            <input
-              type="number" placeholder="dy"
-              id="offset-dy"
-              className="form-input"
-              style={{width:'60px',padding:'4px 6px',fontSize:'12px'}}
-            />
+            <span style={{color:'var(--text-2)'}}>Click on the canvas to place the duplicate. Or enter:</span>
+            <label style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'var(--text-2)'}}>
+              dx
+              <input
+                type="text"
+                placeholder={`e.g. 0 ${units}`}
+                id="offset-dx"
+                className="form-input"
+                style={{width:'90px',padding:'4px 6px',fontSize:'12px'}}
+              />
+            </label>
+            <label style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'var(--text-2)'}}>
+              dy
+              <input
+                type="text"
+                placeholder={`e.g. 65 ${units} (south)`}
+                id="offset-dy"
+                className="form-input"
+                style={{width:'130px',padding:'4px 6px',fontSize:'12px'}}
+              />
+            </label>
+            <span style={{fontSize:'11px',color:'var(--text-3)'}}>
+              Plain numbers = {units}. Or suffix: ft, ", m, cm, mm, yd. +dy = south.
+            </span>
             <button
               className="btn btn-sm btn-primary"
               onClick={() => {
                 const dxEl = document.getElementById('offset-dx');
                 const dyEl = document.getElementById('offset-dy');
-                const dx = Number(dxEl?.value) || 0;
-                const dy = Number(dyEl?.value) || 0;
-                if (dx === 0 && dy === 0) return;
-                offsetByVector(dx, dy);
+                const dxPx = parseLengthToPixels(dxEl?.value, units, pxPerUnit);
+                const dyPx = parseLengthToPixels(dyEl?.value, units, pxPerUnit);
+                if (dxPx === null || dyPx === null) {
+                  window.alert(
+                    'Could not read one of the offset values. Try just a number ' +
+                    `(interpreted as ${units}) or include a unit suffix like ` +
+                    '"65 ft", "20 m", "6\'-6\\"", or "12in".'
+                  );
+                  return;
+                }
+                if (dxPx === 0 && dyPx === 0) return;
+                offsetByVector(dxPx, dyPx);
                 setOffsetMode(false);
                 setOffsetAnchor(null);
               }}
@@ -3852,6 +3871,84 @@ function DraftView({ drawings, setDrawings, userId }) {
 }
 
 // ─── Tier 2 helpers ────────────────────────────────────────────────
+
+// Parse a user-entered length string into drawing pixels.
+//
+// Accepts:
+//   "0"               → 0 pixels (empty/blank also = 0)
+//   "65"              → 65 * pxPerUnit  (treated as drawing's current units)
+//   "65 ft"           → converted from ft to current units, then to pixels
+//   "65ft" "65'" "65 feet"  same
+//   "6'6\""           → 6 ft 6 inches → 6.5 ft → converted to pixels
+//   "6'-6\""          → same (architectural notation)
+//   "6'-6"            → same (closing inch mark optional)
+//   "20 in" "20\"" "20 inches"  → inches
+//   "5 m" "5 meter" "5 meters"   → meters
+//   "200 cm" "200 mm" "10 yd"    → other metric/imperial
+//   "-3 ft"           → negative offsets (move other direction)
+//
+// Returns null if input cannot be parsed. Returns 0 for empty/whitespace.
+//
+// Conversion uses inches as the canonical unit, then converts to drawing px
+// via pxPerUnit (which is px-per-`drawingUnits`).
+function parseLengthToPixels(input, drawingUnits, pxPerUnit) {
+  if (input == null) return 0;
+  const s = String(input).trim();
+  if (s === '') return 0;
+
+  const inPerUnit = {
+    in: 1, ft: 12, yd: 36,
+    m: 39.3701, cm: 0.393701, mm: 0.0393701,
+  };
+  const drawingInPerUnit = inPerUnit[drawingUnits] || 1;
+  const pxPerInch = pxPerUnit / drawingInPerUnit;
+
+  // Architectural feet-inches: 6'6"  6'-6"  6'-6  6'6  6'  -6'6"
+  // Captures: optional sign, feet, optional inches.
+  const archMatch = s.match(/^(-?)(\d+(?:\.\d+)?)\s*'\s*-?\s*(\d+(?:\.\d+)?)?\s*"?$/);
+  if (archMatch) {
+    const sign = archMatch[1] === '-' ? -1 : 1;
+    const feet = parseFloat(archMatch[2]);
+    const inches = archMatch[3] != null ? parseFloat(archMatch[3]) : 0;
+    if (!Number.isFinite(feet) || !Number.isFinite(inches)) return null;
+    const totalInches = sign * (feet * 12 + inches);
+    return totalInches * pxPerInch;
+  }
+
+  // Plain inches with double-quote: 20"  -20"
+  const inchMatch = s.match(/^(-?\d+(?:\.\d+)?)\s*"$/);
+  if (inchMatch) {
+    const inches = parseFloat(inchMatch[1]);
+    if (!Number.isFinite(inches)) return null;
+    return inches * pxPerInch;
+  }
+
+  // <number><unit>  or  <number> <unit>
+  // Or just <number> with no unit (interpreted as drawing's current units)
+  const numericMatch = s.match(
+    /^(-?\d+(?:\.\d+)?)\s*(in|inch|inches|ft|feet|foot|yd|yard|yards|m|meter|meters|metre|metres|cm|centimeter|centimeters|centimetre|centimetres|mm|millimeter|millimeters|millimetre|millimetres|px|pixels?)?$/i
+  );
+  if (!numericMatch) return null;
+  const value = parseFloat(numericMatch[1]);
+  if (!Number.isFinite(value)) return null;
+  const rawUnit = (numericMatch[2] || '').toLowerCase();
+  // Normalize unit aliases
+  const unitMap = {
+    '': drawingUnits,  // no suffix → drawing's current units
+    in: 'in', inch: 'in', inches: 'in',
+    ft: 'ft', feet: 'ft', foot: 'ft',
+    yd: 'yd', yard: 'yd', yards: 'yd',
+    m: 'm', meter: 'm', meters: 'm', metre: 'm', metres: 'm',
+    cm: 'cm', centimeter: 'cm', centimeters: 'cm', centimetre: 'cm', centimetres: 'cm',
+    mm: 'mm', millimeter: 'mm', millimeters: 'mm', millimetre: 'mm', millimetres: 'mm',
+    px: 'px', pixel: 'px', pixels: 'px',
+  };
+  const unit = unitMap[rawUnit];
+  if (unit === undefined) return null;
+  if (unit === 'px') return value;  // Raw drawing pixels — passthrough
+  const inches = value * (inPerUnit[unit] || 1);
+  return inches * pxPerInch;
+}
 
 function parseParametric(input) {
   if (input == null) return null;
