@@ -43,7 +43,7 @@ function AuthScreen() {
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <h1>Kho<span>yi</span></h1>
+          <h1>My<span>Life</span></h1>
           <p>Your personal operating system</p>
         </div>
         {mode === 'login' && <>
@@ -60,7 +60,7 @@ function AuthScreen() {
         </>}
         {mode === 'signup' && <>
           <h2>Create account</h2>
-          <p>Get started with Khoyi</p>
+          <p>Get started with MyLife</p>
           {error && <div className="auth-error">{error}</div>}
           {success && <div className="auth-success">{success}</div>}
           <form onSubmit={handleSignup}>
@@ -4274,7 +4274,7 @@ export default function App() {
     <div className="app-shell" style={{flexDirection:'column'}}>
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo">Kho<span>yi</span></div>
+        <div className="mobile-header-logo">My<span>Life</span></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>
@@ -4287,7 +4287,7 @@ export default function App() {
         {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
-            <h1>Kho<span>yi</span></h1>
+            <h1>My<span>Life</span></h1>
             <p>Personal OS</p>
           </div>
           <div className="sidebar-nav">

@@ -2,23 +2,23 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #0d0f14;
-  color: #e8eaf0;
+  background: #000000;
+  color: #ffffff;
   min-height: 100vh;
   -webkit-text-size-adjust: 100%;
 }
 
 :root {
-  --bg-base:    #0d0f14;
-  --bg-card:    #161921;
-  --bg-hover:   #1e2230;
-  --border:     #252a38;
-  --accent:     #6c63ff;
-  --accent-dim: #3d3880;
-  --accent-glow:#6c63ff33;
-  --text-1:     #e8eaf0;
-  --text-2:     #9499b0;
-  --text-3:     #555e7a;
+  --bg-base:    #000000;
+  --bg-card:    #1a1a1a;
+  --bg-hover:   #262626;
+  --border:     #333333;
+  --accent:     #c5a95e;
+  --accent-dim: #5e4d2a;
+  --accent-glow:#c5a95e26;
+  --text-1:     #ffffff;
+  --text-2:     #a0a0a0;
+  --text-3:     #6b6b6b;
   --green:      #22c55e;
   --red:        #ef4444;
   --yellow:     #f59e0b;
@@ -130,7 +130,7 @@ body {
 .nav-item.active { background: var(--accent-glow); color: var(--accent); border-left-color: var(--accent); }
 .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
 .nav-badge {
-  margin-left: auto; background: var(--accent); color: #fff;
+  margin-left: auto; background: var(--accent); color: #000;
   font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
 }
 
@@ -173,8 +173,8 @@ body {
 
 /* ─── BUTTONS ─── */
 .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; white-space: nowrap; }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover { background: #7c74ff; }
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover { background: #d4ba73; }
 .btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text-1); }
 .btn-danger { background: transparent; color: var(--red); border: 1px solid #ef444433; }
@@ -190,7 +190,7 @@ body {
 .task-item.done { opacity: 0.45; }
 .task-check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); background: none; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
 .task-check.checked { background: var(--accent); border-color: var(--accent); }
-.task-check.checked::after { content: '✓'; font-size: 10px; color: #fff; font-weight: 700; }
+.task-check.checked::after { content: '✓'; font-size: 10px; color: #000; font-weight: 700; }
 .task-text { flex: 1; font-size: 13.5px; color: var(--text-1); min-width: 0; }
 .task-item.done .task-text { text-decoration: line-through; color: var(--text-3); }
 .task-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
@@ -307,7 +307,7 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.chat-bubble.user { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.chat-bubble.user { background: var(--accent); color: #000; border-bottom-right-radius: 4px; }
 .chat-bubble.assistant { background: var(--bg-card); color: var(--text-1); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .chat-typing { display: flex; gap: 4px; align-items: center; padding: 12px 14px; }
 .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: bounce 1.2s infinite; }
@@ -343,13 +343,13 @@ body {
 }
 .chat-input:focus { border-color: var(--accent); }
 .chat-send-btn {
-  background: var(--accent); color: #fff; border: none;
+  background: var(--accent); color: #000; border: none;
   border-radius: 10px; width: 42px; height: 42px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; font-size: 18px; flex-shrink: 0;
   transition: background 0.15s;
 }
-.chat-send-btn:hover:not(:disabled) { background: #7c74ff; }
+.chat-send-btn:hover:not(:disabled) { background: #d4ba73; }
 .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .chat-empty { text-align: center; padding: 60px 20px; color: var(--text-3); }
