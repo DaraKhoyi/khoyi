@@ -845,9 +845,15 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [layers, setLayers] = useState([{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }]);
   const [activeLayerId, setActiveLayerId] = useState('default');
   const [moving, setMoving] = useState(null); // { startX, startY, originalShapes: [...] } during drag
-  // Endpoint-drag state for lines & dimensions: when set, mousemove updates
-  // ONE endpoint of the shape instead of translating the whole thing.
-  // Shape: null | { shapeId, endpoint: 'a'|'b', preDragSnap: { shapes,... } }
+  // Handle-drag state. When set, mousemove updates just one feature of one
+  // shape instead of translating the whole thing. The `endpoint` field
+  // identifies which handle:
+  //   line/dimension: 'a' | 'b' (start/end)
+  //   rect/image:     'tl' | 'tr' | 'br' | 'bl' (corner)
+  //   polyline/freehand: number (vertex index)
+  //   circle:         'r' (radius point)
+  //   bezier:         'a' | 'b' | 'c' (start, end, control)
+  // preDragSnap holds the pre-drag state for undo and Escape-to-cancel.
   const [endpointDrag, setEndpointDrag] = useState(null);
   const [freehandPoints, setFreehandPoints] = useState(null); // array of points during freehand stroke
   const [offsetMode, setOffsetMode] = useState(false); // when true, next click defines offset vector
@@ -1346,21 +1352,136 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function handleMouseMove(e) {
-    // Endpoint drag (line/dimension): update just the dragged endpoint.
-    // Snap and ortho are respected via resolvePoint.
+    // Handle-drag: route by shape type. The `endpoint` value tells us which
+    // handle is being dragged (see comment near endpointDrag state).
     if (endpointDrag) {
       const s = shapeById.get(endpointDrag.shapeId);
       if (!s) return;
-      const anchor = endpointDrag.endpoint === 'a'
-        ? { x: s.x2, y: s.y2 }   // anchor is the OTHER endpoint, for ortho
-        : { x: s.x1, y: s.y1 };
-      const p = resolvePoint(e, anchor);
-      setShapes(prev => prev.map(sh => {
-        if (sh.id !== endpointDrag.shapeId) return sh;
-        return endpointDrag.endpoint === 'a'
-          ? { ...sh, x1: p.x, y1: p.y }
-          : { ...sh, x2: p.x, y2: p.y };
-      }));
+
+      if (s.type === 'line' || s.type === 'dimension') {
+        const anchor = endpointDrag.endpoint === 'a'
+          ? { x: s.x2, y: s.y2 }
+          : { x: s.x1, y: s.y1 };
+        const p = resolvePoint(e, anchor);
+        setShapes(prev => prev.map(sh => {
+          if (sh.id !== endpointDrag.shapeId) return sh;
+          return endpointDrag.endpoint === 'a'
+            ? { ...sh, x1: p.x, y1: p.y }
+            : { ...sh, x2: p.x, y2: p.y };
+        }));
+        return;
+      }
+
+      if (s.type === 'circle') {
+        // Radius handle: new radius = distance from center to mouse.
+        // Anchor for ortho is the center, which keeps the dashed ortho lines
+        // pointing through the center if the user holds Shift/ortho.
+        const p = resolvePoint(e, { x: s.cx, y: s.cy });
+        const newR = Math.max(0.5, Math.hypot(p.x - s.cx, p.y - s.cy));
+        setShapes(prev => prev.map(sh =>
+          sh.id === endpointDrag.shapeId ? { ...sh, r: newR } : sh
+        ));
+        return;
+      }
+
+      if (s.type === 'polyline' || s.type === 'freehand') {
+        const idx = endpointDrag.endpoint;
+        if (typeof idx !== 'number' || !s.points || !s.points[idx]) return;
+        // Anchor for ortho is the previous vertex (or next if dragging the first)
+        const anchorIdx = idx > 0 ? idx - 1 : (s.points.length > 1 ? 1 : idx);
+        const anchorPt = s.points[anchorIdx];
+        const p = resolvePoint(e, anchorPt);
+        setShapes(prev => prev.map(sh => {
+          if (sh.id !== endpointDrag.shapeId) return sh;
+          const newPoints = sh.points.map((pt, i) => i === idx ? { x: p.x, y: p.y } : pt);
+          return { ...sh, points: newPoints };
+        }));
+        return;
+      }
+
+      if (s.type === 'bezier') {
+        let anchor;
+        if (endpointDrag.endpoint === 'a') anchor = { x: s.x2, y: s.y2 };
+        else if (endpointDrag.endpoint === 'b') anchor = { x: s.x1, y: s.y1 };
+        else anchor = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
+        const p = resolvePoint(e, anchor);
+        setShapes(prev => prev.map(sh => {
+          if (sh.id !== endpointDrag.shapeId) return sh;
+          if (endpointDrag.endpoint === 'a') return { ...sh, x1: p.x, y1: p.y };
+          if (endpointDrag.endpoint === 'b') return { ...sh, x2: p.x, y2: p.y };
+          return { ...sh, cx: p.x, cy: p.y };
+        }));
+        return;
+      }
+
+      if (s.type === 'rect' || s.type === 'image') {
+        // Drag a corner. The opposite corner stays fixed in SCREEN space;
+        // we recompute x/y/w/h from the two diagonal corners. For rotated
+        // rects we work in the rect's local axes: project the diagonal onto
+        // the local u (x-axis) and v (y-axis) vectors.
+        const rot = s.rotation || 0;
+        const rad = (rot * Math.PI) / 180;
+        const cosR = Math.cos(rad), sinR = Math.sin(rad);
+        // Local frame axes in screen coords (matches our rotatePoint convention)
+        const ux = cosR,  uy = -sinR;
+        const vx = sinR,  vy =  cosR;
+        const cx0 = s.x + s.w / 2, cy0 = s.y + s.h / 2;
+        const localToScreen = (px, py) => {
+          const dx = px - cx0, dy = py - cy0;
+          return {
+            x: cx0 + dx * cosR + dy * sinR,
+            y: cy0 - dx * sinR + dy * cosR,
+          };
+        };
+        const localCorners = {
+          tl: { x: s.x,         y: s.y         },
+          tr: { x: s.x + s.w,   y: s.y         },
+          br: { x: s.x + s.w,   y: s.y + s.h   },
+          bl: { x: s.x,         y: s.y + s.h   },
+        };
+        const opposite = { tl: 'br', tr: 'bl', br: 'tl', bl: 'tr' }[endpointDrag.endpoint];
+        if (!localCorners[endpointDrag.endpoint] || !opposite) return;
+        const fixedScreen = localToScreen(localCorners[opposite].x, localCorners[opposite].y);
+        const mouse = resolvePoint(e, fixedScreen);
+        const ddx = mouse.x - fixedScreen.x;
+        const ddy = mouse.y - fixedScreen.y;
+        let signedW = ddx * ux + ddy * uy;
+        let signedH = ddx * vx + ddy * vy;
+        // Aspect-ratio constraint: images default to locked aspect (so a
+        // floor-plan import isn't accidentally warped). Rects default to free.
+        // Modifier reverses each: Shift FREES image aspect, Shift LOCKS rect.
+        const baseLock = s.type === 'image';
+        const lockAspect = e.shiftKey ? !baseLock : baseLock;
+        if (lockAspect && s.w > 0 && s.h > 0) {
+          const targetRatio = s.w / s.h;
+          // Use the larger of |signedW| or |signedH * ratio| to set the size
+          // along the dominant axis, then derive the other.
+          const absW = Math.abs(signedW);
+          const absH = Math.abs(signedH);
+          if (absW / Math.max(targetRatio, 1e-9) >= absH) {
+            signedH = Math.sign(signedH || 1) * (absW / targetRatio);
+          } else {
+            signedW = Math.sign(signedW || 1) * (absH * targetRatio);
+          }
+        }
+        const newW = Math.max(0.5, Math.abs(signedW));
+        const newH = Math.max(0.5, Math.abs(signedH));
+        // New center: midpoint of fixed and the (possibly aspect-corrected) dragged point.
+        const correctedDx = signedW * ux + signedH * vx;
+        const correctedDy = signedW * uy + signedH * vy;
+        const newCx = fixedScreen.x + correctedDx / 2;
+        const newCy = fixedScreen.y + correctedDy / 2;
+        const newX = newCx - newW / 2;
+        const newY = newCy - newH / 2;
+        setShapes(prev => prev.map(sh =>
+          sh.id === endpointDrag.shapeId
+            ? { ...sh, x: newX, y: newY, w: newW, h: newH }
+            : sh
+        ));
+        return;
+      }
+
+      // Unknown shape type — ignore drag
       return;
     }
     if (dragSelect) {
@@ -1478,17 +1599,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   function handleMouseUp() {
     if (panStart.current) { panStart.current = null; return; }
     if (endpointDrag) {
-      // Commit the endpoint move as a single history entry IF the endpoint
-      // actually moved relative to the pre-drag snapshot. Compare against the
-      // shape in the snapshot, not the current shape, since the current shape
-      // already reflects the mouse-move updates.
+      // Commit a single history entry IF the shape actually changed vs the
+      // pre-drag snapshot. Use JSON equality on the shape itself; cheap and
+      // works for any shape type without per-type comparison code.
       const snap = endpointDrag.preDragSnap;
       const before = snap.shapes.find(s => s.id === endpointDrag.shapeId);
       const after = shapeById.get(endpointDrag.shapeId);
-      const moved = before && after && (
-        (endpointDrag.endpoint === 'a' && (before.x1 !== after.x1 || before.y1 !== after.y1)) ||
-        (endpointDrag.endpoint === 'b' && (before.x2 !== after.x2 || before.y2 !== after.y2))
-      );
+      const moved = before && after && JSON.stringify(before) !== JSON.stringify(after);
       if (moved) {
         setHistoryPast(prev => {
           const next = [...prev, snap];
@@ -3144,11 +3261,12 @@ function DraftView({ drawings, setDrawings, userId }) {
               }
               return null;
             })()}
-            {/* Endpoint handles for selected lines/dimensions. Click + drag
-                a handle to move just that endpoint. Sized in screen pixels. */}
+            {/* Handles for the selected shape(s). Click + drag a handle to
+                resize/reshape. Sized in screen pixels regardless of zoom. */}
             {(() => {
               const screenPx = (n) => (n * viewBox.w) / (svgRef.current?.getBoundingClientRect().width || 1);
               const handleR = Math.max(4, screenPx(6));
+              const strokeW = screenPx(1.5);
               const handles = [];
               for (const id of selectedIds) {
                 const s = shapeById.get(id);
@@ -3156,13 +3274,54 @@ function DraftView({ drawings, setDrawings, userId }) {
                 if (s.type === 'line' || s.type === 'dimension') {
                   handles.push({ id: s.id, end: 'a', x: s.x1, y: s.y1 });
                   handles.push({ id: s.id, end: 'b', x: s.x2, y: s.y2 });
+                } else if (s.type === 'rect' || s.type === 'image') {
+                  // Four corners, in rotated screen positions
+                  const rot = s.rotation || 0;
+                  const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+                  const rad = (rot * Math.PI) / 180;
+                  const cosR = Math.cos(rad), sinR = Math.sin(rad);
+                  const rotPt = (px, py) => {
+                    const dx = px - cx, dy = py - cy;
+                    return { x: cx + dx * cosR + dy * sinR, y: cy - dx * sinR + dy * cosR };
+                  };
+                  const tl = rotPt(s.x, s.y);
+                  const tr = rotPt(s.x + s.w, s.y);
+                  const br = rotPt(s.x + s.w, s.y + s.h);
+                  const bl = rotPt(s.x, s.y + s.h);
+                  handles.push({ id: s.id, end: 'tl', x: tl.x, y: tl.y });
+                  handles.push({ id: s.id, end: 'tr', x: tr.x, y: tr.y });
+                  handles.push({ id: s.id, end: 'br', x: br.x, y: br.y });
+                  handles.push({ id: s.id, end: 'bl', x: bl.x, y: bl.y });
+                } else if (s.type === 'circle') {
+                  // Radius handle at angle 0 (right side of circle)
+                  handles.push({ id: s.id, end: 'r', x: s.cx + s.r, y: s.cy });
+                } else if (s.type === 'polyline' || s.type === 'freehand') {
+                  // One handle per vertex. For very dense freehand strokes
+                  // (hundreds of points) we skip the freehand case to avoid
+                  // rendering hundreds of handles — vertex-edit on a freehand
+                  // sketch isn't a normal operation anyway. Polylines get all.
+                  if (s.type === 'freehand' && (s.points?.length || 0) > 50) {
+                    // Too dense — skip vertex handles for freehand
+                  } else if (s.points) {
+                    s.points.forEach((pt, i) => {
+                      handles.push({ id: s.id, end: i, x: pt.x, y: pt.y });
+                    });
+                  }
+                } else if (s.type === 'bezier') {
+                  // Endpoints + control point. Color the control handle
+                  // differently so the user knows it's the shape's curvature.
+                  handles.push({ id: s.id, end: 'a', x: s.x1, y: s.y1 });
+                  handles.push({ id: s.id, end: 'b', x: s.x2, y: s.y2 });
+                  handles.push({ id: s.id, end: 'c', x: s.cx, y: s.cy, isControl: true });
                 }
               }
               return handles.map((h, i) => (
                 <circle
                   key={`hdl_${h.id}_${h.end}_${i}`}
                   cx={h.x} cy={h.y} r={handleR}
-                  fill="#fff" stroke="#6c63ff" strokeWidth={screenPx(1.5)}
+                  fill={h.isControl ? '#fde68a' : '#fff'}
+                  stroke="#6c63ff"
+                  strokeWidth={strokeW}
                   style={{ cursor: 'pointer' }}
                   onMouseDown={(e) => {
                     e.stopPropagation();
@@ -3686,7 +3845,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select (drag empty space to box-select, Shift-click to add) · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ⤢ scale · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Z fit-to-view · Type a digit while drawing for parametric length · Drag endpoint handles on a selected line to resize · Ctrl/Cmd+S save · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Ctrl+Shift+Z (or Ctrl+Y) redo · Alt+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select (drag empty space to box-select, Shift-click to add) · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ⤢ scale · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Z fit-to-view · Type a digit while drawing for parametric length · Drag the handles on a selected shape to reshape it (corners for rects, vertices for polylines, radius for circles, control point for curves) · Shift+drag a rect corner to lock aspect (Shift+drag an image FREES aspect) · Ctrl/Cmd+S save · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Ctrl+Shift+Z (or Ctrl+Y) redo · Alt+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
