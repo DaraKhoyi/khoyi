@@ -3814,13 +3814,23 @@ function DraftView({ drawings, setDrawings, userId }) {
               onClick={() => {
                 const dxEl = document.getElementById('offset-dx');
                 const dyEl = document.getElementById('offset-dy');
-                const dxPx = parseLengthToPixels(dxEl?.value, units, pxPerUnit);
-                const dyPx = parseLengthToPixels(dyEl?.value, units, pxPerUnit);
+                const dxRaw = dxEl?.value || '';
+                const dyRaw = dyEl?.value || '';
+                const dxPx = parseLengthToPixels(dxRaw, units, pxPerUnit);
+                const dyPx = parseLengthToPixels(dyRaw, units, pxPerUnit);
+                // Report which box failed so the user doesn't have to guess.
                 if (dxPx === null || dyPx === null) {
+                  const badBoxes = [];
+                  if (dxPx === null) badBoxes.push(`dx ("${dxRaw}")`);
+                  if (dyPx === null) badBoxes.push(`dy ("${dyRaw}")`);
                   window.alert(
-                    'Could not read one of the offset values. Try just a number ' +
-                    `(interpreted as ${units}) or include a unit suffix like ` +
-                    '"65 ft", "20 m", "6\'-6\\"", or "12in".'
+                    `Could not read ${badBoxes.join(' and ')}.\n\n` +
+                    `Accepted formats:\n` +
+                    `  • A plain number — interpreted as ${units} (your drawing's units)\n` +
+                    `  • With a unit suffix: "8 in", "8\\"", "65 ft", "65'", "5 m", "100 cm"\n` +
+                    `  • Architectural feet-inches: "6'-6\\"", "6'6\\"", "5'"\n` +
+                    `  • Leave blank for 0\n\n` +
+                    `Negative values flip direction. +dy = south (down).`
                   );
                   return;
                 }
@@ -3893,8 +3903,19 @@ function DraftView({ drawings, setDrawings, userId }) {
 // via pxPerUnit (which is px-per-`drawingUnits`).
 function parseLengthToPixels(input, drawingUnits, pxPerUnit) {
   if (input == null) return 0;
-  const s = String(input).trim();
+  // Normalize: some keyboards/OSes auto-convert " to typographic ", and copy-
+  // paste from documents commonly contains primes and smart quotes. Treat all
+  // of them as their straight-quote equivalents so users don't get surprise
+  // rejections for typing what looks like a perfectly normal inch mark.
+  //   ' (U+2032 prime), ’ ‘ (U+2019/U+2018), ` (backtick): treat as foot mark
+  //   ″ (U+2033 double prime), ” “ (U+201D/U+201C): treat as inch mark
+  // Also accept a leading "+" sign (the regex only allows "-?" otherwise).
+  let s = String(input).trim();
   if (s === '') return 0;
+  s = s
+    .replace(/[\u2018\u2019\u2032\u02B9\u0060]/g, "'")
+    .replace(/[\u201C\u201D\u2033]/g, '"')
+    .replace(/^\+/, '');
 
   const inPerUnit = {
     in: 1, ft: 12, yd: 36,
