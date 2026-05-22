@@ -573,6 +573,119 @@ function formatLength(px, units, pxPerUnit) {
 
 // Build a flat list of snap candidates for all shapes
 // Each candidate: { x, y, kind: 'endpoint' | 'midpoint' | 'center' | 'quadrant' | 'vertex' | 'intersection' }
+// Compute axis-aligned bounding box of a single shape. Returns null if no extent.
+function shapeBoundingBox(s, blocks) {
+  switch (s.type) {
+    case 'line':
+    case 'dimension':
+      return {
+        minX: Math.min(s.x1, s.x2), maxX: Math.max(s.x1, s.x2),
+        minY: Math.min(s.y1, s.y2), maxY: Math.max(s.y1, s.y2),
+      };
+    case 'rect':
+      return { minX: s.x, minY: s.y, maxX: s.x + s.w, maxY: s.y + s.h };
+    case 'circle':
+      return { minX: s.cx - s.r, minY: s.cy - s.r, maxX: s.cx + s.r, maxY: s.cy + s.r };
+    case 'text': {
+      const fs = s.fontSize || 18;
+      const w = (s.text?.length || 1) * fs * 0.6;
+      return { minX: s.x, minY: s.y - fs / 2, maxX: s.x + w, maxY: s.y + fs / 2 };
+    }
+    case 'polyline':
+    case 'freehand': {
+      if (!s.points || s.points.length === 0) return null;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of s.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+      return { minX, minY, maxX, maxY };
+    }
+    case 'bezier': {
+      const xs = [s.x1, s.x2, s.cx];
+      const ys = [s.y1, s.y2, s.cy];
+      return {
+        minX: Math.min(...xs), maxX: Math.max(...xs),
+        minY: Math.min(...ys), maxY: Math.max(...ys),
+      };
+    }
+    case 'instance': {
+      if (!blocks) return { minX: s.x - 5, minY: s.y - 5, maxX: s.x + 5, maxY: s.y + 5 };
+      const block = blocks.find(b => b.id === s.blockId);
+      if (!block) return { minX: s.x - 5, minY: s.y - 5, maxX: s.x + 5, maxY: s.y + 5 };
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const bs of block.shapes) {
+        const transformed = transformShapeForInstance(bs, s);
+        const sub = shapeBoundingBox(transformed, blocks);
+        if (!sub) continue;
+        if (sub.minX < minX) minX = sub.minX;
+        if (sub.minY < minY) minY = sub.minY;
+        if (sub.maxX > maxX) maxX = sub.maxX;
+        if (sub.maxY > maxY) maxY = sub.maxY;
+      }
+      if (!Number.isFinite(minX)) return { minX: s.x - 5, minY: s.y - 5, maxX: s.x + 5, maxY: s.y + 5 };
+      return { minX, minY, maxX, maxY };
+    }
+    default:
+      return null;
+  }
+}
+
+function unionBoundingBox(shapes, blocks) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of shapes) {
+    const bb = shapeBoundingBox(s, blocks);
+    if (!bb) continue;
+    if (bb.minX < minX) minX = bb.minX;
+    if (bb.minY < minY) minY = bb.minY;
+    if (bb.maxX > maxX) maxX = bb.maxX;
+    if (bb.maxY > maxY) maxY = bb.maxY;
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function fitViewBox(bbox, svgAspect, padding = 0.1) {
+  if (!bbox) return { x: 0, y: 0, w: 1200, h: 800 };
+  const w = bbox.maxX - bbox.minX;
+  const h = bbox.maxY - bbox.minY;
+  if (w < 1 && h < 1) {
+    return { x: bbox.minX - 100, y: bbox.minY - 100, w: 200, h: 200 };
+  }
+  const cx = (bbox.minX + bbox.maxX) / 2;
+  const cy = (bbox.minY + bbox.maxY) / 2;
+  let fitW = w * (1 + 2 * padding);
+  let fitH = h * (1 + 2 * padding);
+  const bbAspect = fitW / fitH;
+  if (bbAspect > svgAspect) fitH = fitW / svgAspect;
+  else fitW = fitH * svgAspect;
+  return { x: cx - fitW / 2, y: cy - fitH / 2, w: fitW, h: fitH };
+}
+
+function shapeIntersectsRect(s, selRect, blocks, selectionMode = 'crossing') {
+  const bb = shapeBoundingBox(s, blocks);
+  if (!bb) return false;
+  if (selectionMode === 'window') {
+    return bb.minX >= selRect.minX && bb.maxX <= selRect.maxX
+        && bb.minY >= selRect.minY && bb.maxY <= selRect.maxY;
+  }
+  return !(bb.maxX < selRect.minX || bb.minX > selRect.maxX ||
+           bb.maxY < selRect.minY || bb.minY > selRect.maxY);
+}
+
+function distanceAngle(anchor, cursor, pxPerUnit) {
+  const dx = cursor.x - anchor.x;
+  const dy = cursor.y - anchor.y;
+  const distPx = Math.hypot(dx, dy);
+  const rad = Math.atan2(-dy, dx);
+  let deg = (rad * 180) / Math.PI;
+  while (deg > 180) deg -= 360;
+  while (deg < -180) deg += 360;
+  return { distPx, distUnits: distPx / pxPerUnit, angleDeg: deg };
+}
+
 function getSnapPoints(shapes, isShapeVisible, blocks) {
   const pts = [];
   // Helper to add snap points for a single shape (used both for top-level shapes
@@ -701,7 +814,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [insertBlockId, setInsertBlockId] = useState(null);
   const [showPdfDialog, setShowPdfDialog] = useState(false);
   const fileInputRef = useRef(null);
-  const [selectedId, setSelectedId] = useState(null);
+  // Multi-select: selectedIds is the source of truth. selectedId mirrors selectedIds[0]
+  // for backwards-compat with single-shape ops (offset, mirror, rotate, array, etc).
+  const [selectedIds, setSelectedIds] = useState([]);
+  const selectedId = selectedIds[0] || null;
+  const setSelectedId = (id) => setSelectedIds(id == null ? [] : [id]);
+  // Drag-select state: null | { start: {x,y}, current: {x,y}, additive: bool }
+  const [dragSelect, setDragSelect] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState('Untitled Drawing');
@@ -747,6 +866,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       setParamInput(null);
       setInsertBlockId(null);
       setSnapHit(null);
+      setDragSelect(null);
     }
   }, [activeId]); // eslint-disable-line
 
@@ -819,7 +939,7 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function handleMouseDown(e) {
-    if (panMode || e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    if (panMode || e.button === 1 || (e.button === 0 && e.altKey)) {
       panStart.current = { mx: e.clientX, my: e.clientY, vx: viewBox.x, vy: viewBox.y };
       return;
     }
@@ -900,14 +1020,30 @@ function DraftView({ drawings, setDrawings, userId }) {
 
     if (tool === 'select') {
       const hit = [...shapes].reverse().find(s => isShapeInteractable(s) && hitTest(s, p));
+      const additive = e.shiftKey || e.metaKey || e.ctrlKey;
       if (hit) {
-        setSelectedId(hit.id);
-        setMoving({
-          startX: p.x, startY: p.y,
-          originalById: { [hit.id]: hit },
-        });
+        let newSelection;
+        if (additive) {
+          if (selectedIds.includes(hit.id)) {
+            newSelection = selectedIds.filter(id => id !== hit.id);
+          } else {
+            newSelection = [...selectedIds, hit.id];
+          }
+        } else if (selectedIds.includes(hit.id) && selectedIds.length > 1) {
+          newSelection = selectedIds;
+        } else {
+          newSelection = [hit.id];
+        }
+        setSelectedIds(newSelection);
+        const originalById = {};
+        for (const id of newSelection) {
+          const s = shapes.find(sh => sh.id === id);
+          if (s) originalById[id] = s;
+        }
+        setMoving({ startX: p.x, startY: p.y, originalById });
       } else {
-        setSelectedId(null);
+        if (!additive) setSelectedIds([]);
+        setDragSelect({ start: p, current: p, additive });
       }
       return;
     }
@@ -968,6 +1104,11 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function handleMouseMove(e) {
+    if (dragSelect) {
+      const p = svgPoint(e);
+      setDragSelect(prev => prev ? { ...prev, current: p } : prev);
+      return;
+    }
     if (panStart.current && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect();
       const dx = ((e.clientX - panStart.current.mx) / rect.width) * viewBox.w;
@@ -1070,20 +1211,45 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function handleMouseUp() {
     if (panStart.current) { panStart.current = null; return; }
+    if (dragSelect) {
+      const { start, current, additive } = dragSelect;
+      const selRect = {
+        minX: Math.min(start.x, current.x),
+        maxX: Math.max(start.x, current.x),
+        minY: Math.min(start.y, current.y),
+        maxY: Math.max(start.y, current.y),
+      };
+      const w = selRect.maxX - selRect.minX, h = selRect.maxY - selRect.minY;
+      if (w < 4 && h < 4) {
+        setDragSelect(null);
+        return;
+      }
+      // L→R = window mode (fully enclosed); R→L = crossing mode (any overlap)
+      const mode = (current.x >= start.x) ? 'window' : 'crossing';
+      const hits = shapes.filter(s => isShapeInteractable(s) && shapeIntersectsRect(s, selRect, blocks, mode));
+      const ids = hits.map(s => s.id);
+      if (additive) {
+        const merged = Array.from(new Set([...selectedIds, ...ids]));
+        setSelectedIds(merged);
+      } else {
+        setSelectedIds(ids);
+      }
+      setDragSelect(null);
+      return;
+    }
     if (moving) {
-      // Detect actual movement vs a click that didn't drag
       const ids = Object.keys(moving.originalById);
       let actuallyMoved = false;
       for (const id of ids) {
         const original = moving.originalById[id];
         const current = shapes.find(s => s.id === id);
         if (!current) continue;
-        // Crude: compare a single representative field
         if (current.type === 'rect' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
         else if (current.type === 'circle' && (current.cx !== original.cx || current.cy !== original.cy)) actuallyMoved = true;
         else if ((current.type === 'line' || current.type === 'dimension') && (current.x1 !== original.x1 || current.y1 !== original.y1)) actuallyMoved = true;
         else if (current.type === 'text' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
         else if (current.type === 'bezier' && (current.x1 !== original.x1 || current.y1 !== original.y1)) actuallyMoved = true;
+        else if (current.type === 'instance' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
         else if ((current.type === 'polyline' || current.type === 'freehand') && current.points[0] && original.points[0] && (current.points[0].x !== original.points[0].x)) actuallyMoved = true;
       }
       if (actuallyMoved) setDirty(true);
@@ -1423,13 +1589,18 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function duplicateSelected() {
-    if (!selectedId) return;
-    const original = shapes.find(s => s.id === selectedId);
-    if (!original) return;
-    const copy = cloneShapeWithNewId(translateShape(original, 20, 20));
-    copy.layer = activeLayerId;
-    setShapes(prev => [...prev, copy]);
-    setSelectedId(copy.id);
+    if (selectedIds.length === 0) return;
+    const newCopies = [];
+    for (const id of selectedIds) {
+      const original = shapes.find(s => s.id === id);
+      if (!original) continue;
+      const copy = cloneShapeWithNewId(translateShape(original, 20, 20));
+      copy.layer = activeLayerId;
+      newCopies.push(copy);
+    }
+    if (newCopies.length === 0) return;
+    setShapes(prev => [...prev, ...newCopies]);
+    setSelectedIds(newCopies.map(c => c.id));
     setDirty(true);
   }
 
@@ -1479,16 +1650,17 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function deleteSelected() {
-    if (!selectedId) return;
-    setShapes(prev => prev.filter(s => s.id !== selectedId));
-    setSelectedId(null);
+    if (selectedIds.length === 0) return;
+    const idSet = new Set(selectedIds);
+    setShapes(prev => prev.filter(s => !idSet.has(s.id)));
+    setSelectedIds([]);
     setDirty(true);
   }
 
   function clearAll() {
     if (!window.confirm('Clear all shapes?')) return;
     setShapes([]);
-    setSelectedId(null);
+    setSelectedIds([]);
     setDirty(true);
   }
 
@@ -1527,6 +1699,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       if (e.key === 't') setTool('text');
       if (e.key === 'a') setTool('bezier');
       if (e.key === 'f') setTool('freehand');
+      if (e.key === 'z' && !e.ctrlKey && !e.metaKey) fitToView();
       if (e.key === 'o' && selectedId) startOffset();
       if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedId) { e.preventDefault(); duplicateSelected(); }
       if (e.key === 'Enter') { e.preventDefault(); finalizePoly(); }
@@ -1544,6 +1717,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           setMoving(null);
         }
         if (freehandPoints) setFreehandPoints(null);
+        if (dragSelect) setDragSelect(null);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -1635,6 +1809,14 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function resetView() {
     setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
+  }
+
+  function fitToView() {
+    const visibleShapes = shapes.filter(isShapeVisible);
+    const bbox = unionBoundingBox(visibleShapes, blocks);
+    const svg = svgRef.current;
+    const aspect = svg ? (svg.getBoundingClientRect().width / svg.getBoundingClientRect().height) : 1.5;
+    setViewBox(fitViewBox(bbox, aspect));
   }
 
   function getExportShapes() {
@@ -1965,7 +2147,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button className={`btn btn-sm ${snapToGrid?'btn-primary':'btn-ghost'}`} onClick={() => setSnapToGrid(s => !s)} title="Snap to grid">⊕</button>
           <button className={`btn btn-sm ${snapEnabled?'btn-primary':'btn-ghost'}`} onClick={() => setSnapEnabled(s => !s)} title="Object snap (endpoints, midpoints, centers)">◈</button>
           <button className={`btn btn-sm ${orthoEnabled?'btn-primary':'btn-ghost'}`} onClick={() => setOrthoEnabled(o => !o)} title="Ortho mode — constrain to 0°/90°">⊥</button>
-          <button className={`btn btn-sm ${panMode?'btn-primary':'btn-ghost'}`} onClick={() => setPanMode(p => !p)} title="Pan mode (or hold Shift)">✋</button>
+          <button className={`btn btn-sm ${panMode?'btn-primary':'btn-ghost'}`} onClick={() => setPanMode(p => !p)} title="Pan mode (or hold Alt and drag)">✋</button>
           <div style={{width:'1px',height:'24px',background:'var(--border)',margin:'0 4px'}} />
           <button className={`btn btn-sm ${trimMode?'btn-primary':'btn-ghost'}`} onClick={() => { setTrimMode(t => !t); setExtendMode(null); }} title="Trim — click a line to cut it at intersections">✂</button>
           <button className={`btn btn-sm ${extendMode?'btn-primary':'btn-ghost'}`} onClick={() => { setExtendMode(extendMode ? null : { stage: 'pickEnd' }); setTrimMode(false); }} title="Extend — click line endpoint, then click target line">↦</button>
@@ -1980,9 +2162,21 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button className="btn btn-sm btn-ghost" onClick={clearAll}>Clear</button>
           <button className={`btn btn-sm ${showLayersPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowLayersPanel(s => !s)} title="Layers">▤</button>
           <button className={`btn btn-sm ${showBlocksPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowBlocksPanel(s => !s)} title="Blocks (reusable symbols)">◫</button>
+          <button className="btn btn-sm btn-ghost" onClick={fitToView} title="Fit all visible shapes to view (Z)">⊡</button>
           <button className="btn btn-sm btn-ghost" onClick={resetView} title="Reset view">⌂</button>
-          <span style={{marginLeft:'auto',fontSize:'11px',color:'var(--text-3)'}}>
-            {shapes.length} shape{shapes.length===1?'':'s'} · zoom {Math.round(1200/viewBox.w*100)}%
+          <span style={{marginLeft:'auto',fontSize:'11px',color:'var(--text-3)',display:'flex',gap:'10px',alignItems:'center'}}>
+            {(() => {
+              const a = currentAnchor();
+              if (a && previewPoint) {
+                const da = distanceAngle(a, previewPoint, pxPerUnit);
+                return <span style={{color:'var(--accent)',fontFamily:'monospace'}}>
+                  {formatLength(da.distPx, units, pxPerUnit)} @ {da.angleDeg.toFixed(1)}°
+                </span>;
+              }
+              return null;
+            })()}
+            {selectedIds.length > 1 && <span style={{color:'var(--text-2)'}}>{selectedIds.length} selected</span>}
+            <span>{shapes.length} shape{shapes.length===1?'':'s'} · zoom {Math.round(1200/viewBox.w*100)}%</span>
           </span>
         </div>
 
@@ -1994,7 +2188,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               display:'block',
               width:'100%',
               height:'min(70vh, 700px)',
-              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : moving ? 'move' : (trimMode || extendMode) ? 'pointer' : insertBlockId ? 'copy' : offsetMode ? 'copy' : tool==='select' ? 'default' : 'crosshair',
+              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : dragSelect ? 'crosshair' : moving ? 'move' : (trimMode || extendMode) ? 'pointer' : insertBlockId ? 'copy' : offsetMode ? 'copy' : tool==='select' ? 'default' : 'crosshair',
               touchAction:'none',
               userSelect:'none',
             }}
@@ -2055,14 +2249,15 @@ function DraftView({ drawings, setDrawings, userId }) {
             {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
 
             {shapes.filter(isShapeVisible).map(s => {
+              const isSelected = selectedIds.includes(s.id);
               if (s.type === 'instance') {
                 const sub = expandInstance(s, blocks);
                 return <g key={s.id}>
-                  {sub.map(es => renderShape({ ...es, stroke: s.id === selectedId ? '#6c63ff' : es.stroke }, false, { units, pxPerUnit }))}
-                  {s.id === selectedId && <circle cx={s.x} cy={s.y} r="4" fill="#6c63ff" />}
+                  {sub.map(es => renderShape({ ...es, stroke: isSelected ? '#6c63ff' : es.stroke }, false, { units, pxPerUnit }))}
+                  {isSelected && <circle cx={s.x} cy={s.y} r="4" fill="#6c63ff" />}
                 </g>;
               }
-              return renderShape(s, s.id === selectedId, { units, pxPerUnit });
+              return renderShape(s, isSelected, { units, pxPerUnit });
             })}
             {draft && renderShape(draft, false, { units, pxPerUnit })}
             {polyPending && polyPending.type === 'polyline' && (
@@ -2171,6 +2366,22 @@ function DraftView({ drawings, setDrawings, userId }) {
             {mirrorMode && mirrorMode.stage === 'pickP2' && (
               <circle cx={mirrorMode.p1.x} cy={mirrorMode.p1.y} r="4" fill="#22c55e" />
             )}
+            {dragSelect && (() => {
+              const { start, current } = dragSelect;
+              const x = Math.min(start.x, current.x);
+              const y = Math.min(start.y, current.y);
+              const w = Math.abs(current.x - start.x);
+              const h = Math.abs(current.y - start.y);
+              const mode = (current.x >= start.x) ? 'window' : 'crossing';
+              return <rect
+                x={x} y={y} width={w} height={h}
+                fill={mode === 'window' ? 'rgba(108, 99, 255, 0.08)' : 'rgba(34, 197, 94, 0.08)'}
+                stroke={mode === 'window' ? '#6c63ff' : '#22c55e'}
+                strokeWidth={worldSnapTolerance() * 0.15}
+                strokeDasharray={mode === 'crossing' ? `${worldSnapTolerance()*0.5},${worldSnapTolerance()*0.5}` : 'none'}
+                pointerEvents="none"
+              />;
+            })()}
             {snapHit && snapEnabled && (() => {
               // Marker size scales with zoom so it's always ~10 screen px
               const sz = worldSnapTolerance() * 0.8;
@@ -2600,7 +2811,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Type a digit while drawing for parametric length · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select (drag empty space to box-select, Shift-click to add) · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Z fit-to-view · Type a digit while drawing for parametric length · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Alt+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
