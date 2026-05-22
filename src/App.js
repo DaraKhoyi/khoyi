@@ -812,6 +812,9 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [showBlocksPanel, setShowBlocksPanel] = useState(false);
   const [showCreateBlockDialog, setShowCreateBlockDialog] = useState(false);
   const [insertBlockId, setInsertBlockId] = useState(null);
+  // Block-edit mode: when non-null, the canvas is showing the block's interior shapes
+  // for editing. savedShapes holds the top-level shapes to restore on exit.
+  const [blockEditMode, setBlockEditMode] = useState(null);
   const [showPdfDialog, setShowPdfDialog] = useState(false);
   const fileInputRef = useRef(null);
   // Multi-select: selectedIds is the source of truth. selectedId mirrors selectedIds[0]
@@ -926,6 +929,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       setDragSelect(null);
       setHistoryPast([]);
       setHistoryFuture([]);
+      setBlockEditMode(null);
     }
   }, [activeId]); // eslint-disable-line
 
@@ -1855,6 +1859,10 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   async function saveDrawing() {
     if (!active) return;
+    if (blockEditMode) {
+      window.alert('Finish editing the block first (click Done or Cancel), then save.');
+      return;
+    }
     setSaving(true);
     const payload = { shapes, layers };
     try {
@@ -2036,6 +2044,59 @@ function DraftView({ drawings, setDrawings, userId }) {
     pushHistory();
     setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, name } : b));
     setDirty(true);
+  }
+
+  // ─── Block edit mode ──────────────────────────────────────────────
+  // Opens the block's interior shapes for editing. On exit, the block
+  // definition is updated and all instances reflect the change.
+  function enterBlockEdit(blockId) {
+    const block = blocks.find(b => b.id === blockId);
+    if (!block) return;
+    // Push history first so the whole edit session is undoable
+    pushHistory();
+    // Save current top-level shapes for restoration; load block's shapes for editing
+    const savedShapes = shapes;
+    setBlockEditMode({ blockId, savedShapes });
+    // Deep clone block's shapes so editing them doesn't mutate the original
+    // until the user clicks Done. Also normalize ids to avoid collisions with
+    // top-level ones (defensive).
+    const editorShapes = JSON.parse(JSON.stringify(block.shapes));
+    setShapes(editorShapes);
+    setSelectedIds([]);
+    // Reset transient state that doesn't make sense in the new context
+    setDraft(null);
+    setPolyPending(null);
+    setMoving(null);
+    setFreehandPoints(null);
+    setInsertBlockId(null);
+    setShowBlocksPanel(false);
+    // Fit to view the block's contents
+    const bbox = unionBoundingBox(editorShapes, blocks);
+    const svg = svgRef.current;
+    const aspect = svg ? (svg.getBoundingClientRect().width / svg.getBoundingClientRect().height) : 1.5;
+    setViewBox(fitViewBox(bbox, aspect));
+  }
+
+  function exitBlockEdit(save) {
+    if (!blockEditMode) return;
+    if (save) {
+      // Write the editor shapes back into the block definition.
+      // Strip the layer property from block shapes since blocks aren't layered.
+      const newBlockShapes = shapes.map((s, i) => {
+        const { layer, ...rest } = s;
+        return { ...rest, id: rest.id || ('s' + (i + 1)) };
+      });
+      setBlocks(prev => prev.map(b =>
+        b.id === blockEditMode.blockId ? { ...b, shapes: newBlockShapes } : b
+      ));
+    }
+    // Restore top-level shapes
+    setShapes(blockEditMode.savedShapes);
+    setBlockEditMode(null);
+    setSelectedIds([]);
+    setDirty(true);
+    // Reset viewbox to defaults — the user can re-fit if desired
+    setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
   }
 
   function exportPdf(paperSize, pdfScale) {
@@ -2626,9 +2687,9 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button
             className="btn btn-sm btn-primary"
             onClick={() => setShowCreateBlockDialog(true)}
-            disabled={!selectedId}
+            disabled={!selectedId || !!blockEditMode}
             style={{width:'100%',marginBottom:'10px'}}
-            title={!selectedId ? "Select a shape first" : ""}
+            title={blockEditMode ? "Nested blocks are not supported — finish editing first" : !selectedId ? "Select a shape first" : ""}
           >
             + Create block from selection
           </button>
@@ -2648,25 +2709,38 @@ function DraftView({ drawings, setDrawings, userId }) {
                       <input
                         value={b.name}
                         onChange={e => renameBlock(b.id, e.target.value)}
+                        disabled={!!blockEditMode}
                         className="form-input"
-                        style={{flex:1,padding:'2px 6px',fontSize:'12px',minWidth:0}}
+                        style={{flex:1,padding:'2px 6px',fontSize:'12px',minWidth:0,opacity: blockEditMode ? 0.4 : 1}}
                       />
                       <button
                         className="btn btn-sm btn-ghost"
                         onClick={() => deleteBlock(b.id)}
-                        style={{minWidth:'20px',padding:'2px 4px',color:'var(--red)'}}
-                        title="Delete block"
+                        disabled={!!blockEditMode}
+                        style={{minWidth:'20px',padding:'2px 4px',color:'var(--red)',opacity: blockEditMode ? 0.4 : 1}}
+                        title={blockEditMode ? "Finish editing first" : "Delete block"}
                       >×</button>
                     </div>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'4px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'4px',gap:'4px'}}>
                       <span style={{fontSize:'10px',color:'var(--text-3)'}}>{count} instance{count===1?'':'s'}</span>
-                      <button
-                        className={`btn btn-sm ${insertBlockId === b.id ? 'btn-primary' : 'btn-ghost'}`}
-                        onClick={() => setInsertBlockId(insertBlockId === b.id ? null : b.id)}
-                        style={{fontSize:'11px',padding:'2px 8px'}}
-                      >
-                        {insertBlockId === b.id ? 'Click canvas…' : 'Insert'}
-                      </button>
+                      <div style={{display:'flex',gap:'4px'}}>
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => enterBlockEdit(b.id)}
+                          disabled={!!blockEditMode}
+                          style={{fontSize:'11px',padding:'2px 8px',opacity: blockEditMode ? 0.4 : 1}}
+                          title={blockEditMode ? "Finish editing first" : "Edit block definition (all instances will update)"}
+                        >Edit</button>
+                        <button
+                          className={`btn btn-sm ${insertBlockId === b.id ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setInsertBlockId(insertBlockId === b.id ? null : b.id)}
+                          disabled={!!blockEditMode}
+                          style={{fontSize:'11px',padding:'2px 8px',opacity: blockEditMode ? 0.4 : 1}}
+                          title={blockEditMode ? "Finish editing first" : ""}
+                        >
+                          {insertBlockId === b.id ? 'Click canvas…' : 'Insert'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -2697,6 +2771,27 @@ function DraftView({ drawings, setDrawings, userId }) {
           }}
         />
       )}
+
+      {blockEditMode && (() => {
+        const block = blocks.find(b => b.id === blockEditMode.blockId);
+        const instCount = blockEditMode.savedShapes.filter(s => s.type === 'instance' && s.blockId === blockEditMode.blockId).length;
+        return (
+          <div style={{
+            position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)',
+            background:'var(--bg-card)', border:'2px solid var(--yellow)', borderRadius:'8px',
+            padding:'10px 16px', zIndex:60, fontSize:'13px',
+            boxShadow:'0 4px 16px rgba(0,0,0,0.4)'
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+              <span style={{color:'var(--yellow)'}}>
+                ◫ Editing block "{block?.name}" — changes will apply to {instCount} instance{instCount === 1 ? '' : 's'} on the canvas
+              </span>
+              <button className="btn btn-sm btn-primary" onClick={() => exitBlockEdit(true)}>Done</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => exitBlockEdit(false)}>Cancel</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {insertBlockId && (() => {
         const block = blocks.find(b => b.id === insertBlockId);
