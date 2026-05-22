@@ -845,6 +845,10 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [layers, setLayers] = useState([{ id: 'default', name: 'Layer 1', color: '#e8eaf0', visible: true, locked: false }]);
   const [activeLayerId, setActiveLayerId] = useState('default');
   const [moving, setMoving] = useState(null); // { startX, startY, originalShapes: [...] } during drag
+  // Endpoint-drag state for lines & dimensions: when set, mousemove updates
+  // ONE endpoint of the shape instead of translating the whole thing.
+  // Shape: null | { shapeId, endpoint: 'a'|'b', preDragSnap: { shapes,... } }
+  const [endpointDrag, setEndpointDrag] = useState(null);
   const [freehandPoints, setFreehandPoints] = useState(null); // array of points during freehand stroke
   const [offsetMode, setOffsetMode] = useState(false); // when true, next click defines offset vector
   const [offsetAnchor, setOffsetAnchor] = useState(null); // {x,y} reference point for offset
@@ -861,6 +865,7 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [mirrorMode, setMirrorMode] = useState(null); // null | { stage: 'pickP1' } | { stage: 'pickP2', p1: {x,y} }
   const [showArrayDialog, setShowArrayDialog] = useState(false);
   const [showRotateDialog, setShowRotateDialog] = useState(false);
+  const [showScaleDialog, setShowScaleDialog] = useState(false);
   // Tier 3 state
   const [blocks, setBlocks] = useState([]);
   const [showBlocksPanel, setShowBlocksPanel] = useState(false);
@@ -1341,6 +1346,23 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function handleMouseMove(e) {
+    // Endpoint drag (line/dimension): update just the dragged endpoint.
+    // Snap and ortho are respected via resolvePoint.
+    if (endpointDrag) {
+      const s = shapeById.get(endpointDrag.shapeId);
+      if (!s) return;
+      const anchor = endpointDrag.endpoint === 'a'
+        ? { x: s.x2, y: s.y2 }   // anchor is the OTHER endpoint, for ortho
+        : { x: s.x1, y: s.y1 };
+      const p = resolvePoint(e, anchor);
+      setShapes(prev => prev.map(sh => {
+        if (sh.id !== endpointDrag.shapeId) return sh;
+        return endpointDrag.endpoint === 'a'
+          ? { ...sh, x1: p.x, y1: p.y }
+          : { ...sh, x2: p.x, y2: p.y };
+      }));
+      return;
+    }
     if (dragSelect) {
       const p = svgPoint(e);
       setDragSelect(prev => prev ? { ...prev, current: p } : prev);
@@ -1455,6 +1477,30 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function handleMouseUp() {
     if (panStart.current) { panStart.current = null; return; }
+    if (endpointDrag) {
+      // Commit the endpoint move as a single history entry IF the endpoint
+      // actually moved relative to the pre-drag snapshot. Compare against the
+      // shape in the snapshot, not the current shape, since the current shape
+      // already reflects the mouse-move updates.
+      const snap = endpointDrag.preDragSnap;
+      const before = snap.shapes.find(s => s.id === endpointDrag.shapeId);
+      const after = shapeById.get(endpointDrag.shapeId);
+      const moved = before && after && (
+        (endpointDrag.endpoint === 'a' && (before.x1 !== after.x1 || before.y1 !== after.y1)) ||
+        (endpointDrag.endpoint === 'b' && (before.x2 !== after.x2 || before.y2 !== after.y2))
+      );
+      if (moved) {
+        setHistoryPast(prev => {
+          const next = [...prev, snap];
+          while (next.length > HISTORY_MAX) next.shift();
+          return next;
+        });
+        setHistoryFuture([]);
+        setDirty(true);
+      }
+      setEndpointDrag(null);
+      return;
+    }
     if (dragSelect) {
       const { start, current, additive } = dragSelect;
       const selRect = {
@@ -1976,7 +2022,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
       // Parametric input: typing digit/minus while an anchor exists opens the input.
       // Subsequent keypresses while paramInput is open are intercepted by the input itself.
-      if (!paramInput && !showArrayDialog && !showRotateDialog && !editingTextId
+      if (!paramInput && !showArrayDialog && !showRotateDialog && !showScaleDialog && !editingTextId
           && (e.key.match(/^[0-9.-]$/) || e.key === ',' || e.key === '<')) {
         const anchor = currentAnchor();
         if (anchor) {
@@ -1989,6 +2035,10 @@ function DraftView({ drawings, setDrawings, userId }) {
 
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (dirty && !saving && !blockEditMode) saveDrawing();
+      }
       if ((e.ctrlKey || e.metaKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) { e.preventDefault(); redo(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedId) { e.preventDefault(); duplicateSelected(); }
       // Bare-letter shortcuts: skip when Ctrl/Cmd is held so browser shortcuts
@@ -2031,6 +2081,12 @@ function DraftView({ drawings, setDrawings, userId }) {
         }
         if (freehandPoints) setFreehandPoints(null);
         if (dragSelect) setDragSelect(null);
+        if (endpointDrag) {
+          // Revert in-progress endpoint drag back to its pre-drag state
+          const snap = endpointDrag.preDragSnap;
+          setShapes(snap.shapes);
+          setEndpointDrag(null);
+        }
       }
     }
     window.addEventListener('keydown', onKey);
@@ -2045,6 +2101,10 @@ function DraftView({ drawings, setDrawings, userId }) {
   useEffect(() => {
     function onWindowMouseUp() {
       if (panStart.current) panStart.current = null;
+      // If an endpoint drag is in flight but the release happened outside the
+      // SVG, we'd otherwise leak the drag state. Clear it here as a safety
+      // net so the next click starts cleanly.
+      setEndpointDrag(prev => prev ? null : prev);
     }
     window.addEventListener('mouseup', onWindowMouseUp);
     window.addEventListener('blur', onWindowMouseUp);
@@ -2807,6 +2867,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button className={`btn btn-sm ${mirrorMode?'btn-primary':'btn-ghost'}`} onClick={() => setMirrorMode(mirrorMode ? null : { stage: 'pickP1' })} disabled={!selectedId} title="Mirror — click two points to define reflection axis">⇋</button>
           <button className="btn btn-sm btn-ghost" onClick={() => setShowArrayDialog(true)} disabled={!selectedId} title="Array — rows × cols grid">⊟</button>
           <button className="btn btn-sm btn-ghost" onClick={() => setShowRotateDialog(true)} disabled={!selectedId} title="Rotate by angle">↻</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setShowScaleDialog(true)} disabled={!selectedId} title="Scale (resize)">⤢</button>
           <button className="btn btn-sm btn-ghost" onClick={deleteSelected} disabled={!selectedId}>Delete</button>
           <button className="btn btn-sm btn-ghost" onClick={clearAll}>Clear</button>
           <button className={`btn btn-sm ${showLayersPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowLayersPanel(s => !s)} title="Layers">▤</button>
@@ -3083,6 +3144,37 @@ function DraftView({ drawings, setDrawings, userId }) {
               }
               return null;
             })()}
+            {/* Endpoint handles for selected lines/dimensions. Click + drag
+                a handle to move just that endpoint. Sized in screen pixels. */}
+            {(() => {
+              const screenPx = (n) => (n * viewBox.w) / (svgRef.current?.getBoundingClientRect().width || 1);
+              const handleR = Math.max(4, screenPx(6));
+              const handles = [];
+              for (const id of selectedIds) {
+                const s = shapeById.get(id);
+                if (!s) continue;
+                if (s.type === 'line' || s.type === 'dimension') {
+                  handles.push({ id: s.id, end: 'a', x: s.x1, y: s.y1 });
+                  handles.push({ id: s.id, end: 'b', x: s.x2, y: s.y2 });
+                }
+              }
+              return handles.map((h, i) => (
+                <circle
+                  key={`hdl_${h.id}_${h.end}_${i}`}
+                  cx={h.x} cy={h.y} r={handleR}
+                  fill="#fff" stroke="#6c63ff" strokeWidth={screenPx(1.5)}
+                  style={{ cursor: 'pointer' }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    setEndpointDrag({
+                      shapeId: h.id,
+                      endpoint: h.end,
+                      preDragSnap: deepSnap(),
+                    });
+                  }}
+                />
+              ));
+            })()}
           </svg>
         </div>
       </div>
@@ -3158,6 +3250,31 @@ function DraftView({ drawings, setDrawings, userId }) {
             }
             setDirty(true);
             setShowRotateDialog(false);
+          }}
+        />;
+      })()}
+
+      {showScaleDialog && selectedId && (() => {
+        const sel = shapeById.get(selectedId);
+        if (!sel) return null;
+        return <ScaleDialog
+          shape={sel}
+          units={units}
+          pxPerUnit={pxPerUnit}
+          onCancel={() => setShowScaleDialog(false)}
+          onApply={(factor, keepOriginal) => {
+            pushHistory();
+            const center = shapeCenter(sel);
+            const scaled = scaleShape(sel, factor, center);
+            if (keepOriginal) {
+              const copy = { ...scaled, id: 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) };
+              setShapes(prev => [...prev, copy]);
+              setSelectedId(copy.id);
+            } else {
+              setShapes(prev => prev.map(s => s.id === selectedId ? { ...scaled, id: s.id } : s));
+            }
+            setDirty(true);
+            setShowScaleDialog(false);
           }}
         />;
       })()}
@@ -3569,7 +3686,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select (drag empty space to box-select, Shift-click to add) · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Z fit-to-view · Type a digit while drawing for parametric length · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Ctrl+Shift+Z (or Ctrl+Y) redo · Alt+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select (drag empty space to box-select, Shift-click to add) · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ⤢ scale · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Z fit-to-view · Type a digit while drawing for parametric length · Drag endpoint handles on a selected line to resize · Ctrl/Cmd+S save · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Ctrl+Shift+Z (or Ctrl+Y) redo · Alt+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
@@ -4101,6 +4218,104 @@ function ArrayDialog({ shape, units, pxPerUnit, onCancel, onApply }) {
         <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
           <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
           <button className="btn btn-sm btn-primary" onClick={() => onApply(rows, cols, dxUnits * pxPerUnit, dyUnits * pxPerUnit)}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScaleDialog({ shape, units, pxPerUnit, onCancel, onApply }) {
+  const [mode, setMode] = useState('factor'); // 'factor' or 'target'
+  const [factor, setFactor] = useState(2);
+  const [target, setTarget] = useState(10); // in current units
+  const [targetDim, setTargetDim] = useState('w'); // 'w' or 'h'
+  const [keepOriginal, setKeepOriginal] = useState(false);
+
+  // Compute current dimensions in real-world units for the "match dimension" UI
+  const currentW = shape.w != null ? shape.w / pxPerUnit : null;
+  const currentH = shape.h != null ? shape.h / pxPerUnit : null;
+  const hasWH = currentW != null && currentH != null;
+
+  function handleApply() {
+    let f;
+    if (mode === 'factor') {
+      f = factor;
+    } else if (hasWH) {
+      const currentDim = targetDim === 'w' ? currentW : currentH;
+      if (!currentDim || currentDim === 0) return;
+      f = target / currentDim;
+    } else {
+      // shape has no w/h — fall back to factor anyway
+      f = factor;
+    }
+    if (!Number.isFinite(f) || f <= 0) return;
+    onApply(f, keepOriginal);
+  }
+
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:100,
+    }} onClick={onCancel}>
+      <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'340px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+        <h3 style={{margin:'0 0 14px 0'}}>Scale</h3>
+        <div style={{display:'flex',gap:'8px',marginBottom:'12px'}}>
+          <button
+            className={`btn btn-sm ${mode === 'factor' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setMode('factor')}
+            style={{flex:1}}
+          >By factor</button>
+          <button
+            className={`btn btn-sm ${mode === 'target' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setMode('target')}
+            disabled={!hasWH}
+            style={{flex:1, opacity: hasWH ? 1 : 0.4}}
+            title={hasWH ? '' : 'Only available for shapes with width/height (rect, image)'}
+          >Match dimension</button>
+        </div>
+        {mode === 'factor' ? (
+          <>
+            <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'8px 10px',alignItems:'center',fontSize:'13px'}}>
+              <label>Factor</label>
+              <input type="number" value={factor} onChange={e => setFactor(Number(e.target.value))} step="0.1" min="0.01" className="form-input" autoFocus />
+            </div>
+            <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
+              {[0.25, 0.5, 0.75, 1.5, 2, 3, 4].map(f => (
+                <button key={f} className="btn btn-sm btn-ghost" onClick={() => setFactor(f)}>×{f}</button>
+              ))}
+            </div>
+            <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',marginBottom:0}}>
+              Scales the shape around its center. e.g. 2 doubles size, 0.5 halves.
+            </p>
+          </>
+        ) : (
+          <>
+            <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'8px'}}>
+              Current: {currentW != null && `W ${currentW.toFixed(2)} ${units}`}{currentH != null && `, H ${currentH.toFixed(2)} ${units}`}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'auto 1fr auto',gap:'8px 10px',alignItems:'center',fontSize:'13px'}}>
+              <label>Make</label>
+              <select value={targetDim} onChange={e => setTargetDim(e.target.value)} className="form-input">
+                <option value="w">Width</option>
+                <option value="h">Height</option>
+              </select>
+              <span>=</span>
+              <span></span>
+              <input type="number" value={target} onChange={e => setTarget(Number(e.target.value))} step="0.1" min="0.01" className="form-input" autoFocus />
+              <span>{units}</span>
+            </div>
+            <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',marginBottom:0}}>
+              Scales uniformly (preserves aspect ratio) so the chosen dimension hits the target.
+            </p>
+          </>
+        )}
+        <label style={{display:'flex',alignItems:'center',gap:'8px',marginTop:'12px',fontSize:'13px',color:'var(--text-2)'}}>
+          <input type="checkbox" checked={keepOriginal} onChange={e => setKeepOriginal(e.target.checked)} />
+          Keep original (copy + scale)
+        </label>
+        <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
+          <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-sm btn-primary" onClick={handleApply}>Apply</button>
         </div>
       </div>
     </div>
