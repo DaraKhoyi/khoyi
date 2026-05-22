@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './dataService';
+import { jsPDF } from 'jspdf';
 import './index.css';
 
 const PLATFORM_ADMIN_EMAIL = 'dara@brokerdara.com';
@@ -678,6 +679,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [mirrorMode, setMirrorMode] = useState(null); // null | { stage: 'pickP1' } | { stage: 'pickP2', p1: {x,y} }
   const [showArrayDialog, setShowArrayDialog] = useState(false);
   const [showRotateDialog, setShowRotateDialog] = useState(false);
+  // Tier 3 state
+  const [blocks, setBlocks] = useState([]);
+  const [showBlocksPanel, setShowBlocksPanel] = useState(false);
+  const [showCreateBlockDialog, setShowCreateBlockDialog] = useState(false);
+  const [insertBlockId, setInsertBlockId] = useState(null);
+  const [showPdfDialog, setShowPdfDialog] = useState(false);
+  const fileInputRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -704,6 +712,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       setActiveLayerId(loadedLayers[0].id);
       setUnits(active.units || 'ft');
       setPxPerUnit(active.px_per_unit || 20);
+      setBlocks(Array.isArray(active.blocks) ? active.blocks : []);
       setTitle(active.title || 'Untitled Drawing');
       setDirty(false);
       setSelectedId(null);
@@ -827,6 +836,21 @@ function DraftView({ drawings, setDrawings, userId }) {
       }
     }
 
+    // Block insert mode: this click places an instance
+    if (insertBlockId) {
+      const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      const newInst = {
+        id, type: 'instance', blockId: insertBlockId,
+        x: p.x, y: p.y, rotation: 0, scale: 1,
+        layer: activeLayerId,
+      };
+      setShapes(prev => [...prev, newInst]);
+      setSelectedId(id);
+      setDirty(true);
+      setInsertBlockId(null);
+      return;
+    }
+
     // Offset mode: this click defines the offset vector
     if (offsetMode && selectedId && offsetAnchor) {
       const dx = p.x - offsetAnchor.x;
@@ -939,6 +963,12 @@ function DraftView({ drawings, setDrawings, userId }) {
       orthoAnchor = { x: moving.startX, y: moving.startY };
     } else if (offsetMode) {
       orthoAnchor = offsetAnchor;
+    }
+    // Track cursor for block-insert preview
+    if (insertBlockId) {
+      const p = resolvePoint(e, orthoAnchor);
+      setPreviewPoint(p);
+      return;
     }
     // Track mouse for offset preview
     if (offsetMode) {
@@ -1068,6 +1098,11 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function hitTest(s, p) {
     const tol = 8;
+    if (s.type === 'instance') {
+      const sub = expandInstance(s, blocks);
+      if (Math.hypot(p.x - s.x, p.y - s.y) <= tol * 2) return true;
+      return sub.some(es => hitTest(es, p));
+    }
     if (s.type === 'line') {
       const { x1, y1, x2, y2 } = s;
       const dx = x2 - x1, dy = y2 - y1;
@@ -1469,6 +1504,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         if (extendMode) setExtendMode(null);
         if (mirrorMode) setMirrorMode(null);
         if (paramInput) setParamInput(null);
+        if (insertBlockId) setInsertBlockId(null);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -1504,7 +1540,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     setSaving(true);
     const payload = { shapes, layers };
     const { data } = await supabase.from('drawings').update({
-      title, units, px_per_unit: pxPerUnit, shapes: payload
+      title, units, px_per_unit: pxPerUnit, shapes: payload, blocks
     }).eq('id', active.id).select().single();
     if (data) {
       setDrawings(prev => prev.map(d => d.id === data.id ? data : d));
@@ -1560,6 +1596,197 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function resetView() {
     setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
+  }
+
+  function getExportShapes() {
+    const out = [];
+    for (const s of shapes) {
+      if (s.type === 'instance') {
+        out.push(...expandInstance(s, blocks));
+      } else {
+        out.push(s);
+      }
+    }
+    return out;
+  }
+
+  function exportDXF() {
+    const dxfText = dxfWrite(getExportShapes());
+    const blob = new Blob([dxfText], { type: 'application/dxf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-z0-9]+/gi, '_')}.dxf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleDxfImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const imported = dxfParse(text);
+        if (imported.length === 0) {
+          window.alert('No supported entities found in the DXF file. Currently supported: LINE, LWPOLYLINE, CIRCLE, TEXT.');
+          return;
+        }
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const s of imported) {
+          if (s.type === 'line') { minX = Math.min(minX, s.x1, s.x2); minY = Math.min(minY, s.y1, s.y2); maxX = Math.max(maxX, s.x1, s.x2); maxY = Math.max(maxY, s.y1, s.y2); }
+          else if (s.type === 'rect') { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); maxX = Math.max(maxX, s.x + s.w); maxY = Math.max(maxY, s.y + s.h); }
+          else if (s.type === 'circle') { minX = Math.min(minX, s.cx - s.r); minY = Math.min(minY, s.cy - s.r); maxX = Math.max(maxX, s.cx + s.r); maxY = Math.max(maxY, s.cy + s.r); }
+          else if (s.type === 'polyline') { for (const p of s.points) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); } }
+          else if (s.type === 'text') { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); maxX = Math.max(maxX, s.x + 50); maxY = Math.max(maxY, s.y + 20); }
+        }
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        const dx = 600 - cx, dy = 400 - cy;
+        const adjusted = imported.map(s => ({ ...translateShape(s, dx, dy), layer: activeLayerId }));
+        setShapes(prev => [...prev, ...adjusted]);
+        setDirty(true);
+        window.alert(`Imported ${adjusted.length} shape${adjusted.length === 1 ? '' : 's'} from DXF.`);
+      } catch (err) {
+        window.alert('Failed to parse DXF file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  function createBlockFromSelection(name) {
+    if (!selectedId) return;
+    const sel = shapes.find(s => s.id === selectedId);
+    if (!sel) return;
+    if (sel.type === 'instance') {
+      window.alert('Cannot create a block from an instance. Select a regular shape.');
+      return;
+    }
+    const c = shapeCenter(sel);
+    const normalized = translateShape(sel, -c.x, -c.y);
+    const blockId = 'blk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const newBlock = {
+      id: blockId,
+      name: name || `Block ${blocks.length + 1}`,
+      shapes: [{ ...normalized, id: 's1' }],
+    };
+    setBlocks(prev => [...prev, newBlock]);
+    const instId = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const inst = {
+      id: instId, type: 'instance', blockId,
+      x: c.x, y: c.y, rotation: 0, scale: 1,
+      layer: sel.layer || activeLayerId,
+    };
+    setShapes(prev => prev.map(s => s.id === selectedId ? inst : s));
+    setSelectedId(instId);
+    setDirty(true);
+  }
+
+  function deleteBlock(blockId) {
+    const instCount = shapes.filter(s => s.type === 'instance' && s.blockId === blockId).length;
+    if (instCount > 0) {
+      if (!window.confirm(`This block has ${instCount} instance${instCount === 1 ? '' : 's'} on the canvas. Delete the block and all its instances?`)) return;
+      setShapes(prev => prev.filter(s => !(s.type === 'instance' && s.blockId === blockId)));
+    }
+    setBlocks(prev => prev.filter(b => b.id !== blockId));
+    setDirty(true);
+  }
+
+  function renameBlock(blockId, name) {
+    setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, name } : b));
+    setDirty(true);
+  }
+
+  function exportPdf(paperSize, pdfScale) {
+    const expanded = getExportShapes();
+    if (expanded.length === 0) {
+      window.alert('Nothing to export.');
+      return;
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of expanded) {
+      if (s.type === 'line' || s.type === 'dimension') { minX = Math.min(minX, s.x1, s.x2); minY = Math.min(minY, s.y1, s.y2); maxX = Math.max(maxX, s.x1, s.x2); maxY = Math.max(maxY, s.y1, s.y2); }
+      else if (s.type === 'rect') { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); maxX = Math.max(maxX, s.x + s.w); maxY = Math.max(maxY, s.y + s.h); }
+      else if (s.type === 'circle') { minX = Math.min(minX, s.cx - s.r); minY = Math.min(minY, s.cy - s.r); maxX = Math.max(maxX, s.cx + s.r); maxY = Math.max(maxY, s.cy + s.r); }
+      else if (s.type === 'polyline' || s.type === 'freehand') { for (const p of (s.points || [])) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); } }
+      else if (s.type === 'bezier') { minX = Math.min(minX, s.x1, s.x2, s.cx); minY = Math.min(minY, s.y1, s.y2, s.cy); maxX = Math.max(maxX, s.x1, s.x2, s.cx); maxY = Math.max(maxY, s.y1, s.y2, s.cy); }
+      else if (s.type === 'text') { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); maxX = Math.max(maxX, s.x + 100); maxY = Math.max(maxY, s.y + 20); }
+    }
+    if (!Number.isFinite(minX)) {
+      window.alert('Nothing to export.');
+      return;
+    }
+    const paperWPts = paperSize.w * 72;
+    const paperHPts = paperSize.h * 72;
+    const orientation = paperSize.w > paperSize.h ? 'landscape' : 'portrait';
+    const pdf = new jsPDF({ unit: 'pt', format: [paperWPts, paperHPts], orientation });
+    const k = computePdfTransform(units, pxPerUnit, pdfScale);
+    const drawWpt = (maxX - minX) * k;
+    const drawHpt = (maxY - minY) * k;
+    const margin = 36;
+    const availW = paperWPts - margin * 2;
+    const availH = paperHPts - margin * 2;
+    if (drawWpt > availW || drawHpt > availH) {
+      if (!window.confirm(`Drawing is ${(drawWpt/72).toFixed(1)}" × ${(drawHpt/72).toFixed(1)}" at this scale — too large for paper. Continue anyway (drawing will be cropped at paper edge)?`)) {
+        return;
+      }
+    }
+    const drawCxPx = (minX + maxX) / 2, drawCyPx = (minY + maxY) / 2;
+    const paperCxPt = paperWPts / 2, paperCyPt = paperHPts / 2;
+    const px2pt = (px, py) => ({
+      x: (px - drawCxPx) * k + paperCxPt,
+      y: (py - drawCyPx) * k + paperCyPt,
+    });
+    pdf.setDrawColor(0); pdf.setTextColor(0);
+    for (const s of expanded) {
+      pdf.setLineWidth(Math.max(0.3, (s.strokeWidth || 1) * 0.5));
+      if (s.type === 'line' || s.type === 'dimension') {
+        const p1 = px2pt(s.x1, s.y1); const p2 = px2pt(s.x2, s.y2);
+        pdf.line(p1.x, p1.y, p2.x, p2.y);
+        if (s.type === 'dimension') {
+          const lenPx = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+          const lbl = formatLength(lenPx, units, pxPerUnit);
+          const midX = (p1.x + p2.x) / 2; const midY = (p1.y + p2.y) / 2;
+          pdf.setFontSize(8);
+          pdf.text(lbl, midX, midY - 4, { align: 'center' });
+        }
+      } else if (s.type === 'rect') {
+        const tl = px2pt(s.x, s.y);
+        pdf.rect(tl.x, tl.y, s.w * k, s.h * k);
+      } else if (s.type === 'circle') {
+        const c = px2pt(s.cx, s.cy);
+        pdf.circle(c.x, c.y, s.r * k);
+      } else if (s.type === 'polyline' || s.type === 'freehand') {
+        if (!s.points || s.points.length < 2) continue;
+        for (let i = 0; i + 1 < s.points.length; i++) {
+          const p1 = px2pt(s.points[i].x, s.points[i].y);
+          const p2 = px2pt(s.points[i + 1].x, s.points[i + 1].y);
+          pdf.line(p1.x, p1.y, p2.x, p2.y);
+        }
+      } else if (s.type === 'text') {
+        const p = px2pt(s.x, s.y);
+        pdf.setFontSize(Math.max(6, (s.fontSize || 18) * k * 0.5));
+        pdf.text(s.text || '', p.x, p.y);
+      } else if (s.type === 'bezier') {
+        const steps = 16;
+        let prev = px2pt(s.x1, s.y1);
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          const mt = 1 - t;
+          const bx = mt*mt*s.x1 + 2*mt*t*s.cx + t*t*s.x2;
+          const by = mt*mt*s.y1 + 2*mt*t*s.cy + t*t*s.y2;
+          const cur = px2pt(bx, by);
+          pdf.line(prev.x, prev.y, cur.x, cur.y);
+          prev = cur;
+        }
+      }
+    }
+    pdf.setFontSize(7);
+    pdf.setTextColor(120);
+    const scaleLabel = `Scale: ${pdfScale.paperLen} ${pdfScale.paperUnit} = ${pdfScale.drawingLen} ${pdfScale.drawingUnit}`;
+    pdf.text(`${title}   ·   ${scaleLabel}`, paperWPts - margin, paperHPts - 12, { align: 'right' });
+    pdf.save(`${title.replace(/[^a-z0-9]+/gi, '_')}.pdf`);
   }
 
   if (!active) {
@@ -1655,6 +1882,16 @@ function DraftView({ drawings, setDrawings, userId }) {
         </div>
         <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
           <button className="btn btn-sm btn-ghost" onClick={exportPNG}>⬇ PNG</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setShowPdfDialog(true)} title="Export as scaled PDF">⬇ PDF</button>
+          <button className="btn btn-sm btn-ghost" onClick={exportDXF} title="Export as DXF (for AutoCAD)">⬇ DXF</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => fileInputRef.current?.click()} title="Import DXF file">⬆ DXF</button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".dxf"
+            style={{display:'none'}}
+            onChange={handleDxfImport}
+          />
           <button className="btn btn-sm btn-primary" onClick={saveDrawing} disabled={saving || !dirty}>
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -1701,6 +1938,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button className="btn btn-sm btn-ghost" onClick={deleteSelected} disabled={!selectedId}>Delete</button>
           <button className="btn btn-sm btn-ghost" onClick={clearAll}>Clear</button>
           <button className={`btn btn-sm ${showLayersPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowLayersPanel(s => !s)} title="Layers">▤</button>
+          <button className={`btn btn-sm ${showBlocksPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowBlocksPanel(s => !s)} title="Blocks (reusable symbols)">◫</button>
           <button className="btn btn-sm btn-ghost" onClick={resetView} title="Reset view">⌂</button>
           <span style={{marginLeft:'auto',fontSize:'11px',color:'var(--text-3)'}}>
             {shapes.length} shape{shapes.length===1?'':'s'} · zoom {Math.round(1200/viewBox.w*100)}%
@@ -1715,7 +1953,7 @@ function DraftView({ drawings, setDrawings, userId }) {
               display:'block',
               width:'100%',
               height:'min(70vh, 700px)',
-              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : moving ? 'move' : (trimMode || extendMode) ? 'pointer' : offsetMode ? 'copy' : tool==='select' ? 'default' : 'crosshair',
+              cursor: panStart.current ? 'grabbing' : panMode ? 'grab' : moving ? 'move' : (trimMode || extendMode) ? 'pointer' : insertBlockId ? 'copy' : offsetMode ? 'copy' : tool==='select' ? 'default' : 'crosshair',
               touchAction:'none',
               userSelect:'none',
             }}
@@ -1775,7 +2013,16 @@ function DraftView({ drawings, setDrawings, userId }) {
             </defs>
             {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
 
-            {shapes.filter(isShapeVisible).map(s => renderShape(s, s.id === selectedId, { units, pxPerUnit }))}
+            {shapes.filter(isShapeVisible).map(s => {
+              if (s.type === 'instance') {
+                const sub = expandInstance(s, blocks);
+                return <g key={s.id}>
+                  {sub.map(es => renderShape({ ...es, stroke: s.id === selectedId ? '#6c63ff' : es.stroke }, false, { units, pxPerUnit }))}
+                  {s.id === selectedId && <circle cx={s.x} cy={s.y} r="4" fill="#6c63ff" />}
+                </g>;
+              }
+              return renderShape(s, s.id === selectedId, { units, pxPerUnit });
+            })}
             {draft && renderShape(draft, false, { units, pxPerUnit })}
             {polyPending && polyPending.type === 'polyline' && (
               <>
@@ -1867,6 +2114,17 @@ function DraftView({ drawings, setDrawings, userId }) {
                   {renderShape({ ...reflected, id: reflected.id + '_mirror_ghost', stroke: '#22c55e' }, false, { units, pxPerUnit })}
                 </g>
               );
+            })()}
+            {/* Block insert preview */}
+            {insertBlockId && previewPoint && (() => {
+              const block = blocks.find(b => b.id === insertBlockId);
+              if (!block) return null;
+              const ghost = { id: '_insert_ghost', type: 'instance', blockId: insertBlockId, x: previewPoint.x, y: previewPoint.y, rotation: 0, scale: 1 };
+              const sub = expandInstance(ghost, blocks);
+              return <g opacity="0.5">
+                {sub.map(es => renderShape({ ...es, stroke: '#22c55e' }, false, { units, pxPerUnit }))}
+                <circle cx={previewPoint.x} cy={previewPoint.y} r="4" fill="#22c55e" />
+              </g>;
             })()}
             {/* Mirror first-point marker */}
             {mirrorMode && mirrorMode.stage === 'pickP2' && (
@@ -1978,6 +2236,109 @@ function DraftView({ drawings, setDrawings, userId }) {
             setShowRotateDialog(false);
           }}
         />;
+      })()}
+
+      {showBlocksPanel && (
+        <div style={{
+          position:'fixed', top:'80px', left:'20px', width:'280px',
+          background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px',
+          padding:'12px', zIndex:50, maxHeight:'70vh', overflowY:'auto',
+          boxShadow:'0 8px 24px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+            <h3 style={{margin:0,fontSize:'14px'}}>Blocks</h3>
+            <button className="btn btn-sm btn-ghost" onClick={() => setShowBlocksPanel(false)}>×</button>
+          </div>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => setShowCreateBlockDialog(true)}
+            disabled={!selectedId}
+            style={{width:'100%',marginBottom:'10px'}}
+            title={!selectedId ? "Select a shape first" : ""}
+          >
+            + Create block from selection
+          </button>
+          {blocks.length === 0 ? (
+            <p style={{fontSize:'11px',color:'var(--text-3)',margin:0}}>No blocks yet. Select a shape and click "Create block from selection".</p>
+          ) : (
+            <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+              {blocks.map(b => {
+                const count = shapes.filter(s => s.type === 'instance' && s.blockId === b.id).length;
+                return (
+                  <div key={b.id} style={{
+                    padding:'6px 8px', borderRadius:'4px',
+                    background: insertBlockId === b.id ? 'var(--bg-hover)' : 'transparent',
+                    border: insertBlockId === b.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  }}>
+                    <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
+                      <input
+                        value={b.name}
+                        onChange={e => renameBlock(b.id, e.target.value)}
+                        className="form-input"
+                        style={{flex:1,padding:'2px 6px',fontSize:'12px',minWidth:0}}
+                      />
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => deleteBlock(b.id)}
+                        style={{minWidth:'20px',padding:'2px 4px',color:'var(--red)'}}
+                        title="Delete block"
+                      >×</button>
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'4px'}}>
+                      <span style={{fontSize:'10px',color:'var(--text-3)'}}>{count} instance{count===1?'':'s'}</span>
+                      <button
+                        className={`btn btn-sm ${insertBlockId === b.id ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setInsertBlockId(insertBlockId === b.id ? null : b.id)}
+                        style={{fontSize:'11px',padding:'2px 8px'}}
+                      >
+                        {insertBlockId === b.id ? 'Click canvas…' : 'Insert'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showCreateBlockDialog && (
+        <CreateBlockDialog
+          defaultName={`Block ${blocks.length + 1}`}
+          onCancel={() => setShowCreateBlockDialog(false)}
+          onCreate={(name) => {
+            createBlockFromSelection(name);
+            setShowCreateBlockDialog(false);
+          }}
+        />
+      )}
+
+      {showPdfDialog && (
+        <PdfExportDialog
+          units={units}
+          onCancel={() => setShowPdfDialog(false)}
+          onExport={(paperSize, pdfScale) => {
+            setShowPdfDialog(false);
+            setTimeout(() => exportPdf(paperSize, pdfScale), 50);
+          }}
+        />
+      )}
+
+      {insertBlockId && (() => {
+        const block = blocks.find(b => b.id === insertBlockId);
+        return (
+          <div style={{
+            position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)',
+            background:'var(--bg-card)', border:'1px solid var(--accent)', borderRadius:'8px',
+            padding:'10px 16px', zIndex:60, fontSize:'13px',
+            boxShadow:'0 4px 16px rgba(0,0,0,0.4)'
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+              <span style={{color:'var(--accent)'}}>◫ Insert "{block?.name}" — click on canvas to place</span>
+              <button className="btn btn-sm btn-ghost" onClick={() => setInsertBlockId(null)}>Cancel</button>
+            </div>
+          </div>
+        );
       })()}
 
       {paramInput && (
@@ -2325,6 +2686,7 @@ function rotatePoint(p, c, angleDeg) {
 
 function shapeCenter(s) {
   switch (s.type) {
+    case 'instance': return { x: s.x, y: s.y };
     case 'rect': return { x: s.x + s.w / 2, y: s.y + s.h / 2 };
     case 'circle': return { x: s.cx, y: s.cy };
     case 'line':
@@ -2402,6 +2764,8 @@ function arrayShapes(s, rows, cols, dx, dy) {
 
 function translateShape(s, dx, dy) {
   switch (s.type) {
+    case 'instance':
+      return { ...s, x: s.x + dx, y: s.y + dy };
     case 'line':
     case 'dimension':
       return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
@@ -2424,6 +2788,231 @@ function translateShape(s, dx, dy) {
     default:
       return s;
   }
+}
+
+// ─── Tier 3 helpers ─────────────────────────────────────────────────
+
+function scaleShape(s, factor, origin = { x: 0, y: 0 }) {
+  const sp = (p) => ({ x: origin.x + (p.x - origin.x) * factor, y: origin.y + (p.y - origin.y) * factor });
+  switch (s.type) {
+    case 'line':
+    case 'dimension': {
+      const p1 = sp({ x: s.x1, y: s.y1 });
+      const p2 = sp({ x: s.x2, y: s.y2 });
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+    }
+    case 'rect': {
+      const tl = sp({ x: s.x, y: s.y });
+      return { ...s, x: tl.x, y: tl.y, w: s.w * factor, h: s.h * factor };
+    }
+    case 'circle': {
+      const c = sp({ x: s.cx, y: s.cy });
+      return { ...s, cx: c.x, cy: c.y, r: s.r * factor };
+    }
+    case 'text': {
+      const p = sp({ x: s.x, y: s.y });
+      return { ...s, x: p.x, y: p.y, fontSize: (s.fontSize || 18) * factor };
+    }
+    case 'polyline':
+    case 'freehand':
+      return { ...s, points: s.points.map(sp) };
+    case 'bezier': {
+      const p1 = sp({ x: s.x1, y: s.y1 });
+      const p2 = sp({ x: s.x2, y: s.y2 });
+      const c = sp({ x: s.cx, y: s.cy });
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, cx: c.x, cy: c.y };
+    }
+    default: return s;
+  }
+}
+
+function transformShapeForInstance(blockShape, instance) {
+  let s = blockShape;
+  const scale = instance.scale || 1;
+  if (scale !== 1) s = scaleShape(s, scale, { x: 0, y: 0 });
+  const rot = instance.rotation || 0;
+  if (rot !== 0) s = rotateShape(s, { x: 0, y: 0 }, rot);
+  s = translateShape(s, instance.x || 0, instance.y || 0);
+  return s;
+}
+
+function expandInstance(instance, blocks) {
+  const block = blocks.find(b => b.id === instance.blockId);
+  if (!block) return [];
+  return block.shapes.map(bs => {
+    const transformed = transformShapeForInstance(bs, instance);
+    return { ...transformed, id: `${instance.id}_${bs.id}` };
+  });
+}
+
+function dxfWrite(shapes) {
+  const lines = [];
+  const out = (code, value) => { lines.push(String(code)); lines.push(String(value)); };
+  out(0, 'SECTION'); out(2, 'HEADER');
+  out(9, '$ACADVER'); out(1, 'AC1015');
+  out(0, 'ENDSEC');
+  out(0, 'SECTION'); out(2, 'TABLES');
+  out(0, 'TABLE'); out(2, 'LAYER'); out(70, 1);
+  out(0, 'LAYER'); out(2, '0'); out(70, 0); out(62, 7); out(6, 'CONTINUOUS');
+  out(0, 'ENDTAB');
+  out(0, 'ENDSEC');
+  out(0, 'SECTION'); out(2, 'ENTITIES');
+  for (const s of shapes) {
+    if (s.type === 'line') {
+      out(0, 'LINE'); out(8, '0');
+      out(10, s.x1); out(20, -s.y1); out(30, 0);
+      out(11, s.x2); out(21, -s.y2); out(31, 0);
+    } else if (s.type === 'rect') {
+      out(0, 'LWPOLYLINE'); out(8, '0');
+      out(90, 4); out(70, 1);
+      out(10, s.x);       out(20, -s.y);
+      out(10, s.x + s.w); out(20, -s.y);
+      out(10, s.x + s.w); out(20, -(s.y + s.h));
+      out(10, s.x);       out(20, -(s.y + s.h));
+    } else if (s.type === 'circle') {
+      out(0, 'CIRCLE'); out(8, '0');
+      out(10, s.cx); out(20, -s.cy); out(30, 0);
+      out(40, s.r);
+    } else if (s.type === 'polyline' || s.type === 'freehand') {
+      if (!s.points || s.points.length < 2) continue;
+      out(0, 'LWPOLYLINE'); out(8, '0');
+      out(90, s.points.length); out(70, 0);
+      for (const p of s.points) { out(10, p.x); out(20, -p.y); }
+    } else if (s.type === 'text') {
+      out(0, 'TEXT'); out(8, '0');
+      out(10, s.x); out(20, -s.y); out(30, 0);
+      out(40, s.fontSize || 18);
+      out(1, s.text || '');
+    } else if (s.type === 'dimension') {
+      out(0, 'LINE'); out(8, '0');
+      out(10, s.x1); out(20, -s.y1); out(30, 0);
+      out(11, s.x2); out(21, -s.y2); out(31, 0);
+    }
+  }
+  out(0, 'ENDSEC');
+  out(0, 'EOF');
+  return lines.join('\n');
+}
+
+function dxfParse(text) {
+  const rawLines = text.replace(/\r\n/g, '\n').split('\n').map(l => l.trim());
+  const pairs = [];
+  for (let i = 0; i + 1 < rawLines.length; i += 2) {
+    const code = parseInt(rawLines[i], 10);
+    if (Number.isNaN(code)) continue;
+    pairs.push({ code, value: rawLines[i + 1] });
+  }
+  const shapes = [];
+  let inEntities = false;
+  let cur = null;
+  const flushCur = () => {
+    if (!cur) return;
+    const baseId = 'imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    if (cur._type === 'LINE') {
+      shapes.push({
+        id: baseId, type: 'line',
+        x1: cur[10] || 0, y1: -(cur[20] || 0),
+        x2: cur[11] || 0, y2: -(cur[21] || 0),
+        stroke: '#e8eaf0', strokeWidth: 2,
+      });
+    } else if (cur._type === 'CIRCLE') {
+      shapes.push({
+        id: baseId, type: 'circle',
+        cx: cur[10] || 0, cy: -(cur[20] || 0),
+        r: cur[40] || 0,
+        stroke: '#e8eaf0', strokeWidth: 2, fill: 'none',
+      });
+    } else if (cur._type === 'LWPOLYLINE') {
+      const pts = (cur._vertices || []).map(v => ({ x: v.x, y: -v.y }));
+      if (pts.length >= 2) {
+        const closed = (cur[70] & 1) === 1;
+        if (closed && pts.length === 4) {
+          const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+          const uniqueXs = Array.from(new Set(xs.map(v => v.toFixed(3))));
+          const uniqueYs = Array.from(new Set(ys.map(v => v.toFixed(3))));
+          if (uniqueXs.length === 2 && uniqueYs.length === 2) {
+            const x = Math.min(...xs), y = Math.min(...ys);
+            shapes.push({
+              id: baseId, type: 'rect',
+              x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y,
+              stroke: '#e8eaf0', strokeWidth: 2, fill: 'none',
+            });
+            cur = null;
+            return;
+          }
+        }
+        const ptsClosed = closed && (pts[0].x !== pts[pts.length-1].x || pts[0].y !== pts[pts.length-1].y)
+          ? [...pts, pts[0]] : pts;
+        shapes.push({
+          id: baseId, type: 'polyline',
+          points: ptsClosed,
+          stroke: '#e8eaf0', strokeWidth: 2,
+        });
+      }
+    } else if (cur._type === 'TEXT') {
+      shapes.push({
+        id: baseId, type: 'text',
+        x: cur[10] || 0, y: -(cur[20] || 0),
+        text: cur[1] || '',
+        fontSize: cur[40] || 18,
+        stroke: '#e8eaf0',
+      });
+    }
+    cur = null;
+  };
+  for (let i = 0; i < pairs.length; i++) {
+    const { code, value } = pairs[i];
+    if (code === 0) {
+      flushCur();
+      if (value === 'SECTION') {
+        if (i + 1 < pairs.length && pairs[i + 1].code === 2 && pairs[i + 1].value === 'ENTITIES') {
+          inEntities = true;
+        } else {
+          inEntities = false;
+        }
+        continue;
+      }
+      if (value === 'ENDSEC') { inEntities = false; continue; }
+      if (value === 'EOF') break;
+      if (!inEntities) continue;
+      if (value === 'LINE' || value === 'CIRCLE' || value === 'LWPOLYLINE' || value === 'TEXT' || value === 'POLYLINE') {
+        cur = { _type: value === 'POLYLINE' ? 'LWPOLYLINE' : value };
+      }
+      continue;
+    }
+    if (!inEntities || !cur) continue;
+    const num = parseFloat(value);
+    if (cur._type === 'LWPOLYLINE' && code === 10) {
+      cur._vertices = cur._vertices || [];
+      cur._vertices.push({ x: num, y: 0 });
+    } else if (cur._type === 'LWPOLYLINE' && code === 20) {
+      const last = cur._vertices && cur._vertices[cur._vertices.length - 1];
+      if (last) last.y = num;
+    } else if (code === 1) {
+      cur[1] = value;
+    } else if (!Number.isNaN(num)) {
+      cur[code] = num;
+    }
+  }
+  flushCur();
+  return shapes;
+}
+
+function unitToInches(unit) {
+  if (unit === 'in') return 1;
+  if (unit === 'ft') return 12;
+  if (unit === 'm')  return 39.3701;
+  if (unit === 'mm') return 0.0393701;
+  return 1;
+}
+
+function computePdfTransform(units, pxPerUnit, pdfScale) {
+  const { paperUnit, paperLen, drawingUnit, drawingLen } = pdfScale;
+  const paperInPerDrawingIn = (unitToInches(paperUnit) * paperLen) /
+                              (unitToInches(drawingUnit) * drawingLen);
+  const paperPtPerDrawingIn = paperInPerDrawingIn * 72;
+  const drawingInPerPx = unitToInches(units) / pxPerUnit;
+  return paperPtPerDrawingIn * drawingInPerPx;
 }
 
 function cloneShapeWithNewId(s) {
@@ -2496,6 +3085,101 @@ function RotateDialog({ shape, onCancel, onApply }) {
         <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
           <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
           <button className="btn btn-sm btn-primary" onClick={() => onApply(angle, keepOriginal)}>Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateBlockDialog({ defaultName, onCancel, onCreate }) {
+  const [name, setName] = useState(defaultName);
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:100,
+    }} onClick={onCancel}>
+      <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'300px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+        <h3 style={{margin:'0 0 14px 0'}}>Create block</h3>
+        <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 10px 0'}}>The selected shape will be saved as a reusable block. The shape stays on canvas as an instance.</p>
+        <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'8px 10px',alignItems:'center',fontSize:'13px'}}>
+          <label>Name</label>
+          <input value={name} onChange={e => setName(e.target.value)} className="form-input" autoFocus
+            onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onCreate(name.trim()); }}
+          />
+        </div>
+        <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
+          <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-sm btn-primary" onClick={() => name.trim() && onCreate(name.trim())} disabled={!name.trim()}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PAPER_SIZES = [
+  { name: 'Letter (8.5×11)', w: 8.5, h: 11 },
+  { name: 'Letter landscape (11×8.5)', w: 11, h: 8.5 },
+  { name: 'Tabloid / 11×17', w: 11, h: 17 },
+  { name: 'Tabloid landscape / 17×11', w: 17, h: 11 },
+  { name: 'Arch C / 18×24', w: 18, h: 24 },
+  { name: 'Arch D / 24×36', w: 24, h: 36 },
+  { name: 'Arch E / 36×48', w: 36, h: 48 },
+  { name: 'A4 (210×297mm)', w: 8.27, h: 11.69 },
+  { name: 'A3 (297×420mm)', w: 11.69, h: 16.54 },
+];
+
+const COMMON_SCALES_FT = [
+  { label: '1" = 1\'', paperLen: 1, paperUnit: 'in', drawingLen: 1, drawingUnit: 'ft' },
+  { label: '1/2" = 1\'', paperLen: 0.5, paperUnit: 'in', drawingLen: 1, drawingUnit: 'ft' },
+  { label: '1/4" = 1\' (most common)', paperLen: 0.25, paperUnit: 'in', drawingLen: 1, drawingUnit: 'ft' },
+  { label: '1/8" = 1\'', paperLen: 0.125, paperUnit: 'in', drawingLen: 1, drawingUnit: 'ft' },
+  { label: '1" = 10\'', paperLen: 1, paperUnit: 'in', drawingLen: 10, drawingUnit: 'ft' },
+  { label: '1" = 20\'', paperLen: 1, paperUnit: 'in', drawingLen: 20, drawingUnit: 'ft' },
+  { label: '1" = 30\'', paperLen: 1, paperUnit: 'in', drawingLen: 30, drawingUnit: 'ft' },
+  { label: '1" = 40\'', paperLen: 1, paperUnit: 'in', drawingLen: 40, drawingUnit: 'ft' },
+  { label: '1" = 50\'', paperLen: 1, paperUnit: 'in', drawingLen: 50, drawingUnit: 'ft' },
+];
+
+const COMMON_SCALES_METRIC = [
+  { label: '1:50',  paperLen: 1, paperUnit: 'mm', drawingLen: 50,   drawingUnit: 'mm' },
+  { label: '1:100', paperLen: 1, paperUnit: 'mm', drawingLen: 100,  drawingUnit: 'mm' },
+  { label: '1:200', paperLen: 1, paperUnit: 'mm', drawingLen: 200,  drawingUnit: 'mm' },
+  { label: '1:500', paperLen: 1, paperUnit: 'mm', drawingLen: 500,  drawingUnit: 'mm' },
+  { label: '1:1000',paperLen: 1, paperUnit: 'mm', drawingLen: 1000, drawingUnit: 'mm' },
+];
+
+function PdfExportDialog({ units, onCancel, onExport }) {
+  const isMetric = (units === 'm' || units === 'mm');
+  const scaleOptions = isMetric ? COMMON_SCALES_METRIC : COMMON_SCALES_FT;
+  const [paperIdx, setPaperIdx] = useState(isMetric ? 7 : 3);
+  const [scaleIdx, setScaleIdx] = useState(isMetric ? 1 : 4);
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:100,
+    }} onClick={onCancel}>
+      <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'380px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+        <h3 style={{margin:'0 0 14px 0'}}>Export PDF (to scale)</h3>
+        <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'10px',alignItems:'center',fontSize:'13px'}}>
+          <label>Paper size</label>
+          <select value={paperIdx} onChange={e => setPaperIdx(Number(e.target.value))} className="form-input">
+            {PAPER_SIZES.map((p, i) => <option key={i} value={i}>{p.name}</option>)}
+          </select>
+          <label>Drawing scale</label>
+          <select value={scaleIdx} onChange={e => setScaleIdx(Number(e.target.value))} className="form-input">
+            {scaleOptions.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
+          </select>
+        </div>
+        <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'10px'}}>
+          The PDF will be printed so measurements are physically correct at the selected scale.
+          If the drawing doesn't fit at this scale, you'll be warned.
+        </p>
+        <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
+          <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-sm btn-primary" onClick={() => {
+            const { label, ...scale } = scaleOptions[scaleIdx];
+            onExport(PAPER_SIZES[paperIdx], scale);
+          }}>Export PDF</button>
         </div>
       </div>
     </div>
