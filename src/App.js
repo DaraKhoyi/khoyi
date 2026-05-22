@@ -4975,6 +4975,832 @@ function renderShape(s, selected, ctx) {
 }
 
 // ─────────────────────────────────────────
+// CONTACTS VIEW
+// ─────────────────────────────────────────
+function ContactModal({ onClose, onSave, initial }) {
+  const [name, setName] = useState(initial?.name || '');
+  const [type, setType] = useState(initial?.type || 'lead');
+  const [email, setEmail] = useState(initial?.email || '');
+  const [phone, setPhone] = useState(initial?.phone || '');
+  const [company, setCompany] = useState(initial?.company || '');
+  const [role, setRole] = useState(initial?.role || '');
+  const [priority, setPriority] = useState(initial?.priority || 'normal');
+  const [notes, setNotes] = useState(initial?.notes || '');
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave({
+      name: name.trim(), type, email: email.trim() || null, phone: phone.trim() || null,
+      company: company.trim() || null, role: role.trim() || null, priority, notes: notes.trim() || null,
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Contact' : 'New Contact'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Type</label>
+              <select className="form-select" value={type} onChange={e=>setType(e.target.value)}>
+                <option value="client">Client</option>
+                <option value="lead">Lead</option>
+                <option value="agent">Agent</option>
+                <option value="recruit">Recruit</option>
+                <option value="partner">Partner</option>
+                <option value="vendor">Vendor</option>
+                <option value="family">Family / Personal</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Priority</label>
+              <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Email</label><input className="form-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={phone} onChange={e=>setPhone(e.target.value)} /></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Company</label><input className="form-input" value={company} onChange={e=>setCompany(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Role</label><input className="form-input" value={role} onChange={e=>setRole(e.target.value)} /></div>
+          </div>
+          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Context, history, anything to remember…" /></div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Contact</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ContactsView({ contacts, setContacts, userId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editContact, setEditContact] = useState(null);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [search, setSearch] = useState('');
+
+  const TYPES = [
+    { id: 'all', label: 'All', icon: '👥' },
+    { id: 'client', label: 'Clients', icon: '🤝' },
+    { id: 'lead', label: 'Leads', icon: '🌱' },
+    { id: 'agent', label: 'Agents', icon: '🧑‍💼' },
+    { id: 'recruit', label: 'Recruits', icon: '🎣' },
+    { id: 'partner', label: 'Partners', icon: '🤲' },
+    { id: 'vendor', label: 'Vendors', icon: '🔧' },
+    { id: 'family', label: 'Family', icon: '👨‍👩‍👧' },
+  ];
+
+  const filtered = contacts.filter(c => {
+    if (typeFilter !== 'all' && c.type !== typeFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (c.name||'').toLowerCase().includes(q) ||
+             (c.company||'').toLowerCase().includes(q) ||
+             (c.email||'').toLowerCase().includes(q) ||
+             (c.notes||'').toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  async function handleSave(data) {
+    if (editContact) {
+      const { data: updated } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
+      if (updated) setContacts(prev => prev.map(c => c.id === updated.id ? updated : c));
+    } else {
+      const { data: created } = await supabase.from('contacts').insert({ ...data, user_id: userId }).select().single();
+      if (created) setContacts(prev => [created, ...prev]);
+    }
+    setShowModal(false); setEditContact(null);
+  }
+
+  async function deleteContact(id) {
+    if (!window.confirm('Delete this contact?')) return;
+    await supabase.from('contacts').delete().eq('id', id);
+    setContacts(prev => prev.filter(c => c.id !== id));
+  }
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div><h2>Contacts</h2><p>{contacts.length} total · {filtered.length} shown</p></div>
+        <button className="btn btn-primary" onClick={()=>{setEditContact(null);setShowModal(true);}}>+ New Contact</button>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
+          <input className="form-input" placeholder="Search contacts…" value={search} onChange={e=>setSearch(e.target.value)} style={{margin:0}} />
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            {TYPES.map(t => (
+              <button key={t.id} className={`btn btn-sm ${typeFilter===t.id?'btn-primary':'btn-ghost'}`} onClick={()=>setTypeFilter(t.id)}>
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="panel-body">
+          {filtered.length === 0
+            ? <div className="empty-state"><div className="empty-icon">👥</div><p>No contacts here.</p></div>
+            : <div className="task-list">
+                {filtered.map(c => (
+                  <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditContact(c);setShowModal(true);}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                        {c.name}
+                        <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{c.type}</span>
+                      </div>
+                      {(c.company || c.role) && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>{[c.role,c.company].filter(Boolean).join(' · ')}</div>}
+                      {(c.email || c.phone) && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>{[c.email,c.phone].filter(Boolean).join(' · ')}</div>}
+                    </div>
+                    <div className="task-meta">
+                      <span className={`task-priority priority-${c.priority==='urgent'?'high':c.priority==='normal'?'medium':c.priority}`}>{c.priority}</span>
+                      <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteContact(c.id);}}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+          }
+        </div>
+      </div>
+      {showModal && <ContactModal onClose={()=>{setShowModal(false);setEditContact(null);}} onSave={handleSave} initial={editContact} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// PROPERTIES VIEW
+// ─────────────────────────────────────────
+function PropertyModal({ onClose, onSave, initial }) {
+  const [nickname, setNickname] = useState(initial?.nickname || '');
+  const [category, setCategory] = useState(initial?.category || 'listing');
+  const [address, setAddress] = useState(initial?.address || '');
+  const [city, setCity] = useState(initial?.city || '');
+  const [state, setState] = useState(initial?.state || '');
+  const [zip, setZip] = useState(initial?.zip || '');
+  const [status, setStatus] = useState(initial?.status || 'active');
+  const [list_price, setListPrice] = useState(initial?.list_price || '');
+  const [notes, setNotes] = useState(initial?.notes || '');
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!nickname.trim()) return;
+    onSave({
+      nickname: nickname.trim(), category, address: address.trim() || null,
+      city: city.trim() || null, state: state.trim() || null, zip: zip.trim() || null,
+      status, list_price: list_price ? Number(list_price) : null, notes: notes.trim() || null,
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Property' : 'New Property'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group"><label className="form-label">Nickname</label><input className="form-input" value={nickname} onChange={e=>setNickname(e.target.value)} placeholder="Villa Adriana, 4214 W Virginia…" autoFocus required /></div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Category</label>
+              <select className="form-select" value={category} onChange={e=>setCategory(e.target.value)}>
+                <option value="listing">Listing</option>
+                <option value="investment">Investment</option>
+                <option value="personal">Personal</option>
+                <option value="rental">Rental</option>
+                <option value="facility">Facility</option>
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Status</label>
+              <select className="form-select" value={status} onChange={e=>setStatus(e.target.value)}>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="closed">Closed</option>
+                <option value="off_market">Off Market</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-group"><label className="form-label">Address</label><input className="form-input" value={address} onChange={e=>setAddress(e.target.value)} placeholder="Street address" /></div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">City</label><input className="form-input" value={city} onChange={e=>setCity(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">State</label><input className="form-input" value={state} onChange={e=>setState(e.target.value)} maxLength="2" /></div>
+            <div className="form-group"><label className="form-label">ZIP</label><input className="form-input" value={zip} onChange={e=>setZip(e.target.value)} /></div>
+          </div>
+          <div className="form-group"><label className="form-label">List Price ($)</label><input className="form-input" type="number" value={list_price} onChange={e=>setListPrice(e.target.value)} /></div>
+          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} /></div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Property</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function PropertiesView({ properties, setProperties, userId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editProp, setEditProp] = useState(null);
+  const [catFilter, setCatFilter] = useState('all');
+
+  const CATS = [
+    { id: 'all', label: 'All', icon: '🏠' },
+    { id: 'listing', label: 'Listings', icon: '🏡' },
+    { id: 'investment', label: 'Investments', icon: '💰' },
+    { id: 'personal', label: 'Personal', icon: '🏘️' },
+    { id: 'rental', label: 'Rentals', icon: '🔑' },
+    { id: 'facility', label: 'Facilities', icon: '🌳' },
+  ];
+
+  const filtered = catFilter === 'all' ? properties : properties.filter(p => p.category === catFilter);
+
+  async function handleSave(data) {
+    if (editProp) {
+      const { data: u } = await supabase.from('properties').update(data).eq('id', editProp.id).select().single();
+      if (u) setProperties(prev => prev.map(p => p.id === u.id ? u : p));
+    } else {
+      const { data: c } = await supabase.from('properties').insert({ ...data, user_id: userId }).select().single();
+      if (c) setProperties(prev => [c, ...prev]);
+    }
+    setShowModal(false); setEditProp(null);
+  }
+
+  async function deleteProp(id) {
+    if (!window.confirm('Delete this property?')) return;
+    await supabase.from('properties').delete().eq('id', id);
+    setProperties(prev => prev.filter(p => p.id !== id));
+  }
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div><h2>Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
+        <button className="btn btn-primary" onClick={()=>{setEditProp(null);setShowModal(true);}}>+ New Property</button>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h3>Properties</h3>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            {CATS.map(c => (
+              <button key={c.id} className={`btn btn-sm ${catFilter===c.id?'btn-primary':'btn-ghost'}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>
+            ))}
+          </div>
+        </div>
+        <div className="panel-body">
+          {filtered.length === 0
+            ? <div className="empty-state"><div className="empty-icon">🏠</div><p>No properties here.</p></div>
+            : <div className="task-list">
+                {filtered.map(p => (
+                  <div key={p.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditProp(p);setShowModal(true);}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                        {p.nickname}
+                        <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{p.category}</span>
+                      </div>
+                      {p.address && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>{[p.address,p.city,p.state,p.zip].filter(Boolean).join(', ')}</div>}
+                      {p.list_price && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>${Number(p.list_price).toLocaleString()}</div>}
+                    </div>
+                    <div className="task-meta">
+                      <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)'}}>{(p.status||'').replace('_',' ')}</span>
+                      <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteProp(p.id);}}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+          }
+        </div>
+      </div>
+      {showModal && <PropertyModal onClose={()=>{setShowModal(false);setEditProp(null);}} onSave={handleSave} initial={editProp} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// INVESTMENTS VIEW
+// ─────────────────────────────────────────
+function InvestmentModal({ onClose, onSave, initial, properties }) {
+  const [name, setName] = useState(initial?.name || '');
+  const [kind, setKind] = useState(initial?.kind || 'deal');
+  const [stage, setStage] = useState(initial?.stage || 'screening');
+  const [property_id, setPropertyId] = useState(initial?.property_id || '');
+  const [amount, setAmount] = useState(initial?.amount || '');
+  const [income_ytd, setIncomeYtd] = useState(initial?.income_ytd || '');
+  const [expense_ytd, setExpenseYtd] = useState(initial?.expense_ytd || '');
+  const [due_date, setDueDate] = useState(initial?.due_date || '');
+  const [notes, setNotes] = useState(initial?.notes || '');
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave({
+      name: name.trim(), kind, stage, property_id: property_id || null,
+      amount: amount ? Number(amount) : null,
+      income_ytd: income_ytd ? Number(income_ytd) : null,
+      expense_ytd: expense_ytd ? Number(expense_ytd) : null,
+      due_date: due_date || null, notes: notes.trim() || null,
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Investment' : 'New Investment'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Kind</label>
+              <select className="form-select" value={kind} onChange={e=>setKind(e.target.value)}>
+                <option value="deal">Deal</option>
+                <option value="pnl">P&L</option>
+                <option value="partner_comm">Partner Comm</option>
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Stage</label>
+              <select className="form-select" value={stage} onChange={e=>setStage(e.target.value)}>
+                <option value="screening">Screening</option>
+                <option value="due_diligence">Due Diligence</option>
+                <option value="under_contract">Under Contract</option>
+                <option value="active">Active</option>
+                <option value="exited">Exited</option>
+                <option value="dead">Dead</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Linked Property</label>
+              <select className="form-select" value={property_id} onChange={e=>setPropertyId(e.target.value)}>
+                <option value="">— None —</option>
+                {properties.map(p => <option key={p.id} value={p.id}>{p.nickname}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Amount ($)</label><input className="form-input" type="number" value={amount} onChange={e=>setAmount(e.target.value)} /></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Income YTD</label><input className="form-input" type="number" value={income_ytd} onChange={e=>setIncomeYtd(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Expense YTD</label><input className="form-input" type="number" value={expense_ytd} onChange={e=>setExpenseYtd(e.target.value)} /></div>
+          </div>
+          <div className="form-group"><label className="form-label">Due Date</label><input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} /></div>
+          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} /></div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Investment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function InvestmentsView({ investments, setInvestments, properties, userId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editInv, setEditInv] = useState(null);
+  const [stageFilter, setStageFilter] = useState('all');
+
+  const STAGES = [
+    { id: 'all', label: 'All' },
+    { id: 'screening', label: 'Screening' },
+    { id: 'due_diligence', label: 'Due Dil' },
+    { id: 'under_contract', label: 'Under Contract' },
+    { id: 'active', label: 'Active' },
+    { id: 'exited', label: 'Exited' },
+    { id: 'dead', label: 'Dead' },
+  ];
+
+  const filtered = stageFilter === 'all' ? investments : investments.filter(i => i.stage === stageFilter);
+
+  // Roll-ups (active only)
+  const active = investments.filter(i => i.stage === 'active');
+  const totalAmount = active.reduce((s,i) => s + Number(i.amount||0), 0);
+  const totalIncome = active.reduce((s,i) => s + Number(i.income_ytd||0), 0);
+  const totalExpense = active.reduce((s,i) => s + Number(i.expense_ytd||0), 0);
+  const netYtd = totalIncome - totalExpense;
+
+  async function handleSave(data) {
+    if (editInv) {
+      const { data: u } = await supabase.from('investments').update(data).eq('id', editInv.id).select().single();
+      if (u) setInvestments(prev => prev.map(i => i.id === u.id ? u : i));
+    } else {
+      const { data: c } = await supabase.from('investments').insert({ ...data, user_id: userId }).select().single();
+      if (c) setInvestments(prev => [c, ...prev]);
+    }
+    setShowModal(false); setEditInv(null);
+  }
+
+  async function deleteInv(id) {
+    if (!window.confirm('Delete this investment?')) return;
+    await supabase.from('investments').delete().eq('id', id);
+    setInvestments(prev => prev.filter(i => i.id !== id));
+  }
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div><h2>Investments</h2><p>{investments.length} total · {active.length} active</p></div>
+        <button className="btn btn-primary" onClick={()=>{setEditInv(null);setShowModal(true);}}>+ New Investment</button>
+      </div>
+
+      <div className="cards-row">
+        <div className="stat-card"><div className="stat-label">Active Capital</div><div className="stat-value">${totalAmount.toLocaleString()}</div></div>
+        <div className="stat-card"><div className="stat-label">Income YTD</div><div className="stat-value" style={{color:'var(--green)'}}>${totalIncome.toLocaleString()}</div></div>
+        <div className="stat-card"><div className="stat-label">Expense YTD</div><div className="stat-value" style={{color:'var(--red)'}}>${totalExpense.toLocaleString()}</div></div>
+        <div className="stat-card"><div className="stat-label">Net YTD</div><div className="stat-value" style={{color: netYtd>=0?'var(--green)':'var(--red)'}}>${netYtd.toLocaleString()}</div></div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h3>Investments</h3>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            {STAGES.map(s => (
+              <button key={s.id} className={`btn btn-sm ${stageFilter===s.id?'btn-primary':'btn-ghost'}`} onClick={()=>setStageFilter(s.id)}>{s.label}</button>
+            ))}
+          </div>
+        </div>
+        <div className="panel-body">
+          {filtered.length === 0
+            ? <div className="empty-state"><div className="empty-icon">💰</div><p>No investments here.</p></div>
+            : <div className="task-list">
+                {filtered.map(i => {
+                  const linkedProp = properties.find(p => p.id === i.property_id);
+                  return (
+                    <div key={i.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditInv(i);setShowModal(true);}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                          {i.name}
+                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{(i.stage||'').replace('_',' ')}</span>
+                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'11px'}}>{(i.kind||'').replace('_',' ')}</span>
+                        </div>
+                        {linkedProp && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>📍 {linkedProp.nickname}</div>}
+                        {i.amount && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>${Number(i.amount).toLocaleString()}</div>}
+                      </div>
+                      <div className="task-meta">
+                        <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteInv(i.id);}}>×</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+          }
+        </div>
+      </div>
+      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} initial={editInv} properties={properties} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// FACILITIES VIEW
+// ─────────────────────────────────────────
+function FacilityJobModal({ onClose, onSave, initial, contacts }) {
+  const [title, setTitle] = useState(initial?.title || '');
+  const [client_contact_id, setClientContactId] = useState(initial?.client_contact_id || '');
+  const [kind, setKind] = useState(initial?.kind || 'job');
+  const [status, setStatus] = useState(initial?.status || 'open');
+  const [priority, setPriority] = useState(initial?.priority || 'normal');
+  const [amount, setAmount] = useState(initial?.amount || '');
+  const [scheduled_date, setScheduledDate] = useState(initial?.scheduled_date || '');
+  const [notes, setNotes] = useState(initial?.notes || '');
+
+  // Pull all contacts in (no facilities-client filter — the existing schema doesn't enforce it)
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    onSave({
+      title: title.trim(), client_contact_id: client_contact_id || null,
+      kind, status, priority,
+      amount: amount ? Number(amount) : null,
+      scheduled_date: scheduled_date || null, notes: notes.trim() || null,
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Job' : 'New Job'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} autoFocus required /></div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Kind</label>
+              <select className="form-select" value={kind} onChange={e=>setKind(e.target.value)}>
+                <option value="job">Job</option>
+                <option value="sales_lead">Sales Lead</option>
+                <option value="contract">Contract</option>
+                <option value="crew_task">Crew Task</option>
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Status</label>
+              <select className="form-select" value={status} onChange={e=>setStatus(e.target.value)}>
+                <option value="open">Open</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="in_progress">In Progress</option>
+                <option value="complete">Complete</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="on_hold">On Hold</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Client</label>
+              <select className="form-select" value={client_contact_id} onChange={e=>setClientContactId(e.target.value)}>
+                <option value="">— None —</option>
+                {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Priority</label>
+              <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Amount ($)</label><input className="form-input" type="number" value={amount} onChange={e=>setAmount(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Scheduled</label><input className="form-input" type="date" value={scheduled_date} onChange={e=>setScheduledDate(e.target.value)} /></div>
+          </div>
+          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} /></div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Job</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function FacilitiesView({ jobs, setJobs, contacts, userId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editJob, setEditJob] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const STATUSES = [
+    { id: 'all', label: 'All' },
+    { id: 'open', label: 'Open' },
+    { id: 'scheduled', label: 'Scheduled' },
+    { id: 'in_progress', label: 'In Progress' },
+    { id: 'complete', label: 'Complete' },
+    { id: 'on_hold', label: 'On Hold' },
+    { id: 'cancelled', label: 'Cancelled' },
+  ];
+
+  const filtered = statusFilter === 'all' ? jobs : jobs.filter(j => j.status === statusFilter);
+
+  // Roll-ups
+  const pipelineValue = jobs.filter(j => ['open','scheduled','in_progress'].includes(j.status)).reduce((s,j) => s + Number(j.amount||0), 0);
+  const completedValue = jobs.filter(j => j.status === 'complete').reduce((s,j) => s + Number(j.amount||0), 0);
+  const activeCount = jobs.filter(j => ['scheduled','in_progress'].includes(j.status)).length;
+
+  async function handleSave(data) {
+    if (editJob) {
+      const { data: u } = await supabase.from('facilities_jobs').update(data).eq('id', editJob.id).select().single();
+      if (u) setJobs(prev => prev.map(j => j.id === u.id ? u : j));
+    } else {
+      const { data: c } = await supabase.from('facilities_jobs').insert({ ...data, user_id: userId }).select().single();
+      if (c) setJobs(prev => [c, ...prev]);
+    }
+    setShowModal(false); setEditJob(null);
+  }
+
+  async function deleteJob(id) {
+    if (!window.confirm('Delete this job?')) return;
+    await supabase.from('facilities_jobs').delete().eq('id', id);
+    setJobs(prev => prev.filter(j => j.id !== id));
+  }
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div><h2>Facilities</h2><p>{jobs.length} jobs · {filtered.length} shown</p></div>
+        <button className="btn btn-primary" onClick={()=>{setEditJob(null);setShowModal(true);}}>+ New Job</button>
+      </div>
+
+      <div className="cards-row">
+        <div className="stat-card"><div className="stat-label">Pipeline Value</div><div className="stat-value">${pipelineValue.toLocaleString()}</div></div>
+        <div className="stat-card"><div className="stat-label">Completed</div><div className="stat-value" style={{color:'var(--green)'}}>${completedValue.toLocaleString()}</div></div>
+        <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value">{activeCount}</div></div>
+        <div className="stat-card"><div className="stat-label">Total Jobs</div><div className="stat-value">{jobs.length}</div></div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h3>Jobs</h3>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            {STATUSES.map(s => (
+              <button key={s.id} className={`btn btn-sm ${statusFilter===s.id?'btn-primary':'btn-ghost'}`} onClick={()=>setStatusFilter(s.id)}>{s.label}</button>
+            ))}
+          </div>
+        </div>
+        <div className="panel-body">
+          {filtered.length === 0
+            ? <div className="empty-state"><div className="empty-icon">🛠️</div><p>No jobs here.</p></div>
+            : <div className="task-list">
+                {filtered.map(j => {
+                  const client = contacts.find(c => c.id === j.client_contact_id);
+                  return (
+                    <div key={j.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditJob(j);setShowModal(true);}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                          {j.title}
+                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{(j.status||'').replace('_',' ')}</span>
+                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'11px'}}>{(j.kind||'').replace('_',' ')}</span>
+                        </div>
+                        {client && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>👤 {client.name}</div>}
+                        {j.amount && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>${Number(j.amount).toLocaleString()}</div>}
+                      </div>
+                      <div className="task-meta">
+                        {j.scheduled_date && <span className="task-due">{j.scheduled_date}</span>}
+                        <span className={`task-priority priority-${j.priority==='urgent'?'high':j.priority==='normal'?'medium':j.priority}`}>{j.priority}</span>
+                        <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteJob(j.id);}}>×</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+          }
+        </div>
+      </div>
+      {showModal && <FacilityJobModal onClose={()=>{setShowModal(false);setEditJob(null);}} onSave={handleSave} initial={editJob} contacts={contacts} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// BRAIN VIEW (Soul / Memory / Playbooks / Decisions / Lessons / North Star)
+// ─────────────────────────────────────────
+function BrainEntryModal({ onClose, onSave, initial, defaultType }) {
+  const [type, setType] = useState(initial?.type || defaultType || 'memory');
+  const [title, setTitle] = useState(initial?.title || '');
+  const [content, setContent] = useState(initial?.content || '');
+  const [event_date, setEventDate] = useState(initial?.event_date || '');
+  const [pinned, setPinned] = useState(initial?.pinned || false);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    onSave({
+      type, title: title.trim(), content: content.trim() || null,
+      event_date: event_date || null, pinned,
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Entry' : 'New Brain Entry'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Type</label>
+              <select className="form-select" value={type} onChange={e=>setType(e.target.value)}>
+                <option value="soul">🪞 Soul</option>
+                <option value="memory">📖 Memory</option>
+                <option value="playbook">📚 Playbook</option>
+                <option value="decision">⚖️ Decision</option>
+                <option value="lesson">💡 Lesson</option>
+                <option value="north-star">🎯 North Star</option>
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Date (optional)</label><input className="form-input" type="date" value={event_date} onChange={e=>setEventDate(e.target.value)} /></div>
+          </div>
+          <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} autoFocus required /></div>
+          <div className="form-group"><label className="form-label">Content</label><textarea className="form-textarea" value={content} onChange={e=>setContent(e.target.value)} style={{minHeight:'180px'}} /></div>
+          <div className="form-group">
+            <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+              <input type="checkbox" checked={pinned} onChange={e=>setPinned(e.target.checked)} />
+              Pin to top
+            </label>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Entry</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function BrainView({ brain, setBrain, userId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
+  const [activeTab, setActiveTab] = useState('north-star');
+
+  const TABS = [
+    { id: 'north-star', label: 'North Star', icon: '🎯' },
+    { id: 'soul', label: 'Soul', icon: '🪞' },
+    { id: 'memory', label: 'Memory', icon: '📖' },
+    { id: 'playbook', label: 'Playbooks', icon: '📚' },
+    { id: 'decision', label: 'Decisions', icon: '⚖️' },
+    { id: 'lesson', label: 'Lessons', icon: '💡' },
+  ];
+
+  const tabEntries = brain.filter(b => b.type === activeTab);
+  // Pinned first, then by event_date desc (if present) then created_at desc
+  const sorted = [...tabEntries].sort((a,b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    const aD = a.event_date || a.created_at;
+    const bD = b.event_date || b.created_at;
+    return new Date(bD) - new Date(aD);
+  });
+
+  async function handleSave(data) {
+    if (editEntry) {
+      const { data: u } = await supabase.from('brain').update(data).eq('id', editEntry.id).select().single();
+      if (u) setBrain(prev => prev.map(x => x.id === u.id ? u : x));
+    } else {
+      const { data: c } = await supabase.from('brain').insert({ ...data, user_id: userId }).select().single();
+      if (c) setBrain(prev => [c, ...prev]);
+    }
+    setShowModal(false); setEditEntry(null);
+  }
+
+  async function deleteEntry(id) {
+    if (!window.confirm('Delete this entry?')) return;
+    await supabase.from('brain').delete().eq('id', id);
+    setBrain(prev => prev.filter(x => x.id !== id));
+  }
+
+  async function togglePin(entry, e) {
+    e.stopPropagation();
+    const { data: u } = await supabase.from('brain').update({ pinned: !entry.pinned }).eq('id', entry.id).select().single();
+    if (u) setBrain(prev => prev.map(x => x.id === u.id ? u : x));
+  }
+
+  const currentTab = TABS.find(t => t.id === activeTab);
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div><h2>🧠 Brain</h2><p>{brain.length} entries · {tabEntries.length} in {currentTab?.label}</p></div>
+        <button className="btn btn-primary" onClick={()=>{setEditEntry(null);setShowModal(true);}}>+ New Entry</button>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            {TABS.map(t => {
+              const count = brain.filter(b => b.type === t.id).length;
+              return (
+                <button key={t.id} className={`btn btn-sm ${activeTab===t.id?'btn-primary':'btn-ghost'}`} onClick={()=>setActiveTab(t.id)}>
+                  {t.icon} {t.label}{count > 0 && <span style={{marginLeft:'6px',opacity:0.7}}>({count})</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="panel-body">
+          {sorted.length === 0
+            ? <div className="empty-state"><div className="empty-icon">{currentTab?.icon}</div><p>Nothing in {currentTab?.label} yet.</p></div>
+            : <div className="task-list">
+                {sorted.map(entry => (
+                  <div key={entry.id} className="task-item" style={{cursor:'pointer',flexDirection:'column',alignItems:'stretch',gap:'6px'}} onClick={()=>{setEditEntry(entry);setShowModal(true);}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px',width:'100%'}}>
+                      <div style={{flex:1,fontWeight:600,color:'var(--text-1)'}}>
+                        {entry.pinned && <span title="Pinned" style={{marginRight:'6px'}}>📌</span>}
+                        {entry.title}
+                      </div>
+                      <div className="task-meta">
+                        {entry.event_date && <span className="task-due">{entry.event_date}</span>}
+                        <button className="task-delete" style={{color:entry.pinned?'var(--accent)':undefined}} onClick={(e)=>togglePin(entry,e)} title="Pin">{entry.pinned ? '★' : '☆'}</button>
+                        <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteEntry(entry.id);}}>×</button>
+                      </div>
+                    </div>
+                    {entry.content && <div style={{fontSize:'13px',color:'var(--text-2)',whiteSpace:'pre-wrap',lineHeight:1.5,paddingLeft:'2px'}}>{entry.content.length > 200 ? entry.content.slice(0,200) + '…' : entry.content}</div>}
+                  </div>
+                ))}
+              </div>
+          }
+        </div>
+      </div>
+      {showModal && <BrainEntryModal onClose={()=>{setShowModal(false);setEditEntry(null);}} onSave={handleSave} initial={editEntry} defaultType={activeTab} />}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────
 // NOTES VIEW
 // ─────────────────────────────────────────
 function NotesView({ notes, setNotes, userId }) {
@@ -5241,6 +6067,11 @@ export default function App() {
   const [robots, setRobots] = useState([]);
   const [drawings, setDrawings] = useState([]);
   const [notes, setNotes] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [properties, setProperties] = useState([]);
+  const [investments, setInvestments] = useState([]);
+  const [facilityJobs, setFacilityJobs] = useState([]);
+  const [brain, setBrain] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -5252,18 +6083,28 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, facilityJobsRes, brainRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
       supabase.from('drawings').select('*').order('updated_at', { ascending: false }),
       supabase.from('notes').select('*').order('updated_at', { ascending: false }),
+      supabase.from('contacts').select('*').order('created_at', { ascending: false }),
+      supabase.from('properties').select('*').order('created_at', { ascending: false }),
+      supabase.from('investments').select('*').order('created_at', { ascending: false }),
+      supabase.from('facilities_jobs').select('*').order('created_at', { ascending: false }),
+      supabase.from('brain').select('*').order('created_at', { ascending: false }),
     ]);
     if (tasksRes.data) setTasks(tasksRes.data);
     if (emailsRes.data) setEmails(emailsRes.data);
     if (robotsRes.data) setRobots(robotsRes.data);
     if (drawingsRes.data) setDrawings(drawingsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
+    if (contactsRes.data) setContacts(contactsRes.data);
+    if (propertiesRes.data) setProperties(propertiesRes.data);
+    if (investmentsRes.data) setInvestments(investmentsRes.data);
+    if (facilityJobsRes.data) setFacilityJobs(facilityJobsRes.data);
+    if (brainRes.data) setBrain(brainRes.data);
     setDataLoaded(true);
   }, [session]);
 
@@ -5271,7 +6112,9 @@ export default function App() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]); setDataLoaded(false);
+    setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]);
+    setContacts([]); setProperties([]); setInvestments([]); setFacilityJobs([]); setBrain([]);
+    setDataLoaded(false);
   }
 
   const navigate = (id) => { setView(id); setSidebarOpen(false); };
@@ -5284,13 +6127,18 @@ export default function App() {
   const openTaskCount = tasks.filter(t=>!t.completed).length;
 
   const NAV = [
-    { id: 'dashboard', icon: '⚡', label: 'Dashboard' },
-    { id: 'tasks',     icon: '✅', label: 'Tasks',     badge: openTaskCount || null },
-    { id: 'inbox',     icon: '📬', label: 'Inbox',     badge: unreadCount || null },
-    { id: 'notes',     icon: '📝', label: 'Notes',     badge: null },
-    { id: 'draft',     icon: '✏️', label: 'Draft' },
-    { id: 'chat',      icon: '✦',  label: 'Ari',       badge: null },
-    { id: 'settings',  icon: '⚙️',  label: 'Settings' },
+    { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
+    { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
+    { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadCount || null },
+    { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
+    { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
+    { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
+    { id: 'facilities',  icon: '🛠️', label: 'Facilities',  badge: facilityJobs.length || null },
+    { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
+    { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
+    { id: 'draft',       icon: '✏️', label: 'Draft' },
+    { id: 'chat',        icon: '✦',  label: 'Ari',         badge: null },
+    { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
 
   return (
@@ -5339,13 +6187,18 @@ export default function App() {
         <main className="main-content">
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
-            : view==='dashboard' ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
-            : view==='tasks'     ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id}/>
-            : view==='inbox'     ? <InboxView emails={emails} setEmails={setEmails} userId={user.id}/>
-            : view==='notes'     ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
-            : view==='draft'     ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
-            : view==='chat'      ? <ChatView robots={robots} userId={user.id}/>
-            : view==='settings'  ? <SettingsView user={user}/>
+            : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
+            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id}/>
+            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} userId={user.id}/>
+            : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
+            : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
+            : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
+            : view==='facilities'  ? <FacilitiesView jobs={facilityJobs} setJobs={setFacilityJobs} contacts={contacts} userId={user.id}/>
+            : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id}/>
+            : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
+            : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
+            : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
+            : view==='settings'    ? <SettingsView user={user}/>
             : null
           }
         </main>
