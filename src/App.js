@@ -573,10 +573,11 @@ function formatLength(px, units, pxPerUnit) {
 
 // Build a flat list of snap candidates for all shapes
 // Each candidate: { x, y, kind: 'endpoint' | 'midpoint' | 'center' | 'quadrant' | 'vertex' | 'intersection' }
-function getSnapPoints(shapes, isShapeVisible) {
+function getSnapPoints(shapes, isShapeVisible, blocks) {
   const pts = [];
-  for (const s of shapes) {
-    if (!isShapeVisible(s)) continue;
+  // Helper to add snap points for a single shape (used both for top-level shapes
+  // and for the sub-shapes inside an expanded block instance).
+  const addPointsFor = (s) => {
     if (s.type === 'line' || s.type === 'dimension') {
       pts.push({ x: s.x1, y: s.y1, kind: 'endpoint' });
       pts.push({ x: s.x2, y: s.y2, kind: 'endpoint' });
@@ -599,7 +600,7 @@ function getSnapPoints(shapes, isShapeVisible) {
       pts.push({ x: s.cx, y: s.cy + s.r, kind: 'quadrant' });
       pts.push({ x: s.cx, y: s.cy - s.r, kind: 'quadrant' });
     } else if (s.type === 'polyline' || s.type === 'freehand') {
-      if (!s.points) continue;
+      if (!s.points) return;
       for (let i = 0; i < s.points.length; i++) {
         pts.push({ x: s.points[i].x, y: s.points[i].y, kind: 'vertex' });
         if (i < s.points.length - 1) {
@@ -613,6 +614,20 @@ function getSnapPoints(shapes, isShapeVisible) {
     } else if (s.type === 'text') {
       pts.push({ x: s.x, y: s.y, kind: 'vertex' });
     }
+  };
+  for (const s of shapes) {
+    if (!isShapeVisible(s)) continue;
+    if (s.type === 'instance') {
+      // Insertion point itself snaps
+      pts.push({ x: s.x, y: s.y, kind: 'vertex' });
+      // And every sub-shape of the expanded instance
+      if (blocks) {
+        const sub = expandInstance(s, blocks);
+        for (const es of sub) addPointsFor(es);
+      }
+      continue;
+    }
+    addPointsFor(s);
   }
   return pts;
 }
@@ -717,6 +732,21 @@ function DraftView({ drawings, setDrawings, userId }) {
       setDirty(false);
       setSelectedId(null);
       setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
+      // Reset all transient editing state so opening a new drawing starts clean
+      setDraft(null);
+      setPolyPending(null);
+      setPreviewPoint(null);
+      setEditingTextId(null);
+      setMoving(null);
+      setFreehandPoints(null);
+      setOffsetMode(false);
+      setOffsetAnchor(null);
+      setTrimMode(false);
+      setExtendMode(null);
+      setMirrorMode(null);
+      setParamInput(null);
+      setInsertBlockId(null);
+      setSnapHit(null);
     }
   }, [activeId]); // eslint-disable-line
 
@@ -758,7 +788,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     let p = { x: rawX, y: rawY };
 
     if (snapEnabled) {
-      const snaps = getSnapPoints(shapes, isShapeVisible);
+      const snaps = getSnapPoints(shapes, isShapeVisible, blocks);
       const hit = findSnap(p, snaps, worldSnapTolerance());
       if (hit) {
         setSnapHit(hit);
@@ -1022,7 +1052,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           const rect = svg.getBoundingClientRect();
           const rawX = viewBox.x + ((e.clientX - rect.left) / rect.width) * viewBox.w;
           const rawY = viewBox.y + ((e.clientY - rect.top) / rect.height) * viewBox.h;
-          const snaps = getSnapPoints(shapes, isShapeVisible);
+          const snaps = getSnapPoints(shapes, isShapeVisible, blocks);
           const hit = findSnap({ x: rawX, y: rawY }, snaps, worldSnapTolerance());
           setSnapHit(hit);
         }
@@ -1123,6 +1153,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       return Math.abs(d - s.r) <= tol;
     }
     if (s.type === 'polyline') {
+      if (!s.points) return false;
       // hit if near any segment
       for (let i = 0; i < s.points.length - 1; i++) {
         const a = s.points[i], b = s.points[i + 1];
@@ -1219,12 +1250,13 @@ function DraftView({ drawings, setDrawings, userId }) {
 
     setShapes(prev => {
       const next = prev.filter(s => s.id !== target.id);
+      const rid = () => 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
       if (lower !== null && upper !== null) {
         // Split into two pieces: [0, lower] and [upper, 1]
         const pLow = { x: a1.x + lower * dx, y: a1.y + lower * dy };
         const pUp = { x: a1.x + upper * dx, y: a1.y + upper * dy };
-        next.push({ ...target, id: 'sh_' + Date.now() + '_a', x2: pLow.x, y2: pLow.y });
-        next.push({ ...target, id: 'sh_' + Date.now() + '_b', x1: pUp.x, y1: pUp.y });
+        next.push({ ...target, id: rid(), x2: pLow.x, y2: pLow.y });
+        next.push({ ...target, id: rid(), x1: pUp.x, y1: pUp.y });
       } else if (upper !== null) {
         // Click was before the first intersection: keep right side
         const pUp = { x: a1.x + upper * dx, y: a1.y + upper * dy };
@@ -1363,6 +1395,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     // Anchor = a natural reference point on the shape
     let anchor;
     switch (sel.type) {
+      case 'instance': anchor = { x: sel.x, y: sel.y }; break;
       case 'rect': anchor = { x: sel.x, y: sel.y }; break;
       case 'circle': anchor = { x: sel.cx, y: sel.cy }; break;
       case 'line':
@@ -1505,6 +1538,12 @@ function DraftView({ drawings, setDrawings, userId }) {
         if (mirrorMode) setMirrorMode(null);
         if (paramInput) setParamInput(null);
         if (insertBlockId) setInsertBlockId(null);
+        if (moving) {
+          // Revert in-progress drag to original positions
+          setShapes(prev => prev.map(s => moving.originalById[s.id] || s));
+          setMoving(null);
+        }
+        if (freehandPoints) setFreehandPoints(null);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -1601,6 +1640,7 @@ function DraftView({ drawings, setDrawings, userId }) {
   function getExportShapes() {
     const out = [];
     for (const s of shapes) {
+      if (!isShapeVisible(s)) continue;
       if (s.type === 'instance') {
         out.push(...expandInstance(s, blocks));
       } else {
@@ -1719,8 +1759,9 @@ function DraftView({ drawings, setDrawings, userId }) {
     }
     const paperWPts = paperSize.w * 72;
     const paperHPts = paperSize.h * 72;
-    const orientation = paperSize.w > paperSize.h ? 'landscape' : 'portrait';
-    const pdf = new jsPDF({ unit: 'pt', format: [paperWPts, paperHPts], orientation });
+    // jsPDF infers orientation from format dimensions; passing orientation
+    // explicitly when format is already explicit can cause double-rotation.
+    const pdf = new jsPDF({ unit: 'pt', format: [paperWPts, paperHPts] });
     const k = computePdfTransform(units, pxPerUnit, pdfScale);
     const drawWpt = (maxX - minX) * k;
     const drawHpt = (maxY - minY) * k;
@@ -3206,6 +3247,7 @@ function renderShape(s, selected, ctx) {
     return <circle key={s.id} cx={s.cx} cy={s.cy} r={s.r} {...common} />;
   }
   if (s.type === 'polyline') {
+    if (!s.points || s.points.length < 2) return null;
     const pts = s.points.map(p => `${p.x},${p.y}`).join(' ');
     // Closed polyline (first==last) gets fill; otherwise no fill
     const isClosed = s.closed || (
