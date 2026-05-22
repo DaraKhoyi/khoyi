@@ -821,6 +821,13 @@ function DraftView({ drawings, setDrawings, userId }) {
   const setSelectedId = (id) => setSelectedIds(id == null ? [] : [id]);
   // Drag-select state: null | { start: {x,y}, current: {x,y}, additive: bool }
   const [dragSelect, setDragSelect] = useState(null);
+  // Undo/redo history. Snapshots capture {shapes, layers, blocks}.
+  // selectedIds, viewBox, tool, etc. are UI state and not part of history.
+  const HISTORY_MAX = 50;
+  const [historyPast, setHistoryPast] = useState([]);
+  const [historyFuture, setHistoryFuture] = useState([]);
+  // Ref mirror of latest state so pushHistory always reads current values.
+  const stateRef = useRef({ shapes: [], layers: [], blocks: [] });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState('Untitled Drawing');
@@ -833,6 +840,56 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   const active = drawings.find(d => d.id === activeId);
   const GRID = 20;
+
+  // Keep stateRef in sync with the latest mutable state.
+  useEffect(() => {
+    stateRef.current = { shapes, layers, blocks };
+  }, [shapes, layers, blocks]);
+
+  // Snapshot helpers
+  function deepSnap() {
+    return {
+      shapes: JSON.parse(JSON.stringify(stateRef.current.shapes)),
+      layers: JSON.parse(JSON.stringify(stateRef.current.layers)),
+      blocks: JSON.parse(JSON.stringify(stateRef.current.blocks)),
+    };
+  }
+  // Call BEFORE any state mutation that should be undoable.
+  function pushHistory() {
+    const snap = deepSnap();
+    setHistoryPast(prev => {
+      const next = [...prev, snap];
+      while (next.length > HISTORY_MAX) next.shift();
+      return next;
+    });
+    setHistoryFuture([]);
+  }
+  function undo() {
+    if (historyPast.length === 0) return;
+    const prev = historyPast[historyPast.length - 1];
+    const currentSnap = deepSnap();
+    setHistoryPast(p => p.slice(0, -1));
+    setHistoryFuture(f => [...f, currentSnap]);
+    setShapes(prev.shapes);
+    setLayers(prev.layers);
+    setBlocks(prev.blocks);
+    setSelectedIds([]);
+    setDirty(true);
+  }
+  function redo() {
+    if (historyFuture.length === 0) return;
+    const next = historyFuture[historyFuture.length - 1];
+    const currentSnap = deepSnap();
+    setHistoryFuture(f => f.slice(0, -1));
+    setHistoryPast(p => [...p, currentSnap]);
+    setShapes(next.shapes);
+    setLayers(next.layers);
+    setBlocks(next.blocks);
+    setSelectedIds([]);
+    setDirty(true);
+  }
+  const canUndo = historyPast.length > 0;
+  const canRedo = historyFuture.length > 0;
 
   useEffect(() => {
     if (active) {
@@ -867,6 +924,8 @@ function DraftView({ drawings, setDrawings, userId }) {
       setInsertBlockId(null);
       setSnapHit(null);
       setDragSelect(null);
+      setHistoryPast([]);
+      setHistoryFuture([]);
     }
   }, [activeId]); // eslint-disable-line
 
@@ -988,6 +1047,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       if (mirrorMode.stage === 'pickP2') {
         const original = shapes.find(s => s.id === selectedId);
         if (original && (p.x !== mirrorMode.p1.x || p.y !== mirrorMode.p1.y)) {
+          pushHistory();
           const reflected = cloneShapeWithNewId(mirrorShape(original, { a: mirrorMode.p1, b: p }));
           reflected.layer = activeLayerId;
           setShapes(prev => [...prev, reflected]);
@@ -1001,6 +1061,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
     // Block insert mode: this click places an instance
     if (insertBlockId) {
+      pushHistory();
       const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
       const newInst = {
         id, type: 'instance', blockId: insertBlockId,
@@ -1020,6 +1081,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       const dy = p.y - offsetAnchor.y;
       const original = shapes.find(s => s.id === selectedId);
       if (original && (dx !== 0 || dy !== 0)) {
+        pushHistory();
         const copy = cloneShapeWithNewId(translateShape(original, dx, dy));
         copy.layer = activeLayerId;
         setShapes(prev => [...prev, copy]);
@@ -1053,7 +1115,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           const s = shapes.find(sh => sh.id === id);
           if (s) originalById[id] = s;
         }
-        setMoving({ startX: p.x, startY: p.y, originalById });
+        setMoving({ startX: p.x, startY: p.y, originalById, preDragSnap: deepSnap() });
       } else {
         if (!additive) setSelectedIds([]);
         setDragSelect({ start: p, current: p, additive });
@@ -1078,6 +1140,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         const finished = { ...polyPending, x2: p.x, y2: p.y };
         const len = Math.hypot(finished.x2 - finished.x1, finished.y2 - finished.y1);
         if (len > 0) {
+          pushHistory();
           setShapes(prev => [...prev, finished]);
           setDirty(true);
         }
@@ -1093,6 +1156,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       } else if (polyPending.stage === 1) {
         setPolyPending({ ...polyPending, stage: 2, x2: p.x, y2: p.y });
       } else if (polyPending.stage === 2) {
+        pushHistory();
         const finished = { ...polyPending, cx: p.x, cy: p.y };
         delete finished.stage;
         setShapes(prev => [...prev, finished]);
@@ -1106,6 +1170,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       return;
     }
     if (tool === 'text') {
+      pushHistory();
       const newText = { id, type: 'text', x: p.x, y: p.y, text: 'Text', stroke: color, fontSize: Math.max(14, strokeWidth * 6), layer: activeLayerId };
       setShapes(prev => [...prev, newText]);
       setSelectedId(id);
@@ -1264,12 +1329,23 @@ function DraftView({ drawings, setDrawings, userId }) {
         else if (current.type === 'instance' && (current.x !== original.x || current.y !== original.y)) actuallyMoved = true;
         else if ((current.type === 'polyline' || current.type === 'freehand') && current.points[0] && original.points[0] && (current.points[0].x !== original.points[0].x)) actuallyMoved = true;
       }
-      if (actuallyMoved) setDirty(true);
+      if (actuallyMoved) {
+        if (moving.preDragSnap) {
+          setHistoryPast(prev => {
+            const next = [...prev, moving.preDragSnap];
+            while (next.length > HISTORY_MAX) next.shift();
+            return next;
+          });
+          setHistoryFuture([]);
+        }
+        setDirty(true);
+      }
       setMoving(null);
       return;
     }
     if (freehandPoints) {
       if (freehandPoints.length >= 2) {
+        pushHistory();
         const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         setShapes(prev => [...prev, {
           id, type: 'freehand',
@@ -1298,6 +1374,7 @@ function DraftView({ drawings, setDrawings, userId }) {
                 || (final.type === 'rect' && (final.w === 0 || final.h === 0))
                 || (final.type === 'circle' && final.r === 0);
     if (!isZero) {
+      pushHistory();
       setShapes(prev => [...prev, final]);
       setDirty(true);
     }
@@ -1422,6 +1499,8 @@ function DraftView({ drawings, setDrawings, userId }) {
 
     if (intersections.length === 0) return; // no cutter
 
+    pushHistory();
+
     // Find bounds: nearest intersection below tClick and nearest above
     let lower = null, upper = null;
     for (const t of intersections) {
@@ -1484,6 +1563,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         { x: target.x1, y: target.y1 }, { x: target.x2, y: target.y2 }
       );
       if (!xx) return;
+      pushHistory();
       const newPoint = { x: xx.x, y: xx.y };
       setShapes(prev => prev.map(s => {
         if (s.id !== src.id) return s;
@@ -1517,6 +1597,11 @@ function DraftView({ drawings, setDrawings, userId }) {
     if (!parsed) { setParamInput(null); return; }
     const target = applyParametric(parsed, paramInput.anchor, paramInput.cursor, pxPerUnit);
     if (!target) { setParamInput(null); return; }
+
+    // Push history once for whichever branch commits. (Polyline-extend and bezier
+    // stage-1 advancement don't add a final shape, but they still produce a state
+    // change worth tracking in history.)
+    pushHistory();
 
     // Apply target to current draft/polyPending
     if (draft) {
@@ -1596,6 +1681,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     if (!selectedId) return;
     const original = shapes.find(s => s.id === selectedId);
     if (!original) return;
+    pushHistory();
     const copy = cloneShapeWithNewId(translateShape(original, dx, dy));
     copy.layer = activeLayerId;
     setShapes(prev => [...prev, copy]);
@@ -1614,6 +1700,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       newCopies.push(copy);
     }
     if (newCopies.length === 0) return;
+    pushHistory();
     setShapes(prev => [...prev, ...newCopies]);
     setSelectedIds(newCopies.map(c => c.id));
     setDirty(true);
@@ -1621,6 +1708,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   // Layer ops
   function addLayer() {
+    pushHistory();
     const n = layers.length + 1;
     const newL = { id: 'l_' + Date.now(), name: `Layer ${n}`, color: '#e8eaf0', visible: true, locked: false };
     setLayers(prev => [...prev, newL]);
@@ -1630,6 +1718,7 @@ function DraftView({ drawings, setDrawings, userId }) {
   function deleteLayer(id) {
     if (layers.length <= 1) return;
     if (!window.confirm('Delete this layer and all its shapes?')) return;
+    pushHistory();
     setShapes(prev => prev.filter(s => (s.layer || 'default') !== id));
     setLayers(prev => prev.filter(l => l.id !== id));
     if (activeLayerId === id) {
@@ -1639,12 +1728,15 @@ function DraftView({ drawings, setDrawings, userId }) {
     setDirty(true);
   }
   function toggleLayerVisible(id) {
+    pushHistory();
     setLayers(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l));
   }
   function toggleLayerLocked(id) {
+    pushHistory();
     setLayers(prev => prev.map(l => l.id === id ? { ...l, locked: !l.locked } : l));
   }
   function renameLayer(id, name) {
+    pushHistory();
     setLayers(prev => prev.map(l => l.id === id ? { ...l, name } : l));
     setDirty(true);
   }
@@ -1652,6 +1744,7 @@ function DraftView({ drawings, setDrawings, userId }) {
   function finalizePoly() {
     if (!polyPending) return;
     if (polyPending.type === 'polyline' && polyPending.points.length >= 2) {
+      pushHistory();
       setShapes(prev => [...prev, polyPending]);
       setDirty(true);
     }
@@ -1666,6 +1759,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function deleteSelected() {
     if (selectedIds.length === 0) return;
+    pushHistory();
     const idSet = new Set(selectedIds);
     setShapes(prev => prev.filter(s => !idSet.has(s.id)));
     setSelectedIds([]);
@@ -1674,14 +1768,9 @@ function DraftView({ drawings, setDrawings, userId }) {
 
   function clearAll() {
     if (!window.confirm('Clear all shapes?')) return;
+    pushHistory();
     setShapes([]);
     setSelectedIds([]);
-    setDirty(true);
-  }
-
-  function undo() {
-    if (shapes.length === 0) return;
-    setShapes(prev => prev.slice(0, -1));
     setDirty(true);
   }
 
@@ -1704,7 +1793,8 @@ function DraftView({ drawings, setDrawings, userId }) {
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) { e.preventDefault(); redo(); }
       if (e.key === 'v') setTool('select');
       if (e.key === 'l') setTool('line');
       if (e.key === 'r') setTool('rect');
@@ -1888,6 +1978,7 @@ function DraftView({ drawings, setDrawings, userId }) {
         const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
         const dx = 600 - cx, dy = 400 - cy;
         const adjusted = imported.map(s => ({ ...translateShape(s, dx, dy), layer: activeLayerId }));
+        pushHistory();
         setShapes(prev => [...prev, ...adjusted]);
         setDirty(true);
         window.alert(`Imported ${adjusted.length} shape${adjusted.length === 1 ? '' : 's'} from DXF.`);
@@ -1907,6 +1998,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       window.alert('Cannot create a block from an instance. Select a regular shape.');
       return;
     }
+    pushHistory();
     const c = shapeCenter(sel);
     const normalized = translateShape(sel, -c.x, -c.y);
     const blockId = 'blk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -1931,13 +2023,17 @@ function DraftView({ drawings, setDrawings, userId }) {
     const instCount = shapes.filter(s => s.type === 'instance' && s.blockId === blockId).length;
     if (instCount > 0) {
       if (!window.confirm(`This block has ${instCount} instance${instCount === 1 ? '' : 's'} on the canvas. Delete the block and all its instances?`)) return;
+      pushHistory();
       setShapes(prev => prev.filter(s => !(s.type === 'instance' && s.blockId === blockId)));
+    } else {
+      pushHistory();
     }
     setBlocks(prev => prev.filter(b => b.id !== blockId));
     setDirty(true);
   }
 
   function renameBlock(blockId, name) {
+    pushHistory();
     setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, name } : b));
     setDirty(true);
   }
@@ -2184,6 +2280,8 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button className="btn btn-sm btn-ghost" onClick={clearAll}>Clear</button>
           <button className={`btn btn-sm ${showLayersPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowLayersPanel(s => !s)} title="Layers">▤</button>
           <button className={`btn btn-sm ${showBlocksPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowBlocksPanel(s => !s)} title="Blocks (reusable symbols)">◫</button>
+          <button className="btn btn-sm btn-ghost" onClick={undo} disabled={!canUndo} title={canUndo ? "Undo (Ctrl+Z)" : "Nothing to undo"} style={{opacity: canUndo ? 1 : 0.4}}>↶</button>
+          <button className="btn btn-sm btn-ghost" onClick={redo} disabled={!canRedo} title={canRedo ? "Redo (Ctrl+Shift+Z)" : "Nothing to redo"} style={{opacity: canRedo ? 1 : 0.4}}>↷</button>
           <button className="btn btn-sm btn-ghost" onClick={fitToView} title="Fit all visible shapes to view (Z)">⊡</button>
           <button className="btn btn-sm btn-ghost" onClick={resetView} title="Reset view">⌂</button>
           <span style={{marginLeft:'auto',fontSize:'11px',color:'var(--text-3)',display:'flex',gap:'10px',alignItems:'center'}}>
@@ -2480,6 +2578,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           pxPerUnit={pxPerUnit}
           onCancel={() => setShowArrayDialog(false)}
           onApply={(rows, cols, dx, dy) => {
+            pushHistory();
             const copies = arrayShapes(sel, rows, cols, dx, dy);
             // Assign current activeLayerId and ensure unique ids
             const stamped = copies.map(c => ({ ...c, layer: activeLayerId }));
@@ -2497,6 +2596,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           shape={sel}
           onCancel={() => setShowRotateDialog(false)}
           onApply={(angleDeg, keepOriginal) => {
+            pushHistory();
             const center = shapeCenter(sel);
             const rotated = rotateShape(sel, center, angleDeg);
             if (keepOriginal) {
@@ -2706,6 +2806,7 @@ function DraftView({ drawings, setDrawings, userId }) {
                 <select
                   value={sel.layer || 'default'}
                   onChange={e => {
+                    pushHistory();
                     setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, layer: e.target.value } : s));
                     setDirty(true);
                   }}
@@ -2720,6 +2821,7 @@ function DraftView({ drawings, setDrawings, userId }) {
                     <select
                       value={sel.fillStyle || 'none'}
                       onChange={e => {
+                        pushHistory();
                         setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fillStyle: e.target.value, fillColor: s.fillColor || s.stroke } : s));
                         setDirty(true);
                       }}
@@ -2739,6 +2841,7 @@ function DraftView({ drawings, setDrawings, userId }) {
                           type="color"
                           value={sel.fillColor || sel.stroke || '#e8eaf0'}
                           onChange={e => {
+                            pushHistory();
                             setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fillColor: e.target.value } : s));
                             setDirty(true);
                           }}
@@ -2833,7 +2936,7 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select (drag empty space to box-select, Shift-click to add) · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Z fit-to-view · Type a digit while drawing for parametric length · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Alt+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select (drag empty space to box-select, Shift-click to add) · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Z fit-to-view · Type a digit while drawing for parametric length · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Ctrl+Shift+Z (or Ctrl+Y) redo · Alt+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
