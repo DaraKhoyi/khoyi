@@ -582,8 +582,23 @@ function shapeBoundingBox(s, blocks) {
         minX: Math.min(s.x1, s.x2), maxX: Math.max(s.x1, s.x2),
         minY: Math.min(s.y1, s.y2), maxY: Math.max(s.y1, s.y2),
       };
-    case 'rect':
-      return { minX: s.x, minY: s.y, maxX: s.x + s.w, maxY: s.y + s.h };
+    case 'rect': {
+      const rot = s.rotation || 0;
+      if (rot === 0) {
+        return { minX: s.x, minY: s.y, maxX: s.x + s.w, maxY: s.y + s.h };
+      }
+      const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+      const rad = (rot * Math.PI) / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      const corners = [
+        [s.x, s.y], [s.x + s.w, s.y], [s.x + s.w, s.y + s.h], [s.x, s.y + s.h]
+      ].map(([px, py]) => {
+        const dx = px - cx, dy = py - cy;
+        return { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
+      });
+      const xs = corners.map(p => p.x), ys = corners.map(p => p.y);
+      return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    }
     case 'circle':
       return { minX: s.cx - s.r, minY: s.cy - s.r, maxX: s.cx + s.r, maxY: s.cy + s.r };
     case 'text': {
@@ -696,16 +711,42 @@ function getSnapPoints(shapes, isShapeVisible, blocks) {
       pts.push({ x: s.x2, y: s.y2, kind: 'endpoint' });
       pts.push({ x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2, kind: 'midpoint' });
     } else if (s.type === 'rect') {
-      const x2 = s.x + s.w, y2 = s.y + s.h;
-      pts.push({ x: s.x, y: s.y, kind: 'endpoint' });
-      pts.push({ x: x2, y: s.y, kind: 'endpoint' });
-      pts.push({ x: x2, y: y2, kind: 'endpoint' });
-      pts.push({ x: s.x, y: y2, kind: 'endpoint' });
-      pts.push({ x: s.x + s.w / 2, y: s.y, kind: 'midpoint' });
-      pts.push({ x: x2, y: s.y + s.h / 2, kind: 'midpoint' });
-      pts.push({ x: s.x + s.w / 2, y: y2, kind: 'midpoint' });
-      pts.push({ x: s.x, y: s.y + s.h / 2, kind: 'midpoint' });
-      pts.push({ x: s.x + s.w / 2, y: s.y + s.h / 2, kind: 'center' });
+      const rot = s.rotation || 0;
+      if (rot === 0) {
+        const x2 = s.x + s.w, y2 = s.y + s.h;
+        pts.push({ x: s.x, y: s.y, kind: 'endpoint' });
+        pts.push({ x: x2, y: s.y, kind: 'endpoint' });
+        pts.push({ x: x2, y: y2, kind: 'endpoint' });
+        pts.push({ x: s.x, y: y2, kind: 'endpoint' });
+        pts.push({ x: s.x + s.w / 2, y: s.y, kind: 'midpoint' });
+        pts.push({ x: x2, y: s.y + s.h / 2, kind: 'midpoint' });
+        pts.push({ x: s.x + s.w / 2, y: y2, kind: 'midpoint' });
+        pts.push({ x: s.x, y: s.y + s.h / 2, kind: 'midpoint' });
+        pts.push({ x: s.x + s.w / 2, y: s.y + s.h / 2, kind: 'center' });
+      } else {
+        const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+        const rad = (rot * Math.PI) / 180;
+        const cos = Math.cos(rad), sin = Math.sin(rad);
+        const rotPt = (px, py) => {
+          const dx = px - cx, dy = py - cy;
+          return { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
+        };
+        const x2 = s.x + s.w, y2 = s.y + s.h;
+        const corners = [[s.x, s.y], [x2, s.y], [x2, y2], [s.x, y2]];
+        for (const [px, py] of corners) {
+          const p = rotPt(px, py);
+          pts.push({ ...p, kind: 'endpoint' });
+        }
+        const mids = [
+          [s.x + s.w / 2, s.y], [x2, s.y + s.h / 2],
+          [s.x + s.w / 2, y2], [s.x, s.y + s.h / 2]
+        ];
+        for (const [px, py] of mids) {
+          const p = rotPt(px, py);
+          pts.push({ ...p, kind: 'midpoint' });
+        }
+        pts.push({ x: cx, y: cy, kind: 'center' });
+      }
     } else if (s.type === 'circle') {
       pts.push({ x: s.cx, y: s.cy, kind: 'center' });
       pts.push({ x: s.cx + s.r, y: s.cy, kind: 'quadrant' });
@@ -1129,7 +1170,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
     const id = 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
     if (tool === 'line') setDraft({ id, type: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, stroke: color, strokeWidth, layer: activeLayerId });
-    if (tool === 'rect') setDraft({ id, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
+    if (tool === 'rect') setDraft({ id, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, rotation: 0, stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
     if (tool === 'circle') setDraft({ id, type: 'circle', cx: p.x, cy: p.y, r: 0, stroke: color, strokeWidth, fill: 'none', layer: activeLayerId });
     if (tool === 'polyline') {
       if (polyPending) {
@@ -1404,11 +1445,21 @@ function DraftView({ drawings, setDrawings, userId }) {
       return Math.hypot(p.x - px, p.y - py) <= tol;
     }
     if (s.type === 'rect') {
+      const rot = s.rotation || 0;
+      let lp = p;
+      if (rot !== 0) {
+        const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+        // Inverse-rotate the click point into the rect's local frame
+        const rad = (-rot * Math.PI) / 180;
+        const cos = Math.cos(rad), sin = Math.sin(rad);
+        const dx = p.x - cx, dy = p.y - cy;
+        lp = { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
+      }
       const on = (a, b) => Math.abs(a - b) <= tol;
-      const inX = p.x >= s.x - tol && p.x <= s.x + s.w + tol;
-      const inY = p.y >= s.y - tol && p.y <= s.y + s.h + tol;
+      const inX = lp.x >= s.x - tol && lp.x <= s.x + s.w + tol;
+      const inY = lp.y >= s.y - tol && lp.y <= s.y + s.h + tol;
       if (!inX || !inY) return false;
-      return on(p.x, s.x) || on(p.x, s.x + s.w) || on(p.y, s.y) || on(p.y, s.y + s.h);
+      return on(lp.x, s.x) || on(lp.x, s.x + s.w) || on(lp.y, s.y) || on(lp.y, s.y + s.h);
     }
     if (s.type === 'circle') {
       const d = Math.hypot(p.x - s.cx, p.y - s.cy);
@@ -2108,7 +2159,10 @@ function DraftView({ drawings, setDrawings, userId }) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const s of expanded) {
       if (s.type === 'line' || s.type === 'dimension') { minX = Math.min(minX, s.x1, s.x2); minY = Math.min(minY, s.y1, s.y2); maxX = Math.max(maxX, s.x1, s.x2); maxY = Math.max(maxY, s.y1, s.y2); }
-      else if (s.type === 'rect') { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); maxX = Math.max(maxX, s.x + s.w); maxY = Math.max(maxY, s.y + s.h); }
+      else if (s.type === 'rect') {
+        const bb = shapeBoundingBox(s);
+        if (bb) { minX = Math.min(minX, bb.minX); minY = Math.min(minY, bb.minY); maxX = Math.max(maxX, bb.maxX); maxY = Math.max(maxY, bb.maxY); }
+      }
       else if (s.type === 'circle') { minX = Math.min(minX, s.cx - s.r); minY = Math.min(minY, s.cy - s.r); maxX = Math.max(maxX, s.cx + s.r); maxY = Math.max(maxY, s.cy + s.r); }
       else if (s.type === 'polyline' || s.type === 'freehand') { for (const p of (s.points || [])) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); } }
       else if (s.type === 'bezier') { minX = Math.min(minX, s.x1, s.x2, s.cx); minY = Math.min(minY, s.y1, s.y2, s.cy); maxX = Math.max(maxX, s.x1, s.x2, s.cx); maxY = Math.max(maxY, s.y1, s.y2, s.cy); }
@@ -2154,8 +2208,31 @@ function DraftView({ drawings, setDrawings, userId }) {
           pdf.text(lbl, midX, midY - 4, { align: 'center' });
         }
       } else if (s.type === 'rect') {
-        const tl = px2pt(s.x, s.y);
-        pdf.rect(tl.x, tl.y, s.w * k, s.h * k);
+        const rot = s.rotation || 0;
+        if (rot === 0) {
+          const tl = px2pt(s.x, s.y);
+          pdf.rect(tl.x, tl.y, s.w * k, s.h * k);
+        } else {
+          // Rotated rect: 4 line segments connecting the rotated corners
+          const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+          const rad = (rot * Math.PI) / 180;
+          const cos = Math.cos(rad), sin = Math.sin(rad);
+          const rotPt = (px, py) => {
+            const dx = px - cx, dy = py - cy;
+            return { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
+          };
+          const corners = [
+            rotPt(s.x, s.y),
+            rotPt(s.x + s.w, s.y),
+            rotPt(s.x + s.w, s.y + s.h),
+            rotPt(s.x, s.y + s.h),
+          ];
+          for (let i = 0; i < 4; i++) {
+            const a = px2pt(corners[i].x, corners[i].y);
+            const b = px2pt(corners[(i + 1) % 4].x, corners[(i + 1) % 4].y);
+            pdf.line(a.x, a.y, b.x, b.y);
+          }
+        }
       } else if (s.type === 'circle') {
         const c = px2pt(s.cx, s.cy);
         pdf.circle(c.x, c.y, s.r * k);
@@ -3189,14 +3266,15 @@ function rotateShape(s, center, angleDeg) {
       return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
     }
     case 'rect': {
-      const c1 = rot({ x: s.x, y: s.y });
-      const c2 = rot({ x: s.x + s.w, y: s.y });
-      const c3 = rot({ x: s.x + s.w, y: s.y + s.h });
-      const c4 = rot({ x: s.x, y: s.y + s.h });
-      const xs = [c1.x, c2.x, c3.x, c4.x];
-      const ys = [c1.y, c2.y, c3.y, c4.y];
-      const nx = Math.min(...xs), ny = Math.min(...ys);
-      return { ...s, x: nx, y: ny, w: Math.max(...xs) - nx, h: Math.max(...ys) - ny };
+      // Rotate the rect's geometric center around the pivot, accumulate rotation.
+      const cur = { x: s.x + s.w / 2, y: s.y + s.h / 2 };
+      const newC = rot(cur);
+      return {
+        ...s,
+        x: newC.x - s.w / 2,
+        y: newC.y - s.h / 2,
+        rotation: (s.rotation || 0) + angleDeg,
+      };
     }
     case 'circle': {
       const c = rot({ x: s.cx, y: s.cy });
@@ -3337,10 +3415,27 @@ function dxfWrite(shapes) {
     } else if (s.type === 'rect') {
       out(0, 'LWPOLYLINE'); out(8, '0');
       out(90, 4); out(70, 1);
-      out(10, s.x);       out(20, -s.y);
-      out(10, s.x + s.w); out(20, -s.y);
-      out(10, s.x + s.w); out(20, -(s.y + s.h));
-      out(10, s.x);       out(20, -(s.y + s.h));
+      const rot = s.rotation || 0;
+      if (rot === 0) {
+        out(10, s.x);       out(20, -s.y);
+        out(10, s.x + s.w); out(20, -s.y);
+        out(10, s.x + s.w); out(20, -(s.y + s.h));
+        out(10, s.x);       out(20, -(s.y + s.h));
+      } else {
+        const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+        const rad = (rot * Math.PI) / 180;
+        const cos = Math.cos(rad), sin = Math.sin(rad);
+        const rp = (px, py) => {
+          const dx = px - cx, dy = py - cy;
+          return { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
+        };
+        const c1 = rp(s.x, s.y), c2 = rp(s.x + s.w, s.y),
+              c3 = rp(s.x + s.w, s.y + s.h), c4 = rp(s.x, s.y + s.h);
+        out(10, c1.x); out(20, -c1.y);
+        out(10, c2.x); out(20, -c2.y);
+        out(10, c3.x); out(20, -c3.y);
+        out(10, c4.x); out(20, -c4.y);
+      }
     } else if (s.type === 'circle') {
       out(0, 'CIRCLE'); out(8, '0');
       out(10, s.cx); out(20, -s.cy); out(30, 0);
@@ -3678,7 +3773,13 @@ function renderShape(s, selected, ctx) {
     const y = s.h >= 0 ? s.y : s.y + s.h;
     const w = Math.abs(s.w);
     const h = Math.abs(s.h);
-    return <rect key={s.id} x={x} y={y} width={w} height={h} {...common} />;
+    const rot = s.rotation || 0;
+    if (rot === 0) {
+      return <rect key={s.id} x={x} y={y} width={w} height={h} {...common} />;
+    }
+    // SVG rotate() is CW in screen coords; our rotation convention is CCW. Negate.
+    const cx = x + w / 2, cy = y + h / 2;
+    return <rect key={s.id} x={x} y={y} width={w} height={h} transform={`rotate(${-rot} ${cx} ${cy})`} {...common} />;
   }
   if (s.type === 'circle') {
     return <circle key={s.id} cx={s.cx} cy={s.cy} r={s.r} {...common} />;
