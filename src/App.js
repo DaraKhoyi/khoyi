@@ -1348,9 +1348,17 @@ function DraftView({ drawings, setDrawings, userId }) {
     }
     if (panStart.current && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect();
+      // Defensive: if the SVG hasn't been laid out yet (zero size), bail
+      // rather than dividing by zero and producing NaN/Infinity in viewBox,
+      // which would render the canvas blank.
+      if (rect.width <= 0 || rect.height <= 0) return;
       const dx = ((e.clientX - panStart.current.mx) / rect.width) * viewBox.w;
       const dy = ((e.clientY - panStart.current.my) / rect.height) * viewBox.h;
-      setViewBox(v => ({ ...v, x: panStart.current.vx - dx, y: panStart.current.vy - dy }));
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+      const nextX = panStart.current.vx - dx;
+      const nextY = panStart.current.vy - dy;
+      if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
+      setViewBox(v => ({ ...v, x: nextX, y: nextY }));
       return;
     }
     // Determine ortho anchor for in-flight tools
@@ -2029,18 +2037,59 @@ function DraftView({ drawings, setDrawings, userId }) {
     return () => window.removeEventListener('keydown', onKey);
   }); // eslint-disable-line
 
+  // Global mouseup: if the user releases the button OUTSIDE the SVG (e.g.
+  // dragged a pan past the canvas edge and let go in the toolbar / outside
+  // the window), the SVG's onMouseUp never fires. Without this listener
+  // panStart.current stays non-null and a subsequent mouseenter+move would
+  // misbehave. We always clear pan state here as a safety net.
+  useEffect(() => {
+    function onWindowMouseUp() {
+      if (panStart.current) panStart.current = null;
+    }
+    window.addEventListener('mouseup', onWindowMouseUp);
+    window.addEventListener('blur', onWindowMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', onWindowMouseUp);
+      window.removeEventListener('blur', onWindowMouseUp);
+    };
+  }, []);
+
+  // Self-healing viewBox: if any code path ever lands an invalid viewBox
+  // into state (NaN, Infinity, zero size), snap back to a sane view so the
+  // user isn't stuck staring at a blank canvas needing a page reload.
+  useEffect(() => {
+    const { x, y, w, h } = viewBox;
+    const bad = !Number.isFinite(x) || !Number.isFinite(y) ||
+                !Number.isFinite(w) || !Number.isFinite(h) ||
+                w <= 0 || h <= 0;
+    if (bad) {
+      setViewBox({ x: 0, y: 0, w: 1200, h: 800 });
+    }
+  }, [viewBox]);
+
   function handleWheel(e) {
     e.preventDefault();
+    if (!svgRef.current) return;
+    // Cancel any in-flight pan — combining pan with wheel-zoom is
+    // incoherent because panStart's captured (vx, vy) becomes stale after
+    // the zoom changes the viewBox. Just end the pan so the next mousedown
+    // starts a clean one.
+    if (panStart.current) panStart.current = null;
     const factor = e.deltaY > 0 ? 1.1 : 0.9;
     const rect = svgRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     const mx = viewBox.x + ((e.clientX - rect.left) / rect.width) * viewBox.w;
     const my = viewBox.y + ((e.clientY - rect.top) / rect.height) * viewBox.h;
-    setViewBox({
+    const next = {
       x: mx - (mx - viewBox.x) * factor,
       y: my - (my - viewBox.y) * factor,
       w: viewBox.w * factor,
       h: viewBox.h * factor,
-    });
+    };
+    if (!Number.isFinite(next.x) || !Number.isFinite(next.y) ||
+        !Number.isFinite(next.w) || !Number.isFinite(next.h) ||
+        next.w <= 0 || next.h <= 0) return;
+    setViewBox(next);
   }
 
   async function newDrawing() {
@@ -2785,7 +2834,18 @@ function DraftView({ drawings, setDrawings, userId }) {
         <div style={{background:'var(--bg-base)',position:'relative'}}>
           <svg
             ref={svgRef}
-            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+            viewBox={(() => {
+              // Defensive: if viewBox state ever goes to NaN/Infinity/zero
+              // (e.g. from a race we didn't anticipate), fall back to the
+              // initial view so the canvas keeps rendering. Better to show
+              // something at a default zoom than a blank screen requiring
+              // a page refresh.
+              const { x, y, w, h } = viewBox;
+              const ok = Number.isFinite(x) && Number.isFinite(y) &&
+                         Number.isFinite(w) && Number.isFinite(h) &&
+                         w > 0 && h > 0;
+              return ok ? `${x} ${y} ${w} ${h}` : `0 0 1200 800`;
+            })()}
             style={{
               display:'block',
               width:'100%',
