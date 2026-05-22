@@ -856,6 +856,10 @@ function DraftView({ drawings, setDrawings, userId }) {
   // preDragSnap holds the pre-drag state for undo and Escape-to-cancel.
   const [endpointDrag, setEndpointDrag] = useState(null);
   const [freehandPoints, setFreehandPoints] = useState(null); // array of points during freehand stroke
+  // Transient hint shown when the user clicks a shape on a locked layer — so
+  // they understand why their click "didn't do anything." Cleared on next
+  // click or after a short timeout.
+  const [lockedLayerHint, setLockedLayerHint] = useState(null);
   const [offsetMode, setOffsetMode] = useState(false); // when true, next click defines offset vector
   const [offsetAnchor, setOffsetAnchor] = useState(null); // {x,y} reference point for offset
   const [showLayersPanel, setShowLayersPanel] = useState(false);
@@ -1264,9 +1268,20 @@ function DraftView({ drawings, setDrawings, userId }) {
       // hit the image first if the image happens to come later in `shapes`.
       const nonImages = [...shapes].filter(s => s.type !== 'image').reverse();
       const images = [...shapes].filter(s => s.type === 'image').reverse();
-      const hit = [...nonImages, ...images].find(s => isShapeInteractable(s) && hitTest(s, p));
+      // Strict first pass: 10 screen-pixel tolerance.
+      let hit = [...nonImages, ...images].find(s => isShapeInteractable(s) && hitTest(s, p));
+      // Lenient second pass for vector shapes only, with a generous 18 screen-pixel
+      // tolerance. CAD selection traditionally accepts near-misses; this catches
+      // the "I clearly clicked the line but nothing happened" frustration.
+      // Images are excluded — they already fill their bounds, no need for slop.
+      if (!hit) {
+        const screenW = svgRef.current?.getBoundingClientRect().width || 1;
+        const lenientTol = Math.max(5, (18 * viewBox.w) / screenW);
+        hit = nonImages.find(s => isShapeInteractable(s) && hitTest(s, p, lenientTol));
+      }
       const additive = e.shiftKey || e.metaKey || e.ctrlKey;
       if (hit) {
+        if (lockedLayerHint) setLockedLayerHint(null);
         let newSelection;
         if (additive) {
           if (selectedIds.includes(hit.id)) {
@@ -1287,6 +1302,30 @@ function DraftView({ drawings, setDrawings, userId }) {
         }
         setMoving({ startX: p.x, startY: p.y, originalById, preDragSnap: deepSnap() });
       } else {
+        // No hit. Before falling through to drag-select, check whether the
+        // user actually CLICKED on a shape that lives on a locked layer.
+        // Helps explain "I clicked the line but nothing happened" — usually
+        // because the layer (or the Reference layer holding an imported PDF)
+        // is locked.
+        const screenW = svgRef.current?.getBoundingClientRect().width || 1;
+        const hintTol = Math.max(5, (18 * viewBox.w) / screenW);
+        const lockedHit = [...nonImages, ...images].find(s => {
+          const l = layerById.get(s.layer || 'default');
+          if (!l || !l.visible || !l.locked) return false;
+          return hitTest(s, p, hintTol);
+        });
+        if (lockedHit) {
+          const l = layerById.get(lockedHit.layer || 'default');
+          const ts = Date.now();
+          setLockedLayerHint({
+            text: `That shape is on "${l?.name || 'a locked layer'}" — unlock it in the Layers panel to select.`,
+            timestamp: ts,
+          });
+          setTimeout(() => {
+            // Only clear if the same hint is still showing (no newer hint came along)
+            setLockedLayerHint(prev => (prev && prev.timestamp === ts) ? null : prev);
+          }, 4000);
+        }
         if (!additive) setSelectedIds([]);
         setDragSelect({ start: p, current: p, additive });
       }
@@ -1711,11 +1750,15 @@ function DraftView({ drawings, setDrawings, userId }) {
     setDraft(null);
   }
 
-  function hitTest(s, p) {
-    // Tolerance scales with zoom — 8 screen pixels in world units.
+  function hitTest(s, p, tolOverride) {
+    // Tolerance scales with zoom — 10 screen pixels in world units by default.
     // Without this, zoomed-out shapes are nearly impossible to click and zoomed-in
-    // shapes accept clicks from absurdly far away.
-    const tol = Math.max(2, (8 * viewBox.w) / (svgRef.current?.getBoundingClientRect().width || 1));
+    // shapes accept clicks from absurdly far away. tolOverride lets callers ask
+    // for a larger tolerance (e.g. a lenient second-pass after a strict miss).
+    const screenPxToWorld = (svgRef.current?.getBoundingClientRect().width || 1);
+    const tol = tolOverride != null
+      ? tolOverride
+      : Math.max(3, (10 * viewBox.w) / screenPxToWorld);
     if (s.type === 'instance') {
       const sub = expandInstance(s, blocks);
       if (Math.hypot(p.x - s.x, p.y - s.y) <= tol * 2) return true;
@@ -2881,7 +2924,7 @@ function DraftView({ drawings, setDrawings, userId }) {
   ];
 
   return (
-    <div>
+    <div style={{position:'relative'}}>
       <div className="page-header" style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
           <button className="btn btn-ghost btn-sm" onClick={() => { if (dirty && !window.confirm('Discard unsaved changes?')) return; setActiveId(null); }}>← Back</button>
@@ -3339,6 +3382,16 @@ function DraftView({ drawings, setDrawings, userId }) {
       </div>
 
       {/* Mode banners */}
+      {lockedLayerHint && (
+        <div style={{
+          position:'absolute', top:'140px', left:'50%', transform:'translateX(-50%)',
+          background:'var(--bg-card)', border:'1px solid var(--yellow)', borderRadius:'8px',
+          padding:'8px 14px', zIndex:65, fontSize:'13px', color:'var(--yellow)',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.4)', pointerEvents:'none',
+        }}>
+          🔒 {lockedLayerHint.text}
+        </div>
+      )}
       {(trimMode || extendMode) && (
         <div style={{
           position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)',
@@ -3440,7 +3493,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
       {showBlocksPanel && (
         <div style={{
-          position:'fixed', top:'80px', left:'20px', width:'280px',
+          position:'absolute', top:'80px', left:'20px', width:'280px',
           background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px',
           padding:'12px', zIndex:50, maxHeight:'70vh', overflowY:'auto',
           boxShadow:'0 8px 24px rgba(0,0,0,0.4)'
@@ -3622,7 +3675,7 @@ function DraftView({ drawings, setDrawings, userId }) {
 
       {showLayersPanel && (
         <div style={{
-          position:'fixed', top:'80px', right:'20px', width:'280px',
+          position:'absolute', top:'80px', right:'20px', width:'280px',
           background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px',
           padding:'12px', zIndex:50, maxHeight:'70vh', overflowY:'auto',
           boxShadow:'0 8px 24px rgba(0,0,0,0.4)'
