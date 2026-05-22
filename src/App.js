@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from './dataService';
 import { jsPDF } from 'jspdf';
 import './index.css';
@@ -908,8 +908,7 @@ function DraftView({ drawings, setDrawings, userId }) {
     let p = { x: rawX, y: rawY };
 
     if (snapEnabled) {
-      const snaps = getSnapPoints(shapes, isShapeVisible, blocks);
-      const hit = findSnap(p, snaps, worldSnapTolerance());
+      const hit = findSnap(p, snapPointsCache, worldSnapTolerance());
       if (hit) {
         setSnapHit(hit);
         return { x: hit.x, y: hit.y, _snapped: true };
@@ -927,16 +926,30 @@ function DraftView({ drawings, setDrawings, userId }) {
     return p;
   }
 
-  // Layer helpers
-  function layerById(id) { return layers.find(l => l.id === id); }
+  // Layer helpers — using a Map for O(1) lookup instead of layers.find per shape
+  const layerById = useMemo(() => {
+    const m = new Map();
+    for (const l of layers) m.set(l.id, l);
+    return m;
+  }, [layers]);
   function isShapeInteractable(s) {
-    const l = layerById(s.layer || 'default');
+    const l = layerById.get(s.layer || 'default');
     return l ? (l.visible && !l.locked) : true;
   }
   function isShapeVisible(s) {
-    const l = layerById(s.layer || 'default');
+    const l = layerById.get(s.layer || 'default');
     return l ? l.visible : true;
   }
+
+  // Memoized snap-points list. Recomputed only when shapes/layers/blocks change,
+  // so mousemove doesn't re-expand every block instance on every event.
+  const snapPointsCache = useMemo(() => {
+    return getSnapPoints(shapes, isShapeVisible, blocks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapes, layers, blocks]);
+
+  // O(1) selection lookups during render — avoids selectedIds.includes per shape.
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   function handleMouseDown(e) {
     if (panMode || e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -1193,8 +1206,7 @@ function DraftView({ drawings, setDrawings, userId }) {
           const rect = svg.getBoundingClientRect();
           const rawX = viewBox.x + ((e.clientX - rect.left) / rect.width) * viewBox.w;
           const rawY = viewBox.y + ((e.clientY - rect.top) / rect.height) * viewBox.h;
-          const snaps = getSnapPoints(shapes, isShapeVisible, blocks);
-          const hit = findSnap({ x: rawX, y: rawY }, snaps, worldSnapTolerance());
+          const hit = findSnap({ x: rawX, y: rawY }, snapPointsCache, worldSnapTolerance());
           setSnapHit(hit);
         }
       }
@@ -1293,7 +1305,10 @@ function DraftView({ drawings, setDrawings, userId }) {
   }
 
   function hitTest(s, p) {
-    const tol = 8;
+    // Tolerance scales with zoom — 8 screen pixels in world units.
+    // Without this, zoomed-out shapes are nearly impossible to click and zoomed-in
+    // shapes accept clicks from absurdly far away.
+    const tol = Math.max(2, (8 * viewBox.w) / (svgRef.current?.getBoundingClientRect().width || 1));
     if (s.type === 'instance') {
       const sub = expandInstance(s, blocks);
       if (Math.hypot(p.x - s.x, p.y - s.y) <= tol * 2) return true;
@@ -1752,14 +1767,21 @@ function DraftView({ drawings, setDrawings, userId }) {
     if (!active) return;
     setSaving(true);
     const payload = { shapes, layers };
-    const { data } = await supabase.from('drawings').update({
-      title, units, px_per_unit: pxPerUnit, shapes: payload, blocks
-    }).eq('id', active.id).select().single();
-    if (data) {
-      setDrawings(prev => prev.map(d => d.id === data.id ? data : d));
-      setDirty(false);
+    try {
+      const { data, error } = await supabase.from('drawings').update({
+        title, units, px_per_unit: pxPerUnit, shapes: payload, blocks
+      }).eq('id', active.id).select().single();
+      if (error) {
+        window.alert(`Save failed: ${error.message}. Your work is still here — try again in a moment.`);
+      } else if (data) {
+        setDrawings(prev => prev.map(d => d.id === data.id ? data : d));
+        setDirty(false);
+      }
+    } catch (err) {
+      window.alert(`Save failed: ${err.message}. Your work is still here — try again in a moment.`);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function deleteDrawing(id) {
@@ -2249,7 +2271,7 @@ function DraftView({ drawings, setDrawings, userId }) {
             {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
 
             {shapes.filter(isShapeVisible).map(s => {
-              const isSelected = selectedIds.includes(s.id);
+              const isSelected = selectedSet.has(s.id);
               if (s.type === 'instance') {
                 const sub = expandInstance(s, blocks);
                 return <g key={s.id}>
@@ -3452,7 +3474,13 @@ function renderShape(s, selected, ctx) {
     return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} {...common} fill="none" />;
   }
   if (s.type === 'rect') {
-    return <rect key={s.id} x={s.x} y={s.y} width={s.w} height={s.h} {...common} />;
+    // Normalize negative w/h so the draft preview is visible when dragging
+    // from bottom-right to top-left.
+    const x = s.w >= 0 ? s.x : s.x + s.w;
+    const y = s.h >= 0 ? s.y : s.y + s.h;
+    const w = Math.abs(s.w);
+    const h = Math.abs(s.h);
+    return <rect key={s.id} x={x} y={y} width={w} height={h} {...common} />;
   }
   if (s.type === 'circle') {
     return <circle key={s.id} cx={s.cx} cy={s.cy} r={s.r} {...common} />;
