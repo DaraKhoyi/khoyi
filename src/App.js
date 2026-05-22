@@ -673,6 +673,11 @@ function DraftView({ drawings, setDrawings, userId }) {
   const [snapHit, setSnapHit] = useState(null); // {x,y,kind} when cursor is near a snap target
   const [trimMode, setTrimMode] = useState(false);
   const [extendMode, setExtendMode] = useState(null); // null | { stage: 'pickEnd', shapeId, endpointKey } | { stage: 'pickTarget', ... }
+  // Tier 2 state
+  const [paramInput, setParamInput] = useState(null); // null | { value: string, anchor: {x,y}, cursor: {x,y} }
+  const [mirrorMode, setMirrorMode] = useState(null); // null | { stage: 'pickP1' } | { stage: 'pickP2', p1: {x,y} }
+  const [showArrayDialog, setShowArrayDialog] = useState(false);
+  const [showRotateDialog, setShowRotateDialog] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -802,6 +807,25 @@ function DraftView({ drawings, setDrawings, userId }) {
       handleExtendClick(p);
       return;
     }
+    // Mirror mode: collect two points defining the axis
+    if (mirrorMode) {
+      if (mirrorMode.stage === 'pickP1') {
+        setMirrorMode({ stage: 'pickP2', p1: p });
+        return;
+      }
+      if (mirrorMode.stage === 'pickP2') {
+        const original = shapes.find(s => s.id === selectedId);
+        if (original && (p.x !== mirrorMode.p1.x || p.y !== mirrorMode.p1.y)) {
+          const reflected = cloneShapeWithNewId(mirrorShape(original, { a: mirrorMode.p1, b: p }));
+          reflected.layer = activeLayerId;
+          setShapes(prev => [...prev, reflected]);
+          setSelectedId(reflected.id);
+          setDirty(true);
+        }
+        setMirrorMode(null);
+        return;
+      }
+    }
 
     // Offset mode: this click defines the offset vector
     if (offsetMode && selectedId && offsetAnchor) {
@@ -920,6 +944,19 @@ function DraftView({ drawings, setDrawings, userId }) {
     if (offsetMode) {
       const p = resolvePoint(e, orthoAnchor);
       setPreviewPoint(p);
+      return;
+    }
+    // Mirror preview
+    if (mirrorMode) {
+      const p = resolvePoint(e, orthoAnchor);
+      setPreviewPoint(p);
+      return;
+    }
+    // Parametric input: track cursor for direction
+    if (paramInput) {
+      const p = resolvePoint(e, orthoAnchor);
+      setPreviewPoint(p);
+      setParamInput(prev => prev ? { ...prev, cursor: p } : prev);
       return;
     }
     // Dragging a shape (move)
@@ -1210,6 +1247,80 @@ function DraftView({ drawings, setDrawings, userId }) {
     }
   }
 
+  function currentAnchor() {
+    if (draft) {
+      if (draft.type === 'line') return { x: draft.x1, y: draft.y1 };
+      if (draft.type === 'rect') return { x: draft.x, y: draft.y };
+      if (draft.type === 'circle') return { x: draft.cx, y: draft.cy };
+    }
+    if (polyPending) {
+      if (polyPending.type === 'polyline' && polyPending.points.length > 0)
+        return polyPending.points[polyPending.points.length - 1];
+      if (polyPending.type === 'dimension') return { x: polyPending.x1, y: polyPending.y1 };
+      if (polyPending.type === 'bezier' && polyPending.stage === 1)
+        return { x: polyPending.x1, y: polyPending.y1 };
+    }
+    return null;
+  }
+
+  function commitParametric() {
+    if (!paramInput) return;
+    const parsed = parseParametric(paramInput.value);
+    if (!parsed) { setParamInput(null); return; }
+    const target = applyParametric(parsed, paramInput.anchor, paramInput.cursor, pxPerUnit);
+    if (!target) { setParamInput(null); return; }
+
+    // Apply target to current draft/polyPending
+    if (draft) {
+      if (draft.type === 'line') {
+        const final = { ...draft, x2: target.x, y2: target.y };
+        if (final.x1 !== final.x2 || final.y1 !== final.y2) {
+          setShapes(prev => [...prev, final]);
+          setDirty(true);
+        }
+        setDraft(null);
+      } else if (draft.type === 'rect') {
+        const w = target.x - draft.x, h = target.y - draft.y;
+        let final = { ...draft, w, h };
+        if (final.w < 0 || final.h < 0) {
+          final = {
+            ...final,
+            x: final.w < 0 ? final.x + final.w : final.x,
+            y: final.h < 0 ? final.y + final.h : final.y,
+            w: Math.abs(final.w), h: Math.abs(final.h),
+          };
+        }
+        if (final.w > 0 && final.h > 0) {
+          setShapes(prev => [...prev, final]);
+          setDirty(true);
+        }
+        setDraft(null);
+      } else if (draft.type === 'circle') {
+        const r = Math.hypot(target.x - draft.cx, target.y - draft.cy);
+        if (r > 0) {
+          setShapes(prev => [...prev, { ...draft, r }]);
+          setDirty(true);
+        }
+        setDraft(null);
+      }
+    } else if (polyPending) {
+      if (polyPending.type === 'polyline') {
+        setPolyPending({ ...polyPending, points: [...polyPending.points, target] });
+      } else if (polyPending.type === 'dimension') {
+        const final = { ...polyPending, x2: target.x, y2: target.y };
+        const len = Math.hypot(final.x2 - final.x1, final.y2 - final.y1);
+        if (len > 0) {
+          setShapes(prev => [...prev, final]);
+          setDirty(true);
+        }
+        setPolyPending(null);
+      } else if (polyPending.type === 'bezier' && polyPending.stage === 1) {
+        setPolyPending({ ...polyPending, stage: 2, x2: target.x, y2: target.y });
+      }
+    }
+    setParamInput(null);
+  }
+
   function startOffset() {
     if (!selectedId) return;
     const sel = shapes.find(s => s.id === selectedId);
@@ -1323,6 +1434,20 @@ function DraftView({ drawings, setDrawings, userId }) {
     function onKey(e) {
       if (!active) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      // Parametric input: typing digit/minus while an anchor exists opens the input.
+      // Subsequent keypresses while paramInput is open are intercepted by the input itself.
+      if (!paramInput && !showArrayDialog && !showRotateDialog && !editingTextId
+          && (e.key.match(/^[0-9.-]$/) || e.key === ',' || e.key === '<')) {
+        const anchor = currentAnchor();
+        if (anchor) {
+          e.preventDefault();
+          // Use last known cursor for direction (previewPoint, or anchor itself as fallback)
+          setParamInput({ value: e.key, anchor, cursor: previewPoint || anchor });
+          return;
+        }
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
       if (e.key === 'v') setTool('select');
@@ -1342,6 +1467,8 @@ function DraftView({ drawings, setDrawings, userId }) {
         if (offsetMode) { setOffsetMode(false); setOffsetAnchor(null); }
         if (trimMode) setTrimMode(false);
         if (extendMode) setExtendMode(null);
+        if (mirrorMode) setMirrorMode(null);
+        if (paramInput) setParamInput(null);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -1568,6 +1695,9 @@ function DraftView({ drawings, setDrawings, userId }) {
           <button className="btn btn-sm btn-ghost" onClick={undo} title="Undo (Ctrl+Z)">↶</button>
           <button className="btn btn-sm btn-ghost" onClick={duplicateSelected} disabled={!selectedId} title="Duplicate (Ctrl/Cmd+D)">⎘</button>
           <button className={`btn btn-sm ${offsetMode?'btn-primary':'btn-ghost'}`} onClick={startOffset} disabled={!selectedId} title="Offset copy (O) — click on canvas to place duplicate">↗</button>
+          <button className={`btn btn-sm ${mirrorMode?'btn-primary':'btn-ghost'}`} onClick={() => setMirrorMode(mirrorMode ? null : { stage: 'pickP1' })} disabled={!selectedId} title="Mirror — click two points to define reflection axis">⇋</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setShowArrayDialog(true)} disabled={!selectedId} title="Array — rows × cols grid">⊟</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setShowRotateDialog(true)} disabled={!selectedId} title="Rotate by angle">↻</button>
           <button className="btn btn-sm btn-ghost" onClick={deleteSelected} disabled={!selectedId}>Delete</button>
           <button className="btn btn-sm btn-ghost" onClick={clearAll}>Clear</button>
           <button className={`btn btn-sm ${showLayersPanel?'btn-primary':'btn-ghost'}`} onClick={() => setShowLayersPanel(s => !s)} title="Layers">▤</button>
@@ -1607,6 +1737,41 @@ function DraftView({ drawings, setDrawings, userId }) {
               <pattern id="grid" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
                 <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#252a38" strokeWidth="0.5" opacity="0.6" />
               </pattern>
+              {/* Generate a pattern for each unique (fillStyle, fillColor) used by shapes */}
+              {(() => {
+                const used = new Set();
+                shapes.forEach(s => {
+                  if (s.fillStyle && s.fillStyle !== 'none' && s.fillStyle !== 'solid') {
+                    used.add(`${s.fillStyle}|${s.fillColor || s.stroke}`);
+                  }
+                });
+                return Array.from(used).map(key => {
+                  const [style, color] = key.split('|');
+                  const id = `pattern-${style}-${color.replace('#', '')}`;
+                  if (style === 'hatch') {
+                    return (
+                      <pattern key={id} id={id} width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                        <line x1="0" y1="0" x2="0" y2="8" stroke={color} strokeWidth="1" />
+                      </pattern>
+                    );
+                  }
+                  if (style === 'crosshatch') {
+                    return (
+                      <pattern key={id} id={id} width="8" height="8" patternUnits="userSpaceOnUse">
+                        <path d="M 0 4 L 8 4 M 4 0 L 4 8" stroke={color} strokeWidth="1" />
+                      </pattern>
+                    );
+                  }
+                  if (style === 'dots') {
+                    return (
+                      <pattern key={id} id={id} width="6" height="6" patternUnits="userSpaceOnUse">
+                        <circle cx="3" cy="3" r="1" fill={color} />
+                      </pattern>
+                    );
+                  }
+                  return null;
+                });
+              })()}
             </defs>
             {showGrid && <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="url(#grid)" />}
 
@@ -1678,6 +1843,35 @@ function DraftView({ drawings, setDrawings, userId }) {
                 </g>
               );
             })()}
+            {/* Mirror preview */}
+            {mirrorMode && mirrorMode.stage === 'pickP2' && previewPoint && selectedId && (() => {
+              const sel = shapes.find(s => s.id === selectedId);
+              if (!sel) return null;
+              const reflected = mirrorShape(sel, { a: mirrorMode.p1, b: previewPoint });
+              // Extend axis line for visual clarity
+              const dx = previewPoint.x - mirrorMode.p1.x;
+              const dy = previewPoint.y - mirrorMode.p1.y;
+              const len = Math.hypot(dx, dy) || 1;
+              const ext = 100; // extend the visible axis by 100px beyond each endpoint
+              const ux = dx / len, uy = dy / len;
+              const axLine = {
+                x1: mirrorMode.p1.x - ux * ext, y1: mirrorMode.p1.y - uy * ext,
+                x2: previewPoint.x + ux * ext, y2: previewPoint.y + uy * ext,
+              };
+              return (
+                <g opacity="0.6">
+                  <line x1={axLine.x1} y1={axLine.y1} x2={axLine.x2} y2={axLine.y2}
+                    stroke="#22c55e" strokeWidth="1" strokeDasharray="6,4" />
+                  <circle cx={mirrorMode.p1.x} cy={mirrorMode.p1.y} r="3" fill="#22c55e" />
+                  <circle cx={previewPoint.x} cy={previewPoint.y} r="3" fill="#22c55e" />
+                  {renderShape({ ...reflected, id: reflected.id + '_mirror_ghost', stroke: '#22c55e' }, false, { units, pxPerUnit })}
+                </g>
+              );
+            })()}
+            {/* Mirror first-point marker */}
+            {mirrorMode && mirrorMode.stage === 'pickP2' && (
+              <circle cx={mirrorMode.p1.x} cy={mirrorMode.p1.y} r="4" fill="#22c55e" />
+            )}
             {snapHit && snapEnabled && (() => {
               // Marker size scales with zoom so it's always ~10 screen px
               const sz = worldSnapTolerance() * 0.8;
@@ -1727,6 +1921,89 @@ function DraftView({ drawings, setDrawings, userId }) {
             {extendMode && extendMode.stage === 'pickTarget' && <span style={{color:'var(--accent)'}}>↦ Extend — now click the target line to extend to</span>}
             <button className="btn btn-sm btn-ghost" onClick={() => { setTrimMode(false); setExtendMode(null); }}>Exit</button>
           </div>
+        </div>
+      )}
+
+      {mirrorMode && (
+        <div style={{
+          position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)',
+          background:'var(--bg-card)', border:'1px solid var(--accent)', borderRadius:'8px',
+          padding:'10px 16px', zIndex:60, fontSize:'13px',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            {mirrorMode.stage === 'pickP1' && <span style={{color:'var(--accent)'}}>⇋ Mirror — click first point of axis</span>}
+            {mirrorMode.stage === 'pickP2' && <span style={{color:'var(--accent)'}}>⇋ Mirror — click second point of axis</span>}
+            <button className="btn btn-sm btn-ghost" onClick={() => setMirrorMode(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {showArrayDialog && selectedId && (() => {
+        const sel = shapes.find(s => s.id === selectedId);
+        if (!sel) return null;
+        return <ArrayDialog
+          shape={sel}
+          units={units}
+          pxPerUnit={pxPerUnit}
+          onCancel={() => setShowArrayDialog(false)}
+          onApply={(rows, cols, dx, dy) => {
+            const copies = arrayShapes(sel, rows, cols, dx, dy);
+            // Assign current activeLayerId and ensure unique ids
+            const stamped = copies.map(c => ({ ...c, layer: activeLayerId }));
+            setShapes(prev => [...prev, ...stamped]);
+            setDirty(true);
+            setShowArrayDialog(false);
+          }}
+        />;
+      })()}
+
+      {showRotateDialog && selectedId && (() => {
+        const sel = shapes.find(s => s.id === selectedId);
+        if (!sel) return null;
+        return <RotateDialog
+          shape={sel}
+          onCancel={() => setShowRotateDialog(false)}
+          onApply={(angleDeg, keepOriginal) => {
+            const center = shapeCenter(sel);
+            const rotated = rotateShape(sel, center, angleDeg);
+            if (keepOriginal) {
+              const copy = { ...rotated, id: 'sh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) };
+              setShapes(prev => [...prev, copy]);
+              setSelectedId(copy.id);
+            } else {
+              setShapes(prev => prev.map(s => s.id === selectedId ? { ...rotated, id: s.id } : s));
+            }
+            setDirty(true);
+            setShowRotateDialog(false);
+          }}
+        />;
+      })()}
+
+      {paramInput && (
+        <div style={{
+          position:'fixed', bottom:'100px', left:'50%', transform:'translateX(-50%)',
+          background:'var(--bg-card)', border:'1px solid var(--accent)', borderRadius:'8px',
+          padding:'10px 14px', zIndex:70, fontSize:'13px',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.4)',
+          display:'flex', alignItems:'center', gap:'10px',
+        }}>
+          <span style={{color:'var(--text-2)'}}>Length:</span>
+          <input
+            value={paramInput.value}
+            autoFocus
+            onChange={e => setParamInput(prev => prev ? { ...prev, value: e.target.value } : prev)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commitParametric(); }
+              if (e.key === 'Escape') { e.preventDefault(); setParamInput(null); }
+            }}
+            className="form-input"
+            style={{width:'150px',fontSize:'14px',fontFamily:'monospace'}}
+            placeholder="120 or 120<45 or 100,50"
+          />
+          <span style={{color:'var(--text-3)',fontSize:'11px'}}>{units}</span>
+          <button className="btn btn-sm btn-primary" onClick={commitParametric}>OK</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setParamInput(null)}>Cancel</button>
         </div>
       )}
 
@@ -1802,6 +2079,40 @@ function DraftView({ drawings, setDrawings, userId }) {
                 >
                   {layers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
+                {(sel.type === 'rect' || sel.type === 'circle' || sel.type === 'polyline') && (
+                  <>
+                    <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'10px',marginBottom:'4px'}}>Fill style:</div>
+                    <select
+                      value={sel.fillStyle || 'none'}
+                      onChange={e => {
+                        setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fillStyle: e.target.value, fillColor: s.fillColor || s.stroke } : s));
+                        setDirty(true);
+                      }}
+                      className="form-input"
+                      style={{width:'100%',fontSize:'12px',padding:'4px 8px'}}
+                    >
+                      <option value="none">None</option>
+                      <option value="solid">Solid</option>
+                      <option value="hatch">Hatch (diagonal lines)</option>
+                      <option value="crosshatch">Crosshatch</option>
+                      <option value="dots">Dots</option>
+                    </select>
+                    {sel.fillStyle && sel.fillStyle !== 'none' && (
+                      <div style={{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px',fontSize:'12px',color:'var(--text-2)'}}>
+                        <span>Fill color:</span>
+                        <input
+                          type="color"
+                          value={sel.fillColor || sel.stroke || '#e8eaf0'}
+                          onChange={e => {
+                            setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, fillColor: e.target.value } : s));
+                            setDirty(true);
+                          }}
+                          style={{width:'28px',height:'24px',border:'none',background:'transparent',cursor:'pointer',padding:0}}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             );
           })()}
@@ -1887,10 +2198,206 @@ function DraftView({ drawings, setDrawings, userId }) {
       })()}
 
       <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'10px'}}>
-        Shortcuts: V select · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
+        Shortcuts: V select · L line · R rect · C circle · P polyline · A curve · F freehand · D dimension · T text · O offset · ⇋ mirror · ⊟ array · ↻ rotate · ✂ trim · ↦ extend · ◈ object snap · ⊥ ortho · Type a digit while drawing for parametric length · Ctrl/Cmd+D duplicate · Del to remove · Ctrl+Z undo · Shift+drag or ✋ to pan · scroll to zoom
       </p>
     </div>
   );
+}
+
+// ─── Tier 2 helpers ────────────────────────────────────────────────
+
+function parseParametric(input) {
+  if (input == null) return null;
+  const s = String(input).trim();
+  if (!s) return null;
+  if (!/^-?\d/.test(s)) return null;
+  if (s.includes(',')) {
+    const parts = s.split(',').map(p => p.trim());
+    if (parts.length !== 2) return null;
+    const dx = Number(parts[0]);
+    const dy = Number(parts[1]);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+    return { kind: 'delta', dx, dy };
+  }
+  if (s.includes('<')) {
+    const parts = s.split('<').map(p => p.trim());
+    if (parts.length !== 2) return null;
+    const length = Number(parts[0]);
+    const angleDeg = Number(parts[1]);
+    if (!Number.isFinite(length) || !Number.isFinite(angleDeg)) return null;
+    return { kind: 'lengthAngle', length, angleDeg };
+  }
+  const length = Number(s);
+  if (!Number.isFinite(length)) return null;
+  return { kind: 'length', length };
+}
+
+function applyParametric(parsed, anchor, cursor, pxPerUnit) {
+  if (!parsed || !anchor) return null;
+  if (parsed.kind === 'length') {
+    if (!cursor) return null;
+    const dx = cursor.x - anchor.x;
+    const dy = cursor.y - anchor.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) {
+      return { x: anchor.x + parsed.length * pxPerUnit, y: anchor.y };
+    }
+    const ux = dx / len, uy = dy / len;
+    const L = parsed.length * pxPerUnit;
+    return { x: anchor.x + ux * L, y: anchor.y + uy * L };
+  }
+  if (parsed.kind === 'lengthAngle') {
+    const L = parsed.length * pxPerUnit;
+    const rad = (parsed.angleDeg * Math.PI) / 180;
+    return {
+      x: anchor.x + Math.cos(rad) * L,
+      y: anchor.y - Math.sin(rad) * L,
+    };
+  }
+  if (parsed.kind === 'delta') {
+    return {
+      x: anchor.x + parsed.dx * pxPerUnit,
+      y: anchor.y + parsed.dy * pxPerUnit,
+    };
+  }
+  return null;
+}
+
+function reflectPoint(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx*dx + dy*dy;
+  if (len2 === 0) return { x: p.x, y: p.y };
+  const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  const projX = a.x + t * dx;
+  const projY = a.y + t * dy;
+  return { x: 2 * projX - p.x, y: 2 * projY - p.y };
+}
+
+function mirrorShape(s, axis) {
+  const ref = (pt) => reflectPoint(pt, axis.a, axis.b);
+  switch (s.type) {
+    case 'line':
+    case 'dimension': {
+      const p1 = ref({ x: s.x1, y: s.y1 });
+      const p2 = ref({ x: s.x2, y: s.y2 });
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+    }
+    case 'rect': {
+      const c1 = ref({ x: s.x, y: s.y });
+      const c2 = ref({ x: s.x + s.w, y: s.y });
+      const c3 = ref({ x: s.x + s.w, y: s.y + s.h });
+      const c4 = ref({ x: s.x, y: s.y + s.h });
+      const xs = [c1.x, c2.x, c3.x, c4.x];
+      const ys = [c1.y, c2.y, c3.y, c4.y];
+      const nx = Math.min(...xs), ny = Math.min(...ys);
+      return { ...s, x: nx, y: ny, w: Math.max(...xs) - nx, h: Math.max(...ys) - ny };
+    }
+    case 'circle': {
+      const c = ref({ x: s.cx, y: s.cy });
+      return { ...s, cx: c.x, cy: c.y };
+    }
+    case 'text': {
+      const p = ref({ x: s.x, y: s.y });
+      return { ...s, x: p.x, y: p.y };
+    }
+    case 'polyline':
+    case 'freehand':
+      return { ...s, points: s.points.map(ref) };
+    case 'bezier': {
+      const p1 = ref({ x: s.x1, y: s.y1 });
+      const p2 = ref({ x: s.x2, y: s.y2 });
+      const c = ref({ x: s.cx, y: s.cy });
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, cx: c.x, cy: c.y };
+    }
+    default: return s;
+  }
+}
+
+function rotatePoint(p, c, angleDeg) {
+  const rad = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const dx = p.x - c.x, dy = p.y - c.y;
+  return {
+    x: c.x + dx * cos + dy * sin,
+    y: c.y - dx * sin + dy * cos,
+  };
+}
+
+function shapeCenter(s) {
+  switch (s.type) {
+    case 'rect': return { x: s.x + s.w / 2, y: s.y + s.h / 2 };
+    case 'circle': return { x: s.cx, y: s.cy };
+    case 'line':
+    case 'dimension': return { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
+    case 'bezier': return { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
+    case 'text': return { x: s.x, y: s.y };
+    case 'polyline':
+    case 'freehand': {
+      if (!s.points || s.points.length === 0) return { x: 0, y: 0 };
+      const xs = s.points.map(p => p.x);
+      const ys = s.points.map(p => p.y);
+      return {
+        x: (Math.min(...xs) + Math.max(...xs)) / 2,
+        y: (Math.min(...ys) + Math.max(...ys)) / 2,
+      };
+    }
+    default: return { x: 0, y: 0 };
+  }
+}
+
+function rotateShape(s, center, angleDeg) {
+  const rot = (pt) => rotatePoint(pt, center, angleDeg);
+  switch (s.type) {
+    case 'line':
+    case 'dimension': {
+      const p1 = rot({ x: s.x1, y: s.y1 });
+      const p2 = rot({ x: s.x2, y: s.y2 });
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+    }
+    case 'rect': {
+      const c1 = rot({ x: s.x, y: s.y });
+      const c2 = rot({ x: s.x + s.w, y: s.y });
+      const c3 = rot({ x: s.x + s.w, y: s.y + s.h });
+      const c4 = rot({ x: s.x, y: s.y + s.h });
+      const xs = [c1.x, c2.x, c3.x, c4.x];
+      const ys = [c1.y, c2.y, c3.y, c4.y];
+      const nx = Math.min(...xs), ny = Math.min(...ys);
+      return { ...s, x: nx, y: ny, w: Math.max(...xs) - nx, h: Math.max(...ys) - ny };
+    }
+    case 'circle': {
+      const c = rot({ x: s.cx, y: s.cy });
+      return { ...s, cx: c.x, cy: c.y };
+    }
+    case 'text': {
+      const p = rot({ x: s.x, y: s.y });
+      return { ...s, x: p.x, y: p.y };
+    }
+    case 'polyline':
+    case 'freehand':
+      return { ...s, points: s.points.map(rot) };
+    case 'bezier': {
+      const p1 = rot({ x: s.x1, y: s.y1 });
+      const p2 = rot({ x: s.x2, y: s.y2 });
+      const c = rot({ x: s.cx, y: s.cy });
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, cx: c.x, cy: c.y };
+    }
+    default: return s;
+  }
+}
+
+function arrayShapes(s, rows, cols, dx, dy) {
+  if (rows < 1 || cols < 1) return [];
+  const out = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (r === 0 && c === 0) continue;
+      const tx = c * dx, ty = r * dy;
+      const moved = translateShape(s, tx, ty);
+      const id = 'sh_' + Date.now() + '_' + r + '_' + c + '_' + Math.random().toString(36).slice(2, 5);
+      out.push({ ...moved, id });
+    }
+  }
+  return out;
 }
 
 function translateShape(s, dx, dy) {
@@ -1924,12 +2431,89 @@ function cloneShapeWithNewId(s) {
   return { ...s, id };
 }
 
+function ArrayDialog({ shape, units, pxPerUnit, onCancel, onApply }) {
+  const [rows, setRows] = useState(1);
+  const [cols, setCols] = useState(5);
+  // Spacing default: shape's bbox width/height in current units
+  const defaultDxUnits = (() => {
+    if (shape.type === 'rect') return shape.w / pxPerUnit + 1;
+    if (shape.type === 'circle') return (shape.r * 2) / pxPerUnit + 1;
+    return 5;
+  })();
+  const [dxUnits, setDxUnits] = useState(defaultDxUnits);
+  const [dyUnits, setDyUnits] = useState(defaultDxUnits);
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:100,
+    }} onClick={onCancel}>
+      <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'320px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+        <h3 style={{margin:'0 0 14px 0'}}>Array — rows × cols</h3>
+        <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'8px 10px',alignItems:'center',fontSize:'13px'}}>
+          <label>Rows</label>
+          <input type="number" min="1" value={rows} onChange={e => setRows(Math.max(1, Number(e.target.value) || 1))} className="form-input" />
+          <label>Columns</label>
+          <input type="number" min="1" value={cols} onChange={e => setCols(Math.max(1, Number(e.target.value) || 1))} className="form-input" />
+          <label>Column spacing ({units})</label>
+          <input type="number" step="0.1" value={dxUnits} onChange={e => setDxUnits(Number(e.target.value))} className="form-input" />
+          <label>Row spacing ({units})</label>
+          <input type="number" step="0.1" value={dyUnits} onChange={e => setDyUnits(Number(e.target.value))} className="form-input" />
+        </div>
+        <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'10px'}}>Will create {rows * cols - 1} additional copies.</p>
+        <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
+          <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-sm btn-primary" onClick={() => onApply(rows, cols, dxUnits * pxPerUnit, dyUnits * pxPerUnit)}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RotateDialog({ shape, onCancel, onApply }) {
+  const [angle, setAngle] = useState(90);
+  const [keepOriginal, setKeepOriginal] = useState(false);
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:100,
+    }} onClick={onCancel}>
+      <div style={{background:'var(--bg-card)',padding:'20px',borderRadius:'8px',minWidth:'300px',border:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+        <h3 style={{margin:'0 0 14px 0'}}>Rotate</h3>
+        <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'8px 10px',alignItems:'center',fontSize:'13px'}}>
+          <label>Angle (°)</label>
+          <input type="number" value={angle} onChange={e => setAngle(Number(e.target.value))} className="form-input" autoFocus />
+        </div>
+        <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
+          {[-90, -45, 45, 90, 180].map(a => (
+            <button key={a} className="btn btn-sm btn-ghost" onClick={() => setAngle(a)}>{a > 0 ? `+${a}` : a}°</button>
+          ))}
+        </div>
+        <label style={{display:'flex',alignItems:'center',gap:'8px',marginTop:'12px',fontSize:'13px',color:'var(--text-2)'}}>
+          <input type="checkbox" checked={keepOriginal} onChange={e => setKeepOriginal(e.target.checked)} />
+          Keep original (copy + rotate)
+        </label>
+        <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px'}}>Rotates around shape's center. Positive angle = CCW.</p>
+        <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'14px'}}>
+          <button className="btn btn-sm btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-sm btn-primary" onClick={() => onApply(angle, keepOriginal)}>Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function renderShape(s, selected, ctx) {
   const stroke = selected ? '#6c63ff' : s.stroke;
   const sw = selected ? (s.strokeWidth || 2) + 1.5 : s.strokeWidth;
-  const common = { stroke, strokeWidth: sw, fill: s.fill || 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };
+  // Resolve fill from fillStyle: 'none', 'solid', or pattern ids 'hatch'/'crosshatch'/'dots'
+  let fill = s.fill || 'none';
+  if (s.fillStyle && s.fillStyle !== 'none') {
+    if (s.fillStyle === 'solid') fill = s.fillColor || stroke;
+    else fill = `url(#pattern-${s.fillStyle}-${(s.fillColor || stroke).replace('#', '')})`;
+  }
+  const common = { stroke, strokeWidth: sw, fill, strokeLinecap: 'round', strokeLinejoin: 'round' };
   if (s.type === 'line') {
-    return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} {...common} />;
+    return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} {...common} fill="none" />;
   }
   if (s.type === 'rect') {
     return <rect key={s.id} x={s.x} y={s.y} width={s.w} height={s.h} {...common} />;
@@ -1939,7 +2523,16 @@ function renderShape(s, selected, ctx) {
   }
   if (s.type === 'polyline') {
     const pts = s.points.map(p => `${p.x},${p.y}`).join(' ');
-    return <polyline key={s.id} points={pts} {...common} />;
+    // Closed polyline (first==last) gets fill; otherwise no fill
+    const isClosed = s.closed || (
+      s.points.length > 2 &&
+      Math.abs(s.points[0].x - s.points[s.points.length - 1].x) < 0.01 &&
+      Math.abs(s.points[0].y - s.points[s.points.length - 1].y) < 0.01
+    );
+    if (isClosed) {
+      return <polygon key={s.id} points={pts} {...common} />;
+    }
+    return <polyline key={s.id} points={pts} {...common} fill="none" />;
   }
   if (s.type === 'dimension') {
     const { x1, y1, x2, y2 } = s;
