@@ -5463,186 +5463,6 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
   );
 }
 
-// ─────────────────────────────────────────
-// FACILITIES VIEW
-// ─────────────────────────────────────────
-function FacilityJobModal({ onClose, onSave, initial, contacts }) {
-  const [title, setTitle] = useState(initial?.title || '');
-  const [client_contact_id, setClientContactId] = useState(initial?.client_contact_id || '');
-  const [kind, setKind] = useState(initial?.kind || 'job');
-  const [status, setStatus] = useState(initial?.status || 'open');
-  const [priority, setPriority] = useState(initial?.priority || 'normal');
-  const [amount, setAmount] = useState(initial?.amount || '');
-  const [scheduled_date, setScheduledDate] = useState(initial?.scheduled_date || '');
-  const [notes, setNotes] = useState(initial?.notes || '');
-
-  // Pull all contacts in (no facilities-client filter — the existing schema doesn't enforce it)
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (!title.trim()) return;
-    onSave({
-      title: title.trim(), client_contact_id: client_contact_id || null,
-      kind, status, priority,
-      amount: amount ? Number(amount) : null,
-      scheduled_date: scheduled_date || null, notes: notes.trim() || null,
-    });
-  }
-
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <h3>{initial ? 'Edit Job' : 'New Job'}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} autoFocus required /></div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Kind</label>
-              <select className="form-select" value={kind} onChange={e=>setKind(e.target.value)}>
-                <option value="job">Job</option>
-                <option value="sales_lead">Sales Lead</option>
-                <option value="contract">Contract</option>
-                <option value="crew_task">Crew Task</option>
-              </select>
-            </div>
-            <div className="form-group"><label className="form-label">Status</label>
-              <select className="form-select" value={status} onChange={e=>setStatus(e.target.value)}>
-                <option value="open">Open</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="in_progress">In Progress</option>
-                <option value="complete">Complete</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="on_hold">On Hold</option>
-              </select>
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Client</label>
-              <select className="form-select" value={client_contact_id} onChange={e=>setClientContactId(e.target.value)}>
-                <option value="">— None —</option>
-                {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div className="form-group"><label className="form-label">Priority</label>
-              <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
-                <option value="urgent">Urgent</option>
-                <option value="high">High</option>
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Amount ($)</label><input className="form-input" type="number" value={amount} onChange={e=>setAmount(e.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Scheduled</label><input className="form-input" type="date" value={scheduled_date} onChange={e=>setScheduledDate(e.target.value)} /></div>
-          </div>
-          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} /></div>
-          <div className="modal-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Save Job</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function FacilitiesView({ jobs, setJobs, contacts, userId }) {
-  const [showModal, setShowModal] = useState(false);
-  const [editJob, setEditJob] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  const STATUSES = [
-    { id: 'all', label: 'All' },
-    { id: 'open', label: 'Open' },
-    { id: 'scheduled', label: 'Scheduled' },
-    { id: 'in_progress', label: 'In Progress' },
-    { id: 'complete', label: 'Complete' },
-    { id: 'on_hold', label: 'On Hold' },
-    { id: 'cancelled', label: 'Cancelled' },
-  ];
-
-  const filtered = statusFilter === 'all' ? jobs : jobs.filter(j => j.status === statusFilter);
-
-  // Roll-ups
-  const pipelineValue = jobs.filter(j => ['open','scheduled','in_progress'].includes(j.status)).reduce((s,j) => s + Number(j.amount||0), 0);
-  const completedValue = jobs.filter(j => j.status === 'complete').reduce((s,j) => s + Number(j.amount||0), 0);
-  const activeCount = jobs.filter(j => ['scheduled','in_progress'].includes(j.status)).length;
-
-  async function handleSave(data) {
-    if (editJob) {
-      const { data: u } = await supabase.from('facilities_jobs').update(data).eq('id', editJob.id).select().single();
-      if (u) setJobs(prev => prev.map(j => j.id === u.id ? u : j));
-    } else {
-      const { data: c } = await supabase.from('facilities_jobs').insert({ ...data, user_id: userId }).select().single();
-      if (c) setJobs(prev => [c, ...prev]);
-    }
-    setShowModal(false); setEditJob(null);
-  }
-
-  async function deleteJob(id) {
-    if (!window.confirm('Delete this job?')) return;
-    await supabase.from('facilities_jobs').delete().eq('id', id);
-    setJobs(prev => prev.filter(j => j.id !== id));
-  }
-
-  return (
-    <div>
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>Facilities</h2><p>{jobs.length} jobs · {filtered.length} shown</p></div>
-        <button className="btn btn-primary" onClick={()=>{setEditJob(null);setShowModal(true);}}>+ New Job</button>
-      </div>
-
-      <div className="cards-row">
-        <div className="stat-card"><div className="stat-label">Pipeline Value</div><div className="stat-value">${pipelineValue.toLocaleString()}</div></div>
-        <div className="stat-card"><div className="stat-label">Completed</div><div className="stat-value" style={{color:'var(--green)'}}>${completedValue.toLocaleString()}</div></div>
-        <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value">{activeCount}</div></div>
-        <div className="stat-card"><div className="stat-label">Total Jobs</div><div className="stat-value">{jobs.length}</div></div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-header">
-          <h3>Jobs</h3>
-          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-            {STATUSES.map(s => (
-              <button key={s.id} className={`btn btn-sm ${statusFilter===s.id?'btn-primary':'btn-ghost'}`} onClick={()=>setStatusFilter(s.id)}>{s.label}</button>
-            ))}
-          </div>
-        </div>
-        <div className="panel-body">
-          {filtered.length === 0
-            ? <div className="empty-state"><div className="empty-icon">🛠️</div><p>No jobs here.</p></div>
-            : <div className="task-list">
-                {filtered.map(j => {
-                  const client = contacts.find(c => c.id === j.client_contact_id);
-                  return (
-                    <div key={j.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditJob(j);setShowModal(true);}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
-                          {j.title}
-                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{(j.status||'').replace('_',' ')}</span>
-                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'11px'}}>{(j.kind||'').replace('_',' ')}</span>
-                        </div>
-                        {client && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>👤 {client.name}</div>}
-                        {j.amount && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>${Number(j.amount).toLocaleString()}</div>}
-                      </div>
-                      <div className="task-meta">
-                        {j.scheduled_date && <span className="task-due">{j.scheduled_date}</span>}
-                        <span className={`task-priority priority-${j.priority==='urgent'?'high':j.priority==='normal'?'medium':j.priority}`}>{j.priority}</span>
-                        <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteJob(j.id);}}>×</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-          }
-        </div>
-      </div>
-      {showModal && <FacilityJobModal onClose={()=>{setShowModal(false);setEditJob(null);}} onSave={handleSave} initial={editJob} contacts={contacts} />}
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────
 // BRAIN VIEW (Soul / Memory / Playbooks / Decisions / Lessons / North Star)
@@ -6091,7 +5911,6 @@ export default function App() {
   const [contacts, setContacts] = useState([]);
   const [properties, setProperties] = useState([]);
   const [investments, setInvestments] = useState([]);
-  const [facilityJobs, setFacilityJobs] = useState([]);
   const [brain, setBrain] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -6104,7 +5923,7 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, facilityJobsRes, brainRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
@@ -6113,7 +5932,6 @@ export default function App() {
       supabase.from('contacts').select('*').order('created_at', { ascending: false }),
       supabase.from('properties').select('*').order('created_at', { ascending: false }),
       supabase.from('investments').select('*').order('created_at', { ascending: false }),
-      supabase.from('facilities_jobs').select('*').order('created_at', { ascending: false }),
       supabase.from('brain').select('*').order('created_at', { ascending: false }),
     ]);
     if (tasksRes.data) setTasks(tasksRes.data);
@@ -6124,7 +5942,6 @@ export default function App() {
     if (contactsRes.data) setContacts(contactsRes.data);
     if (propertiesRes.data) setProperties(propertiesRes.data);
     if (investmentsRes.data) setInvestments(investmentsRes.data);
-    if (facilityJobsRes.data) setFacilityJobs(facilityJobsRes.data);
     if (brainRes.data) setBrain(brainRes.data);
     setDataLoaded(true);
   }, [session]);
@@ -6134,7 +5951,7 @@ export default function App() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]);
-    setContacts([]); setProperties([]); setInvestments([]); setFacilityJobs([]); setBrain([]);
+    setContacts([]); setProperties([]); setInvestments([]); setBrain([]);
     setDataLoaded(false);
   }
 
@@ -6154,7 +5971,6 @@ export default function App() {
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
-    // { id: 'facilities',  icon: '🛠️', label: 'Facilities',  badge: facilityJobs.length || null },
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
     { id: 'draft',       icon: '✏️', label: 'Draft' },
@@ -6214,7 +6030,6 @@ export default function App() {
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
-            : view==='facilities'  ? <FacilitiesView jobs={facilityJobs} setJobs={setFacilityJobs} contacts={contacts} userId={user.id}/>
             : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id}/>
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
             : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
