@@ -5179,7 +5179,6 @@ function PropertyModal({ onClose, onSave, initial }) {
                 <option value="investment">Investment</option>
                 <option value="personal">Personal</option>
                 <option value="rental">Rental</option>
-                <option value="facility">Facility</option>
               </select>
             </div>
             <div className="form-group"><label className="form-label">Status</label>
@@ -5221,7 +5220,6 @@ function PropertiesView({ properties, setProperties, userId }) {
     { id: 'investment', label: 'Investments', icon: '💰' },
     { id: 'personal', label: 'Personal', icon: '🏘️' },
     { id: 'rental', label: 'Rentals', icon: '🔑' },
-    { id: 'facility', label: 'Facilities', icon: '🌳' },
   ];
 
   const filtered = catFilter === 'all' ? properties : properties.filter(p => p.category === catFilter);
