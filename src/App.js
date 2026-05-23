@@ -507,7 +507,7 @@ function DashboardView({ tasks, emails, user, setView, robots }) {
   const unread = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder));
   const today = new Date();
   const gr = today.getHours()<12?'Good morning':today.getHours()<17?'Good afternoon':'Good evening';
-  const name = user?.email?.split('@')[0]||'Dara';
+  const name = user?.user_metadata?.display_name?.trim() || user?.user_metadata?.full_name?.trim()?.split(/\s+/)[0] || user?.email?.split('@')[0] || 'there';
   const overdue = pending.filter(t=>t.due_date&&new Date(t.due_date)<today);
   const robot = robots[0];
 
@@ -6020,6 +6020,17 @@ function SettingsView({ user }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [displayName, setDisplayName] = useState(user?.user_metadata?.display_name || user?.user_metadata?.full_name?.split(/\s+/)[0] || '');
+  const [savingName, setSavingName] = useState(false);
+  const [nameMsg, setNameMsg] = useState('');
+
+  async function handleNameSave(e) {
+    e.preventDefault(); setSavingName(true); setNameMsg('');
+    const { error } = await supabase.auth.updateUser({ data: { display_name: displayName.trim() } });
+    if (error) setNameMsg('Error: '+error.message);
+    else setNameMsg('Display name updated.');
+    setSavingName(false);
+  }
 
   async function handlePasswordChange(e) {
     e.preventDefault(); setSaving(true); setMsg('');
@@ -6033,6 +6044,16 @@ function SettingsView({ user }) {
     <div>
       <div className="page-header"><h2>Settings</h2><p>Manage your account</p></div>
       <div style={{maxWidth:'480px'}}>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Profile</h3></div>
+          <div className="panel-body">
+            {nameMsg&&<div className={nameMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{nameMsg}</div>}
+            <form onSubmit={handleNameSave}>
+              <div className="form-group"><label className="form-label">Display Name</label><input className="form-input" value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="What should we call you?" maxLength={60} /></div>
+              <button className="btn btn-primary" disabled={savingName}>{savingName?'Saving…':'Save Name'}</button>
+            </form>
+          </div>
+        </div>
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Account</h3></div>
           <div className="panel-body">
@@ -6173,9 +6194,9 @@ export default function App() {
           </div>
           <div className="sidebar-footer">
             <div className="sidebar-user">
-              <div className="sidebar-avatar">{user.email?.slice(0,2).toUpperCase()}</div>
+              <div className="sidebar-avatar">{(user.user_metadata?.display_name||user.user_metadata?.full_name||user.email||'').slice(0,2).toUpperCase()}</div>
               <div className="sidebar-user-info">
-                <div className="sidebar-user-name">{user.email?.split('@')[0]}</div>
+                <div className="sidebar-user-name">{user.user_metadata?.display_name?.trim()||user.user_metadata?.full_name?.trim()?.split(/\s+/)[0]||user.email?.split('@')[0]}</div>
                 <div className="sidebar-user-email">{user.email}</div>
               </div>
               <button className="logout-btn" onClick={handleSignOut} title="Sign out">⏻</button>
