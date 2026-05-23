@@ -262,18 +262,76 @@ function ChatView({ robots, userId }) {
 }
 
 // ─────────────────────────────────────────
+// EISENHOWER PRIORITY HELPERS
+// ─────────────────────────────────────────
+// A = Q1 Urgent & Important   B = Q2 Important, Not Urgent
+// C = Q3 Urgent, Not Important D = Q4 Neither
+const QUADRANTS = [
+  { letter:'A', label:'A — Urgent & Important',     short:'Do now' },
+  { letter:'B', label:'B — Important, Not Urgent',  short:'Schedule' },
+  { letter:'C', label:'C — Urgent, Not Important',  short:'Delegate' },
+  { letter:'D', label:'D — Neither',                short:'Drop' },
+];
+// Sort key for Eisenhower: A1 < A2 < B1 < ... Simple-system tasks sort after
+// using high(0)/medium(1)/low(2). Tasks with no priority info sort last.
+function taskSortKey(t) {
+  if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
+    const qIdx = { A:0, B:1, C:2, D:3 }[t.eisenhower_quadrant] ?? 4;
+    return [0, qIdx, t.eisenhower_rank ?? 999];
+  }
+  const pIdx = { high:0, medium:1, low:2 }[t.priority] ?? 3;
+  return [1, pIdx, 0];
+}
+function sortTasks(tasks) {
+  return [...tasks].sort((a, b) => {
+    const ka = taskSortKey(a), kb = taskSortKey(b);
+    for (let i = 0; i < ka.length; i++) {
+      if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    }
+    return 0;
+  });
+}
+function priorityLabel(t) {
+  if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
+    return `${t.eisenhower_quadrant}${t.eisenhower_rank ?? ''}`;
+  }
+  return t.priority || '';
+}
+function priorityClass(t) {
+  if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
+    return `priority-${t.eisenhower_quadrant}`;
+  }
+  return `priority-${t.priority || 'medium'}`;
+}
+// "Top priority" = anything in quadrant A OR simple-system high
+function isTopPriority(t) {
+  if (t.priority_system === 'eisenhower') return t.eisenhower_quadrant === 'A';
+  return t.priority === 'high';
+}
+
+// ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
-function TaskModal({ onClose, onSave, initial }) {
+function TaskModal({ onClose, onSave, initial, defaultSystem }) {
+  const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
+  const [system, setSystem] = useState(initialSystem);
   const [priority, setPriority] = useState(initial?.priority || 'medium');
+  const [quadrant, setQuadrant] = useState(initial?.eisenhower_quadrant || 'A');
+  const [rank, setRank] = useState(initial?.eisenhower_rank ?? 1);
   const [due_date, setDueDate] = useState(initial?.due_date || '');
   const [notes, setNotes] = useState(initial?.notes || '');
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim()) return;
-    onSave({ title: title.trim(), priority, due_date: due_date || null, notes: notes.trim() });
+    const base = { title: title.trim(), due_date: due_date || null, notes: notes.trim(), priority_system: system };
+    if (system === 'eisenhower') {
+      const r = Math.max(1, parseInt(rank, 10) || 1);
+      onSave({ ...base, priority: 'medium', eisenhower_quadrant: quadrant, eisenhower_rank: r });
+    } else {
+      onSave({ ...base, priority, eisenhower_quadrant: null, eisenhower_rank: null });
+    }
   }
 
   return (
@@ -285,14 +343,35 @@ function TaskModal({ onClose, onSave, initial }) {
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Task</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required /></div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Priority</label>
+          <div className="form-group">
+            <label className="form-label">Priority System</label>
+            <div style={{display:'flex',gap:'6px'}}>
+              <button type="button" className={`btn btn-sm ${system==='eisenhower'?'btn-primary':'btn-ghost'}`} onClick={()=>setSystem('eisenhower')}>Eisenhower (A1, B2…)</button>
+              <button type="button" className={`btn btn-sm ${system==='simple'?'btn-primary':'btn-ghost'}`} onClick={()=>setSystem('simple')}>Simple (High/Med/Low)</button>
+            </div>
+          </div>
+          {system === 'eisenhower' ? (
+            <div className="form-row">
+              <div className="form-group" style={{flex:2}}>
+                <label className="form-label">Quadrant</label>
+                <select className="form-select" value={quadrant} onChange={e=>setQuadrant(e.target.value)}>
+                  {QUADRANTS.map(q => <option key={q.letter} value={q.letter}>{q.label} · {q.short}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{flex:1}}>
+                <label className="form-label">Rank</label>
+                <input className="form-input" type="number" min="1" value={rank} onChange={e=>setRank(e.target.value)} />
+              </div>
+            </div>
+          ) : (
+            <div className="form-group">
+              <label className="form-label">Priority</label>
               <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
                 <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Due Date</label><input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} /></div>
-          </div>
+          )}
+          <div className="form-group"><label className="form-label">Due Date</label><input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} /></div>
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional details…" /></div>
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -307,13 +386,14 @@ function TaskModal({ onClose, onSave, initial }) {
 // ─────────────────────────────────────────
 // TASKS VIEW
 // ─────────────────────────────────────────
-function TasksView({ tasks, setTasks, userId }) {
+function TasksView({ tasks, setTasks, userId, defaultSystem }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [filter, setFilter] = useState('all');
 
-  const filtered = tasks.filter(t => filter === 'all' ? true : filter === 'done' ? t.completed : !t.completed);
-  const stats = { total: tasks.length, done: tasks.filter(t=>t.completed).length, high: tasks.filter(t=>t.priority==='high'&&!t.completed).length };
+  const filtered = sortTasks(tasks.filter(t => filter === 'all' ? true : filter === 'done' ? t.completed : !t.completed));
+  const topCount = tasks.filter(t => !t.completed && isTopPriority(t)).length;
+  const stats = { total: tasks.length, done: tasks.filter(t=>t.completed).length, top: topCount };
 
   async function handleSave(data) {
     if (editTask) {
@@ -337,13 +417,13 @@ function TasksView({ tasks, setTasks, userId }) {
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}} >
-        <div><h2>Tasks</h2><p>{stats.done} of {stats.total} complete{stats.high > 0 ? ` · ${stats.high} high priority` : ''}</p></div>
+        <div><h2>Tasks</h2><p>{stats.done} of {stats.total} complete{stats.top > 0 ? ` · ${stats.top} top priority` : ''}</p></div>
         <button className="btn btn-primary" onClick={()=>{setEditTask(null);setShowModal(true);}}>+ New Task</button>
       </div>
       <div className="cards-row">
         <div className="stat-card"><div className="stat-label">Total</div><div className="stat-value">{stats.total}</div></div>
         <div className="stat-card"><div className="stat-label">Done</div><div className="stat-value" style={{color:'var(--green)'}}>{stats.done}</div></div>
-        <div className="stat-card"><div className="stat-label">High Priority</div><div className="stat-value" style={{color:'var(--red)'}}>{stats.high}</div></div>
+        <div className="stat-card"><div className="stat-label">Top Priority</div><div className="stat-value" style={{color:'var(--red)'}}>{stats.top}</div></div>
         <div className="stat-card"><div className="stat-label">Open</div><div className="stat-value">{stats.total-stats.done}</div></div>
       </div>
       <div className="panel">
@@ -364,7 +444,7 @@ function TasksView({ tasks, setTasks, userId }) {
                     <div className={`task-check ${task.completed?'checked':''}`} onClick={()=>toggleTask(task)} />
                     <span className="task-text" style={{cursor:'pointer'}} onClick={()=>{setEditTask(task);setShowModal(true);}}>{task.title}</span>
                     <div className="task-meta">
-                      <span className={`task-priority priority-${task.priority}`}>{task.priority}</span>
+                      <span className={`task-priority ${priorityClass(task)}`}>{priorityLabel(task)}</span>
                       {task.due_date && <span className="task-due">{task.due_date}</span>}
                       <button className="task-delete" onClick={()=>deleteTask(task.id)}>×</button>
                     </div>
@@ -374,7 +454,7 @@ function TasksView({ tasks, setTasks, userId }) {
           }
         </div>
       </div>
-      {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} />}
+      {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} />}
     </div>
   );
 }
@@ -503,7 +583,7 @@ function InboxView({ emails, setEmails, userId }) {
 // ─────────────────────────────────────────
 function DashboardView({ tasks, emails, user, setView, robots }) {
   const pending = tasks.filter(t=>!t.completed);
-  const highPrio = pending.filter(t=>t.priority==='high');
+  const topTasks = sortTasks(pending.filter(isTopPriority));
   const unread = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder));
   const today = new Date();
   const gr = today.getHours()<12?'Good morning':today.getHours()<17?'Good afternoon':'Good evening';
@@ -518,19 +598,19 @@ function DashboardView({ tasks, emails, user, setView, robots }) {
         <p>{today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
       </div>
       <div className="cards-row">
-        <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('tasks')}><div className="stat-label">Open Tasks</div><div className="stat-value">{pending.length}</div><div className="stat-sub">{highPrio.length} high priority</div></div>
+        <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('tasks')}><div className="stat-label">Open Tasks</div><div className="stat-value">{pending.length}</div><div className="stat-sub">{topTasks.length} top priority</div></div>
         <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('inbox')}><div className="stat-label">Unread Email</div><div className="stat-value">{unread.length}</div><div className="stat-sub">in inbox</div></div>
         <div className="stat-card"><div className="stat-label">Done Today</div><div className="stat-value" style={{color:'var(--green)'}}>{tasks.filter(t=>t.completed&&t.updated_at&&new Date(t.updated_at).toDateString()===today.toDateString()).length}</div></div>
         <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{color:overdue.length>0?'var(--red)':'var(--text-1)'}}>{overdue.length}</div></div>
       </div>
       <div className="dash-grid">
         <div className="panel">
-          <div className="panel-header"><h3>🔥 High Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
+          <div className="panel-header"><h3>🔥 Top Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
           <div className="panel-body">
-            {highPrio.length===0
-              ? <div className="empty-state" style={{padding:'20px 0'}}><p>All clear — no high priority tasks.</p></div>
-              : <div className="task-list">{highPrio.slice(0,5).map(t=>(
-                  <div key={t.id} className="task-item"><div className="task-check"/><span className="task-text">{t.title}</span><div className="task-meta"><span className="task-priority priority-high">high</span>{t.due_date&&<span className="task-due">{t.due_date}</span>}</div></div>
+            {topTasks.length===0
+              ? <div className="empty-state" style={{padding:'20px 0'}}><p>All clear — no top priority tasks.</p></div>
+              : <div className="task-list">{topTasks.slice(0,5).map(t=>(
+                  <div key={t.id} className="task-item"><div className="task-check"/><span className="task-text">{t.title}</span><div className="task-meta"><span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>{t.due_date&&<span className="task-due">{t.due_date}</span>}</div></div>
                 ))}</div>
             }
           </div>
@@ -5891,13 +5971,15 @@ function NotesView({ notes, setNotes, userId }) {
 // ─────────────────────────────────────────
 // SETTINGS VIEW
 // ─────────────────────────────────────────
-function SettingsView({ user }) {
+function SettingsView({ user, priorityPref, onPriorityPrefChange }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [displayName, setDisplayName] = useState(user?.user_metadata?.display_name || user?.user_metadata?.full_name?.split(/\s+/)[0] || '');
   const [savingName, setSavingName] = useState(false);
   const [nameMsg, setNameMsg] = useState('');
+  const [prefMsg, setPrefMsg] = useState('');
+  const [savingPref, setSavingPref] = useState(false);
 
   async function handleNameSave(e) {
     e.preventDefault(); setSavingName(true); setNameMsg('');
@@ -5905,6 +5987,14 @@ function SettingsView({ user }) {
     if (error) setNameMsg('Error: '+error.message);
     else setNameMsg('Display name updated.');
     setSavingName(false);
+  }
+
+  async function handlePriorityPref(value) {
+    setSavingPref(true); setPrefMsg('');
+    const { error } = await supabase.auth.updateUser({ data: { priority_system: value } });
+    if (error) setPrefMsg('Error: '+error.message);
+    else { setPrefMsg('Priority system updated.'); onPriorityPrefChange?.(value); }
+    setSavingPref(false);
   }
 
   async function handlePasswordChange(e) {
@@ -5927,6 +6017,23 @@ function SettingsView({ user }) {
               <div className="form-group"><label className="form-label">Display Name</label><input className="form-input" value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="What should we call you?" maxLength={60} /></div>
               <button className="btn btn-primary" disabled={savingName}>{savingName?'Saving…':'Save Name'}</button>
             </form>
+          </div>
+        </div>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Task Preferences</h3></div>
+          <div className="panel-body">
+            {prefMsg&&<div className={prefMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{prefMsg}</div>}
+            <div className="form-group">
+              <label className="form-label">Default Priority System</label>
+              <select className="form-select" value={priorityPref||'eisenhower'} onChange={e=>handlePriorityPref(e.target.value)} disabled={savingPref}>
+                <option value="eisenhower">Eisenhower (A1, A2, B1…)</option>
+                <option value="simple">Simple (High / Medium / Low)</option>
+              </select>
+              <p style={{fontSize:'12px',color:'var(--text-2)',marginTop:'8px',lineHeight:1.5}}>
+                Sets the default for new tasks. You can still switch systems per-task in the task editor.
+                Eisenhower groups by quadrant (A=urgent+important, B=important, C=urgent, D=neither) and ranks within each.
+              </p>
+            </div>
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>
@@ -5969,6 +6076,14 @@ export default function App() {
   const [brain, setBrain] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [priorityPref, setPriorityPref] = useState('eisenhower');
+
+  // Sync priority pref from user metadata when session changes
+  useEffect(() => {
+    const pref = session?.user?.user_metadata?.priority_system;
+    if (pref === 'simple' || pref === 'eisenhower') setPriorityPref(pref);
+    else setPriorityPref('eisenhower');
+  }, [session]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setLoading(false); });
@@ -6080,7 +6195,7 @@ export default function App() {
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
-            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id}/>
+            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref}/>
             : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} userId={user.id}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
@@ -6089,7 +6204,7 @@ export default function App() {
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
             : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
             : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
-            : view==='settings'    ? <SettingsView user={user}/>
+            : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref}/>
             : null
           }
         </main>

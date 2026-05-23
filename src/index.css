@@ -198,6 +198,11 @@ body {
 .priority-high { background: #ef444422; color: var(--red); }
 .priority-medium { background: #f59e0b22; color: var(--yellow); }
 .priority-low { background: #22c55e22; color: var(--green); }
+/* Eisenhower quadrants: A=urgent+important, B=important, C=urgent, D=neither */
+.priority-A { background: #ef444422; color: var(--red); }
+.priority-B { background: #6c63ff22; color: var(--accent); }
+.priority-C { background: #f59e0b22; color: var(--yellow); }
+.priority-D { background: #55556622; color: var(--text-2); }
 .task-due { font-size: 11px; color: var(--text-3); }
 .task-delete { background: none; border: none; cursor: pointer; color: var(--text-3); font-size: 14px; padding: 2px 4px; border-radius: 4px; }
 .task-delete:hover { color: var(--red); }
