@@ -6154,7 +6154,7 @@ export default function App() {
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
-    { id: 'facilities',  icon: '🛠️', label: 'Facilities',  badge: facilityJobs.length || null },
+    // { id: 'facilities',  icon: '🛠️', label: 'Facilities',  badge: facilityJobs.length || null },
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
     { id: 'draft',       icon: '✏️', label: 'Draft' },
