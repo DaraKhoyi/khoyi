@@ -460,9 +460,22 @@ function TasksView({ tasks, setTasks, userId, defaultSystem }) {
 }
 
 // ─────────────────────────────────────────
-// INBOX VIEW
+// INBOX VIEW — Gmail-aware (Phase Two)
+// Reads from email_threads/email_messages when an account is connected;
+// falls back to legacy `emails` table when no account is set up yet.
 // ─────────────────────────────────────────
-function InboxView({ emails, setEmails, userId }) {
+function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, profiles, contacts, userId }) {
+  const primaryAccount = emailAccounts.find(a => a.is_active) || emailAccounts[0] || null;
+  const usingGmail = !!primaryAccount;
+
+  if (usingGmail) {
+    return <GmailInboxView account={primaryAccount} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={userId} />;
+  }
+  return <LegacyInboxView emails={emails} setEmails={setEmails} userId={userId} />;
+}
+
+// ─── Legacy fake-email inbox (the original) ─────────────────────
+function LegacyInboxView({ emails, setEmails, userId }) {
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
@@ -502,7 +515,7 @@ function InboxView({ emails, setEmails, userId }) {
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>Inbox</h2><p>{unread} unread</p></div>
+        <div><h2>Inbox</h2><p>{unread} unread · <span style={{color:'var(--text-3)'}}>not connected to Gmail yet — using local archive</span></p></div>
         <button className="btn btn-primary" onClick={()=>setShowCompose(true)}>✏️ Compose</button>
       </div>
       <div style={{display:'grid',gridTemplateColumns:selected?'1fr 1.4fr':'1fr',gap:'18px'}}>
@@ -520,7 +533,7 @@ function InboxView({ emails, setEmails, userId }) {
             </div>
             <div className="panel-body">
               {visible.length===0
-                ? <div className="empty-state"><div className="empty-icon">📭</div><p>No messages here.</p></div>
+                ? <div className="empty-state"><div className="empty-icon">📭</div><p>No messages here.</p><p style={{fontSize:'13px',color:'var(--text-3)',marginTop:'8px'}}>Connect Gmail in Settings to see real email.</p></div>
                 : <div className="email-list">
                     {visible.map(email=>(
                       <div key={email.id} className={`email-item ${!email.read?'email-unread':''}`} onClick={()=>markRead(email)}>
@@ -566,6 +579,290 @@ function InboxView({ emails, setEmails, userId }) {
               <div className="form-group"><label className="form-label">To</label><input className="form-input" type="email" value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="recipient@example.com" required /></div>
               <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" /></div>
               <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'130px'}} required /></div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={sending}>{sending?'Sending…':'Send'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Gmail inbox ─────────────────────────────────────────────────
+function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId }) {
+  const [threads, setThreads] = useState([]);
+  const [loadingThreads, setLoadingThreads] = useState(true);
+  const [tab, setTab] = useState('inbox');
+  const [selectedThread, setSelectedThread] = useState(null);
+  const [selectedMessages, setSelectedMessages] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeTo, setComposeTo] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendMsg, setSendMsg] = useState('');
+
+  const loadThreads = useCallback(async () => {
+    setLoadingThreads(true);
+    // Filter by label: inbox tab → INBOX label; sent → SENT label
+    let q = supabase
+      .from('email_threads')
+      .select('*')
+      .eq('account_id', account.id)
+      .order('last_message_at', { ascending: false })
+      .limit(50);
+    const { data } = await q;
+    const labelFilter = tab === 'sent' ? 'SENT' : 'INBOX';
+    const filtered = (data || []).filter(t => Array.isArray(t.labels) && t.labels.includes(labelFilter));
+    setThreads(filtered);
+    setLoadingThreads(false);
+  }, [account.id, tab]);
+
+  useEffect(() => { loadThreads(); }, [loadThreads]);
+
+  async function openThread(thread) {
+    setSelectedThread(thread);
+    setLoadingMessages(true);
+    const { data } = await supabase
+      .from('email_messages')
+      .select('*')
+      .eq('thread_id', thread.id)
+      .order('internal_date', { ascending: true });
+    setSelectedMessages(data || []);
+    // Mark unread messages as read
+    const unread = (data || []).filter(m => !m.is_read);
+    if (unread.length > 0) {
+      await supabase
+        .from('email_messages')
+        .update({ is_read: true })
+        .in('id', unread.map(m => m.id));
+      // Also clear thread unread flag if everything's now read
+      await supabase.from('email_threads').update({ has_unread: false }).eq('id', thread.id);
+      setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, has_unread: false } : t));
+    }
+    setLoadingMessages(false);
+  }
+
+  async function runSync() {
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('gmail-sync', {
+        body: { account_id: account.id },
+      });
+      if (error) throw error;
+      const r = (data && data.synced && data.synced[0]) || {};
+      if (r.error) {
+        setSyncMsg('Error: ' + r.error);
+      } else {
+        setSyncMsg(`Synced — ${r.new_messages || 0} new`);
+        await loadThreads();
+        // Refresh account row
+        const { data: acct } = await supabase.from('email_accounts').select('*').eq('id', account.id).single();
+        if (acct) setEmailAccounts(prev => prev.map(a => a.id === acct.id ? acct : a));
+      }
+      setTimeout(() => setSyncMsg(''), 4000);
+    } catch (err) {
+      setSyncMsg('Error: ' + (err.message || err));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleSend(ev) {
+    ev.preventDefault();
+    setSending(true);
+    setSendMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('gmail-send', {
+        body: {
+          account_id: account.id,
+          to: composeTo.split(',').map(s => s.trim()).filter(Boolean),
+          subject: composeSubject,
+          body_text: composeBody,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setSendMsg('Sent.');
+      setShowCompose(false);
+      setComposeTo(''); setComposeSubject(''); setComposeBody('');
+      // Trigger a sync so the sent message shows up
+      runSync();
+    } catch (err) {
+      setSendMsg('Error: ' + (err.message || err));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // Look up the sender's DISC profile via contact_id linkage (best-effort)
+  function profileForEmail(email) {
+    if (!email) return null;
+    const contact = contacts.find(c => (c.email && c.email.toLowerCase() === email.toLowerCase()));
+    if (!contact) return null;
+    return profiles.find(p => p.contact_id === contact.id) || null;
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return '';
+    const diff = Math.floor((Date.now() - new Date(ts)) / 60000);
+    if (diff < 1) return 'just now';
+    if (diff < 60) return `${diff}m`;
+    if (diff < 1440) return `${Math.floor(diff / 60)}h`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  function initials(name, email) {
+    const s = name || email || '?';
+    return s.replace(/[<>"]/g, '').slice(0, 2).toUpperCase();
+  }
+
+  function senderFromThread(thread) {
+    // For inbox, show the most recent non-owner participant; for sent, show recipient.
+    if (!thread.participants || thread.participants.length === 0) return { name: null, email: null };
+    if (tab === 'sent') {
+      const recip = thread.participants.find(p => p.email !== account.email_address);
+      return recip || thread.participants[0];
+    }
+    const sender = thread.participants.find(p => p.email !== account.email_address);
+    return sender || thread.participants[0];
+  }
+
+  const unreadCount = threads.filter(t => t.has_unread).length;
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div>
+          <h2>Inbox</h2>
+          <p style={{fontSize:'13px'}}>
+            <strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>
+            {' · '}
+            {unreadCount > 0 ? `${unreadCount} unread` : 'all caught up'}
+            {account.last_sync_at && <> · last sync: {timeAgo(account.last_sync_at)}</>}
+            {account.last_sync_error && <> · <span style={{color:'var(--red)'}}>sync error</span></>}
+          </p>
+        </div>
+        <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+          {syncMsg && <span style={{fontSize:'12px',color: syncMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)'}}>{syncMsg}</span>}
+          <button className="btn btn-ghost" onClick={runSync} disabled={syncing}>{syncing ? 'Syncing…' : '↻ Sync'}</button>
+          <button className="btn btn-primary" onClick={() => setShowCompose(true)}>✏️ Compose</button>
+        </div>
+      </div>
+
+      {!account.initial_sync_done && (
+        <div className="panel" style={{marginBottom:'14px',background:'rgba(197, 169, 94, 0.08)',borderColor:'var(--accent)'}}>
+          <div className="panel-body" style={{padding:'14px'}}>
+            <p style={{margin:0,fontSize:'14px',color:'var(--text-1)'}}>
+              <strong>First sync hasn't run yet.</strong> Tap <strong>Sync</strong> to pull your most recent messages.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:'grid',gridTemplateColumns:selectedThread?'1fr 1.4fr':'1fr',gap:'18px'}}>
+        <div>
+          <div className="panel">
+            <div className="panel-header">
+              <div style={{display:'flex',gap:'6px'}}>
+                {['inbox','sent'].map(t => (
+                  <button key={t} className={`btn btn-sm ${tab===t?'btn-primary':'btn-ghost'}`} onClick={()=>{setTab(t); setSelectedThread(null);}}>
+                    {t.charAt(0).toUpperCase()+t.slice(1)}
+                    {t==='inbox' && unreadCount>0 && <span className="nav-badge" style={{marginLeft:'6px'}}>{unreadCount}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="panel-body">
+              {loadingThreads
+                ? <div className="loading-screen" style={{minHeight:'200px'}}><div className="spinner"/></div>
+                : threads.length === 0
+                  ? <div className="empty-state"><div className="empty-icon">📭</div><p>{tab==='sent'?'No sent messages yet.':'Inbox is empty.'}</p></div>
+                  : <div className="email-list">
+                      {threads.map(thread => {
+                        const sender = senderFromThread(thread);
+                        const senderProfile = profileForEmail(sender.email);
+                        return (
+                          <div key={thread.id} className={`email-item ${thread.has_unread?'email-unread':''}`} onClick={()=>openThread(thread)} style={{cursor:'pointer'}}>
+                            {thread.has_unread && <div className="unread-dot"/>}
+                            <div className="email-avatar">{initials(sender.name, sender.email)}</div>
+                            <div className="email-content" style={{minWidth:0}}>
+                              <div className="email-from" style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
+                                <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{sender.name || sender.email || '(unknown)'}</span>
+                                {senderProfile && (
+                                  <span className="pill pill-purple" style={{fontSize:'10px',padding:'2px 6px'}}>
+                                    {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
+                                  </span>
+                                )}
+                                {thread.message_count > 1 && <span style={{color:'var(--text-3)',fontSize:'12px'}}>({thread.message_count})</span>}
+                              </div>
+                              <div className="email-subject" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.subject || '(no subject)'}</div>
+                              <div className="email-preview" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.snippet || ''}</div>
+                            </div>
+                            <span className="email-time" style={{flexShrink:0}}>{timeAgo(thread.last_message_at)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+              }
+            </div>
+          </div>
+        </div>
+        {selectedThread && (
+          <div className="panel">
+            <div className="panel-header">
+              <h3 style={{maxWidth:'80%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{selectedThread.subject || '(no subject)'}</h3>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)}>Close</button>
+            </div>
+            <div className="panel-body">
+              {loadingMessages
+                ? <div className="loading-screen" style={{minHeight:'200px'}}><div className="spinner"/></div>
+                : selectedMessages.length === 0
+                  ? <p style={{color:'var(--text-2)'}}>No messages found in this thread.</p>
+                  : selectedMessages.map(msg => {
+                      const senderProfile = profileForEmail(msg.from_address);
+                      return (
+                        <div key={msg.id} style={{marginBottom:'18px',paddingBottom:'14px',borderBottom:'1px solid var(--border)'}}>
+                          <div style={{display:'flex',gap:'6px',marginBottom:'10px',flexWrap:'wrap',alignItems:'center'}}>
+                            <span className="pill pill-purple">From: {msg.from_name || msg.from_address}</span>
+                            {senderProfile && (
+                              <span className="pill" style={{background:'var(--bg-base)',border:'1px solid var(--accent)',color:'var(--accent)',fontSize:'11px'}}>
+                                {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
+                              </span>
+                            )}
+                            <span style={{fontSize:'12px',color:'var(--text-3)',marginLeft:'auto'}}>{msg.internal_date ? new Date(msg.internal_date).toLocaleString() : ''}</span>
+                          </div>
+                          <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
+                            {msg.body_text || (msg.body_html ? '(HTML message — text version not available)' : msg.snippet || '')}
+                          </div>
+                        </div>
+                      );
+                    })
+              }
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showCompose && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && setShowCompose(false)}>
+          <div className="modal">
+            <div className="modal-header">
+              <h3>New message · from {account.email_address}</h3>
+              <button className="modal-close" onClick={()=>setShowCompose(false)}>×</button>
+            </div>
+            <form onSubmit={handleSend}>
+              <div className="form-group"><label className="form-label">To</label><input className="form-input" type="text" value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="recipient@example.com (comma-separated for multiple)" required /></div>
+              <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" required /></div>
+              <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'160px'}} required /></div>
+              {sendMsg && <p style={{fontSize:'13px',color: sendMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',margin:'4px 0'}}>{sendMsg}</p>}
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={sending}>{sending?'Sending…':'Send'}</button>
@@ -6532,10 +6829,86 @@ function ValidatePanel({ ownerProfile, voiceCard }) {
   );
 }
 
+function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
+  const [connecting, setConnecting] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function startConnect() {
+    setConnecting(true);
+    setErr('');
+    try {
+      // Get a current access token to pass through (so the OAuth start function can
+      // identify the user; verify_jwt is off because the function reads the bearer manually).
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not signed in.');
+      const { data, error } = await supabase.functions.invoke('gmail-oauth-start', {
+        body: { return_to: window.location.origin + window.location.pathname },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
+      if (!data?.url) throw new Error('No URL returned.');
+      window.location.href = data.url;
+    } catch (e) {
+      setErr(e.message || String(e));
+      setConnecting(false);
+    }
+  }
+
+  async function disconnect(id) {
+    if (!window.confirm('Disconnect this Gmail account? Synced messages will remain in the database.')) return;
+    await supabase.from('email_accounts').update({ is_active: false }).eq('id', id);
+    setEmailAccounts(prev => prev.map(a => a.id === id ? { ...a, is_active: false } : a));
+  }
+
+  return (
+    <div className="panel" style={{marginBottom:'18px'}}>
+      <div className="panel-header"><h3>📬 Email Accounts</h3></div>
+      <div className="panel-body">
+        <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
+          Connect Gmail to read and send real email from Prism. Behavioral profiles are applied automatically to every draft.
+        </p>
+        {emailAccounts.length === 0
+          ? <p style={{fontSize:'13px',color:'var(--text-3)',marginBottom:'14px'}}>No accounts connected yet.</p>
+          : (
+            <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'14px'}}>
+              {emailAccounts.map(a => (
+                <div key={a.id} style={{padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
+                  <span style={{fontSize:'18px'}}>📧</span>
+                  <div style={{flex:1,minWidth:'160px'}}>
+                    <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{a.email_address}</div>
+                    <div style={{fontSize:'12px',color:'var(--text-2)'}}>
+                      {a.provider} · {a.is_active ? 'active' : 'inactive'}
+                      {a.last_sync_at && <> · synced {new Date(a.last_sync_at).toLocaleString()}</>}
+                    </div>
+                    {a.last_sync_error && (
+                      <div style={{fontSize:'12px',color:'var(--red)',marginTop:'2px'}}>Last error: {a.last_sync_error.slice(0, 200)}</div>
+                    )}
+                  </div>
+                  {a.is_active && (
+                    <button className="btn btn-ghost btn-sm" onClick={()=>disconnect(a.id)}>Disconnect</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        }
+        {err && (
+          <div style={{padding:'10px 12px',background:'rgba(239, 68, 68, 0.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'13px',marginBottom:'12px'}}>
+            {err}
+          </div>
+        )}
+        <button className="btn btn-primary" onClick={startConnect} disabled={connecting}>
+          {connecting ? 'Opening Google…' : '+ Connect Gmail'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
 // SETTINGS VIEW
 // ─────────────────────────────────────────
-function SettingsView({ user, priorityPref, onPriorityPrefChange }) {
+function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -6600,6 +6973,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange }) {
             </div>
           </div>
         </div>
+        <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Account</h3></div>
           <div className="panel-body">
@@ -6640,6 +7014,7 @@ export default function App() {
   const [brain, setBrain] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [voiceCards, setVoiceCards] = useState([]);
+  const [emailAccounts, setEmailAccounts] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
@@ -6659,7 +7034,7 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, profilesRes, voiceCardsRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, profilesRes, voiceCardsRes, emailAccountsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
@@ -6671,6 +7046,7 @@ export default function App() {
       supabase.from('brain').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('voice_cards').select('*').order('created_at', { ascending: true }),
+      supabase.from('email_accounts').select('*').order('created_at', { ascending: true }),
     ]);
     if (tasksRes.data) setTasks(tasksRes.data);
     if (emailsRes.data) setEmails(emailsRes.data);
@@ -6683,16 +7059,38 @@ export default function App() {
     if (brainRes.data) setBrain(brainRes.data);
     if (profilesRes.data) setProfiles(profilesRes.data);
     if (voiceCardsRes.data) setVoiceCards(voiceCardsRes.data);
+    if (emailAccountsRes.data) setEmailAccounts(emailAccountsRes.data);
     setDataLoaded(true);
   }, [session]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Handle the OAuth-callback redirect — show a brief banner, refresh data, and clean the URL.
+  const [gmailConnectedFlash, setGmailConnectedFlash] = useState(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('gmail_connected');
+    if (connected) {
+      setGmailConnectedFlash(connected);
+      // Strip the param from the URL
+      params.delete('gmail_connected');
+      const newSearch = params.toString();
+      const newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
+      window.history.replaceState({}, '', newUrl);
+      // Reload data so the new account appears
+      if (session) loadData();
+      // Hide the flash after 6s
+      const t = setTimeout(() => setGmailConnectedFlash(null), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [session, loadData]);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]);
     setContacts([]); setProperties([]); setInvestments([]); setBrain([]);
-    setProfiles([]); setVoiceCards([]);
+    setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
     setDataLoaded(false);
   }
 
@@ -6764,11 +7162,17 @@ export default function App() {
 
         {/* Main */}
         <main className="main-content">
+          {gmailConnectedFlash && (
+            <div style={{padding:'10px 14px',marginBottom:'14px',background:'rgba(34, 197, 94, 0.1)',border:'1px solid var(--green)',borderRadius:'8px',color:'var(--green)',fontSize:'13px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span>✓ Connected <strong>{gmailConnectedFlash}</strong>. Open Inbox and tap Sync to pull messages.</span>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setGmailConnectedFlash(null)}>×</button>
+            </div>
+          )}
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
             : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref}/>
-            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} userId={user.id}/>
+            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={user.id}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
@@ -6777,7 +7181,7 @@ export default function App() {
             : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
             : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
             : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
-            : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref}/>
+            : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts}/>
             : null
           }
         </main>
