@@ -273,14 +273,14 @@ const QUADRANTS = [
   { letter:'D', label:'D — Neither',                short:'Drop' },
 ];
 // Sort key for Eisenhower: A1 < A2 < B1 < ... Simple-system tasks sort after
-// using high(0)/medium(1)/low(2). Tasks with no priority info sort last.
+// using high(0)/medium(1)/low(2) and their simple_rank. Tasks with no priority info sort last.
 function taskSortKey(t) {
   if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
     const qIdx = { A:0, B:1, C:2, D:3 }[t.eisenhower_quadrant] ?? 4;
     return [0, qIdx, t.eisenhower_rank ?? 999];
   }
   const pIdx = { high:0, medium:1, low:2 }[t.priority] ?? 3;
-  return [1, pIdx, 0];
+  return [1, pIdx, t.simple_rank ?? 999];
 }
 function sortTasks(tasks) {
   return [...tasks].sort((a, b) => {
@@ -308,6 +308,48 @@ function isTopPriority(t) {
   if (t.priority_system === 'eisenhower') return t.eisenhower_quadrant === 'A';
   return t.priority === 'high';
 }
+// Returns the "bucket key" for ranking: same bucket = same quadrant (Eisenhower)
+// or same priority (Simple). Drag/arrows can only reorder within a bucket.
+function bucketKey(t) {
+  if (t.priority_system === 'eisenhower') return `e:${t.eisenhower_quadrant || '?'}`;
+  return `s:${t.priority || 'medium'}`;
+}
+// Date helpers (local-time YYYY-MM-DD comparison)
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function addDaysISO(days) {
+  const d = new Date(); d.setDate(d.getDate() + days);
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+// Filter tasks by named date bucket. Completed tasks excluded from date buckets
+// (they show in their own 'completed' bucket).
+function filterByDateBucket(tasks, bucket) {
+  const today = todayISO();
+  const tomorrow = addDaysISO(1);
+  switch (bucket) {
+    case 'today':    return tasks.filter(t => !t.completed && t.due_date && t.due_date <= today);
+    case 'past_due': return tasks.filter(t => !t.completed && t.due_date && t.due_date < today);
+    case 'tomorrow': return tasks.filter(t => !t.completed && t.due_date === tomorrow);
+    case 'future':   return tasks.filter(t => !t.completed && t.due_date && t.due_date > tomorrow);
+    case 'undated':  return tasks.filter(t => !t.completed && !t.due_date);
+    case 'completed':return tasks.filter(t => t.completed);
+    case 'all':
+    default:         return tasks.filter(t => !t.completed);
+  }
+}
+const DATE_FILTERS = [
+  { id:'today',     label:'Today',     hint:'Due today + past due' },
+  { id:'past_due',  label:'Past Due',  hint:'Overdue tasks' },
+  { id:'tomorrow',  label:'Tomorrow',  hint:'Due tomorrow' },
+  { id:'future',    label:'Future',    hint:'Beyond tomorrow' },
+  { id:'undated',   label:'Undated',   hint:'No due date' },
+  { id:'completed', label:'Completed', hint:'Marked done' },
+  { id:'all',       label:'All Open',  hint:'Everything not done' },
+];
 
 // ─────────────────────────────────────────
 // TASK MODAL
@@ -386,12 +428,18 @@ function TaskModal({ onClose, onSave, initial, defaultSystem }) {
 // ─────────────────────────────────────────
 // TASKS VIEW
 // ─────────────────────────────────────────
-function TasksView({ tasks, setTasks, userId, defaultSystem }) {
+function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
-  const [filter, setFilter] = useState('all');
+  // Drag state
+  const [draggingId, setDraggingId] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null); // {id, position: 'above'|'below', rejected: bool}
 
-  const filtered = sortTasks(tasks.filter(t => filter === 'all' ? true : filter === 'done' ? t.completed : !t.completed));
+  const filter = taskFilter || 'today';
+  const viewMode = taskViewMode || 'list';
+
+  // Top-level filtered+sorted list
+  const filtered = sortTasks(filterByDateBucket(tasks, filter));
   const topCount = tasks.filter(t => !t.completed && isTopPriority(t)).length;
   const stats = { total: tasks.length, done: tasks.filter(t=>t.completed).length, top: topCount };
 
@@ -400,7 +448,17 @@ function TasksView({ tasks, setTasks, userId, defaultSystem }) {
       const { data: updated } = await supabase.from('tasks').update(data).eq('id', editTask.id).select().single();
       if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
     } else {
-      const { data: created } = await supabase.from('tasks').insert({ ...data, user_id: userId, completed: false }).select().single();
+      // New task: append to end of its bucket
+      const peers = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey({ ...data, priority: data.priority || 'medium' }));
+      let rankPatch = {};
+      if (data.priority_system === 'eisenhower') {
+        const maxRank = peers.reduce((m, t) => Math.max(m, t.eisenhower_rank || 0), 0);
+        rankPatch.eisenhower_rank = data.eisenhower_rank || (maxRank + 1);
+      } else {
+        const maxRank = peers.reduce((m, t) => Math.max(m, t.simple_rank || 0), 0);
+        rankPatch.simple_rank = maxRank + 1;
+      }
+      const { data: created } = await supabase.from('tasks').insert({ ...data, ...rankPatch, user_id: userId, completed: false }).select().single();
       if (created) setTasks(prev => [created, ...prev]);
     }
     setShowModal(false); setEditTask(null);
@@ -413,6 +471,119 @@ function TasksView({ tasks, setTasks, userId, defaultSystem }) {
     await supabase.from('tasks').delete().eq('id', id);
     setTasks(prev => prev.filter(t => t.id !== id));
   }
+
+  // ─── Reorder logic ────────────────────────────────────────────
+  // Reorders task `movedId` to be `position` ('above'|'below') target `targetId`
+  // ONLY if both are in the same bucket. Returns nothing; updates state and DB.
+  async function reorderTask(movedId, targetId, position) {
+    if (movedId === targetId) return;
+    const moved = tasks.find(t => t.id === movedId);
+    const target = tasks.find(t => t.id === targetId);
+    if (!moved || !target) return;
+    if (bucketKey(moved) !== bucketKey(target)) return; // same-bucket only
+
+    const isEisen = moved.priority_system === 'eisenhower';
+    // Get all tasks in this bucket (open only), sorted by current rank
+    const bucket = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey(moved));
+    const sorted = [...bucket].sort((a, b) => {
+      const ra = isEisen ? (a.eisenhower_rank ?? 999) : (a.simple_rank ?? 999);
+      const rb = isEisen ? (b.eisenhower_rank ?? 999) : (b.simple_rank ?? 999);
+      return ra - rb;
+    });
+    // Build new order: remove moved, insert near target
+    const without = sorted.filter(t => t.id !== movedId);
+    const targetIdx = without.findIndex(t => t.id === targetId);
+    if (targetIdx === -1) return;
+    const insertAt = position === 'above' ? targetIdx : targetIdx + 1;
+    without.splice(insertAt, 0, moved);
+
+    // Compute updates: only patch tasks whose rank changed
+    const updates = [];
+    const rankField = isEisen ? 'eisenhower_rank' : 'simple_rank';
+    without.forEach((t, idx) => {
+      const newRank = idx + 1;
+      const currRank = isEisen ? t.eisenhower_rank : t.simple_rank;
+      if (currRank !== newRank) updates.push({ id: t.id, rank: newRank });
+    });
+    if (updates.length === 0) return;
+
+    // Optimistic update
+    setTasks(prev => prev.map(t => {
+      const u = updates.find(x => x.id === t.id);
+      return u ? { ...t, [rankField]: u.rank } : t;
+    }));
+    // Push to DB (parallel)
+    await Promise.all(updates.map(u =>
+      supabase.from('tasks').update({ [rankField]: u.rank }).eq('id', u.id)
+    ));
+  }
+
+  // Arrow-button: nudge a task up/down 1 slot within its bucket
+  async function nudgeTask(task, direction) {
+    const isEisen = task.priority_system === 'eisenhower';
+    const bucket = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey(task));
+    const sorted = [...bucket].sort((a, b) => {
+      const ra = isEisen ? (a.eisenhower_rank ?? 999) : (a.simple_rank ?? 999);
+      const rb = isEisen ? (b.eisenhower_rank ?? 999) : (b.simple_rank ?? 999);
+      return ra - rb;
+    });
+    const idx = sorted.findIndex(t => t.id === task.id);
+    if (idx === -1) return;
+    const neighborIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (neighborIdx < 0 || neighborIdx >= sorted.length) return;
+    const neighbor = sorted[neighborIdx];
+    await reorderTask(task.id, neighbor.id, direction === 'up' ? 'above' : 'below');
+  }
+
+  // ─── Drag handlers ────────────────────────────────────────────
+  function onDragStart(e, task) {
+    setDraggingId(task.id);
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', task.id); } catch (_) {}
+  }
+  function onDragOver(e, task) {
+    e.preventDefault();
+    if (!draggingId || draggingId === task.id) return;
+    const dragged = tasks.find(t => t.id === draggingId);
+    if (!dragged) return;
+    const sameBucket = bucketKey(dragged) === bucketKey(task);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    const position = e.clientY < midpoint ? 'above' : 'below';
+    setDropTarget({ id: task.id, position, rejected: !sameBucket });
+    e.dataTransfer.dropEffect = sameBucket ? 'move' : 'none';
+  }
+  function onDragLeave() {
+    // Don't clear immediately — leaves fire on child elements too
+  }
+  function onDrop(e, task) {
+    e.preventDefault();
+    if (!draggingId || !dropTarget || dropTarget.rejected) {
+      setDraggingId(null); setDropTarget(null); return;
+    }
+    reorderTask(draggingId, task.id, dropTarget.position);
+    setDraggingId(null); setDropTarget(null);
+  }
+  function onDragEnd() {
+    setDraggingId(null); setDropTarget(null);
+  }
+
+  // Compute per-task arrow disabled state (first/last in bucket)
+  function arrowDisabled(task, direction) {
+    if (task.completed) return true;
+    const isEisen = task.priority_system === 'eisenhower';
+    const bucket = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey(task));
+    const sorted = [...bucket].sort((a, b) => {
+      const ra = isEisen ? (a.eisenhower_rank ?? 999) : (a.simple_rank ?? 999);
+      const rb = isEisen ? (b.eisenhower_rank ?? 999) : (b.simple_rank ?? 999);
+      return ra - rb;
+    });
+    const idx = sorted.findIndex(t => t.id === task.id);
+    if (direction === 'up') return idx <= 0;
+    return idx >= sorted.length - 1;
+  }
+
+  const currentFilterLabel = DATE_FILTERS.find(f => f.id === filter)?.label || 'Today';
 
   return (
     <div>
@@ -427,34 +598,114 @@ function TasksView({ tasks, setTasks, userId, defaultSystem }) {
         <div className="stat-card"><div className="stat-label">Open</div><div className="stat-value">{stats.total-stats.done}</div></div>
       </div>
       <div className="panel">
-        <div className="panel-header">
-          <h3>Task List</h3>
-          <div style={{display:'flex',gap:'6px'}}>
-            {['all','active','done'].map(f=>(
-              <button key={f} className={`btn btn-sm ${filter===f?'btn-primary':'btn-ghost'}`} onClick={()=>setFilter(f)}>{f.charAt(0).toUpperCase()+f.slice(1)}</button>
-            ))}
+        <div className="panel-header" style={{flexWrap:'wrap',gap:'10px'}}>
+          <h3 style={{display:'flex',alignItems:'center',gap:'8px'}}>
+            {viewMode === 'list' ? currentFilterLabel : 'Quadrant View'}
+          </h3>
+          <div className="view-controls">
+            <div className="view-toggle">
+              <button className={viewMode==='list'?'active':''} onClick={()=>setTaskViewMode('list')}>List</button>
+              <button className={viewMode==='quadrant'?'active':''} onClick={()=>setTaskViewMode('quadrant')}>Quadrants</button>
+            </div>
+            {viewMode === 'list' && (
+              <select className="form-select" style={{padding:'6px 10px',fontSize:'12px',width:'auto',minWidth:'140px'}} value={filter} onChange={e=>setTaskFilter(e.target.value)}>
+                {DATE_FILTERS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+              </select>
+            )}
           </div>
         </div>
         <div className="panel-body">
-          {filtered.length === 0
-            ? <div className="empty-state"><div className="empty-icon">✅</div><p>No tasks here.</p></div>
-            : <div className="task-list">
-                {filtered.map(task=>(
-                  <div key={task.id} className={`task-item ${task.completed?'done':''}`}>
+          {viewMode === 'quadrant' ? (
+            <QuadrantGrid tasks={tasks} onToggle={toggleTask} onEdit={t=>{setEditTask(t);setShowModal(true);}} onDelete={deleteTask} />
+          ) : filtered.length === 0 ? (
+            <div className="empty-state"><div className="empty-icon">✅</div><p>Nothing in {currentFilterLabel.toLowerCase()}.</p></div>
+          ) : (
+            <div className="task-list">
+              {filtered.map(task=>{
+                const isDragging = draggingId === task.id;
+                const isDropTarget = dropTarget && dropTarget.id === task.id;
+                const dropCls = isDropTarget
+                  ? (dropTarget.rejected ? 'drop-rejected' : `drop-${dropTarget.position}`)
+                  : '';
+                return (
+                  <div key={task.id}
+                    className={`task-item ${task.completed?'done':''} ${isDragging?'dragging':''} ${dropCls}`}
+                    draggable={!task.completed}
+                    onDragStart={e=>onDragStart(e, task)}
+                    onDragOver={e=>onDragOver(e, task)}
+                    onDragLeave={onDragLeave}
+                    onDrop={e=>onDrop(e, task)}
+                    onDragEnd={onDragEnd}
+                  >
+                    {!task.completed && <span className="task-handle" title="Drag to reorder">⠿</span>}
                     <div className={`task-check ${task.completed?'checked':''}`} onClick={()=>toggleTask(task)} />
                     <span className="task-text" style={{cursor:'pointer'}} onClick={()=>{setEditTask(task);setShowModal(true);}}>{task.title}</span>
                     <div className="task-meta">
+                      {!task.completed && (
+                        <div className="task-arrows">
+                          <button className="task-arrow" title="Move up" disabled={arrowDisabled(task,'up')} onClick={()=>nudgeTask(task,'up')}>▲</button>
+                          <button className="task-arrow" title="Move down" disabled={arrowDisabled(task,'down')} onClick={()=>nudgeTask(task,'down')}>▼</button>
+                        </div>
+                      )}
                       <span className={`task-priority ${priorityClass(task)}`}>{priorityLabel(task)}</span>
                       {task.due_date && <span className="task-due">{task.due_date}</span>}
                       <button className="task-delete" onClick={()=>deleteTask(task.id)}>×</button>
                     </div>
                   </div>
-                ))}
-              </div>
-          }
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
       {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// EISENHOWER 2x2 QUADRANT GRID
+// Read-only ordering (by rank within quadrant). Click task to edit.
+// Shows only Eisenhower tasks; simple-system tasks excluded (they have no quadrant).
+// ─────────────────────────────────────────
+function QuadrantGrid({ tasks, onToggle, onEdit, onDelete }) {
+  const open = tasks.filter(t => !t.completed && t.priority_system === 'eisenhower');
+  const byQ = { A: [], B: [], C: [], D: [] };
+  open.forEach(t => {
+    const q = t.eisenhower_quadrant;
+    if (q && byQ[q]) byQ[q].push(t);
+  });
+  Object.keys(byQ).forEach(q => {
+    byQ[q].sort((a, b) => (a.eisenhower_rank ?? 999) - (b.eisenhower_rank ?? 999));
+  });
+  const simpleCount = tasks.filter(t => !t.completed && t.priority_system !== 'eisenhower').length;
+  return (
+    <div>
+      <div className="quadrant-grid">
+        {QUADRANTS.map(q => (
+          <div key={q.letter} className={`quadrant-cell q-${q.letter}`}>
+            <div className="quadrant-header">{q.label}</div>
+            <div className="quadrant-sub">{q.short} · {byQ[q.letter].length} task{byQ[q.letter].length===1?'':'s'}</div>
+            <div className="quadrant-list">
+              {byQ[q.letter].length === 0
+                ? <div className="quadrant-empty">No tasks</div>
+                : byQ[q.letter].map(t => (
+                    <div key={t.id} className={`quadrant-task ${t.completed?'done':''}`}>
+                      <div className={`qt-check ${t.completed?'checked':''}`} onClick={()=>onToggle(t)} />
+                      <span className="qt-text" onClick={()=>onEdit(t)} title={t.title}>{t.title}</span>
+                      {t.due_date && <span className="qt-due">{t.due_date.slice(5)}</span>}
+                    </div>
+                  ))
+              }
+            </div>
+          </div>
+        ))}
+      </div>
+      {simpleCount > 0 && (
+        <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'12px',textAlign:'center'}}>
+          {simpleCount} task{simpleCount===1?' uses':'s use'} the simple priority system and aren't shown here. Switch to List view to see them.
+        </p>
+      )}
     </div>
   );
 }
@@ -7018,13 +7269,31 @@ export default function App() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
+  const [taskFilter, setTaskFilter] = useState('today');
+  const [taskViewMode, setTaskViewMode] = useState('list');
 
-  // Sync priority pref from user metadata when session changes
+  // Sync priority pref + task UI prefs from user metadata when session changes
   useEffect(() => {
-    const pref = session?.user?.user_metadata?.priority_system;
+    const meta = session?.user?.user_metadata || {};
+    const pref = meta.priority_system;
     if (pref === 'simple' || pref === 'eisenhower') setPriorityPref(pref);
     else setPriorityPref('eisenhower');
+    const tf = meta.task_filter;
+    if (tf && DATE_FILTERS.some(f => f.id === tf)) setTaskFilter(tf);
+    else setTaskFilter('today');
+    const tv = meta.task_view_mode;
+    if (tv === 'list' || tv === 'quadrant') setTaskViewMode(tv);
+    else setTaskViewMode('list');
   }, [session]);
+
+  // Persist task UI prefs to user metadata (debounced, fire-and-forget)
+  const persistMetaPref = useCallback((key, value) => {
+    // Skip if not signed in yet
+    if (!session) return;
+    supabase.auth.updateUser({ data: { [key]: value } }).catch(() => {});
+  }, [session]);
+  const onTaskFilterChange = useCallback((v) => { setTaskFilter(v); persistMetaPref('task_filter', v); }, [persistMetaPref]);
+  const onTaskViewModeChange = useCallback((v) => { setTaskViewMode(v); persistMetaPref('task_view_mode', v); }, [persistMetaPref]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setLoading(false); });
@@ -7171,7 +7440,7 @@ export default function App() {
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
-            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref}/>
+            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange}/>
             : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={user.id}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
