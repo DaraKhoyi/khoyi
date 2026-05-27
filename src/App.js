@@ -7157,6 +7157,505 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
 }
 
 // ─────────────────────────────────────────
+// FINANCIALS VIEW
+// ─────────────────────────────────────────
+const ACCOUNT_TYPES = [
+  { value: 'checking',    label: 'Checking',    icon: '🏦' },
+  { value: 'savings',     label: 'Savings',     icon: '💰' },
+  { value: 'credit',      label: 'Credit Card', icon: '💳' },
+  { value: 'investment',  label: 'Investment',  icon: '📈' },
+  { value: 'loan',        label: 'Loan',        icon: '📋' },
+  { value: 'cash',        label: 'Cash',        icon: '💵' },
+  { value: 'other',       label: 'Other',       icon: '🔹' },
+];
+
+const ASSET_CATEGORIES = [
+  { value: 'real_estate', label: 'Real Estate', icon: '🏠' },
+  { value: 'vehicle',     label: 'Vehicle',     icon: '🚗' },
+  { value: 'business',    label: 'Business',    icon: '🏢' },
+  { value: 'equity',      label: 'Equity / Stocks', icon: '📊' },
+  { value: 'crypto',      label: 'Crypto',      icon: '🪙' },
+  { value: 'commodity',   label: 'Commodity',   icon: '🥇' },
+  { value: 'collectible', label: 'Collectible', icon: '🖼️' },
+  { value: 'other',       label: 'Other',       icon: '🔹' },
+];
+
+function fmt(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(n));
+}
+function fmtFull(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n));
+}
+
+// ── Account Modal ──
+function AccountModal({ onClose, onSave, initial }) {
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    type: initial?.type || 'checking',
+    institution: initial?.institution || '',
+    balance: initial?.balance ?? '',
+    last_four: initial?.last_four || '',
+    notes: initial?.notes || '',
+    is_active: initial?.is_active ?? true,
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    onSave({ ...form, balance: parseFloat(form.balance) || 0 });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Account' : 'Add Account'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Account Name</label>
+              <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Chase Main" required autoFocus />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Type</label>
+              <select className="form-select" value={form.type} onChange={e => set('type', e.target.value)}>
+                {ACCOUNT_TYPES.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Institution</label>
+              <input className="form-input" value={form.institution} onChange={e => set('institution', e.target.value)} placeholder="e.g. Chase, Wells Fargo" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Last 4 Digits</label>
+              <input className="form-input" value={form.last_four} onChange={e => set('last_four', e.target.value.slice(0, 4))} placeholder="1234" maxLength={4} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Current Balance ($)</label>
+            <input className="form-input" type="number" step="0.01" value={form.balance} onChange={e => set('balance', e.target.value)} placeholder="0.00" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Notes</label>
+            <textarea className="form-textarea" value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional notes…" rows={2} />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Asset Modal ──
+function AssetModal({ onClose, onSave, initial }) {
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    category: initial?.category || 'real_estate',
+    description: initial?.description || '',
+    purchase_price: initial?.purchase_price ?? '',
+    current_value: initial?.current_value ?? '',
+    purchase_date: initial?.purchase_date || '',
+    location: initial?.location || '',
+    notes: initial?.notes || '',
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const gain = (parseFloat(form.current_value) || 0) - (parseFloat(form.purchase_price) || 0);
+  const gainPct = form.purchase_price && parseFloat(form.purchase_price) > 0
+    ? ((gain / parseFloat(form.purchase_price)) * 100).toFixed(1)
+    : null;
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    onSave({
+      ...form,
+      purchase_price: form.purchase_price !== '' ? parseFloat(form.purchase_price) : null,
+      current_value: parseFloat(form.current_value) || 0,
+      purchase_date: form.purchase_date || null,
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: '520px' }}>
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Asset' : 'Add Asset'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Asset Name</label>
+              <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. 123 Main St" required autoFocus />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Category</label>
+              <select className="form-select" value={form.category} onChange={e => set('category', e.target.value)}>
+                {ASSET_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Description</label>
+            <input className="form-input" value={form.description} onChange={e => set('description', e.target.value)} placeholder="Short description" />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Purchase Price ($)</label>
+              <input className="form-input" type="number" step="0.01" value={form.purchase_price} onChange={e => set('purchase_price', e.target.value)} placeholder="0.00" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Current Value ($)</label>
+              <input className="form-input" type="number" step="0.01" value={form.current_value} onChange={e => set('current_value', e.target.value)} placeholder="0.00" />
+            </div>
+          </div>
+          {gainPct !== null && (
+            <div style={{ marginBottom: '12px', padding: '8px 12px', borderRadius: '8px', background: gain >= 0 ? '#22c55e18' : '#ef444418', border: `1px solid ${gain >= 0 ? '#22c55e40' : '#ef444440'}` }}>
+              <span style={{ fontSize: '12.5px', color: gain >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
+                {gain >= 0 ? '▲' : '▼'} {fmtFull(Math.abs(gain))} ({gainPct}% {gain >= 0 ? 'gain' : 'loss'})
+              </span>
+            </div>
+          )}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Purchase Date</label>
+              <input className="form-input" type="date" value={form.purchase_date} onChange={e => set('purchase_date', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Location</label>
+              <input className="form-input" value={form.location} onChange={e => set('location', e.target.value)} placeholder="City, State" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Notes</label>
+            <textarea className="form-textarea" value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional notes…" rows={2} />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Asset</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Accounts Sub-View ──
+function AccountsSubView({ accounts, setAccounts, userId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const totalCash = accounts.filter(a => ['checking','savings','cash'].includes(a.type) && a.is_active).reduce((s, a) => s + Number(a.balance || 0), 0);
+  const totalDebt = accounts.filter(a => ['credit','loan'].includes(a.type) && a.is_active).reduce((s, a) => s + Number(a.balance || 0), 0);
+  const totalInvest = accounts.filter(a => a.type === 'investment' && a.is_active).reduce((s, a) => s + Number(a.balance || 0), 0);
+
+  async function handleSave(data) {
+    if (editing) {
+      const { data: upd } = await supabase.from('fin_accounts').update(data).eq('id', editing.id).select().single();
+      if (upd) setAccounts(prev => prev.map(a => a.id === upd.id ? upd : a));
+    } else {
+      const { data: created } = await supabase.from('fin_accounts').insert({ ...data, user_id: userId }).select().single();
+      if (created) setAccounts(prev => [created, ...prev]);
+    }
+    setShowModal(false); setEditing(null);
+  }
+  async function deleteAccount(id) {
+    if (!window.confirm('Delete this account?')) return;
+    await supabase.from('fin_accounts').delete().eq('id', id);
+    setAccounts(prev => prev.filter(a => a.id !== id));
+  }
+
+  const grouped = ACCOUNT_TYPES.map(t => ({
+    ...t,
+    items: accounts.filter(a => a.type === t.value),
+  })).filter(g => g.items.length > 0);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
+        <div>
+          <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Accounts</h3>
+          <p style={{ fontSize: '12.5px', color: 'var(--text-3)', marginTop: '3px' }}>{accounts.length} account{accounts.length !== 1 ? 's' : ''} linked</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true); }}>+ Add Account</button>
+      </div>
+
+      {/* Summary tiles */}
+      <div className="cards-row" style={{ marginBottom: '22px' }}>
+        <div className="stat-card">
+          <div className="stat-label">Cash & Savings</div>
+          <div className="stat-value" style={{ fontSize: '20px', color: 'var(--green)' }}>{fmt(totalCash)}</div>
+          <div className="stat-sub">checking + savings</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Investments</div>
+          <div className="stat-value" style={{ fontSize: '20px', color: 'var(--accent)' }}>{fmt(totalInvest)}</div>
+          <div className="stat-sub">investment accounts</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Debt</div>
+          <div className="stat-value" style={{ fontSize: '20px', color: totalDebt > 0 ? 'var(--red)' : 'var(--text-1)' }}>{fmt(totalDebt)}</div>
+          <div className="stat-sub">credit + loans</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Net Position</div>
+          <div className="stat-value" style={{ fontSize: '20px', color: (totalCash + totalInvest - totalDebt) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+            {fmt(totalCash + totalInvest - totalDebt)}
+          </div>
+          <div className="stat-sub">liquid net</div>
+        </div>
+      </div>
+
+      {accounts.length === 0 && (
+        <div className="empty-state"><div className="empty-icon">🏦</div><p>No accounts yet. Add your first one.</p></div>
+      )}
+
+      {grouped.map(group => (
+        <div key={group.value} className="panel" style={{ marginBottom: '16px' }}>
+          <div className="panel-header">
+            <h3>{group.icon} {group.label}</h3>
+            <span style={{ fontSize: '12px', color: 'var(--text-3)' }}>
+              {fmt(group.items.reduce((s, a) => s + Number(a.balance || 0), 0))} total
+            </span>
+          </div>
+          <div className="panel-body" style={{ padding: '8px 0' }}>
+            {group.items.map(acct => (
+              <div key={acct.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '11px 18px', borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.1s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'var(--accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', flexShrink: 0 }}>{group.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-1)' }}>{acct.name}{acct.last_four && <span style={{ color: 'var(--text-3)', fontWeight: 400 }}> ···{acct.last_four}</span>}</div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-3)' }}>{acct.institution || 'No institution'}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: ['credit','loan'].includes(acct.type) ? 'var(--red)' : 'var(--text-1)' }}>{fmtFull(acct.balance)}</div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-3)' }}>{acct.is_active ? 'Active' : 'Inactive'}</div>
+                </div>
+                <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setEditing(acct); setShowModal(true); }} title="Edit">✏️</button>
+                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => deleteAccount(acct.id)} title="Delete" style={{ color: 'var(--red)' }}>🗑</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {showModal && <AccountModal onClose={() => { setShowModal(false); setEditing(null); }} onSave={handleSave} initial={editing} />}
+    </div>
+  );
+}
+
+// ── Assets Sub-View ──
+function AssetsSubView({ assets, setAssets, userId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [filterCat, setFilterCat] = useState('all');
+
+  const totalValue = assets.reduce((s, a) => s + Number(a.current_value || 0), 0);
+  const totalCost = assets.reduce((s, a) => s + Number(a.purchase_price || 0), 0);
+  const totalGain = totalValue - totalCost;
+
+  const filtered = filterCat === 'all' ? assets : assets.filter(a => a.category === filterCat);
+  const usedCats = [...new Set(assets.map(a => a.category))];
+
+  async function handleSave(data) {
+    if (editing) {
+      const { data: upd } = await supabase.from('fin_assets').update(data).eq('id', editing.id).select().single();
+      if (upd) setAssets(prev => prev.map(a => a.id === upd.id ? upd : a));
+    } else {
+      const { data: created } = await supabase.from('fin_assets').insert({ ...data, user_id: userId }).select().single();
+      if (created) setAssets(prev => [created, ...prev]);
+    }
+    setShowModal(false); setEditing(null);
+  }
+  async function deleteAsset(id) {
+    if (!window.confirm('Delete this asset?')) return;
+    await supabase.from('fin_assets').delete().eq('id', id);
+    setAssets(prev => prev.filter(a => a.id !== id));
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
+        <div>
+          <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Assets</h3>
+          <p style={{ fontSize: '12.5px', color: 'var(--text-3)', marginTop: '3px' }}>{assets.length} asset{assets.length !== 1 ? 's' : ''} tracked</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true); }}>+ Add Asset</button>
+      </div>
+
+      {/* Summary tiles */}
+      <div className="cards-row" style={{ marginBottom: '22px' }}>
+        <div className="stat-card">
+          <div className="stat-label">Total Value</div>
+          <div className="stat-value" style={{ fontSize: '20px', color: 'var(--accent)' }}>{fmt(totalValue)}</div>
+          <div className="stat-sub">{assets.length} assets</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Total Cost</div>
+          <div className="stat-value" style={{ fontSize: '20px' }}>{fmt(totalCost)}</div>
+          <div className="stat-sub">purchase prices</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Total Gain / Loss</div>
+          <div className="stat-value" style={{ fontSize: '20px', color: totalGain >= 0 ? 'var(--green)' : 'var(--red)' }}>
+            {totalGain >= 0 ? '+' : ''}{fmt(totalGain)}
+          </div>
+          <div className="stat-sub">{totalCost > 0 ? ((totalGain / totalCost) * 100).toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Categories</div>
+          <div className="stat-value" style={{ fontSize: '20px' }}>{usedCats.length}</div>
+          <div className="stat-sub">asset types</div>
+        </div>
+      </div>
+
+      {/* Category filter pills */}
+      {usedCats.length > 1 && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          <button className={`btn btn-sm ${filterCat === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterCat('all')}>All</button>
+          {usedCats.map(cat => {
+            const info = ASSET_CATEGORIES.find(c => c.value === cat);
+            return <button key={cat} className={`btn btn-sm ${filterCat === cat ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterCat(cat)}>{info?.icon} {info?.label}</button>;
+          })}
+        </div>
+      )}
+
+      {filtered.length === 0 && (
+        <div className="empty-state"><div className="empty-icon">💎</div><p>No assets yet. Add your first one.</p></div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {filtered.map(asset => {
+          const catInfo = ASSET_CATEGORIES.find(c => c.value === asset.category);
+          const gain = Number(asset.current_value || 0) - Number(asset.purchase_price || 0);
+          const gainPct = asset.purchase_price && Number(asset.purchase_price) > 0
+            ? ((gain / Number(asset.purchase_price)) * 100).toFixed(1)
+            : null;
+          return (
+            <div key={asset.id} className="panel" style={{ marginBottom: 0 }}>
+              <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                <div style={{ width: '42px', height: '42px', borderRadius: '11px', background: 'var(--accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', flexShrink: 0 }}>{catInfo?.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-1)' }}>{asset.name}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>{catInfo?.label}{asset.location ? ` · ${asset.location}` : ''}{asset.purchase_date ? ` · Purchased ${asset.purchase_date}` : ''}</div>
+                      {asset.description && <div style={{ fontSize: '12px', color: 'var(--text-2)', marginTop: '3px' }}>{asset.description}</div>}
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--accent)' }}>{fmtFull(asset.current_value)}</div>
+                      {asset.purchase_price && <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Cost {fmt(asset.purchase_price)}</div>}
+                      {gainPct !== null && (
+                        <div style={{ fontSize: '11.5px', fontWeight: 600, color: gain >= 0 ? 'var(--green)' : 'var(--red)', marginTop: '2px' }}>
+                          {gain >= 0 ? '▲' : '▼'} {fmt(Math.abs(gain))} ({gainPct}%)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0 }}>
+                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setEditing(asset); setShowModal(true); }} title="Edit">✏️</button>
+                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => deleteAsset(asset.id)} title="Delete" style={{ color: 'var(--red)' }}>🗑</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {showModal && <AssetModal onClose={() => { setShowModal(false); setEditing(null); }} onSave={handleSave} initial={editing} />}
+    </div>
+  );
+}
+
+// ── Main Financials View (sub-nav shell) ──
+function FinancialsView({ accounts, setAccounts, assets, setAssets, userId }) {
+  const [subView, setSubView] = useState('accounts');
+
+  const totalAccounts = accounts.reduce((s, a) => s + Number(a.balance || 0), 0);
+  const totalAssets = assets.reduce((s, a) => s + Number(a.current_value || 0), 0);
+  const totalDebt = accounts.filter(a => ['credit', 'loan'].includes(a.type)).reduce((s, a) => s + Number(a.balance || 0), 0);
+  const netWorth = totalAccounts + totalAssets - totalDebt;
+
+  const SUB_NAV = [
+    { id: 'accounts', icon: '🏦', label: 'Accounts', count: accounts.length },
+    { id: 'assets',   icon: '💎', label: 'Assets',   count: assets.length },
+  ];
+
+  return (
+    <div>
+      {/* Page header */}
+      <div className="page-header" style={{ marginBottom: '16px' }}>
+        <h2>Financials</h2>
+        <p>Track accounts, assets, and your overall financial position</p>
+      </div>
+
+      {/* Net worth banner */}
+      <div style={{ background: 'linear-gradient(135deg, var(--accent-dim) 0%, #1a1535 100%)', border: '1px solid var(--accent-dim)', borderRadius: '14px', padding: '20px 24px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Est. Net Worth</div>
+          <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-1)', letterSpacing: '-1px' }}>{fmt(netWorth)}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '3px' }}>Accounts</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--green)' }}>{fmt(totalAccounts)}</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '3px' }}>Assets</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--accent)' }}>{fmt(totalAssets)}</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '3px' }}>Debt</div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--red)' }}>{fmt(totalDebt)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sub-nav tabs */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '4px' }}>
+        {SUB_NAV.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setSubView(s.id)}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+              padding: '9px 14px', borderRadius: '7px', border: 'none', cursor: 'pointer',
+              fontSize: '13px', fontWeight: 600, transition: 'all 0.15s',
+              background: subView === s.id ? 'var(--accent)' : 'transparent',
+              color: subView === s.id ? '#fff' : 'var(--text-2)',
+            }}
+          >
+            <span>{s.icon}</span>
+            {s.label}
+            <span style={{ background: subView === s.id ? 'rgba(255,255,255,0.25)' : 'var(--bg-hover)', color: subView === s.id ? '#fff' : 'var(--text-3)', fontSize: '11px', fontWeight: 700, padding: '1px 7px', borderRadius: '10px' }}>{s.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Sub view */}
+      {subView === 'accounts' && <AccountsSubView accounts={accounts} setAccounts={setAccounts} userId={userId} />}
+      {subView === 'assets'   && <AssetsSubView   assets={assets}     setAssets={setAssets}     userId={userId} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
 // SETTINGS VIEW
 // ─────────────────────────────────────────
 function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts }) {
@@ -7259,6 +7758,8 @@ export default function App() {
   const [robots, setRobots] = useState([]);
   const [drawings, setDrawings] = useState([]);
   const [notes, setNotes] = useState([]);
+  const [finAccounts, setFinAccounts] = useState([]);
+  const [finAssets, setFinAssets] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [properties, setProperties] = useState([]);
   const [investments, setInvestments] = useState([]);
@@ -7303,7 +7804,7 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, profilesRes, voiceCardsRes, emailAccountsRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, profilesRes, voiceCardsRes, emailAccountsRes, finAccountsRes, finAssetsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
@@ -7316,6 +7817,8 @@ export default function App() {
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('voice_cards').select('*').order('created_at', { ascending: true }),
       supabase.from('email_accounts').select('*').order('created_at', { ascending: true }),
+      supabase.from('fin_accounts').select('*').order('created_at', { ascending: false }),
+      supabase.from('fin_assets').select('*').order('created_at', { ascending: false }),
     ]);
     if (tasksRes.data) setTasks(tasksRes.data);
     if (emailsRes.data) setEmails(emailsRes.data);
@@ -7329,6 +7832,8 @@ export default function App() {
     if (profilesRes.data) setProfiles(profilesRes.data);
     if (voiceCardsRes.data) setVoiceCards(voiceCardsRes.data);
     if (emailAccountsRes.data) setEmailAccounts(emailAccountsRes.data);
+    if (finAccountsRes.data) setFinAccounts(finAccountsRes.data);
+    if (finAssetsRes.data) setFinAssets(finAssetsRes.data);
     setDataLoaded(true);
   }, [session]);
 
@@ -7357,7 +7862,7 @@ export default function App() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]);
+    setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]); setFinAccounts([]); setFinAssets([]);
     setContacts([]); setProperties([]); setInvestments([]); setBrain([]);
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
     setDataLoaded(false);
@@ -7381,6 +7886,7 @@ export default function App() {
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
+    { id: 'financials',  icon: '💳', label: 'Financials',  badge: null },
     { id: 'draft',       icon: '✏️', label: 'Draft' },
     { id: 'chat',        icon: '✦',  label: 'Ari',         badge: null },
     { id: 'prism',       icon: '✦',  label: 'Prism',       badge: null },
@@ -7447,6 +7953,7 @@ export default function App() {
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
             : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id}/>
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
+            : view==='financials'  ? <FinancialsView accounts={finAccounts} setAccounts={setFinAccounts} assets={finAssets} setAssets={setFinAssets} userId={user.id}/>
             : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
             : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
             : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
