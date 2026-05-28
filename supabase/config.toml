@@ -11,3 +11,15 @@ verify_jwt = false
 
 [functions.task-quadrant-suggest]
 verify_jwt = false
+
+[functions.google-oauth-start]
+verify_jwt = false
+
+[functions.google-oauth-callback]
+verify_jwt = false
+
+[functions.calendar-sync]
+verify_jwt = false
+
+[functions.calendar-delete]
+verify_jwt = false

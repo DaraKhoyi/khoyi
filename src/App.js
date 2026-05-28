@@ -6728,6 +6728,358 @@ function BrainView({ brain, setBrain, userId }) {
 
 
 // ─────────────────────────────────────────
+// CALENDAR VIEW — month grid + Google Calendar sync
+// ─────────────────────────────────────────
+function pad2(n){ return String(n).padStart(2,'0'); }
+function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function startOfMonthGrid(year, month) {
+  // month: 0-indexed. Returns the Sunday on/before the 1st.
+  const first = new Date(year, month, 1);
+  const d = new Date(first);
+  d.setDate(1 - first.getDay());
+  return d;
+}
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts }) {
+  const init = initial || {};
+  const startInit = init.start_at ? new Date(init.start_at) : (defaultDate ? new Date(defaultDate + 'T09:00:00') : new Date());
+  const endInit = init.end_at ? new Date(init.end_at) : new Date(startInit.getTime() + 60*60*1000);
+  const [title, setTitle] = useState(init.title || '');
+  const [allDay, setAllDay] = useState(init.all_day || false);
+  const [startDate, setStartDate] = useState(ymd(startInit));
+  const [startTime, setStartTime] = useState(`${pad2(startInit.getHours())}:${pad2(startInit.getMinutes())}`);
+  const [endDate, setEndDate] = useState(ymd(endInit));
+  const [endTime, setEndTime] = useState(`${pad2(endInit.getHours())}:${pad2(endInit.getMinutes())}`);
+  const [location, setLocation] = useState(init.location || '');
+  const [description, setDescription] = useState(init.description || '');
+  const [contactId, setContactId] = useState(init.contact_id || '');
+  const [brainEntryId, setBrainEntryId] = useState(init.brain_entry_id || '');
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const start_at = allDay ? `${startDate}T00:00:00` : `${startDate}T${startTime}:00`;
+    const end_at = allDay ? `${endDate}T00:00:00` : `${endDate}T${endTime}:00`;
+    onSave({
+      title: title.trim(),
+      all_day: allDay,
+      start_at: new Date(start_at).toISOString(),
+      end_at: new Date(end_at).toISOString(),
+      location: location.trim() || null,
+      description: description.trim() || null,
+      contact_id: contactId || null,
+      brain_entry_id: brainEntryId || null,
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Event' : 'New Event'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What's happening?" autoFocus required /></div>
+          <div className="form-group">
+            <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+              <input type="checkbox" checked={allDay} onChange={e=>setAllDay(e.target.checked)} /> All-day
+            </label>
+          </div>
+          <div className="form-row">
+            <div className="form-group" style={{flex:1}}><label className="form-label">Start date</label><input className="form-input" type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} required /></div>
+            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">Start time</label><input className="form-input" type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} /></div>}
+          </div>
+          <div className="form-row">
+            <div className="form-group" style={{flex:1}}><label className="form-label">End date</label><input className="form-input" type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} /></div>
+            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">End time</label><input className="form-input" type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} /></div>}
+          </div>
+          <div className="form-group"><label className="form-label">Location</label><input className="form-input" value={location} onChange={e=>setLocation(e.target.value)} placeholder="Optional" /></div>
+          {contacts && contacts.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">Linked contact</label>
+              <select className="form-select" value={contactId} onChange={e=>setContactId(e.target.value)}>
+                <option value="">— None —</option>
+                {contacts.map(c => <option key={c.id} value={c.id}>{c.name || c.full_name || c.email || 'Contact'}</option>)}
+              </select>
+            </div>
+          )}
+          {brain && brain.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">Brain context</label>
+              <select className="form-select" value={brainEntryId} onChange={e=>setBrainEntryId(e.target.value)}>
+                <option value="">— None —</option>
+                {['playbook','decision','memory'].map(type => {
+                  const entries = brain.filter(b => b.type === type);
+                  if (!entries.length) return null;
+                  return <optgroup key={type} label={type.toUpperCase()}>
+                    {entries.map(b => <option key={b.id} value={b.id}>{b.title.slice(0,60)}</option>)}
+                  </optgroup>;
+                })}
+              </select>
+            </div>
+          )}
+          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Optional details…" /></div>
+          <div className="modal-actions" style={{justifyContent:'space-between'}}>
+            <div>
+              {initial && <button type="button" className="btn btn-ghost" style={{color:'var(--red)'}} onClick={()=>onDelete(initial)}>Delete</button>}
+            </div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary">Save Event</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts }) {
+  const today = new Date();
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [showModal, setShowModal] = useState(false);
+  const [editEvent, setEditEvent] = useState(null);
+  const [modalDate, setModalDate] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [flash, setFlash] = useState(null);
+
+  const googleAccount = (emailAccounts || []).find(a => a.provider === 'google' && a.is_active);
+  const hasCalendarScope = googleAccount && (googleAccount.scopes || []).some(s => s.includes('calendar'));
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const gridStart = startOfMonthGrid(year, month);
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    cells.push(d);
+  }
+
+  function eventsForDay(d) {
+    const key = ymd(d);
+    return events.filter(ev => {
+      const s = new Date(ev.start_at);
+      return ymd(s) === key;
+    }).sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
+  }
+
+  async function handleSave(data) {
+    const payload = { ...data, user_id: userId, sync_status: hasCalendarScope ? 'pending_push' : 'local' };
+    if (editEvent) {
+      const { data: u } = await supabase.from('events').update({ ...data, sync_status: editEvent.google_event_id ? 'pending_push' : (hasCalendarScope ? 'pending_push' : 'local') }).eq('id', editEvent.id).select().single();
+      if (u) setEvents(prev => prev.map(e => e.id === u.id ? u : e));
+    } else {
+      const { data: c } = await supabase.from('events').insert(payload).select().single();
+      if (c) setEvents(prev => [...prev, c]);
+    }
+    setShowModal(false); setEditEvent(null);
+    // Auto-push to Google if connected
+    if (hasCalendarScope) syncCalendar('push', true);
+  }
+
+  async function handleDelete(ev) {
+    if (!window.confirm('Delete this event?')) return;
+    // If synced to Google, delete there too
+    if (ev.google_event_id && hasCalendarScope) {
+      try {
+        await supabase.functions.invoke('calendar-delete', { body: { user_id: userId, event_id: ev.id } }).catch(()=>{});
+      } catch(_) {}
+    }
+    await supabase.from('events').delete().eq('id', ev.id);
+    setEvents(prev => prev.filter(e => e.id !== ev.id));
+    setShowModal(false); setEditEvent(null);
+  }
+
+  async function syncCalendar(direction = 'both', silent = false) {
+    if (!hasCalendarScope) {
+      setFlash({ type:'error', text:'Connect Google Calendar first (Settings or the button above).' });
+      setTimeout(()=>setFlash(null), 4000);
+      return;
+    }
+    if (!silent) setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('calendar-sync', {
+        body: { user_id: userId, direction }
+      });
+      if (error || data?.error) throw new Error(error?.message || data?.error);
+      // Reload events
+      const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+      if (fresh) setEvents(fresh);
+      if (!silent) {
+        setFlash({ type:'ok', text:`Synced · ${data.pulled} in, ${data.pushed} out${data.deleted?`, ${data.deleted} removed`:''}` });
+        setTimeout(()=>setFlash(null), 4000);
+      }
+    } catch (e) {
+      if (!silent) {
+        setFlash({ type:'error', text:`Sync failed: ${e.message}` });
+        setTimeout(()=>setFlash(null), 5000);
+      }
+    } finally {
+      if (!silent) setSyncing(false);
+    }
+  }
+
+  async function connectGoogle() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setFlash({type:'error',text:'Not signed in.'}); return; }
+      const { data, error } = await supabase.functions.invoke('google-oauth-start', {
+        body: { return_to: window.location.origin + window.location.pathname },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
+      if (!data?.url) throw new Error('No URL returned.');
+      window.location.href = data.url;
+    } catch (e) {
+      setFlash({ type:'error', text: e.message });
+      setTimeout(()=>setFlash(null), 5000);
+    }
+  }
+
+  const monthEvents = events.filter(ev => {
+    const s = new Date(ev.start_at);
+    return s.getFullYear() === year && s.getMonth() === month;
+  });
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div><h2>📅 Calendar</h2><p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total</p></div>
+        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+          {hasCalendarScope ? (
+            <button className="btn btn-ghost" onClick={()=>syncCalendar('both')} disabled={syncing}>
+              {syncing ? '↻ Syncing…' : '↻ Sync Google'}
+            </button>
+          ) : (
+            <button className="btn btn-ghost" onClick={connectGoogle} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
+              🔗 Connect Google Calendar
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}}>+ New Event</button>
+        </div>
+      </div>
+
+      {flash && (
+        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',
+          background: flash.type==='ok'?'rgba(34,197,94,0.12)':'rgba(239,68,68,0.12)',
+          border:`1px solid ${flash.type==='ok'?'#22c55e':'#ef4444'}`,
+          color: flash.type==='ok'?'#22c55e':'#ef4444', fontSize:'13px'}}>{flash.text}</div>
+      )}
+
+      {!hasCalendarScope && googleAccount && (
+        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--text-2)',fontSize:'12px'}}>
+          Google is connected for email but without calendar permission. Click <strong>Connect Google Calendar</strong> to re-authorize with calendar access.
+        </div>
+      )}
+
+      {/* Month navigation */}
+      <div className="panel">
+        <div className="panel-header" style={{justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setCursor(new Date(year, month-1, 1))}>‹</button>
+            <h3 style={{minWidth:'160px',textAlign:'center',fontSize:'15px'}}>{MONTH_NAMES[month]} {year}</h3>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setCursor(new Date(year, month+1, 1))}>›</button>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>Today</button>
+        </div>
+        <div className="panel-body" style={{padding:'10px'}}>
+          {/* DOW header */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px',marginBottom:'4px'}}>
+            {DOW.map(d => <div key={d} style={{textAlign:'center',fontSize:'10px',fontWeight:600,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',padding:'4px'}}>{d}</div>)}
+          </div>
+          {/* Grid */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px'}}>
+            {cells.map((d, i) => {
+              const inMonth = d.getMonth() === month;
+              const isToday = ymd(d) === ymd(today);
+              const dayEvents = eventsForDay(d);
+              return (
+                <div key={i}
+                  onClick={()=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
+                  style={{
+                    minHeight:'84px', padding:'4px 6px', borderRadius:'8px', cursor:'pointer',
+                    background: isToday ? 'var(--accent-glow)' : (inMonth ? 'var(--bg-base)' : 'transparent'),
+                    border: isToday ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    opacity: inMonth ? 1 : 0.4,
+                    display:'flex', flexDirection:'column', gap:'2px', overflow:'hidden'
+                  }}>
+                  <div style={{fontSize:'11px',fontWeight:isToday?700:500,color:isToday?'var(--accent)':'var(--text-2)',textAlign:'right'}}>{d.getDate()}</div>
+                  {dayEvents.slice(0,3).map(ev => (
+                    <div key={ev.id}
+                      onClick={(e)=>{e.stopPropagation();setEditEvent(ev);setModalDate(null);setShowModal(true);}}
+                      title={ev.title}
+                      style={{
+                        fontSize:'10px', padding:'1px 4px', borderRadius:'3px',
+                        background: ev.google_event_id ? 'var(--accent-dim)' : 'var(--bg-hover)',
+                        color:'var(--text-1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                        borderLeft: `2px solid ${ev.google_event_id ? 'var(--accent)' : 'var(--text-3)'}`
+                      }}>
+                      {!ev.all_day && <span style={{color:'var(--text-3)',marginRight:'3px'}}>{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</span>}
+                      {ev.title}
+                    </div>
+                  ))}
+                  {dayEvents.length > 3 && <div style={{fontSize:'9px',color:'var(--text-3)',paddingLeft:'4px'}}>+{dayEvents.length-3} more</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Upcoming list */}
+      <div className="panel">
+        <div className="panel-header"><h3>Upcoming</h3></div>
+        <div className="panel-body">
+          {(() => {
+            const upcoming = events
+              .filter(ev => new Date(ev.end_at || ev.start_at) >= new Date(today.getFullYear(),today.getMonth(),today.getDate()))
+              .sort((a,b)=>new Date(a.start_at)-new Date(b.start_at))
+              .slice(0,10);
+            if (upcoming.length === 0) return <div className="empty-state"><div className="empty-icon">📅</div><p>No upcoming events. Click a day to add one.</p></div>;
+            return <div className="task-list">
+              {upcoming.map(ev => {
+                const s = new Date(ev.start_at);
+                return (
+                  <div key={ev.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}>
+                    <div style={{minWidth:'52px',textAlign:'center'}}>
+                      <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase'}}>{MONTH_NAMES[s.getMonth()].slice(0,3)}</div>
+                      <div style={{fontSize:'18px',fontWeight:700,color:'var(--text-1)',lineHeight:1}}>{s.getDate()}</div>
+                    </div>
+                    <span className="task-text">
+                      {ev.title}
+                      {ev.google_event_id && <span title="Synced with Google" style={{marginLeft:'6px',fontSize:'10px',color:'var(--accent)'}}>●</span>}
+                      {ev.location && <span style={{display:'block',fontSize:'11px',color:'var(--text-3)'}}>📍 {ev.location}</span>}
+                    </span>
+                    <div className="task-meta">
+                      <span className="task-due">{ev.all_day ? 'All day' : `${pad2(s.getHours())}:${pad2(s.getMinutes())}`}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>;
+          })()}
+        </div>
+      </div>
+
+      {showModal && <EventModal
+        onClose={()=>{setShowModal(false);setEditEvent(null);}}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        initial={editEvent}
+        defaultDate={modalDate}
+        brain={brain}
+        contacts={contacts}
+      />}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────
 // PLAYBOOKS VIEW — Triggerable, step-aware playbooks
 // ─────────────────────────────────────────
 function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, setPlaybookRuns, tasks, setTasks, userId, setView, setTaskFilter }) {
@@ -8419,6 +8771,7 @@ export default function App() {
   const [properties, setProperties] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [brain, setBrain] = useState([]);
+  const [events, setEvents] = useState([]);
   const [playbookSteps, setPlaybookSteps] = useState([]);
   const [playbookRuns, setPlaybookRuns] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -8461,7 +8814,7 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, playbookStepsRes, playbookRunsRes, profilesRes, voiceCardsRes, emailAccountsRes, finAccountsRes, finAssetsRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, eventsRes, playbookStepsRes, playbookRunsRes, profilesRes, voiceCardsRes, emailAccountsRes, finAccountsRes, finAssetsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
@@ -8471,6 +8824,7 @@ export default function App() {
       supabase.from('properties').select('*').order('created_at', { ascending: false }),
       supabase.from('investments').select('*').order('created_at', { ascending: false }),
       supabase.from('brain').select('*').order('created_at', { ascending: false }),
+      supabase.from('events').select('*').order('start_at', { ascending: true }),
       supabase.from('playbook_steps').select('*').order('step_order', { ascending: true }),
       supabase.from('playbook_runs').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
@@ -8488,6 +8842,7 @@ export default function App() {
     if (propertiesRes.data) setProperties(propertiesRes.data);
     if (investmentsRes.data) setInvestments(investmentsRes.data);
     if (brainRes.data) setBrain(brainRes.data);
+    if (eventsRes.data) setEvents(eventsRes.data);
     if (playbookStepsRes.data) setPlaybookSteps(playbookStepsRes.data);
     if (playbookRunsRes.data) setPlaybookRuns(playbookRunsRes.data);
     if (profilesRes.data) setProfiles(profilesRes.data);
@@ -8506,15 +8861,26 @@ export default function App() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const connected = params.get('gmail_connected');
-    if (connected) {
-      setGmailConnectedFlash(connected);
-      // Strip the param from the URL
+    const googleConnected = params.get('google_connected');
+    if (connected || googleConnected) {
+      setGmailConnectedFlash(connected || googleConnected);
+      // Strip the params from the URL
       params.delete('gmail_connected');
+      params.delete('google_connected');
       const newSearch = params.toString();
       const newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
       window.history.replaceState({}, '', newUrl);
       // Reload data so the new account appears
       if (session) loadData();
+      // If Google (calendar) just connected, kick off an initial calendar sync
+      if (googleConnected && session) {
+        supabase.functions.invoke('calendar-sync', {
+          body: { user_id: session.user.id, direction: 'both' }
+        }).then(async () => {
+          const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+          if (fresh) setEvents(fresh);
+        }).catch(()=>{});
+      }
       // Hide the flash after 6s
       const t = setTimeout(() => setGmailConnectedFlash(null), 6000);
       return () => clearTimeout(t);
@@ -8524,7 +8890,7 @@ export default function App() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]); setFinAccounts([]); setFinAssets([]);
-    setContacts([]); setProperties([]); setInvestments([]); setBrain([]); setPlaybookSteps([]); setPlaybookRuns([]);
+    setContacts([]); setProperties([]); setInvestments([]); setBrain([]); setEvents([]); setPlaybookSteps([]); setPlaybookRuns([]);
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
     setDataLoaded(false);
   }
@@ -8541,6 +8907,7 @@ export default function App() {
   const NAV = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
+    { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadCount || null },
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
@@ -8615,6 +8982,7 @@ export default function App() {
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
             : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id}/>
             : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange}/>
+            : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts}/>
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
             : view==='financials'  ? <FinancialsView accounts={finAccounts} setAccounts={setFinAccounts} assets={finAssets} setAssets={setFinAssets} userId={user.id}/>
             : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
