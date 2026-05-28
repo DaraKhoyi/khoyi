@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.calendar-delete]
 verify_jwt = false
+
+[functions.gmail-aliases-sync]
+verify_jwt = false

@@ -950,7 +950,7 @@ function QuadrantGrid({ tasks, onToggle, onEdit, onDelete }) {
 // Reads from email_threads/email_messages when an account is connected;
 // falls back to legacy `emails` table when no account is set up yet.
 // ─────────────────────────────────────────
-function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, profiles, contacts, userId, setView }) {
+function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView }) {
   // Pick an account that's actually FOR email. Prefer purposes=['email',...],
   // fall back to any account whose scopes include gmail.
   const emailAccount =
@@ -959,7 +959,7 @@ function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, profile
     null;
 
   if (emailAccount) {
-    return <GmailInboxView account={emailAccount} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={userId} />;
+    return <GmailInboxView account={emailAccount} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} />;
   }
   return <LegacyInboxView emails={emails} setEmails={setEmails} userId={userId} setView={setView} />;
 }
@@ -1135,7 +1135,7 @@ function LegacyInboxView({ emails, setEmails, userId, setView }) {
 }
 
 // ─── Gmail inbox ─────────────────────────────────────────────────
-function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId }) {
+function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId }) {
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [tab, setTab] = useState('inbox');
@@ -1148,8 +1148,43 @@ function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId 
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
+  const [composeFrom, setComposeFrom] = useState('');  // resolved sender address
+  const [composeReplyMeta, setComposeReplyMeta] = useState(null);  // { message_id, thread_id } when replying
   const [sending, setSending] = useState(false);
   const [sendMsg, setSendMsg] = useState('');
+  const [syncingAliases, setSyncingAliases] = useState(false);
+
+  // Verified aliases the user can send from. Fall back to the account address.
+  const verifiedAliases = (emailAliases || []).filter(a => a.verified);
+  const defaultAlias = verifiedAliases.find(a => a.is_default)
+    || verifiedAliases.find(a => a.is_primary)
+    || (verifiedAliases.length > 0 ? verifiedAliases[0] : null);
+
+  // Auto-sync aliases the first time we render with zero rows
+  useEffect(() => {
+    if (verifiedAliases.length === 0 && !syncingAliases) {
+      runAliasesSync(true);  // silent first run
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function runAliasesSync(silent = false) {
+    setSyncingAliases(true);
+    try {
+      const { data } = await supabase.functions.invoke('gmail-aliases-sync', {
+        body: { user_id: userId, account_id: account.id }
+      });
+      if (data?.ok) {
+        const { data: fresh } = await supabase.from('email_aliases').select('*').order('email_address', { ascending: true });
+        if (fresh) setEmailAliases(fresh);
+        if (!silent) setSendMsg(`Synced ${data.synced} sender ${data.synced === 1 ? 'address' : 'addresses'}.`);
+      }
+    } catch (e) {
+      if (!silent) setSendMsg('Alias sync failed: ' + (e.message || e));
+    } finally {
+      setSyncingAliases(false);
+    }
+  }
 
   const loadThreads = useCallback(async () => {
     setLoadingThreads(true);
@@ -1218,24 +1253,79 @@ function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId 
     }
   }
 
+  // Reply-from picker: prefer whatever address the inbound mail was sent TO
+  // (if it matches one of our verified aliases), else fall back to the default.
+  function chooseReplyFrom(msg) {
+    if (!msg) return defaultAlias?.email_address || account.email_address;
+    const candidates = [
+      ...(Array.isArray(msg.to_addresses) ? msg.to_addresses : []),
+      ...(Array.isArray(msg.cc_addresses) ? msg.cc_addresses : []),
+    ].map(a => String(a).toLowerCase()).filter(Boolean);
+    const verifiedSet = new Set(verifiedAliases.map(a => a.email_address.toLowerCase()));
+    for (const cand of candidates) {
+      const m = cand.match(/<([^>]+)>/);
+      const bare = (m ? m[1] : cand).toLowerCase().trim();
+      if (verifiedSet.has(bare)) return bare;
+    }
+    return defaultAlias?.email_address || account.email_address;
+  }
+
+  function openCompose() {
+    setComposeTo(''); setComposeSubject(''); setComposeBody('');
+    setComposeFrom(defaultAlias?.email_address || account.email_address);
+    setComposeReplyMeta(null);
+    setSendMsg('');
+    setShowCompose(true);
+  }
+
+  function openReply(msg, replyAll = false) {
+    if (!msg) return;
+    const replyTo = msg.reply_to || msg.from_address || '';
+    let toList = [replyTo].filter(Boolean);
+    if (replyAll) {
+      const myAddrs = new Set([
+        account.email_address.toLowerCase(),
+        ...verifiedAliases.map(a => a.email_address.toLowerCase()),
+      ]);
+      const extraTos = (msg.to_addresses || []).filter(a => !myAddrs.has(String(a).toLowerCase()));
+      toList = Array.from(new Set([...toList, ...extraTos]));
+    }
+    const subj = (msg.subject || '').match(/^re:/i) ? msg.subject : `Re: ${msg.subject || ''}`;
+    const when = msg.internal_date ? new Date(msg.internal_date).toLocaleString() : '';
+    const quoted = (msg.body_text || msg.snippet || '').split('\n').map(l => '> ' + l).join('\n');
+    setComposeTo(toList.join(', '));
+    setComposeSubject(subj);
+    setComposeBody(`\n\nOn ${when}, ${msg.from_name || msg.from_address} wrote:\n${quoted}`);
+    setComposeFrom(chooseReplyFrom(msg));
+    setComposeReplyMeta({ message_id: msg.provider_message_id, thread_id: msg.provider_thread_id });
+    setSendMsg('');
+    setShowCompose(true);
+  }
+
   async function handleSend(ev) {
     ev.preventDefault();
     setSending(true);
     setSendMsg('');
     try {
+      const payload = {
+        account_id: account.id,
+        to: composeTo.split(',').map(s => s.trim()).filter(Boolean),
+        subject: composeSubject,
+        body_text: composeBody,
+      };
+      if (composeFrom && composeFrom !== account.email_address) {
+        payload.from_address = composeFrom;
+      }
+      if (composeReplyMeta?.message_id) payload.reply_to_message_id = composeReplyMeta.message_id;
+      if (composeReplyMeta?.thread_id) payload.in_reply_to_thread_id = composeReplyMeta.thread_id;
       const { data, error } = await supabase.functions.invoke('gmail-send', {
-        body: {
-          account_id: account.id,
-          to: composeTo.split(',').map(s => s.trim()).filter(Boolean),
-          subject: composeSubject,
-          body_text: composeBody,
-        },
+        body: payload,
       });
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
       setSendMsg('Sent.');
       setShowCompose(false);
-      setComposeTo(''); setComposeSubject(''); setComposeBody('');
+      setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFrom(''); setComposeReplyMeta(null);
       // Trigger a sync so the sent message shows up
       runSync();
     } catch (err) {
@@ -1295,8 +1385,11 @@ function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId 
         </div>
         <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
           {syncMsg && <span style={{fontSize:'12px',color: syncMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)'}}>{syncMsg}</span>}
+          <button className="btn btn-ghost btn-sm" onClick={() => runAliasesSync(false)} disabled={syncingAliases} title="Re-sync your Send-mail-as aliases from Gmail">
+            {syncingAliases ? '↻ Syncing senders…' : `↻ Senders (${verifiedAliases.length})`}
+          </button>
           <button className="btn btn-ghost" onClick={runSync} disabled={syncing}>{syncing ? 'Syncing…' : '↻ Sync'}</button>
-          <button className="btn btn-primary" onClick={() => setShowCompose(true)}>✏️ Compose</button>
+          <button className="btn btn-primary" onClick={openCompose}>✏️ Compose</button>
         </div>
       </div>
 
@@ -1371,9 +1464,10 @@ function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId 
                   ? <p style={{color:'var(--text-2)'}}>No messages found in this thread.</p>
                   : selectedMessages.map(msg => {
                       const senderProfile = profileForEmail(msg.from_address);
+                      const sentTo = Array.isArray(msg.to_addresses) ? msg.to_addresses : [];
                       return (
                         <div key={msg.id} style={{marginBottom:'18px',paddingBottom:'14px',borderBottom:'1px solid var(--border)'}}>
-                          <div style={{display:'flex',gap:'6px',marginBottom:'10px',flexWrap:'wrap',alignItems:'center'}}>
+                          <div style={{display:'flex',gap:'6px',marginBottom:'4px',flexWrap:'wrap',alignItems:'center'}}>
                             <span className="pill pill-purple">From: {msg.from_name || msg.from_address}</span>
                             {senderProfile && (
                               <span className="pill" style={{background:'var(--bg-base)',border:'1px solid var(--accent)',color:'var(--accent)',fontSize:'11px'}}>
@@ -1382,8 +1476,19 @@ function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId 
                             )}
                             <span style={{fontSize:'12px',color:'var(--text-3)',marginLeft:'auto'}}>{msg.internal_date ? new Date(msg.internal_date).toLocaleString() : ''}</span>
                           </div>
+                          {sentTo.length > 0 && (
+                            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px'}}>
+                              To: {sentTo.join(', ')}
+                            </div>
+                          )}
                           <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
                             {msg.body_text || (msg.body_html ? '(HTML message — text version not available)' : msg.snippet || '')}
+                          </div>
+                          <div style={{display:'flex',gap:'6px',marginTop:'10px'}}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, false)}>↩ Reply</button>
+                            {(sentTo.length > 1 || (msg.cc_addresses || []).length > 0) && (
+                              <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, true)}>↩↩ Reply All</button>
+                            )}
                           </div>
                         </div>
                       );
@@ -1398,13 +1503,42 @@ function GmailInboxView({ account, setEmailAccounts, profiles, contacts, userId 
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && setShowCompose(false)}>
           <div className="modal">
             <div className="modal-header">
-              <h3>New message · from {account.email_address}</h3>
+              <h3>{composeReplyMeta ? 'Reply' : 'New message'}</h3>
               <button className="modal-close" onClick={()=>setShowCompose(false)}>×</button>
             </div>
             <form onSubmit={handleSend}>
+              <div className="form-group">
+                <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>From</span>
+                  {verifiedAliases.length === 0 && (
+                    <button type="button" onClick={() => runAliasesSync(false)} disabled={syncingAliases} className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)'}}>
+                      {syncingAliases ? 'syncing…' : 'sync senders'}
+                    </button>
+                  )}
+                </label>
+                {verifiedAliases.length === 0 ? (
+                  <div style={{padding:'8px 12px',background:'var(--bg-base)',borderRadius:'6px',fontSize:'12px',color:'var(--text-3)'}}>
+                    Sending as <strong style={{color:'var(--text-1)'}}>{account.email_address}</strong> · click <strong>sync senders</strong> to load your Gmail aliases
+                  </div>
+                ) : (
+                  <select
+                    className="form-select"
+                    value={composeFrom || (defaultAlias?.email_address || account.email_address)}
+                    onChange={e => setComposeFrom(e.target.value)}
+                  >
+                    {verifiedAliases.map(a => (
+                      <option key={a.email_address} value={a.email_address}>
+                        {a.display_name ? `${a.display_name} <${a.email_address}>` : a.email_address}
+                        {a.is_default ? ' · default' : ''}
+                        {a.is_primary ? ' · primary' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
               <div className="form-group"><label className="form-label">To</label><input className="form-input" type="text" value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="recipient@example.com (comma-separated for multiple)" required /></div>
               <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" required /></div>
-              <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'160px'}} required /></div>
+              <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required /></div>
               {sendMsg && <p style={{fontSize:'13px',color: sendMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',margin:'4px 0'}}>{sendMsg}</p>}
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
@@ -8837,6 +8971,7 @@ export default function App() {
   const [investments, setInvestments] = useState([]);
   const [brain, setBrain] = useState([]);
   const [events, setEvents] = useState([]);
+  const [emailAliases, setEmailAliases] = useState([]);
   const [playbookSteps, setPlaybookSteps] = useState([]);
   const [playbookRuns, setPlaybookRuns] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -8879,7 +9014,7 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, eventsRes, playbookStepsRes, playbookRunsRes, profilesRes, voiceCardsRes, emailAccountsRes, finAccountsRes, finAssetsRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, eventsRes, playbookStepsRes, playbookRunsRes, profilesRes, voiceCardsRes, emailAccountsRes, emailAliasesRes, finAccountsRes, finAssetsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
@@ -8895,6 +9030,7 @@ export default function App() {
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('voice_cards').select('*').order('created_at', { ascending: true }),
       supabase.from('email_accounts').select('*').order('created_at', { ascending: true }),
+      supabase.from('email_aliases').select('*').order('email_address', { ascending: true }),
       supabase.from('fin_accounts').select('*').order('created_at', { ascending: false }),
       supabase.from('fin_assets').select('*').order('created_at', { ascending: false }),
     ]);
@@ -8913,6 +9049,7 @@ export default function App() {
     if (profilesRes.data) setProfiles(profilesRes.data);
     if (voiceCardsRes.data) setVoiceCards(voiceCardsRes.data);
     if (emailAccountsRes.data) setEmailAccounts(emailAccountsRes.data);
+    if (emailAliasesRes.data) setEmailAliases(emailAliasesRes.data);
     if (finAccountsRes.data) setFinAccounts(finAccountsRes.data);
     if (finAssetsRes.data) setFinAssets(finAssetsRes.data);
     setDataLoaded(true);
@@ -8945,6 +9082,13 @@ export default function App() {
           const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
           if (fresh) setEvents(fresh);
         }).catch(()=>{});
+        // Also sync Gmail aliases (Send mail as) so the From dropdown is populated
+        supabase.functions.invoke('gmail-aliases-sync', {
+          body: { user_id: session.user.id }
+        }).then(async () => {
+          const { data: aliases } = await supabase.from('email_aliases').select('*').order('email_address', { ascending: true });
+          if (aliases) setEmailAliases(aliases);
+        }).catch(()=>{});
       }
       // Hide the flash after 6s
       const t = setTimeout(() => setGmailConnectedFlash(null), 6000);
@@ -8955,7 +9099,7 @@ export default function App() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]); setFinAccounts([]); setFinAssets([]);
-    setContacts([]); setProperties([]); setInvestments([]); setBrain([]); setEvents([]); setPlaybookSteps([]); setPlaybookRuns([]);
+    setContacts([]); setProperties([]); setInvestments([]); setBrain([]); setEvents([]); setPlaybookSteps([]); setPlaybookRuns([]); setEmailAliases([]);
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
     setDataLoaded(false);
   }
@@ -9041,7 +9185,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
             : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain}/>
-            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={user.id} setView={setView}/>
+            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
