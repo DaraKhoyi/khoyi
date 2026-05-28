@@ -8288,18 +8288,18 @@ function ValidatePanel({ ownerProfile, voiceCard }) {
 
 function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
   const [connecting, setConnecting] = useState(false);
+  const [connectingPurpose, setConnectingPurpose] = useState(null);
   const [err, setErr] = useState('');
 
-  async function startConnect() {
+  async function startConnect(purpose = 'email') {
     setConnecting(true);
+    setConnectingPurpose(purpose);
     setErr('');
     try {
-      // Get a current access token to pass through (so the OAuth start function can
-      // identify the user; verify_jwt is off because the function reads the bearer manually).
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not signed in.');
       const { data, error } = await supabase.functions.invoke('google-oauth-start', {
-        body: { return_to: window.location.origin + window.location.pathname, purpose: 'email' },
+        body: { return_to: window.location.origin + window.location.pathname, purpose },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
@@ -8308,21 +8308,34 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
     } catch (e) {
       setErr(e.message || String(e));
       setConnecting(false);
+      setConnectingPurpose(null);
     }
   }
 
   async function disconnect(id) {
-    if (!window.confirm('Disconnect this Gmail account? Synced messages will remain in the database.')) return;
+    if (!window.confirm('Disconnect this Google account? Synced messages and events will remain in the database, but future sync will stop.')) return;
     await supabase.from('email_accounts').update({ is_active: false }).eq('id', id);
     setEmailAccounts(prev => prev.map(a => a.id === id ? { ...a, is_active: false } : a));
   }
 
+  function purposeBadges(purposes) {
+    const list = purposes || [];
+    return list.map(p => (
+      <span key={p} className="pill" style={{
+        fontSize:'10px', padding:'2px 6px',
+        background: p === 'calendar' ? 'rgba(197,169,94,0.15)' : 'rgba(34,197,94,0.12)',
+        color: p === 'calendar' ? 'var(--accent)' : 'var(--green)',
+        border: `1px solid ${p === 'calendar' ? 'var(--accent-dim)' : '#22c55e'}`,
+      }}>{p === 'calendar' ? '📅 calendar' : '📧 email'}</span>
+    ));
+  }
+
   return (
     <div className="panel" style={{marginBottom:'18px'}}>
-      <div className="panel-header"><h3>📬 Email Accounts</h3></div>
+      <div className="panel-header"><h3>🔗 Connected Google Accounts</h3></div>
       <div className="panel-body">
         <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
-          Connect Gmail to read and send real email from Prism. Behavioral profiles are applied automatically to every draft.
+          Connect Google for email (Gmail) and/or calendar. You can connect different accounts for different purposes — e.g. dara@brokerdara.com for email, khoyi1234@gmail.com for calendar.
         </p>
         {emailAccounts.length === 0
           ? <p style={{fontSize:'13px',color:'var(--text-3)',marginBottom:'14px'}}>No accounts connected yet.</p>
@@ -8330,9 +8343,12 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
             <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'14px'}}>
               {emailAccounts.map(a => (
                 <div key={a.id} style={{padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-                  <span style={{fontSize:'18px'}}>📧</span>
+                  <span style={{fontSize:'18px'}}>{(a.purposes||[]).includes('calendar') ? '📅' : '📧'}</span>
                   <div style={{flex:1,minWidth:'160px'}}>
-                    <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{a.email_address}</div>
+                    <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px',display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
+                      {a.email_address}
+                      {purposeBadges(a.purposes)}
+                    </div>
                     <div style={{fontSize:'12px',color:'var(--text-2)'}}>
                       {a.provider} · {a.is_active ? 'active' : 'inactive'}
                       {a.last_sync_at && <> · synced {new Date(a.last_sync_at).toLocaleString()}</>}
@@ -8354,9 +8370,14 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
             {err}
           </div>
         )}
-        <button className="btn btn-primary" onClick={startConnect} disabled={connecting}>
-          {connecting ? 'Opening Google…' : '+ Connect Gmail'}
-        </button>
+        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+          <button className="btn btn-primary" onClick={() => startConnect('email')} disabled={connecting}>
+            {connecting && connectingPurpose === 'email' ? 'Opening Google…' : '+ Connect Gmail'}
+          </button>
+          <button className="btn btn-ghost" onClick={() => startConnect('calendar')} disabled={connecting} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
+            {connecting && connectingPurpose === 'calendar' ? 'Opening Google…' : '+ Connect Calendar'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -8863,8 +8884,182 @@ function FinancialsView({ accounts, setAccounts, assets, setAssets, userId }) {
 
 // ─────────────────────────────────────────
 // SETTINGS VIEW
+function EmailAliasesPanel({ emailAliases, setEmailAliases, emailAccounts, userId }) {
+  const [syncing, setSyncing] = useState(false);
+  const [busy, setBusy] = useState(null);   // alias id currently being updated
+  const [editingName, setEditingName] = useState(null);  // {id, value}
+  const [msg, setMsg] = useState(null);
+
+  // The email-purpose Google account (only it has a sendAs list)
+  const emailAccount =
+    emailAccounts.find(a => a.is_active && (a.purposes || []).includes('email')) ||
+    emailAccounts.find(a => a.is_active && (a.scopes || []).some(s => s.includes('gmail')));
+
+  const aliases = (emailAliases || []).slice().sort((a, b) => {
+    if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+    if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+    return a.email_address.localeCompare(b.email_address);
+  });
+
+  function flash(text, type = 'ok') {
+    setMsg({ text, type });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function syncAliases() {
+    if (!emailAccount) { flash('Connect a Gmail account first.', 'error'); return; }
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('gmail-aliases-sync', {
+        body: { user_id: userId, account_id: emailAccount.id }
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const { data: fresh } = await supabase.from('email_aliases').select('*').order('email_address', { ascending: true });
+      if (fresh) setEmailAliases(fresh);
+      flash(`Synced ${data.synced} sender ${data.synced === 1 ? 'address' : 'addresses'} from Gmail.`);
+    } catch (e) {
+      flash('Sync failed: ' + (e.message || e), 'error');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function setDefault(alias) {
+    if (alias.is_default) return;
+    setBusy(alias.id);
+    try {
+      // The DB trigger clears is_default on other rows when we set this one.
+      const { error } = await supabase.from('email_aliases').update({ is_default: true }).eq('id', alias.id);
+      if (error) throw error;
+      setEmailAliases(prev => prev.map(a => ({ ...a, is_default: a.id === alias.id })));
+      flash(`Default sender set to ${alias.email_address}.`);
+    } catch (e) {
+      flash('Failed: ' + (e.message || e), 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveName(alias, newName) {
+    const cleaned = (newName || '').trim();
+    if (cleaned === (alias.display_name || '')) {
+      setEditingName(null);
+      return;
+    }
+    setBusy(alias.id);
+    try {
+      const { error } = await supabase.from('email_aliases').update({ display_name: cleaned || null }).eq('id', alias.id);
+      if (error) throw error;
+      setEmailAliases(prev => prev.map(a => a.id === alias.id ? { ...a, display_name: cleaned || null } : a));
+      flash(`Display name updated for ${alias.email_address}.`);
+      setEditingName(null);
+    } catch (e) {
+      flash('Failed: ' + (e.message || e), 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="panel" style={{marginBottom:'18px'}}>
+      <div className="panel-header" style={{justifyContent:'space-between'}}>
+        <h3>✉️ Sender Addresses</h3>
+        <button className="btn btn-ghost btn-sm" onClick={syncAliases} disabled={syncing || !emailAccount}>
+          {syncing ? '↻ Syncing…' : '↻ Sync from Gmail'}
+        </button>
+      </div>
+      <div className="panel-body">
+        <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
+          These are the addresses you can send mail "From" inside DarasApp. They mirror the <strong>Send mail as</strong> list in your Gmail Settings. The address marked <strong style={{color:'var(--accent)'}}>default</strong> is pre-selected in Compose; replies override it to match whatever address the original was sent to.
+        </p>
+
+        {msg && (
+          <div style={{padding:'10px 12px',marginBottom:'12px',borderRadius:'6px',fontSize:'12px',
+            background: msg.type === 'ok' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+            border: `1px solid ${msg.type === 'ok' ? '#22c55e' : '#ef4444'}`,
+            color: msg.type === 'ok' ? '#22c55e' : '#ef4444'}}>{msg.text}</div>
+        )}
+
+        {!emailAccount && (
+          <div style={{padding:'12px',background:'var(--bg-base)',border:'1px dashed var(--border)',borderRadius:'8px',fontSize:'12px',color:'var(--text-3)'}}>
+            Connect a Gmail account above first — sender addresses are pulled from that account's Gmail Settings.
+          </div>
+        )}
+
+        {emailAccount && aliases.length === 0 && (
+          <div style={{padding:'12px',background:'var(--bg-base)',border:'1px dashed var(--border)',borderRadius:'8px',fontSize:'12px',color:'var(--text-3)'}}>
+            No sender addresses synced yet. Click <strong>Sync from Gmail</strong> above.
+          </div>
+        )}
+
+        {aliases.length > 0 && (
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {aliases.map(a => {
+              const isEditing = editingName?.id === a.id;
+              return (
+                <div key={a.id} style={{
+                  padding:'12px',
+                  background: a.is_default ? 'var(--accent-glow)' : 'var(--bg-base)',
+                  border: `1px solid ${a.is_default ? 'var(--accent-dim)' : 'var(--border)'}`,
+                  borderRadius:'8px',
+                  display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'
+                }}>
+                  <div style={{flex:1, minWidth:'200px'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'4px'}}>
+                      <span style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{a.email_address}</span>
+                      {a.is_default && <span className="pill" style={{fontSize:'10px',padding:'2px 6px',background:'var(--accent)',color:'var(--bg-base)',fontWeight:700}}>DEFAULT</span>}
+                      {a.is_primary && <span className="pill" style={{fontSize:'10px',padding:'2px 6px',background:'var(--bg-card)',color:'var(--text-2)',border:'1px solid var(--border)'}}>primary</span>}
+                      {!a.verified && <span className="pill" style={{fontSize:'10px',padding:'2px 6px',background:'rgba(239,68,68,0.15)',color:'var(--red)',border:'1px solid var(--red)'}}>unverified</span>}
+                    </div>
+                    {isEditing ? (
+                      <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                        <input
+                          className="form-input"
+                          autoFocus
+                          value={editingName.value}
+                          onChange={e => setEditingName({ ...editingName, value: e.target.value })}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') { e.preventDefault(); saveName(a, editingName.value); }
+                            if (e.key === 'Escape') setEditingName(null);
+                          }}
+                          placeholder="Display name (e.g. Dara Khoyi)"
+                          style={{padding:'4px 8px',fontSize:'12px',height:'auto'}}
+                        />
+                        <button className="btn btn-ghost btn-sm" onClick={() => saveName(a, editingName.value)} disabled={busy === a.id} style={{padding:'4px 8px',fontSize:'11px'}}>Save</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setEditingName(null)} style={{padding:'4px 8px',fontSize:'11px'}}>×</button>
+                      </div>
+                    ) : (
+                      <div style={{fontSize:'12px',color:'var(--text-3)',display:'flex',alignItems:'center',gap:'6px'}}>
+                        <span>{a.display_name || <em style={{opacity:0.6}}>no display name</em>}</span>
+                        <button onClick={() => setEditingName({ id: a.id, value: a.display_name || '' })} style={{background:'none',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:'11px',padding:0}}>edit</button>
+                      </div>
+                    )}
+                  </div>
+                  {!a.is_default && a.verified && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setDefault(a)} disabled={busy === a.id}
+                      style={{borderColor:'var(--accent-dim)',color:'var(--accent)',fontSize:'11px'}}>
+                      {busy === a.id ? '…' : 'Set as default'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'14px',lineHeight:1.5}}>
+          To add or remove an alias, change it in <a href="https://mail.google.com/mail/u/0/#settings/accounts" target="_blank" rel="noreferrer" style={{color:'var(--accent)'}}>Gmail Settings → Accounts → Send mail as</a>, then click Sync from Gmail above.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
-function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts }) {
+// SETTINGS VIEW
+// ─────────────────────────────────────────
+function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -8930,6 +9125,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
           </div>
         </div>
         <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
+        <EmailAliasesPanel emailAliases={emailAliases || []} setEmailAliases={setEmailAliases} emailAccounts={emailAccounts || []} userId={userId} />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Account</h3></div>
           <div className="panel-body">
@@ -9197,7 +9393,7 @@ export default function App() {
             : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
             : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
             : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
-            : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts}/>
+            : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id}/>
             : null
           }
         </main>
