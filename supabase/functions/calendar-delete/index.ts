@@ -43,11 +43,19 @@ serve(async (req) => {
       });
     }
 
-    const { data: account } = await supabase
+    let { data: account } = await supabase
       .from("email_accounts").select("*")
       .eq("user_id", user_id).eq("provider", "google").eq("is_active", true)
+      .contains("purposes", ["calendar"])
       .order("updated_at", { ascending: false }).limit(1).maybeSingle();
-    if (!account?.refresh_token) throw new Error("No Google account");
+    if (!account) {
+      const { data: candidates } = await supabase
+        .from("email_accounts").select("*")
+        .eq("user_id", user_id).eq("provider", "google").eq("is_active", true)
+        .order("updated_at", { ascending: false });
+      account = (candidates || []).find(a => (a.scopes || []).some((s) => s.includes("calendar"))) || null;
+    }
+    if (!account?.refresh_token) throw new Error("No Google account for calendar");
 
     let accessToken = account.access_token;
     if (!account.token_expires_at || new Date(account.token_expires_at) <= new Date()) {

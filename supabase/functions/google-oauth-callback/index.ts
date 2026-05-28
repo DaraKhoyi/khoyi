@@ -1,17 +1,13 @@
 // google-oauth-callback
-// Google redirects here after the unified consent. Exchanges the code,
-// stores tokens + scopes in email_accounts (provider='google'), then
-// redirects back to the app with ?google_connected=<email>.
+// Google redirects here after consent. Exchanges the code, derives which
+// purposes (email/calendar) were actually granted from the returned scopes,
+// merges with any existing connection for the same address, and stores it.
+// Redirects back with ?google_connected=<email>&purpose=<purpose>.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-function htmlPage(title: string, body: string) {
+function htmlPage(title, body) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0d0f14;color:#e8eaf0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
 .box{max-width:480px;padding:32px;background:#161921;border:1px solid #252a38;border-radius:12px}
@@ -21,9 +17,15 @@ a{color:#C5A95E;text-decoration:none}</style>
 </head><body><div class="box">${body}</div></body></html>`;
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+function purposesFromScopes(scopeStr) {
+  const scopes = (scopeStr || "").split(" ");
+  const purposes = [];
+  if (scopes.some(s => s.includes("gmail"))) purposes.push("email");
+  if (scopes.some(s => s.includes("calendar"))) purposes.push("calendar");
+  return purposes.length ? purposes : ["email"];
+}
 
+serve(async (req) => {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -48,6 +50,7 @@ serve(async (req) => {
     catch { throw new Error("Invalid state parameter"); }
     const userId = stateObj.uid;
     const returnTo = stateObj.rt || "https://darasapp.com/";
+    const requestedPurpose = stateObj.purpose || "email";
 
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
@@ -60,11 +63,8 @@ serve(async (req) => {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
+        code, client_id: clientId, client_secret: clientSecret,
+        redirect_uri: redirectUri, grant_type: "authorization_code",
       }).toString(),
     });
     if (!tokenResp.ok) {
@@ -89,15 +89,23 @@ serve(async (req) => {
     );
 
     const expiresAt = new Date(Date.now() + ((tokens.expires_in || 3600) - 60) * 1000).toISOString();
+    const grantedPurposes = purposesFromScopes(tokens.scope);
 
+    // Find existing connection for this address
     const { data: existing } = await supabase
       .from("email_accounts")
-      .select("id, refresh_token")
+      .select("id, refresh_token, purposes")
       .eq("user_id", userId)
       .eq("email_address", profile.email)
       .maybeSingle();
 
-    const payload: Record<string, unknown> = {
+    // Merge purposes: union of existing + newly granted
+    const mergedPurposes = Array.from(new Set([
+      ...((existing && existing.purposes) || []),
+      ...grantedPurposes,
+    ]));
+
+    const payload = {
       user_id: userId,
       provider: "google",
       email_address: profile.email,
@@ -106,6 +114,7 @@ serve(async (req) => {
       refresh_token: tokens.refresh_token || (existing && existing.refresh_token) || null,
       token_expires_at: expiresAt,
       scopes: (tokens.scope || "").split(" "),
+      purposes: mergedPurposes,
       is_active: true,
     };
 
@@ -117,10 +126,8 @@ serve(async (req) => {
 
     const dest = new URL(returnTo);
     dest.searchParams.set("google_connected", profile.email);
-    return new Response(null, {
-      status: 302,
-      headers: { Location: dest.toString() },
-    });
+    dest.searchParams.set("purpose", grantedPurposes.join(","));
+    return new Response(null, { status: 302, headers: { Location: dest.toString() } });
   } catch (err) {
     return new Response(
       htmlPage(

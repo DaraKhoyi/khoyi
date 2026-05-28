@@ -84,19 +84,32 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Load google account
-    const { data: account, error: accErr } = await supabase
+    // Load the account designated for CALENDAR. Prefer purposes @> {calendar},
+    // fall back to any active google account with a calendar scope.
+    let { data: account, error: accErr } = await supabase
       .from("email_accounts")
       .select("*")
       .eq("user_id", user_id)
       .eq("provider", "google")
       .eq("is_active", true)
+      .contains("purposes", ["calendar"])
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (accErr) throw accErr;
-    if (!account) throw new Error("No active Google account connected");
-    if (!account.refresh_token) throw new Error("No refresh token; please reconnect Google");
+    if (!account) {
+      // Fallback: any active google account whose scopes include calendar
+      const { data: candidates } = await supabase
+        .from("email_accounts")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("provider", "google")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false });
+      account = (candidates || []).find(a => (a.scopes || []).some((s) => s.includes("calendar"))) || null;
+    }
+    if (!account) throw new Error("No Google account connected for calendar");
+    if (!account.refresh_token) throw new Error("No refresh token; please reconnect the calendar account");
 
     // Ensure access token is fresh
     let accessToken = account.access_token;

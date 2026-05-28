@@ -1,6 +1,11 @@
 // google-oauth-start
-// Unified Google OAuth: requests Gmail + Calendar + profile scopes in one consent.
-// Body: { return_to?: string }
+// Purpose-aware Google OAuth. One Google Cloud app, but the scopes requested
+// depend on what the user is connecting the account FOR:
+//   purpose='email'    -> Gmail scopes
+//   purpose='calendar' -> Calendar scopes
+//   purpose='both'     -> everything (single account doing both)
+//
+// Body: { return_to?: string, purpose?: 'email'|'calendar'|'both' }
 // Returns: { url: string, state: string }
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -11,19 +16,28 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SCOPES = [
-  // Gmail
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send",
-  "https://www.googleapis.com/auth/gmail.modify",
-  // Calendar (read + write)
-  "https://www.googleapis.com/auth/calendar",
-  "https://www.googleapis.com/auth/calendar.events",
-  // Identity
+const IDENTITY_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
   "openid",
 ];
+const GMAIL_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/gmail.modify",
+];
+const CALENDAR_SCOPES = [
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/calendar.events",
+];
+
+function scopesForPurpose(purpose) {
+  const set = new Set(IDENTITY_SCOPES);
+  if (purpose === "email" || purpose === "both") GMAIL_SCOPES.forEach(s => set.add(s));
+  if (purpose === "calendar" || purpose === "both") CALENDAR_SCOPES.forEach(s => set.add(s));
+  if (set.size === IDENTITY_SCOPES.length) GMAIL_SCOPES.forEach(s => set.add(s));
+  return [...set];
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -57,15 +71,18 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const returnTo = (body && body.return_to) || "https://darasapp.com/";
+    const purpose = (body && body.purpose) || "email";
 
-    const stateObj = { uid: user.id, rt: returnTo, ts: Date.now() };
+    const scopes = scopesForPurpose(purpose);
+
+    const stateObj = { uid: user.id, rt: returnTo, purpose, ts: Date.now() };
     const state = btoa(JSON.stringify(stateObj));
 
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: SCOPES.join(" "),
+      scope: scopes.join(" "),
       access_type: "offline",
       prompt: "consent",
       include_granted_scopes: "true",
@@ -74,7 +91,7 @@ serve(async (req) => {
 
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 
-    return new Response(JSON.stringify({ url, state }), {
+    return new Response(JSON.stringify({ url, state, purpose }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

@@ -6846,8 +6846,11 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   const [syncing, setSyncing] = useState(false);
   const [flash, setFlash] = useState(null);
 
-  const googleAccount = (emailAccounts || []).find(a => a.provider === 'google' && a.is_active);
-  const hasCalendarScope = googleAccount && (googleAccount.scopes || []).some(s => s.includes('calendar'));
+  const googleAccounts = (emailAccounts || []).filter(a => a.provider === 'google' && a.is_active);
+  // The calendar account: one tagged with 'calendar' purpose, or any with calendar scope
+  const calendarAccount = googleAccounts.find(a => (a.purposes || []).includes('calendar'))
+    || googleAccounts.find(a => (a.scopes || []).some(s => s.includes('calendar')));
+  const hasCalendarScope = !!calendarAccount;
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -6928,7 +6931,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { setFlash({type:'error',text:'Not signed in.'}); return; }
       const { data, error } = await supabase.functions.invoke('google-oauth-start', {
-        body: { return_to: window.location.origin + window.location.pathname },
+        body: { return_to: window.location.origin + window.location.pathname, purpose: 'calendar' },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
@@ -6952,11 +6955,11 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
           {hasCalendarScope ? (
             <button className="btn btn-ghost" onClick={()=>syncCalendar('both')} disabled={syncing}>
-              {syncing ? '↻ Syncing…' : '↻ Sync Google'}
+              {syncing ? '↻ Syncing…' : `↻ Sync ${calendarAccount.email_address}`}
             </button>
           ) : (
             <button className="btn btn-ghost" onClick={connectGoogle} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
-              🔗 Connect Google Calendar
+              🔗 Connect Calendar Account
             </button>
           )}
           <button className="btn btn-primary" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}}>+ New Event</button>
@@ -6970,9 +6973,14 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
           color: flash.type==='ok'?'#22c55e':'#ef4444', fontSize:'13px'}}>{flash.text}</div>
       )}
 
-      {!hasCalendarScope && googleAccount && (
-        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--text-2)',fontSize:'12px'}}>
-          Google is connected for email but without calendar permission. Click <strong>Connect Google Calendar</strong> to re-authorize with calendar access.
+      {!hasCalendarScope && (
+        <div style={{padding:'12px 14px',marginBottom:'14px',borderRadius:'8px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--text-2)',fontSize:'12px',lineHeight:1.6}}>
+          <strong style={{color:'var(--accent)'}}>Connect your calendar account.</strong> Click <strong>Connect Calendar Account</strong> above and sign in with <strong>khoyi1234@gmail.com</strong> (your calendar account). This is separate from your email account — you can connect both. Once connected, your Google Calendar syncs both ways automatically.
+          {googleAccounts.length > 0 && (
+            <div style={{marginTop:'6px',color:'var(--text-3)'}}>
+              Currently connected Google {googleAccounts.length === 1 ? 'account' : 'accounts'}: {googleAccounts.map(a => `${a.email_address} (${(a.purposes||['email']).join('+')})`).join(', ')}
+            </div>
+          )}
         </div>
       )}
 
@@ -8099,8 +8107,8 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
       // identify the user; verify_jwt is off because the function reads the bearer manually).
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not signed in.');
-      const { data, error } = await supabase.functions.invoke('gmail-oauth-start', {
-        body: { return_to: window.location.origin + window.location.pathname },
+      const { data, error } = await supabase.functions.invoke('google-oauth-start', {
+        body: { return_to: window.location.origin + window.location.pathname, purpose: 'email' },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
