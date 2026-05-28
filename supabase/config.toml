@@ -1,0 +1,13 @@
+project_id = "xlgfspnojjgvkuitcoaf"
+
+[functions.brain-embed]
+verify_jwt = false
+
+[functions.brain-semantic-search]
+verify_jwt = false
+
+[functions.playbook-parse]
+verify_jwt = false
+
+[functions.task-quadrant-suggest]
+verify_jwt = false

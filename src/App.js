@@ -351,10 +351,88 @@ const DATE_FILTERS = [
   { id:'all',       label:'All Open',  hint:'Everything not done' },
 ];
 
+// Compute the next due date for a recurring task. Anchors to the old due_date
+// if present, otherwise to today. Returns YYYY-MM-DD.
+function nextRecurringDate(fromDate, interval) {
+  const base = fromDate ? new Date(fromDate + 'T00:00:00') : new Date();
+  const d = new Date(base);
+  switch (interval) {
+    case 'daily':     d.setDate(d.getDate() + 1); break;
+    case 'weekly':    d.setDate(d.getDate() + 7); break;
+    case 'biweekly':  d.setDate(d.getDate() + 14); break;
+    case 'monthly':   d.setMonth(d.getMonth() + 1); break;
+    case 'quarterly': d.setMonth(d.getMonth() + 3); break;
+    case 'yearly':    d.setFullYear(d.getFullYear() + 1); break;
+    default:          d.setDate(d.getDate() + 1);
+  }
+  // If anchored to a past date, roll forward until it's >= today
+  const todayStr = todayISO();
+  let guard = 0;
+  while (d.toISOString().slice(0,10) < todayStr && guard < 60) {
+    switch (interval) {
+      case 'daily':     d.setDate(d.getDate() + 1); break;
+      case 'weekly':    d.setDate(d.getDate() + 7); break;
+      case 'biweekly':  d.setDate(d.getDate() + 14); break;
+      case 'monthly':   d.setMonth(d.getMonth() + 1); break;
+      case 'quarterly': d.setMonth(d.getMonth() + 3); break;
+      case 'yearly':    d.setFullYear(d.getFullYear() + 1); break;
+      default:          d.setDate(d.getDate() + 1);
+    }
+    guard++;
+  }
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+// Choose the appropriate list bucket for a due date
+function nextListForDate(dateStr) {
+  if (!dateStr) return 'inbox';
+  const today = todayISO();
+  const weekOut = addDaysISO(7);
+  if (dateStr <= today) return 'today';
+  if (dateStr <= weekOut) return 'this_week';
+  return 'inbox';
+}
+
+// Task streak (client-side): consecutive days with ≥1 A-quadrant / high completion
+function computeTaskStreak(tasks) {
+  const days = new Set();
+  for (const t of tasks) {
+    if (!t.completed) continue;
+    const isTop = (t.priority_system === 'eisenhower' && t.eisenhower_quadrant === 'A')
+               || (t.priority_system === 'simple' && t.priority === 'high');
+    if (!isTop) continue;
+    const when = t.completed_at || t.updated_at;
+    if (!when) continue;
+    days.add(new Date(when).toISOString().slice(0,10));
+  }
+  if (days.size === 0) return { current: 0, longest: 0, today: false };
+  const today = new Date().toISOString().slice(0,10);
+  const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0,10);
+  const hitToday = days.has(today);
+  let cursor = hitToday ? today : (days.has(yesterday) ? yesterday : null);
+  let current = 0;
+  while (cursor && days.has(cursor)) {
+    current++;
+    cursor = new Date(new Date(cursor).getTime() - 864e5).toISOString().slice(0,10);
+  }
+  const sortedDays = [...days].sort();
+  let longest = 0, run = 0, prev = null;
+  for (const d of sortedDays) {
+    if (prev) {
+      const gap = (new Date(d) - new Date(prev)) / 864e5;
+      run = gap === 1 ? run + 1 : 1;
+    } else run = 1;
+    longest = Math.max(longest, run);
+    prev = d;
+  }
+  return { current, longest, today: hitToday };
+}
+
 // ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
-function TaskModal({ onClose, onSave, initial, defaultSystem }) {
+function TaskModal({ onClose, onSave, initial, defaultSystem, brain }) {
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
   const [system, setSystem] = useState(initialSystem);
@@ -363,11 +441,55 @@ function TaskModal({ onClose, onSave, initial, defaultSystem }) {
   const [rank, setRank] = useState(initial?.eisenhower_rank ?? 1);
   const [due_date, setDueDate] = useState(initial?.due_date || '');
   const [notes, setNotes] = useState(initial?.notes || '');
+  const [brainEntryId, setBrainEntryId] = useState(initial?.brain_entry_id || '');
+  const [recurring, setRecurring] = useState(
+    initial?.recurring_config?.interval || 'none'
+  );
+
+  // AI quadrant suggestion
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState(null);
+
+  async function suggestQuadrant() {
+    if (!title.trim()) return;
+    setSuggesting(true);
+    setSuggestion(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('task-quadrant-suggest', {
+        body: { title: title.trim(), notes: notes.trim() || null, due_date: due_date || null }
+      });
+      if (error || data?.error) {
+        setSuggestion({ error: error?.message || data?.error });
+      } else {
+        setSuggestion(data);
+        if (system === 'eisenhower' && data.quadrant) {
+          setQuadrant(data.quadrant);
+        } else {
+          // Translate quadrant to simple priority
+          const map = { A: 'high', B: 'medium', C: 'medium', D: 'low' };
+          if (data.quadrant) setPriority(map[data.quadrant]);
+        }
+      }
+    } catch (e) {
+      setSuggestion({ error: e.message });
+    } finally {
+      setSuggesting(false);
+    }
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim()) return;
-    const base = { title: title.trim(), due_date: due_date || null, notes: notes.trim(), priority_system: system };
+    const recurring_config = recurring === 'none' ? null : { interval: recurring };
+    const base = {
+      title: title.trim(),
+      due_date: due_date || null,
+      notes: notes.trim(),
+      priority_system: system,
+      brain_entry_id: brainEntryId || null,
+      recurring_config,
+      recurring: recurring === 'none' ? null : recurring,  // legacy text column
+    };
     if (system === 'eisenhower') {
       const r = Math.max(1, parseInt(rank, 10) || 1);
       onSave({ ...base, priority: 'medium', eisenhower_quadrant: quadrant, eisenhower_rank: r });
@@ -395,7 +517,19 @@ function TaskModal({ onClose, onSave, initial, defaultSystem }) {
           {system === 'eisenhower' ? (
             <div className="form-row">
               <div className="form-group" style={{flex:2}}>
-                <label className="form-label">Quadrant</label>
+                <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'space-between'}}>
+                  <span>Quadrant</span>
+                  <button
+                    type="button"
+                    onClick={suggestQuadrant}
+                    disabled={!title.trim() || suggesting}
+                    className="btn btn-sm btn-ghost"
+                    style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}
+                    title="Ask Claude to suggest the right quadrant"
+                  >
+                    {suggesting ? '…thinking' : '✨ Suggest'}
+                  </button>
+                </label>
                 <select className="form-select" value={quadrant} onChange={e=>setQuadrant(e.target.value)}>
                   {QUADRANTS.map(q => <option key={q.letter} value={q.letter}>{q.label} · {q.short}</option>)}
                 </select>
@@ -407,13 +541,70 @@ function TaskModal({ onClose, onSave, initial, defaultSystem }) {
             </div>
           ) : (
             <div className="form-group">
-              <label className="form-label">Priority</label>
+              <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'space-between'}}>
+                <span>Priority</span>
+                <button
+                  type="button"
+                  onClick={suggestQuadrant}
+                  disabled={!title.trim() || suggesting}
+                  className="btn btn-sm btn-ghost"
+                  style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}
+                  title="Ask Claude to suggest"
+                >
+                  {suggesting ? '…thinking' : '✨ Suggest'}
+                </button>
+              </label>
               <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
                 <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
               </select>
             </div>
           )}
-          <div className="form-group"><label className="form-label">Due Date</label><input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} /></div>
+          {suggestion && !suggestion.error && (
+            <div style={{padding:'8px 12px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'6px',marginBottom:'10px',fontSize:'12px'}}>
+              <div style={{color:'var(--accent)',fontWeight:600,marginBottom:'2px'}}>✨ Claude suggests <strong>{suggestion.quadrant}</strong> · confidence {Math.round((suggestion.confidence||0)*100)}%</div>
+              <div style={{color:'var(--text-2)',lineHeight:1.4}}>{suggestion.reasoning}</div>
+            </div>
+          )}
+          {suggestion?.error && (
+            <div style={{padding:'8px 12px',background:'rgba(239,68,68,0.1)',border:'1px solid #ef4444',borderRadius:'6px',marginBottom:'10px',fontSize:'12px',color:'#ef4444'}}>
+              Suggest failed: {suggestion.error}
+            </div>
+          )}
+          <div className="form-row">
+            <div className="form-group" style={{flex:1}}>
+              <label className="form-label">Due Date</label>
+              <input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} />
+            </div>
+            <div className="form-group" style={{flex:1}}>
+              <label className="form-label">Recurring</label>
+              <select className="form-select" value={recurring} onChange={e=>setRecurring(e.target.value)}>
+                <option value="none">No</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Every 2 weeks</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+          </div>
+          {brain && brain.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">Brain context <span style={{color:'var(--text-3)',fontWeight:400,fontSize:'11px'}}>(link this task to a Brain entry — playbook, decision, memory)</span></label>
+              <select className="form-select" value={brainEntryId} onChange={e=>setBrainEntryId(e.target.value)}>
+                <option value="">— None —</option>
+                {['playbook','decision','memory','soul','lesson','north-star'].map(type => {
+                  const entries = brain.filter(b => b.type === type);
+                  if (entries.length === 0) return null;
+                  return (
+                    <optgroup key={type} label={type.toUpperCase()}>
+                      {entries.map(b => <option key={b.id} value={b.id}>{b.title.slice(0,70)}</option>)}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </div>
+          )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional details…" /></div>
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -428,7 +619,7 @@ function TaskModal({ onClose, onSave, initial, defaultSystem }) {
 // ─────────────────────────────────────────
 // TASKS VIEW
 // ─────────────────────────────────────────
-function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode }) {
+function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
   // Drag state
@@ -442,6 +633,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   const filtered = sortTasks(filterByDateBucket(tasks, filter));
   const topCount = tasks.filter(t => !t.completed && isTopPriority(t)).length;
   const stats = { total: tasks.length, done: tasks.filter(t=>t.completed).length, top: topCount };
+  const taskStreak = computeTaskStreak(tasks);
 
   async function handleSave(data) {
     if (editTask) {
@@ -464,8 +656,35 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     setShowModal(false); setEditTask(null);
   }
   async function toggleTask(task) {
-    const { data: u } = await supabase.from('tasks').update({ completed: !task.completed }).eq('id', task.id).select().single();
+    const nowCompleting = !task.completed;
+    const { data: u } = await supabase.from('tasks').update({ completed: nowCompleting }).eq('id', task.id).select().single();
     if (u) setTasks(prev => prev.map(t => t.id === u.id ? u : t));
+
+    // Recurring rollover: when a recurring task is COMPLETED, spawn the next instance
+    const interval = task.recurring_config?.interval || task.recurring;
+    if (nowCompleting && interval && interval !== 'none') {
+      const next = nextRecurringDate(task.due_date, interval);
+      const nextTask = {
+        user_id: userId,
+        title: task.title,
+        notes: task.notes,
+        priority: task.priority,
+        priority_system: task.priority_system,
+        eisenhower_quadrant: task.eisenhower_quadrant,
+        eisenhower_rank: task.eisenhower_rank,
+        simple_rank: task.simple_rank,
+        due_date: next,
+        list: nextListForDate(next),
+        status: 'todo',
+        completed: false,
+        tags: task.tags,
+        brain_entry_id: task.brain_entry_id,
+        recurring: interval,
+        recurring_config: { interval },
+      };
+      const { data: created } = await supabase.from('tasks').insert(nextTask).select().single();
+      if (created) setTasks(prev => [created, ...prev]);
+    }
   }
   async function deleteTask(id) {
     await supabase.from('tasks').delete().eq('id', id);
@@ -592,7 +811,15 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         <button className="btn btn-primary" onClick={()=>{setEditTask(null);setShowModal(true);}}>+ New Task</button>
       </div>
       <div className="cards-row">
-        <div className="stat-card"><div className="stat-label">Total</div><div className="stat-value">{stats.total}</div></div>
+        <div className="stat-card" style={{background:'linear-gradient(135deg, var(--accent-glow) 0%, transparent 100%)',border:'1px solid var(--accent-dim)'}}>
+          <div className="stat-label" style={{color:'var(--accent)'}}>🔥 A-Priority Streak</div>
+          <div className="stat-value" style={{display:'flex',alignItems:'baseline',gap:'5px'}}>
+            <span>{taskStreak.current}</span>
+            <span style={{fontSize:'12px',color:'var(--text-3)',fontWeight:400}}>day{taskStreak.current!==1?'s':''}</span>
+            {taskStreak.today && <span title="Done today" style={{marginLeft:'auto',color:'var(--accent)',fontSize:'14px'}}>●</span>}
+          </div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>best: {taskStreak.longest}</div>
+        </div>
         <div className="stat-card"><div className="stat-label">Done</div><div className="stat-value" style={{color:'var(--green)'}}>{stats.done}</div></div>
         <div className="stat-card"><div className="stat-label">Top Priority</div><div className="stat-value" style={{color:'var(--red)'}}>{stats.top}</div></div>
         <div className="stat-card"><div className="stat-label">Open</div><div className="stat-value">{stats.total-stats.done}</div></div>
@@ -639,7 +866,15 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
                   >
                     {!task.completed && <span className="task-handle" title="Drag to reorder">⠿</span>}
                     <div className={`task-check ${task.completed?'checked':''}`} onClick={()=>toggleTask(task)} />
-                    <span className="task-text" style={{cursor:'pointer'}} onClick={()=>{setEditTask(task);setShowModal(true);}}>{task.title}</span>
+                    <span className="task-text" style={{cursor:'pointer'}} onClick={()=>{setEditTask(task);setShowModal(true);}}>
+                      {task.title}
+                      {(task.recurring_config?.interval || task.recurring) && (task.recurring_config?.interval || task.recurring) !== 'none' && (
+                        <span title={`Repeats ${task.recurring_config?.interval || task.recurring}`} style={{marginLeft:'6px',fontSize:'11px',color:'var(--accent)'}}>↻</span>
+                      )}
+                      {task.playbook_run_id && (
+                        <span title="From a playbook" style={{marginLeft:'6px',fontSize:'11px',opacity:0.7}}>📚</span>
+                      )}
+                    </span>
                     <div className="task-meta">
                       {!task.completed && (
                         <div className="task-arrows">
@@ -658,7 +893,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           )}
         </div>
       </div>
-      {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} />}
+      {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} />}
     </div>
   );
 }
@@ -6493,8 +6728,239 @@ function BrainView({ brain, setBrain, userId }) {
 
 
 // ─────────────────────────────────────────
-// NOTES VIEW
+// PLAYBOOKS VIEW — Triggerable, step-aware playbooks
 // ─────────────────────────────────────────
+function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, setPlaybookRuns, tasks, setTasks, userId, setView, setTaskFilter }) {
+  const playbooks = brain.filter(b => b.type === 'playbook');
+  const [parsingId, setParsingId] = useState(null);
+  const [runningId, setRunningId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [showRunModal, setShowRunModal] = useState(null); // playbook obj
+  const [runNote, setRunNote] = useState('');
+  const [flash, setFlash] = useState(null);
+
+  function stepsFor(pbId) {
+    return playbookSteps.filter(s => s.brain_entry_id === pbId).sort((a,b) => a.step_order - b.step_order);
+  }
+  function runsFor(pbId) {
+    return playbookRuns.filter(r => r.brain_entry_id === pbId);
+  }
+  const totalRuns = playbookRuns.length;
+  const last7dRuns = playbookRuns.filter(r => (new Date(r.created_at) > new Date(Date.now() - 7*864e5))).length;
+
+  async function reparse(playbook) {
+    setParsingId(playbook.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('playbook-parse', {
+        body: { brain_entry_id: playbook.id, user_id: userId }
+      });
+      if (error || data?.error) {
+        setFlash({ type: 'error', text: `Parse failed: ${error?.message || data?.error}` });
+      } else {
+        // Refresh steps from DB
+        const { data: refreshed } = await supabase.from('playbook_steps').select('*').order('step_order', { ascending: true });
+        if (refreshed) setPlaybookSteps(refreshed);
+        setFlash({ type: 'ok', text: `Re-parsed ${data.parsed} steps for ${playbook.title.replace(/^PLAYBOOK\s*[—-]\s*/i,'')}` });
+      }
+    } catch (e) {
+      setFlash({ type: 'error', text: e.message });
+    } finally {
+      setParsingId(null);
+      setTimeout(() => setFlash(null), 4000);
+    }
+  }
+
+  async function runPlaybook(playbook, note) {
+    setRunningId(playbook.id);
+    try {
+      const { data, error } = await supabase.rpc('run_playbook', {
+        p_brain_entry_id: playbook.id,
+        p_user_id: userId,
+        p_trigger_note: note || null,
+        p_context: {}
+      });
+      if (error) throw error;
+      const tasksCreated = data?.tasks_created || 0;
+      // Reload tasks and runs from DB to get fresh data with the new rows
+      const [tRes, rRes] = await Promise.all([
+        supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+        supabase.from('playbook_runs').select('*').order('created_at', { ascending: false }).limit(50),
+      ]);
+      if (tRes.data) setTasks(tRes.data);
+      if (rRes.data) setPlaybookRuns(rRes.data);
+      setShowRunModal(null);
+      setRunNote('');
+      setFlash({ type: 'ok', text: `▶ ${playbook.title.replace(/^PLAYBOOK\s*[—-]\s*/i,'')} launched — ${tasksCreated} tasks created` });
+    } catch (e) {
+      setFlash({ type: 'error', text: `Run failed: ${e.message}` });
+    } finally {
+      setRunningId(null);
+      setTimeout(() => setFlash(null), 5000);
+    }
+  }
+
+  function quadColor(q) {
+    return { A: '#ef4444', B: 'var(--accent)', C: '#f59e0b', D: '#6b7280' }[q] || 'var(--text-3)';
+  }
+
+  return (
+    <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+        <div><h2>📚 Playbooks</h2><p>Your repeatable plays · {playbooks.length} playbooks · {totalRuns} total runs · {last7dRuns} this week</p></div>
+      </div>
+
+      {flash && (
+        <div style={{
+          padding:'10px 14px',
+          marginBottom:'14px',
+          borderRadius:'8px',
+          background: flash.type === 'ok' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+          border: `1px solid ${flash.type === 'ok' ? '#22c55e' : '#ef4444'}`,
+          color: flash.type === 'ok' ? '#22c55e' : '#ef4444',
+          fontSize: '13px'
+        }}>{flash.text}</div>
+      )}
+
+      {playbooks.length === 0 ? (
+        <div className="panel"><div className="panel-body"><div className="empty-state">
+          <div className="empty-icon">📚</div>
+          <p>No playbooks yet. Create one in the Brain (type = Playbook).</p>
+        </div></div></div>
+      ) : (
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(420px, 1fr))', gap:'14px'}}>
+          {playbooks.map(pb => {
+            const steps = stepsFor(pb.id);
+            const runs = runsFor(pb.id);
+            const cleanTitle = pb.title.replace(/^PLAYBOOK\s*[—-]\s*/i, '');
+            const isExpanded = expandedId === pb.id;
+            return (
+              <div key={pb.id} className="panel" style={{display:'flex',flexDirection:'column'}}>
+                <div className="panel-body" style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+                  <div>
+                    <div style={{display:'flex',alignItems:'flex-start',gap:'8px',justifyContent:'space-between'}}>
+                      <h3 style={{margin:0, color:'var(--text-1)', fontSize:'16px', fontWeight:700, lineHeight:1.3}}>{cleanTitle}</h3>
+                      {pb.pinned && <span title="Pinned" style={{color:'var(--accent)',fontSize:'12px'}}>📌</span>}
+                    </div>
+                    <div style={{display:'flex',gap:'10px',marginTop:'6px',fontSize:'11px',color:'var(--text-3)'}}>
+                      <span>{steps.length} {steps.length===1?'step':'steps'}</span>
+                      <span>·</span>
+                      <span>{runs.length} run{runs.length===1?'':'s'}</span>
+                      {runs[0] && <><span>·</span><span>last: {new Date(runs[0].created_at).toLocaleDateString()}</span></>}
+                    </div>
+                  </div>
+
+                  <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setShowRunModal(pb)}
+                      disabled={steps.length === 0 || runningId === pb.id}
+                      style={{flex:1, minWidth:'120px'}}
+                    >
+                      {runningId === pb.id ? 'Launching…' : '▶ Run Playbook'}
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setExpandedId(isExpanded ? null : pb.id)}
+                    >
+                      {isExpanded ? 'Hide steps' : 'View steps'}
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => reparse(pb)}
+                      disabled={parsingId === pb.id}
+                      title="Re-parse with Claude — use if you've edited the playbook content in Brain"
+                    >
+                      {parsingId === pb.id ? 'Parsing…' : '↻ Re-parse'}
+                    </button>
+                  </div>
+
+                  {steps.length === 0 && (
+                    <div style={{fontSize:'12px',color:'var(--text-3)',padding:'10px',background:'var(--bg-base)',borderRadius:'6px',border:'1px dashed var(--border)'}}>
+                      No structured steps yet. Click <strong>↻ Re-parse</strong> to extract steps from the playbook prose.
+                    </div>
+                  )}
+
+                  {isExpanded && steps.length > 0 && (
+                    <div style={{display:'flex',flexDirection:'column',gap:'8px',marginTop:'2px'}}>
+                      {steps.map(s => (
+                        <div key={s.id} style={{padding:'10px 12px',background:'var(--bg-base)',borderRadius:'6px',border:'1px solid var(--border)'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                            <span title={`Quadrant ${s.default_quadrant}`} style={{
+                              fontSize:'10px',fontWeight:700,
+                              color: quadColor(s.default_quadrant),
+                              border:`1px solid ${quadColor(s.default_quadrant)}`,
+                              borderRadius:'4px',padding:'1px 5px',
+                              minWidth:'18px',textAlign:'center'
+                            }}>{s.default_quadrant}</span>
+                            <span style={{fontWeight:600,color:'var(--text-1)',fontSize:'13px',flex:1}}>{s.step_order}. {s.title}</span>
+                            {s.due_offset_days !== null && s.due_offset_days !== undefined && (
+                              <span style={{fontSize:'10px',color:'var(--text-3)',fontFamily:'monospace'}}>+{s.due_offset_days}d</span>
+                            )}
+                          </div>
+                          {s.detail && <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'4px',paddingLeft:'30px',lineHeight:1.4}}>{s.detail}</div>}
+                          {(s.owner || s.timing) && (
+                            <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',paddingLeft:'30px',display:'flex',gap:'12px'}}>
+                              {s.owner && <span>👤 {s.owner}</span>}
+                              {s.timing && <span>⏱ {s.timing}</span>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {runs.length > 0 && (
+                    <div style={{borderTop:'1px solid var(--border)',paddingTop:'10px',marginTop:'2px'}}>
+                      <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:'6px'}}>Recent runs</div>
+                      {runs.slice(0, 3).map(r => (
+                        <div key={r.id} style={{display:'flex',gap:'8px',fontSize:'11px',color:'var(--text-2)',padding:'2px 0'}}>
+                          <span style={{color:'var(--text-3)'}}>{new Date(r.created_at).toLocaleDateString()}</span>
+                          <span>{r.tasks_created} tasks</span>
+                          {r.trigger_note && <span style={{color:'var(--text-3)',fontStyle:'italic'}}>· {r.trigger_note.slice(0,40)}{r.trigger_note.length>40?'…':''}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Run Playbook modal */}
+      {showRunModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowRunModal(null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <h3>▶ Run Playbook</h3>
+              <button className="modal-close" onClick={() => setShowRunModal(null)}>×</button>
+            </div>
+            <div style={{padding:'0 0 14px'}}>
+              <div style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--accent-dim)',borderRadius:'8px',marginBottom:'14px'}}>
+                <div style={{fontSize:'10px',color:'var(--accent)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:'6px',fontWeight:700}}>Playbook</div>
+                <div style={{fontSize:'14px',color:'var(--text-1)',fontWeight:600}}>{showRunModal.title.replace(/^PLAYBOOK\s*[—-]\s*/i,'')}</div>
+                <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'6px'}}>
+                  Will create {stepsFor(showRunModal.id).length} tasks scheduled across the next {Math.max(0, ...stepsFor(showRunModal.id).map(s=>s.due_offset_days||0))} days.
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Context note <span style={{color:'var(--text-3)',fontWeight:400,fontSize:'11px'}}>(who/what this run is for — optional)</span></label>
+                <input className="form-input" value={runNote} onChange={e=>setRunNote(e.target.value)} placeholder='e.g. "123 Oak St listing", "Buyer: Smith", "Recruit: Anvar"' autoFocus />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setShowRunModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => runPlaybook(showRunModal, runNote)} disabled={runningId !== null}>
+                {runningId ? 'Launching…' : '▶ Launch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function NotesView({ notes, setNotes, userId }) {
   const [selected, setSelected] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -7953,6 +8419,8 @@ export default function App() {
   const [properties, setProperties] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [brain, setBrain] = useState([]);
+  const [playbookSteps, setPlaybookSteps] = useState([]);
+  const [playbookRuns, setPlaybookRuns] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [voiceCards, setVoiceCards] = useState([]);
   const [emailAccounts, setEmailAccounts] = useState([]);
@@ -7993,7 +8461,7 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, profilesRes, voiceCardsRes, emailAccountsRes, finAccountsRes, finAssetsRes] = await Promise.all([
+    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, playbookStepsRes, playbookRunsRes, profilesRes, voiceCardsRes, emailAccountsRes, finAccountsRes, finAssetsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('emails').select('*').order('created_at', { ascending: false }),
       supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
@@ -8003,6 +8471,8 @@ export default function App() {
       supabase.from('properties').select('*').order('created_at', { ascending: false }),
       supabase.from('investments').select('*').order('created_at', { ascending: false }),
       supabase.from('brain').select('*').order('created_at', { ascending: false }),
+      supabase.from('playbook_steps').select('*').order('step_order', { ascending: true }),
+      supabase.from('playbook_runs').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('voice_cards').select('*').order('created_at', { ascending: true }),
       supabase.from('email_accounts').select('*').order('created_at', { ascending: true }),
@@ -8018,6 +8488,8 @@ export default function App() {
     if (propertiesRes.data) setProperties(propertiesRes.data);
     if (investmentsRes.data) setInvestments(investmentsRes.data);
     if (brainRes.data) setBrain(brainRes.data);
+    if (playbookStepsRes.data) setPlaybookSteps(playbookStepsRes.data);
+    if (playbookRunsRes.data) setPlaybookRuns(playbookRunsRes.data);
     if (profilesRes.data) setProfiles(profilesRes.data);
     if (voiceCardsRes.data) setVoiceCards(voiceCardsRes.data);
     if (emailAccountsRes.data) setEmailAccounts(emailAccountsRes.data);
@@ -8052,7 +8524,7 @@ export default function App() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]); setFinAccounts([]); setFinAssets([]);
-    setContacts([]); setProperties([]); setInvestments([]); setBrain([]);
+    setContacts([]); setProperties([]); setInvestments([]); setBrain([]); setPlaybookSteps([]); setPlaybookRuns([]);
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
     setDataLoaded(false);
   }
@@ -8074,6 +8546,7 @@ export default function App() {
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
+    { id: 'playbooks',   icon: '📚', label: 'Playbooks',   badge: brain.filter(b=>b.type==='playbook').length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
     { id: 'financials',  icon: '💳', label: 'Financials',  badge: null },
     { id: 'draft',       icon: '✏️', label: 'Draft' },
@@ -8135,12 +8608,13 @@ export default function App() {
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
-            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange}/>
+            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain}/>
             : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={user.id}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
             : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id}/>
+            : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange}/>
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
             : view==='financials'  ? <FinancialsView accounts={finAccounts} setAccounts={setFinAccounts} assets={finAssets} setAssets={setFinAssets} userId={user.id}/>
             : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
