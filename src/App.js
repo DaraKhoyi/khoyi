@@ -950,18 +950,22 @@ function QuadrantGrid({ tasks, onToggle, onEdit, onDelete }) {
 // Reads from email_threads/email_messages when an account is connected;
 // falls back to legacy `emails` table when no account is set up yet.
 // ─────────────────────────────────────────
-function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, profiles, contacts, userId }) {
-  const primaryAccount = emailAccounts.find(a => a.is_active) || emailAccounts[0] || null;
-  const usingGmail = !!primaryAccount;
+function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, profiles, contacts, userId, setView }) {
+  // Pick an account that's actually FOR email. Prefer purposes=['email',...],
+  // fall back to any account whose scopes include gmail.
+  const emailAccount =
+    emailAccounts.find(a => a.is_active && (a.purposes || []).includes('email')) ||
+    emailAccounts.find(a => a.is_active && (a.scopes || []).some(s => s.includes('gmail'))) ||
+    null;
 
-  if (usingGmail) {
-    return <GmailInboxView account={primaryAccount} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={userId} />;
+  if (emailAccount) {
+    return <GmailInboxView account={emailAccount} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={userId} />;
   }
-  return <LegacyInboxView emails={emails} setEmails={setEmails} userId={userId} />;
+  return <LegacyInboxView emails={emails} setEmails={setEmails} userId={userId} setView={setView} />;
 }
 
 // ─── Legacy fake-email inbox (the original) ─────────────────────
-function LegacyInboxView({ emails, setEmails, userId }) {
+function LegacyInboxView({ emails, setEmails, userId, setView }) {
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
@@ -969,6 +973,8 @@ function LegacyInboxView({ emails, setEmails, userId }) {
   const [sending, setSending] = useState(false);
   const [selected, setSelected] = useState(null);
   const [tab, setTab] = useState('inbox');
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState(null);
 
   const unread = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder)).length;
   const visible = tab==='inbox' ? emails.filter(e=>e.folder==='inbox'||!e.folder) : emails.filter(e=>e.folder==='sent');
@@ -979,6 +985,24 @@ function LegacyInboxView({ emails, setEmails, userId }) {
     const diff = Math.floor((Date.now()-new Date(ts))/60000);
     if (diff<1) return 'just now'; if (diff<60) return `${diff}m`; if (diff<1440) return `${Math.floor(diff/60)}h`;
     return new Date(ts).toLocaleDateString();
+  }
+
+  async function connectGmail() {
+    setConnecting(true); setConnectError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not signed in.');
+      const { data, error } = await supabase.functions.invoke('google-oauth-start', {
+        body: { return_to: window.location.origin + window.location.pathname, purpose: 'email' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
+      if (!data?.url) throw new Error('No URL returned.');
+      window.location.href = data.url;
+    } catch (e) {
+      setConnectError(e.message || String(e));
+      setConnecting(false);
+    }
   }
 
   async function markRead(email) {
@@ -1002,8 +1026,41 @@ function LegacyInboxView({ emails, setEmails, userId }) {
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div><h2>Inbox</h2><p>{unread} unread · <span style={{color:'var(--text-3)'}}>not connected to Gmail yet — using local archive</span></p></div>
-        <button className="btn btn-primary" onClick={()=>setShowCompose(true)}>✏️ Compose</button>
+        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+          <button
+            className="btn btn-ghost"
+            onClick={connectGmail}
+            disabled={connecting}
+            style={{borderColor:'var(--accent-dim)',color:'var(--accent)',fontWeight:600}}
+          >
+            {connecting ? 'Opening Google…' : '🔗 Connect Gmail'}
+          </button>
+          <button className="btn btn-primary" onClick={()=>setShowCompose(true)}>✏️ Compose</button>
+        </div>
       </div>
+
+      {/* Connection prompt banner */}
+      <div style={{padding:'14px 16px',marginBottom:'14px',borderRadius:'10px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--text-2)',fontSize:'13px',lineHeight:1.55,display:'flex',alignItems:'flex-start',gap:'12px',flexWrap:'wrap'}}>
+        <div style={{flex:'1 1 320px',minWidth:0}}>
+          <strong style={{color:'var(--accent)',display:'block',marginBottom:'4px'}}>Connect your email account</strong>
+          Click <strong>Connect Gmail</strong> above and sign in with <strong>dara@brokerdara.com</strong> (your email account). When Google asks, choose <strong>"Use another account"</strong> at the bottom of the picker if needed. After approving, your real Gmail will replace this local archive.
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={connectGmail}
+          disabled={connecting}
+          style={{flexShrink:0}}
+        >
+          {connecting ? 'Opening Google…' : '🔗 Connect Gmail Now'}
+        </button>
+      </div>
+
+      {connectError && (
+        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',background:'rgba(239,68,68,0.12)',border:'1px solid #ef4444',color:'#ef4444',fontSize:'12px'}}>
+          Connection failed: {connectError}
+        </div>
+      )}
+
       <div style={{display:'grid',gridTemplateColumns:selected?'1fr 1.4fr':'1fr',gap:'18px'}}>
         <div>
           <div className="panel">
@@ -8984,7 +9041,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
             : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain}/>
-            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={user.id}/>
+            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} profiles={profiles} contacts={contacts} userId={user.id} setView={setView}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
