@@ -119,9 +119,11 @@ serve(async (req) => {
     };
 
     if (existing) {
-      await supabase.from("email_accounts").update(payload).eq("id", existing.id);
+      const { error: upErr } = await supabase.from("email_accounts").update(payload).eq("id", existing.id);
+      if (upErr) throw new Error(`Failed to save account (update): ${upErr.message || upErr.code || JSON.stringify(upErr)}`);
     } else {
-      await supabase.from("email_accounts").insert(payload);
+      const { error: insErr } = await supabase.from("email_accounts").insert(payload);
+      if (insErr) throw new Error(`Failed to save account (insert): ${insErr.message || insErr.code || JSON.stringify(insErr)}`);
     }
 
     const dest = new URL(returnTo);

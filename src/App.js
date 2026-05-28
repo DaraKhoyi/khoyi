@@ -950,7 +950,7 @@ function QuadrantGrid({ tasks, onToggle, onEdit, onDelete }) {
 // Reads from email_threads/email_messages when an account is connected;
 // falls back to legacy `emails` table when no account is set up yet.
 // ─────────────────────────────────────────
-function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView }) {
+function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData }) {
   // Pick an account that's actually FOR email. Prefer purposes=['email',...],
   // fall back to any account whose scopes include gmail.
   const emailAccount =
@@ -961,11 +961,11 @@ function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, emailAl
   if (emailAccount) {
     return <GmailInboxView account={emailAccount} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} />;
   }
-  return <LegacyInboxView emails={emails} setEmails={setEmails} userId={userId} setView={setView} />;
+  return <LegacyInboxView emails={emails} setEmails={setEmails} userId={userId} setView={setView} reloadData={reloadData} />;
 }
 
 // ─── Legacy fake-email inbox (the original) ─────────────────────
-function LegacyInboxView({ emails, setEmails, userId, setView }) {
+function LegacyInboxView({ emails, setEmails, userId, setView, reloadData }) {
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
@@ -975,6 +975,8 @@ function LegacyInboxView({ emails, setEmails, userId, setView }) {
   const [tab, setTab] = useState('inbox');
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
 
   const unread = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder)).length;
   const visible = tab==='inbox' ? emails.filter(e=>e.folder==='inbox'||!e.folder) : emails.filter(e=>e.folder==='sent');
@@ -1002,6 +1004,22 @@ function LegacyInboxView({ emails, setEmails, userId, setView }) {
     } catch (e) {
       setConnectError(e.message || String(e));
       setConnecting(false);
+    }
+  }
+
+  async function syncAndReload() {
+    setSyncing(true); setSyncMsg(null);
+    try {
+      // Reload data — picks up any account row that may have appeared
+      if (reloadData) await reloadData();
+      // If we still don't have an email account after reload, this view will
+      // re-render unchanged. If we DO have one, the parent will swap to GmailInboxView.
+      setSyncMsg({ type: 'ok', text: 'Refreshed. If your email account is connected, the page will switch to live Gmail.' });
+    } catch (e) {
+      setSyncMsg({ type: 'error', text: 'Refresh failed: ' + (e.message || e) });
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(null), 5000);
     }
   }
 
@@ -1035,25 +1053,24 @@ function LegacyInboxView({ emails, setEmails, userId, setView }) {
           >
             {connecting ? 'Opening Google…' : '🔗 Connect Gmail'}
           </button>
+          <button
+            className="btn btn-ghost"
+            onClick={syncAndReload}
+            disabled={syncing}
+            title="Refresh — pulls latest account state from the database"
+          >
+            {syncing ? '↻ Syncing…' : '↻ Sync'}
+          </button>
           <button className="btn btn-primary" onClick={()=>setShowCompose(true)}>✏️ Compose</button>
         </div>
       </div>
 
-      {/* Connection prompt banner */}
-      <div style={{padding:'14px 16px',marginBottom:'14px',borderRadius:'10px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--text-2)',fontSize:'13px',lineHeight:1.55,display:'flex',alignItems:'flex-start',gap:'12px',flexWrap:'wrap'}}>
-        <div style={{flex:'1 1 320px',minWidth:0}}>
-          <strong style={{color:'var(--accent)',display:'block',marginBottom:'4px'}}>Connect your email account</strong>
-          Click <strong>Connect Gmail</strong> above and sign in with <strong>dara@brokerdara.com</strong> (your email account). When Google asks, choose <strong>"Use another account"</strong> at the bottom of the picker if needed. After approving, your real Gmail will replace this local archive.
-        </div>
-        <button
-          className="btn btn-primary"
-          onClick={connectGmail}
-          disabled={connecting}
-          style={{flexShrink:0}}
-        >
-          {connecting ? 'Opening Google…' : '🔗 Connect Gmail Now'}
-        </button>
-      </div>
+      {syncMsg && (
+        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',
+          background: syncMsg.type==='ok'?'rgba(34,197,94,0.12)':'rgba(239,68,68,0.12)',
+          border:`1px solid ${syncMsg.type==='ok'?'#22c55e':'#ef4444'}`,
+          color: syncMsg.type==='ok'?'#22c55e':'#ef4444', fontSize:'13px'}}>{syncMsg.text}</div>
+      )}
 
       {connectError && (
         <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',background:'rgba(239,68,68,0.12)',border:'1px solid #ef4444',color:'#ef4444',fontSize:'12px'}}>
@@ -9381,7 +9398,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
             : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain}/>
-            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView}/>
+            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
