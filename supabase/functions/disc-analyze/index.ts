@@ -36,9 +36,10 @@ CRITICAL RULES for honest inference:
 1. Strong signals: word choice, question type ("what" vs "why"), reference to people vs data, urgency vs consensus language, sentence length patterns.
 2. Avoid weak signals: punctuation alone, single-email mood, formality conventions, busy-ness.
 3. Weight evidence by source: inbound emails (the contact's own words) > outbound (yours quoting them); user notes (direct observation) > anything inferred from text.
-4. Recency matters: stale evidence loses weight.
-5. If a BASELINE TEST RESULT is provided, treat it as the trusted starting point. Only deviate when recent evidence strongly indicates change. When you do deviate, write a drift_note explaining the observed change AND a plausible context reason (stress, role change, new responsibility, etc.).
-6. Confidence: be honest. 1-2 emails = low (under 40%). 3-8 with consistent signals = medium (40-70%). 9+ across multiple contexts with consistent signals = high (70-90%). Only exceed 90% with strong, varied, recent evidence OR an official test baseline confirmed by communications.
+4. RESEARCH evidence (kind="research_read") is a low-weight prior derived from the contact's PUBLIC self-presentation (LinkedIn posts, press, social media). It tells you how they want to be seen, not necessarily how they actually engage. Treat it as a tiebreaker when other evidence is sparse or split, NOT as primary data. Do not let it override consistent observed evidence. If observed evidence contradicts the research read, trust the observed evidence and note the discrepancy.
+5. Recency matters: stale evidence loses weight.
+6. If a BASELINE TEST RESULT is provided, treat it as the trusted starting point. Only deviate when recent evidence strongly indicates change. When you do deviate, write a drift_note explaining the observed change AND a plausible context reason (stress, role change, new responsibility, etc.).
+7. Confidence: be honest. 1-2 emails = low (under 40%). 3-8 with consistent signals = medium (40-70%). 9+ across multiple contexts with consistent signals = high (70-90%). Only exceed 90% with strong, varied, recent evidence OR an official test baseline confirmed by communications. A research_read alone never gets above provisional (40%).
 
 Output ONLY a JSON object, no prose, no markdown:
 {
@@ -82,6 +83,10 @@ function sourceWeight(kind: string): number {
     case "email_outgoing": return 0.5;
     case "calendar_event":
     case "interaction": return 0.8;
+    // Web research is a low-weight nudge — based on public self-presentation,
+    // not on how the person actually engages with the user. Useful as a prior
+    // but should never dominate observed evidence.
+    case "research_read": return 0.3;
     default: return 1.0;
   }
 }
@@ -210,6 +215,35 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
       });
     }
   } catch (_) { /* recordings optional */ }
+
+  // 5) Research read (web-derived behavioral prior) — low weight
+  // We pull the contact's research_summary + key insights, not the full report
+  // (the full report is mostly biographical and would dominate the corpus).
+  try {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("research_summary, research_primary, research_secondary, research_confidence, research_scope, research_taken_at, research_d_score, research_i_score, research_s_score, research_c_score")
+      .eq("contact_id", contact.id)
+      .maybeSingle();
+    if (profile && profile.research_taken_at && profile.research_summary) {
+      const lines: string[] = [];
+      lines.push(`Web research read (scope: ${profile.research_scope || 'both'}, confidence: ${profile.research_confidence || 'tentative'}):`);
+      if (profile.research_primary) {
+        lines.push(`Inferred primary/secondary: ${profile.research_primary}${profile.research_secondary ? '/' + profile.research_secondary : ''}`);
+      }
+      if (profile.research_d_score !== null && profile.research_d_score !== undefined) {
+        lines.push(`Inferred scores — D:${profile.research_d_score} I:${profile.research_i_score} S:${profile.research_s_score} C:${profile.research_c_score}`);
+      }
+      lines.push(`Key public-evidence observations:`);
+      lines.push(profile.research_summary);
+      evidence.push({
+        ref: `research:${contact.id}`,
+        kind: "research_read",
+        excerpt: lines.join("\n"),
+        dated_at: profile.research_taken_at,
+      });
+    }
+  } catch (_) { /* research optional */ }
 
   return evidence;
 }

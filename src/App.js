@@ -6904,6 +6904,28 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
             <div style={{padding:'16px'}}>
               {researchStage === 'idle' && (
                 <div>
+                  {/* 30-day cache notice */}
+                  {hasResearch && profile?.research_taken_at && (() => {
+                    const daysAgo = Math.floor((Date.now() - new Date(profile.research_taken_at).getTime()) / 86400000);
+                    const isFresh = daysAgo < 30;
+                    return (
+                      <div style={{padding:'10px 12px',marginBottom:'12px',borderRadius:'6px',
+                        background: isFresh ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.10)',
+                        border: `1px solid ${isFresh ? '#22c55e' : 'var(--yellow)'}`,
+                        fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                        <div style={{color: isFresh ? '#22c55e' : 'var(--yellow)'}}>
+                          {isFresh
+                            ? `✓ Researched ${daysAgo === 0 ? 'today' : `${daysAgo} day${daysAgo === 1 ? '' : 's'} ago`} — usually still fresh.`
+                            : `⚠ Researched ${daysAgo} days ago — may be stale.`}
+                        </div>
+                        <button className="btn btn-ghost btn-sm" style={{fontSize:'11px',padding:'4px 8px'}}
+                          onClick={() => { setShowResearchModal(false); setShowResearchReport(true); }}>
+                          View existing
+                        </button>
+                      </div>
+                    );
+                  })()}
+
                   <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'12px',lineHeight:1.5}}>
                     I'll use public web sources (LinkedIn, company sites, news, social media if you choose) to build a profile and tentative behavioral read. Identity will be verified before deep research runs.
                   </div>
@@ -7501,6 +7523,15 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   const [showLinkReview, setShowLinkReview] = useState(false);
   const [scanning, setScanning] = useState(false);
 
+  // Phone extraction state
+  const [extractingPhones, setExtractingPhones] = useState(false);
+  const [phoneMsg, setPhoneMsg] = useState(null);
+
+  // Duplicate detection state
+  const [findingDupes, setFindingDupes] = useState(false);
+  const [dupeGroups, setDupeGroups] = useState(null);  // null = never scanned; [] = scanned, none found
+  const [showDupeReview, setShowDupeReview] = useState(false);
+
   // Load existing pending-suggestion count on mount (cheap dry-run)
   useEffect(() => {
     let cancelled = false;
@@ -7542,6 +7573,65 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       }
     } finally { setScanning(false); }
   }
+
+  // Run signature-based phone extraction
+  async function runPhoneExtraction() {
+    setExtractingPhones(true);
+    setPhoneMsg(null);
+    try {
+      const { data } = await supabase.functions.invoke('contact-extract-phones', {
+        body: { user_id: userId, apply: true },
+      });
+      if (data?.ok) {
+        const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+        if (fresh) setContacts(fresh);
+        if (data.filled > 0) {
+          setPhoneMsg({ type: 'ok', text: `Filled ${data.filled} phone${data.filled === 1 ? '' : 's'} from email signatures.` });
+        } else {
+          setPhoneMsg({ type: 'info', text: `No new phones found in signatures (scanned ${data.scanned_contacts} contacts without phones).` });
+        }
+      } else {
+        setPhoneMsg({ type: 'error', text: data?.error || 'Extraction failed.' });
+      }
+    } catch (err) {
+      setPhoneMsg({ type: 'error', text: 'Extraction failed: ' + (err.message || err) });
+    } finally {
+      setExtractingPhones(false);
+      setTimeout(() => setPhoneMsg(null), 6000);
+    }
+  }
+
+  // Find duplicate contacts (manual review only — never auto-merge)
+  async function runDuplicateScan() {
+    setFindingDupes(true);
+    try {
+      const { data } = await supabase.functions.invoke('contact-find-duplicates', {
+        body: { user_id: userId },
+      });
+      if (data?.ok) {
+        setDupeGroups(data.groups || []);
+        if ((data.groups || []).length > 0) setShowDupeReview(true);
+      } else {
+        setDupeGroups([]);
+      }
+    } finally { setFindingDupes(false); }
+  }
+
+  // Load duplicate count on mount (cheap one-shot)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.functions.invoke('contact-find-duplicates', {
+          body: { user_id: userId },
+        });
+        if (!cancelled && data?.ok) {
+          setDupeGroups(data.groups || []);
+        }
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
 
   // O(1) lookup from contact_id → profile
   const profileByContact = useMemo(() => {
@@ -7640,9 +7730,36 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
             title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
             {scanning ? '↻ Scanning…' : '🔗 Scan emails'}
           </button>
+          <button className="btn btn-ghost btn-sm" onClick={runPhoneExtraction} disabled={extractingPhones}
+            title="Extract phone numbers from email signatures and auto-fill empty contact.phone fields.">
+            {extractingPhones ? '↻ Extracting…' : '📞 Extract phones'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={runDuplicateScan} disabled={findingDupes}
+            title="Find likely duplicate contacts based on email, phone, or name+company. Surfaces for review — never auto-merges.">
+            {findingDupes ? '↻ Scanning…' : '🔍 Find dupes'}
+          </button>
           <button className="btn btn-primary" onClick={()=>{setEditContact(null);setShowModal(true);}}>+ New Contact</button>
         </div>
       </div>
+
+      {/* Phone extraction feedback */}
+      {phoneMsg && (
+        <div style={{padding:'8px 12px',marginBottom:'10px',borderRadius:'8px',
+          background: phoneMsg.type === 'ok' ? 'rgba(34,197,94,0.10)' : phoneMsg.type === 'error' ? 'rgba(239,68,68,0.10)' : 'rgba(197,169,94,0.08)',
+          border: `1px solid ${phoneMsg.type === 'ok' ? '#22c55e' : phoneMsg.type === 'error' ? '#ef4444' : 'var(--accent)'}`,
+          color: phoneMsg.type === 'ok' ? '#22c55e' : phoneMsg.type === 'error' ? '#ef4444' : 'var(--text-1)',
+          fontSize:'12px'}}>
+          {phoneMsg.text}
+        </div>
+      )}
+
+      {/* Duplicate banner */}
+      {dupeGroups && dupeGroups.length > 0 && (
+        <div style={{padding:'10px 14px',marginBottom:'10px',background:'rgba(245,158,11,0.10)',border:'1px solid var(--yellow)',borderRadius:'8px',color:'var(--text-1)',fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
+          <span>⚠️ <strong>{dupeGroups.length}</strong> likely duplicate group{dupeGroups.length === 1 ? '' : 's'} found.</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowDupeReview(true)} style={{color:'var(--yellow)'}}>Review →</button>
+        </div>
+      )}
 
       {/* Just-ran feedback */}
       {linkSummary?.just_ran && (linkSummary.auto_linked + linkSummary.auto_filled > 0) && (
@@ -7769,6 +7886,194 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           }))}
         />
       )}
+      {showDupeReview && (
+        <DuplicateReviewModal
+          groups={dupeGroups || []}
+          userId={userId}
+          contacts={contacts}
+          setContacts={setContacts}
+          onClose={() => setShowDupeReview(false)}
+          onMerged={(remainingGroups) => setDupeGroups(remainingGroups)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// DUPLICATE REVIEW MODAL — surfaces likely duplicates, user picks canonical + merges
+// Never auto-merges. Merge action: copies missing fields from non-canonical into
+// canonical, deletes non-canonical, optionally re-points any FK references (notes,
+// profiles, etc).
+// ─────────────────────────────────────────
+function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, onMerged }) {
+  const [localGroups, setLocalGroups] = useState(groups);
+  const [selectedCanonical, setSelectedCanonical] = useState({});  // groupKey -> contactId
+  const [merging, setMerging] = useState({});  // groupKey -> bool
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  // Pre-populate selected canonical from suggested
+  useEffect(() => {
+    const init = {};
+    for (const g of groups) {
+      init[g.key] = g.suggested_canonical_id;
+    }
+    setSelectedCanonical(init);
+  }, [groups]);
+
+  async function mergeGroup(group) {
+    const canonicalId = selectedCanonical[group.key];
+    if (!canonicalId) return;
+    const canonical = group.contacts.find(c => c.id === canonicalId);
+    const others = group.contacts.filter(c => c.id !== canonicalId);
+    if (!canonical || others.length === 0) return;
+
+    setMerging(m => ({ ...m, [group.key]: true }));
+    setErrorMsg(null);
+    try {
+      // Step 1: build a "filled" patch — copy any field from others where canonical is empty.
+      const patch = {};
+      const fillIfEmpty = (field) => {
+        if (canonical[field]) return;
+        for (const o of others) {
+          if (o[field]) { patch[field] = o[field]; return; }
+        }
+      };
+      ['email', 'phone', 'company', 'role', 'type', 'notes', 'last_contact_at'].forEach(fillIfEmpty);
+
+      // For notes: if BOTH have notes, concatenate (canonical stays first)
+      const canonicalNotes = (canonical.notes || '').trim();
+      const otherNotes = others.map(o => (o.notes || '').trim()).filter(Boolean).join('\n\n---\n\n');
+      if (canonicalNotes && otherNotes) {
+        patch.notes = canonicalNotes + '\n\n---\nMerged from duplicate:\n' + otherNotes;
+      }
+
+      // Step 2: update canonical contact with merged fields
+      if (Object.keys(patch).length > 0) {
+        const { error: upErr } = await supabase.from('contacts').update(patch).eq('id', canonicalId);
+        if (upErr) throw upErr;
+      }
+
+      // Step 3: re-point any profile rows from others to canonical (one profile per contact)
+      // Strategy: if canonical already has a profile, keep it. Delete others' profiles.
+      // If canonical has no profile but others do, re-point the first to canonical.
+      const { data: canonicalProfile } = await supabase.from('profiles').select('id').eq('contact_id', canonicalId).maybeSingle();
+      for (const o of others) {
+        const { data: otherProfile } = await supabase.from('profiles').select('id').eq('contact_id', o.id).maybeSingle();
+        if (!otherProfile) continue;
+        if (canonicalProfile) {
+          await supabase.from('profiles').delete().eq('id', otherProfile.id);
+        } else {
+          await supabase.from('profiles').update({ contact_id: canonicalId }).eq('id', otherProfile.id);
+        }
+      }
+
+      // Step 4: delete the duplicates
+      for (const o of others) {
+        await supabase.from('contacts').delete().eq('id', o.id);
+      }
+
+      // Step 5: refresh contacts in parent + remove this group from list
+      const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+      if (fresh) setContacts(fresh);
+      const remaining = localGroups.filter(g => g.key !== group.key);
+      setLocalGroups(remaining);
+      onMerged?.(remaining);
+    } catch (err) {
+      setErrorMsg(`Merge failed: ${err.message || err}`);
+    } finally {
+      setMerging(m => { const n = { ...m }; delete n[group.key]; return n; });
+    }
+  }
+
+  // Dismiss a group without merging (mark as "not duplicates")
+  function skipGroup(group) {
+    const remaining = localGroups.filter(g => g.key !== group.key);
+    setLocalGroups(remaining);
+    onMerged?.(remaining);
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose} style={{zIndex: 1100}}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:'780px',width:'94%',maxHeight:'90vh',display:'flex',flexDirection:'column'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <h3 style={{margin:0}}>Duplicate contacts</h3>
+            <p style={{margin:'4px 0 0',fontSize:'12px',color:'var(--text-3)'}}>
+              {localGroups.length === 0 ? 'All caught up.' : `${localGroups.length} group${localGroups.length === 1 ? '' : 's'} found. Pick the record to keep, then merge.`}
+            </p>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1}}>
+          {errorMsg && (
+            <div style={{padding:'8px 12px',marginBottom:'10px',background:'rgba(239,68,68,0.10)',border:'1px solid #ef4444',borderRadius:'6px',color:'#ef4444',fontSize:'12px'}}>
+              {errorMsg}
+            </div>
+          )}
+
+          {localGroups.length === 0 && (
+            <div style={{padding:'40px 20px',textAlign:'center'}}>
+              <div style={{fontSize:'32px',marginBottom:'8px'}}>✓</div>
+              <div style={{color:'var(--text-2)',fontSize:'13px'}}>No duplicate groups remaining.</div>
+            </div>
+          )}
+
+          {localGroups.map(g => (
+            <div key={g.key} style={{padding:'12px',marginBottom:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px',gap:'8px',flexWrap:'wrap'}}>
+                <span style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Match: {g.reason}</span>
+                <span style={{fontSize:'11px',color:'var(--text-3)'}}>{g.contacts.length} records</span>
+              </div>
+              {g.contacts.map(c => {
+                const isCanonical = selectedCanonical[g.key] === c.id;
+                return (
+                  <label key={c.id} style={{display:'flex',alignItems:'flex-start',gap:'10px',padding:'10px',marginBottom:'6px',
+                    background: isCanonical ? 'rgba(197,169,94,0.10)' : 'var(--bg-card)',
+                    border: isCanonical ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    borderRadius:'6px', cursor:'pointer'}}>
+                    <input type="radio" name={`canon-${g.key}`} checked={isCanonical}
+                      onChange={() => setSelectedCanonical(p => ({ ...p, [g.key]: c.id }))}
+                      style={{marginTop:'3px',flexShrink:0}} />
+                    <div style={{flex:1,minWidth:0,fontSize:'12px',lineHeight:1.6}}>
+                      <div style={{fontWeight:600,color:'var(--text-1)'}}>{c.name || '(no name)'}</div>
+                      <div style={{color:'var(--text-2)'}}>
+                        {c.email && <>{c.email} · </>}
+                        {c.phone && <>{c.phone} · </>}
+                        {c.company && <>{c.company}{c.role ? `, ${c.role}` : ''} · </>}
+                        <span style={{color:'var(--text-3)'}}>type: {CONTACT_TYPE_LABELS[c.type] || c.type}</span>
+                      </div>
+                      {c.notes && (
+                        <div style={{color:'var(--text-3)',fontSize:'11px',marginTop:'4px',fontStyle:'italic',maxHeight:'40px',overflow:'hidden'}}>
+                          {c.notes.substring(0, 150)}{c.notes.length > 150 ? '…' : ''}
+                        </div>
+                      )}
+                      <div style={{color:'var(--text-3)',fontSize:'10px',marginTop:'4px'}}>
+                        Completeness: {c.completeness_score} · Created {new Date(c.created_at).toLocaleDateString()}
+                        {isCanonical && <span style={{color:'var(--accent)',marginLeft:'8px'}}>★ KEEP THIS ONE</span>}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+              <div style={{display:'flex',gap:'6px',marginTop:'10px',justifyContent:'flex-end'}}>
+                <button className="btn btn-ghost btn-sm" onClick={() => skipGroup(g)} disabled={merging[g.key]}>
+                  Not duplicates
+                </button>
+                <button className="btn btn-primary btn-sm" onClick={() => mergeGroup(g)} disabled={merging[g.key]}>
+                  {merging[g.key] ? '↻ Merging…' : `⚠ Merge ${g.contacts.length - 1} into selected`}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontSize:'11px',color:'var(--text-3)'}}>Merging keeps the ★ record and deletes the others. Fields are copied from deleted records into ★ where ★ is empty.</div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Done</button>
+        </div>
+      </div>
     </div>
   );
 }
