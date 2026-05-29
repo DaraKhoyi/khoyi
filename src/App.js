@@ -6052,6 +6052,254 @@ function renderShape(s, selected, ctx) {
 // ─────────────────────────────────────────
 // Contact detail modal: shows DISC profile, evidence trail, baseline test entry,
 // and re-analyze. Replaces directly opening the edit form when clicking a contact.
+// Recordings panel inside ContactDetailModal: list, upload, transcribe, view transcript.
+function ContactRecordingsSection({ contact, userId, onTranscribed }) {
+  const [recordings, setRecordings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [uploadForm, setUploadForm] = useState({ open: false, title: '', firstSpeaker: 'me', recordedAt: new Date().toISOString().slice(0, 16), file: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from('recordings')
+        .select('*').eq('contact_id', contact.id).order('recorded_at', { ascending: false });
+      if (!cancelled) { setRecordings(data || []); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [contact.id]);
+
+  async function refreshRecordings() {
+    const { data } = await supabase.from('recordings')
+      .select('*').eq('contact_id', contact.id).order('recorded_at', { ascending: false });
+    setRecordings(data || []);
+  }
+
+  async function handleUpload(e) {
+    e.preventDefault();
+    if (!uploadForm.file) { setError('Pick an audio file first.'); return; }
+    if (!uploadForm.title.trim()) { setError('Add a title.'); return; }
+    if (uploadForm.file.size > 50 * 1024 * 1024) {
+      setError(`File too large (${(uploadForm.file.size / 1024 / 1024).toFixed(1)} MB). Max 50 MB. Try compressing or splitting.`);
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    setUploadProgress(5);
+    try {
+      const { data: rec, error: insErr } = await supabase.from('recordings').insert({
+        user_id: userId,
+        contact_id: contact.id,
+        title: uploadForm.title.trim(),
+        mime_type: uploadForm.file.type || 'audio/mpeg',
+        size_bytes: uploadForm.file.size,
+        recorded_at: new Date(uploadForm.recordedAt).toISOString(),
+        first_speaker: uploadForm.firstSpeaker,
+        transcription_status: 'pending',
+      }).select().single();
+      if (insErr) throw new Error(`DB row failed: ${insErr.message}`);
+
+      setUploadProgress(15);
+
+      const safeFilename = uploadForm.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${userId}/${rec.id}/${safeFilename}`;
+      const { error: upErr } = await supabase.storage.from('recordings').upload(path, uploadForm.file, {
+        contentType: uploadForm.file.type || 'audio/mpeg',
+        upsert: false,
+      });
+      if (upErr) {
+        await supabase.from('recordings').delete().eq('id', rec.id);
+        throw new Error(`Upload failed: ${upErr.message}`);
+      }
+
+      setUploadProgress(60);
+      await supabase.from('recordings').update({ storage_path: path }).eq('id', rec.id);
+      setUploadProgress(75);
+
+      supabase.functions.invoke('recording-transcribe', {
+        body: { recording_id: rec.id, user_id: userId },
+      }).then(async () => {
+        await refreshRecordings();
+        if (onTranscribed) onTranscribed();
+      }).catch(() => { /* error surfaces via the row's transcription_error */ });
+
+      setUploadProgress(100);
+      setUploadForm({ open: false, title: '', firstSpeaker: 'me', recordedAt: new Date().toISOString().slice(0, 16), file: null });
+      await refreshRecordings();
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setUploading(false);
+      setTimeout(() => setUploadProgress(0), 1500);
+    }
+  }
+
+  async function retranscribe(rec) {
+    if (rec.audio_purged) { setError('Audio has been purged — cannot re-transcribe.'); return; }
+    await supabase.from('recordings').update({ transcription_status: 'transcribing', transcription_error: null }).eq('id', rec.id);
+    await refreshRecordings();
+    try {
+      await supabase.functions.invoke('recording-transcribe', { body: { recording_id: rec.id, user_id: userId } });
+      await refreshRecordings();
+      if (onTranscribed) onTranscribed();
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  }
+
+  async function deleteRecording(rec) {
+    if (!window.confirm(`Delete "${rec.title}"? This removes the audio AND transcript.`)) return;
+    if (rec.storage_path) {
+      await supabase.storage.from('recordings').remove([rec.storage_path]).catch(() => {});
+    }
+    await supabase.from('recordings').delete().eq('id', rec.id);
+    await refreshRecordings();
+  }
+
+  function statusBadge(s) {
+    const map = {
+      pending: { text: 'pending', color: 'var(--text-3)', bg: 'var(--bg-card)' },
+      transcribing: { text: 'transcribing…', color: 'var(--accent)', bg: 'var(--accent-glow)' },
+      ready: { text: '✓ ready', color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+      error: { text: '⚠ error', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+      no_audio: { text: 'no audio', color: 'var(--text-3)', bg: 'var(--bg-card)' },
+    };
+    const m = map[s] || map.pending;
+    return <span className="pill" style={{ fontSize: '10px', padding: '2px 7px', color: m.color, background: m.bg, border: `1px solid ${m.color}` }}>{m.text}</span>;
+  }
+
+  function fmtDuration(seconds) {
+    if (!seconds) return null;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  return (
+    <div style={{ marginBottom: '14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+          🎙 Recordings {recordings.length > 0 && <span style={{ marginLeft: '4px', color: 'var(--text-2)' }}>({recordings.length})</span>}
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={() => setUploadForm(f => ({ ...f, open: !f.open }))} style={{ fontSize: '11px' }}>
+          {uploadForm.open ? '× Cancel' : '+ Upload audio'}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ padding: '8px 10px', marginBottom: '8px', borderRadius: '6px', background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', color: '#ef4444', fontSize: '11px' }}>
+          {error}
+        </div>
+      )}
+
+      {uploadForm.open && (
+        <form onSubmit={handleUpload} style={{ padding: '12px', background: 'var(--bg-base)', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <input
+              type="file"
+              accept="audio/*,video/mp4,video/webm"
+              onChange={e => setUploadForm(f => ({ ...f, file: e.target.files?.[0] || null, title: f.title || (e.target.files?.[0]?.name.replace(/\.[^.]+$/, '') || '') }))}
+              style={{ fontSize: '12px', color: 'var(--text-2)' }}
+              required
+            />
+            <input
+              className="form-input"
+              placeholder="Title (e.g. 'Discovery call with Sarah')"
+              value={uploadForm.title}
+              onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))}
+              style={{ padding: '6px 10px', fontSize: '12px' }}
+              required
+            />
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '140px' }}>
+                <label style={{ fontSize: '10px', color: 'var(--text-3)', display: 'block', marginBottom: '2px' }}>When recorded</label>
+                <input type="datetime-local" className="form-input" value={uploadForm.recordedAt}
+                  onChange={e => setUploadForm(f => ({ ...f, recordedAt: e.target.value }))}
+                  style={{ padding: '6px 8px', fontSize: '12px' }} required />
+              </div>
+              <div style={{ flex: 1, minWidth: '140px' }}>
+                <label style={{ fontSize: '10px', color: 'var(--text-3)', display: 'block', marginBottom: '2px' }}>Who spoke first?</label>
+                <select className="form-select" value={uploadForm.firstSpeaker}
+                  onChange={e => setUploadForm(f => ({ ...f, firstSpeaker: e.target.value }))}
+                  style={{ padding: '6px 8px', fontSize: '12px' }}>
+                  <option value="me">I did</option>
+                  <option value="contact">{contact.name || 'Contact'} did</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ fontSize: '10px', color: 'var(--text-3)', lineHeight: 1.5 }}>
+              Max 50 MB. Audio kept 90 days then auto-deleted; transcript stays forever. Whisper transcribes; speakers labeled by alternating-gap heuristic (you can edit later).
+            </div>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={uploading}>
+                {uploading ? `Uploading ${uploadProgress}%…` : 'Upload & transcribe'}
+              </button>
+              {uploadProgress > 0 && (
+                <div style={{ flex: 1, height: '4px', background: 'var(--bg-card)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s' }} />
+                </div>
+              )}
+            </div>
+          </div>
+        </form>
+      )}
+
+      {loading ? (
+        <div style={{ padding: '8px', fontSize: '11px', color: 'var(--text-3)' }}>Loading…</div>
+      ) : recordings.length === 0 ? (
+        <div style={{ padding: '12px', background: 'var(--bg-base)', border: '1px dashed var(--border)', borderRadius: '6px', fontSize: '11px', color: 'var(--text-3)', textAlign: 'center' }}>
+          No recordings yet. Upload a call/meeting and Claude will fold it into the behavioral signal.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {recordings.map(r => {
+            const isExpanded = expandedId === r.id;
+            return (
+              <div key={r.id} style={{ padding: '8px 10px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '11px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text-1)' }}>{r.title}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-3)', display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                      {r.recorded_at && <span>{new Date(r.recorded_at).toLocaleString()}</span>}
+                      {r.duration_seconds && <span>· {fmtDuration(r.duration_seconds)}</span>}
+                      {r.size_bytes && <span>· {(r.size_bytes / 1024 / 1024).toFixed(1)} MB</span>}
+                      {r.audio_purged && <span style={{ color: '#f59e0b' }}>· audio purged</span>}
+                    </div>
+                  </div>
+                  {statusBadge(r.transcription_status)}
+                  {r.transcript_text && (
+                    <button onClick={() => setExpandedId(isExpanded ? null : r.id)} className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', fontSize: '10px' }}>
+                      {isExpanded ? 'hide' : 'view'}
+                    </button>
+                  )}
+                  <button onClick={() => retranscribe(r)} className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: '10px' }} title="Re-transcribe" disabled={r.audio_purged}>↻</button>
+                  <button onClick={() => deleteRecording(r)} className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: '10px', color: '#ef4444' }} title="Delete">×</button>
+                </div>
+                {r.transcription_error && (
+                  <div style={{ marginTop: '6px', padding: '6px 8px', background: 'rgba(239,68,68,0.08)', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', fontSize: '10px' }}>
+                    {r.transcription_error}
+                  </div>
+                )}
+                {isExpanded && r.transcript_text && (
+                  <div style={{ marginTop: '8px', padding: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '11px', color: 'var(--text-1)', lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: '320px', overflowY: 'auto' }}>
+                    {r.transcript_text}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Contact detail modal: shows DISC profile, evidence trail, baseline test entry,
+// and re-analyze. Replaces directly opening the edit form when clicking a contact.
 function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate, userId }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
@@ -6281,6 +6529,9 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
               </div>
             )}
           </div>
+
+          {/* Recordings section */}
+          <ContactRecordingsSection contact={contact} userId={userId} onTranscribed={reanalyze} />
 
           {/* Evidence trail */}
           {hasInference && (

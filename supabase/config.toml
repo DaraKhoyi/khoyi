@@ -32,3 +32,9 @@ verify_jwt = false
 
 [functions.disc-batch-nightly]
 verify_jwt = false
+
+[functions.recording-transcribe]
+verify_jwt = false
+
+[functions.recording-purge]
+verify_jwt = false

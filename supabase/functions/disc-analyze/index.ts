@@ -77,6 +77,7 @@ function sourceWeight(kind: string): number {
   switch (kind) {
     case "note":
     case "contact_note": return 2.0;
+    case "recording_transcript": return 2.5;   // spoken word > written, very high signal
     case "email_incoming": return 1.5;
     case "email_outgoing": return 0.5;
     case "calendar_event":
@@ -174,6 +175,41 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
       });
     }
   } catch (_) { /* events optional */ }
+
+  // 6) Recording transcripts — extract ONLY the contact's spoken segments (high signal)
+  try {
+    const { data: recs } = await supabase.from("recordings")
+      .select("id, title, recorded_at, transcript_segments, transcript_text")
+      .eq("user_id", userId).eq("contact_id", contact.id)
+      .eq("transcription_status", "ready")
+      .order("recorded_at", { ascending: false }).limit(10);
+    for (const r of recs || []) {
+      // Extract only the contact's lines
+      let contactText = "";
+      if (Array.isArray(r.transcript_segments) && r.transcript_segments.length > 0) {
+        contactText = r.transcript_segments
+          .filter((s: any) => s.speaker === "contact")
+          .map((s: any) => s.text)
+          .join(" ")
+          .slice(0, 3000);
+      } else if (r.transcript_text) {
+        // Fallback: pull "Contact:" lines from plain text
+        contactText = r.transcript_text
+          .split("\n")
+          .filter((line: string) => line.trim().toLowerCase().startsWith("contact:"))
+          .map((line: string) => line.replace(/^contact:\s*/i, ""))
+          .join(" ")
+          .slice(0, 3000);
+      }
+      if (!contactText.trim()) continue;
+      evidence.push({
+        ref: `recording:${r.id}`,
+        kind: "recording_transcript",
+        excerpt: `Recording "${r.title || 'untitled'}":\n${contactText}`,
+        dated_at: r.recorded_at,
+      });
+    }
+  } catch (_) { /* recordings optional */ }
 
   return evidence;
 }
