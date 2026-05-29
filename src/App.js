@@ -6477,6 +6477,15 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   const [baseSource, setBaseSource] = useState(profile?.baseline_source || 'Prism Test');
   const [savingBase, setSavingBase] = useState(false);
 
+  // Research flow state
+  const [showResearchModal, setShowResearchModal] = useState(false);
+  const [researchScope, setResearchScope] = useState('both');  // 'personal' | 'business' | 'both'
+  const [researchStage, setResearchStage] = useState('idle');  // 'idle' | 'identifying' | 'choose_candidate' | 'researching' | 'done' | 'error'
+  const [researchCandidates, setResearchCandidates] = useState([]);
+  const [researchConfidence, setResearchConfidence] = useState(null);
+  const [researchError, setResearchError] = useState(null);
+  const [showResearchReport, setShowResearchReport] = useState(false);  // for viewing existing report
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -6559,7 +6568,97 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
 
   const hasBaseline = !!(profile && profile.baseline_d_score !== null && profile.baseline_d_score !== undefined);
   const hasInference = !!(profile && profile.last_analyzed_at);
+  const hasResearch = !!(profile && profile.research_taken_at);
   const discBarColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
+
+  // Identify candidates for this contact, then either auto-run (locked) or
+  // prompt for candidate selection (strong/weak/insufficient).
+  async function startResearch() {
+    setResearchStage('identifying');
+    setResearchError(null);
+    setResearchCandidates([]);
+    try {
+      const { data, error } = await supabase.functions.invoke('contact-identify', {
+        body: { contact_id: contact.id },
+      });
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      setResearchConfidence(data.confidence);
+      setResearchCandidates(data.candidates || []);
+      if (data.confidence === 'insufficient') {
+        setResearchError(data.message || 'Not enough info to identify this person safely. Add an email, phone, or employer to the contact.');
+        setResearchStage('error');
+        return;
+      }
+      if ((data.candidates || []).length === 0) {
+        setResearchError('No matching public profiles found. Try adding more identifiers (email, phone, employer) to the contact.');
+        setResearchStage('error');
+        return;
+      }
+      if (data.confidence === 'locked' && data.candidates.length === 1) {
+        // Auto-advance to research
+        await runResearch(data.candidates[0], 'email' in (contact || {}) && contact.email ? 'email' : (contact.phone ? 'phone' : 'manual'));
+      } else {
+        // User picks
+        setResearchStage('choose_candidate');
+      }
+    } catch (err) {
+      setResearchError(err.message || String(err));
+      setResearchStage('error');
+    }
+  }
+
+  async function runResearch(candidate, matchedBy) {
+    setResearchStage('researching');
+    setResearchError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('contact-research', {
+        body: {
+          contact_id: contact.id,
+          candidate,
+          scope: researchScope,
+          matched_by: matchedBy,
+        },
+      });
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      // Refresh profile to pick up the new research_* fields
+      const { data: freshProfile } = await supabase.from('profiles')
+        .select('*').eq('contact_id', contact.id).maybeSingle();
+      if (freshProfile) onProfileUpdate(freshProfile);
+      setResearchStage('done');
+    } catch (err) {
+      setResearchError(err.message || String(err));
+      setResearchStage('error');
+    }
+  }
+
+  // Copy research-derived DISC into baseline_* fields
+  async function useResearchAsBaseline() {
+    if (!profile || !profile.research_d_score) return;
+    setSavingBase(true);
+    try {
+      const { data, error } = await supabase.from('profiles').update({
+        baseline_d_score: profile.research_d_score,
+        baseline_i_score: profile.research_i_score,
+        baseline_s_score: profile.research_s_score,
+        baseline_c_score: profile.research_c_score,
+        baseline_primary: profile.research_primary,
+        baseline_secondary: profile.research_secondary,
+        baseline_source: `Research (${profile.research_scope}, ${profile.research_confidence})`,
+        baseline_taken_at: profile.research_taken_at,
+        baseline_locked: true,
+      }).eq('id', profile.id).select().single();
+      if (error) throw error;
+      onProfileUpdate(data);
+      setAnalyzeMsg({ type: 'ok', text: 'Research read copied to baseline.' });
+      setTimeout(() => setAnalyzeMsg(null), 4000);
+    } catch (e) {
+      setAnalyzeMsg({ type: 'error', text: 'Copy failed: ' + (e.message || e) });
+    } finally {
+      setSavingBase(false);
+    }
+  }
 
   function discBars(d, i, s, c, label) {
     return (
@@ -6618,9 +6717,14 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
           <div style={{padding:'14px',background:'var(--bg-base)',borderRadius:'10px',border:'1px solid var(--border)',marginBottom:'14px'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
               <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>🎯 Behavioral Signal (DISC)</div>
-              <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing} style={{fontSize:'11px'}}>
-                {analyzing ? '↻ Analyzing…' : '✨ Re-analyze now'}
-              </button>
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchModal(true)} style={{fontSize:'11px'}}>
+                  🔍 {hasResearch ? 'View research' : 'Research from web'}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing} style={{fontSize:'11px'}}>
+                  {analyzing ? '↻ Analyzing…' : '✨ Re-analyze now'}
+                </button>
+              </div>
             </div>
 
             {!hasInference && !hasBaseline && (
@@ -6675,6 +6779,30 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
             {hasBaseline && (
               <div style={{paddingTop: hasInference ? '14px' : 0, borderTop: hasInference ? '1px solid var(--border)' : 'none'}}>
                 {discBars(profile.baseline_d_score, profile.baseline_i_score, profile.baseline_s_score, profile.baseline_c_score, `Baseline · ${profile.baseline_source || 'Prism Test'}${profile.baseline_taken_at ? ' · ' + new Date(profile.baseline_taken_at).toLocaleDateString() : ''}`)}
+              </div>
+            )}
+
+            {hasResearch && profile.research_d_score !== null && profile.research_d_score !== undefined && (
+              <div style={{paddingTop: (hasInference || hasBaseline) ? '14px' : 0, borderTop: (hasInference || hasBaseline) ? '1px solid var(--border)' : 'none'}}>
+                {discBars(profile.research_d_score, profile.research_i_score, profile.research_s_score, profile.research_c_score,
+                  `Research · ${profile.research_scope || 'both'} · ${profile.research_confidence || 'tentative'}${profile.research_taken_at ? ' · ' + new Date(profile.research_taken_at).toLocaleDateString() : ''}`)}
+                {profile.research_summary && (
+                  <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'8px',lineHeight:1.5,padding:'8px 10px',background:'var(--bg-card)',borderRadius:'6px'}}>
+                    {profile.research_summary.split('\n').map((line, i) => (
+                      <div key={i}>{line}</div>
+                    ))}
+                  </div>
+                )}
+                <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchReport(true)} style={{fontSize:'11px'}}>
+                    📄 View full report
+                  </button>
+                  {!hasBaseline && (
+                    <button className="btn btn-ghost btn-sm" onClick={useResearchAsBaseline} disabled={savingBase} style={{fontSize:'11px'}}>
+                      {savingBase ? '↻ Copying…' : '↑ Use as baseline'}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -6763,6 +6891,169 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
           <button type="button" className="btn btn-primary" onClick={onClose}>Close</button>
         </div>
       </div>
+
+      {/* Research flow modal */}
+      {showResearchModal && (
+        <div className="modal-overlay" onClick={(e) => { if (researchStage !== 'identifying' && researchStage !== 'researching') { setShowResearchModal(false); setResearchStage('idle'); }}} style={{zIndex: 1100}}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:'600px',width:'92%'}}>
+            <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <h3 style={{margin:0}}>🔍 Research {contact.name}</h3>
+              <button className="btn btn-ghost btn-sm" disabled={researchStage === 'identifying' || researchStage === 'researching'}
+                onClick={() => { setShowResearchModal(false); setResearchStage('idle'); }}>✕</button>
+            </div>
+            <div style={{padding:'16px'}}>
+              {researchStage === 'idle' && (
+                <div>
+                  <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'12px',lineHeight:1.5}}>
+                    I'll use public web sources (LinkedIn, company sites, news, social media if you choose) to build a profile and tentative behavioral read. Identity will be verified before deep research runs.
+                  </div>
+
+                  <div style={{marginBottom:'14px'}}>
+                    <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'6px'}}>Scope</div>
+                    <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                      {[
+                        {id:'personal', label:'👤 Personal', desc:'Social media, hobbies, community'},
+                        {id:'business', label:'💼 Business', desc:'LinkedIn, company, press, licenses'},
+                        {id:'both', label:'🔀 Both', desc:'Full profile with sections labeled'},
+                      ].map(opt => (
+                        <button key={opt.id} className={`btn ${researchScope === opt.id ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+                          onClick={() => setResearchScope(opt.id)}
+                          style={{flex:'1 1 140px',minWidth:0,padding:'10px',flexDirection:'column',alignItems:'flex-start',gap:'2px',textAlign:'left'}}>
+                          <div style={{fontWeight:600}}>{opt.label}</div>
+                          <div style={{fontSize:'10px',opacity:0.75,fontWeight:400}}>{opt.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{padding:'10px',background:'var(--bg-base)',borderRadius:'6px',marginBottom:'14px',fontSize:'11px',lineHeight:1.5}}>
+                    <div style={{color:'var(--text-3)',marginBottom:'4px',fontWeight:600}}>Identifiers we'll use:</div>
+                    <div style={{color:'var(--text-2)'}}>
+                      Name: {contact.name || '(none)'}<br />
+                      {contact.email && <>Email: {contact.email}<br /></>}
+                      {contact.phone && <>Phone: {contact.phone}<br /></>}
+                      {contact.company && <>Company: {contact.company}<br /></>}
+                      {contact.role && <>Role: {contact.role}</>}
+                    </div>
+                    {!contact.email && !contact.phone && (
+                      <div style={{color:'var(--yellow)',marginTop:'6px',fontSize:'11px'}}>
+                        ⚠️ Without an email or phone, we'll need to disambiguate from multiple candidates.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
+                    <button className="btn btn-ghost" onClick={() => setShowResearchModal(false)}>Cancel</button>
+                    <button className="btn btn-primary" onClick={startResearch}>
+                      {(contact.email || contact.phone) ? 'Run research' : 'Find candidates'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {researchStage === 'identifying' && (
+                <div style={{padding:'30px 20px',textAlign:'center'}}>
+                  <div style={{fontSize:'14px',color:'var(--text-2)',marginBottom:'8px'}}>↻ Identifying…</div>
+                  <div style={{fontSize:'11px',color:'var(--text-3)'}}>Searching public sources for a match to your identifiers.</div>
+                </div>
+              )}
+
+              {researchStage === 'choose_candidate' && (
+                <div>
+                  <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'12px',lineHeight:1.5}}>
+                    Found {researchCandidates.length} possible {researchCandidates.length === 1 ? 'match' : 'matches'}. Pick the right person before we run the full research:
+                  </div>
+                  {researchCandidates.map((c, i) => (
+                    <div key={i} style={{padding:'10px',marginBottom:'8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'8px',marginBottom:'6px'}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:600,fontSize:'13px'}}>{c.name}</div>
+                          {c.headline && <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'2px'}}>{c.headline}</div>}
+                          {c.location && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>📍 {c.location}</div>}
+                          {c.distinguishing_note && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>{c.distinguishing_note}</div>}
+                          {c.source_url && <a href={c.source_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'10px',color:'var(--accent)',marginTop:'4px',display:'inline-block',wordBreak:'break-all'}}>{c.source_url}</a>}
+                        </div>
+                        <span style={{fontSize:'10px',padding:'2px 8px',borderRadius:'4px',background: c.match_strength === 'high' ? 'rgba(34,197,94,0.15)' : c.match_strength === 'medium' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', color: c.match_strength === 'high' ? '#22c55e' : c.match_strength === 'medium' ? '#f59e0b' : '#ef4444', whiteSpace:'nowrap'}}>
+                          {c.match_strength || 'unknown'}
+                        </span>
+                      </div>
+                      <button className="btn btn-primary btn-sm" style={{fontSize:'11px'}}
+                        onClick={() => runResearch(c, 'manual')}>
+                        ✓ Research this person
+                      </button>
+                    </div>
+                  ))}
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowResearchModal(false); setResearchStage('idle'); }} style={{marginTop:'4px'}}>
+                    None of these — cancel
+                  </button>
+                </div>
+              )}
+
+              {researchStage === 'researching' && (
+                <div style={{padding:'30px 20px',textAlign:'center'}}>
+                  <div style={{fontSize:'14px',color:'var(--text-2)',marginBottom:'8px'}}>↻ Researching…</div>
+                  <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.5}}>
+                    This takes 60-90 seconds. Claude is searching multiple sources, gathering evidence, and building the behavioral read.
+                  </div>
+                </div>
+              )}
+
+              {researchStage === 'done' && (
+                <div style={{padding:'20px',textAlign:'center'}}>
+                  <div style={{fontSize:'40px',marginBottom:'8px'}}>✓</div>
+                  <div style={{fontSize:'14px',color:'var(--text-1)',marginBottom:'14px'}}>Research complete.</div>
+                  <div style={{display:'flex',gap:'8px',justifyContent:'center'}}>
+                    <button className="btn btn-primary btn-sm" onClick={() => { setShowResearchModal(false); setResearchStage('idle'); setShowResearchReport(true); }}>
+                      View report
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowResearchModal(false); setResearchStage('idle'); }}>
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {researchStage === 'error' && (
+                <div>
+                  <div style={{padding:'10px',background:'rgba(239,68,68,0.10)',border:'1px solid #ef4444',borderRadius:'6px',color:'#ef4444',fontSize:'12px',lineHeight:1.5,marginBottom:'12px'}}>
+                    {researchError}
+                  </div>
+                  <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
+                    <button className="btn btn-ghost" onClick={() => { setShowResearchModal(false); setResearchStage('idle'); }}>Close</button>
+                    <button className="btn btn-primary" onClick={() => setResearchStage('idle')}>Try again</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Research report viewer */}
+      {showResearchReport && profile?.research_full_report && (
+        <div className="modal-overlay" onClick={() => setShowResearchReport(false)} style={{zIndex: 1100}}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:'820px',width:'94%',maxHeight:'90vh',display:'flex',flexDirection:'column'}}>
+            <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <h3 style={{margin:0}}>Research report · {contact.name}</h3>
+                <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>
+                  Scope: {profile.research_scope || 'both'} · Generated {profile.research_taken_at ? new Date(profile.research_taken_at).toLocaleString() : ''}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchReport(false)}>✕</button>
+            </div>
+            <div style={{padding:'16px',overflowY:'auto',flex:1,fontSize:'13px',lineHeight:1.7,color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
+              {profile.research_full_report}
+            </div>
+            <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',gap:'8px'}}>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowResearchReport(false); setShowResearchModal(true); }}>
+                ↻ Re-run research
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowResearchReport(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
