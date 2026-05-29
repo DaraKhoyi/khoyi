@@ -6831,6 +6831,191 @@ function ContactModal({ onClose, onSave, initial }) {
   );
 }
 
+// ─────────────────────────────────────────
+// EMAIL → CONTACT LINK REVIEW
+// Shows suggestions from the contact-link-emails edge function and lets the
+// user link, pick a different contact, skip, or block the sender.
+// ─────────────────────────────────────────
+function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChanged }) {
+  const [suggestions, setSuggestions] = useState(null);
+  const [busy, setBusy] = useState({});  // sender_email -> action label
+  const [pickerFor, setPickerFor] = useState(null);  // sender_email when picking different contact
+  const [pickerQuery, setPickerQuery] = useState('');
+
+  const loadSuggestions = useCallback(async () => {
+    setSuggestions(null);
+    const { data } = await supabase.functions.invoke('contact-link-emails', {
+      body: { user_id: userId, apply_auto: false },
+    });
+    if (data?.ok) {
+      setSuggestions(data.suggestions || []);
+      onChanged?.(data.suggestions_count || 0);
+    } else {
+      setSuggestions([]);
+    }
+  }, [userId, onChanged]);
+
+  useEffect(() => { loadSuggestions(); }, [loadSuggestions]);
+
+  async function linkSenderToContact(senderEmail, senderName, contactId, msgMaxDate) {
+    setBusy(b => ({ ...b, [senderEmail]: 'linking' }));
+    try {
+      // Set contact's email + last_contact_at
+      const patch = { email: senderEmail };
+      if (msgMaxDate) patch.last_contact_at = msgMaxDate;
+      await supabase.from('contacts').update(patch).eq('id', contactId);
+      // Refresh contacts state
+      const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+      if (fresh) setContacts(fresh);
+      // Remove from local suggestion list
+      setSuggestions(prev => {
+        const next = (prev || []).filter(s => s.sender.email !== senderEmail);
+        onChanged?.(next.length);
+        return next;
+      });
+    } finally {
+      setBusy(b => { const n = { ...b }; delete n[senderEmail]; return n; });
+    }
+  }
+
+  async function dismissSuggestion(senderEmail, contactId, reason) {
+    setBusy(b => ({ ...b, [senderEmail]: 'dismissing' }));
+    try {
+      await supabase.from('contact_link_dismissals').insert({
+        user_id: userId,
+        sender_email: senderEmail,
+        contact_id: reason === 'block_sender' ? null : contactId,
+        reason,
+      });
+      setSuggestions(prev => {
+        const next = (prev || []).filter(s => {
+          if (reason === 'block_sender') return s.sender.email !== senderEmail;
+          return !(s.sender.email === senderEmail && s.contact.id === contactId);
+        });
+        onChanged?.(next.length);
+        return next;
+      });
+    } finally {
+      setBusy(b => { const n = { ...b }; delete n[senderEmail]; return n; });
+    }
+  }
+
+  // Picker for "different contact"
+  const filteredContacts = (contacts || [])
+    .filter(c => c.name && !c.email)  // only show contacts without an email
+    .filter(c => !pickerQuery || c.name.toLowerCase().includes(pickerQuery.toLowerCase()))
+    .slice(0, 30);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:'720px',width:'92%',maxHeight:'85vh',display:'flex',flexDirection:'column'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
+          <div>
+            <h3 style={{margin:0}}>Link emails to contacts</h3>
+            <p style={{margin:'4px 0 0 0',fontSize:'12px',color:'var(--text-3)'}}>
+              {suggestions === null ? 'Loading…' :
+                suggestions.length === 0 ? 'No pending suggestions.' :
+                `${suggestions.length} pending ${suggestions.length === 1 ? 'suggestion' : 'suggestions'}. Tap Link to add the sender's email to that contact, or Skip / Block.`
+              }
+            </p>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1}}>
+          {suggestions === null && <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Scanning…</div>}
+
+          {suggestions && suggestions.length === 0 && (
+            <div style={{padding:'40px 20px',textAlign:'center'}}>
+              <div style={{fontSize:'32px',marginBottom:'8px'}}>✓</div>
+              <div style={{color:'var(--text-2)',fontSize:'13px'}}>All caught up. Run scan again after new emails arrive.</div>
+            </div>
+          )}
+
+          {suggestions && suggestions.map(s => {
+            const isPicker = pickerFor === s.sender.email;
+            const isBusy = !!busy[s.sender.email];
+            return (
+              <div key={`${s.sender.email}|${s.contact.id}`} style={{padding:'12px',marginBottom:'10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',flexWrap:'wrap',marginBottom:'10px'}}>
+                  <div style={{flex:'1 1 280px',minWidth:0}}>
+                    <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px'}}>📧 SENDER</div>
+                    <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{s.sender.name || '(no name)'}</div>
+                    <div style={{fontSize:'12px',color:'var(--text-2)',wordBreak:'break-all'}}>{s.sender.email}</div>
+                    <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>
+                      {s.sender.msg_count} message{s.sender.msg_count === 1 ? '' : 's'}
+                      {s.sender.last_seen && <> · last {new Date(s.sender.last_seen).toLocaleDateString()}</>}
+                    </div>
+                  </div>
+                  <div style={{flex:'1 1 200px',minWidth:0}}>
+                    <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px'}}>👤 CONTACT</div>
+                    <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{s.contact.name}</div>
+                    <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>
+                      {CONTACT_TYPE_LABELS[s.contact.type] || s.contact.type}
+                      <span style={{marginLeft:'8px',color: s.score >= 90 ? 'var(--green)' : (s.score >= 75 ? 'var(--accent)' : 'var(--text-3)')}}>
+                        score {s.score}{s.ambiguous && ' · ⚠️ ambiguous'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {!isPicker && (
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                    <button className="btn btn-primary btn-sm" disabled={isBusy}
+                      onClick={() => linkSenderToContact(s.sender.email, s.sender.name, s.contact.id, s.sender.last_seen)}>
+                      {busy[s.sender.email] === 'linking' ? '↻ Linking…' : '🔗 Link'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={isBusy}
+                      onClick={() => { setPickerFor(s.sender.email); setPickerQuery(''); }}>
+                      Different contact…
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={isBusy}
+                      onClick={() => dismissSuggestion(s.sender.email, s.contact.id, 'not_a_match')}>
+                      Skip
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={isBusy} style={{color:'var(--red)',marginLeft:'auto'}}
+                      onClick={() => dismissSuggestion(s.sender.email, s.contact.id, 'block_sender')}
+                      title="Mark this sender as not-a-real-person — won't be suggested for any contact again.">
+                      🚫 Block sender
+                    </button>
+                  </div>
+                )}
+
+                {isPicker && (
+                  <div style={{marginTop:'8px',padding:'10px',background:'var(--bg-panel)',borderRadius:'6px'}}>
+                    <input className="form-input" autoFocus placeholder="Search contacts (without email)…"
+                      value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} style={{marginBottom:'8px'}} />
+                    <div style={{maxHeight:'200px',overflowY:'auto'}}>
+                      {filteredContacts.length === 0 ? (
+                        <div style={{padding:'10px',textAlign:'center',color:'var(--text-3)',fontSize:'12px'}}>
+                          No contacts match.
+                        </div>
+                      ) : filteredContacts.map(c => (
+                        <button key={c.id} onClick={() => { setPickerFor(null); linkSenderToContact(s.sender.email, s.sender.name, c.id, s.sender.last_seen); }}
+                          style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',background:'transparent',border:'1px solid transparent',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',cursor:'pointer'}}
+                          onMouseEnter={e=>e.currentTarget.style.background='var(--bg-hover)'}
+                          onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                          {c.name} <span style={{fontSize:'11px',color:'var(--text-3)'}}>· {CONTACT_TYPE_LABELS[c.type] || c.type}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPickerFor(null)} style={{marginTop:'8px'}}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <button className="btn btn-ghost btn-sm" onClick={loadSuggestions}>↻ Refresh</button>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
@@ -6838,6 +7023,48 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added'
   const [search, setSearch] = useState('');
+
+  // Email-to-contact linking state
+  const [linkSummary, setLinkSummary] = useState(null);  // { suggestions_count, auto_filled, auto_linked } or null when never scanned
+  const [showLinkReview, setShowLinkReview] = useState(false);
+  const [scanning, setScanning] = useState(false);
+
+  // Load existing pending-suggestion count on mount (cheap dry-run)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.functions.invoke('contact-link-emails', {
+          body: { user_id: userId, apply_auto: false },
+        });
+        if (!cancelled && data?.ok) {
+          setLinkSummary({ suggestions_count: data.suggestions_count || 0 });
+        }
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  async function runEmailLinkScan() {
+    setScanning(true);
+    try {
+      const { data } = await supabase.functions.invoke('contact-link-emails', {
+        body: { user_id: userId, apply_auto: true },
+      });
+      if (data?.ok) {
+        setLinkSummary({
+          suggestions_count: data.suggestions_count || 0,
+          auto_linked: data.auto_linked,
+          auto_filled: data.auto_filled,
+          just_ran: true,
+        });
+        // Refresh contacts since some may have been auto-filled
+        const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+        if (fresh) setContacts(fresh);
+        if ((data.suggestions_count || 0) > 0) setShowLinkReview(true);
+      }
+    } finally { setScanning(false); }
+  }
 
   // O(1) lookup from contact_id → profile
   const profileByContact = useMemo(() => {
@@ -6931,8 +7158,35 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div><h2>Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
-        <button className="btn btn-primary" onClick={()=>{setEditContact(null);setShowModal(true);}}>+ New Contact</button>
+        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+          <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
+            title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
+            {scanning ? '↻ Scanning…' : '🔗 Scan emails'}
+          </button>
+          <button className="btn btn-primary" onClick={()=>{setEditContact(null);setShowModal(true);}}>+ New Contact</button>
+        </div>
       </div>
+
+      {/* Just-ran feedback */}
+      {linkSummary?.just_ran && (linkSummary.auto_linked + linkSummary.auto_filled > 0) && (
+        <div style={{padding:'10px 14px',marginBottom:'10px',background:'rgba(34, 197, 94, 0.10)',border:'1px solid #22c55e',borderRadius:'8px',color:'#22c55e',fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span>
+            ✓ Linked {linkSummary.auto_linked || 0} contact{linkSummary.auto_linked === 1 ? '' : 's'} via email match
+            {linkSummary.auto_filled > 0 && <>, filled {linkSummary.auto_filled} new email{linkSummary.auto_filled === 1 ? '' : 's'}</>}.
+          </span>
+          <button onClick={() => setLinkSummary(s => ({ ...s, just_ran: false }))} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:'14px'}}>×</button>
+        </div>
+      )}
+
+      {/* Pending suggestions banner */}
+      {linkSummary?.suggestions_count > 0 && (
+        <div style={{padding:'10px 14px',marginBottom:'10px',background:'rgba(197, 169, 94, 0.08)',border:'1px solid var(--accent)',borderRadius:'8px',color:'var(--text-1)',fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
+          <span>
+            <strong>{linkSummary.suggestions_count}</strong> email sender{linkSummary.suggestions_count === 1 ? '' : 's'} may match your existing contacts.
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowLinkReview(true)} style={{color:'var(--accent)'}}>Review →</button>
+        </div>
+      )}
 
       <div className="panel">
         <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
@@ -7016,6 +7270,15 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           onClose={() => setDetailContact(null)}
           onEdit={() => { setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
           onProfileUpdate={handleProfileUpdate}
+        />
+      )}
+      {showLinkReview && (
+        <EmailLinkReviewModal
+          userId={userId}
+          contacts={contacts}
+          setContacts={setContacts}
+          onClose={() => setShowLinkReview(false)}
+          onChanged={(remainingCount) => setLinkSummary(prev => ({ ...prev, suggestions_count: remainingCount }))}
         />
       )}
     </div>
