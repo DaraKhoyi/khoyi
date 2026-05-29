@@ -951,11 +951,13 @@ function QuadrantGrid({ tasks, onToggle, onEdit, onDelete }) {
 // falls back to legacy `emails` table when no account is set up yet.
 // ─────────────────────────────────────────
 function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData }) {
-  // Pick an account that's actually FOR email. Prefer purposes=['email',...],
-  // fall back to any account whose scopes include gmail.
+  // Find the email-purpose Google account. Once a user has gone through OAuth
+  // for email, we KEEP that view forever — even if is_active or sync errors
+  // would otherwise hide it. The user explicitly disconnects via Settings if
+  // they want it gone. This is the "lock in" guarantee.
   const emailAccount =
-    emailAccounts.find(a => a.is_active && (a.purposes || []).includes('email')) ||
-    emailAccounts.find(a => a.is_active && (a.scopes || []).some(s => s.includes('gmail'))) ||
+    emailAccounts.find(a => (a.purposes || []).includes('email') && a.refresh_token) ||
+    emailAccounts.find(a => (a.scopes || []).some(s => s.includes('gmail')) && a.refresh_token) ||
     null;
 
   if (emailAccount) {
