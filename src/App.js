@@ -6838,20 +6838,31 @@ function ContactModal({ onClose, onSave, initial }) {
 // ─────────────────────────────────────────
 function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChanged }) {
   const [suggestions, setSuggestions] = useState(null);
+  const [newContactSuggestions, setNewContactSuggestions] = useState(null);
   const [busy, setBusy] = useState({});  // sender_email -> action label
   const [pickerFor, setPickerFor] = useState(null);  // sender_email when picking different contact
   const [pickerQuery, setPickerQuery] = useState('');
+  // For "Add" on a new-contact suggestion
+  const [addingNewFor, setAddingNewFor] = useState(null);
+  const [newContactType, setNewContactType] = useState('lead');
+  const [newContactName, setNewContactName] = useState('');
 
   const loadSuggestions = useCallback(async () => {
     setSuggestions(null);
+    setNewContactSuggestions(null);
     const { data } = await supabase.functions.invoke('contact-link-emails', {
       body: { user_id: userId, apply_auto: false },
     });
     if (data?.ok) {
       setSuggestions(data.suggestions || []);
-      onChanged?.(data.suggestions_count || 0);
+      setNewContactSuggestions(data.new_contact_suggestions || []);
+      onChanged?.({
+        link: data.suggestions_count || 0,
+        new: data.new_contact_suggestions_count || 0,
+      });
     } else {
       setSuggestions([]);
+      setNewContactSuggestions([]);
     }
   }, [userId, onChanged]);
 
@@ -6867,12 +6878,18 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
       // Refresh contacts state
       const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
       if (fresh) setContacts(fresh);
-      // Remove from local suggestion list
+      // Remove from local suggestion list (link AND new-contact, since linking covers both)
+      let nextLink = [];
+      let nextNew = (newContactSuggestions || []);
       setSuggestions(prev => {
-        const next = (prev || []).filter(s => s.sender.email !== senderEmail);
-        onChanged?.(next.length);
-        return next;
+        nextLink = (prev || []).filter(s => s.sender.email !== senderEmail);
+        return nextLink;
       });
+      setNewContactSuggestions(prev => {
+        nextNew = (prev || []).filter(s => s.sender.email !== senderEmail);
+        return nextNew;
+      });
+      setTimeout(() => onChanged?.({ link: nextLink.length, new: nextNew.length }), 0);
     } finally {
       setBusy(b => { const n = { ...b }; delete n[senderEmail]; return n; });
     }
@@ -6887,14 +6904,87 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
         contact_id: reason === 'block_sender' ? null : contactId,
         reason,
       });
+      let nextLink = [];
+      let nextNew = (newContactSuggestions || []);
       setSuggestions(prev => {
-        const next = (prev || []).filter(s => {
+        nextLink = (prev || []).filter(s => {
           if (reason === 'block_sender') return s.sender.email !== senderEmail;
           return !(s.sender.email === senderEmail && s.contact.id === contactId);
         });
-        onChanged?.(next.length);
-        return next;
+        return nextLink;
       });
+      if (reason === 'block_sender') {
+        setNewContactSuggestions(prev => {
+          nextNew = (prev || []).filter(s => s.sender.email !== senderEmail);
+          return nextNew;
+        });
+      }
+      setTimeout(() => onChanged?.({ link: nextLink.length, new: nextNew.length }), 0);
+    } finally {
+      setBusy(b => { const n = { ...b }; delete n[senderEmail]; return n; });
+    }
+  }
+
+  // Open the inline "Add" form for a new-contact suggestion
+  function startAddingNew(suggestion) {
+    setAddingNewFor(suggestion.sender.email);
+    setNewContactName(suggestion.sender.name || '');
+    setNewContactType('lead');
+  }
+
+  // Create the new contact from a suggestion
+  async function createNewContact(suggestion) {
+    const senderEmail = suggestion.sender.email;
+    if (!newContactName.trim()) return;
+    setBusy(b => ({ ...b, [senderEmail]: 'adding' }));
+    try {
+      const { data: created } = await supabase.from('contacts').insert({
+        user_id: userId,
+        name: newContactName.trim(),
+        email: senderEmail,
+        type: newContactType,
+        priority: 'normal',
+        last_contact_at: suggestion.sender.last_seen,
+        notes: `Auto-suggested from ${suggestion.sender.msg_count} inbound email${suggestion.sender.msg_count === 1 ? '' : 's'}.`,
+      }).select().single();
+      if (created) {
+        setContacts(prev => [created, ...prev]);
+      }
+      let nextNew = [];
+      setNewContactSuggestions(prev => {
+        nextNew = (prev || []).filter(s => s.sender.email !== senderEmail);
+        return nextNew;
+      });
+      setAddingNewFor(null);
+      setTimeout(() => onChanged?.({ link: (suggestions || []).length, new: nextNew.length }), 0);
+    } finally {
+      setBusy(b => { const n = { ...b }; delete n[senderEmail]; return n; });
+    }
+  }
+
+  // Dismiss a new-contact suggestion
+  async function dismissNewContact(senderEmail, reason) {
+    setBusy(b => ({ ...b, [senderEmail]: 'dismissing' }));
+    try {
+      await supabase.from('contact_link_dismissals').insert({
+        user_id: userId,
+        sender_email: senderEmail,
+        contact_id: null,
+        reason,  // 'not_a_new_contact' or 'block_sender'
+      });
+      let nextNew = [];
+      let nextLink = (suggestions || []);
+      setNewContactSuggestions(prev => {
+        nextNew = (prev || []).filter(s => s.sender.email !== senderEmail);
+        return nextNew;
+      });
+      if (reason === 'block_sender') {
+        setSuggestions(prev => {
+          nextLink = (prev || []).filter(s => s.sender.email !== senderEmail);
+          return nextLink;
+        });
+      }
+      setTimeout(() => onChanged?.({ link: nextLink.length, new: nextNew.length }), 0);
     } finally {
       setBusy(b => { const n = { ...b }; delete n[senderEmail]; return n; });
     }
@@ -6911,12 +7001,17 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
       <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:'720px',width:'92%',maxHeight:'85vh',display:'flex',flexDirection:'column'}}>
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
           <div>
-            <h3 style={{margin:0}}>Link emails to contacts</h3>
+            <h3 style={{margin:0}}>Email senders</h3>
             <p style={{margin:'4px 0 0 0',fontSize:'12px',color:'var(--text-3)'}}>
-              {suggestions === null ? 'Loading…' :
-                suggestions.length === 0 ? 'No pending suggestions.' :
-                `${suggestions.length} pending ${suggestions.length === 1 ? 'suggestion' : 'suggestions'}. Tap Link to add the sender's email to that contact, or Skip / Block.`
-              }
+              {suggestions === null ? 'Loading…' : (() => {
+                const linkN = suggestions.length;
+                const newN = (newContactSuggestions || []).length;
+                if (linkN === 0 && newN === 0) return 'All caught up — no pending suggestions.';
+                const parts = [];
+                if (linkN > 0) parts.push(`${linkN} possible match${linkN === 1 ? '' : 'es'} to existing contacts`);
+                if (newN > 0) parts.push(`${newN} potential new contact${newN === 1 ? '' : 's'}`);
+                return parts.join(' · ') + '. Pick an action for each.';
+              })()}
             </p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
@@ -6925,10 +7020,16 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
         <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1}}>
           {suggestions === null && <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Scanning…</div>}
 
-          {suggestions && suggestions.length === 0 && (
+          {suggestions && suggestions.length === 0 && (newContactSuggestions || []).length === 0 && (
             <div style={{padding:'40px 20px',textAlign:'center'}}>
               <div style={{fontSize:'32px',marginBottom:'8px'}}>✓</div>
               <div style={{color:'var(--text-2)',fontSize:'13px'}}>All caught up. Run scan again after new emails arrive.</div>
+            </div>
+          )}
+
+          {suggestions && suggestions.length > 0 && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,margin:'12px 0 8px 0'}}>
+              🔗 Possible matches to existing contacts ({suggestions.length})
             </div>
           )}
 
@@ -7005,6 +7106,86 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
               </div>
             );
           })}
+
+          {/* NEW-CONTACT SUGGESTIONS (Option B) */}
+          {newContactSuggestions && newContactSuggestions.length > 0 && (
+            <>
+              <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,margin:'18px 0 8px 0'}}>
+                ✨ Potential new contacts ({newContactSuggestions.length})
+              </div>
+              <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px',lineHeight:1.5}}>
+                People who've emailed you 3+ times but aren't in your contacts yet. Spam and automated senders are filtered out, but review each before adding.
+              </div>
+              {newContactSuggestions.map(s => {
+                const senderEmail = s.sender.email;
+                const isAdding = addingNewFor === senderEmail;
+                const isBusy = !!busy[senderEmail];
+                return (
+                  <div key={`new-${senderEmail}`} style={{padding:'12px',marginBottom:'10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',flexWrap:'wrap',marginBottom:'10px'}}>
+                      <div style={{flex:'1 1 280px',minWidth:0}}>
+                        <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px'}}>📧 SENDER</div>
+                        <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{s.sender.name || '(no name)'}</div>
+                        <div style={{fontSize:'12px',color:'var(--text-2)',wordBreak:'break-all'}}>{s.sender.email}</div>
+                        {s.confidence_signals && s.confidence_signals.length > 0 && (
+                          <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'6px',lineHeight:1.5}}>
+                            {s.confidence_signals.map((sig, i) => (
+                              <div key={i}>· {sig}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {!isAdding && (
+                      <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                        <button className="btn btn-primary btn-sm" disabled={isBusy} onClick={() => startAddingNew(s)}>
+                          ＋ Add to contacts
+                        </button>
+                        <button className="btn btn-ghost btn-sm" disabled={isBusy}
+                          onClick={() => dismissNewContact(senderEmail, 'not_a_new_contact')}>
+                          {busy[senderEmail] === 'dismissing' ? '↻ Skipping…' : 'Skip'}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" disabled={isBusy}
+                          onClick={() => dismissNewContact(senderEmail, 'block_sender')}
+                          style={{color:'var(--red)'}}>
+                          🚫 Block sender
+                        </button>
+                      </div>
+                    )}
+
+                    {isAdding && (
+                      <div style={{padding:'10px',background:'var(--bg-card)',borderRadius:'6px',border:'1px solid var(--border)'}}>
+                        <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'8px',fontWeight:600}}>Review before adding:</div>
+                        <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}}>
+                          <div style={{flex:'1 1 200px'}}>
+                            <label style={{fontSize:'10px',color:'var(--text-3)',display:'block',marginBottom:'2px'}}>Name</label>
+                            <input className="form-input" value={newContactName} onChange={e=>setNewContactName(e.target.value)} style={{padding:'6px 10px',fontSize:'12px',margin:0,width:'100%'}} />
+                          </div>
+                          <div style={{flex:'1 1 200px'}}>
+                            <label style={{fontSize:'10px',color:'var(--text-3)',display:'block',marginBottom:'2px'}}>Type</label>
+                            <select className="form-select" value={newContactType} onChange={e=>setNewContactType(e.target.value)} style={{padding:'6px 8px',fontSize:'12px',margin:0,width:'100%'}}>
+                              {CONTACT_TYPES.map(t => (
+                                <option key={t.id} value={t.id}>{t.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{display:'flex',gap:'6px'}}>
+                          <button className="btn btn-primary btn-sm" disabled={isBusy || !newContactName.trim()} onClick={() => createNewContact(s)}>
+                            {busy[senderEmail] === 'adding' ? '↻ Adding…' : '✓ Add'}
+                          </button>
+                          <button className="btn btn-ghost btn-sm" disabled={isBusy} onClick={() => setAddingNewFor(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
 
         <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -7038,7 +7219,10 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           body: { user_id: userId, apply_auto: false },
         });
         if (!cancelled && data?.ok) {
-          setLinkSummary({ suggestions_count: data.suggestions_count || 0 });
+          setLinkSummary({
+            suggestions_count: data.suggestions_count || 0,
+            new_contact_count: data.new_contact_suggestions_count || 0,
+          });
         }
       } catch { /* non-fatal */ }
     })();
@@ -7054,6 +7238,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       if (data?.ok) {
         setLinkSummary({
           suggestions_count: data.suggestions_count || 0,
+          new_contact_count: data.new_contact_suggestions_count || 0,
           auto_linked: data.auto_linked,
           auto_filled: data.auto_filled,
           just_ran: true,
@@ -7061,7 +7246,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
         // Refresh contacts since some may have been auto-filled
         const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
         if (fresh) setContacts(fresh);
-        if ((data.suggestions_count || 0) > 0) setShowLinkReview(true);
+        const totalPending = (data.suggestions_count || 0) + (data.new_contact_suggestions_count || 0);
+        if (totalPending > 0) setShowLinkReview(true);
       }
     } finally { setScanning(false); }
   }
@@ -7179,10 +7365,17 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       )}
 
       {/* Pending suggestions banner */}
-      {linkSummary?.suggestions_count > 0 && (
+      {((linkSummary?.suggestions_count || 0) + (linkSummary?.new_contact_count || 0)) > 0 && (
         <div style={{padding:'10px 14px',marginBottom:'10px',background:'rgba(197, 169, 94, 0.08)',border:'1px solid var(--accent)',borderRadius:'8px',color:'var(--text-1)',fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
           <span>
-            <strong>{linkSummary.suggestions_count}</strong> email sender{linkSummary.suggestions_count === 1 ? '' : 's'} may match your existing contacts.
+            {(() => {
+              const m = linkSummary.suggestions_count || 0;
+              const n = linkSummary.new_contact_count || 0;
+              const parts = [];
+              if (m > 0) parts.push(<span key="link"><strong>{m}</strong> possible match{m === 1 ? '' : 'es'}</span>);
+              if (n > 0) parts.push(<span key="new"><strong>{n}</strong> potential new contact{n === 1 ? '' : 's'}</span>);
+              return parts.reduce((acc, p, i) => i === 0 ? [p] : [...acc, ' · ', p], []);
+            })()}
           </span>
           <button className="btn btn-ghost btn-sm" onClick={() => setShowLinkReview(true)} style={{color:'var(--accent)'}}>Review →</button>
         </div>
@@ -7278,7 +7471,11 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           contacts={contacts}
           setContacts={setContacts}
           onClose={() => setShowLinkReview(false)}
-          onChanged={(remainingCount) => setLinkSummary(prev => ({ ...prev, suggestions_count: remainingCount }))}
+          onChanged={(counts) => setLinkSummary(prev => ({
+            ...prev,
+            suggestions_count: counts.link,
+            new_contact_count: counts.new,
+          }))}
         />
       )}
     </div>
