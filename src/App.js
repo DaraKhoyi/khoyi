@@ -12,6 +12,39 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL || ''}/pdf.wo
 
 const PLATFORM_ADMIN_EMAIL = 'dara@brokerdara.com';
 
+// Contact segment types. Order = display order in dropdowns and filter pills.
+// "All" is a UI-only filter sentinel; it isn't stored.
+const CONTACT_TYPES = [
+  { id: 'attorney',           label: 'Attorney',           icon: '⚖️' },
+  { id: 'broker',             label: 'Broker',             icon: '🧑‍💼' },
+  { id: 'brokerage',          label: 'Brokerage',          icon: '🏢' },
+  { id: 'builder',            label: 'Builder',            icon: '🔨' },
+  { id: 'client_commercial',  label: 'Client – Commercial', icon: '🏬' },
+  { id: 'client_residential', label: 'Client – Residential', icon: '🏠' },
+  { id: 'commercial_tenant',  label: 'Commercial Tenant',  icon: '🏪' },
+  { id: 'contractor',         label: 'Contractor',         icon: '🛠️' },
+  { id: 'developer',          label: 'Developer',          icon: '🏗️' },
+  { id: 'doctor',             label: 'Doctor',             icon: '🩺' },
+  { id: 'family',             label: 'Family',             icon: '👨‍👩‍👧' },
+  { id: 'flipper',            label: 'Flipper',            icon: '🔄' },
+  { id: 'investments',        label: 'Investments',        icon: '💰' },
+  { id: 'lender',             label: 'Lender',             icon: '🏦' },
+  { id: 'our_agent',          label: 'Our Agent',          icon: '🌟' },
+  { id: 'personal',           label: 'Personal',           icon: '💛' },
+  { id: 'prospect_agent',     label: 'Prospect Agent',     icon: '🎣' },
+  { id: 'regulator',          label: 'Regulator',          icon: '📋' },
+  // Legacy / catchall last
+  { id: 'client',             label: 'Client (legacy)',    icon: '🤝' },
+  { id: 'lead',               label: 'Lead',               icon: '🌱' },
+  { id: 'agent',              label: 'Agent (legacy)',     icon: '🧑‍💼' },
+  { id: 'recruit',            label: 'Recruit',            icon: '🎯' },
+  { id: 'partner',            label: 'Partner',            icon: '🤲' },
+  { id: 'vendor',             label: 'Vendor',             icon: '🔧' },
+  { id: 'misc',                label: 'Misc',              icon: '🗂️' },
+  { id: 'other',              label: 'Other',              icon: '❓' },
+];
+const CONTACT_TYPE_LABELS = Object.fromEntries(CONTACT_TYPES.map(t => [t.id, t.label]));
+
 // ─────────────────────────────────────────
 // AUTH SCREEN
 // ─────────────────────────────────────────
@@ -1154,6 +1187,47 @@ function LegacyInboxView({ emails, setEmails, userId, setView, reloadData }) {
 }
 
 // ─── Gmail inbox ─────────────────────────────────────────────────
+// Renders email HTML in a sandboxed iframe. Sandbox blocks scripts/popups
+// so even malicious email HTML can't escape into the app. Auto-sizes height.
+function EmailHtmlFrame({ html }) {
+  const iframeRef = useRef(null);
+  const [height, setHeight] = useState(200);
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    // Wrap in a basic style so dark-mode email content stays readable
+    const wrapped = `<!doctype html><html><head><meta charset="utf-8"><style>
+      body { margin: 0; padding: 8px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13.5px; line-height: 1.6; color: #e8eaf0; background: #161921; }
+      a { color: #c5a95e; }
+      img { max-width: 100%; height: auto; }
+      table { max-width: 100%; }
+      blockquote { border-left: 3px solid #252a38; padding-left: 12px; color: #9499b0; margin: 8px 0; }
+      pre { white-space: pre-wrap; word-wrap: break-word; }
+      * { max-width: 100%; box-sizing: border-box; }
+    </style></head><body>${html}</body></html>`;
+    iframe.srcdoc = wrapped;
+    const onLoad = () => {
+      try {
+        const doc = iframe.contentDocument;
+        if (doc) {
+          const h = Math.min(800, Math.max(100, doc.body.scrollHeight + 24));
+          setHeight(h);
+        }
+      } catch (_) { /* cross-origin shouldn't happen with srcdoc */ }
+    };
+    iframe.addEventListener('load', onLoad);
+    return () => iframe.removeEventListener('load', onLoad);
+  }, [html]);
+  return (
+    <iframe
+      ref={iframeRef}
+      title="email-body"
+      sandbox="allow-same-origin"
+      style={{ width: '100%', height: `${height}px`, border: 'none', borderRadius: '6px', background: '#161921' }}
+    />
+  );
+}
+
 function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId }) {
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -1172,6 +1246,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [sending, setSending] = useState(false);
   const [sendMsg, setSendMsg] = useState('');
   const [syncingAliases, setSyncingAliases] = useState(false);
+  // Backfill state: { running, round, totalNew, remaining, error, message }
+  const [backfill, setBackfill] = useState(null);
 
   // Verified aliases the user can send from. Fall back to the account address.
   const verifiedAliases = (emailAliases || []).filter(a => a.verified);
@@ -1271,6 +1347,56 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     } finally {
       setSyncing(false);
     }
+  }
+
+  // 365-day backfill: walks backward through Gmail in batches.
+  // Each round pulls ~300 messages older than what we already have.
+  // Stops when 2 consecutive rounds find no new messages.
+  async function runBackfill() {
+    setBackfill({ running: true, round: 0, totalNew: 0, remaining: null, error: null, message: 'Starting 365-day backfill…' });
+    let totalNew = 0;
+    let zeroRoundsInARow = 0;
+    const MAX_ROUNDS = 100;
+    for (let i = 1; i <= MAX_ROUNDS; i++) {
+      setBackfill(b => ({ ...b, round: i, message: `Round ${i}: fetching older messages…` }));
+      try {
+        const { data, error } = await supabase.functions.invoke('gmail-sync', {
+          body: {
+            account_id: account.id,
+            force_backfill: true,
+            lookback_days: 365,
+            exclude_categories: true,
+            max_initial: 2000,
+            per_run_cap: 300,
+          },
+        });
+        if (error) throw error;
+        const r = (data && data.synced && data.synced[0]) || {};
+        if (r.error) throw new Error(r.error);
+        const newCount = r.new_messages || 0;
+        const remaining = r.remaining_to_fetch || 0;
+        totalNew += newCount;
+        setBackfill(b => ({ ...b, round: i, totalNew, remaining,
+          message: `Round ${i}: +${newCount} messages · total pulled so far: ${totalNew}${remaining > 0 ? ` · ~${remaining} more in queue` : ''}` }));
+        if (newCount === 0) {
+          zeroRoundsInARow++;
+          if (zeroRoundsInARow >= 2) {
+            setBackfill({ running: false, round: i, totalNew, remaining: 0, error: null,
+              message: `✓ Backfill complete. Pulled ${totalNew} messages from the last 365 days (excluding promotions/updates/social).` });
+            break;
+          }
+        } else {
+          zeroRoundsInARow = 0;
+        }
+      } catch (err) {
+        setBackfill(b => ({ ...b, running: false, error: err.message || String(err) }));
+        return;
+      }
+    }
+    await loadThreads();
+    const { data: acct } = await supabase.from('email_accounts').select('*').eq('id', account.id).single();
+    if (acct) setEmailAccounts(prev => prev.map(a => a.id === acct.id ? acct : a));
+    setTimeout(() => setBackfill(b => (b && !b.running ? null : b)), 30000);
   }
 
   // Reply-from picker: prefer whatever address the inbound mail was sent TO
@@ -1379,13 +1505,22 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   function senderFromThread(thread) {
     // For inbox, show the most recent non-owner participant; for sent, show recipient.
-    if (!thread.participants || thread.participants.length === 0) return { name: null, email: null };
-    if (tab === 'sent') {
-      const recip = thread.participants.find(p => p.email !== account.email_address);
-      return recip || thread.participants[0];
-    }
-    const sender = thread.participants.find(p => p.email !== account.email_address);
-    return sender || thread.participants[0];
+    const myEmail = (account.email_address || '').toLowerCase();
+    const myAliases = new Set([myEmail, ...verifiedAliases.map(a => a.email_address.toLowerCase())]);
+    const parts = Array.isArray(thread.participants) ? thread.participants : [];
+    // Normalize — some legacy rows may have strings instead of objects
+    const normalized = parts.map(p => {
+      if (typeof p === 'string') {
+        const m = p.match(/^"?([^"<]+?)"?\s*<([^>]+)>/);
+        if (m) return { name: m[1].trim(), email: m[2].trim().toLowerCase() };
+        return { name: null, email: p.toLowerCase() };
+      }
+      return { name: p?.name || null, email: (p?.email || '').toLowerCase() };
+    }).filter(p => p.email);
+    if (normalized.length === 0) return { name: null, email: null };
+    // Find non-owner first
+    const other = normalized.find(p => !myAliases.has(p.email));
+    return other || normalized[0];
   }
 
   const unreadCount = threads.filter(t => t.has_unread).length;
@@ -1408,10 +1543,27 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
           <button className="btn btn-ghost btn-sm" onClick={() => runAliasesSync(false)} disabled={syncingAliases} title="Re-sync your Send-mail-as aliases from Gmail">
             {syncingAliases ? '↻ Syncing senders…' : `↻ Senders (${verifiedAliases.length})`}
           </button>
+          <button className="btn btn-ghost btn-sm" onClick={runBackfill} disabled={backfill?.running || syncing}
+            title="Pull last 365 days of emails (excludes Promotions / Updates / Social). Safe to leave running in the background — it batches.">
+            {backfill?.running ? `↻ Backfill (round ${backfill.round})` : '⤓ Pull 365d'}
+          </button>
           <button className="btn btn-ghost" onClick={runSync} disabled={syncing}>{syncing ? 'Syncing…' : '↻ Sync'}</button>
           <button className="btn btn-primary" onClick={openCompose}>✏️ Compose</button>
         </div>
       </div>
+
+      {backfill && (
+        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',
+          background: backfill.error ? 'rgba(239,68,68,0.10)' : (backfill.running ? 'rgba(197,169,94,0.08)' : 'rgba(34,197,94,0.10)'),
+          border: `1px solid ${backfill.error ? '#ef4444' : (backfill.running ? 'var(--accent)' : '#22c55e')}`,
+          color: backfill.error ? '#ef4444' : (backfill.running ? 'var(--text-1)' : '#22c55e'),
+          fontSize:'12px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px'}}>
+          <span>{backfill.error ? `Backfill failed: ${backfill.error}` : backfill.message}</span>
+          {!backfill.running && (
+            <button onClick={() => setBackfill(null)} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:'14px'}}>×</button>
+          )}
+        </div>
+      )}
 
       {!account.initial_sync_done && (
         <div className="panel" style={{marginBottom:'14px',background:'rgba(197, 169, 94, 0.08)',borderColor:'var(--accent)'}}>
@@ -1501,9 +1653,17 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                               To: {sentTo.join(', ')}
                             </div>
                           )}
-                          <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
-                            {msg.body_text || (msg.body_html ? '(HTML message — text version not available)' : msg.snippet || '')}
-                          </div>
+                          {msg.body_text ? (
+                            <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
+                              {msg.body_text}
+                            </div>
+                          ) : msg.body_html ? (
+                            <EmailHtmlFrame html={msg.body_html} />
+                          ) : (
+                            <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-3)',fontStyle:'italic'}}>
+                              {msg.snippet || '(no content)'}
+                            </div>
+                          )}
                           <div style={{display:'flex',gap:'6px',marginTop:'10px'}}>
                             <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, false)}>↩ Reply</button>
                             {(sentTo.length > 1 || (msg.cc_addresses || []).length > 0) && (
@@ -6486,6 +6646,29 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
                   <span>{profile.signals_count} signals</span>
                   {profile.last_analyzed_at && <span>Updated: {new Date(profile.last_analyzed_at).toLocaleString()}</span>}
                 </div>
+                {(() => {
+                  // Confidence floor hints — what's needed to reach the next tier.
+                  const pct = profile.confidence_pct || 0;
+                  const signals = profile.signals_count || 0;
+                  if (pct >= 80) return null;
+                  let hint = null;
+                  if (pct < 40) {
+                    const need = Math.max(0, 3 - signals);
+                    hint = need > 0
+                      ? `Currently provisional. Need ~${need} more piece${need === 1 ? '' : 's'} of evidence (notes or inbound emails) to reach medium confidence.`
+                      : `Currently provisional. Evidence is sparse or mixed — more recent communications will sharpen the read.`;
+                  } else if (pct < 80) {
+                    const need = Math.max(0, 9 - signals);
+                    hint = need > 0
+                      ? `Medium confidence. Need ~${need} more piece${need === 1 ? '' : 's'} of varied evidence to reach high confidence.`
+                      : `Medium confidence. The signals are consistent but not yet strong enough across contexts. A baseline test would lock it in.`;
+                  }
+                  return hint && (
+                    <div style={{fontSize:'10px',color:'var(--accent)',marginTop:'6px',padding:'6px 10px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'4px',lineHeight:1.5}}>
+                      💡 {hint}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -6615,14 +6798,9 @@ function ContactModal({ onClose, onSave, initial }) {
           <div className="form-row">
             <div className="form-group"><label className="form-label">Type</label>
               <select className="form-select" value={type} onChange={e=>setType(e.target.value)}>
-                <option value="client">Client</option>
-                <option value="lead">Lead</option>
-                <option value="agent">Agent</option>
-                <option value="recruit">Recruit</option>
-                <option value="partner">Partner</option>
-                <option value="vendor">Vendor</option>
-                <option value="family">Family / Personal</option>
-                <option value="other">Other</option>
+                {CONTACT_TYPES.map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
               </select>
             </div>
             <div className="form-group"><label className="form-label">Priority</label>
@@ -6658,6 +6836,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   const [editContact, setEditContact] = useState(null);
   const [detailContact, setDetailContact] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added'
   const [search, setSearch] = useState('');
 
   // O(1) lookup from contact_id → profile
@@ -6676,16 +6855,24 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
     });
   }
 
-  const TYPES = [
-    { id: 'all', label: 'All', icon: '👥' },
-    { id: 'client', label: 'Clients', icon: '🤝' },
-    { id: 'lead', label: 'Leads', icon: '🌱' },
-    { id: 'agent', label: 'Agents', icon: '🧑‍💼' },
-    { id: 'recruit', label: 'Recruits', icon: '🎣' },
-    { id: 'partner', label: 'Partners', icon: '🤲' },
-    { id: 'vendor', label: 'Vendors', icon: '🔧' },
-    { id: 'family', label: 'Family', icon: '👨‍👩‍👧' },
-  ];
+  // Extract last name for sorting: "John Smith" -> "Smith", "Bob Van Der Berg" -> "Berg", "Cher" -> "Cher"
+  function lastNameKey(c) {
+    const name = (c.name || '').trim();
+    if (!name) return '\uffff'; // sort blanks to end
+    const parts = name.split(/\s+/);
+    const last = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+    return last.toLowerCase();
+  }
+  function firstNameKey(c) {
+    const name = (c.name || '').trim();
+    if (!name) return '\uffff';
+    return (name.split(/\s+/)[0] || '').toLowerCase();
+  }
+  function lastContactKey(c) {
+    // Most recent "touch" — last_contact_at if present, else updated_at
+    const ts = c.last_contact_at || c.updated_at || c.created_at || null;
+    return ts ? new Date(ts).getTime() : 0;
+  }
 
   const filtered = contacts.filter(c => {
     if (typeFilter !== 'all' && c.type !== typeFilter) return false;
@@ -6697,6 +6884,30 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
              (c.notes||'').toLowerCase().includes(q);
     }
     return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'last_name') {
+      const la = lastNameKey(a), lb = lastNameKey(b);
+      if (la !== lb) return la.localeCompare(lb);
+      return firstNameKey(a).localeCompare(firstNameKey(b));
+    }
+    if (sortBy === 'first_name') {
+      return firstNameKey(a).localeCompare(firstNameKey(b));
+    }
+    if (sortBy === 'last_contact_oldest') {
+      // Oldest first — surfaces who you haven't reached out to recently
+      return lastContactKey(a) - lastContactKey(b);
+    }
+    if (sortBy === 'last_contact_newest') {
+      return lastContactKey(b) - lastContactKey(a);
+    }
+    if (sortBy === 'recently_added') {
+      const ta = new Date(a.created_at || 0).getTime();
+      const tb = new Date(b.created_at || 0).getTime();
+      return tb - ta;
+    }
+    return 0;
   });
 
   async function handleSave(data) {
@@ -6719,26 +6930,42 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>Contacts</h2><p>{contacts.length} total · {filtered.length} shown</p></div>
+        <div><h2>Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
         <button className="btn btn-primary" onClick={()=>{setEditContact(null);setShowModal(true);}}>+ New Contact</button>
       </div>
 
       <div className="panel">
         <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
           <input className="form-input" placeholder="Search contacts…" value={search} onChange={e=>setSearch(e.target.value)} style={{margin:0}} />
-          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-            {TYPES.map(t => (
-              <button key={t.id} className={`btn btn-sm ${typeFilter===t.id?'btn-primary':'btn-ghost'}`} onClick={()=>setTypeFilter(t.id)}>
-                {t.icon} {t.label}
-              </button>
-            ))}
+          <div style={{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}}>
+            <div style={{flex:'1 1 220px',minWidth:0}}>
+              <label style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,display:'block',marginBottom:'4px'}}>Filter by type</label>
+              <select className="form-select" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{margin:0}}>
+                <option value="all">👥 All ({contacts.length})</option>
+                {CONTACT_TYPES.map(t => {
+                  const count = contacts.filter(c => c.type === t.id).length;
+                  if (count === 0) return null;
+                  return <option key={t.id} value={t.id}>{t.icon} {t.label} ({count})</option>;
+                })}
+              </select>
+            </div>
+            <div style={{flex:'1 1 200px',minWidth:0}}>
+              <label style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,display:'block',marginBottom:'4px'}}>Sort by</label>
+              <select className="form-select" value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{margin:0}}>
+                <option value="last_name">Last name, first name</option>
+                <option value="first_name">First name</option>
+                <option value="last_contact_oldest">Last contact (oldest first) — overdue for reach-out</option>
+                <option value="last_contact_newest">Last contact (newest first)</option>
+                <option value="recently_added">Recently added</option>
+              </select>
+            </div>
           </div>
         </div>
         <div className="panel-body">
-          {filtered.length === 0
+          {sorted.length === 0
             ? <div className="empty-state"><div className="empty-icon">👥</div><p>No contacts here.</p></div>
             : <div className="task-list">
-                {filtered.map(c => {
+                {sorted.map(c => {
                   const p = profileByContact.get(c.id);
                   const discColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
                   return (
@@ -6746,7 +6973,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
                           {c.name}
-                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{c.type}</span>
+                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)'}}>{CONTACT_TYPE_LABELS[c.type] || c.type}</span>
                           {p?.primary_letter && (
                             <span title={`DISC ${p.primary_letter}${p.secondary_letter ? '/' + p.secondary_letter : ''} · ${p.confidence_pct || 0}% confidence · ${p.analysis_status || 'ready'}`}
                               className="pill"

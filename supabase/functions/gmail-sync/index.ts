@@ -149,13 +149,36 @@ async function gmailFetch(accessToken, path, params) {
   return r.json();
 }
 
+// Build a Gmail search query string based on sync options
+function buildGmailQuery(opts) {
+  const parts = ["-in:trash", "-in:spam"];
+  if (opts.lookback_days && opts.lookback_days > 0) {
+    const epochSeconds = Math.floor(Date.now() / 1000) - (opts.lookback_days * 86400);
+    parts.push(`after:${epochSeconds}`);
+  }
+  if (opts.before_epoch) {
+    parts.push(`before:${opts.before_epoch}`);
+  }
+  if (opts.exclude_categories) {
+    // Skip promotional/automated mail — keep what's likely human-to-human
+    parts.push("-category:promotions");
+    parts.push("-category:updates");
+    parts.push("-category:social");
+    parts.push("-category:forums");
+  }
+  if (opts.labels && opts.labels.length > 0) {
+    for (const label of opts.labels) parts.push(`label:${label}`);
+  }
+  return parts.join(" ");
+}
+
 async function getMessageIds(accessToken, opts) {
   // Initial sync: list messages, paginated, up to limit
   const ids = [];
   let pageToken;
   while (ids.length < opts.limit) {
     const params = {
-      maxResults: Math.min(100, opts.limit - ids.length),
+      maxResults: Math.min(500, opts.limit - ids.length),
       q: opts.query || "-in:trash -in:spam",
     };
     if (pageToken) params.pageToken = pageToken;
@@ -218,10 +241,30 @@ async function syncOneAccount(supabase, account, opts) {
     let messageIds = [];
     let latestHistoryId = account.history_id;
 
-    if (!account.initial_sync_done) {
-      // First sync — pull the recent N messages
-      const limit = Math.min(Math.max(opts.max_initial || 100, 1), 500);
-      messageIds = await getMessageIds(accessToken, { limit });
+    const wantBackfill = opts.force_backfill === true;
+    if (!account.initial_sync_done || wantBackfill) {
+      // First sync (or explicit backfill) — pull recent N messages with optional filtering.
+      // In backfill mode, query for messages OLDER than the oldest we already have,
+      // so each call walks further back in time.
+      const limit = Math.min(Math.max(opts.max_initial || 100, 1), 5000);
+      let beforeEpoch;
+      if (wantBackfill) {
+        const { data: oldest } = await supabase
+          .from("email_messages")
+          .select("internal_date")
+          .eq("account_id", account.id)
+          .order("internal_date", { ascending: true })
+          .limit(1);
+        if (oldest && oldest[0] && oldest[0].internal_date) {
+          beforeEpoch = Math.floor(new Date(oldest[0].internal_date).getTime() / 1000);
+        }
+      }
+      const query = buildGmailQuery({
+        lookback_days: opts.lookback_days,
+        exclude_categories: opts.exclude_categories,
+        before_epoch: beforeEpoch,
+      });
+      messageIds = await getMessageIds(accessToken, { limit, query });
       const prof = await getProfile(accessToken);
       latestHistoryId = prof.historyId;
     } else if (account.history_id) {
@@ -239,8 +282,12 @@ async function syncOneAccount(supabase, account, opts) {
         }
       } catch (e) {
         // history too old — fall back to listing recent messages
-        const limit = Math.min(Math.max(opts.max_initial || 100, 1), 500);
-        messageIds = await getMessageIds(accessToken, { limit });
+        const limit = Math.min(Math.max(opts.max_initial || 100, 1), 5000);
+        const query = buildGmailQuery({
+          lookback_days: opts.lookback_days,
+          exclude_categories: opts.exclude_categories,
+        });
+        messageIds = await getMessageIds(accessToken, { limit, query });
         const prof = await getProfile(accessToken);
         latestHistoryId = prof.historyId;
       }
@@ -262,9 +309,12 @@ async function syncOneAccount(supabase, account, opts) {
       newIds = newIds.filter((id) => !existingSet.has(id));
     }
 
-    // Cap per run to avoid timeout
-    const PER_RUN_CAP = 80;
+    // Cap per run to avoid timeout. Backfills get a larger cap because the
+    // caller knows they'll need multiple runs and will batch.
+    const PER_RUN_CAP = opts.force_backfill ? (opts.per_run_cap || 300) : 80;
     const idsToFetch = newIds.slice(0, PER_RUN_CAP);
+    const remainingAfter = Math.max(0, newIds.length - idsToFetch.length);
+    result.remaining_to_fetch = remainingAfter;
     const ownerEmail = (account.email_address || "").toLowerCase();
     const threadCache = new Map(); // provider_thread_id -> uuid
 
@@ -295,16 +345,28 @@ async function syncOneAccount(supabase, account, opts) {
 
       // Upsert thread
       let threadUuid = threadCache.get(msg.threadId);
+      const fromParticipant = (fromObj.email || fromObj.name) ? { name: fromObj.name, email: fromObj.email } : null;
       if (!threadUuid) {
         const { data: existingThread } = await supabase
           .from("email_threads")
-          .select("id")
+          .select("id, participants")
           .eq("account_id", account.id)
           .eq("provider_thread_id", msg.threadId)
           .maybeSingle();
         if (existingThread) {
           threadUuid = existingThread.id;
+          // Merge this message's sender into participants if not already there
+          if (fromParticipant) {
+            const existingPs = Array.isArray(existingThread.participants) ? existingThread.participants : [];
+            const already = existingPs.some(p => (p.email || '').toLowerCase() === (fromParticipant.email || '').toLowerCase());
+            if (!already) {
+              await supabase.from("email_threads")
+                .update({ participants: [...existingPs, fromParticipant] })
+                .eq("id", threadUuid);
+            }
+          }
         } else {
+          const initialParticipants = fromParticipant ? [fromParticipant] : [];
           const { data: newThread } = await supabase
             .from("email_threads")
             .insert({
@@ -314,7 +376,7 @@ async function syncOneAccount(supabase, account, opts) {
               subject: subject || "(no subject)",
               snippet: msg.snippet || null,
               message_count: 0,
-              participants: [],
+              participants: initialParticipants,
               labels,
               last_message_at: internalDate,
               has_unread: labels.includes("UNREAD"),
@@ -402,15 +464,21 @@ async function syncOneAccount(supabase, account, opts) {
     }
     result.new_threads = threadCache.size;
 
-    // Persist sync cursor
+    // Persist sync cursor. During a backfill, don't advance historyId until the
+    // backfill is complete — otherwise the next normal sync would skip past
+    // anything we haven't ingested yet.
+    const backfillIncomplete = opts.force_backfill && remainingAfter > 0;
+    const updates = {
+      initial_sync_done: true,
+      last_sync_at: new Date().toISOString(),
+      last_sync_error: null,
+    };
+    if (!backfillIncomplete) {
+      updates.history_id = latestHistoryId || account.history_id;
+    }
     await supabase
       .from("email_accounts")
-      .update({
-        history_id: latestHistoryId || account.history_id,
-        initial_sync_done: true,
-        last_sync_at: new Date().toISOString(),
-        last_sync_error: null,
-      })
+      .update(updates)
       .eq("id", account.id);
 
     return result;
@@ -434,7 +502,7 @@ serve(async (req) => {
     );
 
     const body = await req.json().catch(() => ({}));
-    const { account_id, user_id, max_initial } = body || {};
+    const { account_id, user_id, max_initial, lookback_days, exclude_categories, force_backfill } = body || {};
 
     // Auth: either called by cron with a service-role key (user_id is then optional and we sync all),
     // or by a user via the client which passes Authorization
@@ -458,7 +526,12 @@ serve(async (req) => {
 
     const results = [];
     for (const acct of accounts) {
-      const r = await syncOneAccount(supabase, acct, { max_initial });
+      const r = await syncOneAccount(supabase, acct, {
+        max_initial,
+        lookback_days,
+        exclude_categories,
+        force_backfill,
+      });
       results.push(r);
     }
 
