@@ -1207,17 +1207,18 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   const loadThreads = useCallback(async () => {
     setLoadingThreads(true);
-    // Filter by label: inbox tab → INBOX label; sent → SENT label
-    let q = supabase
+    // Filter labels at the SQL level using array-contains (cs) so pagination
+    // works correctly. Previously we fetched 50-most-recent and filtered in JS,
+    // which dropped older INBOX threads if newer Sent/Draft threads filled the window.
+    const labelToMatch = tab === 'sent' ? 'SENT' : 'INBOX';
+    const { data } = await supabase
       .from('email_threads')
       .select('*')
       .eq('account_id', account.id)
+      .contains('labels', [labelToMatch])
       .order('last_message_at', { ascending: false })
       .limit(50);
-    const { data } = await q;
-    const labelFilter = tab === 'sent' ? 'SENT' : 'INBOX';
-    const filtered = (data || []).filter(t => Array.isArray(t.labels) && t.labels.includes(labelFilter));
-    setThreads(filtered);
+    setThreads(data || []);
     setLoadingThreads(false);
   }, [account.id, tab]);
 
@@ -9861,31 +9862,59 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const connected = params.get('gmail_connected');
     const googleConnected = params.get('google_connected');
+    const purposeParam = params.get('purpose') || '';
     if (connected || googleConnected) {
-      setGmailConnectedFlash(connected || googleConnected);
+      const email = connected || googleConnected;
+      const purposes = purposeParam.split(',').filter(Boolean);
+      const isEmail = purposes.includes('email');
+      const isCalendar = purposes.includes('calendar');
+      let purposeLabel = 'email';
+      if (isEmail && isCalendar) purposeLabel = 'email + calendar';
+      else if (isCalendar) purposeLabel = 'calendar';
+      else if (isEmail) purposeLabel = 'email';
+      const nextStep = isEmail
+        ? 'Open Inbox and tap Sync to pull messages.'
+        : (isCalendar ? 'Open Calendar to see your synced events.' : '');
+      setGmailConnectedFlash({ email, purposeLabel, nextStep });
       // Strip the params from the URL
       params.delete('gmail_connected');
       params.delete('google_connected');
+      params.delete('purpose');
       const newSearch = params.toString();
       const newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
       window.history.replaceState({}, '', newUrl);
       // Reload data so the new account appears
       if (session) loadData();
-      // If Google (calendar) just connected, kick off an initial calendar sync
+      // Kick off the right sync based on what just connected
       if (googleConnected && session) {
-        supabase.functions.invoke('calendar-sync', {
-          body: { user_id: session.user.id, direction: 'both' }
-        }).then(async () => {
-          const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
-          if (fresh) setEvents(fresh);
-        }).catch(()=>{});
-        // Also sync Gmail aliases (Send mail as) so the From dropdown is populated
-        supabase.functions.invoke('gmail-aliases-sync', {
-          body: { user_id: session.user.id }
-        }).then(async () => {
-          const { data: aliases } = await supabase.from('email_aliases').select('*').order('email_address', { ascending: true });
-          if (aliases) setEmailAliases(aliases);
-        }).catch(()=>{});
+        if (isCalendar) {
+          supabase.functions.invoke('calendar-sync', {
+            body: { user_id: session.user.id, direction: 'both' }
+          }).then(async () => {
+            const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+            if (fresh) setEvents(fresh);
+          }).catch(()=>{});
+        }
+        if (isEmail) {
+          // Find the email-purpose account and trigger a Gmail sync so messages appear
+          supabase.from('email_accounts')
+            .select('id')
+            .eq('user_id', session.user.id)
+            .eq('email_address', email.toLowerCase())
+            .maybeSingle()
+            .then(({ data: acct }) => {
+              if (acct) {
+                supabase.functions.invoke('gmail-sync', { body: { account_id: acct.id } }).catch(()=>{});
+              }
+            });
+          // Also sync Send-mail-as aliases
+          supabase.functions.invoke('gmail-aliases-sync', {
+            body: { user_id: session.user.id }
+          }).then(async () => {
+            const { data: aliases } = await supabase.from('email_aliases').select('*').order('email_address', { ascending: true });
+            if (aliases) setEmailAliases(aliases);
+          }).catch(()=>{});
+        }
       }
       // Hide the flash after 6s
       const t = setTimeout(() => setGmailConnectedFlash(null), 6000);
@@ -9974,7 +10003,7 @@ export default function App() {
         <main className="main-content">
           {gmailConnectedFlash && (
             <div style={{padding:'10px 14px',marginBottom:'14px',background:'rgba(34, 197, 94, 0.1)',border:'1px solid var(--green)',borderRadius:'8px',color:'var(--green)',fontSize:'13px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span>✓ Connected <strong>{gmailConnectedFlash}</strong>. Open Inbox and tap Sync to pull messages.</span>
+              <span>✓ Connected <strong>{gmailConnectedFlash.email}</strong> for <strong>{gmailConnectedFlash.purposeLabel}</strong>. {gmailConnectedFlash.nextStep}</span>
               <button className="btn btn-ghost btn-sm" onClick={()=>setGmailConnectedFlash(null)}>×</button>
             </div>
           )}
