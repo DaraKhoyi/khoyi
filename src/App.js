@@ -6048,6 +6048,288 @@ function renderShape(s, selected, ctx) {
 // ─────────────────────────────────────────
 // CONTACTS VIEW
 // ─────────────────────────────────────────
+// Contact detail modal: shows DISC profile, evidence trail, baseline test entry,
+// and re-analyze. Replaces directly opening the edit form when clicking a contact.
+function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate, userId }) {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeMsg, setAnalyzeMsg] = useState(null);
+  const [evidence, setEvidence] = useState([]);
+  const [loadingEvidence, setLoadingEvidence] = useState(true);
+  const [showBaselineForm, setShowBaselineForm] = useState(false);
+
+  // Baseline form local state
+  const [baseD, setBaseD] = useState(profile?.baseline_d_score ?? 50);
+  const [baseI, setBaseI] = useState(profile?.baseline_i_score ?? 50);
+  const [baseS, setBaseS] = useState(profile?.baseline_s_score ?? 50);
+  const [baseC, setBaseC] = useState(profile?.baseline_c_score ?? 50);
+  const [baseTakenAt, setBaseTakenAt] = useState(profile?.baseline_taken_at ? profile.baseline_taken_at.slice(0,10) : new Date().toISOString().slice(0,10));
+  const [baseSource, setBaseSource] = useState(profile?.baseline_source || 'Prism Test');
+  const [savingBase, setSavingBase] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingEvidence(true);
+      const { data } = await supabase.from('disc_evidence')
+        .select('*').eq('contact_id', contact.id).order('weight', { ascending: false }).limit(20);
+      if (!cancelled) {
+        setEvidence(data || []);
+        setLoadingEvidence(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [contact.id]);
+
+  async function reanalyze() {
+    setAnalyzing(true); setAnalyzeMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('disc-analyze', {
+        body: { contact_id: contact.id, user_id: userId, force: true }
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      // Reload profile + evidence
+      const { data: freshProfile } = await supabase.from('profiles').select('*').eq('contact_id', contact.id).maybeSingle();
+      const { data: freshEvidence } = await supabase.from('disc_evidence').select('*').eq('contact_id', contact.id).order('weight', { ascending: false }).limit(20);
+      if (freshProfile) onProfileUpdate(freshProfile);
+      if (freshEvidence) setEvidence(freshEvidence);
+      setAnalyzeMsg({ type: 'ok', text: `Updated · ${data.status || 'ok'} · ${data.evidence_count || 0} pieces of evidence` });
+    } catch (e) {
+      setAnalyzeMsg({ type: 'error', text: 'Failed: ' + (e.message || e) });
+    } finally {
+      setAnalyzing(false);
+      setTimeout(() => setAnalyzeMsg(null), 5000);
+    }
+  }
+
+  async function saveBaseline() {
+    const total = baseD + baseI + baseS + baseC;
+    const scores = { D: baseD, I: baseI, S: baseS, C: baseC };
+    const primary = Object.keys(scores).reduce((a,b) => scores[a] > scores[b] ? a : b);
+    const secondary = Object.keys(scores)
+      .filter(k => k !== primary)
+      .reduce((a,b) => scores[a] > scores[b] ? a : b);
+    const showSecondary = scores[secondary] >= 50 && (scores[primary] - scores[secondary]) <= 25;
+    setSavingBase(true);
+    try {
+      const payload = {
+        baseline_d_score: baseD, baseline_i_score: baseI, baseline_s_score: baseS, baseline_c_score: baseC,
+        baseline_primary: primary,
+        baseline_secondary: showSecondary ? secondary : null,
+        baseline_taken_at: baseTakenAt,
+        baseline_source: baseSource || 'Prism Test',
+        baseline_locked: true,
+      };
+      let upd;
+      if (profile) {
+        const { data } = await supabase.from('profiles').update(payload).eq('id', profile.id).select().single();
+        upd = data;
+      } else {
+        const { data } = await supabase.from('profiles').insert({
+          ...payload,
+          user_id: userId, contact_id: contact.id, subject_kind: 'contact',
+          confidence: 'high', source: 'manual',
+          d_score: baseD, i_score: baseI, s_score: baseS, c_score: baseC,
+          primary_letter: primary, secondary_letter: showSecondary ? secondary : null,
+        }).select().single();
+        upd = data;
+      }
+      if (upd) onProfileUpdate(upd);
+      setShowBaselineForm(false);
+      setAnalyzeMsg({ type: 'ok', text: 'Baseline test result saved.' });
+      setTimeout(() => setAnalyzeMsg(null), 4000);
+    } catch (e) {
+      setAnalyzeMsg({ type: 'error', text: 'Save failed: ' + (e.message || e) });
+      setTimeout(() => setAnalyzeMsg(null), 5000);
+    } finally {
+      setSavingBase(false);
+    }
+  }
+
+  const hasBaseline = !!(profile && profile.baseline_d_score !== null && profile.baseline_d_score !== undefined);
+  const hasInference = !!(profile && profile.last_analyzed_at);
+  const discBarColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
+
+  function discBars(d, i, s, c, label) {
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+        {label && <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600}}>{label}</div>}
+        {[['D',d],['I',i],['S',s],['C',c]].map(([letter, val]) => (
+          <div key={letter} style={{display:'flex',alignItems:'center',gap:'8px'}}>
+            <span style={{width:'14px',fontWeight:700,color:discBarColors[letter],fontSize:'12px'}}>{letter}</span>
+            <div style={{flex:1,height:'8px',background:'var(--bg-base)',borderRadius:'4px',overflow:'hidden'}}>
+              <div style={{height:'100%',width:`${val ?? 0}%`,background:discBarColors[letter],transition:'width 0.3s'}}/>
+            </div>
+            <span style={{minWidth:'28px',textAlign:'right',fontSize:'11px',fontFamily:'monospace',color:'var(--text-2)'}}>{val ?? '—'}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{maxWidth:'640px'}}>
+        <div className="modal-header">
+          <h3 style={{display:'flex',alignItems:'center',gap:'8px'}}>
+            <span>{contact.name || '(unnamed)'}</span>
+            {profile?.primary_letter && (
+              <span className="pill" style={{
+                fontSize:'11px',padding:'2px 8px',
+                background: discBarColors[profile.primary_letter],
+                color:'#fff', fontWeight:700,
+              }}>
+                {profile.primary_letter}{profile.secondary_letter ? `/${profile.secondary_letter}` : ''}
+                {profile.confidence_pct ? ` · ${profile.confidence_pct}%` : ''}
+              </span>
+            )}
+          </h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        <div style={{maxHeight:'70vh',overflowY:'auto',paddingRight:'4px'}}>
+          {/* Contact essentials */}
+          <div style={{marginBottom:'14px',fontSize:'13px',color:'var(--text-2)',lineHeight:1.6}}>
+            {(contact.role || contact.company) && <div>{[contact.role, contact.company].filter(Boolean).join(' · ')}</div>}
+            {contact.email && <div>📧 {contact.email}</div>}
+            {contact.phone && <div>📞 {contact.phone}</div>}
+            {contact.type && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Type: {contact.type}</div>}
+          </div>
+
+          {analyzeMsg && (
+            <div style={{padding:'8px 12px',marginBottom:'14px',borderRadius:'6px',fontSize:'12px',
+              background: analyzeMsg.type==='ok' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+              border:`1px solid ${analyzeMsg.type==='ok' ? '#22c55e' : '#ef4444'}`,
+              color: analyzeMsg.type==='ok' ? '#22c55e' : '#ef4444'}}>{analyzeMsg.text}</div>
+          )}
+
+          {/* DISC display */}
+          <div style={{padding:'14px',background:'var(--bg-base)',borderRadius:'10px',border:'1px solid var(--border)',marginBottom:'14px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+              <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>🎯 Behavioral Signal (DISC)</div>
+              <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing} style={{fontSize:'11px'}}>
+                {analyzing ? '↻ Analyzing…' : '✨ Re-analyze now'}
+              </button>
+            </div>
+
+            {!hasInference && !hasBaseline && (
+              <div style={{fontSize:'12px',color:'var(--text-3)',padding:'10px',background:'var(--bg-card)',borderRadius:'6px',border:'1px dashed var(--border)'}}>
+                No analysis yet. Click <strong>Re-analyze now</strong> to infer from notes, emails, and observations. Or enter a baseline below if they've taken an official DISC test.
+              </div>
+            )}
+
+            {hasInference && (
+              <div style={{marginBottom: hasBaseline ? '14px' : 0}}>
+                {discBars(profile.d_score, profile.i_score, profile.s_score, profile.c_score, hasBaseline ? 'Observed (from communications)' : null)}
+                {profile.rationale && (
+                  <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'10px',lineHeight:1.5,fontStyle:'italic'}}>{profile.rationale}</div>
+                )}
+                {profile.drift_note && (
+                  <div style={{padding:'8px 10px',background:'rgba(245,158,11,0.12)',border:'1px solid #f59e0b',borderRadius:'6px',color:'#f59e0b',fontSize:'11px',marginTop:'8px',lineHeight:1.5}}>
+                    <strong>Drift from baseline:</strong> {profile.drift_note}
+                  </div>
+                )}
+                <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',display:'flex',gap:'10px',flexWrap:'wrap'}}>
+                  <span>Status: {profile.analysis_status}</span>
+                  <span>Confidence: {profile.confidence_pct}%</span>
+                  <span>{profile.signals_count} signals</span>
+                  {profile.last_analyzed_at && <span>Updated: {new Date(profile.last_analyzed_at).toLocaleString()}</span>}
+                </div>
+              </div>
+            )}
+
+            {hasBaseline && (
+              <div style={{paddingTop: hasInference ? '14px' : 0, borderTop: hasInference ? '1px solid var(--border)' : 'none'}}>
+                {discBars(profile.baseline_d_score, profile.baseline_i_score, profile.baseline_s_score, profile.baseline_c_score, `Baseline · ${profile.baseline_source || 'Prism Test'}${profile.baseline_taken_at ? ' · ' + new Date(profile.baseline_taken_at).toLocaleDateString() : ''}`)}
+              </div>
+            )}
+          </div>
+
+          {/* Baseline entry */}
+          <div style={{marginBottom:'14px'}}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowBaselineForm(s => !s)} style={{fontSize:'11px',width:'100%',justifyContent:'flex-start'}}>
+              {showBaselineForm ? '▼ Hide' : (hasBaseline ? '▶ Update baseline test result' : '▶ Add official test result (Prism / DISC)')}
+            </button>
+            {showBaselineForm && (
+              <div style={{padding:'14px',background:'var(--bg-base)',borderRadius:'8px',border:'1px solid var(--border)',marginTop:'8px'}}>
+                <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'12px',lineHeight:1.5}}>
+                  Enter the test results (0-100 per dimension). Claude will treat this as the trusted starting point and surface drift when communications show change.
+                </div>
+                {[['D',baseD,setBaseD],['I',baseI,setBaseI],['S',baseS,setBaseS],['C',baseC,setBaseC]].map(([letter, val, setter]) => (
+                  <div key={letter} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
+                    <span style={{width:'18px',fontWeight:700,color:discBarColors[letter]}}>{letter}</span>
+                    <input type="range" min="0" max="100" value={val} onChange={e=>setter(parseInt(e.target.value))} style={{flex:1,accentColor:discBarColors[letter]}}/>
+                    <input type="number" min="0" max="100" value={val} onChange={e=>setter(Math.max(0,Math.min(100,parseInt(e.target.value)||0)))} style={{width:'56px',padding:'4px 6px',fontSize:'12px',background:'var(--bg-card)',color:'var(--text-1)',border:'1px solid var(--border)',borderRadius:'4px'}}/>
+                  </div>
+                ))}
+                <div style={{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}}>
+                  <div style={{flex:1,minWidth:'140px'}}>
+                    <label style={{fontSize:'10px',color:'var(--text-3)',display:'block',marginBottom:'2px'}}>Test date</label>
+                    <input type="date" value={baseTakenAt} onChange={e=>setBaseTakenAt(e.target.value)} className="form-input" style={{padding:'6px 8px',fontSize:'12px'}}/>
+                  </div>
+                  <div style={{flex:1,minWidth:'140px'}}>
+                    <label style={{fontSize:'10px',color:'var(--text-3)',display:'block',marginBottom:'2px'}}>Source</label>
+                    <input type="text" value={baseSource} onChange={e=>setBaseSource(e.target.value)} placeholder="Prism Test" className="form-input" style={{padding:'6px 8px',fontSize:'12px'}}/>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:'8px',marginTop:'10px',justifyContent:'flex-end'}}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowBaselineForm(false)}>Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={saveBaseline} disabled={savingBase}>{savingBase ? 'Saving…' : 'Save baseline'}</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Evidence trail */}
+          {hasInference && (
+            <div>
+              <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'8px'}}>What Claude considered</div>
+              {loadingEvidence ? (
+                <div style={{padding:'12px',color:'var(--text-3)',fontSize:'12px'}}>Loading evidence…</div>
+              ) : evidence.length === 0 ? (
+                <div style={{padding:'12px',background:'var(--bg-base)',border:'1px dashed var(--border)',borderRadius:'6px',color:'var(--text-3)',fontSize:'12px'}}>
+                  No evidence pieces recorded.
+                </div>
+              ) : (
+                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                  {evidence.map(e => {
+                    const sigs = [
+                      e.signals_d ? `D:${e.signals_d}` : null,
+                      e.signals_i ? `I:${e.signals_i}` : null,
+                      e.signals_s ? `S:${e.signals_s}` : null,
+                      e.signals_c ? `C:${e.signals_c}` : null,
+                    ].filter(Boolean);
+                    return (
+                      <div key={e.id} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',fontSize:'11px'}}>
+                        <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'2px',flexWrap:'wrap'}}>
+                          <span style={{fontWeight:600,color:'var(--accent)',fontSize:'10px'}}>{e.source_kind}</span>
+                          {sigs.length > 0 && <span style={{fontFamily:'monospace',color:'var(--text-2)',fontSize:'10px'}}>{sigs.join(' ')}</span>}
+                          <span style={{color:'var(--text-3)',fontSize:'10px',marginLeft:'auto'}}>weight {Number(e.weight || 0).toFixed(2)}</span>
+                        </div>
+                        {e.reasoning && <div style={{color:'var(--text-1)',marginBottom:'4px',lineHeight:1.4}}>{e.reasoning}</div>}
+                        {e.source_excerpt && (
+                          <div style={{color:'var(--text-3)',fontSize:'10px',whiteSpace:'pre-wrap',lineHeight:1.4,maxHeight:'60px',overflow:'hidden',fontStyle:'italic'}}>
+                            "{e.source_excerpt.slice(0, 240)}{e.source_excerpt.length > 240 ? '…' : ''}"
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={onEdit}>Edit contact</button>
+          <button type="button" className="btn btn-primary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContactModal({ onClose, onSave, initial }) {
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
@@ -6117,11 +6399,28 @@ function ContactModal({ onClose, onSave, initial }) {
   );
 }
 
-function ContactsView({ contacts, setContacts, userId }) {
+function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
+  const [detailContact, setDetailContact] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
+
+  // O(1) lookup from contact_id → profile
+  const profileByContact = useMemo(() => {
+    const m = new Map();
+    (profiles || []).forEach(p => { if (p.contact_id) m.set(p.contact_id, p); });
+    return m;
+  }, [profiles]);
+
+  function handleProfileUpdate(updatedProfile) {
+    setProfiles(prev => {
+      const exists = prev.find(p => p.id === updatedProfile.id);
+      return exists
+        ? prev.map(p => p.id === updatedProfile.id ? updatedProfile : p)
+        : [...prev, updatedProfile];
+    });
+  }
 
   const TYPES = [
     { id: 'all', label: 'All', icon: '👥' },
@@ -6185,27 +6484,59 @@ function ContactsView({ contacts, setContacts, userId }) {
           {filtered.length === 0
             ? <div className="empty-state"><div className="empty-icon">👥</div><p>No contacts here.</p></div>
             : <div className="task-list">
-                {filtered.map(c => (
-                  <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditContact(c);setShowModal(true);}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
-                        {c.name}
-                        <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{c.type}</span>
+                {filtered.map(c => {
+                  const p = profileByContact.get(c.id);
+                  const discColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
+                  return (
+                    <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>setDetailContact(c)}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                          {c.name}
+                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{c.type}</span>
+                          {p?.primary_letter && (
+                            <span title={`DISC ${p.primary_letter}${p.secondary_letter ? '/' + p.secondary_letter : ''} · ${p.confidence_pct || 0}% confidence · ${p.analysis_status || 'ready'}`}
+                              className="pill"
+                              style={{
+                                fontSize:'10px', padding:'2px 7px', fontWeight:700,
+                                background: discColors[p.primary_letter],
+                                color: '#fff',
+                                opacity: p.analysis_status === 'provisional' ? 0.6 : 1,
+                              }}>
+                              {p.primary_letter}{p.secondary_letter ? `/${p.secondary_letter}` : ''}
+                              {p.confidence_pct ? ` ${p.confidence_pct}%` : ''}
+                              {p.analysis_status === 'provisional' ? ' · prov' : ''}
+                              {p.analysis_status === 'baseline_only' ? ' · base' : ''}
+                            </span>
+                          )}
+                          {p?.drift_note && (
+                            <span title={p.drift_note} style={{fontSize:'12px',color:'#f59e0b'}}>⚠</span>
+                          )}
+                        </div>
+                        {(c.company || c.role) && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>{[c.role,c.company].filter(Boolean).join(' · ')}</div>}
+                        {(c.email || c.phone) && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>{[c.email,c.phone].filter(Boolean).join(' · ')}</div>}
                       </div>
-                      {(c.company || c.role) && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>{[c.role,c.company].filter(Boolean).join(' · ')}</div>}
-                      {(c.email || c.phone) && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>{[c.email,c.phone].filter(Boolean).join(' · ')}</div>}
+                      <div className="task-meta">
+                        <span className={`task-priority priority-${c.priority==='urgent'?'high':c.priority==='normal'?'medium':c.priority}`}>{c.priority}</span>
+                        <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteContact(c.id);}}>×</button>
+                      </div>
                     </div>
-                    <div className="task-meta">
-                      <span className={`task-priority priority-${c.priority==='urgent'?'high':c.priority==='normal'?'medium':c.priority}`}>{c.priority}</span>
-                      <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteContact(c.id);}}>×</button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
           }
         </div>
       </div>
       {showModal && <ContactModal onClose={()=>{setShowModal(false);setEditContact(null);}} onSave={handleSave} initial={editContact} />}
+      {detailContact && (
+        <ContactDetailModal
+          contact={detailContact}
+          profile={profileByContact.get(detailContact.id) || null}
+          userId={userId}
+          onClose={() => setDetailContact(null)}
+          onEdit={() => { setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
+          onProfileUpdate={handleProfileUpdate}
+        />
+      )}
     </div>
   );
 }
@@ -9399,7 +9730,7 @@ export default function App() {
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
             : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain}/>
             : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
-            : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id}/>
+            : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
             : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id}/>

@@ -26,3 +26,9 @@ verify_jwt = false
 
 [functions.gmail-aliases-sync]
 verify_jwt = false
+
+[functions.disc-analyze]
+verify_jwt = false
+
+[functions.disc-batch-nightly]
+verify_jwt = false
