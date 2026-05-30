@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './dataService';
+import { BUILD_VERSION } from './version';
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
 import './index.css';
+
+// Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
+if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 
 // pdf.js worker. We serve the worker from /public/pdf.worker.min.mjs so it
 // loads same-origin and doesn't depend on a third-party CDN. The file is
