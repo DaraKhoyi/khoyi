@@ -79,12 +79,18 @@ serve(async (req) => {
     }
     const userId = user.id;
 
-    // Load the robot. Robots are currently shared (no user_id column on robots table)
-    // but only active=true robots are exposed for chat.
+    // Load the robot. Each robot now belongs to a single user (Pass 2 Batch A).
+    // We require the robot to belong to the calling user — passing another user's
+    // robot_id would otherwise leak their custom system_prompt.
     const { data: robot, error: rErr } = await supabase
-      .from("robots").select("id, name, role, system_prompt, active")
+      .from("robots").select("id, name, role, system_prompt, active, user_id")
       .eq("id", robot_id).maybeSingle();
     if (rErr || !robot) {
+      return new Response(JSON.stringify({ error: "Robot not found" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (robot.user_id !== userId) {
       return new Response(JSON.stringify({ error: "Robot not found" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
