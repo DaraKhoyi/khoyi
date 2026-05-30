@@ -14,15 +14,37 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM = `You classify tasks into the Eisenhower priority matrix for a real-estate brokerage owner.
-- A = Urgent AND Important: time-critical AND impacts the business/relationship outcome. (Client crisis, contract deadline, signing today, escrow date, court date, IRS deadline.)
-- B = Important, NOT urgent: high-leverage planned work that grows the business. (Strategy, systems, recruiting, training, recurring touch cadence, financial review.)
-- C = Urgent, NOT important: someone else's urgency or admin you should delegate. (Routine paperwork, low-value calls, vendor coordination Josh can handle.)
+const BASE_SYSTEM = `You classify tasks into the Eisenhower priority matrix.
+- A = Urgent AND Important: time-critical AND impacts a meaningful outcome. (Hard deadlines today/tomorrow, contractual obligations, anything that blocks others, crises.)
+- B = Important, NOT urgent: high-leverage planned work that compounds over time. (Strategy, systems, learning, recurring practices, planning, deep work.)
+- C = Urgent, NOT important: someone else's urgency or admin that could be delegated or batched. (Routine paperwork, low-value coordination, busywork with a deadline.)
 - D = Neither: drop. (Distractions, busywork, optional reading.)
 
-Look at: (1) is there a hard deadline today/tomorrow? → push toward A or C. (2) does it move the business forward or just keep it spinning? → A/B if forward, C/D if spinning. (3) does the OWNER need to do this personally? → A/B if yes, C if delegable.
+Look at: (1) is there a hard deadline today/tomorrow? → push toward A or C. (2) does it move things forward or just keep them spinning? → A/B if forward, C/D if spinning. (3) does this person need to do it personally? → A/B if yes, C if delegable.
 
 Output ONLY a JSON object: {"quadrant": "A|B|C|D", "confidence": 0-1, "reasoning": "one short sentence"}. No prose outside the JSON.`;
+
+// Loads optional user context to personalize the system prompt. Returns the
+// combined system prompt — generic if the user hasn't filled in onboarding.
+async function buildSystemPrompt(supabase: any, userId: string): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("user_settings")
+      .select("profession, assistant_context")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const profession = data?.profession?.trim();
+    const ctx = data?.assistant_context?.trim();
+    if (!profession && !ctx) return BASE_SYSTEM;
+    const contextLines = [
+      profession ? `- The user's role/profession: ${profession}` : null,
+      ctx ? `- About the user: ${ctx}` : null,
+    ].filter(Boolean).join("\n");
+    return `${BASE_SYSTEM}\n\nUSER CONTEXT (use this to calibrate what "important" means for this person):\n${contextLines}`;
+  } catch (_) {
+    return BASE_SYSTEM;
+  }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -54,6 +76,8 @@ serve(async (req) => {
       });
     }
 
+    const systemPrompt = await buildSystemPrompt(supabase, user.id);
+
     const userMsg = `Task: ${title}` +
       (notes ? `\nNotes: ${notes}` : "") +
       (due_date ? `\nDue date: ${due_date}` : "");
@@ -68,7 +92,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 200,
-        system: SYSTEM,
+        system: systemPrompt,
         messages: [{ role: "user", content: userMsg }],
       }),
     });

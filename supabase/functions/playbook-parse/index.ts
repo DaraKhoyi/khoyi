@@ -14,16 +14,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PROMPT = `You are parsing a real-estate brokerage playbook into structured steps.
-The playbook describes a repeatable process (trigger + numbered steps + owner + watch-out).
+const BASE_PROMPT = `You are parsing a playbook into structured steps.
+The playbook describes a repeatable process — typically with a trigger condition, a sequence of numbered steps, an owner per step, and watch-outs.
 
 For each numbered step in the playbook, output ONE JSON object with these fields:
-- title: short imperative phrase (e.g., "Schedule photos", "Open transaction file"). Max 60 chars.
+- title: short imperative phrase (e.g., "Schedule photos", "Open transaction file", "Send invoice"). Max 60 chars.
 - detail: 1-2 sentences with the specific action and acceptance criteria.
-- owner: who does it ("Listing agent", "Josh Maples", "Buyer agent", etc) — null if not specified.
+- owner: who does it — a role name or person's name as written in the source (e.g., "Listing agent", "Project manager", "Buyer agent"). Null if not specified.
 - timing: the time phrase from the source ("same day", "24 hours", "Day 2-3", "weekly", etc) — null if not specified.
 - default_quadrant: ONE of A/B/C/D in Eisenhower terms:
-    A = Urgent & Important (must do today / blocks the deal),
+    A = Urgent & Important (must do today / blocks progress),
     B = Important, Not Urgent (scheduled, planned work — most playbook steps),
     C = Urgent, Not Important (delegate),
     D = Neither.
@@ -32,7 +32,28 @@ For each numbered step in the playbook, output ONE JSON object with these fields
 
 Output ONLY a JSON array of these objects, in step order. No prose, no markdown, no explanation. Start with [ and end with ].`;
 
-async function callClaude(playbookText: string): Promise<any[]> {
+// Loads optional user context to personalize the playbook-parse prompt.
+async function buildSystemPrompt(supabase: any, userId: string): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("user_settings")
+      .select("profession, assistant_context")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const profession = data?.profession?.trim();
+    const ctx = data?.assistant_context?.trim();
+    if (!profession && !ctx) return BASE_PROMPT;
+    const contextLines = [
+      profession ? `- The user's role/profession: ${profession}` : null,
+      ctx ? `- About the user: ${ctx}` : null,
+    ].filter(Boolean).join("\n");
+    return `${BASE_PROMPT}\n\nUSER CONTEXT (to interpret jargon and role names appropriately):\n${contextLines}`;
+  } catch (_) {
+    return BASE_PROMPT;
+  }
+}
+
+async function callClaude(systemPrompt: string, playbookText: string): Promise<any[]> {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -43,7 +64,7 @@ async function callClaude(playbookText: string): Promise<any[]> {
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
       max_tokens: 2048,
-      system: PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: playbookText }],
     }),
   });
@@ -103,7 +124,8 @@ serve(async (req) => {
     if (!row.content) throw new Error("Playbook has no content to parse");
 
     const text = `Title: ${row.title}\n\n${row.content}`;
-    const steps = await callClaude(text);
+    const systemPrompt = await buildSystemPrompt(supabase, user_id);
+    const steps = await callClaude(systemPrompt, text);
 
     // Replace existing steps for this playbook
     await supabase.from("playbook_steps").delete().eq("brain_entry_id", brain_entry_id);

@@ -262,7 +262,7 @@ serve(async (req) => {
     for (const a of aliases || []) {
       for (const t of nameTokens(a.display_name || "")) ownNames.add(t);
     }
-    // Also include the user's own from_name from sent mail (e.g. "Dara Khoyi")
+    // Also include the user's own from_name from sent mail (e.g. their display name)
     try {
       const { data: sentSample } = await supabase
         .from("email_messages").select("from_name")

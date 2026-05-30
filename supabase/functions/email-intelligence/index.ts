@@ -29,13 +29,13 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 
 const MODEL = "claude-sonnet-4-6";
 
-const SYSTEM = `You are an email triage assistant for a busy real-estate professional.
+const BASE_SYSTEM = `You are an email triage assistant.
 For each thread, classify into ONE category and ONE action.
 
 Categories:
-- urgent: time-critical, requires immediate attention (client crisis, contract deadline, escrow today, court date)
-- requires_response: needs a personal reply but not emergency (client question, vendor coordination, scheduling)
-- fyi: informational, no reply expected (newsletter, status update from systems, recap)
+- urgent: time-critical, requires immediate attention (active crisis, hard deadline today, anything blocking others)
+- requires_response: needs a personal reply but not emergency (question, coordination, scheduling)
+- fyi: informational, no reply expected (newsletter, status update, recap)
 - can_wait: relevant but low-priority (longer-term planning, non-urgent feedback)
 - promotional: marketing/sales pitch to the user
 - spam: junk, phishing, irrelevant
@@ -50,7 +50,28 @@ Actions:
 
 Return ONLY a JSON object: {"category":"...", "action":"...", "summary":"...", "reasoning":"...", "confidence":0..1}. No prose outside the JSON.`;
 
-async function callClaude(messages: any[]) {
+// Loads optional user context so triage can calibrate what's urgent for this user.
+async function buildSystemPrompt(supabase: any, userId: string): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("user_settings")
+      .select("profession, assistant_context")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const profession = data?.profession?.trim();
+    const ctx = data?.assistant_context?.trim();
+    if (!profession && !ctx) return BASE_SYSTEM;
+    const contextLines = [
+      profession ? `- The user's role/profession: ${profession}` : null,
+      ctx ? `- About the user: ${ctx}` : null,
+    ].filter(Boolean).join("\n");
+    return `${BASE_SYSTEM}\n\nUSER CONTEXT (calibrate "urgent" and "important" against this):\n${contextLines}`;
+  } catch (_) {
+    return BASE_SYSTEM;
+  }
+}
+
+async function callClaude(systemPrompt: string, messages: any[]) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -58,7 +79,7 @@ async function callClaude(messages: any[]) {
       "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: 400, system: SYSTEM, messages }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 400, system: systemPrompt, messages }),
   });
   if (!r.ok) {
     const t = await r.text();
@@ -140,7 +161,8 @@ Labels: ${(thread.labels || []).join(", ") || "(none)"}
 
 ${messageBlocks || "(no message bodies available)"}`;
 
-    const raw = await callClaude([{ role: "user", content: userMsg }]);
+    const systemPrompt = await buildSystemPrompt(supabase, userId);
+    const raw = await callClaude(systemPrompt, [{ role: "user", content: userMsg }]);
     const parsed = safeParseJSON(raw);
 
     // Validate enum values

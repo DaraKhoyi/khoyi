@@ -38,7 +38,7 @@ function buildResearchPrompt(candidate, contact, scope) {
   const scopeInstruction = scope === "personal"
     ? "Focus on PERSONAL sources only: Instagram, public Facebook posts, local news, community involvement, hobbies, family-mentioned-by-them, school alumni pages they're publicly involved in. Skip LinkedIn deep-dives unless personal interests are mentioned there. Do NOT include detailed professional information."
     : scope === "business"
-    ? "Focus on PROFESSIONAL sources only: LinkedIn, company website, professional licenses (DBPR for Florida real estate, FINRA BrokerCheck, state bar lookups), published writing, podcasts, press, board memberships. Skip personal social media unless they themselves use it for professional content."
+    ? "Focus on PROFESSIONAL sources only: LinkedIn, company website, professional licenses appropriate to their stated occupation and jurisdiction (state regulatory bodies for real estate, FINRA BrokerCheck for finance, state bar lookups for attorneys, medical board lookups for healthcare, etc.), published writing, podcasts, press, board memberships. Skip personal social media unless they themselves use it for professional content."
     : "Cover BOTH professional and personal sources, but in section 1 keep professional findings separate from personal findings. Label each finding with its category.";
 
   const confirmedBlock = [
