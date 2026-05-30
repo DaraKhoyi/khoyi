@@ -1541,6 +1541,53 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     setShowCompose(true);
   }
 
+  // Forward a message: empty recipients, prefilled with "Forwarded message" preamble
+  function openForward(msg) {
+    if (!msg) return;
+    const subj = (msg.subject || '').match(/^fwd?:/i) ? msg.subject : `Fwd: ${msg.subject || ''}`;
+    const when = msg.internal_date ? new Date(msg.internal_date).toLocaleString() : '';
+    const sentToFmt = (Array.isArray(msg.to_addresses) ? msg.to_addresses : []).map(r => {
+      if (typeof r === 'string') return r;
+      if (r && typeof r === 'object') return r.name ? `${r.name} <${r.email}>` : r.email;
+      return '';
+    }).filter(Boolean).join(', ');
+    const quoted = msg.body_text || msg.snippet || '';
+    setComposeTo('');
+    setComposeSubject(subj);
+    setComposeBody(
+      `\n\n---------- Forwarded message ----------\n` +
+      `From: ${msg.from_name ? `${msg.from_name} <${msg.from_address}>` : msg.from_address}\n` +
+      `Date: ${when}\n` +
+      `Subject: ${msg.subject || ''}\n` +
+      (sentToFmt ? `To: ${sentToFmt}\n` : '') +
+      `\n${quoted}`
+    );
+    setComposeFrom(defaultAlias?.email_address || account.email_address);
+    // Forward doesn't preserve thread — start a new conversation
+    setComposeReplyMeta(null);
+    setSendMsg('');
+    setShowCompose(true);
+  }
+
+  // Move a thread (and its messages) to Trash via Gmail API
+  async function trashCurrentThread() {
+    if (!selectedThread) return;
+    if (!window.confirm('Move this conversation to Trash?')) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('gmail-trash', {
+        body: { account_id: account.id, thread_id: selectedThread.provider_thread_id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      // Remove from local list, close the reading pane
+      setThreads(prev => prev.filter(t => t.id !== selectedThread.id));
+      setSelectedThread(null);
+      setSelectedMessages([]);
+    } catch (err) {
+      alert('Could not move to Trash: ' + (err.message || err));
+    }
+  }
+
   function openReply(msg, replyAll = false) {
     if (!msg) return;
     // Normalize a recipient (string or {name, email}) to a plain email
@@ -1755,64 +1802,133 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
           </div>
         </div>
         {selectedThread && (
-          <div className="panel" ref={readingPaneRef}>
-            <div className="panel-header" style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
-              {isMobileWidth && (
-                <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)} style={{flexShrink:0}}>
-                  ← Inbox
-                </button>
-              )}
-              <h3 style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0}}>{selectedThread.subject || '(no subject)'}</h3>
-              {!isMobileWidth && (
-                <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)}>Close</button>
-              )}
+          <div className="panel" ref={readingPaneRef} style={{display:'flex',flexDirection:'column'}}>
+            {/* Sticky action bar at the top */}
+            <div style={{
+              position:'sticky', top:0, zIndex:5,
+              background:'var(--bg-card)',
+              borderBottom:'1px solid var(--border)',
+              padding:'10px 14px',
+              display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'
+            }}>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)} style={{flexShrink:0}}
+                title={isMobileWidth ? 'Back to inbox' : 'Close'}>
+                ← {isMobileWidth ? 'Inbox' : 'Close'}
+              </button>
+              <div style={{width:'1px',background:'var(--border)',height:'20px',margin:'0 4px'}}/>
+              {selectedMessages.length > 0 && (() => {
+                const latest = selectedMessages[selectedMessages.length - 1];
+                const sentTo = Array.isArray(latest.to_addresses) ? latest.to_addresses : [];
+                const cc = Array.isArray(latest.cc_addresses) ? latest.cc_addresses : [];
+                const canReplyAll = sentTo.length > 1 || cc.length > 0;
+                return (
+                  <>
+                    <button className="btn btn-primary btn-sm" onClick={() => openReply(latest, false)} style={{padding:'4px 12px',fontSize:'12px'}}>
+                      ↩ Reply
+                    </button>
+                    {canReplyAll && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => openReply(latest, true)} style={{padding:'4px 10px',fontSize:'12px'}}>
+                        ↩↩ Reply all
+                      </button>
+                    )}
+                    <button className="btn btn-ghost btn-sm" onClick={() => openForward(latest)} style={{padding:'4px 10px',fontSize:'12px'}}>
+                      ↪ Forward
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={trashCurrentThread} style={{padding:'4px 10px',fontSize:'12px',color:'var(--red)',marginLeft:'auto'}}>
+                      🗑 Delete
+                    </button>
+                  </>
+                );
+              })()}
             </div>
-            <div className="panel-body">
+
+            {/* Subject line */}
+            <div style={{padding:'14px 16px 6px',borderBottom:'1px solid var(--border)'}}>
+              <h3 style={{margin:0,fontSize:'17px',fontWeight:600,color:'var(--text-1)',lineHeight:1.35,wordBreak:'break-word'}}>
+                {selectedThread.subject || '(no subject)'}
+              </h3>
+            </div>
+
+            <div className="panel-body" style={{padding:'0'}}>
               {loadingMessages
                 ? <div className="loading-screen" style={{minHeight:'200px'}}><div className="spinner"/></div>
                 : selectedMessages.length === 0
-                  ? <p style={{color:'var(--text-2)'}}>No messages found in this thread.</p>
-                  : selectedMessages.map(msg => {
+                  ? <p style={{color:'var(--text-2)',padding:'20px'}}>No messages found in this thread.</p>
+                  : selectedMessages.map((msg, idx) => {
                       const senderProfile = profileForEmail(msg.from_address);
                       const sentTo = Array.isArray(msg.to_addresses) ? msg.to_addresses : [];
+                      const fmtRecipient = (r) => {
+                        if (typeof r === 'string') return r;
+                        if (r && typeof r === 'object') return r.name ? `${r.name} <${r.email}>` : r.email;
+                        return String(r);
+                      };
+                      const isLast = idx === selectedMessages.length - 1;
+                      const canReplyAll = sentTo.length > 1 || (msg.cc_addresses || []).length > 0;
                       return (
-                        <div key={msg.id} style={{marginBottom:'18px',paddingBottom:'14px',borderBottom:'1px solid var(--border)'}}>
-                          <div style={{display:'flex',gap:'6px',marginBottom:'4px',flexWrap:'wrap',alignItems:'center'}}>
-                            <span className="pill pill-purple">From: {msg.from_name || msg.from_address}</span>
-                            {senderProfile && (
-                              <span className="pill" style={{background:'var(--bg-base)',border:'1px solid var(--accent)',color:'var(--accent)',fontSize:'11px'}}>
-                                {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
-                              </span>
-                            )}
-                            <span style={{fontSize:'12px',color:'var(--text-3)',marginLeft:'auto'}}>{msg.internal_date ? new Date(msg.internal_date).toLocaleString() : ''}</span>
+                        <div key={msg.id} style={{borderBottom: isLast ? 'none' : '1px solid var(--border)'}}>
+                          {/* Metadata card */}
+                          <div style={{
+                            padding:'12px 16px',
+                            background:'var(--bg-base)',
+                            borderBottom:'1px solid var(--border)'
+                          }}>
+                            <div style={{display:'flex',gap:'10px',alignItems:'flex-start',flexWrap:'wrap'}}>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'2px'}}>
+                                  <span style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>
+                                    {msg.from_name || msg.from_address}
+                                  </span>
+                                  {senderProfile && (
+                                    <span className="pill" style={{background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',color:'var(--accent)',fontSize:'10px',padding:'2px 6px'}}>
+                                      {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
+                                    </span>
+                                  )}
+                                </div>
+                                {msg.from_name && (
+                                  <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'4px',wordBreak:'break-word'}}>
+                                    {msg.from_address}
+                                  </div>
+                                )}
+                                {sentTo.length > 0 && (
+                                  <div style={{fontSize:'11px',color:'var(--text-3)',wordBreak:'break-word',lineHeight:1.5}}>
+                                    <span style={{color:'var(--text-3)'}}>to </span>
+                                    {sentTo.map(fmtRecipient).join(', ')}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',flexShrink:0}}>
+                                {msg.internal_date ? new Date(msg.internal_date).toLocaleString(undefined, {
+                                  month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'
+                                }) : ''}
+                              </div>
+                            </div>
                           </div>
-                          {sentTo.length > 0 && (
-                            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px',wordBreak:'break-word'}}>
-                              To: {sentTo.map(r => {
-                                // r is either a string or {name, email} object
-                                if (typeof r === 'string') return r;
-                                if (r && typeof r === 'object') return r.name ? `${r.name} <${r.email}>` : r.email;
-                                return String(r);
-                              }).join(', ')}
+
+                          {/* Message body */}
+                          <div style={{padding:'14px 16px'}}>
+                            {msg.body_text ? (
+                              <div style={{fontSize:'14px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                                {msg.body_text}
+                              </div>
+                            ) : msg.body_html ? (
+                              <EmailHtmlFrame html={msg.body_html} />
+                            ) : (
+                              <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-3)',fontStyle:'italic'}}>
+                                {msg.snippet || '(no content)'}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Per-message reply buttons (Gmail-style: at bottom of each message in a thread) */}
+                          {isLast && (
+                            <div style={{display:'flex',gap:'6px',padding:'0 16px 16px',flexWrap:'wrap'}}>
+                              <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, false)} style={{fontSize:'12px'}}>↩ Reply</button>
+                              {canReplyAll && (
+                                <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, true)} style={{fontSize:'12px'}}>↩↩ Reply all</button>
+                              )}
+                              <button className="btn btn-ghost btn-sm" onClick={() => openForward(msg)} style={{fontSize:'12px'}}>↪ Forward</button>
                             </div>
                           )}
-                          {msg.body_text ? (
-                            <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
-                              {msg.body_text}
-                            </div>
-                          ) : msg.body_html ? (
-                            <EmailHtmlFrame html={msg.body_html} />
-                          ) : (
-                            <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-3)',fontStyle:'italic'}}>
-                              {msg.snippet || '(no content)'}
-                            </div>
-                          )}
-                          <div style={{display:'flex',gap:'6px',marginTop:'10px'}}>
-                            <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, false)}>↩ Reply</button>
-                            {(sentTo.length > 1 || (msg.cc_addresses || []).length > 0) && (
-                              <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, true)}>↩↩ Reply All</button>
-                            )}
-                          </div>
                         </div>
                       );
                     })
