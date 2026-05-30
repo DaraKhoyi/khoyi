@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './dataService';
 import { BUILD_VERSION } from './version';
@@ -746,22 +746,265 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
 // persistent bottom drop zones (Today / Tomorrow / Pick Date).
 // Powered by SortableJS for proper touch+delay behavior.
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// TASKS VIEW — ONE Tasks-inspired design with CUSTOM drag system
+// ─────────────────────────────────────────────────────────────────────
+// Why custom drag instead of SortableJS/ReactSortable: those libraries
+// physically mutate the DOM to handle drag-and-drop, which conflicts
+// with React's reconciler and produces ghost elements that persist
+// across renders. After three attempts to bridge the gap, switched to
+// native PointerEvents:
+//   - We never mutate React-managed DOM during drag
+//   - The "floating clone" that follows the finger is a single <div>
+//     parented to document.body, fully under our control
+//   - Drop targets register via React context; we hit-test pointer
+//     position against their bounding rects
+//   - On release, we update React state via the registered callback
+// React owns the entire task-list DOM. No libraries fight with it.
+// ─────────────────────────────────────────────────────────────────────
+
+const DragContext = React.createContext(null);
+
+// Drag controller — provides startDrag, registerDropZone, and listens to
+// global pointermove/pointerup. Wraps any subtree where drag should work.
+function DragProvider({ onDragStart, onDragEnd, children }) {
+  const [activeDrag, setActiveDrag] = useState(null); // { taskId, clientX, clientY, rowHeight, label, sourceQuadrant }
+  const cloneRef = useRef(null);
+  const dropZonesRef = useRef([]);   // [{ id, type:'zone'|'quadrant', getRect, onDrop }]
+  const hoveredZoneRef = useRef(null);
+
+  const register = useCallback((spec) => {
+    dropZonesRef.current.push(spec);
+    return () => {
+      dropZonesRef.current = dropZonesRef.current.filter(z => z.id !== spec.id);
+    };
+  }, []);
+
+  // Begin a drag — called by a task row's anchor on pointerdown+threshold
+  const startDrag = useCallback((opts) => {
+    setActiveDrag(opts);
+    if (onDragStart) onDragStart();
+  }, [onDragStart]);
+
+  // Floating clone — only rendered while activeDrag is set, via portal
+  const floatingClone = activeDrag && createPortal(
+    <div ref={cloneRef}
+      style={{
+        position:'fixed',
+        top: activeDrag.clientY - 16,
+        left: activeDrag.clientX - 40,
+        pointerEvents:'none',
+        zIndex:99999,
+        opacity:0.92,
+        transform:'rotate(-1deg)',
+        boxShadow:'0 8px 24px rgba(0,0,0,0.5)',
+      }}>
+      <div style={{
+        display:'inline-flex', alignItems:'center', gap:'6px',
+        padding:'6px 10px',
+        background:'var(--bg-card)',
+        border:`1px solid ${activeDrag.color || 'var(--accent)'}`,
+        borderRadius:'6px',
+        fontSize:'13px',
+        color:'var(--text-1)',
+        maxWidth:'70vw',
+        whiteSpace:'nowrap',
+        overflow:'hidden',
+        textOverflow:'ellipsis',
+      }}>
+        <span style={{
+          flexShrink:0,
+          padding:'2px 7px',
+          background: activeDrag.color || 'var(--accent)',
+          color:'#fff',
+          fontSize:'10px',
+          fontWeight:900,
+          borderRadius:'4px',
+        }}>{activeDrag.label}</span>
+        <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{activeDrag.title}</span>
+      </div>
+    </div>,
+    document.body
+  );
+
+  // Global pointermove + pointerup
+  useEffect(() => {
+    if (!activeDrag) return;
+    function onMove(e) {
+      const pt = e.touches ? e.touches[0] : e;
+      setActiveDrag(prev => prev ? { ...prev, clientX: pt.clientX, clientY: pt.clientY } : null);
+      // Hit-test
+      let hovered = null;
+      for (const z of dropZonesRef.current) {
+        const r = z.getRect();
+        if (!r) continue;
+        if (pt.clientX >= r.left && pt.clientX <= r.right && pt.clientY >= r.top && pt.clientY <= r.bottom) {
+          hovered = z;
+          // Zones win over quadrants if overlapping
+          if (z.type === 'zone') break;
+        }
+      }
+      hoveredZoneRef.current = hovered;
+      // Highlight: write to DOM directly to avoid re-render storms
+      dropZonesRef.current.forEach(z => {
+        const el = z.getElement?.();
+        if (!el) return;
+        if (hovered && hovered.id === z.id) {
+          el.classList.add('drop-hover');
+        } else {
+          el.classList.remove('drop-hover');
+        }
+      });
+    }
+    function onUp(e) {
+      const pt = e.changedTouches ? e.changedTouches[0] : e;
+      // Final hit-test
+      let target = null;
+      for (const z of dropZonesRef.current) {
+        const r = z.getRect();
+        if (!r) continue;
+        if (pt.clientX >= r.left && pt.clientX <= r.right && pt.clientY >= r.top && pt.clientY <= r.bottom) {
+          target = z;
+          if (z.type === 'zone') break;
+        }
+      }
+      // Clear highlights
+      dropZonesRef.current.forEach(z => {
+        const el = z.getElement?.();
+        if (el) el.classList.remove('drop-hover');
+      });
+      if (target && target.onDrop) {
+        try {
+          target.onDrop(activeDrag, { clientX: pt.clientX, clientY: pt.clientY });
+        } catch (err) {
+          console.error('Drop handler failed:', err);
+        }
+      }
+      setActiveDrag(null);
+      if (onDragEnd) onDragEnd();
+    }
+    function onCancel() {
+      dropZonesRef.current.forEach(z => {
+        const el = z.getElement?.();
+        if (el) el.classList.remove('drop-hover');
+      });
+      setActiveDrag(null);
+      if (onDragEnd) onDragEnd();
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+    };
+  }, [activeDrag, onDragEnd]);
+
+  const ctxValue = useMemo(() => ({
+    register,
+    startDrag,
+    isDragging: !!activeDrag,
+  }), [register, startDrag, activeDrag]);
+
+  return (
+    <DragContext.Provider value={ctxValue}>
+      {children}
+      {floatingClone}
+    </DragContext.Provider>
+  );
+}
+
+// Hook for a draggable badge — handles long-press detection
+function useDraggable({ task, label, color, sourceQuadrant }) {
+  const drag = useContext(DragContext);
+  const pressTimerRef = useRef(null);
+  const pressOriginRef = useRef(null);
+  const isDraggingRef = useRef(false);
+
+  const onPointerDown = useCallback((e) => {
+    // Only react to primary pointer (left mouse / first touch)
+    if (e.button !== undefined && e.button !== 0) return;
+    pressOriginRef.current = { x: e.clientX, y: e.clientY };
+    isDraggingRef.current = false;
+    // 200ms long-press to start drag (matches ONE Tasks behavior)
+    pressTimerRef.current = setTimeout(() => {
+      if (!pressOriginRef.current) return;
+      isDraggingRef.current = true;
+      drag.startDrag({
+        taskId: task.id,
+        title: task.title,
+        label,
+        color,
+        sourceQuadrant,
+        clientX: pressOriginRef.current.x,
+        clientY: pressOriginRef.current.y,
+      });
+      // Provide haptic feedback if available
+      if (navigator.vibrate) try { navigator.vibrate(15); } catch (_) {}
+    }, 200);
+  }, [drag, task.id, task.title, label, color, sourceQuadrant]);
+
+  // Cancel the long-press if pointer moves >5px before timer fires
+  // (treats this as a tap, not a drag)
+  const onPointerMove = useCallback((e) => {
+    if (!pressOriginRef.current || isDraggingRef.current) return;
+    const dx = e.clientX - pressOriginRef.current.x;
+    const dy = e.clientY - pressOriginRef.current.y;
+    if (dx * dx + dy * dy > 25) {
+      // 5px squared = 25
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+      pressOriginRef.current = null;
+    }
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    pressOriginRef.current = null;
+  }, []);
+
+  return { onPointerDown, onPointerMove, onPointerUp };
+}
+
+// Hook for a drop target — registers with the controller, returns ref to assign
+function useDropTarget({ type, onDrop }) {
+  const drag = useContext(DragContext);
+  const elRef = useRef(null);
+  const idRef = useRef(Math.random().toString(36).slice(2));
+  useEffect(() => {
+    const id = idRef.current;
+    const spec = {
+      id,
+      type,
+      getRect: () => elRef.current?.getBoundingClientRect(),
+      getElement: () => elRef.current,
+      onDrop,
+    };
+    const unreg = drag.register(spec);
+    return unreg;
+  }, [drag, type, onDrop]);
+  return elRef;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// TASKS VIEW — main component
+// ─────────────────────────────────────────────────────────────────────
 function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
-  // Reset taskViewMode if it's a legacy value (list/grid) — only sequence and matrix are valid now
   const viewMode = (taskViewMode === 'sequence' || taskViewMode === 'matrix') ? taskViewMode : 'sequence';
   const filter = taskFilter || 'today';
-  // Active during drag — controls drop-zone visibility + reveals action strip
   const [isDragging, setIsDragging] = useState(false);
-  // When user drops on "Pick Date", we capture the task and open a date picker
   const [datePickerTask, setDatePickerTask] = useState(null);
-  // Filter "More" dropdown state
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const moreButtonRef = useRef(null);
   const [moreMenuPos, setMoreMenuPos] = useState({ top: 0, left: 0 });
 
-  // Tasks filtered by the pill bar
+  // Filtered task set
   const visibleTasks = useMemo(() => {
     const today = todayISO();
     const tomorrow = addDaysISO(1);
@@ -772,7 +1015,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
       const d = t.due_date;
       if (filter === 'all') return true;
       if (filter === 'past') return d && d < today;
-      // Today includes past due — the working "what needs my attention now" view
       if (filter === 'today') return d && d <= today;
       if (filter === 'tomorrow') return d === tomorrow;
       if (filter === '7days') return d && d >= today && d <= sevenDays;
@@ -782,8 +1024,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     });
   }, [tasks, filter]);
 
-  // Sequence view: group by Eisenhower quadrant (A/B/C/D/E). Sort within group by rank.
-  // We use A/B/C/D — the 4 standard quadrants. Anything outside (no quadrant set) goes into a single "Unranked" bucket.
   const QUADS = ['A', 'B', 'C', 'D'];
   const sequenceGroups = useMemo(() => {
     const buckets = {}; QUADS.forEach(q => buckets[q] = []);
@@ -800,10 +1040,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     return { buckets, unranked };
   }, [visibleTasks]);
 
-  // Matrix view: same quadrant groupings, displayed as 2x2 grid
-  const matrixGroups = sequenceGroups.buckets;
-
-  // Open task editor
   function openEdit(task) { setEditTask(task); setShowModal(true); }
   function openNew() { setEditTask(null); setShowModal(true); }
 
@@ -817,7 +1053,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         savedTaskId = updated.id;
       }
     } else {
-      // New task: assign rank as max+1 within its quadrant
       const peers = tasks.filter(t => !t.completed && t.eisenhower_quadrant === taskData.eisenhower_quadrant);
       const maxRank = peers.reduce((m, t) => Math.max(m, t.eisenhower_rank || 0), 0);
       const insert = { ...taskData, eisenhower_rank: taskData.eisenhower_rank || (maxRank + 1), user_id: userId, completed: false };
@@ -845,265 +1080,44 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
   }
 
-  // After a drag, write the new quadrant + rank for the moved task,
-  // and renumber all peers in the destination quadrant.
-  // SequenceView/MatrixView now do the DB writes themselves and pass us
-  // the list of updates so we can mirror them in the parent's `tasks` array.
-  // Legacy signature (taskId, quadrant, orderedIds) kept for backward compat
-  // but no callers use it anymore; new shape is (_, _, _, updates).
-  async function applyReorder(_taskId, _newQuadrant, _newOrderedIds, updates) {
-    if (!Array.isArray(updates) || updates.length === 0) return;
+  // Move task to quadrant at position. The drop handler in QuadrantGroup passes
+  // the position where the user released (above which row, or end of list).
+  async function moveTaskToQuadrant(taskId, destQuadrant, dropAboveTaskId) {
+    const moved = tasks.find(t => t.id === taskId);
+    if (!moved) return;
+    // Compute new ordering of dest quadrant: take current sorted list, remove moved if it's there,
+    // insert before the dropAboveTaskId (or at end if null)
+    const destTasks = tasks.filter(t => !t.completed && t.eisenhower_quadrant === destQuadrant && t.id !== taskId)
+      .sort((a, b) => (a.eisenhower_rank ?? 999) - (b.eisenhower_rank ?? 999));
+    let insertIdx = destTasks.length; // default: end
+    if (dropAboveTaskId) {
+      const idx = destTasks.findIndex(t => t.id === dropAboveTaskId);
+      if (idx >= 0) insertIdx = idx;
+    }
+    const newDestOrder = [...destTasks.slice(0, insertIdx), { ...moved, eisenhower_quadrant: destQuadrant }, ...destTasks.slice(insertIdx)];
+    // Updates for destination
+    const updates = newDestOrder.map((t, i) => ({
+      id: t.id,
+      eisenhower_rank: i + 1,
+      eisenhower_quadrant: destQuadrant,
+    }));
+    // If quadrant changed, also renumber the source
+    const sourceQuadrant = moved.eisenhower_quadrant;
+    if (sourceQuadrant && sourceQuadrant !== destQuadrant) {
+      const sourceTasks = tasks.filter(t => !t.completed && t.eisenhower_quadrant === sourceQuadrant && t.id !== taskId)
+        .sort((a, b) => (a.eisenhower_rank ?? 999) - (b.eisenhower_rank ?? 999));
+      sourceTasks.forEach((t, i) => {
+        updates.push({ id: t.id, eisenhower_rank: i + 1, eisenhower_quadrant: sourceQuadrant });
+      });
+    }
+    // Optimistic local update
     const byId = Object.fromEntries(updates.map(u => [u.id, u]));
     setTasks(prev => prev.map(t => {
       const u = byId[t.id];
       if (!u) return t;
       return { ...t, eisenhower_rank: u.eisenhower_rank, eisenhower_quadrant: u.eisenhower_quadrant, priority_system: 'eisenhower' };
     }));
-  }
-
-  // Drop zone: change due_date
-  async function setTaskDate(taskId, newDateISO) {
-    const { data: updated } = await supabase.from('tasks')
-      .update({ due_date: newDateISO }).eq('id', taskId).select().single();
-    if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
-  }
-
-  return (
-    <div className="view">
-      <div className="view-header">
-        <h2>Tasks</h2>
-        <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
-          <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
-          <button className="btn btn-primary" onClick={openNew}>+ New Task</button>
-        </div>
-      </div>
-
-      {/* Filter pills — primary 3 always visible, rest in More dropdown */}
-      <div style={{display:'flex',gap:'6px',padding:'4px 0 12px',alignItems:'center',flexWrap:'wrap'}}>
-        {(() => {
-          const primary = [
-            { id: 'today',     label: 'Today' },
-            { id: 'tomorrow',  label: 'Tomorrow' },
-            { id: 'all',       label: 'All' },
-          ];
-          const secondary = [
-            { id: 'past',      label: 'Past Due' },
-            { id: '7days',     label: '7 Days' },
-            { id: 'future',    label: 'Future' },
-            { id: 'undated',   label: 'Undated' },
-            { id: 'completed', label: 'Completed' },
-          ];
-          // If the active filter is one of the secondary set, surface its name on the More button
-          const activeSecondary = secondary.find(s => s.id === filter);
-          const moreLabel = activeSecondary ? activeSecondary.label : 'More';
-          const moreActive = !!activeSecondary;
-
-          const pillStyle = (active) => ({
-            flexShrink:0, padding:'6px 12px', borderRadius:'999px',
-            fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.03em',
-            border:'1px solid',
-            background: active ? 'var(--accent)' : 'transparent',
-            borderColor: active ? 'var(--accent)' : 'var(--border)',
-            color: active ? '#000' : 'var(--text-2)',
-            cursor:'pointer', transition:'.15s',
-            display:'inline-flex', alignItems:'center', gap:'4px',
-          });
-
-          return (
-            <>
-              {primary.map(p => (
-                <button key={p.id} onClick={() => setTaskFilter(p.id)} style={pillStyle(filter === p.id)}>
-                  {p.label}
-                </button>
-              ))}
-              <button ref={moreButtonRef}
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  setMoreMenuPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 180) });
-                  setMoreFiltersOpen(o => !o);
-                }}
-                style={pillStyle(moreActive)}>
-                {moreLabel} <span style={{fontSize:'9px',opacity:0.7}}>▾</span>
-              </button>
-            </>
-          );
-        })()}
-      </div>
-
-      {/* More-filters dropdown — portal so it's not clipped by overflow */}
-      {moreFiltersOpen && createPortal(
-        <>
-          <div onClick={() => setMoreFiltersOpen(false)}
-            style={{position:'fixed',inset:0,zIndex:9998,background:'transparent'}}/>
-          <div style={{
-            position:'fixed', top:moreMenuPos.top, left:moreMenuPos.left, zIndex:9999,
-            background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px',
-            boxShadow:'0 8px 24px rgba(0,0,0,0.4)', minWidth:'170px', padding:'4px'
-          }}>
-            {[
-              { id: 'past',      label: 'Past Due' },
-              { id: '7days',     label: '7 Days' },
-              { id: 'future',    label: 'Future' },
-              { id: 'undated',   label: 'Undated' },
-              { id: 'completed', label: 'Completed' },
-            ].map(p => (
-              <button key={p.id}
-                onClick={() => { setTaskFilter(p.id); setMoreFiltersOpen(false); }}
-                style={{
-                  display:'block', width:'100%', textAlign:'left',
-                  padding:'10px 14px', background: filter === p.id ? 'var(--bg-hover)' : 'none',
-                  border:'none', cursor:'pointer', borderRadius:'4px',
-                  color: filter === p.id ? 'var(--accent)' : 'var(--text-1)',
-                  fontSize:'13px', fontWeight: filter === p.id ? 700 : 400,
-                }}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
-
-      {/* View switcher: Sequence | Matrix */}
-      <div style={{display:'flex',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',marginBottom:'14px'}}>
-        {[
-          { id: 'sequence', label: 'Sequence' },
-          { id: 'matrix',   label: 'Matrix' },
-        ].map(v => (
-          <button key={v.id}
-            onClick={() => setTaskViewMode(v.id)}
-            style={{
-              flex:1, padding:'7px 0', border:'none', borderRadius:'6px',
-              fontSize:'11px', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.03em',
-              background: viewMode === v.id ? 'var(--accent)' : 'transparent',
-              color: viewMode === v.id ? '#000' : 'var(--text-2)',
-              cursor:'pointer', transition:'.18s'
-            }}>
-            {v.label}
-          </button>
-        ))}
-      </div>
-
-      {/* "Move past due → Today" button — only on Today filter, only when there ARE past-due dated tasks.
-          Past due = not completed, has due_date, due_date < today (excludes undated/someday-maybe). */}
-      {filter === 'today' && (() => {
-        const today = todayISO();
-        const pastDue = tasks.filter(t => !t.completed && t.due_date && t.due_date < today);
-        if (pastDue.length === 0) return null;
-        return (
-          <button
-            onClick={async () => {
-              if (!window.confirm(`Move ${pastDue.length} past-due task${pastDue.length === 1 ? '' : 's'} to today?`)) return;
-              const ids = pastDue.map(t => t.id);
-              await supabase.from('tasks').update({ due_date: today }).in('id', ids);
-              setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, due_date: today } : t));
-            }}
-            style={{
-              width:'100%', marginBottom:'12px',
-              padding:'10px 14px',
-              background:'rgba(239,68,68,0.10)',
-              border:'1px solid #ef4444',
-              borderRadius:'6px',
-              color:'#ef4444',
-              fontSize:'12px', fontWeight:700,
-              cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center', gap:'8px',
-            }}>
-            ↻ Move {pastDue.length} past-due task{pastDue.length === 1 ? '' : 's'} to Today
-          </button>
-        );
-      })()}
-
-      {/* Body — Sequence or Matrix view */}
-      {viewMode === 'sequence' ? (
-        <SequenceView
-          buckets={sequenceGroups.buckets}
-          unranked={sequenceGroups.unranked}
-          quads={QUADS}
-          onEdit={openEdit}
-          onToggleComplete={toggleComplete}
-          onReorder={applyReorder}
-          setIsDragging={setIsDragging}
-          showRanking={filter === 'today'}
-        />
-      ) : (
-        <MatrixView
-          groups={matrixGroups}
-          quads={QUADS}
-          onEdit={openEdit}
-          onToggleComplete={toggleComplete}
-          onReorder={applyReorder}
-          setIsDragging={setIsDragging}
-          showRanking={filter === 'today'}
-        />
-      )}
-
-      {/* Persistent drop zones — visible during drag */}
-      <DropZoneStrip
-        visible={isDragging}
-        onDropToday={(taskId) => setTaskDate(taskId, todayISO())}
-        onDropTomorrow={(taskId) => setTaskDate(taskId, addDaysISO(1))}
-        onDropPickDate={(taskId) => {
-          const task = tasks.find(t => t.id === taskId);
-          if (task) setDatePickerTask(task);
-        }}
-      />
-
-      {/* Date picker for "Pick Date" drop zone */}
-      {datePickerTask && (
-        <DatePickerModal
-          initial={datePickerTask.due_date || todayISO()}
-          onCancel={() => setDatePickerTask(null)}
-          onPick={async (iso) => {
-            await setTaskDate(datePickerTask.id, iso);
-            setDatePickerTask(null);
-          }}
-        />
-      )}
-
-      {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} userId={userId} />}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────
-// SEQUENCE VIEW — grouped by quadrant, priority badge is drag handle
-// ─────────────────────────────────────────
-function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
-  // SequenceView holds local state per bucket so ReactSortable can manage
-  // each list without parent re-renders fighting the drag operation.
-  const idsSig = (arr) => arr.map(t => t.id).join('|');
-
-  const [localBuckets, setLocalBuckets] = useState(() => ({ ...buckets, _unranked: unranked }));
-  // Mirror local state in a ref so persistAfterDrag (which runs after React
-  // schedules state updates) can read the LATEST state, not the stale closure.
-  const localRef = useRef(localBuckets);
-  useEffect(() => { localRef.current = localBuckets; }, [localBuckets]);
-
-  // Re-sync local state when prop buckets change content (filter switch, etc).
-  useEffect(() => {
-    const next = { ...buckets, _unranked: unranked };
-    const sigsChanged =
-      quads.some(q => idsSig(next[q] || []) !== idsSig(localBuckets[q] || [])) ||
-      idsSig(next._unranked || []) !== idsSig(localBuckets._unranked || []);
-    if (sigsChanged) setLocalBuckets(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buckets, unranked, quads]);
-
-  // Persist post-drag state. Reads live state from ref to avoid stale closures.
-  async function persistAfterDrag() {
-    const live = localRef.current;
-    const updates = [];
-    quads.forEach(q => {
-      (live[q] || []).forEach((task, idx) => {
-        const desiredRank = idx + 1;
-        const desiredQuad = q;
-        if (task.eisenhower_rank !== desiredRank || task.eisenhower_quadrant !== desiredQuad) {
-          updates.push({ id: task.id, eisenhower_rank: desiredRank, eisenhower_quadrant: desiredQuad });
-        }
-      });
-    });
-    if (updates.length === 0) return;
+    // Persist in parallel
     await Promise.all(updates.map(u =>
       supabase.from('tasks').update({
         eisenhower_rank: u.eisenhower_rank,
@@ -1111,50 +1125,198 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onRe
         priority_system: 'eisenhower',
       }).eq('id', u.id)
     ));
-    if (onReorder) onReorder(null, null, null, updates);
   }
 
-  function setBucket(q, newList) {
-    setLocalBuckets(prev => ({ ...prev, [q]: newList }));
+  async function setTaskDate(taskId, newDateISO) {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: newDateISO } : t));
+    await supabase.from('tasks').update({ due_date: newDateISO }).eq('id', taskId);
   }
-
-  const allEmpty = quads.every(q => (localBuckets[q] || []).length === 0) && (localBuckets._unranked || []).length === 0;
 
   return (
-    <div>
-      {quads.map(q => (
-        <QuadrantGroup key={q}
-          quadrant={q}
-          label={QUAD_LABELS[q]}
-          tasks={localBuckets[q] || []}
-          setTasks={(newList) => setBucket(q, newList)}
-          onEdit={onEdit}
-          onToggleComplete={onToggleComplete}
-          onDragEnd={persistAfterDrag}
-          setIsDragging={setIsDragging}
-          showRanking={showRanking}
-        />
-      ))}
-      {(localBuckets._unranked || []).length > 0 && (
-        <QuadrantGroup
-          quadrant={null}
-          label="Unranked"
-          tasks={localBuckets._unranked || []}
-          setTasks={(newList) => setBucket('_unranked', newList)}
-          onEdit={onEdit}
-          onToggleComplete={onToggleComplete}
-          onDragEnd={persistAfterDrag}
-          setIsDragging={setIsDragging}
-          showRanking={showRanking}
-        />
-      )}
-      {allEmpty && (
-        <div className="empty-state" style={{padding:'40px 0',textAlign:'center'}}>
-          <div style={{fontSize:'42px',marginBottom:'10px'}}>✓</div>
-          <p style={{color:'var(--text-2)'}}>All clear. Nothing matches this filter.</p>
+    <DragProvider onDragStart={() => setIsDragging(true)} onDragEnd={() => setIsDragging(false)}>
+      <div className="view">
+        <div className="view-header">
+          <h2>Tasks</h2>
+          <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+            <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
+            <button className="btn btn-primary" onClick={openNew}>+ New Task</button>
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* Filter pills */}
+        <div style={{display:'flex',gap:'6px',padding:'4px 0 12px',alignItems:'center',flexWrap:'wrap'}}>
+          {(() => {
+            const primary = [
+              { id: 'today',     label: 'Today' },
+              { id: 'tomorrow',  label: 'Tomorrow' },
+              { id: 'all',       label: 'All' },
+            ];
+            const secondary = [
+              { id: 'past',      label: 'Past Due' },
+              { id: '7days',     label: '7 Days' },
+              { id: 'future',    label: 'Future' },
+              { id: 'undated',   label: 'Undated' },
+              { id: 'completed', label: 'Completed' },
+            ];
+            const activeSecondary = secondary.find(s => s.id === filter);
+            const moreLabel = activeSecondary ? activeSecondary.label : 'More';
+            const moreActive = !!activeSecondary;
+            const pillStyle = (active) => ({
+              flexShrink:0, padding:'6px 12px', borderRadius:'999px',
+              fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.03em',
+              border:'1px solid',
+              background: active ? 'var(--accent)' : 'transparent',
+              borderColor: active ? 'var(--accent)' : 'var(--border)',
+              color: active ? '#000' : 'var(--text-2)',
+              cursor:'pointer', transition:'.15s',
+              display:'inline-flex', alignItems:'center', gap:'4px',
+            });
+            return (
+              <>
+                {primary.map(p => (
+                  <button key={p.id} onClick={() => setTaskFilter(p.id)} style={pillStyle(filter === p.id)}>{p.label}</button>
+                ))}
+                <button ref={moreButtonRef}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setMoreMenuPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 180) });
+                    setMoreFiltersOpen(o => !o);
+                  }}
+                  style={pillStyle(moreActive)}>
+                  {moreLabel} <span style={{fontSize:'9px',opacity:0.7}}>▾</span>
+                </button>
+              </>
+            );
+          })()}
+        </div>
+
+        {moreFiltersOpen && createPortal(
+          <>
+            <div onClick={() => setMoreFiltersOpen(false)}
+              style={{position:'fixed',inset:0,zIndex:9998,background:'transparent'}}/>
+            <div style={{
+              position:'fixed', top:moreMenuPos.top, left:moreMenuPos.left, zIndex:9999,
+              background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px',
+              boxShadow:'0 8px 24px rgba(0,0,0,0.4)', minWidth:'170px', padding:'4px'
+            }}>
+              {[
+                { id: 'past',      label: 'Past Due' },
+                { id: '7days',     label: '7 Days' },
+                { id: 'future',    label: 'Future' },
+                { id: 'undated',   label: 'Undated' },
+                { id: 'completed', label: 'Completed' },
+              ].map(p => (
+                <button key={p.id}
+                  onClick={() => { setTaskFilter(p.id); setMoreFiltersOpen(false); }}
+                  style={{
+                    display:'block', width:'100%', textAlign:'left',
+                    padding:'10px 14px', background: filter === p.id ? 'var(--bg-hover)' : 'none',
+                    border:'none', cursor:'pointer', borderRadius:'4px',
+                    color: filter === p.id ? 'var(--accent)' : 'var(--text-1)',
+                    fontSize:'13px', fontWeight: filter === p.id ? 700 : 400,
+                  }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body
+        )}
+
+        {/* View switcher */}
+        <div style={{display:'flex',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',marginBottom:'14px'}}>
+          {[
+            { id: 'sequence', label: 'Sequence' },
+            { id: 'matrix',   label: 'Matrix' },
+          ].map(v => (
+            <button key={v.id}
+              onClick={() => setTaskViewMode(v.id)}
+              style={{
+                flex:1, padding:'7px 0', border:'none', borderRadius:'6px',
+                fontSize:'11px', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.03em',
+                background: viewMode === v.id ? 'var(--accent)' : 'transparent',
+                color: viewMode === v.id ? '#000' : 'var(--text-2)',
+                cursor:'pointer', transition:'.18s'
+              }}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+
+        {/* "Move past due to Today" button */}
+        {filter === 'today' && (() => {
+          const today = todayISO();
+          const pastDue = tasks.filter(t => !t.completed && t.due_date && t.due_date < today);
+          if (pastDue.length === 0) return null;
+          return (
+            <button
+              onClick={async () => {
+                if (!window.confirm(`Move ${pastDue.length} past-due task${pastDue.length === 1 ? '' : 's'} to today?`)) return;
+                const ids = pastDue.map(t => t.id);
+                await supabase.from('tasks').update({ due_date: today }).in('id', ids);
+                setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, due_date: today } : t));
+              }}
+              style={{
+                width:'100%', marginBottom:'12px',
+                padding:'10px 14px',
+                background:'rgba(239,68,68,0.10)',
+                border:'1px solid #ef4444',
+                borderRadius:'6px',
+                color:'#ef4444',
+                fontSize:'12px', fontWeight:700,
+                cursor:'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:'8px',
+              }}>
+              ↻ Move {pastDue.length} past-due task{pastDue.length === 1 ? '' : 's'} to Today
+            </button>
+          );
+        })()}
+
+        {viewMode === 'sequence' ? (
+          <SequenceView
+            buckets={sequenceGroups.buckets}
+            unranked={sequenceGroups.unranked}
+            quads={QUADS}
+            onEdit={openEdit}
+            onToggleComplete={toggleComplete}
+            onMoveTask={moveTaskToQuadrant}
+            showRanking={filter === 'today'}
+          />
+        ) : (
+          <MatrixView
+            groups={sequenceGroups.buckets}
+            quads={QUADS}
+            onEdit={openEdit}
+            onToggleComplete={toggleComplete}
+            onMoveTask={moveTaskToQuadrant}
+            showRanking={filter === 'today'}
+          />
+        )}
+
+        <DropZoneStrip
+          visible={isDragging}
+          onDropToday={(taskId) => setTaskDate(taskId, todayISO())}
+          onDropTomorrow={(taskId) => setTaskDate(taskId, addDaysISO(1))}
+          onDropPickDate={(taskId) => {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) setDatePickerTask(task);
+          }}
+        />
+
+        {datePickerTask && (
+          <DatePickerModal
+            initial={datePickerTask.due_date || todayISO()}
+            onCancel={() => setDatePickerTask(null)}
+            onPick={async (iso) => {
+              await setTaskDate(datePickerTask.id, iso);
+              setDatePickerTask(null);
+            }}
+          />
+        )}
+
+        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} userId={userId} />}
+      </div>
+    </DragProvider>
   );
 }
 
@@ -1165,16 +1327,71 @@ const QUAD_LABELS = {
   D: 'Q4 · Not Important / Not Urgent',
 };
 const QUAD_COLORS = {
-  A: '#ef4444',    // red — urgent
-  B: '#3b82f6',    // blue — strategic
-  C: '#f59e0b',    // amber — interruption
-  D: '#94a3b8',    // gray — defer
+  A: '#ef4444',
+  B: '#3b82f6',
+  C: '#f59e0b',
+  D: '#94a3b8',
 };
 
-// ─────────────────────────────────────────
-// QUADRANT GROUP — one priority bucket, sortable list inside
-// ─────────────────────────────────────────
-function QuadrantGroup({ quadrant, label, tasks, setTasks, onEdit, onToggleComplete, onDragEnd, setIsDragging, showRanking }) {
+function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onMoveTask, showRanking }) {
+  const allEmpty = quads.every(q => (buckets[q] || []).length === 0) && unranked.length === 0;
+  return (
+    <div>
+      {quads.map(q => (
+        <QuadrantGroup key={q}
+          quadrant={q}
+          label={QUAD_LABELS[q]}
+          tasks={buckets[q] || []}
+          onEdit={onEdit}
+          onToggleComplete={onToggleComplete}
+          onMoveTask={onMoveTask}
+          showRanking={showRanking}
+        />
+      ))}
+      {unranked.length > 0 && (
+        <QuadrantGroup
+          quadrant={null}
+          label="Unranked"
+          tasks={unranked}
+          onEdit={onEdit}
+          onToggleComplete={onToggleComplete}
+          onMoveTask={onMoveTask}
+          showRanking={showRanking}
+        />
+      )}
+      {allEmpty && (
+        <div style={{padding:'40px 0',textAlign:'center'}}>
+          <div style={{fontSize:'42px',marginBottom:'10px'}}>✓</div>
+          <p style={{color:'var(--text-2)'}}>All clear. Nothing matches this filter.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onMoveTask, showRanking }) {
+  const onDrop = useCallback((drag, point) => {
+    if (!quadrant) return; // can't drop into unranked
+    // Hit-test which row the pointer is over to find insertion index
+    const container = elRef.current;
+    if (!container) {
+      onMoveTask(drag.taskId, quadrant, null);
+      return;
+    }
+    let dropAboveTaskId = null;
+    const rows = Array.from(container.querySelectorAll('[data-task-row]'));
+    for (const row of rows) {
+      const r = row.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      if (point.clientY < mid) {
+        dropAboveTaskId = row.getAttribute('data-task-row');
+        break;
+      }
+    }
+    onMoveTask(drag.taskId, quadrant, dropAboveTaskId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quadrant, onMoveTask]);
+  const elRef = useDropTarget({ type: 'quadrant', onDrop });
   const headerColor = quadrant ? QUAD_COLORS[quadrant] : 'var(--text-3)';
 
   return (
@@ -1191,71 +1408,53 @@ function QuadrantGroup({ quadrant, label, tasks, setTasks, onEdit, onToggleCompl
         <span>{label}</span>
         <span style={{color:'var(--text-3)',fontWeight:600}}>{tasks.length}</span>
       </div>
-      <ReactSortable
-        tag="div"
-        list={tasks}
-        setList={setTasks}
-        group={{
-          name: 'tasks',
-          // Allow normal cross-list moves between 'tasks' lists, but CLONE
-          // when the destination is a drop zone (so the source list keeps
-          // the original item, and the clone in the drop zone is just an
-          // ephemeral DOM artifact that we discard in onAdd).
-          pull: (to) => to.options.group.name === 'dropzones' ? 'clone' : true,
-          put: ['tasks'],
-        }}
-        animation={150}
-        handle=".tasks-pro-anchor"
-        delay={200}
-        delayOnTouchOnly={true}
-        touchStartThreshold={5}
-        ghostClass="tasks-pro-ghost"
-        dragClass="tasks-pro-drag"
-        onStart={() => setIsDragging(true)}
-        onEnd={() => {
-          setIsDragging(false);
-          // Defer to next tick so ReactSortable's setList calls all settle
-          setTimeout(() => { if (onDragEnd) onDragEnd(); }, 0);
-        }}
+      <div ref={elRef} className="tasks-pro-drop-target"
         style={{
           background:'var(--bg-card)',
           border:'1px solid var(--border)',
           borderTop:'none',
           borderRadius:'0 0 4px 4px',
-          minHeight: tasks.length === 0 ? '36px' : 'auto',
-        }}
-      >
+          minHeight: tasks.length === 0 ? '40px' : 'auto',
+          transition:'background .15s',
+        }}>
         {tasks.map((t, i) => (
           <TaskProRow key={t.id}
             task={t}
             rankNumber={i + 1}
+            quadrant={quadrant}
             onEdit={onEdit}
             onToggleComplete={onToggleComplete}
             showRanking={showRanking}
           />
         ))}
-      </ReactSortable>
+        {tasks.length === 0 && (
+          <div style={{padding:'10px 14px',fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center'}}>
+            Drop a task here
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────
-// TASK ROW — priority badge is drag anchor, click anywhere else to edit
-// ─────────────────────────────────────────
-function TaskProRow({ task, rankNumber, onEdit, onToggleComplete, showRanking }) {
-  const quadrant = task.eisenhower_quadrant;
-  // On Today filter: show "A1", "A2", "B1" — ranking is actionable
-  // Elsewhere: show just "A", "B", "C", "D" — priority only, ranking suppressed
-  const badgeLabel = quadrant
-    ? (showRanking ? `${quadrant}${rankNumber}` : quadrant)
+function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, showRanking }) {
+  const q = quadrant || task.eisenhower_quadrant;
+  const badgeLabel = q
+    ? (showRanking ? `${q}${rankNumber}` : q)
     : (showRanking ? `${rankNumber}` : '·');
-  const badgeColor = quadrant ? QUAD_COLORS[quadrant] : 'var(--text-3)';
+  const badgeColor = q ? QUAD_COLORS[q] : 'var(--text-3)';
   const isDone = !!task.completed;
 
+  const dragHandlers = useDraggable({
+    task,
+    label: badgeLabel,
+    color: badgeColor,
+    sourceQuadrant: q,
+  });
+
   return (
-    <div data-id={task.id}
+    <div data-task-row={task.id}
       onClick={(e) => {
-        // Don't trigger edit if click came from checkbox or anchor
         if (e.target.closest('.tasks-pro-anchor') || e.target.closest('.tasks-pro-check')) return;
         onEdit(task);
       }}
@@ -1267,14 +1466,15 @@ function TaskProRow({ task, rankNumber, onEdit, onToggleComplete, showRanking })
         background: isDone ? 'var(--bg-base)' : 'transparent',
         opacity: isDone ? 0.55 : 1,
       }}>
-      {/* Checkbox */}
       <input type="checkbox" checked={isDone} className="tasks-pro-check"
         onChange={(e) => onToggleComplete(task, e)}
         onClick={e => e.stopPropagation()}
-        style={{flexShrink:0,width:'16px',height:'16px',accentColor:'var(--accent)',cursor:'pointer'}}
-      />
-      {/* Priority badge — THIS IS THE DRAG HANDLE */}
+        style={{flexShrink:0,width:'16px',height:'16px',accentColor:'var(--accent)',cursor:'pointer'}}/>
       <div className="tasks-pro-anchor"
+        onPointerDown={dragHandlers.onPointerDown}
+        onPointerMove={dragHandlers.onPointerMove}
+        onPointerUp={dragHandlers.onPointerUp}
+        onPointerCancel={dragHandlers.onPointerUp}
         style={{
           flexShrink:0,
           padding:'3px 8px',
@@ -1284,13 +1484,13 @@ function TaskProRow({ task, rankNumber, onEdit, onToggleComplete, showRanking })
           borderRadius:'4px',
           cursor:'grab',
           touchAction:'none',
+          userSelect:'none',
           minWidth:'30px', textAlign:'center',
           letterSpacing:'0.02em',
         }}
-        title="Drag to reorder or move to another priority">
+        title="Long-press and drag to reorder, or to a drop zone to reschedule">
         {badgeLabel}
       </div>
-      {/* Title */}
       <span style={{
         flex:1, minWidth:0,
         fontSize:'13px',
@@ -1300,7 +1500,6 @@ function TaskProRow({ task, rankNumber, onEdit, onToggleComplete, showRanking })
       }}>
         {task.title}
       </span>
-      {/* Right meta: due date */}
       {task.due_date && (
         <span style={{
           flexShrink:0,
@@ -1320,57 +1519,13 @@ function formatDueShort(iso) {
   const tomorrow = addDaysISO(1);
   if (iso === today) return 'Today';
   if (iso === tomorrow) return 'Tomorrow';
-  if (iso < today) return iso; // overdue — full date
-  // Otherwise show short "May 30"
+  if (iso < today) return iso;
   const [y, m, d] = iso.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-// ─────────────────────────────────────────
-// MATRIX VIEW — 2x2 quadrant grid with drag-between
-// ─────────────────────────────────────────
-function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
-  // Same pattern as SequenceView: hold local per-quadrant state, re-sync on
-  // content changes, persist after each drag. Ref mirrors live state so
-  // persistAfterDrag reads current values (not stale closure).
-  const idsSig = (arr) => arr.map(t => t.id).join('|');
-  const [localGroups, setLocalGroups] = useState(() => ({ ...groups }));
-  const localRef = useRef(localGroups);
-  useEffect(() => { localRef.current = localGroups; }, [localGroups]);
-
-  useEffect(() => {
-    const sigsChanged = quads.some(q => idsSig(groups[q] || []) !== idsSig(localGroups[q] || []));
-    if (sigsChanged) setLocalGroups({ ...groups });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groups, quads]);
-
-  async function persistAfterDrag() {
-    const live = localRef.current;
-    const updates = [];
-    quads.forEach(q => {
-      (live[q] || []).forEach((task, idx) => {
-        const desiredRank = idx + 1;
-        if (task.eisenhower_rank !== desiredRank || task.eisenhower_quadrant !== q) {
-          updates.push({ id: task.id, eisenhower_rank: desiredRank, eisenhower_quadrant: q });
-        }
-      });
-    });
-    if (updates.length === 0) return;
-    await Promise.all(updates.map(u =>
-      supabase.from('tasks').update({
-        eisenhower_rank: u.eisenhower_rank,
-        eisenhower_quadrant: u.eisenhower_quadrant,
-        priority_system: 'eisenhower',
-      }).eq('id', u.id)
-    ));
-    if (onReorder) onReorder(null, null, null, updates);
-  }
-
-  function setQuadList(q, newList) {
-    setLocalGroups(prev => ({ ...prev, [q]: newList }));
-  }
-
+function MatrixView({ groups, quads, onEdit, onToggleComplete, onMoveTask, showRanking }) {
   return (
     <div style={{
       display:'grid',
@@ -1383,12 +1538,10 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsD
         <MatrixQuadrant key={q}
           quadrant={q}
           label={QUAD_LABELS[q]}
-          tasks={localGroups[q] || []}
-          setTasks={(newList) => setQuadList(q, newList)}
+          tasks={groups[q] || []}
           onEdit={onEdit}
           onToggleComplete={onToggleComplete}
-          onDragEnd={persistAfterDrag}
-          setIsDragging={setIsDragging}
+          onMoveTask={onMoveTask}
           showRanking={showRanking}
         />
       ))}
@@ -1396,7 +1549,27 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsD
   );
 }
 
-function MatrixQuadrant({ quadrant, label, tasks, setTasks, onEdit, onToggleComplete, onDragEnd, setIsDragging, showRanking }) {
+function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onMoveTask, showRanking }) {
+  const onDrop = useCallback((drag, point) => {
+    const container = elRef.current;
+    if (!container) {
+      onMoveTask(drag.taskId, quadrant, null);
+      return;
+    }
+    let dropAboveTaskId = null;
+    const rows = Array.from(container.querySelectorAll('[data-task-row]'));
+    for (const row of rows) {
+      const r = row.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      if (point.clientY < mid) {
+        dropAboveTaskId = row.getAttribute('data-task-row');
+        break;
+      }
+    }
+    onMoveTask(drag.taskId, quadrant, dropAboveTaskId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quadrant, onMoveTask]);
+  const elRef = useDropTarget({ type: 'quadrant', onDrop });
   const headerColor = QUAD_COLORS[quadrant];
 
   return (
@@ -1417,114 +1590,86 @@ function MatrixQuadrant({ quadrant, label, tasks, setTasks, onEdit, onToggleComp
       }}>
         {label}
       </div>
-      <ReactSortable
-        tag="div"
-        list={tasks}
-        setList={setTasks}
-        group={{
-          name: 'tasks',
-          pull: (to) => to.options.group.name === 'dropzones' ? 'clone' : true,
-          put: ['tasks'],
-        }}
-        animation={150}
-        handle=".tasks-pro-anchor"
-        delay={200}
-        delayOnTouchOnly={true}
-        touchStartThreshold={5}
-        ghostClass="tasks-pro-ghost"
-        dragClass="tasks-pro-drag"
-        onStart={() => setIsDragging(true)}
-        onEnd={() => {
-          setIsDragging(false);
-          setTimeout(() => { if (onDragEnd) onDragEnd(); }, 0);
-        }}
-        style={{flex:1, overflowY:'auto', minHeight:'80px', padding:'2px 0'}}
-      >
+      <div ref={elRef} className="tasks-pro-drop-target"
+        style={{flex:1, overflowY:'auto', minHeight:'80px', padding:'2px 0'}}>
         {tasks.map((t, i) => (
-          <div key={t.id} data-id={t.id}
-            onClick={(e) => {
-              if (e.target.closest('.tasks-pro-anchor') || e.target.closest('.tasks-pro-check')) return;
-              onEdit(t);
-            }}
-            style={{
-              display:'flex', alignItems:'center', gap:'4px',
-              padding:'5px 7px',
-              borderBottom:'1px solid var(--border)',
-              cursor:'pointer',
-              opacity: t.completed ? 0.5 : 1,
-            }}>
-            <input type="checkbox" checked={!!t.completed} className="tasks-pro-check"
-              onChange={(e) => onToggleComplete(t, e)}
-              onClick={e => e.stopPropagation()}
-              style={{flexShrink:0,width:'13px',height:'13px',accentColor:'var(--accent)'}}/>
-            <div className="tasks-pro-anchor"
-              style={{
-                flexShrink:0,
-                padding:'1px 5px',
-                background: headerColor,
-                color:'#fff',
-                fontSize:'9px', fontWeight:900,
-                borderRadius:'3px',
-                cursor:'grab',
-                touchAction:'none',
-              }}>
-              {showRanking ? `${quadrant}${i + 1}` : quadrant}
-            </div>
-            <span style={{
-              flex:1, minWidth:0,
-              fontSize:'12px',
-              color: t.completed ? 'var(--text-3)' : 'var(--text-1)',
-              textDecoration: t.completed ? 'line-through' : 'none',
-              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
-            }}>
-              {t.title}
-            </span>
-          </div>
+          <MatrixTaskRow key={t.id}
+            task={t}
+            rankNumber={i + 1}
+            quadrant={quadrant}
+            headerColor={headerColor}
+            onEdit={onEdit}
+            onToggleComplete={onToggleComplete}
+            showRanking={showRanking}
+          />
         ))}
-      </ReactSortable>
+        {tasks.length === 0 && (
+          <div style={{padding:'10px',fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center'}}>
+            Empty
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────
-// DROP ZONE STRIP — appears during drag; quick reschedule
-// ─────────────────────────────────────────
+function MatrixTaskRow({ task, rankNumber, quadrant, headerColor, onEdit, onToggleComplete, showRanking }) {
+  const badgeLabel = showRanking ? `${quadrant}${rankNumber}` : quadrant;
+  const dragHandlers = useDraggable({
+    task,
+    label: badgeLabel,
+    color: headerColor,
+    sourceQuadrant: quadrant,
+  });
+  return (
+    <div data-task-row={task.id}
+      onClick={(e) => {
+        if (e.target.closest('.tasks-pro-anchor') || e.target.closest('.tasks-pro-check')) return;
+        onEdit(task);
+      }}
+      style={{
+        display:'flex', alignItems:'center', gap:'4px',
+        padding:'5px 7px',
+        borderBottom:'1px solid var(--border)',
+        cursor:'pointer',
+        opacity: task.completed ? 0.5 : 1,
+      }}>
+      <input type="checkbox" checked={!!task.completed} className="tasks-pro-check"
+        onChange={(e) => onToggleComplete(task, e)}
+        onClick={e => e.stopPropagation()}
+        style={{flexShrink:0,width:'13px',height:'13px',accentColor:'var(--accent)'}}/>
+      <div className="tasks-pro-anchor"
+        onPointerDown={dragHandlers.onPointerDown}
+        onPointerMove={dragHandlers.onPointerMove}
+        onPointerUp={dragHandlers.onPointerUp}
+        onPointerCancel={dragHandlers.onPointerUp}
+        style={{
+          flexShrink:0,
+          padding:'1px 5px',
+          background: headerColor,
+          color:'#fff',
+          fontSize:'9px', fontWeight:900,
+          borderRadius:'3px',
+          cursor:'grab',
+          touchAction:'none',
+          userSelect:'none',
+        }}>
+        {badgeLabel}
+      </div>
+      <span style={{
+        flex:1, minWidth:0,
+        fontSize:'12px',
+        color: task.completed ? 'var(--text-3)' : 'var(--text-1)',
+        textDecoration: task.completed ? 'line-through' : 'none',
+        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
+      }}>
+        {task.title}
+      </span>
+    </div>
+  );
+}
+
 function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate }) {
-  const todayRef = useRef(null);
-  const tomorrowRef = useRef(null);
-  const dateRef = useRef(null);
-
-  useEffect(() => {
-    const zones = [
-      { ref: todayRef, action: 'today', handler: onDropToday },
-      { ref: tomorrowRef, action: 'tomorrow', handler: onDropTomorrow },
-      { ref: dateRef, action: 'pick', handler: onDropPickDate },
-    ];
-    const cleanups = [];
-    zones.forEach(z => {
-      if (!z.ref.current) return;
-      // Drop zones are part of the 'dropzones' group (NOT 'tasks').
-      // The source 'tasks' lists use pull: (to) => to.name === 'dropzones' ? 'clone' : true,
-      // so when an item is dragged INTO a drop zone, SortableJS clones it.
-      // The source keeps the original. We discard the clone and fire the action.
-      // This means we never mutate any React-managed DOM tree → no ghosts.
-      const sortable = Sortable.create(z.ref.current, {
-        group: { name: 'dropzones', pull: false, put: true },
-        delay: 0,
-        sort: false,
-        onAdd: (evt) => {
-          const taskId = evt.item.getAttribute('data-id') || evt.item.dataset?.id || null;
-          // evt.item here is the CLONE that SortableJS placed into us. Safe to remove
-          // — it's not in any React virtual tree. (Source's original element is untouched.)
-          evt.item.remove();
-          if (taskId) z.handler(taskId);
-        },
-      });
-      cleanups.push(() => sortable.destroy());
-    });
-    return () => cleanups.forEach(c => c());
-  }, [onDropToday, onDropTomorrow, onDropPickDate]);
-
   return (
     <div style={{
       position:'fixed',
@@ -1537,34 +1682,39 @@ function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate })
       transition:'bottom .25s ease',
       pointerEvents: visible ? 'auto' : 'none',
     }}>
-      {[
-        { ref: todayRef, action: 'today', label: 'Today' },
-        { ref: tomorrowRef, action: 'tomorrow', label: 'Tomorrow' },
-        { ref: dateRef, action: 'pick', label: 'Pick Date' },
-      ].map(z => (
-        <div key={z.action} ref={z.ref} data-drop-action={z.action}
-          style={{
-            background:'var(--bg-card)',
-            border:'2px dashed var(--accent)',
-            borderRadius:'8px',
-            padding:'14px 8px',
-            textAlign:'center',
-            fontSize:'10px', fontWeight:900, textTransform:'uppercase', letterSpacing:'0.05em',
-            color:'var(--accent)',
-            minHeight:'48px',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
-          }}>
-          {z.label}
-        </div>
-      ))}
+      <DropZoneCell label="Today" action="today" onDrop={onDropToday} />
+      <DropZoneCell label="Tomorrow" action="tomorrow" onDrop={onDropTomorrow} />
+      <DropZoneCell label="Pick Date" action="pick" onDrop={onDropPickDate} />
     </div>
   );
 }
 
-// ─────────────────────────────────────────
-// DATE PICKER MODAL — simple month grid for "Pick Date" drop zone
-// ─────────────────────────────────────────
+function DropZoneCell({ label, action, onDrop }) {
+  const handleDrop = useCallback((drag) => {
+    onDrop(drag.taskId);
+  }, [onDrop]);
+  const elRef = useDropTarget({ type: 'zone', onDrop: handleDrop });
+  return (
+    <div ref={elRef} className="tasks-pro-drop-target"
+      data-drop-action={action}
+      style={{
+        background:'var(--bg-card)',
+        border:'2px dashed var(--accent)',
+        borderRadius:'8px',
+        padding:'14px 8px',
+        textAlign:'center',
+        fontSize:'10px', fontWeight:900, textTransform:'uppercase', letterSpacing:'0.05em',
+        color:'var(--accent)',
+        minHeight:'48px',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
+        transition:'transform .12s, background .12s',
+      }}>
+      {label}
+    </div>
+  );
+}
+
 function DatePickerModal({ initial, onCancel, onPick }) {
   const [year, setYear] = useState(() => {
     const [y] = (initial || todayISO()).split('-').map(Number);
@@ -1634,6 +1784,7 @@ function DatePickerModal({ initial, onCancel, onPick }) {
     </div>
   );
 }
+
 
 
 // ─────────────────────────────────────────
