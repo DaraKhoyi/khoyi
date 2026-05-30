@@ -1192,7 +1192,11 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     const { _contact_ids, ...taskData } = data;
     let savedTaskId = null;
     if (editTask) {
-      const { data: updated } = await supabase.from('tasks').update(taskData).eq('id', editTask.id).select().single();
+      const { data: updated, error } = await supabase.from('tasks').update(taskData).eq('id', editTask.id).select().single();
+      if (error) {
+        notify("Couldn't save changes. Try again.", 'error');
+        return;
+      }
       if (updated) {
         setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
         savedTaskId = updated.id;
@@ -1201,16 +1205,29 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
       const peers = tasks.filter(t => !t.completed && t.eisenhower_quadrant === taskData.eisenhower_quadrant);
       const maxRank = peers.reduce((m, t) => Math.max(m, t.eisenhower_rank || 0), 0);
       const insert = { ...taskData, eisenhower_rank: taskData.eisenhower_rank || (maxRank + 1), user_id: userId, completed: false };
-      const { data: created } = await supabase.from('tasks').insert(insert).select().single();
+      const { data: created, error } = await supabase.from('tasks').insert(insert).select().single();
+      if (error) {
+        notify("Couldn't create task. Try again.", 'error');
+        return;
+      }
       if (created) {
         setTasks(prev => [created, ...prev]);
         savedTaskId = created.id;
       }
     }
+    // Replace task-contact links atomically (Pass 1 Finding #4).
+    // The set_task_contacts RPC inserts new rows + deletes stale ones in a single
+    // transaction. Old code did delete-then-insert which could silently lose all
+    // links if the insert failed after the delete succeeded.
     if (savedTaskId && Array.isArray(_contact_ids)) {
-      await supabase.from('task_contacts').delete().eq('task_id', savedTaskId);
-      if (_contact_ids.length > 0) {
-        await supabase.from('task_contacts').insert(_contact_ids.map(cid => ({ task_id: savedTaskId, contact_id: cid, user_id: userId })));
+      const { error: rpcErr } = await supabase.rpc('set_task_contacts', {
+        p_task_id: savedTaskId,
+        p_contact_ids: _contact_ids,
+      });
+      if (rpcErr) {
+        notify("Task saved but contact links failed to update.", 'error');
+        // Do not close the modal — give the user a chance to retry
+        return;
       }
     }
     setShowModal(false); setEditTask(null);
@@ -3339,16 +3356,24 @@ function DashboardView({ tasks, setTasks, emails, user, setView, robots, contact
   async function handleTaskSave(data) {
     if (!editTask) return;
     const { _contact_ids, ...taskData } = data;
-    const { data: updated } = await supabase.from('tasks')
+    const { data: updated, error } = await supabase.from('tasks')
       .update(taskData).eq('id', editTask.id).select().single();
+    if (error) {
+      notify("Couldn't save changes. Try again.", 'error');
+      return;
+    }
     if (updated) {
       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
     }
+    // Atomic contact-link replacement (Pass 1 Finding #4)
     if (Array.isArray(_contact_ids)) {
-      await supabase.from('task_contacts').delete().eq('task_id', editTask.id);
-      if (_contact_ids.length > 0) {
-        const rows = _contact_ids.map(cid => ({ task_id: editTask.id, contact_id: cid, user_id: user.id }));
-        await supabase.from('task_contacts').insert(rows);
+      const { error: rpcErr } = await supabase.rpc('set_task_contacts', {
+        p_task_id: editTask.id,
+        p_contact_ids: _contact_ids,
+      });
+      if (rpcErr) {
+        notify("Task saved but contact links failed to update.", 'error');
+        return;
       }
     }
     setEditTask(null);
@@ -3358,9 +3383,13 @@ function DashboardView({ tasks, setTasks, emails, user, setView, robots, contact
   async function toggleComplete(task, e) {
     e.stopPropagation();  // don't trigger the row's edit-on-click
     const newCompleted = !task.completed;
-    const { data: updated } = await supabase.from('tasks')
+    const { data: updated, error } = await supabase.from('tasks')
       .update({ completed: newCompleted, updated_at: new Date().toISOString() })
       .eq('id', task.id).select().single();
+    if (error) {
+      notify("Couldn't update task. Try again.", 'error');
+      return;
+    }
     if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
   }
   const pending = tasks.filter(t=>!t.completed);
@@ -8265,9 +8294,13 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
         patch.last_communication_direction = (!newOut || (newIn && new Date(newIn) > new Date(newOut))) ? 'inbound' : 'outbound';
       }
       if (Object.keys(patch).length > 0) {
-        await supabase.from('contacts').update(patch).eq('id', contact.id);
-        // Update local contact object — caller may not refetch
-        Object.assign(contact, patch);
+        const { error } = await supabase.from('contacts').update(patch).eq('id', contact.id);
+        if (error) {
+          notify("Couldn't update contact's last-contact info.", 'error');
+        } else {
+          // Update local contact object — caller may not refetch
+          Object.assign(contact, patch);
+        }
       }
       setShowLogInteraction(false);
       setInteractionForm({ channel: 'phone', direction: 'outbound', occurred_at: new Date().toISOString().slice(0, 16), brief: '' });
@@ -9144,7 +9177,11 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
       // Set contact's email + last_contact_at
       const patch = { email: senderEmail };
       if (msgMaxDate) patch.last_contact_at = msgMaxDate;
-      await supabase.from('contacts').update(patch).eq('id', contactId);
+      const { error } = await supabase.from('contacts').update(patch).eq('id', contactId);
+      if (error) {
+        notify("Couldn't link sender to contact. Try again.", 'error');
+        return;
+      }
       // Refresh contacts state
       const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
       if (fresh) setContacts(fresh);
@@ -9731,10 +9768,18 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
 
   async function handleSave(data) {
     if (editContact) {
-      const { data: updated } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
+      const { data: updated, error } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
+      if (error) {
+        notify("Couldn't save contact. Try again.", 'error');
+        return;
+      }
       if (updated) setContacts(prev => prev.map(c => c.id === updated.id ? updated : c));
     } else {
-      const { data: created } = await supabase.from('contacts').insert({ ...data, user_id: userId }).select().single();
+      const { data: created, error } = await supabase.from('contacts').insert({ ...data, user_id: userId }).select().single();
+      if (error) {
+        notify("Couldn't create contact. Try again.", 'error');
+        return;
+      }
       if (created) setContacts(prev => [created, ...prev]);
     }
     setShowModal(false); setEditContact(null);
@@ -9742,8 +9787,15 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
 
   async function deleteContact(id) {
     if (!window.confirm('Delete this contact?')) return;
-    await supabase.from('contacts').delete().eq('id', id);
+    // Snapshot for rollback
+    const snapshot = contacts.find(c => c.id === id);
     setContacts(prev => prev.filter(c => c.id !== id));
+    const { error } = await supabase.from('contacts').delete().eq('id', id);
+    if (error) {
+      // Rollback
+      if (snapshot) setContacts(prev => [snapshot, ...prev.filter(c => c.id !== id)]);
+      notify("Couldn't delete contact. Reverted.", 'error');
+    }
   }
 
   return (
@@ -10691,10 +10743,12 @@ function BrainView({ brain, setBrain, userId }) {
 
   async function handleSave(data) {
     if (editEntry) {
-      const { data: u } = await supabase.from('brain').update(data).eq('id', editEntry.id).select().single();
+      const { data: u, error } = await supabase.from('brain').update(data).eq('id', editEntry.id).select().single();
+      if (error) { notify("Couldn't save entry. Try again.", 'error'); return; }
       if (u) setBrain(prev => prev.map(x => x.id === u.id ? u : x));
     } else {
-      const { data: c } = await supabase.from('brain').insert({ ...data, user_id: userId }).select().single();
+      const { data: c, error } = await supabase.from('brain').insert({ ...data, user_id: userId }).select().single();
+      if (error) { notify("Couldn't create entry. Try again.", 'error'); return; }
       if (c) setBrain(prev => [c, ...prev]);
     }
     setShowModal(false); setEditEntry(null);
@@ -10709,13 +10763,20 @@ function BrainView({ brain, setBrain, userId }) {
 
   async function deleteEntry(id) {
     if (!window.confirm('Delete this entry?')) return;
-    await supabase.from('brain').delete().eq('id', id);
+    // Snapshot for rollback
+    const snapshot = brain.find(x => x.id === id);
     setBrain(prev => prev.filter(x => x.id !== id));
+    const { error } = await supabase.from('brain').delete().eq('id', id);
+    if (error) {
+      if (snapshot) setBrain(prev => [snapshot, ...prev.filter(x => x.id !== id)]);
+      notify("Couldn't delete entry. Reverted.", 'error');
+    }
   }
 
   async function togglePin(entry, e) {
     e.stopPropagation();
-    const { data: u } = await supabase.from('brain').update({ pinned: !entry.pinned }).eq('id', entry.id).select().single();
+    const { data: u, error } = await supabase.from('brain').update({ pinned: !entry.pinned }).eq('id', entry.id).select().single();
+    if (error) { notify("Couldn't update pin state.", 'error'); return; }
     if (u) setBrain(prev => prev.map(x => x.id === u.id ? u : x));
   }
 
@@ -11002,10 +11063,12 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   async function handleSave(data) {
     const payload = { ...data, user_id: userId, sync_status: hasCalendarScope ? 'pending_push' : 'local' };
     if (editEvent) {
-      const { data: u } = await supabase.from('events').update({ ...data, sync_status: editEvent.google_event_id ? 'pending_push' : (hasCalendarScope ? 'pending_push' : 'local') }).eq('id', editEvent.id).select().single();
+      const { data: u, error } = await supabase.from('events').update({ ...data, sync_status: editEvent.google_event_id ? 'pending_push' : (hasCalendarScope ? 'pending_push' : 'local') }).eq('id', editEvent.id).select().single();
+      if (error) { notify("Couldn't save event. Try again.", 'error'); return; }
       if (u) setEvents(prev => prev.map(e => e.id === u.id ? u : e));
     } else {
-      const { data: c } = await supabase.from('events').insert(payload).select().single();
+      const { data: c, error } = await supabase.from('events').insert(payload).select().single();
+      if (error) { notify("Couldn't create event. Try again.", 'error'); return; }
       if (c) setEvents(prev => [...prev, c]);
     }
     setShowModal(false); setEditEvent(null);
@@ -11015,14 +11078,21 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 
   async function handleDelete(ev) {
     if (!window.confirm('Delete this event?')) return;
-    // If synced to Google, delete there too
+    // If synced to Google, delete there too (fire-and-forget; we'll surface DB errors below)
     if (ev.google_event_id && hasCalendarScope) {
       try {
-        await supabase.functions.invoke('calendar-delete', { body: { user_id: userId, event_id: ev.id } }).catch(()=>{});
+        await supabase.functions.invoke('calendar-delete', { body: { event_id: ev.id } }).catch(()=>{});
       } catch(_) {}
     }
-    await supabase.from('events').delete().eq('id', ev.id);
+    // Snapshot for rollback
+    const snapshot = ev;
     setEvents(prev => prev.filter(e => e.id !== ev.id));
+    const { error } = await supabase.from('events').delete().eq('id', ev.id);
+    if (error) {
+      setEvents(prev => [snapshot, ...prev.filter(e => e.id !== ev.id)]);
+      notify("Couldn't delete event. Reverted.", 'error');
+      return;
+    }
     setShowModal(false); setEditEvent(null);
   }
 
@@ -11506,17 +11576,23 @@ function NotesView({ notes, setNotes, userId }) {
 
   async function togglePin(note, e) {
     e.stopPropagation();
-    const { data: updated } = await supabase.from('notes')
+    const { data: updated, error } = await supabase.from('notes')
       .update({ pinned: !note.pinned }).eq('id', note.id).select().single();
+    if (error) { notify("Couldn't update pin state.", 'error'); return; }
     if (updated) setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
   }
 
   async function deleteNote(note, e) {
     e.stopPropagation();
     if (!window.confirm(`Delete "${note.title}"?`)) return;
-    await supabase.from('notes').delete().eq('id', note.id);
+    const snapshot = note;
     setNotes(prev => prev.filter(n => n.id !== note.id));
     if (selected?.id === note.id) { setSelected(null); setEditTitle(''); setEditBody(''); }
+    const { error } = await supabase.from('notes').delete().eq('id', note.id);
+    if (error) {
+      setNotes(prev => [snapshot, ...prev.filter(n => n.id !== note.id)]);
+      notify("Couldn't delete note. Reverted.", 'error');
+    }
   }
 
   function timeAgo(ts) {
