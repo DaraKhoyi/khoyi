@@ -1071,18 +1071,16 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
 // ─────────────────────────────────────────
 function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
   // SequenceView holds local state per bucket so ReactSortable can manage
-  // each list without parent re-renders fighting the drag operation. We
-  // re-sync from props only when the *content* of the bucket actually
-  // changes (filter switch, task added/edited/completed), NOT on every
-  // parent render (which would clobber in-flight drag state).
-  //
-  // Key (ids-only signature) lets us detect real content changes vs cosmetic.
+  // each list without parent re-renders fighting the drag operation.
   const idsSig = (arr) => arr.map(t => t.id).join('|');
 
   const [localBuckets, setLocalBuckets] = useState(() => ({ ...buckets, _unranked: unranked }));
+  // Mirror local state in a ref so persistAfterDrag (which runs after React
+  // schedules state updates) can read the LATEST state, not the stale closure.
+  const localRef = useRef(localBuckets);
+  useEffect(() => { localRef.current = localBuckets; }, [localBuckets]);
 
   // Re-sync local state when prop buckets change content (filter switch, etc).
-  // We compare id signatures so reordering-only updates don't trigger.
   useEffect(() => {
     const next = { ...buckets, _unranked: unranked };
     const sigsChanged =
@@ -1092,24 +1090,20 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onRe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buckets, unranked, quads]);
 
-  // Persist the post-drag state. Called on drag end (not on every setList
-  // tick during the drag itself).
+  // Persist post-drag state. Reads live state from ref to avoid stale closures.
   async function persistAfterDrag() {
-    // Each bucket's current order = new ranks 1..N.
-    // For tasks that moved between buckets, also update quadrant.
+    const live = localRef.current;
     const updates = [];
     quads.forEach(q => {
-      (localBuckets[q] || []).forEach((task, idx) => {
+      (live[q] || []).forEach((task, idx) => {
         const desiredRank = idx + 1;
         const desiredQuad = q;
-        // Always write to be safe — cheap, and avoids missed cross-moves
         if (task.eisenhower_rank !== desiredRank || task.eisenhower_quadrant !== desiredQuad) {
           updates.push({ id: task.id, eisenhower_rank: desiredRank, eisenhower_quadrant: desiredQuad });
         }
       });
     });
     if (updates.length === 0) return;
-    // Batch the writes. Don't await each one individually — fire in parallel.
     await Promise.all(updates.map(u =>
       supabase.from('tasks').update({
         eisenhower_rank: u.eisenhower_rank,
@@ -1117,8 +1111,6 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onRe
         priority_system: 'eisenhower',
       }).eq('id', u.id)
     ));
-    // Tell parent so its `tasks` state mirrors the DB. Pass a no-op for
-    // ordering — parent recomputes buckets from the updated tasks list.
     if (onReorder) onReorder(null, null, null, updates);
   }
 
@@ -1203,7 +1195,15 @@ function QuadrantGroup({ quadrant, label, tasks, setTasks, onEdit, onToggleCompl
         tag="div"
         list={tasks}
         setList={setTasks}
-        group="tasks"
+        group={{
+          name: 'tasks',
+          // Allow normal cross-list moves between 'tasks' lists, but CLONE
+          // when the destination is a drop zone (so the source list keeps
+          // the original item, and the clone in the drop zone is just an
+          // ephemeral DOM artifact that we discard in onAdd).
+          pull: (to) => to.options.group.name === 'dropzones' ? 'clone' : true,
+          put: ['tasks'],
+        }}
         animation={150}
         handle=".tasks-pro-anchor"
         delay={200}
@@ -1332,9 +1332,12 @@ function formatDueShort(iso) {
 // ─────────────────────────────────────────
 function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
   // Same pattern as SequenceView: hold local per-quadrant state, re-sync on
-  // content changes, persist after each drag.
+  // content changes, persist after each drag. Ref mirrors live state so
+  // persistAfterDrag reads current values (not stale closure).
   const idsSig = (arr) => arr.map(t => t.id).join('|');
   const [localGroups, setLocalGroups] = useState(() => ({ ...groups }));
+  const localRef = useRef(localGroups);
+  useEffect(() => { localRef.current = localGroups; }, [localGroups]);
 
   useEffect(() => {
     const sigsChanged = quads.some(q => idsSig(groups[q] || []) !== idsSig(localGroups[q] || []));
@@ -1343,9 +1346,10 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsD
   }, [groups, quads]);
 
   async function persistAfterDrag() {
+    const live = localRef.current;
     const updates = [];
     quads.forEach(q => {
-      (localGroups[q] || []).forEach((task, idx) => {
+      (live[q] || []).forEach((task, idx) => {
         const desiredRank = idx + 1;
         if (task.eisenhower_rank !== desiredRank || task.eisenhower_quadrant !== q) {
           updates.push({ id: task.id, eisenhower_rank: desiredRank, eisenhower_quadrant: q });
@@ -1417,7 +1421,11 @@ function MatrixQuadrant({ quadrant, label, tasks, setTasks, onEdit, onToggleComp
         tag="div"
         list={tasks}
         setList={setTasks}
-        group="tasks"
+        group={{
+          name: 'tasks',
+          pull: (to) => to.options.group.name === 'dropzones' ? 'clone' : true,
+          put: ['tasks'],
+        }}
         animation={150}
         handle=".tasks-pro-anchor"
         delay={200}
@@ -1433,7 +1441,7 @@ function MatrixQuadrant({ quadrant, label, tasks, setTasks, onEdit, onToggleComp
         style={{flex:1, overflowY:'auto', minHeight:'80px', padding:'2px 0'}}
       >
         {tasks.map((t, i) => (
-          <div key={t.id}
+          <div key={t.id} data-id={t.id}
             onClick={(e) => {
               if (e.target.closest('.tasks-pro-anchor') || e.target.closest('.tasks-pro-check')) return;
               onEdit(t);
@@ -1495,22 +1503,21 @@ function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate })
     const cleanups = [];
     zones.forEach(z => {
       if (!z.ref.current) return;
-      // Each drop zone is itself a SortableJS receiver — accepts items from the 'tasks' group.
+      // Drop zones are part of the 'dropzones' group (NOT 'tasks').
+      // The source 'tasks' lists use pull: (to) => to.name === 'dropzones' ? 'clone' : true,
+      // so when an item is dragged INTO a drop zone, SortableJS clones it.
+      // The source keeps the original. We discard the clone and fire the action.
+      // This means we never mutate any React-managed DOM tree → no ghosts.
       const sortable = Sortable.create(z.ref.current, {
-        group: { name: 'tasks', pull: false, put: true },
+        group: { name: 'dropzones', pull: false, put: true },
         delay: 0,
         sort: false,
         onAdd: (evt) => {
-          const taskId = evt.item.getAttribute('data-id');
-          // Put the item back where it came from so React's re-render is in sync.
-          // The drop zone is just an action target — we don't actually keep items here.
-          if (evt.from) {
-            const refNode = evt.from.children[evt.oldIndex] || null;
-            evt.from.insertBefore(evt.item, refNode);
-          } else {
-            evt.item.remove();
-          }
-          z.handler(taskId);
+          const taskId = evt.item.getAttribute('data-id') || evt.item.dataset?.id || null;
+          // evt.item here is the CLONE that SortableJS placed into us. Safe to remove
+          // — it's not in any React virtual tree. (Source's original element is untouched.)
+          evt.item.remove();
+          if (taskId) z.handler(taskId);
         },
       });
       cleanups.push(() => sortable.destroy());
