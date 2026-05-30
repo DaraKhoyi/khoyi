@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from './dataService';
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -1284,22 +1285,36 @@ function EmailHtmlFrame({ html }) {
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
-    // Wrap in a basic style so dark-mode email content stays readable
-    const wrapped = `<!doctype html><html><head><meta charset="utf-8"><style>
-      body { margin: 0; padding: 8px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13.5px; line-height: 1.6; color: #e8eaf0; background: #161921; }
-      a { color: #c5a95e; }
-      img { max-width: 100%; height: auto; }
-      table { max-width: 100%; }
-      blockquote { border-left: 3px solid #252a38; padding-left: 12px; color: #9499b0; margin: 8px 0; }
-      pre { white-space: pre-wrap; word-wrap: break-word; }
-      * { max-width: 100%; box-sizing: border-box; }
-    </style></head><body>${html}</body></html>`;
+    // Wrap in a basic style so dark-mode email content stays readable.
+    // <base target="_blank"> ensures every link opens in a new tab instead of
+    // trying to navigate the (sandboxed) iframe itself.
+    const wrapped = `<!doctype html><html><head><meta charset="utf-8">
+      <base target="_blank" rel="noopener noreferrer">
+      <style>
+        body { margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px; line-height: 1.6; color: #e8eaf0; background: #161921; word-wrap: break-word; overflow-wrap: anywhere; }
+        a { color: #c5a95e; word-break: break-all; }
+        a:visited { color: #b09853; }
+        img { max-width: 100%; height: auto; display: inline-block; }
+        table { max-width: 100% !important; width: auto !important; }
+        td, th { max-width: 100%; word-wrap: break-word; }
+        blockquote { border-left: 3px solid #252a38; padding-left: 12px; color: #9499b0; margin: 8px 0; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+        * { max-width: 100%; box-sizing: border-box; }
+        /* Override email-defined dark/light backgrounds that look bad in our dark UI */
+        body[bgcolor], body[style*="background"] { background: #161921 !important; color: #e8eaf0 !important; }
+      </style></head><body>${html}</body></html>`;
     iframe.srcdoc = wrapped;
     const onLoad = () => {
       try {
         const doc = iframe.contentDocument;
         if (doc) {
-          const h = Math.min(800, Math.max(100, doc.body.scrollHeight + 24));
+          // Belt and suspenders: also patch any explicit target on links
+          // (some emails set target="_self" which would override <base>)
+          doc.querySelectorAll('a').forEach(a => {
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+          });
+          const h = Math.min(1200, Math.max(100, doc.body.scrollHeight + 24));
           setHeight(h);
         }
       } catch (_) { /* cross-origin shouldn't happen with srcdoc */ }
@@ -1311,9 +1326,54 @@ function EmailHtmlFrame({ html }) {
     <iframe
       ref={iframeRef}
       title="email-body"
-      sandbox="allow-same-origin"
+      // allow-popups + allow-popups-to-escape-sandbox so target="_blank" links open;
+      // allow-same-origin so we can read scrollHeight from the iframe document
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       style={{ width: '100%', height: `${height}px`, border: 'none', borderRadius: '6px', background: '#161921' }}
     />
+  );
+}
+
+// Render plain-text email bodies with auto-linked URLs, markdown-style [text](url),
+// and angle-bracket <https://...> URLs. Each detected URL becomes a clickable link.
+function PlainTextBody({ text }) {
+  if (!text) return null;
+  // Parse the text into segments: plain text and links
+  // Three patterns to detect, in priority order:
+  //   1. [text](url)           — markdown link
+  //   2. <https://url>         — angle-bracketed URL
+  //   3. https://url           — bare URL
+  const segments = [];
+  const re = /(\[([^\]]+)\]\((https?:\/\/[^)\s]+)\))|<(https?:\/\/[^>\s]+)>|(https?:\/\/[^\s<>"')\]]+)/g;
+  let lastIdx = 0;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      segments.push({ type: 'text', value: text.substring(lastIdx, match.index) });
+    }
+    if (match[1]) {
+      // Markdown link [label](url)
+      segments.push({ type: 'link', label: match[2], url: match[3] });
+    } else if (match[4]) {
+      // <https://...>
+      segments.push({ type: 'link', label: match[4], url: match[4] });
+    } else if (match[5]) {
+      // Bare URL
+      segments.push({ type: 'link', label: match[5], url: match[5] });
+    }
+    lastIdx = re.lastIndex;
+  }
+  if (lastIdx < text.length) {
+    segments.push({ type: 'text', value: text.substring(lastIdx) });
+  }
+  return (
+    <div style={{fontSize:'14px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+      {segments.map((s, i) => s.type === 'text'
+        ? <span key={i}>{s.value}</span>
+        : <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+            style={{color:'var(--accent)',wordBreak:'break-all'}}>{s.label}</a>
+      )}
+    </div>
   );
 }
 
@@ -1335,6 +1395,22 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     return () => window.removeEventListener('resize', onResize);
   }, []);
   const readingPaneRef = useRef(null);
+
+  // More menu — rendered in a portal to escape the toolbar's overflow clipping
+  const moreButtonRef = useRef(null);
+  const [moreMenuPos, setMoreMenuPos] = useState({ top: 0, right: 0 });
+  // Re-measure position when menu opens (and when window resizes/scrolls while open)
+  useEffect(() => {
+    function measure() {
+      if (!moreButtonRef.current) return;
+      const r = moreButtonRef.current.getBoundingClientRect();
+      setMoreMenuPos({
+        top: r.bottom + 4,
+        right: Math.max(8, window.innerWidth - r.right),
+      });
+    }
+    measure();
+  }, []);
 
   // Pickers and dropdowns
   const [showSnoozePicker, setShowSnoozePicker] = useState(false);
@@ -2014,27 +2090,46 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                       🗑
                     </button>
 
-                    {/* More menu — everything else (Gmail-style) */}
+                    {/* More menu — everything else (Gmail-style).
+                        Rendered in a portal so it can't be clipped by the toolbar's
+                        overflow:hidden (which is needed to prevent button overflow). */}
                     <div style={{position:'relative',marginLeft:'auto',flexShrink:0}}>
-                      <button className="btn btn-ghost btn-sm"
-                        onClick={() => { setShowMoreMenu(m => !m); setShowSnoozePicker(false); }}
+                      <button ref={moreButtonRef} className="btn btn-ghost btn-sm"
+                        onClick={(e) => {
+                          // Measure button position so the portal-rendered dropdown
+                          // anchors below+right of it
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setMoreMenuPos({
+                            top: r.bottom + 4,
+                            right: Math.max(8, window.innerWidth - r.right),
+                          });
+                          setShowMoreMenu(m => !m);
+                          setShowSnoozePicker(false);
+                        }}
                         title="More actions"
                         style={{padding:'4px 10px',fontSize:'16px',lineHeight:1}}>
                         ⋮
                       </button>
-                      {showMoreMenu && (
-                        <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,zIndex:20,
+                    </div>
+                    {showMoreMenu && createPortal(
+                      <>
+                        {/* Invisible backdrop captures clicks-outside to close */}
+                        <div onClick={() => { setShowMoreMenu(false); setShowSnoozePicker(false); }}
+                          style={{position:'fixed',inset:0,zIndex:9998,background:'transparent'}}/>
+                        <div style={{
+                          position:'fixed',
+                          top: moreMenuPos.top,
+                          right: moreMenuPos.right,
+                          zIndex:9999,
                           background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',
                           boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
-                          minWidth:'220px',padding:'4px'}}>
-
+                          minWidth:'220px',padding:'4px'
+                        }}>
                           {/* Reply all — always show when applicable */}
                           {canReplyAll && (
                             <button
                               onClick={() => { openReply(latest, true); setShowMoreMenu(false); }}
-                              style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
-                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                              style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
                               ↩↩ Reply all
                             </button>
                           )}
@@ -2042,21 +2137,17 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Forward */}
                           <button
                             onClick={() => { openForward(latest); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
                             ↪ Forward
                           </button>
 
                           <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
 
                           {/* Snooze — opens sub-popover */}
-                          <div style={{position:'relative'}}>
+                          <div>
                             <button
                               onClick={() => setShowSnoozePicker(s => !s)}
-                              style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
-                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                              style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
                               <span>⏰ Snooze</span>
                               <span style={{color:'var(--text-3)',fontSize:'11px'}}>{showSnoozePicker ? '▾' : '▸'}</span>
                             </button>
@@ -2065,9 +2156,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                                 {snoozeOptions().map(opt => (
                                   <button key={opt.key}
                                     onClick={() => { snoozeThread(opt.date); setShowMoreMenu(false); }}
-                                    style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
-                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                    style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}>
                                     <div>{opt.label}</div>
                                     <div style={{fontSize:'10px',color:'var(--text-3)'}}>{opt.sub}</div>
                                   </button>
@@ -2092,18 +2181,14 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Mark unread/read */}
                           <button
                             onClick={() => { modifyThread(isUnread ? 'mark_read' : 'mark_unread'); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
                             {isUnread ? '✓ Mark as read' : '○ Mark as unread'}
                           </button>
 
                           {/* Labels */}
                           <button
                             onClick={() => { setShowLabelPicker(true); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
                             🏷 Apply labels…
                           </button>
 
@@ -2112,14 +2197,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Mark as spam (destructive) */}
                           <button
                             onClick={() => { modifyThread('spam', { removeFromList: true }); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'13px'}}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'13px'}}>
                             ⚠ Mark as spam
                           </button>
                         </div>
-                      )}
-                    </div>
+                      </>,
+                      document.body
+                    )}
                   </>
                 );
               })()}
@@ -2187,14 +2271,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                             </div>
                           </div>
 
-                          {/* Message body */}
+                          {/* Message body — prefer HTML (richer, clickable links, formatting).
+                              Fall back to text with auto-linked URLs. Final fallback: snippet. */}
                           <div style={{padding:'14px 16px'}}>
-                            {msg.body_text ? (
-                              <div style={{fontSize:'14px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
-                                {msg.body_text}
-                              </div>
-                            ) : msg.body_html ? (
+                            {msg.body_html ? (
                               <EmailHtmlFrame html={msg.body_html} />
+                            ) : msg.body_text ? (
+                              <PlainTextBody text={msg.body_text} />
                             ) : (
                               <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-3)',fontStyle:'italic'}}>
                                 {msg.snippet || '(no content)'}
