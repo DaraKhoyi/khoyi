@@ -2377,7 +2377,38 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 // ─────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────
-function DashboardView({ tasks, emails, user, setView, robots }) {
+function DashboardView({ tasks, setTasks, emails, user, setView, robots, contacts = [], brain, defaultSystem }) {
+  const [editTask, setEditTask] = useState(null);
+
+  // Save edits to a task triggered from the dashboard. Mirrors the logic in
+  // TasksView so behavior (priority system, task_contacts sync) is identical.
+  async function handleTaskSave(data) {
+    if (!editTask) return;
+    const { _contact_ids, ...taskData } = data;
+    const { data: updated } = await supabase.from('tasks')
+      .update(taskData).eq('id', editTask.id).select().single();
+    if (updated) {
+      setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+    }
+    if (Array.isArray(_contact_ids)) {
+      await supabase.from('task_contacts').delete().eq('task_id', editTask.id);
+      if (_contact_ids.length > 0) {
+        const rows = _contact_ids.map(cid => ({ task_id: editTask.id, contact_id: cid, user_id: user.id }));
+        await supabase.from('task_contacts').insert(rows);
+      }
+    }
+    setEditTask(null);
+  }
+
+  // Toggle complete from the dashboard (checkbox click)
+  async function toggleComplete(task, e) {
+    e.stopPropagation();  // don't trigger the row's edit-on-click
+    const newCompleted = !task.completed;
+    const { data: updated } = await supabase.from('tasks')
+      .update({ completed: newCompleted, updated_at: new Date().toISOString() })
+      .eq('id', task.id).select().single();
+    if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+  }
   const pending = tasks.filter(t=>!t.completed);
   const topTasks = sortTasks(pending.filter(isTopPriority));
   const unread = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder));
@@ -2406,11 +2437,36 @@ function DashboardView({ tasks, emails, user, setView, robots }) {
             {topTasks.length===0
               ? <div className="empty-state" style={{padding:'20px 0'}}><p>All clear — no top priority tasks.</p></div>
               : <div className="task-list">{topTasks.slice(0,5).map(t=>(
-                  <div key={t.id} className="task-item"><div className="task-check"/><span className="task-text">{t.title}</span><div className="task-meta"><span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>{t.due_date&&<span className="task-due">{t.due_date}</span>}</div></div>
+                  <div key={t.id} className="task-item" onClick={() => setEditTask(t)} style={{cursor:'pointer'}}>
+                    <input
+                      type="checkbox"
+                      checked={!!t.completed}
+                      onClick={(e) => toggleComplete(t, e)}
+                      onChange={() => { /* handled by onClick */ }}
+                      style={{flexShrink:0,width:'18px',height:'18px',cursor:'pointer',accentColor:'var(--accent)'}}
+                      title={t.completed ? 'Mark as not done' : 'Mark as done'}
+                    />
+                    <span className="task-text" style={{textDecoration: t.completed ? 'line-through' : 'none', color: t.completed ? 'var(--text-3)' : 'var(--text-1)'}}>{t.title}</span>
+                    <div className="task-meta">
+                      <span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>
+                      {t.due_date && <span className="task-due">{t.due_date}</span>}
+                    </div>
+                  </div>
                 ))}</div>
             }
           </div>
         </div>
+        {editTask && (
+          <TaskModal
+            onClose={() => setEditTask(null)}
+            onSave={handleTaskSave}
+            initial={editTask}
+            defaultSystem={defaultSystem}
+            brain={brain}
+            contacts={contacts}
+            userId={user.id}
+          />
+        )}
         {robot && (
           <div className="panel" style={{cursor:'pointer',transition:'border-color 0.15s'}} onClick={()=>setView('chat')}
             onMouseEnter={e=>e.currentTarget.style.borderColor='var(--accent)'}
@@ -12338,7 +12394,7 @@ export default function App() {
           )}
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
-            : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
+            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} emails={emails} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref}/>
             : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts}/>
             : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
