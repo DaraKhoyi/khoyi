@@ -1323,6 +1323,18 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [tab, setTab] = useState('inbox');
   const [selectedThread, setSelectedThread] = useState(null);
   const [selectedMessages, setSelectedMessages] = useState([]);
+
+  // Responsive: on mobile (<900px), tapping a thread fully replaces the list
+  // view with the reading pane. On desktop, both panels show side-by-side.
+  const [isMobileWidth, setIsMobileWidth] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  );
+  useEffect(() => {
+    function onResize() { setIsMobileWidth(window.innerWidth < 900); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const readingPaneRef = useRef(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
@@ -1410,6 +1422,15 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, has_unread: false } : t));
     }
     setLoadingMessages(false);
+    // On mobile, scroll the reading pane into view since the list collapses.
+    // Use setTimeout so the DOM has time to re-render with the new pane visible.
+    setTimeout(() => {
+      if (readingPaneRef.current) {
+        readingPaneRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      // Belt-and-suspenders: also scroll the page to top, since the pane should fill the view
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 50);
   }
 
   async function runSync() {
@@ -1492,12 +1513,19 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   // (if it matches one of our verified aliases), else fall back to the default.
   function chooseReplyFrom(msg) {
     if (!msg) return defaultAlias?.email_address || account.email_address;
+    const toEmail = (r) => {
+      if (!r) return null;
+      if (typeof r === 'string') return r.trim().toLowerCase();
+      if (typeof r === 'object') return r.email ? String(r.email).trim().toLowerCase() : null;
+      return null;
+    };
     const candidates = [
       ...(Array.isArray(msg.to_addresses) ? msg.to_addresses : []),
       ...(Array.isArray(msg.cc_addresses) ? msg.cc_addresses : []),
-    ].map(a => String(a).toLowerCase()).filter(Boolean);
+    ].map(toEmail).filter(Boolean);
     const verifiedSet = new Set(verifiedAliases.map(a => a.email_address.toLowerCase()));
     for (const cand of candidates) {
+      // Strip angle brackets if present (some legacy strings might be "Name <email@x>")
       const m = cand.match(/<([^>]+)>/);
       const bare = (m ? m[1] : cand).toLowerCase().trim();
       if (verifiedSet.has(bare)) return bare;
@@ -1515,6 +1543,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   function openReply(msg, replyAll = false) {
     if (!msg) return;
+    // Normalize a recipient (string or {name, email}) to a plain email
+    const toEmail = (r) => {
+      if (!r) return null;
+      if (typeof r === 'string') return r.trim();
+      if (typeof r === 'object') return r.email ? String(r.email).trim() : null;
+      return null;
+    };
     const replyTo = msg.reply_to || msg.from_address || '';
     let toList = [replyTo].filter(Boolean);
     if (replyAll) {
@@ -1522,7 +1557,10 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         account.email_address.toLowerCase(),
         ...verifiedAliases.map(a => a.email_address.toLowerCase()),
       ]);
-      const extraTos = (msg.to_addresses || []).filter(a => !myAddrs.has(String(a).toLowerCase()));
+      const extraTos = (msg.to_addresses || [])
+        .map(toEmail)
+        .filter(Boolean)
+        .filter(a => !myAddrs.has(a.toLowerCase()));
       toList = Array.from(new Set([...toList, ...extraTos]));
     }
     const subj = (msg.subject || '').match(/^re:/i) ? msg.subject : `Re: ${msg.subject || ''}`;
@@ -1664,8 +1702,12 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         </div>
       )}
 
-      <div style={{display:'grid',gridTemplateColumns:selectedThread?'1fr 1.4fr':'1fr',gap:'18px'}}>
-        <div>
+      <div style={{
+        display: isMobileWidth ? 'block' : 'grid',
+        gridTemplateColumns: selectedThread ? '1fr 1.4fr' : '1fr',
+        gap: '18px'
+      }}>
+        <div style={{display: isMobileWidth && selectedThread ? 'none' : 'block'}}>
           <div className="panel">
             <div className="panel-header">
               <div style={{display:'flex',gap:'6px'}}>
@@ -1713,10 +1755,17 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
           </div>
         </div>
         {selectedThread && (
-          <div className="panel">
-            <div className="panel-header">
-              <h3 style={{maxWidth:'80%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{selectedThread.subject || '(no subject)'}</h3>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)}>Close</button>
+          <div className="panel" ref={readingPaneRef}>
+            <div className="panel-header" style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+              {isMobileWidth && (
+                <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)} style={{flexShrink:0}}>
+                  ← Inbox
+                </button>
+              )}
+              <h3 style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0}}>{selectedThread.subject || '(no subject)'}</h3>
+              {!isMobileWidth && (
+                <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)}>Close</button>
+              )}
             </div>
             <div className="panel-body">
               {loadingMessages
@@ -1738,8 +1787,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                             <span style={{fontSize:'12px',color:'var(--text-3)',marginLeft:'auto'}}>{msg.internal_date ? new Date(msg.internal_date).toLocaleString() : ''}</span>
                           </div>
                           {sentTo.length > 0 && (
-                            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px'}}>
-                              To: {sentTo.join(', ')}
+                            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px',wordBreak:'break-word'}}>
+                              To: {sentTo.map(r => {
+                                // r is either a string or {name, email} object
+                                if (typeof r === 'string') return r;
+                                if (r && typeof r === 'object') return r.name ? `${r.name} <${r.email}>` : r.email;
+                                return String(r);
+                              }).join(', ')}
                             </div>
                           )}
                           {msg.body_text ? (
