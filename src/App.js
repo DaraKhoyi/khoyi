@@ -5,6 +5,7 @@ import { BUILD_VERSION } from './version';
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
 import Sortable from 'sortablejs';
+import { ReactSortable } from 'react-sortablejs';
 import './index.css';
 
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
@@ -846,36 +847,17 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
 
   // After a drag, write the new quadrant + rank for the moved task,
   // and renumber all peers in the destination quadrant.
-  async function applyReorder(taskId, newQuadrant, newOrderedIds) {
-    const moved = tasks.find(t => t.id === taskId);
-    if (!moved) return;
-    // 1. Update the moved task's quadrant (if changed)
-    const quadrantChanged = moved.eisenhower_quadrant !== newQuadrant;
-    if (quadrantChanged) {
-      await supabase.from('tasks')
-        .update({ eisenhower_quadrant: newQuadrant, priority_system: 'eisenhower' })
-        .eq('id', taskId);
-    }
-    // 2. Renumber the destination quadrant
-    const updates = newOrderedIds.map((id, idx) => ({ id, rank: idx + 1 }));
-    await Promise.all(updates.map(u =>
-      supabase.from('tasks').update({ eisenhower_rank: u.rank }).eq('id', u.id)
-    ));
-    // 3. If task was moved OUT of a quadrant, renumber the source quadrant too
-    if (quadrantChanged) {
-      const sourceQuad = moved.eisenhower_quadrant;
-      const sourceTasks = tasks.filter(t => !t.completed && t.id !== taskId && t.eisenhower_quadrant === sourceQuad)
-        .sort((a, b) => (a.eisenhower_rank ?? 999) - (b.eisenhower_rank ?? 999));
-      await Promise.all(sourceTasks.map((t, idx) =>
-        supabase.from('tasks').update({ eisenhower_rank: idx + 1 }).eq('id', t.id)
-      ));
-    }
-    // 4. Update local state
+  // SequenceView/MatrixView now do the DB writes themselves and pass us
+  // the list of updates so we can mirror them in the parent's `tasks` array.
+  // Legacy signature (taskId, quadrant, orderedIds) kept for backward compat
+  // but no callers use it anymore; new shape is (_, _, _, updates).
+  async function applyReorder(_taskId, _newQuadrant, _newOrderedIds, updates) {
+    if (!Array.isArray(updates) || updates.length === 0) return;
+    const byId = Object.fromEntries(updates.map(u => [u.id, u]));
     setTasks(prev => prev.map(t => {
-      if (t.id === taskId) return { ...t, eisenhower_quadrant: newQuadrant, eisenhower_rank: newOrderedIds.indexOf(taskId) + 1, priority_system: 'eisenhower' };
-      const idxInDest = newOrderedIds.indexOf(t.id);
-      if (idxInDest >= 0) return { ...t, eisenhower_rank: idxInDest + 1 };
-      return t;
+      const u = byId[t.id];
+      if (!u) return t;
+      return { ...t, eisenhower_rank: u.eisenhower_rank, eisenhower_quadrant: u.eisenhower_quadrant, priority_system: 'eisenhower' };
     }));
   }
 
@@ -1088,33 +1070,93 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
 // SEQUENCE VIEW — grouped by quadrant, priority badge is drag handle
 // ─────────────────────────────────────────
 function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
+  // SequenceView holds local state per bucket so ReactSortable can manage
+  // each list without parent re-renders fighting the drag operation. We
+  // re-sync from props only when the *content* of the bucket actually
+  // changes (filter switch, task added/edited/completed), NOT on every
+  // parent render (which would clobber in-flight drag state).
+  //
+  // Key (ids-only signature) lets us detect real content changes vs cosmetic.
+  const idsSig = (arr) => arr.map(t => t.id).join('|');
+
+  const [localBuckets, setLocalBuckets] = useState(() => ({ ...buckets, _unranked: unranked }));
+
+  // Re-sync local state when prop buckets change content (filter switch, etc).
+  // We compare id signatures so reordering-only updates don't trigger.
+  useEffect(() => {
+    const next = { ...buckets, _unranked: unranked };
+    const sigsChanged =
+      quads.some(q => idsSig(next[q] || []) !== idsSig(localBuckets[q] || [])) ||
+      idsSig(next._unranked || []) !== idsSig(localBuckets._unranked || []);
+    if (sigsChanged) setLocalBuckets(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buckets, unranked, quads]);
+
+  // Persist the post-drag state. Called on drag end (not on every setList
+  // tick during the drag itself).
+  async function persistAfterDrag() {
+    // Each bucket's current order = new ranks 1..N.
+    // For tasks that moved between buckets, also update quadrant.
+    const updates = [];
+    quads.forEach(q => {
+      (localBuckets[q] || []).forEach((task, idx) => {
+        const desiredRank = idx + 1;
+        const desiredQuad = q;
+        // Always write to be safe — cheap, and avoids missed cross-moves
+        if (task.eisenhower_rank !== desiredRank || task.eisenhower_quadrant !== desiredQuad) {
+          updates.push({ id: task.id, eisenhower_rank: desiredRank, eisenhower_quadrant: desiredQuad });
+        }
+      });
+    });
+    if (updates.length === 0) return;
+    // Batch the writes. Don't await each one individually — fire in parallel.
+    await Promise.all(updates.map(u =>
+      supabase.from('tasks').update({
+        eisenhower_rank: u.eisenhower_rank,
+        eisenhower_quadrant: u.eisenhower_quadrant,
+        priority_system: 'eisenhower',
+      }).eq('id', u.id)
+    ));
+    // Tell parent so its `tasks` state mirrors the DB. Pass a no-op for
+    // ordering — parent recomputes buckets from the updated tasks list.
+    if (onReorder) onReorder(null, null, null, updates);
+  }
+
+  function setBucket(q, newList) {
+    setLocalBuckets(prev => ({ ...prev, [q]: newList }));
+  }
+
+  const allEmpty = quads.every(q => (localBuckets[q] || []).length === 0) && (localBuckets._unranked || []).length === 0;
+
   return (
     <div>
       {quads.map(q => (
         <QuadrantGroup key={q}
           quadrant={q}
           label={QUAD_LABELS[q]}
-          tasks={buckets[q]}
+          tasks={localBuckets[q] || []}
+          setTasks={(newList) => setBucket(q, newList)}
           onEdit={onEdit}
           onToggleComplete={onToggleComplete}
-          onReorder={onReorder}
+          onDragEnd={persistAfterDrag}
           setIsDragging={setIsDragging}
           showRanking={showRanking}
         />
       ))}
-      {unranked.length > 0 && (
+      {(localBuckets._unranked || []).length > 0 && (
         <QuadrantGroup
           quadrant={null}
           label="Unranked"
-          tasks={unranked}
+          tasks={localBuckets._unranked || []}
+          setTasks={(newList) => setBucket('_unranked', newList)}
           onEdit={onEdit}
           onToggleComplete={onToggleComplete}
-          onReorder={onReorder}
+          onDragEnd={persistAfterDrag}
           setIsDragging={setIsDragging}
           showRanking={showRanking}
         />
       )}
-      {quads.every(q => buckets[q].length === 0) && unranked.length === 0 && (
+      {allEmpty && (
         <div className="empty-state" style={{padding:'40px 0',textAlign:'center'}}>
           <div style={{fontSize:'42px',marginBottom:'10px'}}>✓</div>
           <p style={{color:'var(--text-2)'}}>All clear. Nothing matches this filter.</p>
@@ -1140,75 +1182,7 @@ const QUAD_COLORS = {
 // ─────────────────────────────────────────
 // QUADRANT GROUP — one priority bucket, sortable list inside
 // ─────────────────────────────────────────
-function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
-  // Build group id used by Sortable for cross-group moves
-  const groupId = `quad-${quadrant || 'unranked'}`;
-
-  // Render initial DOM, let Sortable manage drag state
-  const containerRef = useRef(null);
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const sortable = Sortable.create(containerRef.current, {
-      group: 'tasks',
-      animation: 150,
-      // Drag handle is the priority badge — `.tasks-pro-anchor`
-      handle: '.tasks-pro-anchor',
-      // Touch settings tuned to match ONE Tasks: 200ms hold before drag begins,
-      // so a tap doesn't get hijacked into a drag.
-      delay: 200,
-      delayOnTouchOnly: true,
-      touchStartThreshold: 5,
-      // Drop-zone container will be set up separately; let cross-list moves
-      // work for between-quadrant repositioning
-      ghostClass: 'tasks-pro-ghost',
-      dragClass: 'tasks-pro-drag',
-      onStart: () => setIsDragging(true),
-      onEnd: async (evt) => {
-        setIsDragging(false);
-        const taskId = evt.item.getAttribute('data-id');
-        const destGroupEl = evt.to;
-        const destQuadrant = destGroupEl.getAttribute('data-quadrant') || null;
-        const dropAction = destGroupEl.getAttribute('data-drop-action');
-
-        // Compute the new ordering from the current DOM state (post-drop)
-        const newOrderedIds = dropAction
-          ? null
-          : Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
-
-        // CRITICAL: Undo Sortable's DOM mutation immediately.
-        // SortableJS physically moves the <div> to the drop target. If we leave
-        // it there and call setTasks(), React's reconciler doesn't know about
-        // the move and produces ghost duplicates (the moved element + a new one
-        // React created from the updated state). Undoing the mutation puts the
-        // DOM back in sync with React's virtual tree; then React's re-render
-        // does the move cleanly.
-        if (evt.from !== evt.to) {
-          // Cross-list move: put the item back in its source list
-          const refNode = evt.from.children[evt.oldIndex] || null;
-          evt.from.insertBefore(evt.item, refNode);
-        } else if (evt.oldIndex !== evt.newIndex) {
-          // Same-list reorder: put it back at its old position
-          const children = Array.from(evt.from.children).filter(c => c !== evt.item);
-          const refNode = children[evt.oldIndex] || null;
-          evt.from.insertBefore(evt.item, refNode);
-        }
-
-        if (dropAction) {
-          // Drop-zone target — fire the action event; don't touch tasks state here
-          destGroupEl.dispatchEvent(new CustomEvent('taskdropped', { detail: { taskId } }));
-          return;
-        }
-
-        try {
-          await onReorder(taskId, destQuadrant, newOrderedIds);
-        } catch (err) {
-          console.error('Reorder failed:', err);
-        }
-      },
-    });
-    return () => sortable.destroy();
-  }, [onReorder, setIsDragging]);
-
+function QuadrantGroup({ quadrant, label, tasks, setTasks, onEdit, onToggleComplete, onDragEnd, setIsDragging, showRanking }) {
   const headerColor = quadrant ? QUAD_COLORS[quadrant] : 'var(--text-3)';
 
   return (
@@ -1225,14 +1199,32 @@ function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReo
         <span>{label}</span>
         <span style={{color:'var(--text-3)',fontWeight:600}}>{tasks.length}</span>
       </div>
-      <div ref={containerRef} id={groupId} data-quadrant={quadrant || ''}
+      <ReactSortable
+        tag="div"
+        list={tasks}
+        setList={setTasks}
+        group="tasks"
+        animation={150}
+        handle=".tasks-pro-anchor"
+        delay={200}
+        delayOnTouchOnly={true}
+        touchStartThreshold={5}
+        ghostClass="tasks-pro-ghost"
+        dragClass="tasks-pro-drag"
+        onStart={() => setIsDragging(true)}
+        onEnd={() => {
+          setIsDragging(false);
+          // Defer to next tick so ReactSortable's setList calls all settle
+          setTimeout(() => { if (onDragEnd) onDragEnd(); }, 0);
+        }}
         style={{
           background:'var(--bg-card)',
           border:'1px solid var(--border)',
           borderTop:'none',
           borderRadius:'0 0 4px 4px',
           minHeight: tasks.length === 0 ? '36px' : 'auto',
-        }}>
+        }}
+      >
         {tasks.map((t, i) => (
           <TaskProRow key={t.id}
             task={t}
@@ -1242,12 +1234,7 @@ function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReo
             showRanking={showRanking}
           />
         ))}
-        {tasks.length === 0 && (
-          <div style={{padding:'10px 14px',fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center'}}>
-            Drop a task here to move it to {label}
-          </div>
-        )}
-      </div>
+      </ReactSortable>
     </div>
   );
 }
@@ -1344,6 +1331,42 @@ function formatDueShort(iso) {
 // MATRIX VIEW — 2x2 quadrant grid with drag-between
 // ─────────────────────────────────────────
 function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
+  // Same pattern as SequenceView: hold local per-quadrant state, re-sync on
+  // content changes, persist after each drag.
+  const idsSig = (arr) => arr.map(t => t.id).join('|');
+  const [localGroups, setLocalGroups] = useState(() => ({ ...groups }));
+
+  useEffect(() => {
+    const sigsChanged = quads.some(q => idsSig(groups[q] || []) !== idsSig(localGroups[q] || []));
+    if (sigsChanged) setLocalGroups({ ...groups });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, quads]);
+
+  async function persistAfterDrag() {
+    const updates = [];
+    quads.forEach(q => {
+      (localGroups[q] || []).forEach((task, idx) => {
+        const desiredRank = idx + 1;
+        if (task.eisenhower_rank !== desiredRank || task.eisenhower_quadrant !== q) {
+          updates.push({ id: task.id, eisenhower_rank: desiredRank, eisenhower_quadrant: q });
+        }
+      });
+    });
+    if (updates.length === 0) return;
+    await Promise.all(updates.map(u =>
+      supabase.from('tasks').update({
+        eisenhower_rank: u.eisenhower_rank,
+        eisenhower_quadrant: u.eisenhower_quadrant,
+        priority_system: 'eisenhower',
+      }).eq('id', u.id)
+    ));
+    if (onReorder) onReorder(null, null, null, updates);
+  }
+
+  function setQuadList(q, newList) {
+    setLocalGroups(prev => ({ ...prev, [q]: newList }));
+  }
+
   return (
     <div style={{
       display:'grid',
@@ -1356,10 +1379,11 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsD
         <MatrixQuadrant key={q}
           quadrant={q}
           label={QUAD_LABELS[q]}
-          tasks={groups[q]}
+          tasks={localGroups[q] || []}
+          setTasks={(newList) => setQuadList(q, newList)}
           onEdit={onEdit}
           onToggleComplete={onToggleComplete}
-          onReorder={onReorder}
+          onDragEnd={persistAfterDrag}
           setIsDragging={setIsDragging}
           showRanking={showRanking}
         />
@@ -1368,56 +1392,7 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsD
   );
 }
 
-function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
-  const containerRef = useRef(null);
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const sortable = Sortable.create(containerRef.current, {
-      group: 'tasks',
-      animation: 150,
-      handle: '.tasks-pro-anchor',
-      delay: 200,
-      delayOnTouchOnly: true,
-      touchStartThreshold: 5,
-      ghostClass: 'tasks-pro-ghost',
-      dragClass: 'tasks-pro-drag',
-      onStart: () => setIsDragging(true),
-      onEnd: async (evt) => {
-        setIsDragging(false);
-        const taskId = evt.item.getAttribute('data-id');
-        const destGroupEl = evt.to;
-        const destQuadrant = destGroupEl.getAttribute('data-quadrant') || null;
-        const dropAction = destGroupEl.getAttribute('data-drop-action');
-
-        const newOrderedIds = dropAction
-          ? null
-          : Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
-
-        // Undo Sortable's DOM mutation so React's re-render does the move cleanly
-        if (evt.from !== evt.to) {
-          const refNode = evt.from.children[evt.oldIndex] || null;
-          evt.from.insertBefore(evt.item, refNode);
-        } else if (evt.oldIndex !== evt.newIndex) {
-          const children = Array.from(evt.from.children).filter(c => c !== evt.item);
-          const refNode = children[evt.oldIndex] || null;
-          evt.from.insertBefore(evt.item, refNode);
-        }
-
-        if (dropAction) {
-          destGroupEl.dispatchEvent(new CustomEvent('taskdropped', { detail: { taskId } }));
-          return;
-        }
-
-        try {
-          await onReorder(taskId, destQuadrant, newOrderedIds);
-        } catch (err) {
-          console.error('Reorder failed:', err);
-        }
-      },
-    });
-    return () => sortable.destroy();
-  }, [onReorder, setIsDragging]);
-
+function MatrixQuadrant({ quadrant, label, tasks, setTasks, onEdit, onToggleComplete, onDragEnd, setIsDragging, showRanking }) {
   const headerColor = QUAD_COLORS[quadrant];
 
   return (
@@ -1438,10 +1413,27 @@ function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onRe
       }}>
         {label}
       </div>
-      <div ref={containerRef} data-quadrant={quadrant}
-        style={{flex:1, overflowY:'auto', minHeight:'80px', padding:'2px 0'}}>
+      <ReactSortable
+        tag="div"
+        list={tasks}
+        setList={setTasks}
+        group="tasks"
+        animation={150}
+        handle=".tasks-pro-anchor"
+        delay={200}
+        delayOnTouchOnly={true}
+        touchStartThreshold={5}
+        ghostClass="tasks-pro-ghost"
+        dragClass="tasks-pro-drag"
+        onStart={() => setIsDragging(true)}
+        onEnd={() => {
+          setIsDragging(false);
+          setTimeout(() => { if (onDragEnd) onDragEnd(); }, 0);
+        }}
+        style={{flex:1, overflowY:'auto', minHeight:'80px', padding:'2px 0'}}
+      >
         {tasks.map((t, i) => (
-          <div key={t.id} data-id={t.id}
+          <div key={t.id}
             onClick={(e) => {
               if (e.target.closest('.tasks-pro-anchor') || e.target.closest('.tasks-pro-check')) return;
               onEdit(t);
@@ -1481,12 +1473,7 @@ function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onRe
             </span>
           </div>
         ))}
-        {tasks.length === 0 && (
-          <div style={{padding:'10px',fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center'}}>
-            Empty
-          </div>
-        )}
-      </div>
+      </ReactSortable>
     </div>
   );
 }
