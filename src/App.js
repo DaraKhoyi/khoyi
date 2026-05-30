@@ -1968,13 +1968,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
               background:'var(--bg-card)',
               borderBottom:'1px solid var(--border)',
               padding:'10px 14px',
-              display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'
+              display:'flex',alignItems:'center',gap:'6px',flexWrap:'nowrap',
+              overflow:'hidden'
             }}>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)} style={{flexShrink:0}}
+              <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)} style={{flexShrink:0,padding:'4px 10px',fontSize:'12px'}}
                 title={isMobileWidth ? 'Back to inbox' : 'Close'}>
                 ← {isMobileWidth ? 'Inbox' : 'Close'}
               </button>
-              <div style={{width:'1px',background:'var(--border)',height:'20px',margin:'0 4px'}}/>
 
               {selectedMessages.length > 0 && (() => {
                 const latest = selectedMessages[selectedMessages.length - 1];
@@ -1983,110 +1983,139 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 const canReplyAll = sentTo.length > 1 || cc.length > 0;
                 return (
                   <>
+                    {/* Star — leftmost icon action, single emoji */}
                     <button className="btn btn-ghost btn-sm"
                       onClick={() => modifyThread(isStarred ? 'unstar' : 'star')}
                       title={isStarred ? 'Unstar' : 'Star'}
-                      style={{padding:'4px 8px',fontSize:'13px',color: isStarred ? '#f59e0b' : 'var(--text-2)'}}>
+                      style={{flexShrink:0,padding:'4px 8px',fontSize:'16px',color: isStarred ? '#f59e0b' : 'var(--text-2)'}}>
                       {isStarred ? '★' : '☆'}
                     </button>
+
+                    {/* Reply — primary action, always visible */}
+                    <button className="btn btn-primary btn-sm" onClick={() => openReply(latest, false)}
+                      style={{flexShrink:0,padding:'4px 12px',fontSize:'12px'}}>
+                      ↩ Reply
+                    </button>
+
+                    {/* Archive — only when not already archived */}
                     {tab !== 'sent' && (
                       <button className="btn btn-ghost btn-sm"
                         onClick={() => modifyThread('archive', { removeFromList: true })}
                         title="Archive"
-                        style={{padding:'4px 10px',fontSize:'12px'}}>
-                        📥 Archive
+                        style={{flexShrink:0,padding:'4px 8px',fontSize:'14px'}}>
+                        📥
                       </button>
                     )}
-                    <div style={{position:'relative'}}>
-                      <button className="btn btn-ghost btn-sm"
-                        onClick={() => { setShowSnoozePicker(s => !s); setShowMoreMenu(false); }}
-                        title="Snooze"
-                        style={{padding:'4px 10px',fontSize:'12px'}}>
-                        ⏰ Snooze
-                      </button>
-                      {showSnoozePicker && (
-                        <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:20,
-                          background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',
-                          boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
-                          minWidth:'220px',padding:'4px'}}>
-                          {snoozeOptions().map(opt => (
-                            <button key={opt.key}
-                              onClick={() => snoozeThread(opt.date)}
-                              style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
-                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                              <div style={{fontWeight:600}}>{opt.label}</div>
-                              <div style={{fontSize:'10px',color:'var(--text-3)'}}>{opt.sub}</div>
-                            </button>
-                          ))}
-                          <div style={{borderTop:'1px solid var(--border)',marginTop:'4px',paddingTop:'8px',padding:'8px 12px'}}>
-                            <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'4px',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>Pick date</div>
-                            <div style={{display:'flex',gap:'4px'}}>
-                              <input type="datetime-local" className="form-input"
-                                value={customSnoozeDate}
-                                onChange={e => setCustomSnoozeDate(e.target.value)}
-                                style={{padding:'4px 6px',fontSize:'11px',margin:0,flex:1}} />
-                              <button className="btn btn-primary btn-sm"
-                                disabled={!customSnoozeDate}
-                                onClick={() => snoozeThread(new Date(customSnoozeDate))}
-                                style={{padding:'4px 8px',fontSize:'11px'}}>Go</button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{width:'1px',background:'var(--border)',height:'20px',margin:'0 4px'}}/>
-                    <button className="btn btn-primary btn-sm" onClick={() => openReply(latest, false)} style={{padding:'4px 12px',fontSize:'12px'}}>
-                      ↩ Reply
+
+                    {/* Delete — keep visible since it's a frequent action */}
+                    <button className="btn btn-ghost btn-sm" onClick={trashCurrentThread}
+                      title="Delete (move to Trash)"
+                      style={{flexShrink:0,padding:'4px 8px',fontSize:'14px',color:'var(--red)'}}>
+                      🗑
                     </button>
-                    {canReplyAll && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => openReply(latest, true)} style={{padding:'4px 10px',fontSize:'12px'}}>
-                        ↩↩ Reply all
-                      </button>
-                    )}
-                    <button className="btn btn-ghost btn-sm" onClick={() => openForward(latest)} style={{padding:'4px 10px',fontSize:'12px'}}>
-                      ↪ Forward
-                    </button>
-                    <div style={{position:'relative',marginLeft:'auto'}}>
+
+                    {/* More menu — everything else (Gmail-style) */}
+                    <div style={{position:'relative',marginLeft:'auto',flexShrink:0}}>
                       <button className="btn btn-ghost btn-sm"
                         onClick={() => { setShowMoreMenu(m => !m); setShowSnoozePicker(false); }}
                         title="More actions"
-                        style={{padding:'4px 8px',fontSize:'14px'}}>
+                        style={{padding:'4px 10px',fontSize:'16px',lineHeight:1}}>
                         ⋮
                       </button>
                       {showMoreMenu && (
                         <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,zIndex:20,
                           background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',
                           boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
-                          minWidth:'200px',padding:'4px'}}>
+                          minWidth:'220px',padding:'4px'}}>
+
+                          {/* Reply all — always show when applicable */}
+                          {canReplyAll && (
+                            <button
+                              onClick={() => { openReply(latest, true); setShowMoreMenu(false); }}
+                              style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
+                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                              ↩↩ Reply all
+                            </button>
+                          )}
+
+                          {/* Forward */}
+                          <button
+                            onClick={() => { openForward(latest); setShowMoreMenu(false); }}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            ↪ Forward
+                          </button>
+
+                          <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
+
+                          {/* Snooze — opens sub-popover */}
+                          <div style={{position:'relative'}}>
+                            <button
+                              onClick={() => setShowSnoozePicker(s => !s)}
+                              style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
+                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                              <span>⏰ Snooze</span>
+                              <span style={{color:'var(--text-3)',fontSize:'11px'}}>{showSnoozePicker ? '▾' : '▸'}</span>
+                            </button>
+                            {showSnoozePicker && (
+                              <div style={{paddingLeft:'12px'}}>
+                                {snoozeOptions().map(opt => (
+                                  <button key={opt.key}
+                                    onClick={() => { snoozeThread(opt.date); setShowMoreMenu(false); }}
+                                    style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                    <div>{opt.label}</div>
+                                    <div style={{fontSize:'10px',color:'var(--text-3)'}}>{opt.sub}</div>
+                                  </button>
+                                ))}
+                                <div style={{padding:'6px 12px'}}>
+                                  <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'4px',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>Pick date</div>
+                                  <div style={{display:'flex',gap:'4px'}}>
+                                    <input type="datetime-local" className="form-input"
+                                      value={customSnoozeDate}
+                                      onChange={e => setCustomSnoozeDate(e.target.value)}
+                                      style={{padding:'4px 6px',fontSize:'11px',margin:0,flex:1}} />
+                                    <button className="btn btn-primary btn-sm"
+                                      disabled={!customSnoozeDate}
+                                      onClick={() => { snoozeThread(new Date(customSnoozeDate)); setShowMoreMenu(false); }}
+                                      style={{padding:'4px 8px',fontSize:'11px'}}>Go</button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Mark unread/read */}
                           <button
                             onClick={() => { modifyThread(isUnread ? 'mark_read' : 'mark_unread'); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
                             onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                             {isUnread ? '✓ Mark as read' : '○ Mark as unread'}
                           </button>
+
+                          {/* Labels */}
                           <button
                             onClick={() => { setShowLabelPicker(true); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}
                             onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                             🏷 Apply labels…
                           </button>
+
                           <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
+
+                          {/* Mark as spam (destructive) */}
                           <button
                             onClick={() => { modifyThread('spam', { removeFromList: true }); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'12px'}}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'13px'}}
                             onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                             ⚠ Mark as spam
-                          </button>
-                          <button
-                            onClick={() => { trashCurrentThread(); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'12px'}}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                            🗑 Delete (move to Trash)
                           </button>
                         </div>
                       )}
