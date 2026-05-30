@@ -1,9 +1,3 @@
-/*!
-  Copyright (c) 2018 Jed Watson.
-  Licensed under the MIT License (MIT), see
-  http://jedwatson.github.io/classnames
-*/
-
 /**
    * @license
    * (c) Dean McNamee <dean@gmail.com>, 2013.
@@ -314,11 +308,4 @@
  * Contributor(s):
  *    siefkenj, ahwolf, rickygu, Midnith, saintclair, eaparango,
  *    kim3er, mfo, alnorth, Flamenco
- */
-
-/**!
- * Sortable 1.15.7
- * @author	RubaXa   <trash@rubaxa.org>
- * @author	owenm    <owen23355@gmail.com>
- * @license MIT
  */
