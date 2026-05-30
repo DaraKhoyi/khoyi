@@ -755,6 +755,10 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   const [isDragging, setIsDragging] = useState(false);
   // When user drops on "Pick Date", we capture the task and open a date picker
   const [datePickerTask, setDatePickerTask] = useState(null);
+  // Filter "More" dropdown state
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const moreButtonRef = useRef(null);
+  const [moreMenuPos, setMoreMenuPos] = useState({ top: 0, left: 0 });
 
   // Tasks filtered by the pill bar
   const visibleTasks = useMemo(() => {
@@ -892,33 +896,91 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         </div>
       </div>
 
-      {/* Filter pills */}
-      <div style={{display:'flex',gap:'6px',padding:'4px 0 12px',overflowX:'auto',scrollbarWidth:'none'}}>
-        {[
-          { id: 'all',       label: 'All' },
-          { id: 'past',      label: 'Past Due' },
-          { id: 'today',     label: 'Today' },
-          { id: 'tomorrow',  label: 'Tomorrow' },
-          { id: '7days',     label: '7 Days' },
-          { id: 'future',    label: 'Future' },
-          { id: 'undated',   label: 'Undated' },
-          { id: 'completed', label: 'Completed' },
-        ].map(p => (
-          <button key={p.id}
-            onClick={() => setTaskFilter(p.id)}
-            style={{
-              flexShrink:0, padding:'5px 11px', borderRadius:'999px',
-              fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.03em',
-              border:'1px solid',
-              background: filter === p.id ? 'var(--accent)' : 'transparent',
-              borderColor: filter === p.id ? 'var(--accent)' : 'var(--border)',
-              color: filter === p.id ? '#000' : 'var(--text-2)',
-              cursor:'pointer', transition:'.15s'
-            }}>
-            {p.label}
-          </button>
-        ))}
+      {/* Filter pills — primary 3 always visible, rest in More dropdown */}
+      <div style={{display:'flex',gap:'6px',padding:'4px 0 12px',alignItems:'center',flexWrap:'wrap'}}>
+        {(() => {
+          const primary = [
+            { id: 'today',     label: 'Today' },
+            { id: 'tomorrow',  label: 'Tomorrow' },
+            { id: 'all',       label: 'All' },
+          ];
+          const secondary = [
+            { id: 'past',      label: 'Past Due' },
+            { id: '7days',     label: '7 Days' },
+            { id: 'future',    label: 'Future' },
+            { id: 'undated',   label: 'Undated' },
+            { id: 'completed', label: 'Completed' },
+          ];
+          // If the active filter is one of the secondary set, surface its name on the More button
+          const activeSecondary = secondary.find(s => s.id === filter);
+          const moreLabel = activeSecondary ? activeSecondary.label : 'More';
+          const moreActive = !!activeSecondary;
+
+          const pillStyle = (active) => ({
+            flexShrink:0, padding:'6px 12px', borderRadius:'999px',
+            fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.03em',
+            border:'1px solid',
+            background: active ? 'var(--accent)' : 'transparent',
+            borderColor: active ? 'var(--accent)' : 'var(--border)',
+            color: active ? '#000' : 'var(--text-2)',
+            cursor:'pointer', transition:'.15s',
+            display:'inline-flex', alignItems:'center', gap:'4px',
+          });
+
+          return (
+            <>
+              {primary.map(p => (
+                <button key={p.id} onClick={() => setTaskFilter(p.id)} style={pillStyle(filter === p.id)}>
+                  {p.label}
+                </button>
+              ))}
+              <button ref={moreButtonRef}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setMoreMenuPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 180) });
+                  setMoreFiltersOpen(o => !o);
+                }}
+                style={pillStyle(moreActive)}>
+                {moreLabel} <span style={{fontSize:'9px',opacity:0.7}}>▾</span>
+              </button>
+            </>
+          );
+        })()}
       </div>
+
+      {/* More-filters dropdown — portal so it's not clipped by overflow */}
+      {moreFiltersOpen && createPortal(
+        <>
+          <div onClick={() => setMoreFiltersOpen(false)}
+            style={{position:'fixed',inset:0,zIndex:9998,background:'transparent'}}/>
+          <div style={{
+            position:'fixed', top:moreMenuPos.top, left:moreMenuPos.left, zIndex:9999,
+            background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px',
+            boxShadow:'0 8px 24px rgba(0,0,0,0.4)', minWidth:'170px', padding:'4px'
+          }}>
+            {[
+              { id: 'past',      label: 'Past Due' },
+              { id: '7days',     label: '7 Days' },
+              { id: 'future',    label: 'Future' },
+              { id: 'undated',   label: 'Undated' },
+              { id: 'completed', label: 'Completed' },
+            ].map(p => (
+              <button key={p.id}
+                onClick={() => { setTaskFilter(p.id); setMoreFiltersOpen(false); }}
+                style={{
+                  display:'block', width:'100%', textAlign:'left',
+                  padding:'10px 14px', background: filter === p.id ? 'var(--bg-hover)' : 'none',
+                  border:'none', cursor:'pointer', borderRadius:'4px',
+                  color: filter === p.id ? 'var(--accent)' : 'var(--text-1)',
+                  fontSize:'13px', fontWeight: filter === p.id ? 700 : 400,
+                }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* View switcher: Sequence | Matrix */}
       <div style={{display:'flex',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',marginBottom:'14px'}}>
@@ -1103,23 +1165,45 @@ function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReo
       onStart: () => setIsDragging(true),
       onEnd: async (evt) => {
         setIsDragging(false);
-        // evt.item.dataset.id, evt.to.id (target group), evt.to children order
         const taskId = evt.item.getAttribute('data-id');
         const destGroupEl = evt.to;
         const destQuadrant = destGroupEl.getAttribute('data-quadrant') || null;
-        // If destination is a drop zone (not a quadrant), it has data-drop-action
         const dropAction = destGroupEl.getAttribute('data-drop-action');
+
+        // Compute the new ordering from the current DOM state (post-drop)
+        const newOrderedIds = dropAction
+          ? null
+          : Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
+
+        // CRITICAL: Undo Sortable's DOM mutation immediately.
+        // SortableJS physically moves the <div> to the drop target. If we leave
+        // it there and call setTasks(), React's reconciler doesn't know about
+        // the move and produces ghost duplicates (the moved element + a new one
+        // React created from the updated state). Undoing the mutation puts the
+        // DOM back in sync with React's virtual tree; then React's re-render
+        // does the move cleanly.
+        if (evt.from !== evt.to) {
+          // Cross-list move: put the item back in its source list
+          const refNode = evt.from.children[evt.oldIndex] || null;
+          evt.from.insertBefore(evt.item, refNode);
+        } else if (evt.oldIndex !== evt.newIndex) {
+          // Same-list reorder: put it back at its old position
+          const children = Array.from(evt.from.children).filter(c => c !== evt.item);
+          const refNode = children[evt.oldIndex] || null;
+          evt.from.insertBefore(evt.item, refNode);
+        }
+
         if (dropAction) {
-          // The drop zone handlers will manage this; remove the item from this list
-          // (drop zones don't actually hold items — they're action targets)
-          evt.item.remove();
-          // Fire the drop action handler from the drop zone strip
+          // Drop-zone target — fire the action event; don't touch tasks state here
           destGroupEl.dispatchEvent(new CustomEvent('taskdropped', { detail: { taskId } }));
           return;
         }
-        // Otherwise it's a quadrant — compute new ordering
-        const newOrderedIds = Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
-        await onReorder(taskId, destQuadrant, newOrderedIds);
+
+        try {
+          await onReorder(taskId, destQuadrant, newOrderedIds);
+        } catch (err) {
+          console.error('Reorder failed:', err);
+        }
       },
     });
     return () => sortable.destroy();
@@ -1304,13 +1388,31 @@ function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onRe
         const destGroupEl = evt.to;
         const destQuadrant = destGroupEl.getAttribute('data-quadrant') || null;
         const dropAction = destGroupEl.getAttribute('data-drop-action');
+
+        const newOrderedIds = dropAction
+          ? null
+          : Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
+
+        // Undo Sortable's DOM mutation so React's re-render does the move cleanly
+        if (evt.from !== evt.to) {
+          const refNode = evt.from.children[evt.oldIndex] || null;
+          evt.from.insertBefore(evt.item, refNode);
+        } else if (evt.oldIndex !== evt.newIndex) {
+          const children = Array.from(evt.from.children).filter(c => c !== evt.item);
+          const refNode = children[evt.oldIndex] || null;
+          evt.from.insertBefore(evt.item, refNode);
+        }
+
         if (dropAction) {
-          evt.item.remove();
           destGroupEl.dispatchEvent(new CustomEvent('taskdropped', { detail: { taskId } }));
           return;
         }
-        const newOrderedIds = Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
-        await onReorder(taskId, destQuadrant, newOrderedIds);
+
+        try {
+          await onReorder(taskId, destQuadrant, newOrderedIds);
+        } catch (err) {
+          console.error('Reorder failed:', err);
+        }
       },
     });
     return () => sortable.destroy();
@@ -1412,8 +1514,15 @@ function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate })
         delay: 0,
         sort: false,
         onAdd: (evt) => {
-          evt.item.remove();  // don't let it stick in the drop zone
           const taskId = evt.item.getAttribute('data-id');
+          // Put the item back where it came from so React's re-render is in sync.
+          // The drop zone is just an action target — we don't actually keep items here.
+          if (evt.from) {
+            const refNode = evt.from.children[evt.oldIndex] || null;
+            evt.from.insertBefore(evt.item, refNode);
+          } else {
+            evt.item.remove();
+          }
           z.handler(taskId);
         },
       });
