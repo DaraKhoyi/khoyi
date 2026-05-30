@@ -381,13 +381,14 @@ function filterByDateBucket(tasks, bucket) {
   }
 }
 const DATE_FILTERS = [
-  { id:'today',     label:'Today',     hint:'Due today + past due' },
-  { id:'past_due',  label:'Past Due',  hint:'Overdue tasks' },
-  { id:'tomorrow',  label:'Tomorrow',  hint:'Due tomorrow' },
-  { id:'future',    label:'Future',    hint:'Beyond tomorrow' },
-  { id:'undated',   label:'Undated',   hint:'No due date' },
-  { id:'completed', label:'Completed', hint:'Marked done' },
-  { id:'all',       label:'All Open',  hint:'Everything not done' },
+  { id:'all',       label:'All',        hint:'Everything not done' },
+  { id:'past',      label:'Past Due',   hint:'Overdue tasks' },
+  { id:'today',     label:'Today',      hint:'Due today + past due' },
+  { id:'tomorrow',  label:'Tomorrow',   hint:'Due tomorrow' },
+  { id:'7days',     label:'7 Days',     hint:'Next 7 days' },
+  { id:'future',    label:'Future',     hint:'Beyond tomorrow' },
+  { id:'undated',   label:'Undated',    hint:'No due date — someday/maybe' },
+  { id:'completed', label:'Completed',  hint:'Marked done' },
 ];
 
 // Compute the next due date for a recurring task. Anchors to the old due_date
@@ -639,7 +640,15 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
           )}
           <div className="form-row">
             <div className="form-group" style={{flex:1}}>
-              <label className="form-label">Due Date</label>
+              <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span>Due Date {!due_date && <span style={{color:'var(--text-3)',fontSize:'10px',fontWeight:400}}>· Someday/Maybe (no date)</span>}</span>
+                {due_date && (
+                  <button type="button" onClick={() => setDueDate('')}
+                    style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'10px',cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.03em',padding:0}}>
+                    × Clear
+                  </button>
+                )}
+              </label>
               <input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} />
             </div>
             <div className="form-group" style={{flex:1}}>
@@ -758,10 +767,12 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
       const d = t.due_date;
       if (filter === 'all') return true;
       if (filter === 'past') return d && d < today;
-      if (filter === 'today') return d === today;
+      // Today includes past due — the working "what needs my attention now" view
+      if (filter === 'today') return d && d <= today;
       if (filter === 'tomorrow') return d === tomorrow;
       if (filter === '7days') return d && d >= today && d <= sevenDays;
       if (filter === 'future') return d && d > today;
+      if (filter === 'undated') return !d;
       return true;
     });
   }, [tasks, filter]);
@@ -890,6 +901,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           { id: 'tomorrow',  label: 'Tomorrow' },
           { id: '7days',     label: '7 Days' },
           { id: 'future',    label: 'Future' },
+          { id: 'undated',   label: 'Undated' },
           { id: 'completed', label: 'Completed' },
         ].map(p => (
           <button key={p.id}
@@ -928,6 +940,36 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         ))}
       </div>
 
+      {/* "Move past due → Today" button — only on Today filter, only when there ARE past-due dated tasks.
+          Past due = not completed, has due_date, due_date < today (excludes undated/someday-maybe). */}
+      {filter === 'today' && (() => {
+        const today = todayISO();
+        const pastDue = tasks.filter(t => !t.completed && t.due_date && t.due_date < today);
+        if (pastDue.length === 0) return null;
+        return (
+          <button
+            onClick={async () => {
+              if (!window.confirm(`Move ${pastDue.length} past-due task${pastDue.length === 1 ? '' : 's'} to today?`)) return;
+              const ids = pastDue.map(t => t.id);
+              await supabase.from('tasks').update({ due_date: today }).in('id', ids);
+              setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, due_date: today } : t));
+            }}
+            style={{
+              width:'100%', marginBottom:'12px',
+              padding:'10px 14px',
+              background:'rgba(239,68,68,0.10)',
+              border:'1px solid #ef4444',
+              borderRadius:'6px',
+              color:'#ef4444',
+              fontSize:'12px', fontWeight:700,
+              cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:'8px',
+            }}>
+            ↻ Move {pastDue.length} past-due task{pastDue.length === 1 ? '' : 's'} to Today
+          </button>
+        );
+      })()}
+
       {/* Body — Sequence or Matrix view */}
       {viewMode === 'sequence' ? (
         <SequenceView
@@ -938,6 +980,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           onToggleComplete={toggleComplete}
           onReorder={applyReorder}
           setIsDragging={setIsDragging}
+          showRanking={filter === 'today'}
         />
       ) : (
         <MatrixView
@@ -947,6 +990,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           onToggleComplete={toggleComplete}
           onReorder={applyReorder}
           setIsDragging={setIsDragging}
+          showRanking={filter === 'today'}
         />
       )}
 
@@ -981,7 +1025,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
 // ─────────────────────────────────────────
 // SEQUENCE VIEW — grouped by quadrant, priority badge is drag handle
 // ─────────────────────────────────────────
-function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
   return (
     <div>
       {quads.map(q => (
@@ -993,6 +1037,7 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onRe
           onToggleComplete={onToggleComplete}
           onReorder={onReorder}
           setIsDragging={setIsDragging}
+          showRanking={showRanking}
         />
       ))}
       {unranked.length > 0 && (
@@ -1004,6 +1049,7 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onRe
           onToggleComplete={onToggleComplete}
           onReorder={onReorder}
           setIsDragging={setIsDragging}
+          showRanking={showRanking}
         />
       )}
       {quads.every(q => buckets[q].length === 0) && unranked.length === 0 && (
@@ -1032,7 +1078,7 @@ const QUAD_COLORS = {
 // ─────────────────────────────────────────
 // QUADRANT GROUP — one priority bucket, sortable list inside
 // ─────────────────────────────────────────
-function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
   // Build group id used by Sortable for cross-group moves
   const groupId = `quad-${quadrant || 'unranked'}`;
 
@@ -1109,6 +1155,7 @@ function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReo
             rankNumber={i + 1}
             onEdit={onEdit}
             onToggleComplete={onToggleComplete}
+            showRanking={showRanking}
           />
         ))}
         {tasks.length === 0 && (
@@ -1124,9 +1171,13 @@ function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReo
 // ─────────────────────────────────────────
 // TASK ROW — priority badge is drag anchor, click anywhere else to edit
 // ─────────────────────────────────────────
-function TaskProRow({ task, rankNumber, onEdit, onToggleComplete }) {
+function TaskProRow({ task, rankNumber, onEdit, onToggleComplete, showRanking }) {
   const quadrant = task.eisenhower_quadrant;
-  const badgeLabel = quadrant ? `${quadrant}${rankNumber}` : `${rankNumber}`;
+  // On Today filter: show "A1", "A2", "B1" — ranking is actionable
+  // Elsewhere: show just "A", "B", "C", "D" — priority only, ranking suppressed
+  const badgeLabel = quadrant
+    ? (showRanking ? `${quadrant}${rankNumber}` : quadrant)
+    : (showRanking ? `${rankNumber}` : '·');
   const badgeColor = quadrant ? QUAD_COLORS[quadrant] : 'var(--text-3)';
   const isDone = !!task.completed;
 
@@ -1208,7 +1259,7 @@ function formatDueShort(iso) {
 // ─────────────────────────────────────────
 // MATRIX VIEW — 2x2 quadrant grid with drag-between
 // ─────────────────────────────────────────
-function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
   return (
     <div style={{
       display:'grid',
@@ -1226,13 +1277,14 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsD
           onToggleComplete={onToggleComplete}
           onReorder={onReorder}
           setIsDragging={setIsDragging}
+          showRanking={showRanking}
         />
       ))}
     </div>
   );
 }
 
-function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging, showRanking }) {
   const containerRef = useRef(null);
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1314,7 +1366,7 @@ function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onRe
                 cursor:'grab',
                 touchAction:'none',
               }}>
-              {quadrant}{i + 1}
+              {showRanking ? `${quadrant}${i + 1}` : quadrant}
             </div>
             <span style={{
               flex:1, minWidth:0,
@@ -12633,8 +12685,8 @@ export default function App() {
     if (tf && DATE_FILTERS.some(f => f.id === tf)) setTaskFilter(tf);
     else setTaskFilter('today');
     const tv = meta.task_view_mode;
-    if (tv === 'list' || tv === 'quadrant') setTaskViewMode(tv);
-    else setTaskViewMode('list');
+    if (tv === 'sequence' || tv === 'matrix') setTaskViewMode(tv);
+    else setTaskViewMode('sequence');
   }, [session]);
 
   // Persist task UI prefs to user metadata (debounced, fire-and-forget)
