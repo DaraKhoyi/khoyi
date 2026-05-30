@@ -763,14 +763,93 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
 // React owns the entire task-list DOM. No libraries fight with it.
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// GLOBAL TOAST SYSTEM
+// ─────────────────────────────────────────────────────────────────────
+// Lightweight, event-bus based. Call notify('message', 'error') from anywhere.
+// Renders a stack in the top-right; auto-dismisses after 5s.
+// Pass 1 Batch B addition: surface silent errors from optimistic-rollback
+// patterns. Batch C will expand uses across writes throughout the app.
+
+const __toastListeners = new Set();
+function notify(message, kind = 'info') {
+  __toastListeners.forEach(fn => { try { fn({ id: Date.now() + Math.random(), message, kind }); } catch (_) {} });
+}
+// Export to window so non-React code paths can call too (cron retry hooks, etc.)
+if (typeof window !== 'undefined') {
+  window.__notify = notify;
+}
+
+function ToastHost() {
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => {
+    function onToast(t) {
+      setToasts(prev => [...prev, t]);
+      // Auto-dismiss
+      setTimeout(() => {
+        setToasts(prev => prev.filter(x => x.id !== t.id));
+      }, t.kind === 'error' ? 6500 : 4000);
+    }
+    __toastListeners.add(onToast);
+    return () => { __toastListeners.delete(onToast); };
+  }, []);
+
+  if (toasts.length === 0) return null;
+  return createPortal(
+    <div style={{
+      position:'fixed',
+      top:'14px',
+      right:'14px',
+      zIndex:100000,
+      display:'flex',
+      flexDirection:'column',
+      gap:'8px',
+      maxWidth:'92vw',
+      pointerEvents:'none',
+    }}>
+      {toasts.map(t => {
+        const color = t.kind === 'error' ? '#ef4444' : t.kind === 'success' ? '#22c55e' : 'var(--accent)';
+        return (
+          <div key={t.id}
+            style={{
+              pointerEvents:'auto',
+              padding:'10px 14px',
+              borderRadius:'8px',
+              background:'var(--bg-card)',
+              border:`1px solid ${color}`,
+              color:'var(--text-1)',
+              fontSize:'13px',
+              fontWeight:500,
+              boxShadow:'0 6px 18px rgba(0,0,0,0.35)',
+              display:'flex',
+              alignItems:'center',
+              gap:'8px',
+              maxWidth:'380px',
+              cursor:'pointer',
+            }}
+            onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}>
+            <span style={{color}}>{t.kind === 'error' ? '⚠' : t.kind === 'success' ? '✓' : 'ℹ'}</span>
+            <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{t.message}</span>
+          </div>
+        );
+      })}
+    </div>,
+    document.body
+  );
+}
+
 const DragContext = React.createContext(null);
 
 // Drag controller — provides startDrag, registerDropZone, and listens to
 // global pointermove/pointerup. Wraps any subtree where drag should work.
 function DragProvider({ onDragStart, onDragEnd, children }) {
-  const [activeDrag, setActiveDrag] = useState(null); // { taskId, clientX, clientY, rowHeight, label, sourceQuadrant }
-  const cloneRef = useRef(null);
-  const dropZonesRef = useRef([]);   // [{ id, type:'zone'|'quadrant', getRect, onDrop }]
+  // activeDrag is set on drag-start and cleared on drag-end. It does NOT change
+  // on every pointermove — that's the bug fix from Finding #7 (listener thrash).
+  // Pointer coordinates live in a ref and update the floating-clone DOM directly.
+  const [activeDrag, setActiveDrag] = useState(null);
+  const cloneElRef = useRef(null);            // the floating clone <div> in document.body
+  const pointerRef = useRef({ x: 0, y: 0 });  // live pointer position
+  const dropZonesRef = useRef([]);            // [{ id, type, getRect, getElement, onDrop }]
   const hoveredZoneRef = useRef(null);
 
   const register = useCallback((spec) => {
@@ -780,24 +859,30 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
     };
   }, []);
 
-  // Begin a drag — called by a task row's anchor on pointerdown+threshold
+  // Begin a drag — called by a task row's anchor on first move past threshold
   const startDrag = useCallback((opts) => {
+    pointerRef.current = { x: opts.clientX, y: opts.clientY };
     setActiveDrag(opts);
     if (onDragStart) onDragStart();
   }, [onDragStart]);
 
-  // Floating clone — only rendered while activeDrag is set, via portal
+  // Floating clone — rendered ONCE per drag (activeDrag changes only on start/end).
+  // Position updates happen via direct DOM manipulation in onMove → no re-renders.
   const floatingClone = activeDrag && createPortal(
-    <div ref={cloneRef}
+    <div ref={(el) => { cloneElRef.current = el; if (el) {
+      // Position immediately on mount so first frame is correct
+      el.style.left = `${pointerRef.current.x - 40}px`;
+      el.style.top  = `${pointerRef.current.y - 16}px`;
+    }}}
       style={{
         position:'fixed',
-        top: activeDrag.clientY - 16,
-        left: activeDrag.clientX - 40,
+        top: 0, left: 0,                        // overridden by direct DOM updates
         pointerEvents:'none',
         zIndex:99999,
         opacity:0.92,
         transform:'rotate(-1deg)',
         boxShadow:'0 8px 24px rgba(0,0,0,0.5)',
+        willChange:'transform',
       }}>
       <div style={{
         display:'inline-flex', alignItems:'center', gap:'6px',
@@ -827,12 +912,21 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
     document.body
   );
 
-  // Global pointermove + pointerup
+  // Global pointermove + pointerup. Listeners attach ONCE when a drag starts
+  // (activeDrag flips null → object) and detach ONCE when it ends — not on every
+  // pointer move. Coordinates flow through pointerRef so React doesn't re-render
+  // on every move.
   useEffect(() => {
     if (!activeDrag) return;
     function onMove(e) {
       const pt = e.touches ? e.touches[0] : e;
-      setActiveDrag(prev => prev ? { ...prev, clientX: pt.clientX, clientY: pt.clientY } : null);
+      pointerRef.current = { x: pt.clientX, y: pt.clientY };
+      // Update the floating clone's position via direct DOM (no React re-render)
+      const el = cloneElRef.current;
+      if (el) {
+        el.style.left = `${pt.clientX - 40}px`;
+        el.style.top  = `${pt.clientY - 16}px`;
+      }
       // Hit-test
       let hovered = null;
       for (const z of dropZonesRef.current) {
@@ -847,13 +941,10 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
       hoveredZoneRef.current = hovered;
       // Highlight: write to DOM directly to avoid re-render storms
       dropZonesRef.current.forEach(z => {
-        const el = z.getElement?.();
-        if (!el) return;
-        if (hovered && hovered.id === z.id) {
-          el.classList.add('drop-hover');
-        } else {
-          el.classList.remove('drop-hover');
-        }
+        const zEl = z.getElement?.();
+        if (!zEl) return;
+        if (hovered && hovered.id === z.id) zEl.classList.add('drop-hover');
+        else zEl.classList.remove('drop-hover');
       });
     }
     function onUp(e) {
@@ -870,8 +961,8 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
       }
       // Clear highlights
       dropZonesRef.current.forEach(z => {
-        const el = z.getElement?.();
-        if (el) el.classList.remove('drop-hover');
+        const zEl = z.getElement?.();
+        if (zEl) zEl.classList.remove('drop-hover');
       });
       if (target && target.onDrop) {
         try {
@@ -885,8 +976,8 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
     }
     function onCancel() {
       dropZonesRef.current.forEach(z => {
-        const el = z.getElement?.();
-        if (el) el.classList.remove('drop-hover');
+        const zEl = z.getElement?.();
+        if (zEl) zEl.classList.remove('drop-hover');
       });
       setActiveDrag(null);
       if (onDragEnd) onDragEnd();
@@ -899,6 +990,11 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
     };
+    // Deps: activeDrag (the object) IS the gate — it flips on/off per drag.
+    // We deliberately don't depend on its mutating fields (it doesn't have any
+    // anymore — clientX/Y were removed from the object's React identity).
+    // onDragEnd should be stable (passed from parent as a callback).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDrag, onDragEnd]);
 
   const ctxValue = useMemo(() => ({
@@ -915,78 +1011,120 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
   );
 }
 
-// Hook for a draggable badge — handles long-press detection
+// Hook for a draggable badge.
+//
+// Behavior (per Q9 decision): drag starts almost instantly. The priority badge
+// is a dedicated drag handle — user agrees not to touch it for scrolling.
+// We require a tiny pointer movement (3px) to start drag, which prevents
+// pure clicks from triggering drag but lets intentional drags begin immediately.
+//
+// Stability: the returned handlers are STABLE across renders (callbacks read
+// the latest task/label/color via refs). Avoids the "re-register every render"
+// churn that Finding #13 flagged.
+//
+// Cleanup: any pending press timer is cleared on unmount (Finding #15).
 function useDraggable({ task, label, color, sourceQuadrant }) {
   const drag = useContext(DragContext);
-  const pressTimerRef = useRef(null);
-  const pressOriginRef = useRef(null);
-  const isDraggingRef = useRef(false);
+
+  // Latest values live in a ref so onPointerDown stays stable across renders.
+  const latestRef = useRef({ task, label, color, sourceQuadrant });
+  useEffect(() => {
+    latestRef.current = { task, label, color, sourceQuadrant };
+  });
+
+  const startedRef = useRef(false);     // has drag actually started for this gesture
+  const originRef = useRef(null);       // { x, y } where pointerdown happened
+  const cleanupRef = useRef(null);      // function to remove window listeners
+
+  // Cleanup window listeners + any pending state on unmount
+  useEffect(() => () => {
+    if (cleanupRef.current) {
+      try { cleanupRef.current(); } catch (_) {}
+      cleanupRef.current = null;
+    }
+    originRef.current = null;
+    startedRef.current = false;
+  }, []);
 
   const onPointerDown = useCallback((e) => {
-    // Only react to primary pointer (left mouse / first touch)
+    // Only primary pointer
     if (e.button !== undefined && e.button !== 0) return;
-    pressOriginRef.current = { x: e.clientX, y: e.clientY };
-    isDraggingRef.current = false;
-    // 200ms long-press to start drag (matches ONE Tasks behavior)
-    pressTimerRef.current = setTimeout(() => {
-      if (!pressOriginRef.current) return;
-      isDraggingRef.current = true;
+    originRef.current = { x: e.clientX, y: e.clientY };
+    startedRef.current = false;
+
+    // Listen at the window level for the next pointermove. As soon as the
+    // pointer moves > 3px from the origin, start the drag. This gives near-zero
+    // latency (typically <16ms = a single frame), while still distinguishing a
+    // tap (no movement) from an intentional drag.
+    function maybeStart(ev) {
+      if (!originRef.current || startedRef.current) return;
+      const dx = ev.clientX - originRef.current.x;
+      const dy = ev.clientY - originRef.current.y;
+      if (dx * dx + dy * dy < 9) return;  // 3px threshold
+      startedRef.current = true;
+      const cur = latestRef.current;
       drag.startDrag({
-        taskId: task.id,
-        title: task.title,
-        label,
-        color,
-        sourceQuadrant,
-        clientX: pressOriginRef.current.x,
-        clientY: pressOriginRef.current.y,
+        taskId: cur.task.id,
+        title: cur.task.title,
+        label: cur.label,
+        color: cur.color,
+        sourceQuadrant: cur.sourceQuadrant,
+        clientX: ev.clientX,
+        clientY: ev.clientY,
       });
-      // Provide haptic feedback if available
-      if (navigator.vibrate) try { navigator.vibrate(15); } catch (_) {}
-    }, 200);
-  }, [drag, task.id, task.title, label, color, sourceQuadrant]);
-
-  // Cancel the long-press if pointer moves >5px before timer fires
-  // (treats this as a tap, not a drag)
-  const onPointerMove = useCallback((e) => {
-    if (!pressOriginRef.current || isDraggingRef.current) return;
-    const dx = e.clientX - pressOriginRef.current.x;
-    const dy = e.clientY - pressOriginRef.current.y;
-    if (dx * dx + dy * dy > 25) {
-      // 5px squared = 25
-      clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-      pressOriginRef.current = null;
+      if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) {}
+      // Once drag has started, the DragProvider takes over. We can detach.
+      cleanup();
     }
-  }, []);
-
-  const onPointerUp = useCallback(() => {
-    if (pressTimerRef.current) {
-      clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
+    function onUpEarly() {
+      // Released before reaching threshold = it was a tap, not a drag.
+      cleanup();
+      originRef.current = null;
     }
-    pressOriginRef.current = null;
-  }, []);
+    function cleanup() {
+      window.removeEventListener('pointermove', maybeStart);
+      window.removeEventListener('pointerup', onUpEarly);
+      window.removeEventListener('pointercancel', onUpEarly);
+      cleanupRef.current = null;
+    }
+    window.addEventListener('pointermove', maybeStart);
+    window.addEventListener('pointerup', onUpEarly);
+    window.addEventListener('pointercancel', onUpEarly);
+    cleanupRef.current = cleanup;
+  }, [drag]);
 
-  return { onPointerDown, onPointerMove, onPointerUp };
+  return { onPointerDown };
 }
 
-// Hook for a drop target — registers with the controller, returns ref to assign
+// Hook for a drop target — registers with the controller, returns ref to assign.
+//
+// Stability (Fix #8 + #14): the registration runs ONCE per mount instead of on
+// every parent re-render. Consumers can pass freshly-created onDrop callbacks
+// without causing register/unregister churn, because we route onDrop through
+// a ref that we update synchronously each render. Uses React.useId for a
+// stable, deterministic id (not Math.random).
 function useDropTarget({ type, onDrop }) {
   const drag = useContext(DragContext);
   const elRef = useRef(null);
-  const idRef = useRef(Math.random().toString(36).slice(2));
+  const id = React.useId();
+  const onDropRef = useRef(onDrop);
+  useEffect(() => { onDropRef.current = onDrop; });
+
   useEffect(() => {
-    const id = idRef.current;
     const spec = {
       id,
       type,
       getRect: () => elRef.current?.getBoundingClientRect(),
       getElement: () => elRef.current,
-      onDrop,
+      onDrop: (drag, point) => {
+        const fn = onDropRef.current;
+        if (fn) fn(drag, point);
+      },
     };
     const unreg = drag.register(spec);
     return unreg;
-  }, [drag, type, onDrop]);
+  }, [drag, type, id]);
+
   return elRef;
 }
 
@@ -1003,6 +1141,13 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const moreButtonRef = useRef(null);
   const [moreMenuPos, setMoreMenuPos] = useState({ top: 0, left: 0 });
+
+  // Latest tasks in a ref so memoized callbacks below can read fresh data
+  // without depending on `tasks` (which changes every state update). Combined
+  // with useDropTarget's onDrop-via-ref pattern, this keeps drop-zone
+  // registration stable across the lifetime of a TasksView mount (Fix #8).
+  const tasksRef = useRef(tasks);
+  useEffect(() => { tasksRef.current = tasks; });
 
   // Filtered task set
   const visibleTasks = useMemo(() => {
@@ -1071,18 +1216,29 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     setShowModal(false); setEditTask(null);
   }
 
-  async function toggleComplete(task, e) {
+  const toggleComplete = useCallback(async (task, e) => {
     if (e) e.stopPropagation();
     const newCompleted = !task.completed;
-    const { data: updated } = await supabase.from('tasks')
+    const { data: updated, error } = await supabase.from('tasks')
       .update({ completed: newCompleted, updated_at: new Date().toISOString() })
       .eq('id', task.id).select().single();
+    if (error) {
+      notify("Couldn't update task. Try again.", 'error');
+      return;
+    }
     if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
-  }
+  }, [setTasks]);
 
   // Move task to quadrant at position. The drop handler in QuadrantGroup passes
   // the position where the user released (above which row, or end of list).
-  async function moveTaskToQuadrant(taskId, destQuadrant, dropAboveTaskId) {
+  //
+  // Safety (Pass 1 Findings #5 + #11):
+  //  - Snapshot pre-update tasks state so we can rollback on failure
+  //  - Persist updates in parallel using allSettled to detect ANY failure
+  //  - If any update failed, rollback local state to the snapshot + toast error
+  //  - User sees the move stick or hears about it failing — never silent
+  const moveTaskToQuadrant = useCallback(async (taskId, destQuadrant, dropAboveTaskId) => {
+    const tasks = tasksRef.current;
     const moved = tasks.find(t => t.id === taskId);
     if (!moved) return;
     // Compute new ordering of dest quadrant: take current sorted list, remove moved if it's there,
@@ -1110,6 +1266,13 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         updates.push({ id: t.id, eisenhower_rank: i + 1, eisenhower_quadrant: sourceQuadrant });
       });
     }
+
+    // Snapshot pre-update task fields so we can rollback exactly the rows we touch
+    const affectedIds = new Set(updates.map(u => u.id));
+    const snapshot = tasks
+      .filter(t => affectedIds.has(t.id))
+      .map(t => ({ id: t.id, eisenhower_rank: t.eisenhower_rank, eisenhower_quadrant: t.eisenhower_quadrant, priority_system: t.priority_system }));
+
     // Optimistic local update
     const byId = Object.fromEntries(updates.map(u => [u.id, u]));
     setTasks(prev => prev.map(t => {
@@ -1117,20 +1280,51 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
       if (!u) return t;
       return { ...t, eisenhower_rank: u.eisenhower_rank, eisenhower_quadrant: u.eisenhower_quadrant, priority_system: 'eisenhower' };
     }));
-    // Persist in parallel
-    await Promise.all(updates.map(u =>
+
+    // Persist in parallel; use allSettled so one failure doesn't mask others.
+    const results = await Promise.allSettled(updates.map(u =>
       supabase.from('tasks').update({
         eisenhower_rank: u.eisenhower_rank,
         eisenhower_quadrant: u.eisenhower_quadrant,
         priority_system: 'eisenhower',
-      }).eq('id', u.id)
+      }).eq('id', u.id).select('id')
     ));
-  }
 
-  async function setTaskDate(taskId, newDateISO) {
+    // Treat a Supabase rejection OR a result with non-null .error as a failure
+    const failed = results.filter((r, i) => {
+      if (r.status === 'rejected') return true;
+      const val = r.value;
+      if (val && val.error) return true;
+      return false;
+    });
+
+    if (failed.length > 0) {
+      // Rollback local state for affected rows
+      const snapById = Object.fromEntries(snapshot.map(s => [s.id, s]));
+      setTasks(prev => prev.map(t => {
+        const s = snapById[t.id];
+        return s ? { ...t, eisenhower_rank: s.eisenhower_rank, eisenhower_quadrant: s.eisenhower_quadrant, priority_system: s.priority_system } : t;
+      }));
+      notify(
+        failed.length === updates.length
+          ? "Couldn't save the move. Reverted."
+          : `Partial save (${updates.length - failed.length} of ${updates.length}). Reverted.`,
+        'error'
+      );
+    }
+  }, [setTasks]);
+
+  // Reschedule a task's due date (called by drop zones). Optimistic with rollback.
+  const setTaskDate = useCallback(async (taskId, newDateISO) => {
+    const prevDate = tasksRef.current.find(t => t.id === taskId)?.due_date;
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: newDateISO } : t));
-    await supabase.from('tasks').update({ due_date: newDateISO }).eq('id', taskId);
-  }
+    const { error } = await supabase.from('tasks').update({ due_date: newDateISO }).eq('id', taskId);
+    if (error) {
+      // Rollback
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: prevDate } : t));
+      notify("Couldn't update due date. Reverted.", 'error');
+    }
+  }, [setTasks]);
 
   return (
     <DragProvider onDragStart={() => setIsDragging(true)} onDragEnd={() => setIsDragging(false)}>
@@ -1472,9 +1666,6 @@ function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, show
         style={{flexShrink:0,width:'16px',height:'16px',accentColor:'var(--accent)',cursor:'pointer'}}/>
       <div className="tasks-pro-anchor"
         onPointerDown={dragHandlers.onPointerDown}
-        onPointerMove={dragHandlers.onPointerMove}
-        onPointerUp={dragHandlers.onPointerUp}
-        onPointerCancel={dragHandlers.onPointerUp}
         style={{
           flexShrink:0,
           padding:'3px 8px',
@@ -1640,9 +1831,6 @@ function MatrixTaskRow({ task, rankNumber, quadrant, headerColor, onEdit, onTogg
         style={{flexShrink:0,width:'13px',height:'13px',accentColor:'var(--accent)'}}/>
       <div className="tasks-pro-anchor"
         onPointerDown={dragHandlers.onPointerDown}
-        onPointerMove={dragHandlers.onPointerMove}
-        onPointerUp={dragHandlers.onPointerUp}
-        onPointerCancel={dragHandlers.onPointerUp}
         style={{
           flexShrink:0,
           padding:'1px 5px',
@@ -13179,6 +13367,7 @@ export default function App() {
           }
         </main>
       </div>
+      <ToastHost />
     </div>
   );
 }
