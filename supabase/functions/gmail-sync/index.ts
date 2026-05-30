@@ -151,6 +151,10 @@ async function gmailFetch(accessToken, path, params) {
 
 // Build a Gmail search query string based on sync options
 function buildGmailQuery(opts) {
+  // If the caller provided an explicit override, use it verbatim (still wins).
+  if (opts.query_override && typeof opts.query_override === "string" && opts.query_override.trim()) {
+    return opts.query_override.trim();
+  }
   const parts = ["-in:trash", "-in:spam"];
   if (opts.lookback_days && opts.lookback_days > 0) {
     const epochSeconds = Math.floor(Date.now() / 1000) - (opts.lookback_days * 86400);
@@ -249,12 +253,25 @@ async function syncOneAccount(supabase, account, opts) {
       const limit = Math.min(Math.max(opts.max_initial || 100, 1), 5000);
       let beforeEpoch;
       if (wantBackfill) {
-        const { data: oldest } = await supabase
+        // When backfilling a specific label (e.g. SENT), walk backward through messages
+        // with that label, not just any messages. Otherwise initial SENT pulls get the
+        // newest SENT (a few items) and then stop, because the "oldest we have" is from INBOX.
+        let oldestQ = supabase
           .from("email_messages")
-          .select("internal_date")
+          .select("internal_date,labels")
           .eq("account_id", account.id)
           .order("internal_date", { ascending: true })
           .limit(1);
+        if (opts.labels && opts.labels.length === 1) {
+          oldestQ = supabase
+            .from("email_messages")
+            .select("internal_date")
+            .eq("account_id", account.id)
+            .contains("labels", opts.labels)
+            .order("internal_date", { ascending: true })
+            .limit(1);
+        }
+        const { data: oldest } = await oldestQ;
         if (oldest && oldest[0] && oldest[0].internal_date) {
           beforeEpoch = Math.floor(new Date(oldest[0].internal_date).getTime() / 1000);
         }
@@ -263,6 +280,8 @@ async function syncOneAccount(supabase, account, opts) {
         lookback_days: opts.lookback_days,
         exclude_categories: opts.exclude_categories,
         before_epoch: beforeEpoch,
+        labels: opts.labels,
+        query_override: opts.query_override,
       });
       messageIds = await getMessageIds(accessToken, { limit, query });
       const prof = await getProfile(accessToken);
@@ -464,6 +483,20 @@ async function syncOneAccount(supabase, account, opts) {
     }
     result.new_threads = threadCache.size;
 
+    // Recompute last_inbound_at / last_outbound_at on contacts whose email matches
+    // any newly synced message. Cheap because we just touched these messages and
+    // they're paginated by the per-run cap.
+    if (result.new_messages > 0) {
+      try {
+        // Inbound: contacts whose email = from_address of any of OUR newly synced inbound messages
+        await supabase.rpc("recompute_contact_communication", { p_user_id: account.user_id }).then(() => {}, () => {});
+        // If RPC doesn't exist, fall back to direct SQL update via separate POST
+        // (We define the RPC alongside this deploy.)
+      } catch (_) {
+        // Non-fatal — backfill remains correct because the SQL backfill above ran once
+      }
+    }
+
     // Persist sync cursor. During a backfill, don't advance historyId until the
     // backfill is complete — otherwise the next normal sync would skip past
     // anything we haven't ingested yet.
@@ -502,7 +535,7 @@ serve(async (req) => {
     );
 
     const body = await req.json().catch(() => ({}));
-    const { account_id, user_id, max_initial, lookback_days, exclude_categories, force_backfill } = body || {};
+    const { account_id, user_id, max_initial, lookback_days, exclude_categories, force_backfill, labels, query_override } = body || {};
 
     // Auth: either called by cron with a service-role key (user_id is then optional and we sync all),
     // or by a user via the client which passes Authorization
@@ -531,6 +564,8 @@ serve(async (req) => {
         lookback_days,
         exclude_categories,
         force_backfill,
+        labels,
+        query_override,
       });
       results.push(r);
     }

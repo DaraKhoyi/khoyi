@@ -465,7 +465,7 @@ function computeTaskStreak(tasks) {
 // ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
-function TaskModal({ onClose, onSave, initial, defaultSystem, brain }) {
+function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = [], userId }) {
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
   const [system, setSystem] = useState(initialSystem);
@@ -478,6 +478,34 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain }) {
   const [recurring, setRecurring] = useState(
     initial?.recurring_config?.interval || 'none'
   );
+  // Linked contacts (many-to-many via task_contacts)
+  const [contactIds, setContactIds] = useState([]);
+  const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [contactQuery, setContactQuery] = useState('');
+
+  // Load existing contact links when editing
+  useEffect(() => {
+    if (!initial?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('task_contacts')
+        .select('contact_id').eq('task_id', initial.id);
+      if (!cancelled && data) setContactIds(data.map(r => r.contact_id));
+    })();
+    return () => { cancelled = true; };
+  }, [initial?.id]);
+
+  const linkedContacts = contactIds.map(id => contacts.find(c => c.id === id)).filter(Boolean);
+  const filteredContactOptions = (() => {
+    const q = contactQuery.trim().toLowerCase();
+    const base = contacts.filter(c => !contactIds.includes(c.id));
+    if (!q) return base.slice(0, 20);
+    return base.filter(c =>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.email || '').toLowerCase().includes(q) ||
+      (c.company || '').toLowerCase().includes(q)
+    ).slice(0, 20);
+  })();
 
   // AI quadrant suggestion
   const [suggesting, setSuggesting] = useState(false);
@@ -525,9 +553,9 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain }) {
     };
     if (system === 'eisenhower') {
       const r = Math.max(1, parseInt(rank, 10) || 1);
-      onSave({ ...base, priority: 'medium', eisenhower_quadrant: quadrant, eisenhower_rank: r });
+      onSave({ ...base, priority: 'medium', eisenhower_quadrant: quadrant, eisenhower_rank: r, _contact_ids: contactIds });
     } else {
-      onSave({ ...base, priority, eisenhower_quadrant: null, eisenhower_rank: null });
+      onSave({ ...base, priority, eisenhower_quadrant: null, eisenhower_rank: null, _contact_ids: contactIds });
     }
   }
 
@@ -639,6 +667,49 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain }) {
             </div>
           )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional details…" /></div>
+
+          <div className="form-group">
+            <label className="form-label">Linked contacts {linkedContacts.length > 0 && <span style={{color:'var(--text-3)',fontWeight:400}}>({linkedContacts.length})</span>}</label>
+            <div style={{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'6px',minHeight:'4px'}}>
+              {linkedContacts.map(c => (
+                <span key={c.id} style={{display:'inline-flex',alignItems:'center',gap:'4px',padding:'4px 10px',background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',borderRadius:'12px',fontSize:'12px',color:'var(--text-1)'}}>
+                  {c.name}
+                  <button type="button" onClick={() => setContactIds(prev => prev.filter(id => id !== c.id))}
+                    style={{background:'none',border:'none',color:'var(--text-2)',cursor:'pointer',padding:'0 0 0 4px',fontSize:'14px',lineHeight:1}}>×</button>
+                </span>
+              ))}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setContactPickerOpen(o => !o)} style={{fontSize:'11px',padding:'4px 10px'}}>
+                {contactPickerOpen ? '× Close' : '+ Add contact'}
+              </button>
+            </div>
+            {contactPickerOpen && (
+              <div style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'8px',background:'var(--bg-base)',maxHeight:'240px',display:'flex',flexDirection:'column'}}>
+                <input className="form-input" autoFocus value={contactQuery} onChange={e=>setContactQuery(e.target.value)}
+                  placeholder="Search by name, email, or company…" style={{margin:0,marginBottom:'6px',fontSize:'12px'}} />
+                <div style={{overflowY:'auto',flex:1}}>
+                  {filteredContactOptions.length === 0 && (
+                    <div style={{padding:'12px',textAlign:'center',color:'var(--text-3)',fontSize:'11px'}}>
+                      {contactQuery ? 'No matches.' : 'No contacts to add.'}
+                    </div>
+                  )}
+                  {filteredContactOptions.map(c => (
+                    <button key={c.id} type="button"
+                      onClick={() => { setContactIds(prev => [...prev, c.id]); setContactQuery(''); }}
+                      style={{display:'block',width:'100%',textAlign:'left',padding:'6px 8px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',fontSize:'12px',color:'var(--text-1)'}}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                      <div style={{fontWeight:600}}>{c.name}</div>
+                      {(c.email || c.company) && (
+                        <div style={{fontSize:'10px',color:'var(--text-3)'}}>
+                          {c.email}{c.email && c.company ? ' · ' : ''}{c.company}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">Save Task</button>
@@ -652,7 +723,7 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain }) {
 // ─────────────────────────────────────────
 // TASKS VIEW
 // ─────────────────────────────────────────
-function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain }) {
+function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
   // Drag state
@@ -669,22 +740,40 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   const taskStreak = computeTaskStreak(tasks);
 
   async function handleSave(data) {
+    // Extract _contact_ids — internal field, not part of the tasks row
+    const { _contact_ids, ...taskData } = data;
+    let savedTaskId = null;
     if (editTask) {
-      const { data: updated } = await supabase.from('tasks').update(data).eq('id', editTask.id).select().single();
-      if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+      const { data: updated } = await supabase.from('tasks').update(taskData).eq('id', editTask.id).select().single();
+      if (updated) {
+        setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+        savedTaskId = updated.id;
+      }
     } else {
       // New task: append to end of its bucket
-      const peers = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey({ ...data, priority: data.priority || 'medium' }));
+      const peers = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey({ ...taskData, priority: taskData.priority || 'medium' }));
       let rankPatch = {};
-      if (data.priority_system === 'eisenhower') {
+      if (taskData.priority_system === 'eisenhower') {
         const maxRank = peers.reduce((m, t) => Math.max(m, t.eisenhower_rank || 0), 0);
-        rankPatch.eisenhower_rank = data.eisenhower_rank || (maxRank + 1);
+        rankPatch.eisenhower_rank = taskData.eisenhower_rank || (maxRank + 1);
       } else {
         const maxRank = peers.reduce((m, t) => Math.max(m, t.simple_rank || 0), 0);
         rankPatch.simple_rank = maxRank + 1;
       }
-      const { data: created } = await supabase.from('tasks').insert({ ...data, ...rankPatch, user_id: userId, completed: false }).select().single();
-      if (created) setTasks(prev => [created, ...prev]);
+      const { data: created } = await supabase.from('tasks').insert({ ...taskData, ...rankPatch, user_id: userId, completed: false }).select().single();
+      if (created) {
+        setTasks(prev => [created, ...prev]);
+        savedTaskId = created.id;
+      }
+    }
+
+    // Sync task_contacts: delete existing, insert current
+    if (savedTaskId && Array.isArray(_contact_ids)) {
+      await supabase.from('task_contacts').delete().eq('task_id', savedTaskId);
+      if (_contact_ids.length > 0) {
+        const rows = _contact_ids.map(cid => ({ task_id: savedTaskId, contact_id: cid, user_id: userId }));
+        await supabase.from('task_contacts').insert(rows);
+      }
     }
     setShowModal(false); setEditTask(null);
   }
@@ -926,7 +1015,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           )}
         </div>
       </div>
-      {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} />}
+      {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} userId={userId} />}
     </div>
   );
 }
@@ -6486,6 +6575,142 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   const [researchError, setResearchError] = useState(null);
   const [showResearchReport, setShowResearchReport] = useState(false);  // for viewing existing report
 
+  // Linked tasks
+  const [linkedTasks, setLinkedTasks] = useState([]);
+  const [tasksExpanded, setTasksExpanded] = useState(false);
+
+  // Date-stamped notes (proper notes table — separate from contacts.notes pinned summary)
+  const [dateNotes, setDateNotes] = useState([]);
+  const [newNoteBody, setNewNoteBody] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingNoteBody, setEditingNoteBody] = useState('');
+
+  // Manual interaction logging
+  const [showLogInteraction, setShowLogInteraction] = useState(false);
+  const [interactionForm, setInteractionForm] = useState({
+    channel: 'phone',
+    direction: 'outbound',
+    occurred_at: new Date().toISOString().slice(0, 16),
+    brief: '',
+  });
+  const [interactions, setInteractions] = useState([]);
+
+  // Load tasks, dated notes, interactions on mount
+  useEffect(() => {
+    if (!contact?.id) return;
+    let cancelled = false;
+    (async () => {
+      // Tasks linked to this contact
+      const { data: linkRows } = await supabase.from('task_contacts')
+        .select('task_id').eq('contact_id', contact.id);
+      if (linkRows && linkRows.length > 0) {
+        const taskIds = linkRows.map(r => r.task_id);
+        const { data: tasks } = await supabase.from('tasks')
+          .select('*').in('id', taskIds).order('completed').order('due_date', { nullsFirst: false });
+        if (!cancelled && tasks) setLinkedTasks(tasks);
+      } else if (!cancelled) {
+        setLinkedTasks([]);
+      }
+
+      // Dated notes
+      const { data: notes } = await supabase.from('contact_notes')
+        .select('*').eq('contact_id', contact.id).order('created_at', { ascending: false });
+      if (!cancelled && notes) setDateNotes(notes);
+
+      // Manual interactions
+      const { data: ints } = await supabase.from('contact_interactions')
+        .select('*').eq('contact_id', contact.id).order('occurred_at', { ascending: false }).limit(20);
+      if (!cancelled && ints) setInteractions(ints);
+    })();
+    return () => { cancelled = true; };
+  }, [contact?.id]);
+
+  // Compute communication summary from contact fields (already populated by sync)
+  function daysSince(ts) {
+    if (!ts) return null;
+    return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
+  }
+  function formatRelative(ts) {
+    const d = daysSince(ts);
+    if (d === null) return '';
+    if (d === 0) return 'today';
+    if (d === 1) return 'yesterday';
+    if (d < 7) return `${d}d ago`;
+    if (d < 30) return `${Math.floor(d/7)}w ago`;
+    if (d < 365) return `${Math.floor(d/30)}mo ago`;
+    return `${Math.floor(d/365)}y ago`;
+  }
+  const lastIn = contact.last_inbound_at;
+  const lastOut = contact.last_outbound_at;
+  const lastDir = contact.last_communication_direction;
+  const lastChannel = contact.last_communication_channel || 'email';
+  const owedDays = (lastDir === 'inbound' && lastIn) ? daysSince(lastIn) : null;
+
+  async function addDatedNote() {
+    if (!newNoteBody.trim()) return;
+    setSavingNote(true);
+    try {
+      const { data } = await supabase.from('contact_notes').insert({
+        user_id: userId, contact_id: contact.id, body: newNoteBody.trim(),
+      }).select().single();
+      if (data) {
+        setDateNotes(prev => [data, ...prev]);
+        setNewNoteBody('');
+      }
+    } finally { setSavingNote(false); }
+  }
+  async function saveEditedNote() {
+    if (!editingNoteId || !editingNoteBody.trim()) return;
+    const { data } = await supabase.from('contact_notes').update({ body: editingNoteBody.trim() })
+      .eq('id', editingNoteId).select().single();
+    if (data) setDateNotes(prev => prev.map(n => n.id === data.id ? data : n));
+    setEditingNoteId(null); setEditingNoteBody('');
+  }
+  async function deleteNote(id) {
+    if (!window.confirm('Delete this note?')) return;
+    await supabase.from('contact_notes').delete().eq('id', id);
+    setDateNotes(prev => prev.filter(n => n.id !== id));
+  }
+
+  async function logInteraction() {
+    if (!interactionForm.channel || !interactionForm.direction) return;
+    const occurredAt = interactionForm.occurred_at
+      ? new Date(interactionForm.occurred_at).toISOString()
+      : new Date().toISOString();
+    const { data: created } = await supabase.from('contact_interactions').insert({
+      user_id: userId,
+      contact_id: contact.id,
+      channel: interactionForm.channel,
+      direction: interactionForm.direction,
+      occurred_at: occurredAt,
+      brief: interactionForm.brief.trim() || null,
+    }).select().single();
+    if (created) {
+      setInteractions(prev => [created, ...prev]);
+      // Also bump contact's last_inbound/outbound + channel + direction if this is more recent
+      const isMoreRecentInbound = interactionForm.direction === 'inbound' && (!lastIn || new Date(occurredAt) > new Date(lastIn));
+      const isMoreRecentOutbound = interactionForm.direction === 'outbound' && (!lastOut || new Date(occurredAt) > new Date(lastOut));
+      const patch = {};
+      if (isMoreRecentInbound) patch.last_inbound_at = occurredAt;
+      if (isMoreRecentOutbound) patch.last_outbound_at = occurredAt;
+      // Recompute direction
+      const newIn = patch.last_inbound_at || lastIn;
+      const newOut = patch.last_outbound_at || lastOut;
+      if (newIn || newOut) {
+        patch.last_communication_channel = interactionForm.channel;
+        patch.last_communication_direction = (!newOut || (newIn && new Date(newIn) > new Date(newOut))) ? 'inbound' : 'outbound';
+      }
+      if (Object.keys(patch).length > 0) {
+        await supabase.from('contacts').update(patch).eq('id', contact.id);
+        // Update local contact object — caller may not refetch
+        Object.assign(contact, patch);
+      }
+      setShowLogInteraction(false);
+      setInteractionForm({ channel: 'phone', direction: 'outbound', occurred_at: new Date().toISOString().slice(0, 16), brief: '' });
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -6884,6 +7109,175 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
               )}
             </div>
           )}
+        </div>
+
+        {/* ========== COMMUNICATION PANEL ========== */}
+        <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>📡 Communication</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowLogInteraction(s => !s)} style={{fontSize:'11px'}}>
+              {showLogInteraction ? '× Cancel' : '+ Log interaction'}
+            </button>
+          </div>
+          {!lastIn && !lastOut && interactions.length === 0 && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
+              No communication recorded yet. Connect email or log a phone/in-person interaction to start tracking.
+            </div>
+          )}
+          {(lastIn || lastOut) && (
+            <div style={{display:'flex',gap:'12px',flexWrap:'wrap',marginBottom:'8px'}}>
+              <div style={{flex:'1 1 200px',padding:'10px',background: lastDir === 'inbound' ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)', border:`1px solid ${lastDir === 'inbound' ? 'var(--yellow)' : 'var(--border)'}`, borderRadius:'6px'}}>
+                <div style={{fontSize:'10px',color: lastDir === 'inbound' ? 'var(--yellow)' : 'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginBottom:'3px'}}>
+                  ⬇ THEY → YOU {lastDir === 'inbound' ? '· awaiting your reply' : ''}
+                </div>
+                <div style={{fontSize:'12px',color:'var(--text-1)'}}>
+                  {lastIn ? `${formatRelative(lastIn)} via ${lastChannel}` : '—'}
+                </div>
+                {lastIn && <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{new Date(lastIn).toLocaleString()}</div>}
+              </div>
+              <div style={{flex:'1 1 200px',padding:'10px',background: lastDir === 'outbound' ? 'rgba(34,197,94,0.10)' : 'var(--bg-card)', border:`1px solid ${lastDir === 'outbound' ? '#22c55e' : 'var(--border)'}`, borderRadius:'6px'}}>
+                <div style={{fontSize:'10px',color: lastDir === 'outbound' ? '#22c55e' : 'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginBottom:'3px'}}>
+                  ⬆ YOU → THEM {lastDir === 'outbound' ? '· most recent' : ''}
+                </div>
+                <div style={{fontSize:'12px',color:'var(--text-1)'}}>
+                  {lastOut ? `${formatRelative(lastOut)} via ${lastChannel}` : '—'}
+                </div>
+                {lastOut && <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{new Date(lastOut).toLocaleString()}</div>}
+              </div>
+            </div>
+          )}
+          {owedDays !== null && owedDays >= 1 && (
+            <div style={{padding:'8px 12px',background:'rgba(245,158,11,0.10)',border:'1px solid var(--yellow)',borderRadius:'6px',color:'var(--yellow)',fontSize:'12px',marginBottom:'8px'}}>
+              ⚠ You may owe a reply — they wrote {owedDays} day{owedDays === 1 ? '' : 's'} ago and you haven't responded.
+            </div>
+          )}
+
+          {showLogInteraction && (
+            <div style={{padding:'10px',background:'var(--bg-card)',borderRadius:'6px',border:'1px solid var(--border)',marginBottom:'8px'}}>
+              <div style={{display:'flex',gap:'8px',marginBottom:'6px',flexWrap:'wrap'}}>
+                <select className="form-select" value={interactionForm.channel}
+                  onChange={e => setInteractionForm(f => ({ ...f, channel: e.target.value }))}
+                  style={{flex:'1 1 110px',padding:'6px',fontSize:'12px',margin:0}}>
+                  <option value="phone">📞 Phone</option>
+                  <option value="in_person">👤 In person</option>
+                  <option value="text">💬 Text/SMS</option>
+                  <option value="video">📹 Video call</option>
+                  <option value="other">Other</option>
+                </select>
+                <select className="form-select" value={interactionForm.direction}
+                  onChange={e => setInteractionForm(f => ({ ...f, direction: e.target.value }))}
+                  style={{flex:'1 1 110px',padding:'6px',fontSize:'12px',margin:0}}>
+                  <option value="outbound">I contacted them</option>
+                  <option value="inbound">They contacted me</option>
+                </select>
+                <input type="datetime-local" className="form-input" value={interactionForm.occurred_at}
+                  onChange={e => setInteractionForm(f => ({ ...f, occurred_at: e.target.value }))}
+                  style={{flex:'1 1 160px',padding:'6px',fontSize:'12px',margin:0}} />
+              </div>
+              <input className="form-input" placeholder="Brief note (optional)…"
+                value={interactionForm.brief}
+                onChange={e => setInteractionForm(f => ({ ...f, brief: e.target.value }))}
+                style={{fontSize:'12px',padding:'6px 10px',margin:0,marginBottom:'6px'}} />
+              <button className="btn btn-primary btn-sm" onClick={logInteraction} style={{fontSize:'11px'}}>Save interaction</button>
+            </div>
+          )}
+          {interactions.length > 0 && (
+            <div style={{maxHeight:'120px',overflowY:'auto',fontSize:'11px',color:'var(--text-2)'}}>
+              <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginBottom:'4px'}}>Recent manual log</div>
+              {interactions.slice(0, 5).map(i => (
+                <div key={i.id} style={{padding:'4px 0',borderBottom:'1px solid var(--border)'}}>
+                  {i.direction === 'outbound' ? '⬆' : '⬇'} {i.channel} · {formatRelative(i.occurred_at)}
+                  {i.brief && <span style={{color:'var(--text-3)'}}> — {i.brief}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ========== LINKED TASKS PANEL ========== */}
+        <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+            ✅ Tasks ({linkedTasks.length})
+          </div>
+          {linkedTasks.length === 0 && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
+              No tasks linked. Link this contact when creating or editing a task.
+            </div>
+          )}
+          {(tasksExpanded ? linkedTasks : linkedTasks.slice(0, 3)).map(t => (
+            <div key={t.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',fontSize:'12px'}}>
+              <div style={{flex:1,minWidth:0,textDecoration: t.completed ? 'line-through' : 'none',color: t.completed ? 'var(--text-3)' : 'var(--text-1)'}}>
+                {t.completed ? '✓ ' : '○ '}{t.title}
+              </div>
+              {t.due_date && (
+                <span style={{fontSize:'10px',color:'var(--text-3)',whiteSpace:'nowrap'}}>
+                  {new Date(t.due_date).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+          ))}
+          {linkedTasks.length > 3 && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setTasksExpanded(e => !e)} style={{fontSize:'11px',marginTop:'4px'}}>
+              {tasksExpanded ? '↑ Show fewer' : `↓ Show all ${linkedTasks.length}`}
+            </button>
+          )}
+        </div>
+
+        {/* ========== DATE-STAMPED NOTES PANEL ========== */}
+        <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+            📝 Dated notes ({dateNotes.length})
+          </div>
+          <div style={{display:'flex',gap:'6px',marginBottom:'8px'}}>
+            <input className="form-input" placeholder="Add a note (stamped with today's date)…"
+              value={newNoteBody} onChange={e => setNewNoteBody(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addDatedNote(); } }}
+              style={{flex:1,padding:'6px 10px',fontSize:'12px',margin:0}} />
+            <button className="btn btn-primary btn-sm" onClick={addDatedNote}
+              disabled={savingNote || !newNoteBody.trim()} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
+              {savingNote ? '↻' : '+ Add'}
+            </button>
+          </div>
+          {dateNotes.length === 0 && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
+              No dated notes yet. (The contact's pinned summary above is separate from these.)
+            </div>
+          )}
+          <div style={{maxHeight:'260px',overflowY:'auto'}}>
+            {dateNotes.map(n => (
+              <div key={n.id} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'6px',fontSize:'12px'}}>
+                {editingNoteId === n.id ? (
+                  <>
+                    <textarea className="form-textarea" value={editingNoteBody}
+                      onChange={e => setEditingNoteBody(e.target.value)}
+                      style={{minHeight:'60px',fontSize:'12px',padding:'6px 8px',margin:0,marginBottom:'6px'}} />
+                    <div style={{display:'flex',gap:'6px'}}>
+                      <button className="btn btn-primary btn-sm" onClick={saveEditedNote} style={{fontSize:'11px'}}>Save</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => { setEditingNoteId(null); setEditingNoteBody(''); }} style={{fontSize:'11px'}}>Cancel</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'8px',marginBottom:'4px'}}>
+                      <div style={{fontSize:'10px',color:'var(--text-3)',fontWeight:600}}>
+                        {new Date(n.created_at).toLocaleString()}
+                        {n.updated_at && new Date(n.updated_at).getTime() - new Date(n.created_at).getTime() > 1000 && (
+                          <span style={{color:'var(--text-3)',fontWeight:400}}> · edited {formatRelative(n.updated_at)}</span>
+                        )}
+                      </div>
+                      <div style={{display:'flex',gap:'4px'}}>
+                        <button onClick={() => { setEditingNoteId(n.id); setEditingNoteBody(n.body); }}
+                          style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'11px',padding:'0 4px'}}>edit</button>
+                        <button onClick={() => deleteNote(n.id)}
+                          style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'11px',padding:'0 4px'}}>delete</button>
+                      </div>
+                    </div>
+                    <div style={{color:'var(--text-1)',whiteSpace:'pre-wrap',lineHeight:1.5}}>{n.body}</div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="modal-actions">
@@ -7850,6 +8244,34 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                         </div>
                         {(c.company || c.role) && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>{[c.role,c.company].filter(Boolean).join(' · ')}</div>}
                         {(c.email || c.phone) && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>{[c.email,c.phone].filter(Boolean).join(' · ')}</div>}
+                        {(() => {
+                          // Subtle communication state line
+                          if (!c.last_inbound_at && !c.last_outbound_at) return null;
+                          const lin = c.last_inbound_at;
+                          const lout = c.last_outbound_at;
+                          const dir = c.last_communication_direction;
+                          const rel = (ts) => {
+                            const d = Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
+                            if (d === 0) return 'today';
+                            if (d === 1) return '1d ago';
+                            if (d < 7) return `${d}d ago`;
+                            if (d < 30) return `${Math.floor(d/7)}w ago`;
+                            if (d < 365) return `${Math.floor(d/30)}mo ago`;
+                            return `${Math.floor(d/365)}y ago`;
+                          };
+                          if (dir === 'inbound' && lin) {
+                            const days = Math.floor((Date.now() - new Date(lin).getTime()) / 86400000);
+                            // Show owe-reply hint only if >= 1 day old
+                            if (days >= 1) {
+                              return <div style={{fontSize:'11px',color:'var(--yellow)',marginTop:'3px',opacity:0.85}}>⬇ they wrote {rel(lin)} · awaiting reply</div>;
+                            }
+                            return <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'3px'}}>⬇ they wrote {rel(lin)}</div>;
+                          }
+                          if (dir === 'outbound' && lout) {
+                            return <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'3px'}}>⬆ you wrote {rel(lout)}</div>;
+                          }
+                          return null;
+                        })()}
                       </div>
                       <div className="task-meta">
                         <span className={`task-priority priority-${c.priority==='urgent'?'high':c.priority==='normal'?'medium':c.priority}`}>{c.priority}</span>
@@ -11293,7 +11715,7 @@ export default function App() {
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : view==='dashboard'   ? <DashboardView tasks={tasks} emails={emails} user={user} setView={setView} robots={robots}/>
-            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain}/>
+            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts}/>
             : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
