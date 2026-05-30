@@ -535,21 +535,34 @@ serve(async (req) => {
     );
 
     const body = await req.json().catch(() => ({}));
-    const { account_id, user_id, max_initial, lookback_days, exclude_categories, force_backfill, labels, query_override } = body || {};
+    const { account_id, max_initial, lookback_days, exclude_categories, force_backfill, labels, query_override } = body || {};
 
-    // Auth: either called by cron with a service-role key (user_id is then optional and we sync all),
-    // or by a user via the client which passes Authorization
-    let callerUserId = user_id || null;
+    // SECURITY: caller identity comes from JWT or service-role only. Body user_id IGNORED.
+    // Cron runs use service-role; clients use a user JWT. Body user_id (legacy) is ignored
+    // because trusting it lets any logged-in user sync another user's accounts.
     const authHeader = req.headers.get("Authorization") || "";
-    const tokenStr = authHeader.replace("Bearer ", "");
-    if (tokenStr && tokenStr !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
-      const { data: { user } } = await supabase.auth.getUser(tokenStr);
-      if (user) callerUserId = user.id;
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const isCronCaller = token && token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    let callerUserId = null;
+    if (!isCronCaller) {
+      if (!token) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      callerUserId = user.id;
     }
 
     let q = supabase.from("email_accounts").select("*").eq("is_active", true);
     if (account_id) q = q.eq("id", account_id);
-    else if (callerUserId) q = q.eq("user_id", callerUserId);
+    // For user callers, always restrict to their accounts. For cron, allow all.
+    if (callerUserId) q = q.eq("user_id", callerUserId);
     const { data: accounts } = await q;
     if (!accounts || accounts.length === 0) {
       return new Response(JSON.stringify({ synced: [], note: "No accounts to sync" }), {

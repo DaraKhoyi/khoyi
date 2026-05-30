@@ -278,10 +278,27 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { contact_id, user_id, force = false } = await req.json();
-    if (!contact_id || !user_id) throw new Error("contact_id and user_id required");
+    const body = await req.json();
+    const { contact_id, force = false } = body || {};
+    if (!contact_id) throw new Error("contact_id required");
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // SECURITY: derive user_id from JWT, OR allow service-role (cron batch caller).
+    const authHeader = req.headers.get("Authorization") || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const isCronCaller = token && token === SUPABASE_SERVICE_ROLE_KEY;
+    let user_id;
+    if (isCronCaller) {
+      // Cron passes user_id in body — trust because service-role auth gates entry
+      user_id = body.user_id;
+      if (!user_id) throw new Error("user_id required when called with service-role");
+    } else {
+      if (!token) throw new Error("Unauthorized");
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (!user) throw new Error("Unauthorized");
+      user_id = user.id;
+    }
 
     // Load contact
     const { data: contact, error: cErr } = await supabase.from("contacts")

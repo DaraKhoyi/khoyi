@@ -74,10 +74,25 @@ serve(async (req) => {
   try {
     const body = await req.json();
     recordingId = body.recording_id;
-    const userId = body.user_id;
-    if (!recordingId || !userId) throw new Error("recording_id and user_id required");
+    if (!recordingId) throw new Error("recording_id required");
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // SECURITY: derive user_id from JWT only
+    const authHeader = req.headers.get("Authorization") || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!token || token === SUPABASE_SERVICE_ROLE_KEY) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userId = user.id;
 
     // Load the recording
     const { data: rec, error: rErr } = await supabase.from("recordings")

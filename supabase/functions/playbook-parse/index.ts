@@ -67,13 +67,29 @@ serve(async (req) => {
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const { brain_entry_id, user_id } = await req.json();
+    const { brain_entry_id } = await req.json();
 
-    if (!brain_entry_id || !user_id) {
-      return new Response(JSON.stringify({ error: "brain_entry_id and user_id required" }), {
+    if (!brain_entry_id) {
+      return new Response(JSON.stringify({ error: "brain_entry_id required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // SECURITY: derive user_id from JWT, then verify brain entry ownership
+    const authHeader = req.headers.get("Authorization") || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!token || token === SUPABASE_SERVICE_ROLE_KEY) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const user_id = user.id;
 
     const { data: row, error: rErr } = await supabase
       .from("brain")

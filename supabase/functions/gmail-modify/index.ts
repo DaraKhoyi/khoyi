@@ -61,6 +61,22 @@ const ACTIONS = {
   unsnooze:    { add: ["INBOX"] },      // restore early
 };
 
+// Verifies the caller via JWT in the Authorization header. Returns the user's
+// id, or throws if the token is missing/invalid. Service-role calls (cron)
+// would not normally hit this function — it's purely client-called.
+async function requireAuthedUserId(req, supabase) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw new Error("Unauthorized: missing Authorization header");
+  // Reject service-role tokens — this endpoint is per-user only
+  if (token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+    throw new Error("Unauthorized: service-role calls not permitted on this endpoint");
+  }
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) throw new Error("Unauthorized: invalid or expired token");
+  return user.id;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -96,11 +112,21 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     );
 
+    // SECURITY: verify caller identity from JWT, then verify account belongs to caller.
+    // Before this check, an authenticated user could pass any other user's account_id
+    // and modify their Gmail labels.
+    const callerUserId = await requireAuthedUserId(req, supabase);
+
     const { data: account, error: aErr } = await supabase
       .from("email_accounts").select("*").eq("id", account_id).single();
     if (aErr || !account) {
       return new Response(JSON.stringify({ error: "Account not found" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (account.user_id !== callerUserId) {
+      return new Response(JSON.stringify({ error: "Forbidden: account does not belong to caller" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -149,8 +175,10 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const msg = err && (err as any).message ? (err as any).message : String(err);
+    const status = msg.startsWith("Unauthorized") ? 401 : msg.startsWith("Forbidden") ? 403 : 500;
+    return new Response(JSON.stringify({ error: msg }), {
+      status, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
