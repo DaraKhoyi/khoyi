@@ -4,6 +4,7 @@ import { supabase } from './dataService';
 import { BUILD_VERSION } from './version';
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
+import Sortable from 'sortablejs';
 import './index.css';
 
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
@@ -728,24 +729,69 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
 // ─────────────────────────────────────────
 // TASKS VIEW
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// TASKS VIEW — ONE Tasks-inspired design
+// Filter pills (Today default) · view switcher (Sequence/Matrix) ·
+// priority-anchored drag (A1/A2/A3 badge IS the handle) ·
+// persistent bottom drop zones (Today / Tomorrow / Pick Date).
+// Powered by SortableJS for proper touch+delay behavior.
+// ─────────────────────────────────────────
 function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
-  // Drag state
-  const [draggingId, setDraggingId] = useState(null);
-  const [dropTarget, setDropTarget] = useState(null); // {id, position: 'above'|'below', rejected: bool}
-
+  // Reset taskViewMode if it's a legacy value (list/grid) — only sequence and matrix are valid now
+  const viewMode = (taskViewMode === 'sequence' || taskViewMode === 'matrix') ? taskViewMode : 'sequence';
   const filter = taskFilter || 'today';
-  const viewMode = taskViewMode || 'list';
+  // Active during drag — controls drop-zone visibility + reveals action strip
+  const [isDragging, setIsDragging] = useState(false);
+  // When user drops on "Pick Date", we capture the task and open a date picker
+  const [datePickerTask, setDatePickerTask] = useState(null);
 
-  // Top-level filtered+sorted list
-  const filtered = sortTasks(filterByDateBucket(tasks, filter));
-  const topCount = tasks.filter(t => !t.completed && isTopPriority(t)).length;
-  const stats = { total: tasks.length, done: tasks.filter(t=>t.completed).length, top: topCount };
-  const taskStreak = computeTaskStreak(tasks);
+  // Tasks filtered by the pill bar
+  const visibleTasks = useMemo(() => {
+    const today = todayISO();
+    const tomorrow = addDaysISO(1);
+    const sevenDays = addDaysISO(7);
+    return tasks.filter(t => {
+      if (filter === 'completed') return t.completed;
+      if (t.completed) return false;
+      const d = t.due_date;
+      if (filter === 'all') return true;
+      if (filter === 'past') return d && d < today;
+      if (filter === 'today') return d === today;
+      if (filter === 'tomorrow') return d === tomorrow;
+      if (filter === '7days') return d && d >= today && d <= sevenDays;
+      if (filter === 'future') return d && d > today;
+      return true;
+    });
+  }, [tasks, filter]);
+
+  // Sequence view: group by Eisenhower quadrant (A/B/C/D/E). Sort within group by rank.
+  // We use A/B/C/D — the 4 standard quadrants. Anything outside (no quadrant set) goes into a single "Unranked" bucket.
+  const QUADS = ['A', 'B', 'C', 'D'];
+  const sequenceGroups = useMemo(() => {
+    const buckets = {}; QUADS.forEach(q => buckets[q] = []);
+    const unranked = [];
+    visibleTasks.forEach(t => {
+      const q = t.eisenhower_quadrant;
+      if (QUADS.includes(q)) buckets[q].push(t);
+      else unranked.push(t);
+    });
+    QUADS.forEach(q => {
+      buckets[q].sort((a, b) => (a.eisenhower_rank ?? 999) - (b.eisenhower_rank ?? 999));
+    });
+    unranked.sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+    return { buckets, unranked };
+  }, [visibleTasks]);
+
+  // Matrix view: same quadrant groupings, displayed as 2x2 grid
+  const matrixGroups = sequenceGroups.buckets;
+
+  // Open task editor
+  function openEdit(task) { setEditTask(task); setShowModal(true); }
+  function openNew() { setEditTask(null); setShowModal(true); }
 
   async function handleSave(data) {
-    // Extract _contact_ids — internal field, not part of the tasks row
     const { _contact_ids, ...taskData } = data;
     let savedTaskId = null;
     if (editTask) {
@@ -755,275 +801,685 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         savedTaskId = updated.id;
       }
     } else {
-      // New task: append to end of its bucket
-      const peers = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey({ ...taskData, priority: taskData.priority || 'medium' }));
-      let rankPatch = {};
-      if (taskData.priority_system === 'eisenhower') {
-        const maxRank = peers.reduce((m, t) => Math.max(m, t.eisenhower_rank || 0), 0);
-        rankPatch.eisenhower_rank = taskData.eisenhower_rank || (maxRank + 1);
-      } else {
-        const maxRank = peers.reduce((m, t) => Math.max(m, t.simple_rank || 0), 0);
-        rankPatch.simple_rank = maxRank + 1;
-      }
-      const { data: created } = await supabase.from('tasks').insert({ ...taskData, ...rankPatch, user_id: userId, completed: false }).select().single();
+      // New task: assign rank as max+1 within its quadrant
+      const peers = tasks.filter(t => !t.completed && t.eisenhower_quadrant === taskData.eisenhower_quadrant);
+      const maxRank = peers.reduce((m, t) => Math.max(m, t.eisenhower_rank || 0), 0);
+      const insert = { ...taskData, eisenhower_rank: taskData.eisenhower_rank || (maxRank + 1), user_id: userId, completed: false };
+      const { data: created } = await supabase.from('tasks').insert(insert).select().single();
       if (created) {
         setTasks(prev => [created, ...prev]);
         savedTaskId = created.id;
       }
     }
-
-    // Sync task_contacts: delete existing, insert current
     if (savedTaskId && Array.isArray(_contact_ids)) {
       await supabase.from('task_contacts').delete().eq('task_id', savedTaskId);
       if (_contact_ids.length > 0) {
-        const rows = _contact_ids.map(cid => ({ task_id: savedTaskId, contact_id: cid, user_id: userId }));
-        await supabase.from('task_contacts').insert(rows);
+        await supabase.from('task_contacts').insert(_contact_ids.map(cid => ({ task_id: savedTaskId, contact_id: cid, user_id: userId })));
       }
     }
     setShowModal(false); setEditTask(null);
   }
-  async function toggleTask(task) {
-    const nowCompleting = !task.completed;
-    const { data: u } = await supabase.from('tasks').update({ completed: nowCompleting }).eq('id', task.id).select().single();
-    if (u) setTasks(prev => prev.map(t => t.id === u.id ? u : t));
 
-    // Recurring rollover: when a recurring task is COMPLETED, spawn the next instance
-    const interval = task.recurring_config?.interval || task.recurring;
-    if (nowCompleting && interval && interval !== 'none') {
-      const next = nextRecurringDate(task.due_date, interval);
-      const nextTask = {
-        user_id: userId,
-        title: task.title,
-        notes: task.notes,
-        priority: task.priority,
-        priority_system: task.priority_system,
-        eisenhower_quadrant: task.eisenhower_quadrant,
-        eisenhower_rank: task.eisenhower_rank,
-        simple_rank: task.simple_rank,
-        due_date: next,
-        list: nextListForDate(next),
-        status: 'todo',
-        completed: false,
-        tags: task.tags,
-        brain_entry_id: task.brain_entry_id,
-        recurring: interval,
-        recurring_config: { interval },
-      };
-      const { data: created } = await supabase.from('tasks').insert(nextTask).select().single();
-      if (created) setTasks(prev => [created, ...prev]);
+  async function toggleComplete(task, e) {
+    if (e) e.stopPropagation();
+    const newCompleted = !task.completed;
+    const { data: updated } = await supabase.from('tasks')
+      .update({ completed: newCompleted, updated_at: new Date().toISOString() })
+      .eq('id', task.id).select().single();
+    if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+  }
+
+  // After a drag, write the new quadrant + rank for the moved task,
+  // and renumber all peers in the destination quadrant.
+  async function applyReorder(taskId, newQuadrant, newOrderedIds) {
+    const moved = tasks.find(t => t.id === taskId);
+    if (!moved) return;
+    // 1. Update the moved task's quadrant (if changed)
+    const quadrantChanged = moved.eisenhower_quadrant !== newQuadrant;
+    if (quadrantChanged) {
+      await supabase.from('tasks')
+        .update({ eisenhower_quadrant: newQuadrant, priority_system: 'eisenhower' })
+        .eq('id', taskId);
     }
-  }
-  async function deleteTask(id) {
-    await supabase.from('tasks').delete().eq('id', id);
-    setTasks(prev => prev.filter(t => t.id !== id));
-  }
-
-  // ─── Reorder logic ────────────────────────────────────────────
-  // Reorders task `movedId` to be `position` ('above'|'below') target `targetId`
-  // ONLY if both are in the same bucket. Returns nothing; updates state and DB.
-  async function reorderTask(movedId, targetId, position) {
-    if (movedId === targetId) return;
-    const moved = tasks.find(t => t.id === movedId);
-    const target = tasks.find(t => t.id === targetId);
-    if (!moved || !target) return;
-    if (bucketKey(moved) !== bucketKey(target)) return; // same-bucket only
-
-    const isEisen = moved.priority_system === 'eisenhower';
-    // Get all tasks in this bucket (open only), sorted by current rank
-    const bucket = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey(moved));
-    const sorted = [...bucket].sort((a, b) => {
-      const ra = isEisen ? (a.eisenhower_rank ?? 999) : (a.simple_rank ?? 999);
-      const rb = isEisen ? (b.eisenhower_rank ?? 999) : (b.simple_rank ?? 999);
-      return ra - rb;
-    });
-    // Build new order: remove moved, insert near target
-    const without = sorted.filter(t => t.id !== movedId);
-    const targetIdx = without.findIndex(t => t.id === targetId);
-    if (targetIdx === -1) return;
-    const insertAt = position === 'above' ? targetIdx : targetIdx + 1;
-    without.splice(insertAt, 0, moved);
-
-    // Compute updates: only patch tasks whose rank changed
-    const updates = [];
-    const rankField = isEisen ? 'eisenhower_rank' : 'simple_rank';
-    without.forEach((t, idx) => {
-      const newRank = idx + 1;
-      const currRank = isEisen ? t.eisenhower_rank : t.simple_rank;
-      if (currRank !== newRank) updates.push({ id: t.id, rank: newRank });
-    });
-    if (updates.length === 0) return;
-
-    // Optimistic update
-    setTasks(prev => prev.map(t => {
-      const u = updates.find(x => x.id === t.id);
-      return u ? { ...t, [rankField]: u.rank } : t;
-    }));
-    // Push to DB (parallel)
+    // 2. Renumber the destination quadrant
+    const updates = newOrderedIds.map((id, idx) => ({ id, rank: idx + 1 }));
     await Promise.all(updates.map(u =>
-      supabase.from('tasks').update({ [rankField]: u.rank }).eq('id', u.id)
+      supabase.from('tasks').update({ eisenhower_rank: u.rank }).eq('id', u.id)
     ));
-  }
-
-  // Arrow-button: nudge a task up/down 1 slot within its bucket
-  async function nudgeTask(task, direction) {
-    const isEisen = task.priority_system === 'eisenhower';
-    const bucket = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey(task));
-    const sorted = [...bucket].sort((a, b) => {
-      const ra = isEisen ? (a.eisenhower_rank ?? 999) : (a.simple_rank ?? 999);
-      const rb = isEisen ? (b.eisenhower_rank ?? 999) : (b.simple_rank ?? 999);
-      return ra - rb;
-    });
-    const idx = sorted.findIndex(t => t.id === task.id);
-    if (idx === -1) return;
-    const neighborIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (neighborIdx < 0 || neighborIdx >= sorted.length) return;
-    const neighbor = sorted[neighborIdx];
-    await reorderTask(task.id, neighbor.id, direction === 'up' ? 'above' : 'below');
-  }
-
-  // ─── Drag handlers ────────────────────────────────────────────
-  function onDragStart(e, task) {
-    setDraggingId(task.id);
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', task.id); } catch (_) {}
-  }
-  function onDragOver(e, task) {
-    e.preventDefault();
-    if (!draggingId || draggingId === task.id) return;
-    const dragged = tasks.find(t => t.id === draggingId);
-    if (!dragged) return;
-    const sameBucket = bucketKey(dragged) === bucketKey(task);
-    const rect = e.currentTarget.getBoundingClientRect();
-    const midpoint = rect.top + rect.height / 2;
-    const position = e.clientY < midpoint ? 'above' : 'below';
-    setDropTarget({ id: task.id, position, rejected: !sameBucket });
-    e.dataTransfer.dropEffect = sameBucket ? 'move' : 'none';
-  }
-  function onDragLeave() {
-    // Don't clear immediately — leaves fire on child elements too
-  }
-  function onDrop(e, task) {
-    e.preventDefault();
-    if (!draggingId || !dropTarget || dropTarget.rejected) {
-      setDraggingId(null); setDropTarget(null); return;
+    // 3. If task was moved OUT of a quadrant, renumber the source quadrant too
+    if (quadrantChanged) {
+      const sourceQuad = moved.eisenhower_quadrant;
+      const sourceTasks = tasks.filter(t => !t.completed && t.id !== taskId && t.eisenhower_quadrant === sourceQuad)
+        .sort((a, b) => (a.eisenhower_rank ?? 999) - (b.eisenhower_rank ?? 999));
+      await Promise.all(sourceTasks.map((t, idx) =>
+        supabase.from('tasks').update({ eisenhower_rank: idx + 1 }).eq('id', t.id)
+      ));
     }
-    reorderTask(draggingId, task.id, dropTarget.position);
-    setDraggingId(null); setDropTarget(null);
-  }
-  function onDragEnd() {
-    setDraggingId(null); setDropTarget(null);
-  }
-
-  // Compute per-task arrow disabled state (first/last in bucket)
-  function arrowDisabled(task, direction) {
-    if (task.completed) return true;
-    const isEisen = task.priority_system === 'eisenhower';
-    const bucket = tasks.filter(t => !t.completed && bucketKey(t) === bucketKey(task));
-    const sorted = [...bucket].sort((a, b) => {
-      const ra = isEisen ? (a.eisenhower_rank ?? 999) : (a.simple_rank ?? 999);
-      const rb = isEisen ? (b.eisenhower_rank ?? 999) : (b.simple_rank ?? 999);
-      return ra - rb;
-    });
-    const idx = sorted.findIndex(t => t.id === task.id);
-    if (direction === 'up') return idx <= 0;
-    return idx >= sorted.length - 1;
+    // 4. Update local state
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) return { ...t, eisenhower_quadrant: newQuadrant, eisenhower_rank: newOrderedIds.indexOf(taskId) + 1, priority_system: 'eisenhower' };
+      const idxInDest = newOrderedIds.indexOf(t.id);
+      if (idxInDest >= 0) return { ...t, eisenhower_rank: idxInDest + 1 };
+      return t;
+    }));
   }
 
-  const currentFilterLabel = DATE_FILTERS.find(f => f.id === filter)?.label || 'Today';
+  // Drop zone: change due_date
+  async function setTaskDate(taskId, newDateISO) {
+    const { data: updated } = await supabase.from('tasks')
+      .update({ due_date: newDateISO }).eq('id', taskId).select().single();
+    if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+  }
 
   return (
-    <div>
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}} >
-        <div><h2>Tasks</h2><p>{stats.done} of {stats.total} complete{stats.top > 0 ? ` · ${stats.top} top priority` : ''}</p></div>
-        <button className="btn btn-primary" onClick={()=>{setEditTask(null);setShowModal(true);}}>+ New Task</button>
-      </div>
-      <div className="cards-row">
-        <div className="stat-card" style={{background:'linear-gradient(135deg, var(--accent-glow) 0%, transparent 100%)',border:'1px solid var(--accent-dim)'}}>
-          <div className="stat-label" style={{color:'var(--accent)'}}>🔥 A-Priority Streak</div>
-          <div className="stat-value" style={{display:'flex',alignItems:'baseline',gap:'5px'}}>
-            <span>{taskStreak.current}</span>
-            <span style={{fontSize:'12px',color:'var(--text-3)',fontWeight:400}}>day{taskStreak.current!==1?'s':''}</span>
-            {taskStreak.today && <span title="Done today" style={{marginLeft:'auto',color:'var(--accent)',fontSize:'14px'}}>●</span>}
-          </div>
-          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>best: {taskStreak.longest}</div>
-        </div>
-        <div className="stat-card"><div className="stat-label">Done</div><div className="stat-value" style={{color:'var(--green)'}}>{stats.done}</div></div>
-        <div className="stat-card"><div className="stat-label">Top Priority</div><div className="stat-value" style={{color:'var(--red)'}}>{stats.top}</div></div>
-        <div className="stat-card"><div className="stat-label">Open</div><div className="stat-value">{stats.total-stats.done}</div></div>
-      </div>
-      <div className="panel">
-        <div className="panel-header" style={{flexWrap:'wrap',gap:'10px'}}>
-          <h3 style={{display:'flex',alignItems:'center',gap:'8px'}}>
-            {viewMode === 'list' ? currentFilterLabel : 'Quadrant View'}
-          </h3>
-          <div className="view-controls">
-            <div className="view-toggle">
-              <button className={viewMode==='list'?'active':''} onClick={()=>setTaskViewMode('list')}>List</button>
-              <button className={viewMode==='quadrant'?'active':''} onClick={()=>setTaskViewMode('quadrant')}>Quadrants</button>
-            </div>
-            {viewMode === 'list' && (
-              <select className="form-select" style={{padding:'6px 10px',fontSize:'12px',width:'auto',minWidth:'140px'}} value={filter} onChange={e=>setTaskFilter(e.target.value)}>
-                {DATE_FILTERS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-              </select>
-            )}
-          </div>
-        </div>
-        <div className="panel-body">
-          {viewMode === 'quadrant' ? (
-            <QuadrantGrid tasks={tasks} onToggle={toggleTask} onEdit={t=>{setEditTask(t);setShowModal(true);}} onDelete={deleteTask} />
-          ) : filtered.length === 0 ? (
-            <div className="empty-state"><div className="empty-icon">✅</div><p>Nothing in {currentFilterLabel.toLowerCase()}.</p></div>
-          ) : (
-            <div className="task-list">
-              {filtered.map(task=>{
-                const isDragging = draggingId === task.id;
-                const isDropTarget = dropTarget && dropTarget.id === task.id;
-                const dropCls = isDropTarget
-                  ? (dropTarget.rejected ? 'drop-rejected' : `drop-${dropTarget.position}`)
-                  : '';
-                return (
-                  <div key={task.id}
-                    className={`task-item ${task.completed?'done':''} ${isDragging?'dragging':''} ${dropCls}`}
-                    draggable={!task.completed}
-                    onDragStart={e=>onDragStart(e, task)}
-                    onDragOver={e=>onDragOver(e, task)}
-                    onDragLeave={onDragLeave}
-                    onDrop={e=>onDrop(e, task)}
-                    onDragEnd={onDragEnd}
-                  >
-                    {!task.completed && <span className="task-handle" title="Drag to reorder">⠿</span>}
-                    <div className={`task-check ${task.completed?'checked':''}`} onClick={()=>toggleTask(task)} />
-                    <span className="task-text" style={{cursor:'pointer'}} onClick={()=>{setEditTask(task);setShowModal(true);}}>
-                      {task.title}
-                      {(task.recurring_config?.interval || task.recurring) && (task.recurring_config?.interval || task.recurring) !== 'none' && (
-                        <span title={`Repeats ${task.recurring_config?.interval || task.recurring}`} style={{marginLeft:'6px',fontSize:'11px',color:'var(--accent)'}}>↻</span>
-                      )}
-                      {task.playbook_run_id && (
-                        <span title="From a playbook" style={{marginLeft:'6px',fontSize:'11px',opacity:0.7}}>📚</span>
-                      )}
-                    </span>
-                    <div className="task-meta">
-                      {!task.completed && (
-                        <div className="task-arrows">
-                          <button className="task-arrow" title="Move up" disabled={arrowDisabled(task,'up')} onClick={()=>nudgeTask(task,'up')}>▲</button>
-                          <button className="task-arrow" title="Move down" disabled={arrowDisabled(task,'down')} onClick={()=>nudgeTask(task,'down')}>▼</button>
-                        </div>
-                      )}
-                      <span className={`task-priority ${priorityClass(task)}`}>{priorityLabel(task)}</span>
-                      {task.due_date && <span className="task-due">{task.due_date}</span>}
-                      <button className="task-delete" onClick={()=>deleteTask(task.id)}>×</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+    <div className="view">
+      <div className="view-header">
+        <h2>Tasks</h2>
+        <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+          <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
+          <button className="btn btn-primary" onClick={openNew}>+ New Task</button>
         </div>
       </div>
+
+      {/* Filter pills */}
+      <div style={{display:'flex',gap:'6px',padding:'4px 0 12px',overflowX:'auto',scrollbarWidth:'none'}}>
+        {[
+          { id: 'all',       label: 'All' },
+          { id: 'past',      label: 'Past Due' },
+          { id: 'today',     label: 'Today' },
+          { id: 'tomorrow',  label: 'Tomorrow' },
+          { id: '7days',     label: '7 Days' },
+          { id: 'future',    label: 'Future' },
+          { id: 'completed', label: 'Completed' },
+        ].map(p => (
+          <button key={p.id}
+            onClick={() => setTaskFilter(p.id)}
+            style={{
+              flexShrink:0, padding:'5px 11px', borderRadius:'999px',
+              fontSize:'11px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.03em',
+              border:'1px solid',
+              background: filter === p.id ? 'var(--accent)' : 'transparent',
+              borderColor: filter === p.id ? 'var(--accent)' : 'var(--border)',
+              color: filter === p.id ? '#000' : 'var(--text-2)',
+              cursor:'pointer', transition:'.15s'
+            }}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* View switcher: Sequence | Matrix */}
+      <div style={{display:'flex',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',marginBottom:'14px'}}>
+        {[
+          { id: 'sequence', label: 'Sequence' },
+          { id: 'matrix',   label: 'Matrix' },
+        ].map(v => (
+          <button key={v.id}
+            onClick={() => setTaskViewMode(v.id)}
+            style={{
+              flex:1, padding:'7px 0', border:'none', borderRadius:'6px',
+              fontSize:'11px', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.03em',
+              background: viewMode === v.id ? 'var(--accent)' : 'transparent',
+              color: viewMode === v.id ? '#000' : 'var(--text-2)',
+              cursor:'pointer', transition:'.18s'
+            }}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Body — Sequence or Matrix view */}
+      {viewMode === 'sequence' ? (
+        <SequenceView
+          buckets={sequenceGroups.buckets}
+          unranked={sequenceGroups.unranked}
+          quads={QUADS}
+          onEdit={openEdit}
+          onToggleComplete={toggleComplete}
+          onReorder={applyReorder}
+          setIsDragging={setIsDragging}
+        />
+      ) : (
+        <MatrixView
+          groups={matrixGroups}
+          quads={QUADS}
+          onEdit={openEdit}
+          onToggleComplete={toggleComplete}
+          onReorder={applyReorder}
+          setIsDragging={setIsDragging}
+        />
+      )}
+
+      {/* Persistent drop zones — visible during drag */}
+      <DropZoneStrip
+        visible={isDragging}
+        onDropToday={(taskId) => setTaskDate(taskId, todayISO())}
+        onDropTomorrow={(taskId) => setTaskDate(taskId, addDaysISO(1))}
+        onDropPickDate={(taskId) => {
+          const task = tasks.find(t => t.id === taskId);
+          if (task) setDatePickerTask(task);
+        }}
+      />
+
+      {/* Date picker for "Pick Date" drop zone */}
+      {datePickerTask && (
+        <DatePickerModal
+          initial={datePickerTask.due_date || todayISO()}
+          onCancel={() => setDatePickerTask(null)}
+          onPick={async (iso) => {
+            await setTaskDate(datePickerTask.id, iso);
+            setDatePickerTask(null);
+          }}
+        />
+      )}
+
       {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} userId={userId} />}
     </div>
   );
 }
+
+// ─────────────────────────────────────────
+// SEQUENCE VIEW — grouped by quadrant, priority badge is drag handle
+// ─────────────────────────────────────────
+function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+  return (
+    <div>
+      {quads.map(q => (
+        <QuadrantGroup key={q}
+          quadrant={q}
+          label={QUAD_LABELS[q]}
+          tasks={buckets[q]}
+          onEdit={onEdit}
+          onToggleComplete={onToggleComplete}
+          onReorder={onReorder}
+          setIsDragging={setIsDragging}
+        />
+      ))}
+      {unranked.length > 0 && (
+        <QuadrantGroup
+          quadrant={null}
+          label="Unranked"
+          tasks={unranked}
+          onEdit={onEdit}
+          onToggleComplete={onToggleComplete}
+          onReorder={onReorder}
+          setIsDragging={setIsDragging}
+        />
+      )}
+      {quads.every(q => buckets[q].length === 0) && unranked.length === 0 && (
+        <div className="empty-state" style={{padding:'40px 0',textAlign:'center'}}>
+          <div style={{fontSize:'42px',marginBottom:'10px'}}>✓</div>
+          <p style={{color:'var(--text-2)'}}>All clear. Nothing matches this filter.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const QUAD_LABELS = {
+  A: 'Q1 · Important / Urgent',
+  B: 'Q2 · Important / Not Urgent',
+  C: 'Q3 · Not Important / Urgent',
+  D: 'Q4 · Not Important / Not Urgent',
+};
+const QUAD_COLORS = {
+  A: '#ef4444',    // red — urgent
+  B: '#3b82f6',    // blue — strategic
+  C: '#f59e0b',    // amber — interruption
+  D: '#94a3b8',    // gray — defer
+};
+
+// ─────────────────────────────────────────
+// QUADRANT GROUP — one priority bucket, sortable list inside
+// ─────────────────────────────────────────
+function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+  // Build group id used by Sortable for cross-group moves
+  const groupId = `quad-${quadrant || 'unranked'}`;
+
+  // Render initial DOM, let Sortable manage drag state
+  const containerRef = useRef(null);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const sortable = Sortable.create(containerRef.current, {
+      group: 'tasks',
+      animation: 150,
+      // Drag handle is the priority badge — `.tasks-pro-anchor`
+      handle: '.tasks-pro-anchor',
+      // Touch settings tuned to match ONE Tasks: 200ms hold before drag begins,
+      // so a tap doesn't get hijacked into a drag.
+      delay: 200,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      // Drop-zone container will be set up separately; let cross-list moves
+      // work for between-quadrant repositioning
+      ghostClass: 'tasks-pro-ghost',
+      dragClass: 'tasks-pro-drag',
+      onStart: () => setIsDragging(true),
+      onEnd: async (evt) => {
+        setIsDragging(false);
+        // evt.item.dataset.id, evt.to.id (target group), evt.to children order
+        const taskId = evt.item.getAttribute('data-id');
+        const destGroupEl = evt.to;
+        const destQuadrant = destGroupEl.getAttribute('data-quadrant') || null;
+        // If destination is a drop zone (not a quadrant), it has data-drop-action
+        const dropAction = destGroupEl.getAttribute('data-drop-action');
+        if (dropAction) {
+          // The drop zone handlers will manage this; remove the item from this list
+          // (drop zones don't actually hold items — they're action targets)
+          evt.item.remove();
+          // Fire the drop action handler from the drop zone strip
+          destGroupEl.dispatchEvent(new CustomEvent('taskdropped', { detail: { taskId } }));
+          return;
+        }
+        // Otherwise it's a quadrant — compute new ordering
+        const newOrderedIds = Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
+        await onReorder(taskId, destQuadrant, newOrderedIds);
+      },
+    });
+    return () => sortable.destroy();
+  }, [onReorder, setIsDragging]);
+
+  const headerColor = quadrant ? QUAD_COLORS[quadrant] : 'var(--text-3)';
+
+  return (
+    <div style={{marginBottom:'18px'}}>
+      <div style={{
+        padding:'6px 10px',
+        background:'var(--bg-hover)',
+        borderLeft:`3px solid ${headerColor}`,
+        borderRadius:'4px 4px 0 0',
+        fontSize:'10px', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.06em',
+        color:'var(--text-2)',
+        display:'flex', justifyContent:'space-between', alignItems:'center'
+      }}>
+        <span>{label}</span>
+        <span style={{color:'var(--text-3)',fontWeight:600}}>{tasks.length}</span>
+      </div>
+      <div ref={containerRef} id={groupId} data-quadrant={quadrant || ''}
+        style={{
+          background:'var(--bg-card)',
+          border:'1px solid var(--border)',
+          borderTop:'none',
+          borderRadius:'0 0 4px 4px',
+          minHeight: tasks.length === 0 ? '36px' : 'auto',
+        }}>
+        {tasks.map((t, i) => (
+          <TaskProRow key={t.id}
+            task={t}
+            rankNumber={i + 1}
+            onEdit={onEdit}
+            onToggleComplete={onToggleComplete}
+          />
+        ))}
+        {tasks.length === 0 && (
+          <div style={{padding:'10px 14px',fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center'}}>
+            Drop a task here to move it to {label}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// TASK ROW — priority badge is drag anchor, click anywhere else to edit
+// ─────────────────────────────────────────
+function TaskProRow({ task, rankNumber, onEdit, onToggleComplete }) {
+  const quadrant = task.eisenhower_quadrant;
+  const badgeLabel = quadrant ? `${quadrant}${rankNumber}` : `${rankNumber}`;
+  const badgeColor = quadrant ? QUAD_COLORS[quadrant] : 'var(--text-3)';
+  const isDone = !!task.completed;
+
+  return (
+    <div data-id={task.id}
+      onClick={(e) => {
+        // Don't trigger edit if click came from checkbox or anchor
+        if (e.target.closest('.tasks-pro-anchor') || e.target.closest('.tasks-pro-check')) return;
+        onEdit(task);
+      }}
+      style={{
+        display:'flex', alignItems:'center', gap:'6px',
+        padding:'8px 10px',
+        borderBottom:'1px solid var(--border)',
+        cursor:'pointer',
+        background: isDone ? 'var(--bg-base)' : 'transparent',
+        opacity: isDone ? 0.55 : 1,
+      }}>
+      {/* Checkbox */}
+      <input type="checkbox" checked={isDone} className="tasks-pro-check"
+        onChange={(e) => onToggleComplete(task, e)}
+        onClick={e => e.stopPropagation()}
+        style={{flexShrink:0,width:'16px',height:'16px',accentColor:'var(--accent)',cursor:'pointer'}}
+      />
+      {/* Priority badge — THIS IS THE DRAG HANDLE */}
+      <div className="tasks-pro-anchor"
+        style={{
+          flexShrink:0,
+          padding:'3px 8px',
+          background: badgeColor,
+          color:'#fff',
+          fontSize:'10px', fontWeight:900,
+          borderRadius:'4px',
+          cursor:'grab',
+          touchAction:'none',
+          minWidth:'30px', textAlign:'center',
+          letterSpacing:'0.02em',
+        }}
+        title="Drag to reorder or move to another priority">
+        {badgeLabel}
+      </div>
+      {/* Title */}
+      <span style={{
+        flex:1, minWidth:0,
+        fontSize:'13px',
+        color: isDone ? 'var(--text-3)' : 'var(--text-1)',
+        textDecoration: isDone ? 'line-through' : 'none',
+        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
+      }}>
+        {task.title}
+      </span>
+      {/* Right meta: due date */}
+      {task.due_date && (
+        <span style={{
+          flexShrink:0,
+          fontSize:'10px', fontWeight:600,
+          color:'var(--text-3)',
+        }}>
+          {formatDueShort(task.due_date)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function formatDueShort(iso) {
+  if (!iso) return '';
+  const today = todayISO();
+  const tomorrow = addDaysISO(1);
+  if (iso === today) return 'Today';
+  if (iso === tomorrow) return 'Tomorrow';
+  if (iso < today) return iso; // overdue — full date
+  // Otherwise show short "May 30"
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ─────────────────────────────────────────
+// MATRIX VIEW — 2x2 quadrant grid with drag-between
+// ─────────────────────────────────────────
+function MatrixView({ groups, quads, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+  return (
+    <div style={{
+      display:'grid',
+      gridTemplateColumns:'1fr 1fr',
+      gridTemplateRows:'1fr 1fr',
+      gap:'8px',
+      minHeight:'320px',
+    }}>
+      {quads.map(q => (
+        <MatrixQuadrant key={q}
+          quadrant={q}
+          label={QUAD_LABELS[q]}
+          tasks={groups[q]}
+          onEdit={onEdit}
+          onToggleComplete={onToggleComplete}
+          onReorder={onReorder}
+          setIsDragging={setIsDragging}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onReorder, setIsDragging }) {
+  const containerRef = useRef(null);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const sortable = Sortable.create(containerRef.current, {
+      group: 'tasks',
+      animation: 150,
+      handle: '.tasks-pro-anchor',
+      delay: 200,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      ghostClass: 'tasks-pro-ghost',
+      dragClass: 'tasks-pro-drag',
+      onStart: () => setIsDragging(true),
+      onEnd: async (evt) => {
+        setIsDragging(false);
+        const taskId = evt.item.getAttribute('data-id');
+        const destGroupEl = evt.to;
+        const destQuadrant = destGroupEl.getAttribute('data-quadrant') || null;
+        const dropAction = destGroupEl.getAttribute('data-drop-action');
+        if (dropAction) {
+          evt.item.remove();
+          destGroupEl.dispatchEvent(new CustomEvent('taskdropped', { detail: { taskId } }));
+          return;
+        }
+        const newOrderedIds = Array.from(destGroupEl.children).map(el => el.getAttribute('data-id')).filter(Boolean);
+        await onReorder(taskId, destQuadrant, newOrderedIds);
+      },
+    });
+    return () => sortable.destroy();
+  }, [onReorder, setIsDragging]);
+
+  const headerColor = QUAD_COLORS[quadrant];
+
+  return (
+    <div style={{
+      background:'var(--bg-card)',
+      border:'1px solid var(--border)',
+      borderTop:`3px solid ${headerColor}`,
+      borderRadius:'6px',
+      display:'flex', flexDirection:'column',
+      overflow:'hidden',
+    }}>
+      <div style={{
+        padding:'5px 8px',
+        background:'var(--bg-hover)',
+        fontSize:'9px', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em',
+        color:'var(--text-2)',
+        borderBottom:'1px solid var(--border)',
+      }}>
+        {label}
+      </div>
+      <div ref={containerRef} data-quadrant={quadrant}
+        style={{flex:1, overflowY:'auto', minHeight:'80px', padding:'2px 0'}}>
+        {tasks.map((t, i) => (
+          <div key={t.id} data-id={t.id}
+            onClick={(e) => {
+              if (e.target.closest('.tasks-pro-anchor') || e.target.closest('.tasks-pro-check')) return;
+              onEdit(t);
+            }}
+            style={{
+              display:'flex', alignItems:'center', gap:'4px',
+              padding:'5px 7px',
+              borderBottom:'1px solid var(--border)',
+              cursor:'pointer',
+              opacity: t.completed ? 0.5 : 1,
+            }}>
+            <input type="checkbox" checked={!!t.completed} className="tasks-pro-check"
+              onChange={(e) => onToggleComplete(t, e)}
+              onClick={e => e.stopPropagation()}
+              style={{flexShrink:0,width:'13px',height:'13px',accentColor:'var(--accent)'}}/>
+            <div className="tasks-pro-anchor"
+              style={{
+                flexShrink:0,
+                padding:'1px 5px',
+                background: headerColor,
+                color:'#fff',
+                fontSize:'9px', fontWeight:900,
+                borderRadius:'3px',
+                cursor:'grab',
+                touchAction:'none',
+              }}>
+              {quadrant}{i + 1}
+            </div>
+            <span style={{
+              flex:1, minWidth:0,
+              fontSize:'12px',
+              color: t.completed ? 'var(--text-3)' : 'var(--text-1)',
+              textDecoration: t.completed ? 'line-through' : 'none',
+              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
+            }}>
+              {t.title}
+            </span>
+          </div>
+        ))}
+        {tasks.length === 0 && (
+          <div style={{padding:'10px',fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center'}}>
+            Empty
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// DROP ZONE STRIP — appears during drag; quick reschedule
+// ─────────────────────────────────────────
+function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate }) {
+  const todayRef = useRef(null);
+  const tomorrowRef = useRef(null);
+  const dateRef = useRef(null);
+
+  useEffect(() => {
+    const zones = [
+      { ref: todayRef, action: 'today', handler: onDropToday },
+      { ref: tomorrowRef, action: 'tomorrow', handler: onDropTomorrow },
+      { ref: dateRef, action: 'pick', handler: onDropPickDate },
+    ];
+    const cleanups = [];
+    zones.forEach(z => {
+      if (!z.ref.current) return;
+      // Each drop zone is itself a SortableJS receiver — accepts items from the 'tasks' group.
+      const sortable = Sortable.create(z.ref.current, {
+        group: { name: 'tasks', pull: false, put: true },
+        delay: 0,
+        sort: false,
+        onAdd: (evt) => {
+          evt.item.remove();  // don't let it stick in the drop zone
+          const taskId = evt.item.getAttribute('data-id');
+          z.handler(taskId);
+        },
+      });
+      cleanups.push(() => sortable.destroy());
+    });
+    return () => cleanups.forEach(c => c());
+  }, [onDropToday, onDropTomorrow, onDropPickDate]);
+
+  return (
+    <div style={{
+      position:'fixed',
+      bottom: visible ? '12px' : '-100px',
+      left:'12px', right:'12px',
+      display:'grid',
+      gridTemplateColumns:'1fr 1fr 1fr',
+      gap:'8px',
+      zIndex:200,
+      transition:'bottom .25s ease',
+      pointerEvents: visible ? 'auto' : 'none',
+    }}>
+      {[
+        { ref: todayRef, action: 'today', label: 'Today' },
+        { ref: tomorrowRef, action: 'tomorrow', label: 'Tomorrow' },
+        { ref: dateRef, action: 'pick', label: 'Pick Date' },
+      ].map(z => (
+        <div key={z.action} ref={z.ref} data-drop-action={z.action}
+          style={{
+            background:'var(--bg-card)',
+            border:'2px dashed var(--accent)',
+            borderRadius:'8px',
+            padding:'14px 8px',
+            textAlign:'center',
+            fontSize:'10px', fontWeight:900, textTransform:'uppercase', letterSpacing:'0.05em',
+            color:'var(--accent)',
+            minHeight:'48px',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
+          }}>
+          {z.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// DATE PICKER MODAL — simple month grid for "Pick Date" drop zone
+// ─────────────────────────────────────────
+function DatePickerModal({ initial, onCancel, onPick }) {
+  const [year, setYear] = useState(() => {
+    const [y] = (initial || todayISO()).split('-').map(Number);
+    return y;
+  });
+  const [month, setMonth] = useState(() => {
+    const [, m] = (initial || todayISO()).split('-').map(Number);
+    return m - 1;
+  });
+  const today = todayISO();
+  const monthName = new Date(year, month, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  function pick(day) {
+    const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onPick(iso);
+  }
+  function shiftMonth(n) {
+    let m = month + n; let y = year;
+    if (m < 0) { m = 11; y--; }
+    if (m > 11) { m = 0; y++; }
+    setMonth(m); setYear(y);
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()} style={{zIndex:1300}}>
+      <div className="modal" style={{maxWidth:'320px',width:'92%'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <h3 style={{margin:0,fontSize:'14px'}}>Pick a date</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onCancel}>✕</button>
+        </div>
+        <div style={{padding:'14px 16px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+            <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(-1)}>‹</button>
+            <span style={{fontSize:'13px',fontWeight:700}}>{monthName}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(1)}>›</button>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',gap:'2px',fontSize:'10px',color:'var(--text-3)',fontWeight:700,textAlign:'center',marginBottom:'4px'}}>
+            <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',gap:'4px'}}>
+            {cells.map((c, i) => {
+              if (c === null) return <div key={i} />;
+              const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(c).padStart(2, '0')}`;
+              const isToday = iso === today;
+              return (
+                <button key={i} onClick={() => pick(c)}
+                  style={{
+                    padding:'8px 0', fontSize:'12px',
+                    background: isToday ? 'var(--accent)' : 'var(--bg-base)',
+                    color: isToday ? '#000' : 'var(--text-1)',
+                    border:'1px solid var(--border)',
+                    borderRadius:'4px', cursor:'pointer',
+                    fontWeight: isToday ? 800 : 500,
+                  }}>
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // ─────────────────────────────────────────
 // EISENHOWER 2x2 QUADRANT GRID
@@ -12165,7 +12621,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
   const [taskFilter, setTaskFilter] = useState('today');
-  const [taskViewMode, setTaskViewMode] = useState('list');
+  const [taskViewMode, setTaskViewMode] = useState('sequence');
 
   // Sync priority pref + task UI prefs from user metadata when session changes
   useEffect(() => {
