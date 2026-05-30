@@ -2125,14 +2125,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
                           minWidth:'220px',padding:'4px'
                         }}>
-                          {/* Reply all — always show when applicable */}
-                          {canReplyAll && (
-                            <button
-                              onClick={() => { openReply(latest, true); setShowMoreMenu(false); }}
-                              style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
-                              ↩↩ Reply all
-                            </button>
-                          )}
+                          {/* Reply all — always shown for menu consistency.
+                              On solo-recipient threads this behaves identically to Reply. */}
+                          <button
+                            onClick={() => { openReply(latest, true); setShowMoreMenu(false); }}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
+                            ↩↩ Reply all
+                          </button>
 
                           {/* Forward */}
                           <button
