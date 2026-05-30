@@ -4,8 +4,6 @@ import { supabase } from './dataService';
 import { BUILD_VERSION } from './version';
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
-import Sortable from 'sortablejs';
-import { ReactSortable } from 'react-sortablejs';
 import './index.css';
 
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
@@ -16,8 +14,6 @@ if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 // copied from node_modules/pdfjs-dist/build/pdf.worker.min.mjs at commit time.
 // If you bump pdfjs-dist, also re-copy public/pdf.worker.min.mjs.
 pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL || ''}/pdf.worker.min.mjs`;
-
-const PLATFORM_ADMIN_EMAIL = 'dara@brokerdara.com';
 
 // Contact segment types. Order = display order in dropdowns and filter pills.
 // "All" is a UI-only filter sentinel; it isn't stored.
@@ -2040,11 +2036,12 @@ function QuadrantGrid({ tasks, onToggle, onEdit, onDelete }) {
 }
 
 // ─────────────────────────────────────────
-// INBOX VIEW — Gmail-aware (Phase Two)
-// Reads from email_threads/email_messages when an account is connected;
-// falls back to legacy `emails` table when no account is set up yet.
+// INBOX VIEW — Gmail-aware
+// Reads from email_threads/email_messages when an account is connected.
+// No account? Show a connect screen. (Pass 1 Batch D removed the legacy
+// fake-email LegacyInboxView and the underlying `emails` table.)
 // ─────────────────────────────────────────
-function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData }) {
+function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData }) {
   // Find the email-purpose Google account. Once a user has gone through OAuth
   // for email, we KEEP that view forever — even if is_active or sync errors
   // would otherwise hide it. The user explicitly disconnects via Settings if
@@ -2057,192 +2054,46 @@ function InboxView({ emails, setEmails, emailAccounts, setEmailAccounts, emailAl
   if (emailAccount) {
     return <GmailInboxView account={emailAccount} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} />;
   }
-  return <LegacyInboxView emails={emails} setEmails={setEmails} userId={userId} setView={setView} reloadData={reloadData} />;
+  return <InboxConnectScreen setView={setView} reloadData={reloadData} />;
 }
 
-// ─── Legacy fake-email inbox (the original) ─────────────────────
-function LegacyInboxView({ emails, setEmails, userId, setView, reloadData }) {
-  const [showCompose, setShowCompose] = useState(false);
-  const [composeTo, setComposeTo] = useState('');
-  const [composeSubject, setComposeSubject] = useState('');
-  const [composeBody, setComposeBody] = useState('');
-  const [sending, setSending] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [tab, setTab] = useState('inbox');
+// Shown in the Inbox tab when no Gmail account is connected.
+function InboxConnectScreen({ setView, reloadData }) {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState(null);
 
-  const unread = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder)).length;
-  const visible = tab==='inbox' ? emails.filter(e=>e.folder==='inbox'||!e.folder) : emails.filter(e=>e.folder==='sent');
-
-  function initials(addr) { return addr ? addr.split('@')[0].slice(0,2).toUpperCase() : '?'; }
-  function timeAgo(ts) {
-    if (!ts) return '';
-    const diff = Math.floor((Date.now()-new Date(ts))/60000);
-    if (diff<1) return 'just now'; if (diff<60) return `${diff}m`; if (diff<1440) return `${Math.floor(diff/60)}h`;
-    return new Date(ts).toLocaleDateString();
-  }
-
-  async function connectGmail() {
-    setConnecting(true); setConnectError(null);
+  async function startOAuth() {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not signed in.');
+      setConnecting(true);
+      setConnectError(null);
       const { data, error } = await supabase.functions.invoke('google-oauth-start', {
-        body: { return_to: window.location.origin + window.location.pathname, purpose: 'email' },
+        body: { purpose: 'email' },
       });
       if (error) throw error;
-      if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
-      if (!data?.url) throw new Error('No URL returned.');
-      window.location.href = data.url;
-    } catch (e) {
-      setConnectError(e.message || String(e));
+      if (data?.url) window.location.href = data.url;
+      else throw new Error('No OAuth URL returned');
+    } catch (err) {
+      setConnectError(err?.message || String(err));
       setConnecting(false);
     }
   }
 
-  async function syncAndReload() {
-    setSyncing(true); setSyncMsg(null);
-    try {
-      // Reload data — picks up any account row that may have appeared
-      if (reloadData) await reloadData();
-      // If we still don't have an email account after reload, this view will
-      // re-render unchanged. If we DO have one, the parent will swap to GmailInboxView.
-      setSyncMsg({ type: 'ok', text: 'Refreshed. If your email account is connected, the page will switch to live Gmail.' });
-    } catch (e) {
-      setSyncMsg({ type: 'error', text: 'Refresh failed: ' + (e.message || e) });
-    } finally {
-      setSyncing(false);
-      setTimeout(() => setSyncMsg(null), 5000);
-    }
-  }
-
-  async function markRead(email) {
-    if (!email.read) await supabase.from('emails').update({read:true}).eq('id',email.id);
-    setEmails(prev=>prev.map(e=>e.id===email.id?{...e,read:true}:e));
-    setSelected({...email,read:true});
-  }
-  async function handleSend(ev) {
-    ev.preventDefault(); setSending(true);
-    const { data: sent } = await supabase.from('emails').insert({ user_id:userId, from_address:PLATFORM_ADMIN_EMAIL, to_address:composeTo, subject:composeSubject, body:composeBody, folder:'sent', read:true }).select().single();
-    if (sent) setEmails(prev=>[sent,...prev]);
-    setShowCompose(false); setComposeTo(''); setComposeSubject(''); setComposeBody(''); setSending(false);
-  }
-  async function deleteEmail(id) {
-    await supabase.from('emails').delete().eq('id',id);
-    setEmails(prev=>prev.filter(e=>e.id!==id));
-    if (selected?.id===id) setSelected(null);
-  }
-
   return (
-    <div>
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>Inbox</h2><p>{unread} unread · <span style={{color:'var(--text-3)'}}>not connected to Gmail yet — using local archive</span></p></div>
-        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-          <button
-            className="btn btn-ghost"
-            onClick={connectGmail}
-            disabled={connecting}
-            style={{borderColor:'var(--accent-dim)',color:'var(--accent)',fontWeight:600}}
-          >
-            {connecting ? 'Opening Google…' : '🔗 Connect Gmail'}
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={syncAndReload}
-            disabled={syncing}
-            title="Refresh — pulls latest account state from the database"
-          >
-            {syncing ? '↻ Syncing…' : '↻ Sync'}
-          </button>
-          <button className="btn btn-primary" onClick={()=>setShowCompose(true)}>✏️ Compose</button>
-        </div>
-      </div>
-
-      {syncMsg && (
-        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',
-          background: syncMsg.type==='ok'?'rgba(34,197,94,0.12)':'rgba(239,68,68,0.12)',
-          border:`1px solid ${syncMsg.type==='ok'?'#22c55e':'#ef4444'}`,
-          color: syncMsg.type==='ok'?'#22c55e':'#ef4444', fontSize:'13px'}}>{syncMsg.text}</div>
-      )}
-
-      {connectError && (
-        <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',background:'rgba(239,68,68,0.12)',border:'1px solid #ef4444',color:'#ef4444',fontSize:'12px'}}>
-          Connection failed: {connectError}
-        </div>
-      )}
-
-      <div style={{display:'grid',gridTemplateColumns:selected?'1fr 1.4fr':'1fr',gap:'18px'}}>
-        <div>
-          <div className="panel">
-            <div className="panel-header">
-              <div style={{display:'flex',gap:'6px'}}>
-                {['inbox','sent'].map(t=>(
-                  <button key={t} className={`btn btn-sm ${tab===t?'btn-primary':'btn-ghost'}`} onClick={()=>{setTab(t);setSelected(null);}}>
-                    {t.charAt(0).toUpperCase()+t.slice(1)}
-                    {t==='inbox'&&unread>0&&<span className="nav-badge" style={{marginLeft:'6px'}}>{unread}</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="panel-body">
-              {visible.length===0
-                ? <div className="empty-state"><div className="empty-icon">📭</div><p>No messages here.</p><p style={{fontSize:'13px',color:'var(--text-3)',marginTop:'8px'}}>Connect Gmail in Settings to see real email.</p></div>
-                : <div className="email-list">
-                    {visible.map(email=>(
-                      <div key={email.id} className={`email-item ${!email.read?'email-unread':''}`} onClick={()=>markRead(email)}>
-                        {!email.read&&<div className="unread-dot"/>}
-                        <div className="email-avatar">{initials(tab==='inbox'?email.from_address:email.to_address)}</div>
-                        <div className="email-content">
-                          <div className="email-from">{tab==='inbox'?email.from_address:`To: ${email.to_address}`}</div>
-                          <div className="email-subject">{email.subject||'(no subject)'}</div>
-                          <div className="email-preview">{email.body?.slice(0,80)||''}</div>
-                        </div>
-                        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'4px',flexShrink:0}}>
-                          <span className="email-time">{timeAgo(email.created_at)}</span>
-                          <button className="btn-icon" style={{color:'var(--red)',fontSize:'13px'}} onClick={ev=>{ev.stopPropagation();deleteEmail(email.id);}}>🗑</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-              }
-            </div>
-          </div>
-        </div>
-        {selected&&(
-          <div className="panel">
-            <div className="panel-header">
-              <h3 style={{maxWidth:'80%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{selected.subject||'(no subject)'}</h3>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(null)}>Close</button>
-            </div>
-            <div className="panel-body">
-              <div style={{display:'flex',gap:'6px',marginBottom:'14px',flexWrap:'wrap'}}>
-                <span className="pill pill-purple">From: {selected.from_address}</span>
-                {selected.to_address&&<span className="pill pill-green">To: {selected.to_address}</span>}
-              </div>
-              <div style={{fontSize:'13.5px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap'}}>{selected.body}</div>
-            </div>
-          </div>
+    <div className="view">
+      <div className="view-header"><h2>Inbox</h2></div>
+      <div className="empty-state" style={{padding:'40px 20px', textAlign:'center', maxWidth:'520px', margin:'0 auto'}}>
+        <h3 style={{marginBottom:'10px'}}>Connect Gmail to use your Inbox</h3>
+        <p style={{color:'var(--text-2)', marginBottom:'20px'}}>
+          Hook up a Gmail account and your inbox will sync here automatically.
+          You can connect more than one — set each one's purpose in Settings.
+        </p>
+        <button className="btn btn-primary" onClick={startOAuth} disabled={connecting}>
+          {connecting ? 'Opening Google…' : 'Connect Gmail'}
+        </button>
+        {connectError && (
+          <p style={{color:'var(--red)', marginTop:'12px', fontSize:'13px'}}>{connectError}</p>
         )}
       </div>
-      {showCompose&&(
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowCompose(false)}>
-          <div className="modal">
-            <div className="modal-header"><h3>New Message</h3><button className="modal-close" onClick={()=>setShowCompose(false)}>×</button></div>
-            <form onSubmit={handleSend}>
-              <div className="form-group"><label className="form-label">To</label><input className="form-input" type="email" value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="recipient@example.com" required /></div>
-              <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" /></div>
-              <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'130px'}} required /></div>
-              <div className="modal-actions">
-                <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={sending}>{sending?'Sending…':'Send'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -3348,7 +3199,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 // ─────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────
-function DashboardView({ tasks, setTasks, emails, user, setView, robots, contacts = [], brain, defaultSystem }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem }) {
   const [editTask, setEditTask] = useState(null);
 
   // Save edits to a task triggered from the dashboard. Mirrors the logic in
@@ -3394,7 +3245,6 @@ function DashboardView({ tasks, setTasks, emails, user, setView, robots, contact
   }
   const pending = tasks.filter(t=>!t.completed);
   const topTasks = sortTasks(pending.filter(isTopPriority));
-  const unread = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder));
   const today = new Date();
   const gr = today.getHours()<12?'Good morning':today.getHours()<17?'Good afternoon':'Good evening';
   const name = user?.user_metadata?.display_name?.trim() || user?.user_metadata?.full_name?.trim()?.split(/\s+/)[0] || user?.email?.split('@')[0] || 'there';
@@ -3409,7 +3259,7 @@ function DashboardView({ tasks, setTasks, emails, user, setView, robots, contact
       </div>
       <div className="cards-row">
         <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('tasks')}><div className="stat-label">Open Tasks</div><div className="stat-value">{pending.length}</div><div className="stat-sub">{topTasks.length} top priority</div></div>
-        <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('inbox')}><div className="stat-label">Unread Email</div><div className="stat-value">{unread.length}</div><div className="stat-sub">in inbox</div></div>
+        <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('inbox')}><div className="stat-label">Unread Email</div><div className="stat-value">{unreadEmailCount}</div><div className="stat-sub">in inbox</div></div>
         <div className="stat-card"><div className="stat-label">Done Today</div><div className="stat-value" style={{color:'var(--green)'}}>{tasks.filter(t=>t.completed&&t.updated_at&&new Date(t.updated_at).toDateString()===today.toDateString()).length}</div></div>
         <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{color:overdue.length>0?'var(--red)':'var(--text-1)'}}>{overdue.length}</div></div>
       </div>
@@ -13170,12 +13020,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
   const [tasks, setTasks] = useState([]);
-  const [emails, setEmails] = useState([]);
   const [robots, setRobots] = useState([]);
-  const [drawings, setDrawings] = useState([]);
   const [notes, setNotes] = useState([]);
-  const [finAccounts, setFinAccounts] = useState([]);
-  const [finAssets, setFinAssets] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [properties, setProperties] = useState([]);
   const [investments, setInvestments] = useState([]);
@@ -13187,6 +13033,8 @@ export default function App() {
   const [profiles, setProfiles] = useState([]);
   const [voiceCards, setVoiceCards] = useState([]);
   const [emailAccounts, setEmailAccounts] = useState([]);
+  // Dashboard "Unread Email" tile — count of unread inbox threads (excludes snoozed)
+  const [unreadEmailCount, setUnreadEmailCount] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
@@ -13224,44 +13072,73 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [tasksRes, emailsRes, robotsRes, drawingsRes, notesRes, contactsRes, propertiesRes, investmentsRes, brainRes, eventsRes, playbookStepsRes, playbookRunsRes, profilesRes, voiceCardsRes, emailAccountsRes, emailAliasesRes, finAccountsRes, finAssetsRes] = await Promise.all([
-      supabase.from('tasks').select('*').order('created_at', { ascending: false }),
-      supabase.from('emails').select('*').order('created_at', { ascending: false }),
-      supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true }),
-      supabase.from('drawings').select('*').order('updated_at', { ascending: false }),
-      supabase.from('notes').select('*').order('updated_at', { ascending: false }),
-      supabase.from('contacts').select('*').order('created_at', { ascending: false }),
-      supabase.from('properties').select('*').order('created_at', { ascending: false }),
-      supabase.from('investments').select('*').order('created_at', { ascending: false }),
-      supabase.from('brain').select('*').order('created_at', { ascending: false }),
-      supabase.from('events').select('*').order('start_at', { ascending: true }),
-      supabase.from('playbook_steps').select('*').order('step_order', { ascending: true }),
-      supabase.from('playbook_runs').select('*').order('created_at', { ascending: false }).limit(50),
-      supabase.from('profiles').select('*').order('created_at', { ascending: true }),
-      supabase.from('voice_cards').select('*').order('created_at', { ascending: true }),
-      supabase.from('email_accounts').select('*').order('created_at', { ascending: true }),
-      supabase.from('email_aliases').select('*').order('email_address', { ascending: true }),
-      supabase.from('fin_accounts').select('*').order('created_at', { ascending: false }),
-      supabase.from('fin_assets').select('*').order('created_at', { ascending: false }),
-    ]);
-    if (tasksRes.data) setTasks(tasksRes.data);
-    if (emailsRes.data) setEmails(emailsRes.data);
-    if (robotsRes.data) setRobots(robotsRes.data);
-    if (drawingsRes.data) setDrawings(drawingsRes.data);
-    if (notesRes.data) setNotes(notesRes.data);
-    if (contactsRes.data) setContacts(contactsRes.data);
-    if (propertiesRes.data) setProperties(propertiesRes.data);
-    if (investmentsRes.data) setInvestments(investmentsRes.data);
-    if (brainRes.data) setBrain(brainRes.data);
-    if (eventsRes.data) setEvents(eventsRes.data);
-    if (playbookStepsRes.data) setPlaybookSteps(playbookStepsRes.data);
-    if (playbookRunsRes.data) setPlaybookRuns(playbookRunsRes.data);
-    if (profilesRes.data) setProfiles(profilesRes.data);
-    if (voiceCardsRes.data) setVoiceCards(voiceCardsRes.data);
-    if (emailAccountsRes.data) setEmailAccounts(emailAccountsRes.data);
-    if (emailAliasesRes.data) setEmailAliases(emailAliasesRes.data);
-    if (finAccountsRes.data) setFinAccounts(finAccountsRes.data);
-    if (finAssetsRes.data) setFinAssets(finAssetsRes.data);
+    // Pass 1 Batch D — Findings #10 + #12 + #16:
+    // - Removed: legacy emails, drawings, fin_accounts, fin_assets (per Q2 decision)
+    // - Added bounds: events limited to 6 months back / 18 months ahead
+    // - Added limits: completed tasks capped (recent 200 only), brain capped (500),
+    //   notes capped (500), contacts capped (1000), email_threads unread count only
+    // - Switched to Promise.allSettled so a single query failure doesn't block the rest
+    const now = new Date();
+    const eventsLowerBound = new Date(now.getTime() - 180 * 86400000).toISOString();
+    const eventsUpperBound = new Date(now.getTime() + 540 * 86400000).toISOString();
+
+    const queries = [
+      ['tasks',          supabase.from('tasks').select('*').order('created_at', { ascending: false }).limit(500)],
+      ['robots',         supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true })],
+      ['notes',          supabase.from('notes').select('*').order('updated_at', { ascending: false }).limit(500)],
+      ['contacts',       supabase.from('contacts').select('*').order('created_at', { ascending: false }).limit(1000)],
+      ['properties',     supabase.from('properties').select('*').order('created_at', { ascending: false })],
+      ['investments',    supabase.from('investments').select('*').order('created_at', { ascending: false })],
+      ['brain',          supabase.from('brain').select('*').order('created_at', { ascending: false }).limit(500)],
+      ['events',         supabase.from('events').select('*')
+                            .gte('start_at', eventsLowerBound).lte('start_at', eventsUpperBound)
+                            .order('start_at', { ascending: true })],
+      ['playbookSteps',  supabase.from('playbook_steps').select('*').order('step_order', { ascending: true })],
+      ['playbookRuns',   supabase.from('playbook_runs').select('*').order('created_at', { ascending: false }).limit(50)],
+      ['profiles',       supabase.from('profiles').select('*').order('created_at', { ascending: true })],
+      ['voiceCards',     supabase.from('voice_cards').select('*').order('created_at', { ascending: true })],
+      ['emailAccounts',  supabase.from('email_accounts').select('*').order('created_at', { ascending: true })],
+      ['emailAliases',   supabase.from('email_aliases').select('*').order('email_address', { ascending: true })],
+      // Lightweight unread count for the Dashboard tile — replaces the old legacy
+      // `emails.filter(...)` approach. Uses head:true + count='exact' to avoid
+      // fetching any rows (just the count).
+      ['unreadEmailCount', supabase.from('email_threads').select('id', { count: 'exact', head: true })
+                              .eq('has_unread', true).contains('labels', ['INBOX']).is('snoozed_until', null)],
+    ];
+
+    const results = await Promise.allSettled(queries.map(([_, q]) => q));
+    const byKey = Object.fromEntries(queries.map(([k], i) => [k, results[i]]));
+
+    // Apply each result — failures noted in console; user sees a single toast if any
+    const failed = [];
+    function take(key, setter) {
+      const r = byKey[key];
+      if (r && r.status === 'fulfilled' && r.value && !r.value.error) {
+        setter(r.value);
+      } else {
+        failed.push(key);
+      }
+    }
+    take('tasks',         res => setTasks(res.data || []));
+    take('robots',        res => setRobots(res.data || []));
+    take('notes',         res => setNotes(res.data || []));
+    take('contacts',      res => setContacts(res.data || []));
+    take('properties',    res => setProperties(res.data || []));
+    take('investments',   res => setInvestments(res.data || []));
+    take('brain',         res => setBrain(res.data || []));
+    take('events',        res => setEvents(res.data || []));
+    take('playbookSteps', res => setPlaybookSteps(res.data || []));
+    take('playbookRuns',  res => setPlaybookRuns(res.data || []));
+    take('profiles',      res => setProfiles(res.data || []));
+    take('voiceCards',    res => setVoiceCards(res.data || []));
+    take('emailAccounts', res => setEmailAccounts(res.data || []));
+    take('emailAliases',  res => setEmailAliases(res.data || []));
+    take('unreadEmailCount', res => setUnreadEmailCount(typeof res.count === 'number' ? res.count : 0));
+
+    if (failed.length > 0) {
+      console.warn('loadData: queries failed:', failed);
+      notify(`Couldn't load: ${failed.join(', ')}. Some screens may be stale.`, 'error');
+    }
     setDataLoaded(true);
   }, [session]);
 
@@ -13339,9 +13216,10 @@ export default function App() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    setTasks([]); setEmails([]); setRobots([]); setDrawings([]); setNotes([]); setFinAccounts([]); setFinAssets([]);
+    setTasks([]); setRobots([]); setNotes([]);
     setContacts([]); setProperties([]); setInvestments([]); setBrain([]); setEvents([]); setPlaybookSteps([]); setPlaybookRuns([]); setEmailAliases([]);
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
+    setUnreadEmailCount(0);
     setDataLoaded(false);
   }
 
@@ -13351,22 +13229,19 @@ export default function App() {
   if (!session) return <AuthScreen />;
 
   const user = session.user;
-  const unreadCount = emails.filter(e=>!e.read&&(e.folder==='inbox'||!e.folder)).length;
   const openTaskCount = tasks.filter(t=>!t.completed).length;
 
   const NAV = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
-    { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadCount || null },
+    { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
     { id: 'playbooks',   icon: '📚', label: 'Playbooks',   badge: brain.filter(b=>b.type==='playbook').length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
-    { id: 'financials',  icon: '💳', label: 'Financials',  badge: null },
-    { id: 'draft',       icon: '✏️', label: 'Draft' },
     { id: 'chat',        icon: '✦',  label: 'Ari',         badge: null },
     { id: 'prism',       icon: '✦',  label: 'Prism',       badge: null },
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
@@ -13424,9 +13299,9 @@ export default function App() {
           )}
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
-            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} emails={emails} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref}/>
+            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref}/>
             : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts}/>
-            : view==='inbox'       ? <InboxView emails={emails} setEmails={setEmails} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
+            : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
@@ -13434,8 +13309,6 @@ export default function App() {
             : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange}/>
             : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts}/>
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
-            : view==='financials'  ? <FinancialsView accounts={finAccounts} setAccounts={setFinAccounts} assets={finAssets} setAssets={setFinAssets} userId={user.id}/>
-            : view==='draft'       ? <DraftView drawings={drawings} setDrawings={setDrawings} userId={user.id}/>
             : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
             : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
             : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id}/>
