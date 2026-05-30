@@ -57,13 +57,15 @@ const ACTIONS = {
   mark_unread: { add: ["UNREAD"] },
   spam:        { add: ["SPAM"], remove: ["INBOX"] },
   unspam:      { remove: ["SPAM"], add: ["INBOX"] },
+  snooze:      { remove: ["INBOX"] },   // hide from inbox; cron restores at snooze_until
+  unsnooze:    { add: ["INBOX"] },      // restore early
 };
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const body = await req.json();
-    const { account_id, thread_id, action } = body || {};
+    const { account_id, thread_id, action, snooze_until } = body || {};
     let { add = [], remove = [] } = body || {};
 
     if (!account_id || !thread_id) {
@@ -131,8 +133,11 @@ serve(async (req) => {
       for (const l of add) labelSet.add(l);
       const newLabels = Array.from(labelSet);
       const hasUnread = newLabels.includes("UNREAD");
+      const patch: any = { labels: newLabels, has_unread: hasUnread };
+      if (action === "snooze" && snooze_until) patch.snoozed_until = snooze_until;
+      if (action === "unsnooze") patch.snoozed_until = null;
       await supabase.from("email_threads")
-        .update({ labels: newLabels, has_unread: hasUnread })
+        .update(patch)
         .eq("id", thread.id);
       // Also update individual messages' labels
       await supabase.from("email_messages")

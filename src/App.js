@@ -1354,6 +1354,18 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     return () => { cancelled = true; };
   }, [account.id]);
 
+  // Close popovers on Escape key
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        setShowSnoozePicker(false);
+        setShowMoreMenu(false);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   async function refreshLabels() {
     try {
       await supabase.functions.invoke('gmail-labels-sync', { body: { account_id: account.id } });
@@ -12108,6 +12120,9 @@ export default function App() {
             .then(({ data: acct }) => {
               if (acct) {
                 supabase.functions.invoke('gmail-sync', { body: { account_id: acct.id } }).catch(()=>{});
+                // Also pull the user's Gmail labels into our local mirror so the
+                // label picker has data the first time it's opened.
+                supabase.functions.invoke('gmail-labels-sync', { body: { account_id: acct.id } }).catch(()=>{});
               }
             });
           // Also sync Send-mail-as aliases
