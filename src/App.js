@@ -1335,6 +1335,33 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     return () => window.removeEventListener('resize', onResize);
   }, []);
   const readingPaneRef = useRef(null);
+
+  // Pickers and dropdowns
+  const [showSnoozePicker, setShowSnoozePicker] = useState(false);
+  const [showLabelPicker, setShowLabelPicker] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [customSnoozeDate, setCustomSnoozeDate] = useState('');
+
+  // User's Gmail labels (custom, type='user')
+  const [userLabels, setUserLabels] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('gmail_labels')
+        .select('*').eq('account_id', account.id).eq('type', 'user').order('name');
+      if (!cancelled && data) setUserLabels(data);
+    })();
+    return () => { cancelled = true; };
+  }, [account.id]);
+
+  async function refreshLabels() {
+    try {
+      await supabase.functions.invoke('gmail-labels-sync', { body: { account_id: account.id } });
+      const { data } = await supabase.from('gmail_labels')
+        .select('*').eq('account_id', account.id).eq('type', 'user').order('name');
+      if (data) setUserLabels(data);
+    } catch (_) { /* non-fatal */ }
+  }
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
@@ -1384,17 +1411,18 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   const loadThreads = useCallback(async () => {
     setLoadingThreads(true);
-    // Filter labels at the SQL level using array-contains (cs) so pagination
-    // works correctly. Previously we fetched 50-most-recent and filtered in JS,
-    // which dropped older INBOX threads if newer Sent/Draft threads filled the window.
-    const labelToMatch = tab === 'sent' ? 'SENT' : 'INBOX';
-    const { data } = await supabase
-      .from('email_threads')
-      .select('*')
-      .eq('account_id', account.id)
-      .contains('labels', [labelToMatch])
-      .order('last_message_at', { ascending: false })
-      .limit(50);
+    // tab can be 'inbox', 'sent', or 'snoozed'
+    let q = supabase.from('email_threads').select('*').eq('account_id', account.id);
+    if (tab === 'sent') {
+      q = q.contains('labels', ['SENT']);
+    } else if (tab === 'snoozed') {
+      // Snoozed: has snoozed_until in the future
+      q = q.not('snoozed_until', 'is', null).gt('snoozed_until', new Date().toISOString());
+    } else {
+      // inbox: must have INBOX label, and not be snoozed
+      q = q.contains('labels', ['INBOX']).or(`snoozed_until.is.null,snoozed_until.lte.${new Date().toISOString()}`);
+    }
+    const { data } = await q.order('last_message_at', { ascending: false }).limit(50);
     setThreads(data || []);
     setLoadingThreads(false);
   }, [account.id, tab]);
@@ -1588,6 +1616,117 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     }
   }
 
+  // ===== Email actions: archive / star / unread / spam / labels / snooze =====
+  // All route through the gmail-modify edge function with action or add/remove arrays.
+
+  // Compute whether the current thread is starred / unread / spam from its labels
+  const currentLabels = (selectedThread?.labels || []);
+  const isStarred = currentLabels.includes('STARRED');
+  const isUnread = selectedThread?.has_unread || currentLabels.includes('UNREAD');
+  const isInSpam = currentLabels.includes('SPAM');
+
+  async function modifyThread(action, opts = {}) {
+    if (!selectedThread) return;
+    const { silent = false, removeFromList = false } = opts;
+    try {
+      const { data, error } = await supabase.functions.invoke('gmail-modify', {
+        body: { account_id: account.id, thread_id: selectedThread.provider_thread_id, action },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      // Update local: re-fetch the thread to get the new labels
+      const { data: updated } = await supabase.from('email_threads').select('*').eq('id', selectedThread.id).single();
+      if (updated) {
+        setSelectedThread(updated);
+        if (removeFromList) {
+          setThreads(prev => prev.filter(t => t.id !== updated.id));
+          if (action === 'archive' || action === 'spam') {
+            // Close the reading pane on archive/spam
+            setSelectedThread(null);
+            setSelectedMessages([]);
+          }
+        } else {
+          setThreads(prev => prev.map(t => t.id === updated.id ? updated : t));
+        }
+      }
+    } catch (err) {
+      if (!silent) alert('Action failed: ' + (err.message || err));
+    }
+  }
+
+  // Snooze: hide from inbox until a target time, then restore via cron
+  async function snoozeThread(untilDate) {
+    if (!selectedThread || !untilDate) return;
+    try {
+      // Remove from inbox view via Gmail (mirrors what Gmail does), and set snoozed_until locally
+      await supabase.functions.invoke('gmail-modify', {
+        body: { account_id: account.id, thread_id: selectedThread.provider_thread_id, action: 'archive' },
+      });
+      await supabase.from('email_threads').update({ snoozed_until: untilDate.toISOString() }).eq('id', selectedThread.id);
+      setThreads(prev => prev.filter(t => t.id !== selectedThread.id));
+      setSelectedThread(null);
+      setSelectedMessages([]);
+      setShowSnoozePicker(false);
+    } catch (err) {
+      alert('Snooze failed: ' + (err.message || err));
+    }
+  }
+
+  // Apply labels to the thread (add some, remove others)
+  async function applyLabels(addIds, removeIds) {
+    if (!selectedThread) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('gmail-modify', {
+        body: {
+          account_id: account.id,
+          thread_id: selectedThread.provider_thread_id,
+          add: addIds,
+          remove: removeIds,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const { data: updated } = await supabase.from('email_threads').select('*').eq('id', selectedThread.id).single();
+      if (updated) {
+        setSelectedThread(updated);
+        setThreads(prev => prev.map(t => t.id === updated.id ? updated : t));
+      }
+      setShowLabelPicker(false);
+    } catch (err) {
+      alert('Label change failed: ' + (err.message || err));
+    }
+  }
+
+  // Snooze time options
+  function snoozeOptions() {
+    const now = new Date();
+    const opts = [];
+    // Later today: 4 hours from now, but if past 7pm, skip
+    const laterToday = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+    if (laterToday.getHours() <= 21) {
+      opts.push({ key: 'later', label: 'Later today', sub: laterToday.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), date: laterToday });
+    }
+    // Tomorrow at 9am
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    opts.push({ key: 'tomorrow', label: 'Tomorrow', sub: 'Tomorrow at 9:00 AM', date: tomorrow });
+    // This weekend: Saturday at 9am (if today is Sat/Sun, next Saturday)
+    const weekend = new Date(now);
+    const dayOfWeek = weekend.getDay();
+    const daysUntilSat = dayOfWeek === 6 ? 7 : (dayOfWeek === 0 ? 6 : 6 - dayOfWeek);
+    weekend.setDate(weekend.getDate() + daysUntilSat);
+    weekend.setHours(9, 0, 0, 0);
+    opts.push({ key: 'weekend', label: 'This weekend', sub: weekend.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' at 9:00 AM', date: weekend });
+    // Next week: next Monday at 9am
+    const nextWeek = new Date(now);
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+    nextWeek.setDate(nextWeek.getDate() + daysUntilMonday);
+    nextWeek.setHours(9, 0, 0, 0);
+    opts.push({ key: 'nextweek', label: 'Next week', sub: nextWeek.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' at 9:00 AM', date: nextWeek });
+    return opts;
+  }
+
   function openReply(msg, replyAll = false) {
     if (!msg) return;
     // Normalize a recipient (string or {name, email}) to a plain email
@@ -1757,10 +1896,10 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         <div style={{display: isMobileWidth && selectedThread ? 'none' : 'block'}}>
           <div className="panel">
             <div className="panel-header">
-              <div style={{display:'flex',gap:'6px'}}>
-                {['inbox','sent'].map(t => (
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                {['inbox','snoozed','sent'].map(t => (
                   <button key={t} className={`btn btn-sm ${tab===t?'btn-primary':'btn-ghost'}`} onClick={()=>{setTab(t); setSelectedThread(null);}}>
-                    {t.charAt(0).toUpperCase()+t.slice(1)}
+                    {t === 'inbox' ? 'Inbox' : t === 'snoozed' ? '⏰ Snoozed' : 'Sent'}
                     {t==='inbox' && unreadCount>0 && <span className="nav-badge" style={{marginLeft:'6px'}}>{unreadCount}</span>}
                   </button>
                 ))}
@@ -1781,6 +1920,9 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                             <div className="email-avatar">{initials(sender.name, sender.email)}</div>
                             <div className="email-content" style={{minWidth:0}}>
                               <div className="email-from" style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
+                                {(thread.labels || []).includes('STARRED') && (
+                                  <span style={{color:'#f59e0b',fontSize:'12px',flexShrink:0}} title="Starred">★</span>
+                                )}
                                 <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{sender.name || sender.email || '(unknown)'}</span>
                                 {senderProfile && (
                                   <span className="pill pill-purple" style={{fontSize:'10px',padding:'2px 6px'}}>
@@ -1788,6 +1930,11 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                                   </span>
                                 )}
                                 {thread.message_count > 1 && <span style={{color:'var(--text-3)',fontSize:'12px'}}>({thread.message_count})</span>}
+                                {thread.snoozed_until && new Date(thread.snoozed_until) > new Date() && (
+                                  <span style={{fontSize:'10px',color:'var(--accent)',padding:'2px 6px',background:'rgba(197,169,94,0.10)',borderRadius:'4px'}}>
+                                    ⏰ until {new Date(thread.snoozed_until).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
+                                  </span>
+                                )}
                               </div>
                               <div className="email-subject" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.subject || '(no subject)'}</div>
                               <div className="email-preview" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.snippet || ''}</div>
@@ -1816,6 +1963,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 ← {isMobileWidth ? 'Inbox' : 'Close'}
               </button>
               <div style={{width:'1px',background:'var(--border)',height:'20px',margin:'0 4px'}}/>
+
               {selectedMessages.length > 0 && (() => {
                 const latest = selectedMessages[selectedMessages.length - 1];
                 const sentTo = Array.isArray(latest.to_addresses) ? latest.to_addresses : [];
@@ -1823,6 +1971,59 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 const canReplyAll = sentTo.length > 1 || cc.length > 0;
                 return (
                   <>
+                    <button className="btn btn-ghost btn-sm"
+                      onClick={() => modifyThread(isStarred ? 'unstar' : 'star')}
+                      title={isStarred ? 'Unstar' : 'Star'}
+                      style={{padding:'4px 8px',fontSize:'13px',color: isStarred ? '#f59e0b' : 'var(--text-2)'}}>
+                      {isStarred ? '★' : '☆'}
+                    </button>
+                    {tab !== 'sent' && (
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => modifyThread('archive', { removeFromList: true })}
+                        title="Archive"
+                        style={{padding:'4px 10px',fontSize:'12px'}}>
+                        📥 Archive
+                      </button>
+                    )}
+                    <div style={{position:'relative'}}>
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => { setShowSnoozePicker(s => !s); setShowMoreMenu(false); }}
+                        title="Snooze"
+                        style={{padding:'4px 10px',fontSize:'12px'}}>
+                        ⏰ Snooze
+                      </button>
+                      {showSnoozePicker && (
+                        <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:20,
+                          background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',
+                          boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
+                          minWidth:'220px',padding:'4px'}}>
+                          {snoozeOptions().map(opt => (
+                            <button key={opt.key}
+                              onClick={() => snoozeThread(opt.date)}
+                              style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
+                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                              <div style={{fontWeight:600}}>{opt.label}</div>
+                              <div style={{fontSize:'10px',color:'var(--text-3)'}}>{opt.sub}</div>
+                            </button>
+                          ))}
+                          <div style={{borderTop:'1px solid var(--border)',marginTop:'4px',paddingTop:'8px',padding:'8px 12px'}}>
+                            <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'4px',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>Pick date</div>
+                            <div style={{display:'flex',gap:'4px'}}>
+                              <input type="datetime-local" className="form-input"
+                                value={customSnoozeDate}
+                                onChange={e => setCustomSnoozeDate(e.target.value)}
+                                style={{padding:'4px 6px',fontSize:'11px',margin:0,flex:1}} />
+                              <button className="btn btn-primary btn-sm"
+                                disabled={!customSnoozeDate}
+                                onClick={() => snoozeThread(new Date(customSnoozeDate))}
+                                style={{padding:'4px 8px',fontSize:'11px'}}>Go</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{width:'1px',background:'var(--border)',height:'20px',margin:'0 4px'}}/>
                     <button className="btn btn-primary btn-sm" onClick={() => openReply(latest, false)} style={{padding:'4px 12px',fontSize:'12px'}}>
                       ↩ Reply
                     </button>
@@ -1834,9 +2035,50 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                     <button className="btn btn-ghost btn-sm" onClick={() => openForward(latest)} style={{padding:'4px 10px',fontSize:'12px'}}>
                       ↪ Forward
                     </button>
-                    <button className="btn btn-ghost btn-sm" onClick={trashCurrentThread} style={{padding:'4px 10px',fontSize:'12px',color:'var(--red)',marginLeft:'auto'}}>
-                      🗑 Delete
-                    </button>
+                    <div style={{position:'relative',marginLeft:'auto'}}>
+                      <button className="btn btn-ghost btn-sm"
+                        onClick={() => { setShowMoreMenu(m => !m); setShowSnoozePicker(false); }}
+                        title="More actions"
+                        style={{padding:'4px 8px',fontSize:'14px'}}>
+                        ⋮
+                      </button>
+                      {showMoreMenu && (
+                        <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,zIndex:20,
+                          background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',
+                          boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
+                          minWidth:'200px',padding:'4px'}}>
+                          <button
+                            onClick={() => { modifyThread(isUnread ? 'mark_read' : 'mark_unread'); setShowMoreMenu(false); }}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            {isUnread ? '✓ Mark as read' : '○ Mark as unread'}
+                          </button>
+                          <button
+                            onClick={() => { setShowLabelPicker(true); setShowMoreMenu(false); }}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'12px'}}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            🏷 Apply labels…
+                          </button>
+                          <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
+                          <button
+                            onClick={() => { modifyThread('spam', { removeFromList: true }); setShowMoreMenu(false); }}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'12px'}}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            ⚠ Mark as spam
+                          </button>
+                          <button
+                            onClick={() => { trashCurrentThread(); setShowMoreMenu(false); }}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'12px'}}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            🗑 Delete (move to Trash)
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </>
                 );
               })()}
@@ -1937,6 +2179,24 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
           </div>
         )}
       </div>
+
+      {showLabelPicker && selectedThread && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowLabelPicker(false)} style={{zIndex: 1100}}>
+          <div className="modal" style={{maxWidth:'460px',width:'92%'}}>
+            <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <h3 style={{margin:0}}>🏷 Apply labels</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowLabelPicker(false)}>✕</button>
+            </div>
+            <LabelPickerBody
+              currentLabels={currentLabels}
+              userLabels={userLabels}
+              onApply={applyLabels}
+              onRefresh={refreshLabels}
+              onCancel={() => setShowLabelPicker(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {showCompose && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && setShowCompose(false)}>
@@ -8069,6 +8329,74 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
           <button className="btn btn-ghost btn-sm" onClick={loadSuggestions}>↻ Refresh</button>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Done</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LabelPickerBody({ currentLabels, userLabels, onApply, onRefresh, onCancel }) {
+  const [selected, setSelected] = useState(new Set(currentLabels.filter(l => !['INBOX','SENT','TRASH','SPAM','STARRED','UNREAD','IMPORTANT','DRAFT','CATEGORY_PERSONAL','CATEGORY_PROMOTIONS','CATEGORY_UPDATES','CATEGORY_SOCIAL','CATEGORY_FORUMS'].includes(l))));
+  const [query, setQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const filtered = query
+    ? userLabels.filter(l => l.name.toLowerCase().includes(query.toLowerCase()))
+    : userLabels;
+
+  function toggle(labelId) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(labelId)) next.delete(labelId);
+      else next.add(labelId);
+      return next;
+    });
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try { await onRefresh(); }
+    finally { setRefreshing(false); }
+  }
+
+  function handleApply() {
+    const initial = new Set(currentLabels.filter(l => userLabels.some(ul => ul.label_id === l)));
+    const toAdd = Array.from(selected).filter(id => !initial.has(id));
+    const toRemove = Array.from(initial).filter(id => !selected.has(id));
+    onApply(toAdd, toRemove);
+  }
+
+  return (
+    <div style={{padding:'14px',display:'flex',flexDirection:'column',gap:'10px'}}>
+      <div style={{display:'flex',gap:'6px'}}>
+        <input className="form-input" placeholder="Search labels…"
+          value={query} onChange={e => setQuery(e.target.value)}
+          style={{flex:1,fontSize:'12px',padding:'6px 10px',margin:0}} />
+        <button className="btn btn-ghost btn-sm" onClick={handleRefresh} disabled={refreshing} title="Re-sync labels from Gmail">
+          {refreshing ? '↻' : '↻ Sync'}
+        </button>
+      </div>
+      <div style={{maxHeight:'320px',overflowY:'auto',border:'1px solid var(--border)',borderRadius:'6px'}}>
+        {filtered.length === 0 && (
+          <div style={{padding:'20px',textAlign:'center',color:'var(--text-3)',fontSize:'12px'}}>
+            {userLabels.length === 0 ? 'No custom labels found. Click ↻ Sync to fetch from Gmail.' : 'No matches.'}
+          </div>
+        )}
+        {filtered.map(l => {
+          const isChecked = selected.has(l.label_id);
+          return (
+            <label key={l.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid var(--border)'}}>
+              <input type="checkbox" checked={isChecked} onChange={() => toggle(l.label_id)} />
+              <span style={{fontSize:'13px',color:'var(--text-1)',flex:1}}>{l.name}</span>
+              {l.color?.backgroundColor && (
+                <span style={{width:'12px',height:'12px',borderRadius:'2px',background:l.color.backgroundColor,flexShrink:0}}/>
+              )}
+            </label>
+          );
+        })}
+      </div>
+      <div style={{display:'flex',gap:'6px',justifyContent:'flex-end'}}>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={handleApply}>Apply</button>
       </div>
     </div>
   );
