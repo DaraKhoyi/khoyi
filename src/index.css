@@ -546,3 +546,24 @@ body {
 .year-day.out { color: var(--text-3); opacity: 0.4; cursor: default; }
 .year-day.today { border: 1px solid var(--accent); color: var(--accent); font-weight: 700; }
 .year-day.in:hover { background: var(--bg-hover) !important; }
+
+/* ─── COMPACT FILTER CHIPS (Properties / Investments) ─── */
+/* Smaller than .btn-sm so 5–7 chips fit on max 2 lines on phone screens.
+   The panel-header wraps the chips and tightens padding so the list pulls up. */
+.filter-chip-row { display: flex; flex-wrap: wrap; gap: 4px 5px; align-items: center; }
+.filter-chip {
+  flex-shrink: 0; padding: 4px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; line-height: 1.3;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-2); cursor: pointer; transition: .12s;
+  white-space: nowrap;
+}
+.filter-chip:hover { color: var(--text-1); border-color: var(--text-3); }
+.filter-chip.active { background: var(--accent); border-color: var(--accent); color: #1a1410; }
+.panel-header-compact { padding: 9px 14px; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.panel-header-compact h3 { padding-top: 2px; flex-shrink: 0; }
+.panel-header-compact .filter-chip-row { flex: 1; justify-content: flex-end; }
+@media (max-width: 540px) {
+  .panel-header-compact { flex-direction: column; align-items: stretch; }
+  .panel-header-compact .filter-chip-row { justify-content: flex-start; }
+}

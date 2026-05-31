@@ -1357,6 +1357,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   const [isDragging, setIsDragging] = useState(false);
   const [datePickerTask, setDatePickerTask] = useState(null);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [taskSearch, setTaskSearch] = useState('');
   const moreButtonRef = useRef(null);
   const [moreMenuPos, setMoreMenuPos] = useState({ top: 0, left: 0 });
 
@@ -1372,20 +1373,29 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     const today = todayISO();
     const tomorrow = addDaysISO(1);
     const sevenDays = addDaysISO(7);
+    const q = (taskSearch || '').trim().toLowerCase();
     return tasks.filter(t => {
-      if (filter === 'completed') return t.completed;
-      if (t.completed) return false;
-      const d = t.due_date;
-      if (filter === 'all') return true;
-      if (filter === 'past') return d && d < today;
-      if (filter === 'today') return d && d <= today;
-      if (filter === 'tomorrow') return d === tomorrow;
-      if (filter === '7days') return d && d >= today && d <= sevenDays;
-      if (filter === 'future') return d && d > today;
-      if (filter === 'undated') return !d;
+      // Date-bucket filter
+      if (filter === 'completed') { if (!t.completed) return false; }
+      else if (t.completed) return false;
+      else {
+        const d = t.due_date;
+        if (filter === 'past' && !(d && d < today)) return false;
+        else if (filter === 'today' && !(d && d <= today)) return false;
+        else if (filter === 'tomorrow' && d !== tomorrow) return false;
+        else if (filter === '7days' && !(d && d >= today && d <= sevenDays)) return false;
+        else if (filter === 'future' && !(d && d > today)) return false;
+        else if (filter === 'undated' && d) return false;
+        // 'all' — no extra constraint
+      }
+      // Text search (title or notes)
+      if (q) {
+        const hay = `${t.title||''} ${t.notes||''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
     });
-  }, [tasks, filter]);
+  }, [tasks, filter, taskSearch]);
 
   const sequenceGroups = useMemo(() => {
     const buckets = {}; QUADS.forEach(q => buckets[q] = []);
@@ -1650,6 +1660,32 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           </>,
           document.body
         )}
+
+        {/* Search input */}
+        <div style={{position:'relative',marginBottom:'10px'}}>
+          <input
+            type="text"
+            value={taskSearch}
+            onChange={e=>setTaskSearch(e.target.value)}
+            placeholder="🔍 Search tasks (title or notes)…"
+            style={{
+              width:'100%', padding:'9px 34px 9px 12px',
+              background:'var(--bg-card)', border:'1px solid var(--border)',
+              borderRadius:'8px', color:'var(--text-1)', fontSize:'13px',
+              outline:'none', boxSizing:'border-box',
+            }}
+          />
+          {taskSearch && (
+            <button
+              onClick={()=>setTaskSearch('')}
+              title="Clear search"
+              style={{
+                position:'absolute', right:'6px', top:'50%', transform:'translateY(-50%)',
+                background:'none', border:'none', color:'var(--text-3)', fontSize:'18px',
+                cursor:'pointer', lineHeight:1, padding:'4px 8px',
+              }}>×</button>
+          )}
+        </div>
 
         {/* View switcher */}
         <div style={{display:'flex',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',marginBottom:'14px'}}>
@@ -1921,6 +1957,7 @@ function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, show
         fontSize:'13px',
         color: isDone ? 'var(--text-3)' : 'var(--text-1)',
         textDecoration: isDone ? 'line-through' : 'none',
+        fontStyle: task.recurring ? 'italic' : 'normal',
         overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
       }}>
         {task.title}
@@ -2083,6 +2120,7 @@ function MatrixTaskRow({ task, rankNumber, quadrant, headerColor, onEdit, onTogg
         fontSize:'12px',
         color: task.completed ? 'var(--text-3)' : 'var(--text-1)',
         textDecoration: task.completed ? 'line-through' : 'none',
+        fontStyle: task.recurring ? 'italic' : 'normal',
         overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'
       }}>
         {task.title}
@@ -5734,23 +5772,23 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
 
   return (
     <div>
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
-        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-          <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
-            title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
-            {scanning ? '↻ Scanning…' : '🔗 Scan emails'}
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={runPhoneExtraction} disabled={extractingPhones}
-            title="Extract phone numbers from email signatures and auto-fill empty contact.phone fields.">
-            {extractingPhones ? '↻ Extracting…' : '📞 Extract phones'}
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={runDuplicateScan} disabled={findingDupes}
-            title="Find likely duplicate contacts based on email, phone, or name+company. Surfaces for review — never auto-merges.">
-            {findingDupes ? '↻ Scanning…' : '🔍 Find dupes'}
-          </button>
-          <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
-        </div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
+        <div style={{flex:1,minWidth:0}}><h2>Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
+        <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
+      </div>
+      <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
+        <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
+          title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
+          {scanning ? '↻ Scanning…' : '🔗 Scan emails'}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={runPhoneExtraction} disabled={extractingPhones}
+          title="Extract phone numbers from email signatures and auto-fill empty contact.phone fields.">
+          {extractingPhones ? '↻ Extracting…' : '📞 Extract phones'}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={runDuplicateScan} disabled={findingDupes}
+          title="Find likely duplicate contacts based on email, phone, or name+company. Surfaces for review — never auto-merges.">
+          {findingDupes ? '↻ Scanning…' : '🔍 Find dupes'}
+        </button>
       </div>
 
       {/* Phone extraction feedback */}
@@ -6658,11 +6696,11 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
       </div>
 
       <div className="panel">
-        <div className="panel-header">
+        <div className="panel-header panel-header-compact">
           <h3>Properties</h3>
-          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+          <div className="filter-chip-row">
             {CATS.map(c => (
-              <button key={c.id} className={`btn btn-sm ${catFilter===c.id?'btn-primary':'btn-ghost'}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>
+              <button key={c.id} className={`filter-chip ${catFilter===c.id?'active':''}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>
             ))}
           </div>
         </div>
@@ -6850,11 +6888,11 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
       </div>
 
       <div className="panel">
-        <div className="panel-header">
+        <div className="panel-header panel-header-compact">
           <h3>Investments</h3>
-          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+          <div className="filter-chip-row">
             {STAGES.map(s => (
-              <button key={s.id} className={`btn btn-sm ${stageFilter===s.id?'btn-primary':'btn-ghost'}`} onClick={()=>setStageFilter(s.id)}>{s.label}</button>
+              <button key={s.id} className={`filter-chip ${stageFilter===s.id?'active':''}`} onClick={()=>setStageFilter(s.id)}>{s.label}</button>
             ))}
           </div>
         </div>
@@ -7857,8 +7895,20 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
     return { top: (startMin/60)*HOUR_PX, height: Math.max(22, ((endMin - startMin)/60)*HOUR_PX) };
   }
 
-  // Tasks: highest-ranking open tasks (not completed), sorted by Eisenhower/simple rank.
-  const openTasks = sortTasks((tasks||[]).filter(t => !t.completed)).slice(0, 50);
+  // Tasks: filter to what's relevant for this day, matching the TasksView 'Today' logic.
+  // - When viewing today: tasks due today OR past-due (not completed)
+  // - When viewing any other day: tasks due exactly on that day (not completed)
+  // Sort by Eisenhower/simple rank (same as Tasks list).
+  const viewDateStr = ymd(date);
+  const todayStr = ymd(today);
+  const openTasks = sortTasks(
+    (tasks || []).filter(t => {
+      if (t.completed) return false;
+      if (!t.due_date) return false;
+      if (viewDateStr === todayStr) return t.due_date <= todayStr; // today + past due
+      return t.due_date === viewDateStr;                            // exact match
+    })
+  ).slice(0, 50);
 
   async function toggleTask(task) {
     if (!setTasks) return;
@@ -7920,7 +7970,7 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
                     <span className="day-task-check">{t.completed ? '☑' : '☐'}</span>
                     <span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>
                   </div>
-                  <span className="day-task-text" title={t.title}>{t.title}</span>
+                  <span className="day-task-text" style={{fontStyle: t.recurring ? 'italic' : 'normal'}} title={t.title}>{t.title}</span>
                 </div>
               ))
           }
@@ -9647,6 +9697,39 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setLoading(false); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Back-button confirmation guard.
+  // Push a sentinel history state on mount. If the user presses the browser
+  // back button and would otherwise leave the app, we intercept, ask, and
+  // re-push the sentinel if they cancel. (Modal/menu-aware: if a confirm
+  // dialog or .modal-overlay is open, defer to that — close the dialog
+  // by re-pushing the sentinel.)
+  useEffect(() => {
+    try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
+    const onPop = (e) => {
+      // If a modal overlay is on screen, close it first instead of asking to exit
+      const modal = document.querySelector('.modal-overlay');
+      if (modal) {
+        try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
+        // Click the overlay's close button if present, else dispatch Escape
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) closeBtn.click();
+        else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        return;
+      }
+      const ok = window.confirm('Exit Prism? Tap Cancel to stay.');
+      if (!ok) {
+        // Restore the sentinel so the next back press triggers this again
+        try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
+      } else {
+        // Allow the navigation; let the browser handle it
+        window.removeEventListener('popstate', onPop);
+        window.history.back();
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   const loadData = useCallback(async () => {
