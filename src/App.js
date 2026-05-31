@@ -976,6 +976,83 @@ function ToastHost() {
   );
 }
 
+// Pass 5 Batch A: ViewErrorBoundary.
+// Wraps the view router only — sidebar stays outside so the user can always
+// navigate away from a crashed view (per Q2=C). Reset by keying on the view
+// id, so changing tabs gives the new view a fresh shot.
+class ViewErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null, info: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    // Surface to the console for debugging. We deliberately don't ship to a
+    // third-party crash service yet.
+    // eslint-disable-next-line no-console
+    console.error('View crashed:', error, info);
+    this.setState({ info });
+  }
+  copyDetails = () => {
+    const { error, info } = this.state;
+    const text = [
+      `Prism build: ${BUILD_VERSION}`,
+      `View: ${this.props.viewName || '(unknown)'}`,
+      `Time: ${new Date().toISOString()}`,
+      `Error: ${error?.message || String(error)}`,
+      '',
+      'Stack:',
+      error?.stack || '(no stack)',
+      '',
+      'React component stack:',
+      info?.componentStack || '(no component stack)',
+    ].join('\n');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(
+        () => { if (window.__notify) window.__notify('Error details copied to clipboard', 'success'); },
+        () => { if (window.__notify) window.__notify('Could not copy. See console.', 'error'); }
+      );
+    }
+  };
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{padding:'40px 20px',maxWidth:'560px',margin:'40px auto'}}>
+          <div className="panel">
+            <div className="panel-body" style={{textAlign:'center',padding:'32px 20px'}}>
+              <div style={{fontSize:'40px',marginBottom:'12px'}}>⚠️</div>
+              <h3 style={{margin:'0 0 8px',color:'var(--text-1)'}}>This view ran into an error</h3>
+              <p style={{margin:'0 0 16px',color:'var(--text-2)',fontSize:'13px',lineHeight:1.5}}>
+                Use the sidebar to switch to another view — that's not affected.
+                If this keeps happening on the same view, copy the details and let Anthropic know.
+              </p>
+              <details style={{textAlign:'left',background:'var(--bg-base)',padding:'10px 12px',borderRadius:'6px',marginBottom:'16px',fontSize:'11px',color:'var(--text-3)'}}>
+                <summary style={{cursor:'pointer',color:'var(--text-2)'}}>Show technical details</summary>
+                <pre style={{whiteSpace:'pre-wrap',wordBreak:'break-word',margin:'8px 0 0',fontFamily:'monospace',fontSize:'10px',color:'var(--text-2)'}}>
+{this.state.error?.message || String(this.state.error)}
+{'\n\n'}
+{(this.state.error?.stack || '').split('\n').slice(0, 6).join('\n')}
+                </pre>
+              </details>
+              <div style={{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}}>
+                <button className="btn btn-ghost btn-sm" onClick={this.copyDetails}>
+                  📋 Copy error details
+                </button>
+                <button className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>
+                  ↻ Reload page
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const DragContext = React.createContext(null);
 
 // Drag controller — provides startDrag, registerDropZone, and listens to
@@ -2331,6 +2408,27 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [triageCache, setTriageCache] = useState({});
   const [triageLoading, setTriageLoading] = useState({});  // { thread_id → true }
   const [autoTriageProgress, setAutoTriageProgress] = useState(null);  // { done, total } | null
+  // Pass 5 Batch A: abort + concurrency control for auto-triage.
+  // autoTriageAbortRef.current.aborted is checked between iterations so we
+  // can bail on unmount or account change (Finding #7, Q3=B).
+  // autoTriageRunningRef stops a second concurrent run kicking off (Finding #3).
+  const autoTriageAbortRef = useRef({ aborted: false });
+  const autoTriageRunningRef = useRef(false);
+  // Pass 5 Finding #8: track the runBackfill cleanup timer so we can cancel
+  // it on unmount/account change rather than firing setState on dead component.
+  const backfillCleanupTimerRef = useRef(null);
+  // Bail any in-flight triage loop when this InboxView unmounts OR when the
+  // active account.id changes (Q3=B). Reset abort flag so a fresh mount works.
+  useEffect(() => {
+    autoTriageAbortRef.current = { aborted: false };
+    return () => {
+      autoTriageAbortRef.current.aborted = true;
+      if (backfillCleanupTimerRef.current) {
+        clearTimeout(backfillCleanupTimerRef.current);
+        backfillCleanupTimerRef.current = null;
+      }
+    };
+  }, [account.id]);
 
   // Responsive: on mobile (<900px), tapping a thread fully replaces the list
   // view with the reading pane. On desktop, both panels show side-by-side.
@@ -2467,6 +2565,9 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   async function openThread(thread) {
     setSelectedThread(thread);
+    // Pass 5 Finding #6: clear stale messages from the previous thread so
+    // they don't briefly render under the new thread's subject.
+    setSelectedMessages([]);
     setLoadingMessages(true);
     const { data } = await supabase
       .from('email_messages')
@@ -2526,6 +2627,12 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      // Pass 5 Finding #12: surface a persist_error if the model succeeded but
+      // the DB write failed — user-visible so they know the cache won't warm
+      // and they'll re-pay for triage next time.
+      if (data?.persist_error) {
+        if (window.__notify) window.__notify('Triage ran but cache write failed: ' + data.persist_error, 'error');
+      }
       // Cache shape matches the email_triage row enough for UI to consume.
       setTriageCache(prev => ({
         ...prev,
@@ -2557,20 +2664,49 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   // serially (one at a time, to avoid spiking API costs/rate limits). Per
   // Q2a = "Auto-triage every new thread in background as soon as it syncs."
   // Per Q2c = persist (the edge function writes to email_triage on success).
+  //
+  // Pass 5 Batch A fixes:
+  //   #2 — query email_triage DB directly instead of trusting local triageCache,
+  //        which may be stale right after sync (cache useEffect hasn't fired yet)
+  //   #3 — guard against concurrent runs (double-Sync click) via running ref
+  //   #5 — dropped the dead try/catch around triageThread (it never throws)
+  //   #7 — check abort flag between iterations; bail cleanly on unmount/account change
   async function autoTriageUntriaged(allThreads) {
-    const candidates = allThreads.filter(t => !triageCache[t.id]);
+    if (autoTriageRunningRef.current) return;  // #3 concurrency guard
+    if (!allThreads || allThreads.length === 0) return;
+
+    // #2 source of truth: query email_triage rather than local cache.
+    // The local cache useEffect is async and may not have populated by now.
+    const allIds = allThreads.map(t => t.id);
+    const { data: existing } = await supabase
+      .from('email_triage')
+      .select('thread_id')
+      .in('thread_id', allIds);
+    const cachedIds = new Set((existing || []).map(r => r.thread_id));
+    const candidates = allThreads.filter(t => !cachedIds.has(t.id));
     if (candidates.length === 0) return;
+
+    autoTriageRunningRef.current = true;
     setAutoTriageProgress({ done: 0, total: candidates.length });
-    for (let i = 0; i < candidates.length; i++) {
-      try {
-        await triageThread(candidates[i].id);
-      } catch (_) { /* triageThread already toasts; keep going */ }
-      setAutoTriageProgress({ done: i + 1, total: candidates.length });
-      // Throttle: 250ms between calls to be polite to the API
-      if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 250));
+    try {
+      for (let i = 0; i < candidates.length; i++) {
+        // #7 abort check before each (potentially slow) network call
+        if (autoTriageAbortRef.current.aborted) return;
+        await triageThread(candidates[i].id);  // triageThread catches its own errors
+        if (autoTriageAbortRef.current.aborted) return;
+        setAutoTriageProgress({ done: i + 1, total: candidates.length });
+        // Throttle: 250ms between calls to be polite to the API
+        if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 250));
+      }
+    } finally {
+      autoTriageRunningRef.current = false;
+      // Clear progress after a moment (unless we're already aborted/unmounted)
+      if (!autoTriageAbortRef.current.aborted) {
+        setTimeout(() => {
+          if (!autoTriageAbortRef.current.aborted) setAutoTriageProgress(null);
+        }, 2500);
+      }
     }
-    // Clear progress after a moment
-    setTimeout(() => setAutoTriageProgress(null), 2500);
   }
 
   async function runSync() {
@@ -2664,7 +2800,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     await loadThreads();
     const { data: acct } = await supabase.from('email_accounts').select('*').eq('id', account.id).single();
     if (acct) setEmailAccounts(prev => prev.map(a => a.id === acct.id ? acct : a));
-    setTimeout(() => setBackfill(b => (b && !b.running ? null : b)), 30000);
+    // Pass 5 Finding #8: store the cleanup-timer handle so the unmount/account
+    // change effect can clear it. Previously this fired setState on dead components.
+    if (backfillCleanupTimerRef.current) clearTimeout(backfillCleanupTimerRef.current);
+    backfillCleanupTimerRef.current = setTimeout(() => {
+      setBackfill(b => (b && !b.running ? null : b));
+      backfillCleanupTimerRef.current = null;
+    }, 30000);
   }
 
   // Reply-from picker: prefer whatever address the inbound mail was sent TO
@@ -2791,13 +2933,18 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       await supabase.functions.invoke('gmail-modify', {
         body: { account_id: account.id, thread_id: selectedThread.provider_thread_id, action: 'archive' },
       });
-      await supabase.from('email_threads').update({ snoozed_until: untilDate.toISOString() }).eq('id', selectedThread.id);
+      // Pass 5 Finding #9: capture DB error so a silent failure doesn't leave
+      // the user thinking the thread is snoozed when nothing was persisted.
+      const { error: snoozeErr } = await supabase.from('email_threads')
+        .update({ snoozed_until: untilDate.toISOString() }).eq('id', selectedThread.id);
+      if (snoozeErr) throw snoozeErr;
       setThreads(prev => prev.filter(t => t.id !== selectedThread.id));
       setSelectedThread(null);
       setSelectedMessages([]);
       setShowSnoozePicker(false);
+      if (window.__notify) window.__notify(`Snoozed until ${untilDate.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`, 'success');
     } catch (err) {
-      alert('Snooze failed: ' + (err.message || err));
+      if (window.__notify) window.__notify('Snooze failed: ' + (err.message || err), 'error');
     }
   }
 
@@ -9385,20 +9532,22 @@ export default function App() {
           )}
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
-            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
-            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/>
-            : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
-            : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
-            : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
-            : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
-            : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events}/>
-            : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
-            : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties}/>
-            : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
-            : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
-            : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
-            : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
-            : null
+            : <ViewErrorBoundary key={view} viewName={view}>
+                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
+              : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/>
+              : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
+              : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
+              : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
+              : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
+              : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events}/>
+              : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
+              : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties}/>
+              : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
+              : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
+              : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
+              : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
+              : null}
+              </ViewErrorBoundary>
           }
         </main>
       </div>

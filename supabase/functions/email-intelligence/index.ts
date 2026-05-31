@@ -229,8 +229,11 @@ ${messageBlocks || "(no message bodies available)"}`;
         prompt_version: PROMPT_VERSION,
         created_at: new Date().toISOString(),
       }, { onConflict: "thread_id" });
+
+    // Pass 5 Finding #12: surface persistence failure to the client so it can
+    // re-run later if needed. Previously this was only console.error'd; clients
+    // saw 'cached: true' on the next view even though nothing was actually cached.
     if (upsertErr) {
-      // Non-fatal: log + still return the result so the UI isn't blocked.
       console.error("email_triage upsert failed:", upsertErr.message);
     }
 
@@ -238,6 +241,7 @@ ${messageBlocks || "(no message bodies available)"}`;
       ...parsed,
       cached: false,
       created_at: new Date().toISOString(),
+      persist_error: upsertErr ? (upsertErr.message || String(upsertErr)) : null,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     const msg = String(err && (err as any).message ? (err as any).message : err);
