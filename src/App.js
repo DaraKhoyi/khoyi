@@ -286,15 +286,16 @@ function ChatView({ robots, userId }) {
   const inputRef = useRef(null);
 
   const robot = robots[0] || null;
+  const robotId = robot?.id;
 
   // Load conversation history
   useEffect(() => {
-    if (!robot || !userId) { setLoadingHistory(false); return; }
+    if (!robotId || !userId) { setLoadingHistory(false); return; }
     supabase
       .from('robot_conversations')
       .select('messages')
       .eq('user_id', userId)
-      .eq('robot_id', robot.id)
+      .eq('robot_id', robotId)
       .maybeSingle()
       .then(({ data }) => {
         const entries = Array.isArray(data?.messages) ? data.messages : [];
@@ -306,7 +307,7 @@ function ChatView({ robots, userId }) {
         setMessages(flat);
         setLoadingHistory(false);
       });
-  }, [robot?.id, userId]);
+  }, [robotId, userId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -453,6 +454,7 @@ const QUADRANTS = [
   { letter:'C', label:'C — Urgent, Not Important',  short:'Delegate' },
   { letter:'D', label:'D — Neither',                short:'Drop' },
 ];
+const QUADS = ['A', 'B', 'C', 'D'];
 // Sort key for Eisenhower: A1 < A2 < B1 < ... Simple-system tasks sort after
 // using high(0)/medium(1)/low(2) and their simple_rank. Tasks with no priority info sort last.
 function taskSortKey(t) {
@@ -952,6 +954,23 @@ if (typeof window !== 'undefined') {
 
 function ToastHost() {
   const [toasts, setToasts] = useState([]);
+  // Track viewport so toasts re-position on rotate/resize without page reload.
+  const [isMobile, setIsMobile] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(max-width: 768px)').matches
+      : false
+  ));
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = e => setIsMobile(e.matches);
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else mq.addListener(onChange);  // older Safari fallback
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
   useEffect(() => {
     function onToast(t) {
       setToasts(prev => [...prev, t]);
@@ -968,8 +987,10 @@ function ToastHost() {
   return createPortal(
     <div style={{
       position:'fixed',
-      top:'14px',
-      right:'14px',
+      ...(isMobile
+        ? { bottom: '14px', left: '50%', transform: 'translateX(-50%)', alignItems: 'center' }
+        : { top: '14px', right: '14px', alignItems: 'flex-end' }
+      ),
       zIndex:100000,
       display:'flex',
       flexDirection:'column',
@@ -1339,7 +1360,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     });
   }, [tasks, filter]);
 
-  const QUADS = ['A', 'B', 'C', 'D'];
   const sequenceGroups = useMemo(() => {
     const buckets = {}; QUADS.forEach(q => buckets[q] = []);
     const unranked = [];
@@ -6163,7 +6183,11 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 // circle, polyline, freehand. No editing, no panning/zooming.
 // ─────────────────────────────────────────
 function DrawingViewerModal({ drawing, onClose }) {
-  const shapes = Array.isArray(drawing.shapes) ? drawing.shapes : [];
+  // Memoize so the useMemo below doesn't see a new array on every render.
+  const shapes = useMemo(
+    () => Array.isArray(drawing.shapes) ? drawing.shapes : [],
+    [drawing.shapes]
+  );
 
   const bbox = useMemo(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

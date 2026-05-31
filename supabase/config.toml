@@ -1,40 +1,33 @@
 project_id = "xlgfspnojjgvkuitcoaf"
 
-[functions.brain-embed]
-verify_jwt = false
-
-[functions.brain-semantic-search]
-verify_jwt = false
-
-[functions.playbook-parse]
-verify_jwt = false
-
-[functions.task-quadrant-suggest]
-verify_jwt = false
-
-[functions.google-oauth-start]
-verify_jwt = false
-
+# ─── Functions that MUST keep verify_jwt=false ─────────────────────────────
+# OAuth callbacks: Google redirects the user's browser to these, no JWT
+# possible. Auth is via the OAuth `state` parameter (which carries a token
+# signed with our secret, verified inside the function).
 [functions.google-oauth-callback]
 verify_jwt = false
 
-[functions.calendar-sync]
+[functions.gmail-oauth-callback]
 verify_jwt = false
 
-[functions.calendar-delete]
-verify_jwt = false
-
-[functions.gmail-aliases-sync]
-verify_jwt = false
-
-[functions.disc-analyze]
-verify_jwt = false
-
+# Cron functions: invoked by pg_cron with service-role auth. Gateway JWT
+# verification could work here, but pg_cron's net.http_post call pattern is
+# easier to maintain without it. The functions themselves enforce auth.
 [functions.disc-batch-nightly]
-verify_jwt = false
-
-[functions.recording-transcribe]
 verify_jwt = false
 
 [functions.recording-purge]
 verify_jwt = false
+
+[functions.email-snooze-restore]
+verify_jwt = false
+
+# All other 23 functions default to verify_jwt = true (Supabase default).
+# This includes: brain-embed, brain-semantic-search, playbook-parse,
+# task-quadrant-suggest, calendar-sync, calendar-delete, gmail-aliases-sync,
+# gmail-labels-sync, gmail-modify, gmail-send, gmail-sync, gmail-trash,
+# contact-extract-phones, contact-find-duplicates, contact-identify,
+# contact-link-emails, contact-research, disc-analyze, recording-transcribe,
+# robot-chat, google-oauth-start, gmail-oauth-start, email-intelligence.
+# Gateway rejects requests without a valid JWT before they reach function
+# code. In-code auth (supabase.auth.getUser) remains the secondary check.
