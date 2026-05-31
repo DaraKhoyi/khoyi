@@ -91,7 +91,7 @@ function AuthScreen() {
             <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" required /></div>
             <button className="btn btn-primary" style={{width:'100%'}} disabled={loading}>{loading ? 'Signing in…' : 'Sign In'}</button>
           </form>
-          <div className="auth-switch"><a onClick={()=>switchMode('reset')}>Forgot password?</a> · <a onClick={()=>switchMode('signup')}>Create account</a></div>
+          <div className="auth-switch"><button type="button" className="auth-link" onClick={()=>switchMode('reset')}>Forgot password?</button> · <button type="button" className="auth-link" onClick={()=>switchMode('signup')}>Create account</button></div>
         </>}
         {mode === 'signup' && <>
           <h2>Create account</h2>
@@ -103,7 +103,7 @@ function AuthScreen() {
             <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" required /></div>
             <button className="btn btn-primary" style={{width:'100%'}} disabled={loading}>{loading ? 'Creating…' : 'Create Account'}</button>
           </form>
-          <div className="auth-switch">Already have an account? <a onClick={()=>switchMode('login')}>Sign in</a></div>
+          <div className="auth-switch">Already have an account? <button type="button" className="auth-link" onClick={()=>switchMode('login')}>Sign in</button></div>
         </>}
         {mode === 'reset' && <>
           <h2>Reset password</h2>
@@ -114,7 +114,7 @@ function AuthScreen() {
             <div className="form-group"><label className="form-label">Email</label><input className="form-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" required /></div>
             <button className="btn btn-primary" style={{width:'100%'}} disabled={loading}>{loading ? 'Sending…' : 'Send Reset Link'}</button>
           </form>
-          <div className="auth-switch"><a onClick={()=>switchMode('login')}>Back to sign in</a></div>
+          <div className="auth-switch"><button type="button" className="auth-link" onClick={()=>switchMode('login')}>Back to sign in</button></div>
         </>}
       </div>
     </div>
@@ -491,12 +491,6 @@ function isTopPriority(t) {
   if (t.priority_system === 'eisenhower') return t.eisenhower_quadrant === 'A';
   return t.priority === 'high';
 }
-// Returns the "bucket key" for ranking: same bucket = same quadrant (Eisenhower)
-// or same priority (Simple). Drag/arrows can only reorder within a bucket.
-function bucketKey(t) {
-  if (t.priority_system === 'eisenhower') return `e:${t.eisenhower_quadrant || '?'}`;
-  return `s:${t.priority || 'medium'}`;
-}
 // Date helpers (local-time YYYY-MM-DD comparison)
 function todayISO() {
   const d = new Date();
@@ -508,22 +502,6 @@ function addDaysISO(days) {
   const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
 }
-// Filter tasks by named date bucket. Completed tasks excluded from date buckets
-// (they show in their own 'completed' bucket).
-function filterByDateBucket(tasks, bucket) {
-  const today = todayISO();
-  const tomorrow = addDaysISO(1);
-  switch (bucket) {
-    case 'today':    return tasks.filter(t => !t.completed && t.due_date && t.due_date <= today);
-    case 'past_due': return tasks.filter(t => !t.completed && t.due_date && t.due_date < today);
-    case 'tomorrow': return tasks.filter(t => !t.completed && t.due_date === tomorrow);
-    case 'future':   return tasks.filter(t => !t.completed && t.due_date && t.due_date > tomorrow);
-    case 'undated':  return tasks.filter(t => !t.completed && !t.due_date);
-    case 'completed':return tasks.filter(t => t.completed);
-    case 'all':
-    default:         return tasks.filter(t => !t.completed);
-  }
-}
 const DATE_FILTERS = [
   { id:'all',       label:'All',        hint:'Everything not done' },
   { id:'past',      label:'Past Due',   hint:'Overdue tasks' },
@@ -534,84 +512,6 @@ const DATE_FILTERS = [
   { id:'undated',   label:'Undated',    hint:'No due date — someday/maybe' },
   { id:'completed', label:'Completed',  hint:'Marked done' },
 ];
-
-// Compute the next due date for a recurring task. Anchors to the old due_date
-// if present, otherwise to today. Returns YYYY-MM-DD.
-function nextRecurringDate(fromDate, interval) {
-  const base = fromDate ? new Date(fromDate + 'T00:00:00') : new Date();
-  const d = new Date(base);
-  switch (interval) {
-    case 'daily':     d.setDate(d.getDate() + 1); break;
-    case 'weekly':    d.setDate(d.getDate() + 7); break;
-    case 'biweekly':  d.setDate(d.getDate() + 14); break;
-    case 'monthly':   d.setMonth(d.getMonth() + 1); break;
-    case 'quarterly': d.setMonth(d.getMonth() + 3); break;
-    case 'yearly':    d.setFullYear(d.getFullYear() + 1); break;
-    default:          d.setDate(d.getDate() + 1);
-  }
-  // If anchored to a past date, roll forward until it's >= today
-  const todayStr = todayISO();
-  let guard = 0;
-  while (d.toISOString().slice(0,10) < todayStr && guard < 60) {
-    switch (interval) {
-      case 'daily':     d.setDate(d.getDate() + 1); break;
-      case 'weekly':    d.setDate(d.getDate() + 7); break;
-      case 'biweekly':  d.setDate(d.getDate() + 14); break;
-      case 'monthly':   d.setMonth(d.getMonth() + 1); break;
-      case 'quarterly': d.setMonth(d.getMonth() + 3); break;
-      case 'yearly':    d.setFullYear(d.getFullYear() + 1); break;
-      default:          d.setDate(d.getDate() + 1);
-    }
-    guard++;
-  }
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
-}
-
-// Choose the appropriate list bucket for a due date
-function nextListForDate(dateStr) {
-  if (!dateStr) return 'inbox';
-  const today = todayISO();
-  const weekOut = addDaysISO(7);
-  if (dateStr <= today) return 'today';
-  if (dateStr <= weekOut) return 'this_week';
-  return 'inbox';
-}
-
-// Task streak (client-side): consecutive days with ≥1 A-quadrant / high completion
-function computeTaskStreak(tasks) {
-  const days = new Set();
-  for (const t of tasks) {
-    if (!t.completed) continue;
-    const isTop = (t.priority_system === 'eisenhower' && t.eisenhower_quadrant === 'A')
-               || (t.priority_system === 'simple' && t.priority === 'high');
-    if (!isTop) continue;
-    const when = t.completed_at || t.updated_at;
-    if (!when) continue;
-    days.add(new Date(when).toISOString().slice(0,10));
-  }
-  if (days.size === 0) return { current: 0, longest: 0, today: false };
-  const today = new Date().toISOString().slice(0,10);
-  const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0,10);
-  const hitToday = days.has(today);
-  let cursor = hitToday ? today : (days.has(yesterday) ? yesterday : null);
-  let current = 0;
-  while (cursor && days.has(cursor)) {
-    current++;
-    cursor = new Date(new Date(cursor).getTime() - 864e5).toISOString().slice(0,10);
-  }
-  const sortedDays = [...days].sort();
-  let longest = 0, run = 0, prev = null;
-  for (const d of sortedDays) {
-    if (prev) {
-      const gap = (new Date(d) - new Date(prev)) / 864e5;
-      run = gap === 1 ? run + 1 : 1;
-    } else run = 1;
-    longest = Math.max(longest, run);
-    prev = d;
-  }
-  return { current, longest, today: hitToday };
-}
 
 // ─────────────────────────────────────────
 // TASK MODAL
@@ -2204,48 +2104,6 @@ function DatePickerModal({ initial, onCancel, onPick }) {
 // Read-only ordering (by rank within quadrant). Click task to edit.
 // Shows only Eisenhower tasks; simple-system tasks excluded (they have no quadrant).
 // ─────────────────────────────────────────
-function QuadrantGrid({ tasks, onToggle, onEdit, onDelete }) {
-  const open = tasks.filter(t => !t.completed && t.priority_system === 'eisenhower');
-  const byQ = { A: [], B: [], C: [], D: [] };
-  open.forEach(t => {
-    const q = t.eisenhower_quadrant;
-    if (q && byQ[q]) byQ[q].push(t);
-  });
-  Object.keys(byQ).forEach(q => {
-    byQ[q].sort((a, b) => (a.eisenhower_rank ?? 999) - (b.eisenhower_rank ?? 999));
-  });
-  const simpleCount = tasks.filter(t => !t.completed && t.priority_system !== 'eisenhower').length;
-  return (
-    <div>
-      <div className="quadrant-grid">
-        {QUADRANTS.map(q => (
-          <div key={q.letter} className={`quadrant-cell q-${q.letter}`}>
-            <div className="quadrant-header">{q.label}</div>
-            <div className="quadrant-sub">{q.short} · {byQ[q.letter].length} task{byQ[q.letter].length===1?'':'s'}</div>
-            <div className="quadrant-list">
-              {byQ[q.letter].length === 0
-                ? <div className="quadrant-empty">No tasks</div>
-                : byQ[q.letter].map(t => (
-                    <div key={t.id} className={`quadrant-task ${t.completed?'done':''}`}>
-                      <div className={`qt-check ${t.completed?'checked':''}`} onClick={()=>onToggle(t)} />
-                      <span className="qt-text" onClick={()=>onEdit(t)} title={t.title}>{t.title}</span>
-                      {t.due_date && <span className="qt-due">{t.due_date.slice(5)}</span>}
-                    </div>
-                  ))
-              }
-            </div>
-          </div>
-        ))}
-      </div>
-      {simpleCount > 0 && (
-        <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'12px',textAlign:'center'}}>
-          {simpleCount} task{simpleCount===1?' uses':'s use'} the simple priority system and aren't shown here. Switch to List view to see them.
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────
 // INBOX VIEW — Gmail-aware
 // Reads from email_threads/email_messages when an account is connected.
@@ -2635,13 +2493,16 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         const newCount = r.new_messages || 0;
         const remaining = r.remaining_to_fetch || 0;
         totalNew += newCount;
-        setBackfill(b => ({ ...b, round: i, totalNew, remaining,
-          message: `Round ${i}: +${newCount} messages · total pulled so far: ${totalNew}${remaining > 0 ? ` · ~${remaining} more in queue` : ''}` }));
+        // Capture in a per-iteration const so the closures below don't bind
+        // to the loop-mutated outer variable (eslint no-loop-func).
+        const total = totalNew;
+        setBackfill(b => ({ ...b, round: i, totalNew: total, remaining,
+          message: `Round ${i}: +${newCount} messages · total pulled so far: ${total}${remaining > 0 ? ` · ~${remaining} more in queue` : ''}` }));
         if (newCount === 0) {
           zeroRoundsInARow++;
           if (zeroRoundsInARow >= 2) {
-            setBackfill({ running: false, round: i, totalNew, remaining: 0, error: null,
-              message: `✓ Backfill complete. Pulled ${totalNew} messages from the last 365 days (excluding promotions/updates/social).` });
+            setBackfill({ running: false, round: i, totalNew: total, remaining: 0, error: null,
+              message: `✓ Backfill complete. Pulled ${total} messages from the last 365 days (excluding promotions/updates/social).` });
             break;
           }
         } else {
@@ -2740,11 +2601,10 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   // ===== Email actions: archive / star / unread / spam / labels / snooze =====
   // All route through the gmail-modify edge function with action or add/remove arrays.
 
-  // Compute whether the current thread is starred / unread / spam from its labels
+  // Compute whether the current thread is starred / unread from its labels
   const currentLabels = (selectedThread?.labels || []);
   const isStarred = currentLabels.includes('STARRED');
   const isUnread = selectedThread?.has_unread || currentLabels.includes('UNREAD');
-  const isInSpam = currentLabels.includes('SPAM');
 
   async function modifyThread(action, opts = {}) {
     if (!selectedThread) return;
@@ -3087,9 +2947,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
               {selectedMessages.length > 0 && (() => {
                 const latest = selectedMessages[selectedMessages.length - 1];
-                const sentTo = Array.isArray(latest.to_addresses) ? latest.to_addresses : [];
-                const cc = Array.isArray(latest.cc_addresses) ? latest.cc_addresses : [];
-                const canReplyAll = sentTo.length > 1 || cc.length > 0;
+                // Per-message canReplyAll is computed where reply buttons render below.
                 return (
                   <>
                     {/* Star — leftmost icon action, single emoji */}
@@ -3805,7 +3663,6 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   const [researchScope, setResearchScope] = useState('both');  // 'personal' | 'business' | 'both'
   const [researchStage, setResearchStage] = useState('idle');  // 'idle' | 'identifying' | 'choose_candidate' | 'researching' | 'done' | 'error'
   const [researchCandidates, setResearchCandidates] = useState([]);
-  const [researchConfidence, setResearchConfidence] = useState(null);
   const [researchError, setResearchError] = useState(null);
   const [showResearchReport, setShowResearchReport] = useState(false);  // for viewing existing report
 
@@ -4007,7 +3864,6 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   }
 
   async function saveBaseline() {
-    const total = baseD + baseI + baseS + baseC;
     const scores = { D: baseD, I: baseI, S: baseS, C: baseC };
     const primary = Object.keys(scores).reduce((a,b) => scores[a] > scores[b] ? a : b);
     const secondary = Object.keys(scores)
@@ -4067,7 +3923,6 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
-      setResearchConfidence(data.confidence);
       setResearchCandidates(data.candidates || []);
       if (data.confidence === 'insufficient') {
         setResearchError(data.message || 'Not enough info to identify this person safely. Add an email, phone, or employer to the contact.');
@@ -5903,7 +5758,6 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
   const [linkedInvestments, setLinkedInvestments] = useState([]);
   const [linkedDrawings, setLinkedDrawings] = useState([]);
   const [propertyNotes, setPropertyNotes] = useState([]);
-  const [loading, setLoading] = useState(true);
 
   const [showContactPicker, setShowContactPicker] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
@@ -5922,26 +5776,21 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
     if (!property?.id) return;
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      try {
-        const [lcRes, ltRes, leRes, liRes, ldRes, lnRes] = await Promise.all([
-          supabase.from('property_contacts').select('contact_id').eq('property_id', property.id),
-          supabase.from('tasks').select('*').eq('property_id', property.id).order('completed').order('due_date', { nullsFirst: false }),
-          supabase.from('events').select('*').eq('property_id', property.id).order('start_at', { ascending: false }).limit(50),
-          supabase.from('investments').select('*').eq('property_id', property.id).order('created_at', { ascending: false }),
-          supabase.from('drawings').select('id, title, shapes, units, px_per_unit, created_at').eq('property_id', property.id).order('created_at', { ascending: false }),
-          supabase.from('property_notes').select('*').eq('property_id', property.id).order('created_at', { ascending: false }),
-        ]);
-        if (cancelled) return;
-        setLinkedContactIds((lcRes.data || []).map(r => r.contact_id));
-        setLinkedTasks(ltRes.data || []);
-        setLinkedEvents(leRes.data || []);
-        setLinkedInvestments(liRes.data || []);
-        setLinkedDrawings(ldRes.data || []);
-        setPropertyNotes(lnRes.data || []);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      const [lcRes, ltRes, leRes, liRes, ldRes, lnRes] = await Promise.all([
+        supabase.from('property_contacts').select('contact_id').eq('property_id', property.id),
+        supabase.from('tasks').select('*').eq('property_id', property.id).order('completed').order('due_date', { nullsFirst: false }),
+        supabase.from('events').select('*').eq('property_id', property.id).order('start_at', { ascending: false }).limit(50),
+        supabase.from('investments').select('*').eq('property_id', property.id).order('created_at', { ascending: false }),
+        supabase.from('drawings').select('id, title, shapes, units, px_per_unit, created_at').eq('property_id', property.id).order('created_at', { ascending: false }),
+        supabase.from('property_notes').select('*').eq('property_id', property.id).order('created_at', { ascending: false }),
+      ]);
+      if (cancelled) return;
+      setLinkedContactIds((lcRes.data || []).map(r => r.contact_id));
+      setLinkedTasks(ltRes.data || []);
+      setLinkedEvents(leRes.data || []);
+      setLinkedInvestments(liRes.data || []);
+      setLinkedDrawings(ldRes.data || []);
+      setPropertyNotes(lnRes.data || []);
     })();
     return () => { cancelled = true; };
   }, [property?.id]);
