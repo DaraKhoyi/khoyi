@@ -86,7 +86,7 @@ function AuthScreen() {
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <h1>My<span>Life</span></h1>
+          <h1><span>Prism</span></h1>
           <p>Your personal operating system</p>
         </div>
         {mode === 'login' && <>
@@ -103,7 +103,7 @@ function AuthScreen() {
         </>}
         {mode === 'signup' && <>
           <h2>Create account</h2>
-          <p>Get started with MyLife</p>
+          <p>Get started with Prism</p>
           {error && <div className="auth-error">{error}</div>}
           {success && <div className="auth-success">{success}</div>}
           <form onSubmit={handleSignup}>
@@ -124,6 +124,159 @@ function AuthScreen() {
           </form>
           <div className="auth-switch"><a onClick={()=>switchMode('login')}>Back to sign in</a></div>
         </>}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// ONBOARDING MODAL — first-run setup (Pass 2 Batch C)
+//
+// Shown to any signed-in user where user_settings.onboarding_complete = false.
+// Blocking — no close, no ESC, no backdrop dismiss. The user fills in 4
+// fields (name, profession, timezone, assistant context) and we upsert
+// user_settings + flip onboarding_complete=true.
+// ─────────────────────────────────────────
+function OnboardingModal({ userId, userEmail, onComplete }) {
+  const [displayName, setDisplayName] = useState('');
+  const [profession, setProfession] = useState('');
+  const [timezone, setTimezone] = useState(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+    catch (_) { return ''; }
+  });
+  const [assistantContext, setAssistantContext] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Block ESC dismissal.
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') e.preventDefault(); };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    if (!displayName.trim()) { setError('Please enter your name.'); return; }
+    setSaving(true);
+    const payload = {
+      user_id: userId,
+      display_name: displayName.trim(),
+      profession: profession.trim() || null,
+      timezone: timezone.trim() || null,
+      assistant_context: assistantContext.trim() || null,
+      onboarding_complete: true,
+      updated_at: new Date().toISOString(),
+    };
+    const { error: upErr } = await supabase.from('user_settings').upsert(payload, { onConflict: 'user_id' });
+    if (upErr) {
+      setSaving(false);
+      setError(upErr.message || 'Could not save. Please try again.');
+      return;
+    }
+    // Also update the user's robot system prompt to include their context so
+    // chat replies are personalized from message #1.
+    if (assistantContext.trim() || profession.trim() || displayName.trim()) {
+      try {
+        const contextLine = [
+          displayName.trim() ? `The user's name is ${displayName.trim()}.` : null,
+          profession.trim() ? `Their role: ${profession.trim()}.` : null,
+          assistantContext.trim() ? `About them: ${assistantContext.trim()}` : null,
+        ].filter(Boolean).join(' ');
+        const newPrompt = `You are Ari, a sharp, friendly personal AI assistant. ${contextLine} You help with tasks, decisions, scheduling, writing, and anything else they need. Be direct, warm, and genuinely useful. Keep responses concise unless depth is needed. You are always on their side.`;
+        await supabase.from('robots').update({ system_prompt: newPrompt }).eq('user_id', userId);
+      } catch (_) { /* non-fatal — base prompt still works */ }
+    }
+    setSaving(false);
+    onComplete();
+  }
+
+  return (
+    <div className="modal-overlay" style={{zIndex: 2000, padding: '16px'}}>
+      <div className="modal" style={{maxWidth: '520px', width: '100%', maxHeight: '92vh', overflowY: 'auto'}}>
+        <div className="modal-header" style={{borderBottom: '1px solid var(--border)', paddingBottom: '12px', marginBottom: '16px'}}>
+          <div>
+            <h2 style={{margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-1)'}}>Welcome to Prism</h2>
+            <p style={{margin: '4px 0 0', fontSize: '13px', color: 'var(--text-2)'}}>
+              A few quick things so we can set up your workspace and personalize your assistant.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Your name <span style={{color: 'var(--red)'}}>*</span></label>
+            <input
+              className="form-input"
+              type="text"
+              autoFocus
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              placeholder="What should we call you?"
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">What do you do?</label>
+            <input
+              className="form-input"
+              type="text"
+              value={profession}
+              onChange={e => setProfession(e.target.value)}
+              placeholder="e.g. Real estate broker, Doctor, Engineer, Designer"
+            />
+            <p style={{margin: '4px 0 0', fontSize: '11px', color: 'var(--text-3)'}}>
+              Helps your AI assistant calibrate what's important and what's urgent for you.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Timezone</label>
+            <input
+              className="form-input"
+              type="text"
+              value={timezone}
+              onChange={e => setTimezone(e.target.value)}
+              placeholder="e.g. America/New_York"
+            />
+            <p style={{margin: '4px 0 0', fontSize: '11px', color: 'var(--text-3)'}}>
+              Auto-detected from your browser. Edit if it's wrong.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Tell your assistant about you</label>
+            <textarea
+              className="form-input"
+              rows={5}
+              value={assistantContext}
+              onChange={e => setAssistantContext(e.target.value)}
+              placeholder="A few sentences about your work, priorities, who you serve, what matters. Your AI assistant uses this to tailor every response."
+              style={{resize: 'vertical', fontFamily: 'inherit', minHeight: '110px'}}
+            />
+            <p style={{margin: '4px 0 0', fontSize: '11px', color: 'var(--text-3)'}}>
+              Optional — but the more context, the better the assistance. You can edit this anytime in Settings.
+            </p>
+          </div>
+
+          {error && (
+            <div style={{padding: '10px 12px', background: 'rgba(239,68,68,0.12)', border: '1px solid var(--red)', borderRadius: '6px', color: 'var(--red)', fontSize: '13px', marginBottom: '12px'}}>
+              {error}
+            </div>
+          )}
+
+          <div className="modal-actions" style={{display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px'}}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Finish setup'}
+            </button>
+          </div>
+        </form>
+
+        <p style={{margin: '14px 0 0', fontSize: '11px', color: 'var(--text-3)', textAlign: 'center'}}>
+          Signed in as {userEmail}
+        </p>
       </div>
     </div>
   );
@@ -11024,7 +11177,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 
       {!hasCalendarScope && (
         <div style={{padding:'12px 14px',marginBottom:'14px',borderRadius:'8px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--text-2)',fontSize:'12px',lineHeight:1.6}}>
-          <strong style={{color:'var(--accent)'}}>Connect your calendar account.</strong> Click <strong>Connect Calendar Account</strong> above and sign in with <strong>khoyi1234@gmail.com</strong> (your calendar account). This is separate from your email account — you can connect both. Once connected, your Google Calendar syncs both ways automatically.
+          <strong style={{color:'var(--accent)'}}>Connect your calendar account.</strong> Click <strong>Connect Calendar Account</strong> above and sign in with the Google account you want to use for your calendar. This can be the same account you use for email, or a separate one. Once connected, your Google Calendar syncs both ways automatically.
           {googleAccounts.length > 0 && (
             <div style={{marginTop:'6px',color:'var(--text-3)'}}>
               Currently connected Google {googleAccounts.length === 1 ? 'account' : 'accounts'}: {googleAccounts.map(a => `${a.email_address} (${(a.purposes||['email']).join('+')})`).join(', ')}
@@ -12199,7 +12352,7 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
       <div className="panel-header"><h3>🔗 Connected Google Accounts</h3></div>
       <div className="panel-body">
         <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
-          Connect Google for email (Gmail) and/or calendar. You can connect different accounts for different purposes — e.g. dara@brokerdara.com for email, khoyi1234@gmail.com for calendar.
+          Connect Google for email (Gmail) and/or calendar. You can connect different accounts for different purposes — for example, a work account for email and a personal account for calendar.
         </p>
         {emailAccounts.length === 0
           ? <p style={{fontSize:'13px',color:'var(--text-3)',marginBottom:'14px'}}>No accounts connected yet.</p>
@@ -12835,7 +12988,7 @@ function EmailAliasesPanel({ emailAliases, setEmailAliases, emailAccounts, userI
       </div>
       <div className="panel-body">
         <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
-          These are the addresses you can send mail "From" inside DarasApp. They mirror the <strong>Send mail as</strong> list in your Gmail Settings. The address marked <strong style={{color:'var(--accent)'}}>default</strong> is pre-selected in Compose; replies override it to match whatever address the original was sent to.
+          These are the addresses you can send mail "From" inside Prism. They mirror the <strong>Send mail as</strong> list in your Gmail Settings. The address marked <strong style={{color:'var(--accent)'}}>default</strong> is pre-selected in Compose; replies override it to match whatever address the original was sent to.
         </p>
 
         {msg && (
@@ -12887,7 +13040,7 @@ function EmailAliasesPanel({ emailAliases, setEmailAliases, emailAccounts, userI
                             if (e.key === 'Enter') { e.preventDefault(); saveName(a, editingName.value); }
                             if (e.key === 'Escape') setEditingName(null);
                           }}
-                          placeholder="Display name (e.g. Dara Khoyi)"
+                          placeholder="Display name (e.g. Your Name)"
                           style={{padding:'4px 8px',fontSize:'12px',height:'auto'}}
                         />
                         <button className="btn btn-ghost btn-sm" onClick={() => saveName(a, editingName.value)} disabled={busy === a.id} style={{padding:'4px 8px',fontSize:'11px'}}>Save</button>
@@ -13033,6 +13186,8 @@ export default function App() {
   const [profiles, setProfiles] = useState([]);
   const [voiceCards, setVoiceCards] = useState([]);
   const [emailAccounts, setEmailAccounts] = useState([]);
+  // Pass 2 Batch C — user_settings: drives the onboarding modal + future Settings.
+  const [userSettings, setUserSettings] = useState(null);
   // Dashboard "Unread Email" tile — count of unread inbox threads (excludes snoozed)
   const [unreadEmailCount, setUnreadEmailCount] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -13099,6 +13254,9 @@ export default function App() {
       ['voiceCards',     supabase.from('voice_cards').select('*').order('created_at', { ascending: true })],
       ['emailAccounts',  supabase.from('email_accounts').select('*').order('created_at', { ascending: true })],
       ['emailAliases',   supabase.from('email_aliases').select('*').order('email_address', { ascending: true })],
+      // Pass 2 Batch C — user_settings row drives onboarding modal + personalization.
+      // maybeSingle so we get null (not an error) when row doesn't exist yet.
+      ['userSettings',   supabase.from('user_settings').select('*').eq('user_id', session?.user?.id).maybeSingle()],
       // Lightweight unread count for the Dashboard tile — replaces the old legacy
       // `emails.filter(...)` approach. Uses head:true + count='exact' to avoid
       // fetching any rows (just the count).
@@ -13133,6 +13291,7 @@ export default function App() {
     take('voiceCards',    res => setVoiceCards(res.data || []));
     take('emailAccounts', res => setEmailAccounts(res.data || []));
     take('emailAliases',  res => setEmailAliases(res.data || []));
+    take('userSettings',  res => setUserSettings(res.data || null));
     take('unreadEmailCount', res => setUnreadEmailCount(typeof res.count === 'number' ? res.count : 0));
 
     if (failed.length > 0) {
@@ -13219,6 +13378,7 @@ export default function App() {
     setTasks([]); setRobots([]); setNotes([]);
     setContacts([]); setProperties([]); setInvestments([]); setBrain([]); setEvents([]); setPlaybookSteps([]); setPlaybookRuns([]); setEmailAliases([]);
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
+    setUserSettings(null);
     setUnreadEmailCount(0);
     setDataLoaded(false);
   }
@@ -13242,8 +13402,8 @@ export default function App() {
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
     { id: 'playbooks',   icon: '📚', label: 'Playbooks',   badge: brain.filter(b=>b.type==='playbook').length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
-    { id: 'chat',        icon: '✦',  label: 'Ari',         badge: null },
-    { id: 'prism',       icon: '✦',  label: 'Prism',       badge: null },
+    { id: 'chat',        icon: '✦',  label: robots[0]?.name || 'Assistant', badge: null },
+    { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
 
@@ -13251,7 +13411,7 @@ export default function App() {
     <div className="app-shell" style={{flexDirection:'column'}}>
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo">My<span>Life</span></div>
+        <div className="mobile-header-logo"><span>Prism</span></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>
@@ -13264,7 +13424,7 @@ export default function App() {
         {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
-            <h1>My<span>Life</span></h1>
+            <h1><span>Prism</span></h1>
             <p>Personal OS</p>
           </div>
           <div className="sidebar-nav">
@@ -13317,6 +13477,16 @@ export default function App() {
         </main>
       </div>
       <ToastHost />
+      {/* Pass 2 Batch C: Blocking onboarding modal for new users (and existing
+          users on first run after this ships). Only mounts once user_settings
+          has been fetched (avoids flashing the modal before we know). */}
+      {dataLoaded && userSettings && userSettings.onboarding_complete === false && (
+        <OnboardingModal
+          userId={user.id}
+          userEmail={user.email}
+          onComplete={() => { loadData(); }}
+        />
+      )}
     </div>
   );
 }

@@ -33,7 +33,7 @@ serve(async (req) => {
 
   if (error) {
     return new Response(
-      htmlPage("Connection cancelled", `<h1>Connection cancelled</h1><p>Google reported: ${error}</p><p><a href="https://darasapp.com/">Return to DarasApp</a></p>`),
+      htmlPage("Connection cancelled", `<h1>Connection cancelled</h1><p>Google reported: ${error}</p><p><a href="https://darasapp.com/">Return to Prism</a></p>`),
       { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
   }
@@ -134,7 +134,7 @@ serve(async (req) => {
     return new Response(
       htmlPage(
         "Connection failed",
-        `<h1>Connection failed</h1><p>${String(err).slice(0, 400)}</p><p><a href="https://darasapp.com/">Return to DarasApp</a></p>`,
+        `<h1>Connection failed</h1><p>${String(err).slice(0, 400)}</p><p><a href="https://darasapp.com/">Return to Prism</a></p>`,
       ),
       { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
