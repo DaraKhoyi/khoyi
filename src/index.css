@@ -430,3 +430,76 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .divider { height: 1px; background: var(--border); margin: 18px 0; }
+
+/* ─── CALENDAR VIEW TOGGLE ─── */
+.cal-view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.cal-view-toggle button { background: var(--bg-card); border: none; color: var(--text-2); padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+.cal-view-toggle button + button { border-left: 1px solid var(--border); }
+.cal-view-toggle button:hover:not(.active) { color: var(--text-1); background: var(--bg-hover); }
+.cal-view-toggle button.active { background: var(--accent); color: #1a1410; }
+
+/* ─── WEEK TIMELINE ─── */
+.week-timeline { display: flex; flex-direction: column; min-height: 400px; }
+.week-day-headers { display: grid; grid-template-columns: 48px repeat(7, 1fr); border-bottom: 1px solid var(--border); background: var(--bg-card); position: sticky; top: 0; z-index: 2; }
+.week-time-gutter { width: 48px; }
+.week-day-header { padding: 8px 6px; text-align: center; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.week-day-header.today { background: var(--accent-glow); }
+.week-dow { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
+.week-day-header.today .week-dow { color: var(--accent); }
+.week-date { font-size: 16px; font-weight: 700; color: var(--text-1); }
+.week-day-header.today .week-date { color: var(--accent); }
+.week-allday-chip { font-size: 10px; padding: 2px 5px; border-radius: 3px; background: var(--accent-dim); color: var(--text-1); border-left: 2px solid var(--accent); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.week-grid-scroll { flex: 1; overflow-y: auto; max-height: 70vh; }
+.week-grid { display: grid; grid-template-columns: 48px repeat(7, 1fr); position: relative; }
+.week-time-gutter-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--bg-card); }
+.week-time-cell { display: flex; align-items: flex-start; justify-content: flex-end; padding: 2px 6px; font-size: 10px; color: var(--text-3); border-bottom: 1px solid var(--border); }
+.week-day-col { position: relative; border-left: 1px solid var(--border); }
+.week-day-col.today { background: rgba(197,169,94,0.04); }
+.week-hour-cell { border-bottom: 1px solid var(--border); cursor: pointer; }
+.week-hour-cell:hover { background: var(--bg-hover); }
+.week-event-block { position: absolute; left: 2px; right: 2px; background: var(--accent-dim); border-left: 3px solid var(--accent); border-radius: 4px; padding: 3px 5px; overflow: hidden; cursor: pointer; z-index: 1; transition: transform 0.1s; }
+.week-event-block:hover { transform: scale(1.02); z-index: 5; }
+.week-event-time { font-size: 9px; color: var(--text-3); }
+.week-event-title { font-size: 11px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ─── DAY VIEW (events 40% | tasks 60%) ─── */
+.day-view { display: grid; grid-template-columns: 40% 60%; gap: 10px; min-height: 500px; }
+.day-events-col, .day-tasks-col { background: var(--bg-base); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+.day-col-header { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; color: var(--text-1); background: var(--bg-card); }
+.day-allday-row { display: flex; gap: 4px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.day-allday-chip { font-size: 11px; padding: 3px 6px; background: var(--accent-dim); color: var(--text-1); border-left: 2px solid var(--accent); border-radius: 3px; cursor: pointer; }
+.day-timeline-scroll { flex: 1; overflow-y: auto; max-height: 70vh; }
+.day-timeline { position: relative; }
+.day-hour-row { display: flex; border-bottom: 1px solid var(--border); cursor: pointer; }
+.day-hour-row:hover { background: var(--bg-hover); }
+.day-hour-label { width: 56px; font-size: 11px; color: var(--text-3); padding: 4px 8px; flex-shrink: 0; border-right: 1px solid var(--border); }
+.day-event-block { position: absolute; left: 60px; right: 6px; background: var(--accent-dim); border-left: 3px solid var(--accent); border-radius: 5px; padding: 5px 8px; overflow: hidden; cursor: pointer; z-index: 1; }
+.day-event-time { font-size: 10px; color: var(--text-3); }
+.day-event-title { font-size: 12px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day-event-loc { font-size: 10px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day-tasks-scroll { flex: 1; overflow-y: auto; max-height: 70vh; padding: 4px 0; }
+.day-task-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+.day-task-row:hover { background: var(--bg-hover); }
+.day-task-check { font-size: 16px; color: var(--text-2); flex-shrink: 0; line-height: 1.2; }
+.day-task-row .task-priority { flex-shrink: 0; align-self: flex-start; margin-top: 1px; }
+.day-task-text { font-size: 13px; color: var(--text-1); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; flex: 1; min-width: 0; }
+@media (max-width: 720px) {
+  .day-view { grid-template-columns: 1fr; }
+  .day-events-col, .day-tasks-col { max-height: none; }
+}
+
+/* ─── YEAR VIEW — 6 months in a 3×2 grid (responsive) ─── */
+.year-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 10px; }
+@media (max-width: 900px) { .year-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .year-grid { grid-template-columns: 1fr; } }
+.year-month { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.year-month-header { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 8px; cursor: pointer; text-align: center; padding: 4px; border-radius: 4px; }
+.year-month-header:hover { background: var(--bg-hover); color: var(--accent); }
+.year-dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+.year-dow > div { text-align: center; font-size: 9px; font-weight: 700; color: var(--text-3); }
+.year-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.year-day { font-size: 10px; text-align: center; padding: 4px 0; border-radius: 3px; color: var(--text-2); cursor: pointer; transition: all 0.1s; min-height: 22px; display: flex; align-items: center; justify-content: center; }
+.year-day.in { color: var(--text-1); }
+.year-day.out { color: var(--text-3); opacity: 0.4; cursor: default; }
+.year-day.today { border: 1px solid var(--accent); color: var(--accent); font-weight: 700; }
+.year-day.in:hover { background: var(--bg-hover) !important; }

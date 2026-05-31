@@ -7375,7 +7375,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
   );
 }
 
-function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts, properties = [] }) {
+function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts, properties = [], tasks = [], setTasks }) {
   const today = new Date();
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [showModal, setShowModal] = useState(false);
@@ -7383,6 +7383,51 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   const [modalDate, setModalDate] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [flash, setFlash] = useState(null);
+  // View mode — sticky in localStorage. 'month' | 'week' | 'day' | 'year'
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('calendar_view_mode');
+      return ['month','week','day','year'].includes(saved) ? saved : 'month';
+    } catch(_) { return 'month'; }
+  });
+  function changeViewMode(m) {
+    setViewMode(m);
+    try { localStorage.setItem('calendar_view_mode', m); } catch(_) {}
+    // When switching to day/week, snap cursor to today if it's in a wildly different month
+    if ((m==='day' || m==='week') && (cursor.getMonth()!==today.getMonth() || cursor.getFullYear()!==today.getFullYear())) {
+      setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+  }
+
+  // ─── Navigation helpers — adapt prev/next to viewMode ───
+  const VIEW_HOUR_START = 6;   // 6 AM
+  const VIEW_HOUR_END   = 23;  // 11 PM (exclusive)
+  function shiftCursor(delta) {
+    const d = new Date(cursor);
+    if (viewMode === 'month') d.setMonth(d.getMonth() + delta);
+    else if (viewMode === 'week') d.setDate(d.getDate() + 7*delta);
+    else if (viewMode === 'day') d.setDate(d.getDate() + delta);
+    else if (viewMode === 'year') d.setMonth(d.getMonth() + 6*delta); // ±6 months
+    setCursor(d);
+  }
+  function goToday() {
+    setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  }
+  function startOfWeek(d) {
+    const r = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    r.setDate(r.getDate() - r.getDay()); // Sunday
+    return r;
+  }
+  function addDaysLocal(d, n) {
+    const r = new Date(d); r.setDate(r.getDate()+n); return r;
+  }
+  function eventsForDay(d) {
+    const key = ymd(d);
+    return events.filter(ev => {
+      const s = new Date(ev.start_at);
+      return ymd(s) === key;
+    }).sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
+  }
 
   const googleAccounts = (emailAccounts || []).filter(a => a.provider === 'google' && a.is_active);
   // The calendar account: one tagged with 'calendar' purpose, or any with calendar scope
@@ -7398,14 +7443,6 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     const d = new Date(gridStart);
     d.setDate(gridStart.getDate() + i);
     cells.push(d);
-  }
-
-  function eventsForDay(d) {
-    const key = ymd(d);
-    return events.filter(ev => {
-      const s = new Date(ev.start_at);
-      return ymd(s) === key;
-    }).sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
   }
 
   async function handleSave(data) {
@@ -7498,7 +7535,10 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>📅 Calendar</h2><p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total</p></div>
+        <div>
+          <h2>📅 Calendar</h2>
+          <p style={{color:'var(--text-1)',opacity:0.9,fontWeight:500}}>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total</p>
+        </div>
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
           {hasCalendarScope ? (
             <button className="btn btn-ghost" onClick={()=>syncCalendar('both')} disabled={syncing}>
@@ -7510,6 +7550,20 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             </button>
           )}
           <button className="btn btn-primary" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}}>+ New Event</button>
+        </div>
+      </div>
+
+      {/* View toggle */}
+      <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px',flexWrap:'wrap'}}>
+        <div className="cal-view-toggle">
+          {[
+            {id:'day',label:'Day'},
+            {id:'week',label:'Week'},
+            {id:'month',label:'Month'},
+            {id:'year',label:'Year'},
+          ].map(v => (
+            <button key={v.id} className={viewMode===v.id?'active':''} onClick={()=>changeViewMode(v.id)}>{v.label}</button>
+          ))}
         </div>
       </div>
 
@@ -7531,57 +7585,60 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         </div>
       )}
 
-      {/* Month navigation */}
+      {/* Navigation header — adapts to viewMode */}
       <div className="panel">
         <div className="panel-header" style={{justifyContent:'space-between'}}>
           <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setCursor(new Date(year, month-1, 1))}>‹</button>
-            <h3 style={{minWidth:'160px',textAlign:'center',fontSize:'15px'}}>{MONTH_NAMES[month]} {year}</h3>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setCursor(new Date(year, month+1, 1))}>›</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>shiftCursor(-1)}>‹</button>
+            <h3 style={{minWidth:'200px',textAlign:'center',fontSize:'15px'}}>
+              {viewMode==='month' && `${MONTH_NAMES[month]} ${year}`}
+              {viewMode==='week' && (() => {
+                const ws = startOfWeek(cursor); const we = addDaysLocal(ws, 6);
+                const sameMonth = ws.getMonth()===we.getMonth();
+                return sameMonth
+                  ? `${MONTH_NAMES[ws.getMonth()].slice(0,3)} ${ws.getDate()} – ${we.getDate()}, ${we.getFullYear()}`
+                  : `${MONTH_NAMES[ws.getMonth()].slice(0,3)} ${ws.getDate()} – ${MONTH_NAMES[we.getMonth()].slice(0,3)} ${we.getDate()}, ${we.getFullYear()}`;
+              })()}
+              {viewMode==='day' && `${DOW[cursor.getDay()]}, ${MONTH_NAMES[cursor.getMonth()]} ${cursor.getDate()}, ${cursor.getFullYear()}`}
+              {viewMode==='year' && (() => {
+                const endM = new Date(year, month+5, 1);
+                return `${MONTH_NAMES[month].slice(0,3)} ${year} – ${MONTH_NAMES[endM.getMonth()].slice(0,3)} ${endM.getFullYear()}`;
+              })()}
+            </h3>
+            <button className="btn btn-ghost btn-sm" onClick={()=>shiftCursor(1)}>›</button>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>Today</button>
+          <button className="btn btn-ghost btn-sm" onClick={goToday}>Today</button>
         </div>
-        <div className="panel-body" style={{padding:'10px'}}>
-          {/* DOW header */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px',marginBottom:'4px'}}>
-            {DOW.map(d => <div key={d} style={{textAlign:'center',fontSize:'10px',fontWeight:600,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',padding:'4px'}}>{d}</div>)}
-          </div>
-          {/* Grid */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px'}}>
-            {cells.map((d, i) => {
-              const inMonth = d.getMonth() === month;
-              const isToday = ymd(d) === ymd(today);
-              const dayEvents = eventsForDay(d);
-              return (
-                <div key={i}
-                  onClick={()=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
-                  style={{
-                    minHeight:'84px', padding:'4px 6px', borderRadius:'8px', cursor:'pointer',
-                    background: isToday ? 'var(--accent-glow)' : (inMonth ? 'var(--bg-base)' : 'transparent'),
-                    border: isToday ? '1px solid var(--accent)' : '1px solid var(--border)',
-                    opacity: inMonth ? 1 : 0.4,
-                    display:'flex', flexDirection:'column', gap:'2px', overflow:'hidden'
-                  }}>
-                  <div style={{fontSize:'11px',fontWeight:isToday?700:500,color:isToday?'var(--accent)':'var(--text-2)',textAlign:'right'}}>{d.getDate()}</div>
-                  {dayEvents.slice(0,3).map(ev => (
-                    <div key={ev.id}
-                      onClick={(e)=>{e.stopPropagation();setEditEvent(ev);setModalDate(null);setShowModal(true);}}
-                      title={ev.title}
-                      style={{
-                        fontSize:'10px', padding:'1px 4px', borderRadius:'3px',
-                        background: ev.google_event_id ? 'var(--accent-dim)' : 'var(--bg-hover)',
-                        color:'var(--text-1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
-                        borderLeft: `2px solid ${ev.google_event_id ? 'var(--accent)' : 'var(--text-3)'}`
-                      }}>
-                      {!ev.all_day && <span style={{color:'var(--text-3)',marginRight:'3px'}}>{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</span>}
-                      {ev.title}
-                    </div>
-                  ))}
-                  {dayEvents.length > 3 && <div style={{fontSize:'9px',color:'var(--text-3)',paddingLeft:'4px'}}>+{dayEvents.length-3} more</div>}
-                </div>
-              );
-            })}
-          </div>
+        <div className="panel-body" style={{padding:viewMode==='month'?'10px':'0'}}>
+          {viewMode==='month' && <MonthGrid
+            cells={cells} month={month} today={today}
+            eventsForDay={eventsForDay}
+            onDayClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
+            onEventClick={(ev)=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}
+          />}
+          {viewMode==='week' && <WeekTimeline
+            startDate={startOfWeek(cursor)}
+            today={today}
+            hourStart={VIEW_HOUR_START} hourEnd={VIEW_HOUR_END}
+            events={events}
+            onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
+            onEventClick={(ev)=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}
+          />}
+          {viewMode==='day' && <DayTimelineWithTasks
+            date={cursor} today={today}
+            hourStart={VIEW_HOUR_START} hourEnd={VIEW_HOUR_END}
+            events={eventsForDay(cursor)}
+            tasks={tasks} setTasks={setTasks}
+            onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
+            onEventClick={(ev)=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}
+          />}
+          {viewMode==='year' && <YearGrid
+            startMonth={new Date(year, month, 1)}
+            today={today}
+            events={events}
+            onMonthClick={(d)=>{setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); changeViewMode('month');}}
+            onDayClick={(d)=>{setCursor(d); changeViewMode('day');}}
+          />}
         </div>
       </div>
 
@@ -7630,6 +7687,286 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         contacts={contacts}
         properties={properties}
       />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// CALENDAR VIEW HELPERS — Month / Week / Day / Year sub-components
+// ─────────────────────────────────────────
+
+// MONTH — 6-row grid of 7 days
+function MonthGrid({ cells, month, today, eventsForDay, onDayClick, onEventClick }) {
+  return (
+    <>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px',marginBottom:'4px'}}>
+        {DOW.map(d => <div key={d} style={{textAlign:'center',fontSize:'10px',fontWeight:600,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',padding:'4px'}}>{d}</div>)}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px'}}>
+        {cells.map((d, i) => {
+          const inMonth = d.getMonth() === month;
+          const isToday = ymd(d) === ymd(today);
+          const dayEvents = eventsForDay(d);
+          return (
+            <div key={i} onClick={()=>onDayClick(d)}
+              style={{
+                minHeight:'84px', padding:'4px 6px', borderRadius:'8px', cursor:'pointer',
+                background: isToday ? 'var(--accent-glow)' : (inMonth ? 'var(--bg-base)' : 'transparent'),
+                border: isToday ? '1px solid var(--accent)' : '1px solid var(--border)',
+                opacity: inMonth ? 1 : 0.4,
+                display:'flex', flexDirection:'column', gap:'2px', overflow:'hidden'
+              }}>
+              <div style={{fontSize:'11px',fontWeight:isToday?700:500,color:isToday?'var(--accent)':'var(--text-2)',textAlign:'right'}}>{d.getDate()}</div>
+              {dayEvents.slice(0,3).map(ev => (
+                <div key={ev.id} onClick={(e)=>{e.stopPropagation();onEventClick(ev);}} title={ev.title}
+                  style={{
+                    fontSize:'10px', padding:'1px 4px', borderRadius:'3px',
+                    background: ev.google_event_id ? 'var(--accent-dim)' : 'var(--bg-hover)',
+                    color:'var(--text-1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                    borderLeft: `2px solid ${ev.google_event_id ? 'var(--accent)' : 'var(--text-3)'}`
+                  }}>
+                  {!ev.all_day && <span style={{color:'var(--text-3)',marginRight:'3px'}}>{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</span>}
+                  {ev.title}
+                </div>
+              ))}
+              {dayEvents.length > 3 && <div style={{fontSize:'9px',color:'var(--text-3)',paddingLeft:'4px'}}>+{dayEvents.length-3} more</div>}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// WEEK — 7 day columns × hourly rows. Events absolutely positioned by start/end.
+function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClick, onEventClick }) {
+  const HOUR_PX = 44;
+  const hours = []; for (let h = hourStart; h < hourEnd; h++) hours.push(h);
+  const days = []; for (let i = 0; i < 7; i++) { const d = new Date(startDate); d.setDate(d.getDate()+i); days.push(d); }
+  function evForDay(d) {
+    const key = ymd(d);
+    return events.filter(ev => ymd(new Date(ev.start_at)) === key && !ev.all_day);
+  }
+  function allDayForDay(d) {
+    const key = ymd(d);
+    return events.filter(ev => ymd(new Date(ev.start_at)) === key && ev.all_day);
+  }
+  function evPosition(ev) {
+    const s = new Date(ev.start_at);
+    const e = ev.end_at ? new Date(ev.end_at) : new Date(s.getTime()+60*60000);
+    const startMin = Math.max(0, (s.getHours() - hourStart)*60 + s.getMinutes());
+    const endMin = Math.min((hourEnd - hourStart)*60, (e.getHours() - hourStart)*60 + e.getMinutes());
+    const top = (startMin/60)*HOUR_PX;
+    const height = Math.max(18, ((endMin - startMin)/60)*HOUR_PX);
+    return { top, height };
+  }
+  return (
+    <div className="week-timeline">
+      {/* Day headers */}
+      <div className="week-day-headers">
+        <div className="week-time-gutter" />
+        {days.map((d,i) => {
+          const isToday = ymd(d) === ymd(today);
+          return (
+            <div key={i} className={`week-day-header ${isToday?'today':''}`}>
+              <div className="week-dow">{DOW[d.getDay()]}</div>
+              <div className="week-date">{d.getDate()}</div>
+              {/* All-day chips */}
+              {allDayForDay(d).map(ev => (
+                <div key={ev.id} className="week-allday-chip" onClick={(e)=>{e.stopPropagation();onEventClick(ev);}} title={ev.title}>
+                  {ev.title}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      {/* Hour grid */}
+      <div className="week-grid-scroll">
+        <div className="week-grid" style={{height: `${hours.length*HOUR_PX}px`}}>
+          {/* Time gutter */}
+          <div className="week-time-gutter-col">
+            {hours.map(h => (
+              <div key={h} className="week-time-cell" style={{height: `${HOUR_PX}px`}}>
+                <span>{h===0?'12 AM':h<12?`${h} AM`:h===12?'12 PM':`${h-12} PM`}</span>
+              </div>
+            ))}
+          </div>
+          {/* Day columns */}
+          {days.map((d,di) => {
+            const dayEv = evForDay(d);
+            const isToday = ymd(d) === ymd(today);
+            return (
+              <div key={di} className={`week-day-col ${isToday?'today':''}`}>
+                {hours.map(h => (
+                  <div key={h} className="week-hour-cell" style={{height: `${HOUR_PX}px`}}
+                    onClick={()=>{ const nd = new Date(d); nd.setHours(h,0,0,0); onCellClick(nd); }} />
+                ))}
+                {dayEv.map(ev => {
+                  const {top, height} = evPosition(ev);
+                  return (
+                    <div key={ev.id} className="week-event-block"
+                      style={{top: `${top}px`, height: `${height}px`}}
+                      onClick={(e)=>{e.stopPropagation();onEventClick(ev);}}
+                      title={ev.title}>
+                      <div className="week-event-time">{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>
+                      <div className="week-event-title">{ev.title}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// DAY — Hour timeline + tasks panel (tasks panel 60% / events 40%, per request)
+function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, setTasks, onCellClick, onEventClick }) {
+  const HOUR_PX = 52;
+  const hours = []; for (let h = hourStart; h < hourEnd; h++) hours.push(h);
+  const isToday = ymd(date) === ymd(today);
+
+  const nonAllDay = events.filter(e => !e.all_day);
+  const allDay = events.filter(e => e.all_day);
+
+  function evPosition(ev) {
+    const s = new Date(ev.start_at);
+    const e = ev.end_at ? new Date(ev.end_at) : new Date(s.getTime()+60*60000);
+    const startMin = Math.max(0, (s.getHours() - hourStart)*60 + s.getMinutes());
+    const endMin = Math.min((hourEnd - hourStart)*60, (e.getHours() - hourStart)*60 + e.getMinutes());
+    return { top: (startMin/60)*HOUR_PX, height: Math.max(22, ((endMin - startMin)/60)*HOUR_PX) };
+  }
+
+  // Tasks: highest-ranking open tasks (not completed), sorted by Eisenhower/simple rank.
+  const openTasks = sortTasks((tasks||[]).filter(t => !t.completed)).slice(0, 50);
+
+  async function toggleTask(task) {
+    if (!setTasks) return;
+    const { data: u } = await supabase.from('tasks').update({ completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null }).eq('id', task.id).select().single();
+    if (u) setTasks(prev => prev.map(t => t.id === u.id ? u : t));
+  }
+
+  return (
+    <div className="day-view">
+      {/* Events column (40%) */}
+      <div className="day-events-col">
+        <div className="day-col-header">
+          <span>{isToday ? 'Today' : `${MONTH_NAMES[date.getMonth()].slice(0,3)} ${date.getDate()}`}</span>
+          <span style={{fontSize:'10px',color:'var(--text-3)'}}>{nonAllDay.length} event{nonAllDay.length===1?'':'s'}</span>
+        </div>
+        {allDay.length > 0 && (
+          <div className="day-allday-row">
+            {allDay.map(ev => (
+              <div key={ev.id} className="day-allday-chip" onClick={()=>onEventClick(ev)} title={ev.title}>{ev.title}</div>
+            ))}
+          </div>
+        )}
+        <div className="day-timeline-scroll">
+          <div className="day-timeline" style={{height: `${hours.length*HOUR_PX}px`}}>
+            {hours.map(h => (
+              <div key={h} className="day-hour-row" style={{height: `${HOUR_PX}px`}}
+                onClick={()=>{ const nd = new Date(date); nd.setHours(h,0,0,0); onCellClick(nd); }}>
+                <div className="day-hour-label">{h===0?'12 AM':h<12?`${h} AM`:h===12?'12 PM':`${h-12} PM`}</div>
+              </div>
+            ))}
+            {nonAllDay.map(ev => {
+              const {top, height} = evPosition(ev);
+              return (
+                <div key={ev.id} className="day-event-block"
+                  style={{top: `${top}px`, height: `${height}px`}}
+                  onClick={(e)=>{e.stopPropagation();onEventClick(ev);}}
+                  title={ev.title}>
+                  <div className="day-event-time">{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>
+                  <div className="day-event-title">{ev.title}</div>
+                  {ev.location && <div className="day-event-loc">📍 {ev.location}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {/* Tasks column (60%) */}
+      <div className="day-tasks-col">
+        <div className="day-col-header">
+          <span>Tasks</span>
+          <span style={{fontSize:'10px',color:'var(--text-3)'}}>{openTasks.length} open</span>
+        </div>
+        <div className="day-tasks-scroll">
+          {openTasks.length === 0
+            ? <div className="empty-state" style={{padding:'20px 0'}}><p>No open tasks.</p></div>
+            : openTasks.map(t => (
+                <div key={t.id} className="day-task-row" onClick={()=>toggleTask(t)}>
+                  <span className="day-task-check">{t.completed ? '☑' : '☐'}</span>
+                  <span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>
+                  <span className="day-task-text" title={t.title}>{t.title}</span>
+                </div>
+              ))
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// YEAR — 6 months in a 3×2 grid; ‹/› shifts by 6 months
+function YearGrid({ startMonth, today, events, onMonthClick, onDayClick }) {
+  // Pre-compute event counts per day across the visible range
+  const months = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(startMonth.getFullYear(), startMonth.getMonth()+i, 1);
+    months.push(d);
+  }
+  // Bucket event counts by ymd for the visible range
+  const startBound = new Date(months[0]);
+  const endBound = new Date(startMonth.getFullYear(), startMonth.getMonth()+6, 0, 23, 59, 59);
+  const counts = {};
+  for (const ev of events) {
+    const s = new Date(ev.start_at);
+    if (s < startBound || s > endBound) continue;
+    const k = ymd(s);
+    counts[k] = (counts[k] || 0) + 1;
+  }
+  function densityColor(n) {
+    if (!n) return 'transparent';
+    if (n === 1) return 'var(--accent-glow)';
+    if (n === 2) return 'rgba(197,169,94,0.25)';
+    if (n <= 4) return 'rgba(197,169,94,0.45)';
+    return 'var(--accent-dim)';
+  }
+  return (
+    <div className="year-grid">
+      {months.map((m, mi) => {
+        const y = m.getFullYear(), mo = m.getMonth();
+        const gridStart = startOfMonthGrid(y, mo);
+        const cells = []; for (let i = 0; i < 42; i++) { const d = new Date(gridStart); d.setDate(gridStart.getDate()+i); cells.push(d); }
+        return (
+          <div key={mi} className="year-month">
+            <div className="year-month-header" onClick={()=>onMonthClick(m)}>{MONTH_NAMES[mo]} {y}</div>
+            <div className="year-dow">
+              {['S','M','T','W','T','F','S'].map((d,i)=> <div key={i}>{d}</div>)}
+            </div>
+            <div className="year-days">
+              {cells.map((d, i) => {
+                const inMonth = d.getMonth() === mo;
+                const isToday = ymd(d) === ymd(today);
+                const n = counts[ymd(d)] || 0;
+                return (
+                  <div key={i}
+                    onClick={(e)=>{e.stopPropagation();if(inMonth) onDayClick(d);}}
+                    className={`year-day ${inMonth?'in':'out'} ${isToday?'today':''}`}
+                    style={{background: inMonth ? densityColor(n) : 'transparent'}}
+                    title={n>0?`${n} event${n===1?'':'s'}`:''}>
+                    {d.getDate()}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -9541,7 +9878,7 @@ export default function App() {
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
               : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
-              : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties}/>
+              : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks}/>
               : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
