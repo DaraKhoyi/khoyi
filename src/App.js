@@ -259,7 +259,37 @@ function OnboardingModal({ userId, userEmail, onComplete }) {
             </div>
           )}
 
-          <div className="modal-actions" style={{display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px'}}>
+          <div className="modal-actions" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '16px', flexWrap: 'wrap'}}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={async () => {
+                // Skip path — write the minimum so we don't show this modal again.
+                // User can fill in profession / context later in Settings.
+                if (saving) return;
+                if (!displayName.trim()) {
+                  setError('Just need your name first (one field) — then you can skip the rest.');
+                  return;
+                }
+                setSaving(true);
+                setError('');
+                const { error: upErr } = await supabase.from('user_settings').upsert({
+                  user_id: userId,
+                  display_name: displayName.trim(),
+                  onboarding_complete: true,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'user_id' });
+                setSaving(false);
+                if (upErr) {
+                  setError(upErr.message || 'Could not save. Please try again.');
+                  return;
+                }
+                onComplete();
+              }}
+              style={{fontSize: '12px', color: 'var(--text-3)'}}
+              title="Save just your name and fill in the rest later in Settings">
+              Skip for now
+            </button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Saving…' : 'Finish setup'}
             </button>
@@ -2104,6 +2134,25 @@ function DatePickerModal({ initial, onCancel, onPick }) {
 // Read-only ordering (by rank within quadrant). Click task to edit.
 // Shows only Eisenhower tasks; simple-system tasks excluded (they have no quadrant).
 // ─────────────────────────────────────────
+// Pass 4 Batch D: email triage display metadata.
+// One source of truth for icons, colors, and labels used by InboxView.
+const TRIAGE_CATEGORIES = {
+  urgent:            { icon: '🚨', label: 'Urgent',            color: '#ef4444' },
+  requires_response: { icon: '✉️', label: 'Needs reply',       color: '#f59e0b' },
+  fyi:               { icon: 'ℹ️', label: 'FYI',               color: '#6c63ff' },
+  can_wait:          { icon: '⏳', label: 'Can wait',           color: '#9499b0' },
+  promotional:       { icon: '📢', label: 'Promotional',       color: '#9499b0' },
+  spam:              { icon: '🗑️', label: 'Spam',              color: '#555e7a' },
+};
+const TRIAGE_ACTIONS = {
+  reply_now:        { label: 'Reply now' },
+  reply_today:      { label: 'Reply today' },
+  schedule_reply:   { label: 'Schedule a reply' },
+  archive:          { label: 'Archive it' },
+  ignore:           { label: 'Ignore' },
+  snooze:           { label: 'Snooze' },
+};
+
 // ─────────────────────────────────────────
 // INBOX VIEW — Gmail-aware
 // Reads from email_threads/email_messages when an account is connected.
@@ -2275,6 +2324,14 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [selectedThread, setSelectedThread] = useState(null);
   const [selectedMessages, setSelectedMessages] = useState([]);
 
+  // Pass 4 Batch D: email triage (per Q2 = auto on sync + persist + full output)
+  // triageCache is a map { thread_id → triage_row } populated lazily as we
+  // open threads or as background auto-triage finishes. Mirrors what's in the
+  // email_triage table; lets the UI render synchronously without DB round-trips.
+  const [triageCache, setTriageCache] = useState({});
+  const [triageLoading, setTriageLoading] = useState({});  // { thread_id → true }
+  const [autoTriageProgress, setAutoTriageProgress] = useState(null);  // { done, total } | null
+
   // Responsive: on mobile (<900px), tapping a thread fully replaces the list
   // view with the reading pane. On desktop, both panels show side-by-side.
   const [isMobileWidth, setIsMobileWidth] = useState(
@@ -2440,6 +2497,82 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     }, 50);
   }
 
+  // Pass 4 Batch D: load any cached triage rows for current threads so the
+  // inbox list can show category dots immediately. Re-runs when threads change.
+  useEffect(() => {
+    if (!threads || threads.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const ids = threads.map(t => t.id);
+      const { data } = await supabase
+        .from('email_triage')
+        .select('*')
+        .in('thread_id', ids);
+      if (cancelled || !data) return;
+      const map = {};
+      for (const row of data) map[row.thread_id] = row;
+      setTriageCache(prev => ({ ...prev, ...map }));
+    })();
+    return () => { cancelled = true; };
+  }, [threads]);
+
+  // Triage a single thread. force=true bypasses the edge-function's cache check.
+  // The function itself UPSERTs to email_triage, so we just take its return value.
+  async function triageThread(threadId, { force = false } = {}) {
+    setTriageLoading(prev => ({ ...prev, [threadId]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke('email-intelligence', {
+        body: { thread_id: threadId, force },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      // Cache shape matches the email_triage row enough for UI to consume.
+      setTriageCache(prev => ({
+        ...prev,
+        [threadId]: {
+          thread_id: threadId,
+          category: data.category,
+          action: data.action,
+          summary: data.summary,
+          reasoning: data.reasoning,
+          confidence: data.confidence,
+          created_at: data.created_at,
+          cached: data.cached,
+        },
+      }));
+      return data;
+    } catch (err) {
+      if (window.__notify) window.__notify('Triage failed: ' + (err.message || err), 'error');
+      return null;
+    } finally {
+      setTriageLoading(prev => {
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+    }
+  }
+
+  // Auto-triage: after a sync, find threads with no triage row and run them
+  // serially (one at a time, to avoid spiking API costs/rate limits). Per
+  // Q2a = "Auto-triage every new thread in background as soon as it syncs."
+  // Per Q2c = persist (the edge function writes to email_triage on success).
+  async function autoTriageUntriaged(allThreads) {
+    const candidates = allThreads.filter(t => !triageCache[t.id]);
+    if (candidates.length === 0) return;
+    setAutoTriageProgress({ done: 0, total: candidates.length });
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        await triageThread(candidates[i].id);
+      } catch (_) { /* triageThread already toasts; keep going */ }
+      setAutoTriageProgress({ done: i + 1, total: candidates.length });
+      // Throttle: 250ms between calls to be polite to the API
+      if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 250));
+    }
+    // Clear progress after a moment
+    setTimeout(() => setAutoTriageProgress(null), 2500);
+  }
+
   async function runSync() {
     setSyncing(true);
     setSyncMsg('');
@@ -2457,6 +2590,21 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         // Refresh account row
         const { data: acct } = await supabase.from('email_accounts').select('*').eq('id', account.id).single();
         if (acct) setEmailAccounts(prev => prev.map(a => a.id === acct.id ? acct : a));
+        // Pass 4 Batch D: kick off auto-triage in background for any new threads.
+        // Refetch threads first so we have the latest list including new ones.
+        try {
+          const { data: latest } = await supabase
+            .from('email_threads')
+            .select('id')
+            .eq('account_id', account.id)
+            .contains('labels', ['INBOX'])
+            .order('last_message_at', { ascending: false })
+            .limit(50);
+          if (latest && latest.length > 0) {
+            // Fire-and-forget — don't await, so the sync UI clears immediately.
+            autoTriageUntriaged(latest);
+          }
+        } catch (_) { /* non-fatal */ }
       }
       setTimeout(() => setSyncMsg(''), 4000);
     } catch (err) {
@@ -2834,6 +2982,11 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         </div>
         <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
           {syncMsg && <span style={{fontSize:'12px',color: syncMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)'}}>{syncMsg}</span>}
+          {autoTriageProgress && (
+            <span style={{fontSize:'11px',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'4px'}}>
+              ⚙️ Triaging {autoTriageProgress.done}/{autoTriageProgress.total}
+            </span>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={() => runAliasesSync(false)} disabled={syncingAliases} title="Re-sync your Send-mail-as aliases from Gmail">
             {syncingAliases ? '↻ Syncing senders…' : `↻ Senders (${verifiedAliases.length})`}
           </button>
@@ -2895,12 +3048,21 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                       {threads.map(thread => {
                         const sender = senderFromThread(thread);
                         const senderProfile = profileForEmail(sender.email);
+                        // Pass 4 Batch D: triage indicator in thread list — colored dot
+                        // hover tip with category name. Subtle so it doesn't shout.
+                        const threadTriage = triageCache[thread.id];
+                        const triageCat = threadTriage ? TRIAGE_CATEGORIES[threadTriage.category] : null;
                         return (
                           <div key={thread.id} className={`email-item ${thread.has_unread?'email-unread':''}`} onClick={()=>openThread(thread)} style={{cursor:'pointer'}}>
                             {thread.has_unread && <div className="unread-dot"/>}
                             <div className="email-avatar">{initials(sender.name, sender.email)}</div>
                             <div className="email-content" style={{minWidth:0}}>
                               <div className="email-from" style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
+                                {triageCat && (
+                                  <span
+                                    title={`AI triage: ${triageCat.label} → ${TRIAGE_ACTIONS[threadTriage.action]?.label || threadTriage.action}`}
+                                    style={{width:'7px',height:'7px',borderRadius:'50%',background:triageCat.color,flexShrink:0,display:'inline-block'}} />
+                                )}
                                 {(thread.labels || []).includes('STARRED') && (
                                   <span style={{color:'#f59e0b',fontSize:'12px',flexShrink:0}} title="Starred">★</span>
                                 )}
@@ -3105,6 +3267,68 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 {selectedThread.subject || '(no subject)'}
               </h3>
             </div>
+
+            {/* Pass 4 Batch D: AI triage card */}
+            {(() => {
+              const triage = triageCache[selectedThread.id];
+              const isLoading = !!triageLoading[selectedThread.id];
+              if (!triage && !isLoading) {
+                // No cached row and not currently running — offer to run on demand.
+                // This is the path for older threads from before auto-triage existed.
+                return (
+                  <div style={{padding:'10px 16px',background:'var(--bg-base)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
+                    <span style={{fontSize:'11px',color:'var(--text-3)'}}>No AI triage yet for this thread.</span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => triageThread(selectedThread.id)} style={{fontSize:'11px'}}>
+                      ⚙️ Triage
+                    </button>
+                  </div>
+                );
+              }
+              if (isLoading && !triage) {
+                return (
+                  <div style={{padding:'10px 16px',background:'var(--bg-base)',borderBottom:'1px solid var(--border)',fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
+                    ↻ Analyzing thread…
+                  </div>
+                );
+              }
+              // We have a triage row (possibly stale; the action button can re-run)
+              const cat = TRIAGE_CATEGORIES[triage.category] || TRIAGE_CATEGORIES.fyi;
+              const act = TRIAGE_ACTIONS[triage.action] || { label: triage.action };
+              const confidencePct = Math.round((Number(triage.confidence) || 0) * 100);
+              return (
+                <div style={{padding:'10px 16px',background:'var(--bg-base)',borderBottom:'1px solid var(--border)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',flexWrap:'wrap'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'4px'}}>
+                        <span className="pill" style={{fontSize:'11px',padding:'3px 8px',background:`${cat.color}1a`,border:`1px solid ${cat.color}`,color:cat.color,fontWeight:600}}>
+                          {cat.icon} {cat.label}
+                        </span>
+                        <span style={{fontSize:'11px',color:'var(--text-2)'}}>→ <strong>{act.label}</strong></span>
+                        <span style={{fontSize:'10px',color:'var(--text-3)'}}>· {confidencePct}% confident</span>
+                      </div>
+                      {triage.summary && (
+                        <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4,marginBottom:'4px'}}>
+                          {triage.summary}
+                        </div>
+                      )}
+                      {triage.reasoning && (
+                        <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',lineHeight:1.4}}>
+                          {triage.reasoning}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => triageThread(selectedThread.id, { force: true })}
+                      disabled={isLoading}
+                      title="Re-run AI triage on this thread"
+                      style={{fontSize:'11px',flexShrink:0}}>
+                      {isLoading ? '↻ …' : '↻ Re-run'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="panel-body" style={{padding:'0'}}>
               {loadingMessages
@@ -7360,9 +7584,21 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
       )}
 
       {playbooks.length === 0 ? (
-        <div className="panel"><div className="panel-body"><div className="empty-state">
+        <div className="panel"><div className="panel-body"><div className="empty-state" style={{padding:'40px 20px',textAlign:'center',maxWidth:'520px',margin:'0 auto'}}>
           <div className="empty-icon">📚</div>
-          <p>No playbooks yet. Create one in the Brain (type = Playbook).</p>
+          <p style={{fontSize:'15px',color:'var(--text-1)',marginBottom:'8px'}}>No playbooks yet.</p>
+          <p style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'16px',lineHeight:1.5}}>
+            Playbooks are step-by-step procedures you can trigger to spawn a batch
+            of tasks &amp; events at once — useful for any recurring workflow
+            (new listing, new client, weekly review, project kickoff…).
+          </p>
+          <button className="btn btn-primary btn-sm" onClick={() => setView('brain')}>
+            → Create one in Brain
+          </button>
+          <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'12px'}}>
+            In Brain, switch to the <strong>Playbooks</strong> tab and add a new entry.
+            Claude auto-parses it into steps; the button to run it appears here.
+          </p>
         </div></div></div>
       ) : (
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(420px, 1fr))', gap:'14px'}}>

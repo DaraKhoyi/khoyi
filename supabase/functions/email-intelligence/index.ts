@@ -1,18 +1,25 @@
 // email-intelligence
-// AI triage for incoming email threads. Given a thread_id, loads the latest
-// few messages, asks Claude to classify, and returns a recommendation.
+// AI triage for incoming email threads. Given a thread_id:
+//   1. Check email_triage cache (return cached unless force=true or stale)
+//   2. If miss/stale, load messages, ask Claude to classify
+//   3. UPSERT result into email_triage table
+//   4. Return the triage object
 //
-// POST body: { thread_id: uuid }
+// POST body: { thread_id: uuid, force?: boolean }
 // Returns:   {
 //   category: 'urgent' | 'requires_response' | 'fyi' | 'can_wait' | 'promotional' | 'spam',
 //   action:   'reply_now' | 'reply_today' | 'schedule_reply' | 'archive' | 'ignore' | 'snooze',
 //   summary:  string,        // one-line gist
-//   reasoning:string,        // why this category/action
+//   reasoning: string,       // why this category/action
 //   confidence: 0..1,
+//   cached: boolean,         // true if served from cache without re-running
+//   created_at: timestamptz, // when the (cached or new) row was written
 // }
 //
+// Cache invalidation: re-runs if the thread has grown beyond what we analyzed
+// (message_count > message_count_at_triage). Pass force=true to bypass cache.
+//
 // Auth: requires a valid user JWT. Thread must belong to caller.
-// Note: this is a starter stub — wire into the inbox UI when you're ready.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -28,6 +35,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 
 const MODEL = "claude-sonnet-4-6";
+const PROMPT_VERSION = "v1";
 
 const BASE_SYSTEM = `You are an email triage assistant.
 For each thread, classify into ONE category and ONE action.
@@ -101,7 +109,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const body = await req.json().catch(() => ({}));
-    const { thread_id } = body || {};
+    const { thread_id, force = false } = body || {};
     if (!thread_id) {
       return new Response(JSON.stringify({ error: "thread_id required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -128,7 +136,8 @@ serve(async (req) => {
 
     // Load the thread. Must belong to caller.
     const { data: thread, error: tErr } = await supabase
-      .from("email_threads").select("id, user_id, subject, participants, snippet, labels")
+      .from("email_threads")
+      .select("id, user_id, subject, participants, snippet, labels, message_count, last_message_at")
       .eq("id", thread_id).maybeSingle();
     if (tErr || !thread) {
       return new Response(JSON.stringify({ error: "Thread not found" }), {
@@ -141,7 +150,35 @@ serve(async (req) => {
       });
     }
 
-    // Load the last few messages of the thread for context (cap to limit prompt size)
+    // CACHE CHECK: serve cached result unless force=true OR thread grew since
+    // we last analyzed it OR cached row was generated under a different prompt
+    // version (means we changed the system prompt).
+    if (!force) {
+      const { data: cached } = await supabase
+        .from("email_triage")
+        .select("*")
+        .eq("thread_id", thread_id)
+        .maybeSingle();
+      if (cached) {
+        const stale = (thread.message_count != null
+                        && cached.message_count_at_triage != null
+                        && thread.message_count > cached.message_count_at_triage)
+                     || cached.prompt_version !== PROMPT_VERSION;
+        if (!stale) {
+          return new Response(JSON.stringify({
+            category: cached.category,
+            action: cached.action,
+            summary: cached.summary,
+            reasoning: cached.reasoning,
+            confidence: Number(cached.confidence),
+            cached: true,
+            created_at: cached.created_at,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
+
+    // CACHE MISS / FORCE: run the model
     const { data: msgs } = await supabase
       .from("email_messages")
       .select("from_name, from_address, subject, snippet, body_text, sent_at, direction")
@@ -151,8 +188,8 @@ serve(async (req) => {
 
     const messageBlocks = (msgs || []).reverse().map((m: any, i: number) => {
       const from = m.from_name ? `${m.from_name} <${m.from_address}>` : (m.from_address || "(unknown)");
-      const body = (m.body_text || m.snippet || "").slice(0, 1500);
-      return `--- Message ${i + 1} (${m.direction || "inbound"}, ${m.sent_at}) ---\nFrom: ${from}\nSubject: ${m.subject || "(no subject)"}\n\n${body}`;
+      const bodyText = (m.body_text || m.snippet || "").slice(0, 1500);
+      return `--- Message ${i + 1} (${m.direction || "inbound"}, ${m.sent_at}) ---\nFrom: ${from}\nSubject: ${m.subject || "(no subject)"}\n\n${bodyText}`;
     }).join("\n\n");
 
     const userMsg = `Subject: ${thread.subject || "(no subject)"}
@@ -173,9 +210,35 @@ ${messageBlocks || "(no message bodies available)"}`;
     if (typeof parsed.confidence !== "number") parsed.confidence = 0.5;
     parsed.confidence = Math.max(0, Math.min(1, parsed.confidence));
 
-    return new Response(JSON.stringify(parsed), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // UPSERT into cache. The UNIQUE(thread_id) constraint means re-runs replace.
+    // user_id is set from JWT — RLS would block service-role bypass but we
+    // pass it explicitly so the row is owned by the caller.
+    const { error: upsertErr } = await supabase
+      .from("email_triage")
+      .upsert({
+        user_id: userId,
+        thread_id,
+        category: parsed.category,
+        action: parsed.action,
+        summary: parsed.summary || null,
+        reasoning: parsed.reasoning || null,
+        confidence: parsed.confidence,
+        message_count_at_triage: thread.message_count ?? null,
+        last_message_at_triage: thread.last_message_at ?? null,
+        model: MODEL,
+        prompt_version: PROMPT_VERSION,
+        created_at: new Date().toISOString(),
+      }, { onConflict: "thread_id" });
+    if (upsertErr) {
+      // Non-fatal: log + still return the result so the UI isn't blocked.
+      console.error("email_triage upsert failed:", upsertErr.message);
+    }
+
+    return new Response(JSON.stringify({
+      ...parsed,
+      cached: false,
+      created_at: new Date().toISOString(),
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     const msg = String(err && (err as any).message ? (err as any).message : err);
     return new Response(JSON.stringify({ error: msg }), {
