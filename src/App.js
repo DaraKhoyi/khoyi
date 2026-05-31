@@ -546,7 +546,7 @@ const DATE_FILTERS = [
 // ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
-function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = [], properties = [], events = [], userId }) {
+function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, contacts = [], properties = [], events = [], userId }) {
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
   const [system, setSystem] = useState(initialSystem);
@@ -647,7 +647,10 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
       <div className="modal">
         <div className="modal-header">
           <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <div className="modal-header-actions">
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Task</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required /></div>
@@ -1739,7 +1742,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           />
         )}
 
-        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} properties={properties || []} events={events} userId={userId} />}
+        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} onDelete={async (t)=>{ if(!window.confirm(`Delete "${t.title}"?`)) return; await supabase.from('tasks').delete().eq('id', t.id); setTasks(prev=>prev.filter(x=>x.id!==t.id)); setShowModal(false); setEditTask(null); }} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} properties={properties || []} events={events} userId={userId} />}
       </div>
     </DragProvider>
   );
@@ -4998,7 +5001,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   );
 }
 
-function ContactModal({ onClose, onSave, initial }) {
+function ContactModal({ onClose, onSave, onDelete, initial }) {
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
   const [email, setEmail] = useState(initial?.email || '');
@@ -5022,7 +5025,10 @@ function ContactModal({ onClose, onSave, initial }) {
       <div className="modal">
         <div className="modal-header">
           <h3>{initial ? 'Edit Contact' : 'New Contact'}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <div className="modal-header-actions">
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
@@ -5895,7 +5901,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           }
         </div>
       </div>
-      {showModal && <ContactModal onClose={()=>{setShowModal(false);setEditContact(null);}} onSave={handleSave} initial={editContact} />}
+      {showModal && <ContactModal onClose={()=>{setShowModal(false);setEditContact(null);}} onSave={handleSave} onDelete={async (c)=>{ if(!window.confirm(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); }} initial={editContact} />}
       {detailContact && (
         <ContactDetailModal
           contact={detailContact}
@@ -6498,7 +6504,7 @@ function DrawingViewerModal({ drawing, onClose }) {
   );
 }
 
-function PropertyModal({ onClose, onSave, initial }) {
+function PropertyModal({ onClose, onSave, onDelete, initial }) {
   const [nickname, setNickname] = useState(initial?.nickname || '');
   const [category, setCategory] = useState(initial?.category || 'listing');
   const [address, setAddress] = useState(initial?.address || '');
@@ -6543,7 +6549,10 @@ function PropertyModal({ onClose, onSave, initial }) {
       <div className="modal">
         <div className="modal-header">
           <h3>{initial ? 'Edit Property' : 'New Property'}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <div className="modal-header-actions">
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Nickname</label><input className="form-input" value={nickname} onChange={e=>setNickname(e.target.value)} placeholder="Wellington, Villa Adriana…" autoFocus required /></div>
@@ -6688,7 +6697,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
           }
         </div>
       </div>
-      {showModal && <PropertyModal onClose={()=>{setShowModal(false);setEditProp(null);}} onSave={handleSave} initial={editProp} />}
+      {showModal && <PropertyModal onClose={()=>{setShowModal(false);setEditProp(null);}} onSave={handleSave} onDelete={async (p)=>{ if(!window.confirm(`Delete property "${p.nickname || p.address || '(unnamed)'}"?`)) return; await supabase.from('properties').delete().eq('id', p.id); setProperties(prev=>prev.filter(x=>x.id!==p.id)); setShowModal(false); setEditProp(null); }} initial={editProp} />}
       {detailProp && (
         <PropertyDetailModal
           property={detailProp}
@@ -6706,7 +6715,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
 // ─────────────────────────────────────────
 // INVESTMENTS VIEW
 // ─────────────────────────────────────────
-function InvestmentModal({ onClose, onSave, initial, properties }) {
+function InvestmentModal({ onClose, onSave, onDelete, initial, properties }) {
   const [name, setName] = useState(initial?.name || '');
   const [kind, setKind] = useState(initial?.kind || 'deal');
   const [stage, setStage] = useState(initial?.stage || 'screening');
@@ -6734,7 +6743,10 @@ function InvestmentModal({ onClose, onSave, initial, properties }) {
       <div className="modal">
         <div className="modal-header">
           <h3>{initial ? 'Edit Investment' : 'New Investment'}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <div className="modal-header-actions">
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
@@ -6873,7 +6885,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
           }
         </div>
       </div>
-      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} initial={editInv} properties={properties} />}
+      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} onDelete={async (i)=>{ if(!window.confirm(`Delete investment "${i.name}"?`)) return; await deleteInv(i.id); setShowModal(false); setEditInv(null); }} initial={editInv} properties={properties} />}
     </div>
   );
 }
@@ -6883,7 +6895,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
 // BRAIN VIEW (Soul / Memory / Playbooks / Decisions / Lessons / North Star)
 // Hybrid search (FTS + trigram), tags, strength, streak gamification
 // ─────────────────────────────────────────
-function BrainEntryModal({ onClose, onSave, initial, defaultType }) {
+function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType }) {
   const [type, setType] = useState(initial?.type || defaultType || 'memory');
   const [title, setTitle] = useState(initial?.title || '');
   const [content, setContent] = useState(initial?.content || '');
@@ -6907,7 +6919,10 @@ function BrainEntryModal({ onClose, onSave, initial, defaultType }) {
       <div className="modal">
         <div className="modal-header">
           <h3>{initial ? 'Edit Brain Entry' : 'New Brain Entry'}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <div className="modal-header-actions">
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-row">
@@ -7246,7 +7261,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [] }) {
           }
         </div>
       </div>
-      {showModal && <BrainEntryModal onClose={()=>{setShowModal(false);setEditEntry(null);}} onSave={handleSave} initial={editEntry} defaultType={activeTab} />}
+      {showModal && <BrainEntryModal onClose={()=>{setShowModal(false);setEditEntry(null);}} onSave={handleSave} onDelete={async (e)=>{ if(!window.confirm(`Delete "${e.title}"?`)) return; await deleteEntry(e.id); setShowModal(false); setEditEntry(null); }} initial={editEntry} defaultType={activeTab} />}
     </div>
   );
 }
@@ -7306,7 +7321,10 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
       <div className="modal">
         <div className="modal-header">
           <h3>{initial ? 'Edit Event' : 'New Event'}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <div className="modal-header-actions">
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What's happening?" autoFocus required /></div>
@@ -7360,14 +7378,9 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
             </div>
           )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Optional details…" /></div>
-          <div className="modal-actions" style={{justifyContent:'space-between'}}>
-            <div>
-              {initial && <button type="button" className="btn btn-ghost" style={{color:'var(--red)'}} onClick={()=>onDelete(initial)}>Delete</button>}
-            </div>
-            <div style={{display:'flex',gap:'8px'}}>
-              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-              <button type="submit" className="btn btn-primary">Save Event</button>
-            </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">Save Event</button>
           </div>
         </form>
       </div>
