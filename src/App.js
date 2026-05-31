@@ -7377,7 +7377,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
 
 function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts, properties = [], tasks = [], setTasks }) {
   const today = new Date();
-  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [showModal, setShowModal] = useState(false);
   const [editEvent, setEditEvent] = useState(null);
   const [modalDate, setModalDate] = useState(null);
@@ -7391,10 +7391,11 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     } catch(_) { return 'month'; }
   });
   function changeViewMode(m) {
+    if (m === viewMode) return;
     setViewMode(m);
     try { localStorage.setItem('calendar_view_mode', m); } catch(_) {}
-    // When switching to day/week, snap cursor to today if it's in a wildly different month
-    if ((m==='day' || m==='week') && (cursor.getMonth()!==today.getMonth() || cursor.getFullYear()!==today.getFullYear())) {
+    // Switching to Day or Week always snaps to today (per UX spec)
+    if (m==='day' || m==='week') {
       setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
     }
   }
@@ -7534,26 +7535,29 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 
   return (
     <div>
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div>
+      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
+        <div style={{flex:1,minWidth:0}}>
           <h2>📅 Calendar</h2>
           <p style={{color:'var(--text-1)',opacity:0.9,fontWeight:500}}>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total</p>
         </div>
-        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
           {hasCalendarScope ? (
-            <button className="btn btn-ghost" onClick={()=>syncCalendar('both')} disabled={syncing}>
-              {syncing ? '↻ Syncing…' : `↻ Sync ${calendarAccount.email_address}`}
+            <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={()=>syncCalendar('both')} disabled={syncing}
+              title={`Refresh — ${calendarAccount.email_address}`} aria-label="Refresh calendar">
+              <span className={syncing?'spinning':''} style={{fontSize:'16px',display:'inline-block'}}>↻</span>
             </button>
           ) : (
-            <button className="btn btn-ghost" onClick={connectGoogle} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
-              🔗 Connect Calendar Account
+            <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={connectGoogle}
+              style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}
+              title="Connect Google Calendar to enable refresh" aria-label="Connect calendar">
+              🔗
             </button>
           )}
-          <button className="btn btn-primary" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}}>+ New Event</button>
+          <button className="btn btn-primary btn-sm" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}}>+ New Event</button>
         </div>
       </div>
 
-      {/* View toggle */}
+      {/* View toggle — right under the title */}
       <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px',flexWrap:'wrap'}}>
         <div className="cal-view-toggle">
           {[
