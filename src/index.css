@@ -149,9 +149,10 @@ body {
 .logout-btn:hover { color: var(--red); }
 
 /* ─── PAGE ─── */
-.page-header { margin-bottom: 28px; }
+.page-header { margin-bottom: 22px; }
+.page-header h2 { line-height: 1.15; }
+.page-header p { font-size: 13px; color: var(--text-1); opacity: 0.85; font-weight: 500; margin-top: 2px; }
 .page-header h2 { font-size: 24px; font-weight: 700; color: var(--text-1); }
-.page-header p { font-size: 13px; color: var(--text-3); margin-top: 4px; }
 @media (max-width: 768px) {
   .page-header { margin-bottom: 16px; }
   .page-header h2 { font-size: 20px; }
@@ -185,7 +186,7 @@ body {
 
 /* ─── TASKS ─── */
 .task-list { display: flex; flex-direction: column; gap: 8px; }
-.task-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; transition: border-color 0.12s; }
+.task-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; transition: border-color 0.12s; }
 .task-item:hover { border-color: var(--accent-dim); }
 .task-item.done { opacity: 0.45; }
 .task-check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); background: none; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
@@ -462,40 +463,68 @@ body {
 .week-event-time { font-size: 9px; color: var(--text-3); }
 .week-event-title { font-size: 11px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ─── DAY VIEW (events 60% | tasks 40%) ─── */
-.day-view { display: grid; grid-template-columns: 60% 40%; gap: 10px; min-height: 500px; }
-.day-events-col, .day-tasks-col { background: var(--bg-base); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-.day-col-header { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; color: var(--text-1); background: var(--bg-card); }
-.day-allday-row { display: flex; gap: 4px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+/* ─── DAY VIEW (events ~60% | tasks ~40%, thin divider, no gap) ─── */
+.day-view { display: grid; grid-template-columns: 58% 42%; gap: 0; min-height: 500px; }
+.day-events-col, .day-tasks-col { background: var(--bg-base); border: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.day-events-col { border-radius: 8px 0 0 8px; border-right: none; }
+.day-tasks-col { border-radius: 0 8px 8px 0; }
+.day-col-header { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: var(--text-1); background: var(--bg-card); }
+.day-col-header > :last-child { color: var(--text-1) !important; opacity: 0.7; font-weight: 600; }
+.day-allday-row { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .day-allday-chip { font-size: 11px; padding: 3px 6px; background: var(--accent-dim); color: var(--text-1); border-left: 2px solid var(--accent); border-radius: 3px; cursor: pointer; }
 .day-timeline-scroll { flex: 1; overflow-y: auto; max-height: 70vh; }
 .day-timeline { position: relative; }
 .day-hour-row { display: flex; border-bottom: 1px solid var(--border); cursor: pointer; }
 .day-hour-row:hover { background: var(--bg-hover); }
-.day-hour-label { width: 56px; font-size: 11px; color: var(--text-3); padding: 4px 8px; flex-shrink: 0; border-right: 1px solid var(--border); }
-.day-event-block { position: absolute; left: 60px; right: 6px; background: var(--accent-dim); border-left: 3px solid var(--accent); border-radius: 5px; padding: 5px 8px; overflow: hidden; cursor: pointer; z-index: 1; }
+.day-hour-label { width: 40px; font-size: 10px; color: var(--text-3); padding: 3px 4px; flex-shrink: 0; border-right: 1px solid var(--border); text-align: right; }
+.day-event-block { position: absolute; left: 44px; right: 4px; background: var(--accent-dim); border-left: 3px solid var(--accent); border-radius: 5px; padding: 4px 7px; overflow: hidden; cursor: pointer; z-index: 1; }
 .day-event-time { font-size: 10px; color: var(--text-3); }
 .day-event-title { font-size: 12px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day-event-loc { font-size: 10px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.day-tasks-scroll { flex: 1; overflow-y: auto; max-height: 70vh; padding: 4px 0; }
-.day-task-row { display: flex; align-items: flex-start; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+.day-tasks-scroll { flex: 1; overflow-y: auto; max-height: 70vh; padding: 0; }
+
+/* Task rows: checkbox + priority STACKED vertically on the left;
+   description gets all remaining horizontal space (3-line clamp) */
+.day-task-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
 .day-task-row:hover { background: var(--bg-hover); }
-.day-task-check { font-size: 16px; color: var(--text-2); flex-shrink: 0; line-height: 1.2; }
-.day-task-row .task-priority { flex-shrink: 0; align-self: flex-start; margin-top: 1px; font-size: 9px; padding: 1px 5px; }
+.day-task-meta-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; min-width: 26px; padding-top: 1px; }
+.day-task-check { font-size: 16px; color: var(--text-2); line-height: 1; }
+.day-task-row .task-priority { font-size: 9px; padding: 1px 4px; line-height: 1.3; }
 .day-task-text { font-size: 13px; color: var(--text-1); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; flex: 1; min-width: 0; }
 @media (max-width: 480px) {
-  /* Keep side-by-side on phone but tighten paddings */
-  .day-col-header { padding: 8px 10px; font-size: 12px; }
-  .day-allday-row { padding: 6px 8px; }
-  .day-task-row { padding: 6px 8px; gap: 4px; }
+  .day-col-header { padding: 6px 8px; font-size: 11px; }
+  .day-allday-row { padding: 5px 6px; }
+  .day-task-row { padding: 6px 8px; gap: 6px; }
   .day-task-text { font-size: 12px; }
   .day-event-title { font-size: 11px; }
+  .day-hour-label { width: 36px; font-size: 9px; }
+  .day-event-block { left: 40px; }
 }
 
 /* Spinning refresh icon */
 .cal-icon-btn { padding: 6px 10px !important; min-width: 36px; line-height: 1; }
 @keyframes cal-spin { to { transform: rotate(360deg); } }
 .spinning { animation: cal-spin 0.8s linear infinite; }
+
+/* ─── CIRCULAR ADD BUTTON ─── */
+/* Replaces the rectangular "+ New X" buttons across the app. Round gold disc
+   with the dark base color "+" centered. Used everywhere via .btn-add-circle. */
+.btn-add-circle {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--accent); color: var(--bg-base);
+  border: none; cursor: pointer;
+  font-size: 22px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 1; padding: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  flex-shrink: 0;
+}
+.btn-add-circle:hover { transform: scale(1.07); box-shadow: 0 4px 14px rgba(197,169,94,0.45); filter: brightness(1.06); }
+.btn-add-circle:active { transform: scale(0.94); }
+.btn-add-circle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-add-circle.btn-add-circle-sm { width: 32px; height: 32px; font-size: 19px; }
+.btn-add-circle.btn-add-circle-lg { width: 52px; height: 52px; font-size: 28px; }
 
 /* ─── YEAR VIEW — 6 months in a 3×2 grid (responsive) ─── */
 .year-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 10px; }

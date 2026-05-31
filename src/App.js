@@ -1564,7 +1564,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           <h2>Tasks</h2>
           <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
-            <button className="btn btn-primary" onClick={openNew}>+ New Task</button>
+            <button className="btn-add-circle" onClick={openNew} title="New Task" aria-label="New Task">+</button>
           </div>
         </div>
 
@@ -5743,7 +5743,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
             title="Find likely duplicate contacts based on email, phone, or name+company. Surfaces for review — never auto-merges.">
             {findingDupes ? '↻ Scanning…' : '🔍 Find dupes'}
           </button>
-          <button className="btn btn-primary" onClick={()=>{setEditContact(null);setShowModal(true);}}>+ New Contact</button>
+          <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
         </div>
       </div>
 
@@ -6645,7 +6645,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div><h2>Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
-        <button className="btn btn-primary" onClick={()=>{setEditProp(null);setShowModal(true);}}>+ New Property</button>
+        <button className="btn-add-circle" onClick={()=>{setEditProp(null);setShowModal(true);}} title="New Property" aria-label="New Property">+</button>
       </div>
 
       <div className="panel">
@@ -6827,7 +6827,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div><h2>Investments</h2><p>{investments.length} total · {active.length} active</p></div>
-        <button className="btn btn-primary" onClick={()=>{setEditInv(null);setShowModal(true);}}>+ New Investment</button>
+        <button className="btn-add-circle" onClick={()=>{setEditInv(null);setShowModal(true);}} title="New Investment" aria-label="New Investment">+</button>
       </div>
 
       <div className="cards-row">
@@ -7103,7 +7103,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [] }) {
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div><h2>🧠 Brain</h2><p>Your operating memory · {brain.length} entries · {totalTags} unique tags</p></div>
-        <button className="btn btn-primary" onClick={()=>{setEditEntry(null);setShowModal(true);}}>+ New Entry</button>
+        <button className="btn-add-circle" onClick={()=>{setEditEntry(null);setShowModal(true);}} title="New Entry" aria-label="New Entry">+</button>
       </div>
 
       {/* STREAK + STATS BANNER — subtle gamification in brand gold */}
@@ -7538,7 +7538,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}>
           <h2>📅 Calendar</h2>
-          <p style={{color:'var(--text-1)',opacity:0.9,fontWeight:500}}>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total</p>
+          <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total</p>
         </div>
         <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
           {hasCalendarScope ? (
@@ -7553,7 +7553,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
               🔗
             </button>
           )}
-          <button className="btn btn-primary btn-sm" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}}>+ New Event</button>
+          <button className="btn-add-circle btn-add-circle-sm" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}} title="New Event" aria-label="New Event">+</button>
         </div>
       </div>
 
@@ -7903,8 +7903,10 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
             ? <div className="empty-state" style={{padding:'20px 0'}}><p>No open tasks.</p></div>
             : openTasks.map(t => (
                 <div key={t.id} className="day-task-row" onClick={()=>toggleTask(t)}>
-                  <span className="day-task-check">{t.completed ? '☑' : '☐'}</span>
-                  <span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>
+                  <div className="day-task-meta-col">
+                    <span className="day-task-check">{t.completed ? '☑' : '☐'}</span>
+                    <span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>
+                  </div>
                   <span className="day-task-text" title={t.title}>{t.title}</span>
                 </div>
               ))
@@ -8364,7 +8366,7 @@ function NotesView({ notes, setNotes, userId }) {
             <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Notes</h2>
             <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>{notes.length} note{notes.length !== 1 ? 's' : ''}</p>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={createNote}>+ New</button>
+          <button className="btn-add-circle btn-add-circle-sm" onClick={createNote} title="New Note" aria-label="New Note">+</button>
         </div>
 
         {/* Search */}
@@ -8427,7 +8429,7 @@ function NotesView({ notes, setNotes, userId }) {
           <div className="empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
             <div className="empty-icon">📝</div>
             <p>Select a note or create a new one</p>
-            <button className="btn btn-primary" style={{ marginTop: '14px' }} onClick={createNote}>+ New Note</button>
+            <button className="btn-add-circle btn-add-circle-lg" style={{ marginTop: '14px' }} onClick={createNote} title="New Note" aria-label="New Note">+</button>
           </div>
         ) : (
           <>
