@@ -614,7 +614,7 @@ function computeTaskStreak(tasks) {
 // ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
-function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = [], userId }) {
+function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = [], properties = [], userId }) {
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
   const [system, setSystem] = useState(initialSystem);
@@ -624,6 +624,7 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
   const [due_date, setDueDate] = useState(initial?.due_date || '');
   const [notes, setNotes] = useState(initial?.notes || '');
   const [brainEntryId, setBrainEntryId] = useState(initial?.brain_entry_id || '');
+  const [propertyId, setPropertyId] = useState(initial?.property_id || '');
   const [recurring, setRecurring] = useState(
     initial?.recurring_config?.interval || 'none'
   );
@@ -697,6 +698,7 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
       notes: notes.trim(),
       priority_system: system,
       brain_entry_id: brainEntryId || null,
+      property_id: propertyId || null,
       recurring_config,
       recurring: recurring === 'none' ? null : recurring,  // legacy text column
     };
@@ -820,6 +822,33 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
                     </optgroup>
                   );
                 })}
+              </select>
+            </div>
+          )}
+          {properties && properties.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">Property <span style={{color:'var(--text-3)',fontWeight:400,fontSize:'11px'}}>(if this task is about a specific property)</span></label>
+              <select className="form-select" value={propertyId} onChange={e=>setPropertyId(e.target.value)}>
+                <option value="">— None —</option>
+                {['listing','investment','personal','rental'].map(cat => {
+                  const items = properties.filter(p => p.category === cat);
+                  if (items.length === 0) return null;
+                  return (
+                    <optgroup key={cat} label={cat.toUpperCase()}>
+                      {items.map(p => <option key={p.id} value={p.id}>{p.nickname || p.address || '(unnamed)'}</option>)}
+                    </optgroup>
+                  );
+                })}
+                {(() => {
+                  const known = new Set(['listing','investment','personal','rental']);
+                  const other = properties.filter(p => !known.has(p.category));
+                  if (other.length === 0) return null;
+                  return (
+                    <optgroup label="OTHER">
+                      {other.map(p => <option key={p.id} value={p.id}>{p.nickname || p.address || '(unnamed)'}</option>)}
+                    </optgroup>
+                  );
+                })()}
               </select>
             </div>
           )}
@@ -1272,7 +1301,7 @@ function useDropTarget({ type, onDrop }) {
 // ─────────────────────────────────────────────────────────────────────
 // TASKS VIEW — main component
 // ─────────────────────────────────────────────────────────────────────
-function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts }) {
+function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts, properties }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const viewMode = (taskViewMode === 'sequence' || taskViewMode === 'matrix') ? taskViewMode : 'sequence';
@@ -1666,7 +1695,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           />
         )}
 
-        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} userId={userId} />}
+        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} properties={properties || []} userId={userId} />}
       </div>
     </DragProvider>
   );
@@ -3344,7 +3373,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 // ─────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [] }) {
   const [editTask, setEditTask] = useState(null);
 
   // Save edits to a task triggered from the dashboard. Mirrors the logic in
@@ -3442,6 +3471,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
             defaultSystem={defaultSystem}
             brain={brain}
             contacts={contacts}
+            properties={properties}
             userId={user.id}
           />
         )}
@@ -3745,6 +3775,10 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   const [linkedTasks, setLinkedTasks] = useState([]);
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
+  // Pass 3: linked events (events.contact_id) + linked properties (property_contacts join)
+  const [linkedEvents, setLinkedEvents] = useState([]);
+  const [linkedProperties, setLinkedProperties] = useState([]);
+
   // Date-stamped notes (proper notes table — separate from contacts.notes pinned summary)
   const [dateNotes, setDateNotes] = useState([]);
   const [newNoteBody, setNewNoteBody] = useState('');
@@ -3788,6 +3822,23 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
       const { data: ints } = await supabase.from('contact_interactions')
         .select('*').eq('contact_id', contact.id).order('occurred_at', { ascending: false }).limit(20);
       if (!cancelled && ints) setInteractions(ints);
+
+      // Pass 3: linked events
+      const { data: evs } = await supabase.from('events')
+        .select('*').eq('contact_id', contact.id).order('start_at', { ascending: false }).limit(50);
+      if (!cancelled && evs) setLinkedEvents(evs);
+
+      // Pass 3: linked properties via property_contacts join
+      const { data: pcRows } = await supabase.from('property_contacts')
+        .select('property_id').eq('contact_id', contact.id);
+      if (pcRows && pcRows.length > 0) {
+        const propIds = pcRows.map(r => r.property_id);
+        const { data: props } = await supabase.from('properties')
+          .select('id, nickname, address, city, state, category, status').in('id', propIds);
+        if (!cancelled && props) setLinkedProperties(props);
+      } else if (!cancelled) {
+        setLinkedProperties([]);
+      }
     })();
     return () => { cancelled = true; };
   }, [contact?.id]);
@@ -4392,6 +4443,45 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
             </button>
           )}
         </div>
+
+        {/* ========== LINKED EVENTS PANEL (Pass 3) ========== */}
+        <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+            📅 Events ({linkedEvents.length})
+          </div>
+          {linkedEvents.length === 0 && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
+              No events linked to this contact.
+            </div>
+          )}
+          {linkedEvents.slice(0, 10).map(e => (
+            <div key={e.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
+              <div style={{color:'var(--text-1)'}}>{e.title}</div>
+              <div style={{fontSize:'10px',color:'var(--text-3)'}}>{e.start_at ? new Date(e.start_at).toLocaleString() : '—'}</div>
+            </div>
+          ))}
+          {linkedEvents.length > 10 && (
+            <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px'}}>Showing 10 of {linkedEvents.length}.</div>
+          )}
+        </div>
+
+        {/* ========== LINKED PROPERTIES PANEL (Pass 3) ========== */}
+        {linkedProperties.length > 0 && (
+          <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+              🏠 Properties ({linkedProperties.length})
+            </div>
+            {linkedProperties.map(p => (
+              <div key={p.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
+                  <div style={{color:'var(--text-1)',fontWeight:500}}>{p.nickname || '(unnamed)'}</div>
+                  <span style={{fontSize:'10px',color:'var(--text-3)',textTransform:'capitalize'}}>{p.category}</span>
+                </div>
+                {p.address && <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{[p.address, p.city, p.state].filter(Boolean).join(', ')}</div>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ========== DATE-STAMPED NOTES PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
@@ -5760,6 +5850,392 @@ function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, 
 // ─────────────────────────────────────────
 // PROPERTIES VIEW
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// PROPERTY DETAIL MODAL (Pass 3 Batch B)
+//
+// Read-mostly detail surface for a single property. Mirrors ContactDetailModal's
+// pattern: shows linked contacts, tasks, events, investments, drawings, and
+// dated notes. Edit button opens the existing PropertyModal for the field-level
+// editing.
+// ─────────────────────────────────────────
+function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, userId }) {
+  const [linkedContactIds, setLinkedContactIds] = useState([]);
+  const [linkedTasks, setLinkedTasks] = useState([]);
+  const [linkedEvents, setLinkedEvents] = useState([]);
+  const [linkedInvestments, setLinkedInvestments] = useState([]);
+  const [linkedDrawings, setLinkedDrawings] = useState([]);
+  const [propertyNotes, setPropertyNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [showContactPicker, setShowContactPicker] = useState(false);
+  const [contactQuery, setContactQuery] = useState('');
+
+  const [newNoteBody, setNewNoteBody] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
+  const [viewDrawing, setViewDrawing] = useState(null);
+
+  const linkedContacts = useMemo(
+    () => linkedContactIds.map(id => contacts.find(c => c.id === id)).filter(Boolean),
+    [linkedContactIds, contacts]
+  );
+
+  useEffect(() => {
+    if (!property?.id) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [lcRes, ltRes, leRes, liRes, ldRes, lnRes] = await Promise.all([
+          supabase.from('property_contacts').select('contact_id').eq('property_id', property.id),
+          supabase.from('tasks').select('*').eq('property_id', property.id).order('completed').order('due_date', { nullsFirst: false }),
+          supabase.from('events').select('*').eq('property_id', property.id).order('start_at', { ascending: false }).limit(50),
+          supabase.from('investments').select('*').eq('property_id', property.id).order('created_at', { ascending: false }),
+          supabase.from('drawings').select('id, title, shapes, units, px_per_unit, created_at').eq('property_id', property.id).order('created_at', { ascending: false }),
+          supabase.from('property_notes').select('*').eq('property_id', property.id).order('created_at', { ascending: false }),
+        ]);
+        if (cancelled) return;
+        setLinkedContactIds((lcRes.data || []).map(r => r.contact_id));
+        setLinkedTasks(ltRes.data || []);
+        setLinkedEvents(leRes.data || []);
+        setLinkedInvestments(liRes.data || []);
+        setLinkedDrawings(ldRes.data || []);
+        setPropertyNotes(lnRes.data || []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [property?.id]);
+
+  async function addContactLink(contactId) {
+    const newIds = [...linkedContactIds, contactId];
+    const { error } = await supabase.rpc('set_property_contacts', {
+      p_property_id: property.id,
+      p_contact_ids: newIds,
+    });
+    if (error) {
+      if (window.__notify) window.__notify('Could not link contact: ' + error.message, 'error');
+      return;
+    }
+    setLinkedContactIds(newIds);
+    setShowContactPicker(false);
+    setContactQuery('');
+  }
+
+  async function removeContactLink(contactId) {
+    const newIds = linkedContactIds.filter(id => id !== contactId);
+    const { error } = await supabase.rpc('set_property_contacts', {
+      p_property_id: property.id,
+      p_contact_ids: newIds,
+    });
+    if (error) {
+      if (window.__notify) window.__notify('Could not unlink contact: ' + error.message, 'error');
+      return;
+    }
+    setLinkedContactIds(newIds);
+  }
+
+  async function addDatedNote() {
+    const body = newNoteBody.trim();
+    if (!body || savingNote) return;
+    setSavingNote(true);
+    const { data, error } = await supabase.from('property_notes').insert({
+      user_id: userId, property_id: property.id, body,
+    }).select().single();
+    setSavingNote(false);
+    if (error) {
+      if (window.__notify) window.__notify('Could not save note: ' + error.message, 'error');
+      return;
+    }
+    setPropertyNotes(prev => [data, ...prev]);
+    setNewNoteBody('');
+  }
+
+  async function deleteDatedNote(noteId) {
+    const prev = propertyNotes;
+    setPropertyNotes(p => p.filter(n => n.id !== noteId));
+    const { error } = await supabase.from('property_notes').delete().eq('id', noteId);
+    if (error) {
+      setPropertyNotes(prev);
+      if (window.__notify) window.__notify('Could not delete note: ' + error.message, 'error');
+    }
+  }
+
+  async function handleDeleteProperty() {
+    if (!window.confirm(`Delete ${property.nickname || 'this property'}? This removes the property and all its linked notes. Tasks/events stay but lose the link.`)) return;
+    const { error } = await supabase.from('properties').delete().eq('id', property.id);
+    if (error) {
+      if (window.__notify) window.__notify('Could not delete: ' + error.message, 'error');
+      return;
+    }
+    onDeleted?.(property.id);
+    onClose();
+  }
+
+  const availableContacts = useMemo(() => {
+    const linked = new Set(linkedContactIds);
+    const q = contactQuery.toLowerCase().trim();
+    return contacts
+      .filter(c => !linked.has(c.id))
+      .filter(c => !q || (c.name || '').toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [contacts, linkedContactIds, contactQuery]);
+
+  const equity = property.current_value && property.loan_balance
+    ? Number(property.current_value) - Number(property.loan_balance)
+    : null;
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{maxWidth:'620px',padding:0,maxHeight:'92vh',overflowY:'auto'}}>
+        <div style={{padding:'16px 18px 14px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',position:'sticky',top:0,background:'var(--bg-card)',zIndex:5}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'4px'}}>
+              <h3 style={{margin:0,fontSize:'18px',color:'var(--text-1)'}}>{property.nickname || 'Untitled property'}</h3>
+              {property.category && <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{property.category}</span>}
+              {property.status && <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)'}}>{(property.status || '').replace('_', ' ')}</span>}
+            </div>
+            {property.address && (
+              <div style={{fontSize:'13px',color:'var(--text-2)'}}>
+                {[property.address, property.city, property.state, property.zip].filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        {(property.current_value || property.loan_balance || property.list_price) && (
+          <div style={{padding:'10px 18px',borderBottom:'1px solid var(--border)',display:'flex',gap:'18px',flexWrap:'wrap',fontSize:'12px'}}>
+            {property.list_price ? <div><span style={{color:'var(--text-3)'}}>List:</span> <strong style={{color:'var(--text-1)'}}>${Number(property.list_price).toLocaleString()}</strong></div> : null}
+            {property.current_value ? <div><span style={{color:'var(--text-3)'}}>Value:</span> <strong style={{color:'var(--text-1)'}}>${Number(property.current_value).toLocaleString()}</strong></div> : null}
+            {property.loan_balance ? <div><span style={{color:'var(--text-3)'}}>Loan:</span> <strong style={{color:'var(--text-1)'}}>${Number(property.loan_balance).toLocaleString()}</strong>{property.loan_rate ? <span style={{color:'var(--text-3)'}}> @ {property.loan_rate}%</span> : null}</div> : null}
+            {equity !== null ? <div><span style={{color:'var(--text-3)'}}>Equity:</span> <strong style={{color:'var(--accent)'}}>${equity.toLocaleString()}</strong></div> : null}
+          </div>
+        )}
+
+        <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>👥 Contacts ({linkedContacts.length})</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowContactPicker(v => !v)} style={{fontSize:'11px'}}>
+              {showContactPicker ? '× Cancel' : '+ Link'}
+            </button>
+          </div>
+          {showContactPicker && (
+            <div style={{padding:'8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'8px'}}>
+              <input className="form-input" placeholder="Search contacts…" value={contactQuery} onChange={e => setContactQuery(e.target.value)} autoFocus style={{fontSize:'12px',padding:'6px 8px',marginBottom:'6px'}} />
+              <div style={{maxHeight:'180px',overflowY:'auto'}}>
+                {availableContacts.length === 0 && (
+                  <div style={{fontSize:'11px',color:'var(--text-3)',padding:'4px',fontStyle:'italic'}}>No contacts {contactQuery ? 'match' : 'available to link'}.</div>
+                )}
+                {availableContacts.map(c => (
+                  <div key={c.id} onClick={() => addContactLink(c.id)} style={{padding:'6px 8px',cursor:'pointer',fontSize:'12px',borderRadius:'4px'}} onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    {c.name} {c.email && <span style={{color:'var(--text-3)'}}>· {c.email}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {linkedContacts.length === 0 && !showContactPicker && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No contacts linked.</div>
+          )}
+          {linkedContacts.map(c => (
+            <div key={c.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',fontSize:'12px'}}>
+              <div style={{flex:1,minWidth:0,color:'var(--text-1)'}}>
+                {c.name} {c.email && <span style={{color:'var(--text-3)'}}>· {c.email}</span>}
+              </div>
+              <button onClick={() => removeContactLink(c.id)} title="Unlink" style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'14px',padding:'0 4px'}}>×</button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+            ✅ Tasks ({linkedTasks.length})
+          </div>
+          {linkedTasks.length === 0 ? (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No tasks linked. Link this property when creating or editing a task.</div>
+          ) : linkedTasks.map(t => (
+            <div key={t.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',fontSize:'12px'}}>
+              <div style={{flex:1,minWidth:0,textDecoration: t.completed ? 'line-through' : 'none',color: t.completed ? 'var(--text-3)' : 'var(--text-1)'}}>
+                {t.completed ? '✓ ' : '○ '}{t.title}
+              </div>
+              {t.due_date && <span style={{fontSize:'10px',color:'var(--text-3)',whiteSpace:'nowrap'}}>{new Date(t.due_date).toLocaleDateString()}</span>}
+            </div>
+          ))}
+        </div>
+
+        <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+            📅 Events ({linkedEvents.length})
+          </div>
+          {linkedEvents.length === 0 ? (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No events linked.</div>
+          ) : linkedEvents.slice(0, 10).map(e => (
+            <div key={e.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
+              <div style={{color:'var(--text-1)'}}>{e.title}</div>
+              <div style={{fontSize:'10px',color:'var(--text-3)'}}>{e.start_at ? new Date(e.start_at).toLocaleString() : '—'}</div>
+            </div>
+          ))}
+          {linkedEvents.length > 10 && <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px'}}>Showing 10 of {linkedEvents.length}.</div>}
+        </div>
+
+        {linkedInvestments.length > 0 && (
+          <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>💰 Investments ({linkedInvestments.length})</div>
+            {linkedInvestments.map(inv => (
+              <div key={inv.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',gap:'8px',fontSize:'12px'}}>
+                <div style={{color:'var(--text-1)'}}>{inv.label || inv.kind || 'Investment'}</div>
+                {inv.amount && <span style={{color:'var(--accent)'}}>${Number(inv.amount).toLocaleString()}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {linkedDrawings.length > 0 && (
+          <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>✏️ Drawings ({linkedDrawings.length})</div>
+            {linkedDrawings.map(d => {
+              const shapeCount = Array.isArray(d.shapes) ? d.shapes.length : 0;
+              return (
+                <div key={d.id} onClick={() => setViewDrawing(d)} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'4px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'12px'}}>
+                  <div>
+                    <div style={{color:'var(--text-1)',fontWeight:500}}>{d.title || 'Untitled drawing'}</div>
+                    <div style={{fontSize:'10px',color:'var(--text-3)'}}>{shapeCount} shape{shapeCount === 1 ? '' : 's'} · {d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}</div>
+                  </div>
+                  <span style={{color:'var(--accent)',fontSize:'11px'}}>View ›</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>📝 Dated notes ({propertyNotes.length})</div>
+          <div style={{display:'flex',gap:'6px',marginBottom:'8px'}}>
+            <input className="form-input" placeholder="Add a note (stamped with today's date)…"
+              value={newNoteBody} onChange={e => setNewNoteBody(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addDatedNote(); } }}
+              style={{flex:1,padding:'6px 10px',fontSize:'12px',margin:0}} />
+            <button className="btn btn-primary btn-sm" onClick={addDatedNote} disabled={savingNote || !newNoteBody.trim()} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
+              {savingNote ? '↻' : '+ Add'}
+            </button>
+          </div>
+          {propertyNotes.length === 0 ? (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No notes yet.</div>
+          ) : propertyNotes.map(n => (
+            <div key={n.id} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'4px',fontSize:'12px'}}>
+              <div style={{color:'var(--text-1)',whiteSpace:'pre-wrap',marginBottom:'4px'}}>{n.body}</div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:'10px',color:'var(--text-3)'}}>{new Date(n.created_at).toLocaleString()}</span>
+                <button onClick={() => deleteDatedNote(n.id)} title="Delete" style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'12px',padding:'0 4px'}}>×</button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {property.notes && (
+          <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'4px'}}>Note (on property record)</div>
+            <div style={{fontSize:'12px',color:'var(--text-2)',whiteSpace:'pre-wrap'}}>{property.notes}</div>
+          </div>
+        )}
+
+        <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',justifyContent:'space-between'}}>
+          <button className="btn btn-ghost btn-sm" onClick={handleDeleteProperty} style={{color:'var(--red)'}}>Delete property</button>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button className="btn btn-ghost" onClick={onClose}>Close</button>
+            <button className="btn btn-primary" onClick={onEdit}>Edit details</button>
+          </div>
+        </div>
+
+        {viewDrawing && (
+          <DrawingViewerModal drawing={viewDrawing} onClose={() => setViewDrawing(null)} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// DRAWING VIEWER MODAL — minimal read-only SVG renderer
+// Restored per Q3a=C. Only renders the shape types Dara used: line, rect,
+// circle, polyline, freehand. No editing, no panning/zooming.
+// ─────────────────────────────────────────
+function DrawingViewerModal({ drawing, onClose }) {
+  const shapes = Array.isArray(drawing.shapes) ? drawing.shapes : [];
+
+  const bbox = useMemo(() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    function note(x, y) {
+      if (typeof x === 'number' && typeof y === 'number') {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+    for (const s of shapes) {
+      if (s.type === 'line' || s.type === 'dimension') { note(s.x1, s.y1); note(s.x2, s.y2); }
+      else if (s.type === 'rect') { note(s.x, s.y); note((s.x || 0) + (s.w || 0), (s.y || 0) + (s.h || 0)); }
+      else if (s.type === 'circle') { note((s.cx || 0) - (s.r || 0), (s.cy || 0) - (s.r || 0)); note((s.cx || 0) + (s.r || 0), (s.cy || 0) + (s.r || 0)); }
+      else if ((s.type === 'polyline' || s.type === 'freehand') && Array.isArray(s.points)) { for (const p of s.points) note(p.x, p.y); }
+      else if (s.type === 'text') { note(s.x, s.y); note((s.x || 0) + 50, (s.y || 0) + 14); }
+    }
+    if (minX === Infinity) return { x: 0, y: 0, w: 100, h: 100 };
+    const pad = 20;
+    return { x: minX - pad, y: minY - pad, w: (maxX - minX) + pad * 2, h: (maxY - minY) + pad * 2 };
+  }, [shapes]);
+
+  function renderShape(s, i) {
+    const stroke = s.stroke || s.color || '#e8eaf0';
+    const fill = s.fillStyle && s.fillStyle !== 'none' ? (s.fillColor || stroke) : 'none';
+    const sw = s.strokeWidth || 2;
+    const common = { stroke, strokeWidth: sw, fill, key: s.id || i };
+    if (s.type === 'line' || s.type === 'dimension') return <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} {...common} fill="none" />;
+    if (s.type === 'rect') return <rect x={s.x} y={s.y} width={s.w} height={s.h} {...common} />;
+    if (s.type === 'circle') return <circle cx={s.cx} cy={s.cy} r={s.r} {...common} />;
+    if (s.type === 'polyline' && Array.isArray(s.points)) {
+      const pts = s.points.map(p => `${p.x},${p.y}`).join(' ');
+      return <polyline points={pts} {...common} fill="none" />;
+    }
+    if (s.type === 'freehand' && Array.isArray(s.points) && s.points.length >= 2) {
+      const d = 'M ' + s.points.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ');
+      return <path d={d} {...common} fill="none" />;
+    }
+    if (s.type === 'text') {
+      return <text x={s.x} y={s.y} fill={s.color || stroke} fontSize={s.fontSize || 14} key={s.id || i}>{s.text || ''}</text>;
+    }
+    return null;
+  }
+
+  return (
+    <div className="modal-overlay" style={{zIndex: 1500}} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{maxWidth:'820px',width:'94%',padding:0,maxHeight:'92vh',overflowY:'auto'}}>
+        <div style={{padding:'14px 18px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <h3 style={{margin:0,fontSize:'16px',color:'var(--text-1)'}}>{drawing.title || 'Untitled drawing'}</h3>
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>
+              {shapes.length} shape{shapes.length === 1 ? '' : 's'} · Read-only view
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div style={{padding:'18px',background:'var(--bg-base)'}}>
+          <div style={{background:'#1a1d26',borderRadius:'6px',padding:'12px',minHeight:'320px'}}>
+            <svg viewBox={`${bbox.x} ${bbox.y} ${bbox.w} ${bbox.h}`} style={{width:'100%',height:'auto',maxHeight:'60vh',display:'block'}}>
+              {shapes.map(renderShape)}
+            </svg>
+          </div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',textAlign:'center'}}>
+            Read-only viewer. The drafting editor is not currently available.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PropertyModal({ onClose, onSave, initial }) {
   const [nickname, setNickname] = useState(initial?.nickname || '');
   const [category, setCategory] = useState(initial?.category || 'listing');
@@ -5876,9 +6352,10 @@ function PropertyModal({ onClose, onSave, initial }) {
   );
 }
 
-function PropertiesView({ properties, setProperties, userId }) {
+function PropertiesView({ properties, setProperties, userId, contacts }) {
   const [showModal, setShowModal] = useState(false);
   const [editProp, setEditProp] = useState(null);
+  const [detailProp, setDetailProp] = useState(null);
   const [catFilter, setCatFilter] = useState('all');
 
   const CATS = [
@@ -5900,12 +6377,6 @@ function PropertiesView({ properties, setProperties, userId }) {
       if (c) setProperties(prev => [c, ...prev]);
     }
     setShowModal(false); setEditProp(null);
-  }
-
-  async function deleteProp(id) {
-    if (!window.confirm('Delete this property?')) return;
-    await supabase.from('properties').delete().eq('id', id);
-    setProperties(prev => prev.filter(p => p.id !== id));
   }
 
   return (
@@ -5931,7 +6402,7 @@ function PropertiesView({ properties, setProperties, userId }) {
                 {filtered.map(p => {
                   const equity = p.current_value && p.loan_balance ? Number(p.current_value) - Number(p.loan_balance) : null;
                   return (
-                  <div key={p.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditProp(p);setShowModal(true);}}>
+                  <div key={p.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>setDetailProp(p)}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
                         {p.nickname}
@@ -5947,7 +6418,6 @@ function PropertiesView({ properties, setProperties, userId }) {
                     </div>
                     <div className="task-meta">
                       <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)'}}>{(p.status||'').replace('_',' ')}</span>
-                      <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteProp(p.id);}}>×</button>
                     </div>
                   </div>
                   );
@@ -5957,6 +6427,16 @@ function PropertiesView({ properties, setProperties, userId }) {
         </div>
       </div>
       {showModal && <PropertyModal onClose={()=>{setShowModal(false);setEditProp(null);}} onSave={handleSave} initial={editProp} />}
+      {detailProp && (
+        <PropertyDetailModal
+          property={detailProp}
+          contacts={contacts || []}
+          onClose={() => setDetailProp(null)}
+          onEdit={() => { setEditProp(detailProp); setShowModal(true); setDetailProp(null); }}
+          onDeleted={(id) => setProperties(prev => prev.filter(p => p.id !== id))}
+          userId={userId}
+        />
+      )}
     </div>
   );
 }
@@ -6246,7 +6726,7 @@ function computeBrainStreak(brain) {
   return { current, longest, today: hitToday };
 }
 
-function BrainView({ brain, setBrain, userId }) {
+function BrainView({ brain, setBrain, userId, tasks = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [activeTab, setActiveTab] = useState('north-star');
@@ -6448,6 +6928,9 @@ function BrainView({ brain, setBrain, userId }) {
             : <div className="task-list">
                 {displayEntries.map(entry => {
                   const strength = entry.strength ?? 50;
+                  // Pass 3 Finding #2: reverse view — count tasks referencing this brain entry
+                  const derivedTaskCount = tasks.filter(t => t.brain_entry_id === entry.id).length;
+                  const derivedTaskCompleted = tasks.filter(t => t.brain_entry_id === entry.id && t.completed).length;
                   return (
                     <div key={entry.id} className="task-item" style={{cursor:'pointer',flexDirection:'column',alignItems:'stretch',gap:'8px'}} onClick={()=>{setEditEntry(entry);setShowModal(true);}}>
                       <div style={{display:'flex',alignItems:'center',gap:'8px',width:'100%'}}>
@@ -6465,6 +6948,13 @@ function BrainView({ brain, setBrain, userId }) {
                           {entry.title}
                         </div>
                         <div className="task-meta">
+                          {derivedTaskCount > 0 && (
+                            <span
+                              title={`${derivedTaskCount} task${derivedTaskCount === 1 ? '' : 's'} linked${derivedTaskCompleted > 0 ? ` · ${derivedTaskCompleted} done` : ''}`}
+                              style={{fontSize:'10px',color:'var(--text-3)',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',padding:'2px 6px',whiteSpace:'nowrap'}}>
+                              ✅ {derivedTaskCompleted > 0 ? `${derivedTaskCompleted}/${derivedTaskCount}` : derivedTaskCount}
+                            </span>
+                          )}
                           {entry.event_date && <span className="task-due">{entry.event_date}</span>}
                           <button className="task-delete" style={{color:entry.pinned?'var(--accent)':undefined}} onClick={(e)=>togglePin(entry,e)} title="Pin">{entry.pinned ? '★' : '☆'}</button>
                           <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteEntry(entry.id);}}>×</button>
@@ -6506,7 +6996,7 @@ function startOfMonthGrid(year, month) {
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts }) {
+function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts, properties = [] }) {
   const init = initial || {};
   const startInit = init.start_at ? new Date(init.start_at) : (defaultDate ? new Date(defaultDate + 'T09:00:00') : new Date());
   const endInit = init.end_at ? new Date(init.end_at) : new Date(startInit.getTime() + 60*60*1000);
@@ -6520,6 +7010,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
   const [description, setDescription] = useState(init.description || '');
   const [contactId, setContactId] = useState(init.contact_id || '');
   const [brainEntryId, setBrainEntryId] = useState(init.brain_entry_id || '');
+  const [propertyId, setPropertyId] = useState(init.property_id || '');
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -6535,6 +7026,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
       description: description.trim() || null,
       contact_id: contactId || null,
       brain_entry_id: brainEntryId || null,
+      property_id: propertyId || null,
     });
   }
 
@@ -6585,6 +7077,17 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
               </select>
             </div>
           )}
+          {properties && properties.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">Property</label>
+              <select className="form-select" value={propertyId} onChange={e=>setPropertyId(e.target.value)}>
+                <option value="">— None —</option>
+                {properties.map(p => (
+                  <option key={p.id} value={p.id}>{p.nickname || p.address || '(unnamed)'}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Optional details…" /></div>
           <div className="modal-actions" style={{justifyContent:'space-between'}}>
             <div>
@@ -6601,7 +7104,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
   );
 }
 
-function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts }) {
+function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts, properties = [] }) {
   const today = new Date();
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [showModal, setShowModal] = useState(false);
@@ -6854,6 +7357,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         defaultDate={modalDate}
         brain={brain}
         contacts={contacts}
+        properties={properties}
       />}
     </div>
   );
@@ -8706,15 +9210,15 @@ export default function App() {
           )}
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
-            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref}/>
-            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts}/>
+            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties}/>
+            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties}/>
             : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
-            : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id}/>
+            : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
-            : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id}/>
+            : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks}/>
             : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange}/>
-            : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts}/>
+            : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties}/>
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
             : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
             : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
