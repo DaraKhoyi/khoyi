@@ -544,6 +544,71 @@ const DATE_FILTERS = [
 ];
 
 // ─────────────────────────────────────────
+// CONTACT PICKER — reusable inline picker for any modal that needs to link contacts.
+// Renders selected contacts as chips + a "+ Add contact" toggle that opens a search list.
+// Parent owns the selection (selectedIds state) — this component just edits it.
+// ─────────────────────────────────────────
+function ContactPicker({ contacts = [], selectedIds = [], onChange, label = 'Contacts', placeholder = 'Search by name, email, or company…', emptyText = 'No matches.' }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const linked = selectedIds.map(id => contacts.find(c => c.id === id)).filter(Boolean);
+  const q = query.trim().toLowerCase();
+  const options = (() => {
+    const base = contacts.filter(c => !selectedIds.includes(c.id));
+    if (!q) return base.slice(0, 20);
+    return base.filter(c =>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.email || '').toLowerCase().includes(q) ||
+      (c.company || '').toLowerCase().includes(q)
+    ).slice(0, 20);
+  })();
+  return (
+    <div className="form-group">
+      <label className="form-label">{label}</label>
+      <div style={{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'8px'}}>
+        {linked.map(c => (
+          <span key={c.id} style={{display:'inline-flex',alignItems:'center',gap:'4px',padding:'4px 10px',background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',borderRadius:'12px',fontSize:'12px',color:'var(--text-1)'}}>
+            {c.name}
+            <button type="button" onClick={() => onChange(selectedIds.filter(id => id !== c.id))}
+              style={{background:'none',border:'none',color:'var(--text-2)',cursor:'pointer',padding:'0 0 0 4px',fontSize:'14px',lineHeight:1}}>×</button>
+          </span>
+        ))}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)} style={{fontSize:'11px',padding:'4px 10px'}}>
+          {open ? '× Close' : '+ Add contact'}
+        </button>
+      </div>
+      {open && (
+        <div style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'8px',background:'var(--bg-base)',maxHeight:'240px',display:'flex',flexDirection:'column'}}>
+          <input className="form-input" autoFocus value={query} onChange={e=>setQuery(e.target.value)}
+            placeholder={placeholder} style={{margin:0,marginBottom:'6px',fontSize:'12px'}} />
+          <div style={{overflowY:'auto',flex:1}}>
+            {options.length === 0 && (
+              <div style={{padding:'12px',textAlign:'center',color:'var(--text-3)',fontSize:'11px'}}>
+                {query ? emptyText : 'No contacts to add.'}
+              </div>
+            )}
+            {options.map(c => (
+              <button key={c.id} type="button"
+                onClick={() => { onChange([...selectedIds, c.id]); setQuery(''); }}
+                style={{display:'block',width:'100%',textAlign:'left',padding:'6px 8px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',fontSize:'12px',color:'var(--text-1)'}}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                <div style={{fontWeight:600}}>{c.name}</div>
+                {(c.email || c.company) && (
+                  <div style={{fontSize:'10px',color:'var(--text-3)'}}>
+                    {c.email}{c.email && c.company ? ' · ' : ''}{c.company}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
 function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, contacts = [], properties = [], events = [], userId }) {
@@ -4054,7 +4119,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
 
 // Contact detail modal: shows DISC profile, evidence trail, baseline test entry,
 // and re-analyze. Replaces directly opening the edit form when clicking a contact.
-function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate, userId }) {
+function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate, userId, contacts = [] }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
   const [evidence, setEvidence] = useState([]);
@@ -4103,6 +4168,16 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   });
   const [interactions, setInteractions] = useState([]);
 
+  // Contact ↔ contact relationships
+  const [relationships, setRelationships] = useState([]);
+  const [showAddRel, setShowAddRel] = useState(false);
+  const [relTargetId, setRelTargetId] = useState('');
+  const [relType, setRelType] = useState('spouse');
+  const [savingRel, setSavingRel] = useState(false);
+
+  // Reset action busy state (shared across the three reset buttons)
+  const [resetting, setResetting] = useState(false);
+
   // Load tasks, dated notes, interactions on mount
   useEffect(() => {
     if (!contact?.id) return;
@@ -4146,6 +4221,13 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
       } else if (!cancelled) {
         setLinkedProperties([]);
       }
+
+      // Contact ↔ contact relationships (either side)
+      const { data: relRows } = await supabase.from('contact_relationships')
+        .select('id, contact_a_id, contact_b_id, type, notes, created_at')
+        .or(`contact_a_id.eq.${contact.id},contact_b_id.eq.${contact.id}`)
+        .order('created_at', { ascending: false });
+      if (!cancelled && relRows) setRelationships(relRows);
     })();
     return () => { cancelled = true; };
   }, [contact?.id]);
@@ -4273,6 +4355,111 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
       setAnalyzing(false);
       setTimeout(() => setAnalyzeMsg(null), 5000);
     }
+  }
+
+  // ─── Reset actions: clear analyzed DISC, research, or everything ───
+  // 'disc'     → clears observed scores + evidence + queue rows (keeps baseline + research)
+  // 'research' → clears research_* fields (keeps observed + baseline)
+  // 'all'      → clears observed + research + baseline + evidence + queue (full wipe)
+  async function performReset(kind) {
+    const messages = {
+      disc:     'Reset observed DISC analysis? This clears scores, evidence, and queued analysis. Baseline and research are kept.',
+      research: 'Reset research profile? This clears the web-research scores and the full report.',
+      all:      'Reset ALL DISC data (observed + baseline + research + evidence)? This cannot be undone.',
+    };
+    if (!window.confirm(messages[kind] || 'Reset?')) return;
+    setResetting(true); setAnalyzeMsg(null);
+    try {
+      const profileUpdates = {};
+      if (kind === 'disc' || kind === 'all') {
+        Object.assign(profileUpdates, {
+          d_score: null, i_score: null, s_score: null, c_score: null,
+          primary_letter: null, secondary_letter: null,
+          analysis_status: null, last_analyzed_at: null,
+          confidence: null, confidence_pct: null,
+          rationale: null, signal_snapshot: null,
+          signals_count: null, drift_note: null,
+        });
+      }
+      if (kind === 'research' || kind === 'all') {
+        Object.assign(profileUpdates, {
+          research_d_score: null, research_i_score: null, research_s_score: null, research_c_score: null,
+          research_primary: null, research_secondary: null, research_confidence: null,
+          research_taken_at: null, research_summary: null, research_full_report: null,
+          research_scope: null, research_matched_by: null,
+        });
+      }
+      if (kind === 'all') {
+        Object.assign(profileUpdates, {
+          baseline_d_score: null, baseline_i_score: null, baseline_s_score: null, baseline_c_score: null,
+          baseline_primary: null, baseline_secondary: null,
+          baseline_taken_at: null, baseline_source: null, baseline_locked: false,
+        });
+      }
+      if (Object.keys(profileUpdates).length > 0) {
+        const { error } = await supabase.from('profiles').update(profileUpdates).eq('contact_id', contact.id);
+        if (error) throw error;
+      }
+      if (kind === 'disc' || kind === 'all') {
+        await supabase.from('disc_evidence').delete().eq('contact_id', contact.id);
+        await supabase.from('disc_analysis_queue').delete().eq('contact_id', contact.id);
+        setEvidence([]);
+      }
+      // Reload profile so the UI reflects the reset
+      const { data: fresh } = await supabase.from('profiles').select('*').eq('contact_id', contact.id).maybeSingle();
+      if (fresh) onProfileUpdate(fresh);
+      setAnalyzeMsg({ type: 'ok', text: kind === 'all' ? 'Full DISC reset complete.' : kind === 'disc' ? 'Observed DISC cleared.' : 'Research profile cleared.' });
+    } catch (e) {
+      setAnalyzeMsg({ type: 'error', text: 'Reset failed: ' + (e.message || e) });
+    } finally {
+      setResetting(false);
+      setTimeout(() => setAnalyzeMsg(null), 5000);
+    }
+  }
+
+  // ─── Relationships: add and remove ───
+  async function addRelationship() {
+    if (!relTargetId || relTargetId === contact.id) return;
+    setSavingRel(true);
+    try {
+      const { data, error } = await supabase.from('contact_relationships').insert({
+        user_id: userId,
+        contact_a_id: contact.id,
+        contact_b_id: relTargetId,
+        type: relType,
+      }).select().single();
+      if (error) {
+        if (error.code === '23505') {
+          notify('That relationship already exists.', 'error');
+        } else {
+          notify("Couldn't save relationship: " + error.message, 'error');
+        }
+      } else if (data) {
+        setRelationships(prev => [data, ...prev]);
+        setRelTargetId(''); setRelType('spouse'); setShowAddRel(false);
+      }
+    } finally {
+      setSavingRel(false);
+    }
+  }
+
+  async function removeRelationship(rel) {
+    if (!window.confirm('Remove this relationship?')) return;
+    const { error } = await supabase.from('contact_relationships').delete().eq('id', rel.id);
+    if (error) { notify("Couldn't remove relationship.", 'error'); return; }
+    setRelationships(prev => prev.filter(r => r.id !== rel.id));
+  }
+
+  // Helper: label for a relationship type as seen FROM this contact's perspective.
+  // For asymmetric types (parent/child), invert when this contact is on the b-side.
+  function relLabel(rel) {
+    const thisIsA = rel.contact_a_id === contact.id;
+    const inverseMap = { parent: 'child', child: 'parent' };
+    if (!thisIsA && inverseMap[rel.type]) return inverseMap[rel.type];
+    return rel.type;
+  }
+  function otherContactId(rel) {
+    return rel.contact_a_id === contact.id ? rel.contact_b_id : rel.contact_a_id;
   }
 
   async function saveBaseline() {
@@ -4472,10 +4659,26 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchModal(true)} style={{fontSize:'11px'}}>
                   🔍 {hasResearch ? 'View research' : 'Research from web'}
                 </button>
-                <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing} style={{fontSize:'11px'}}>
+                <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing || resetting} style={{fontSize:'11px'}}>
                   {analyzing ? '↻ Analyzing…' : '✨ Re-analyze now'}
                 </button>
               </div>
+            </div>
+            {/* Reset actions — destructive, behind confirm() */}
+            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'4px',marginBottom:'10px',fontSize:'10px',color:'var(--text-3)',alignItems:'center'}}>
+              <span style={{textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600}}>Reset:</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => performReset('disc')} disabled={analyzing || resetting}
+                style={{fontSize:'10px',padding:'3px 8px',color:'var(--red)'}}>
+                {resetting ? '⏳' : '⟲ DISC'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => performReset('research')} disabled={analyzing || resetting}
+                style={{fontSize:'10px',padding:'3px 8px',color:'var(--red)'}}>
+                {resetting ? '⏳' : '⟲ Research'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => performReset('all')} disabled={analyzing || resetting}
+                style={{fontSize:'10px',padding:'3px 8px',color:'var(--red)',borderColor:'var(--red)'}}>
+                {resetting ? '⏳' : '⟲ All'}
+              </button>
             </div>
 
             {!hasInference && !hasBaseline && (
@@ -4787,6 +4990,65 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
             ))}
           </div>
         )}
+
+        {/* ========== RELATIONSHIPS PANEL ========== */}
+        <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>
+              🔗 Relationships ({relationships.length})
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowAddRel(v => !v)} style={{fontSize:'11px'}}>
+              {showAddRel ? '× Cancel' : '+ Add'}
+            </button>
+          </div>
+          {showAddRel && (
+            <div style={{padding:'8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'8px',display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
+              <select className="form-select" value={relTargetId} onChange={e => setRelTargetId(e.target.value)}
+                style={{flex:'1 1 160px',fontSize:'12px',padding:'5px 8px',margin:0,minWidth:0}}>
+                <option value="">— Pick contact —</option>
+                {contacts.filter(c => c.id !== contact.id).map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <select className="form-select" value={relType} onChange={e => setRelType(e.target.value)}
+                style={{flex:'0 0 130px',fontSize:'12px',padding:'5px 8px',margin:0}}>
+                <option value="spouse">Spouse</option>
+                <option value="parent">Parent of…</option>
+                <option value="child">Child of…</option>
+                <option value="sibling">Sibling</option>
+                <option value="business_partner">Business partner</option>
+                <option value="partner">Partner</option>
+                <option value="friend">Friend</option>
+                <option value="colleague">Colleague</option>
+                <option value="other">Other</option>
+              </select>
+              <button className="btn btn-primary btn-sm" onClick={addRelationship}
+                disabled={savingRel || !relTargetId} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
+                {savingRel ? '↻' : 'Save'}
+              </button>
+            </div>
+          )}
+          {relationships.length === 0 && !showAddRel && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
+              No relationships set. Tap + Add to link this contact to family, partners, colleagues, etc.
+            </div>
+          )}
+          {relationships.map(rel => {
+            const otherId = otherContactId(rel);
+            const other = contacts.find(c => c.id === otherId);
+            const label = relLabel(rel).replace(/_/g, ' ');
+            return (
+              <div key={rel.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:'var(--text-1)',fontWeight:500}}>{other ? other.name : '(unknown contact)'}</div>
+                  <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'capitalize'}}>{label}</div>
+                </div>
+                <button onClick={() => removeRelationship(rel)} title="Remove"
+                  style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',padding:'4px 8px',fontSize:'14px'}}>×</button>
+              </div>
+            );
+          })}
+        </div>
 
         {/* ========== DATE-STAMPED NOTES PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
@@ -5945,6 +6207,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           contact={detailContact}
           profile={profileByContact.get(detailContact.id) || null}
           userId={userId}
+          contacts={contacts}
           onClose={() => setDetailContact(null)}
           onEdit={() => { setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
           onProfileUpdate={handleProfileUpdate}
@@ -6753,7 +7016,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
 // ─────────────────────────────────────────
 // INVESTMENTS VIEW
 // ─────────────────────────────────────────
-function InvestmentModal({ onClose, onSave, onDelete, initial, properties }) {
+function InvestmentModal({ onClose, onSave, onDelete, initial, properties, contacts = [] }) {
   const [name, setName] = useState(initial?.name || '');
   const [kind, setKind] = useState(initial?.kind || 'deal');
   const [stage, setStage] = useState(initial?.stage || 'screening');
@@ -6763,6 +7026,17 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties }) {
   const [expense_ytd, setExpenseYtd] = useState(initial?.expense_ytd || '');
   const [due_date, setDueDate] = useState(initial?.due_date || '');
   const [notes, setNotes] = useState(initial?.notes || '');
+  const [contactIds, setContactIds] = useState([]);
+
+  useEffect(() => {
+    if (!initial?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('investment_contacts').select('contact_id').eq('investment_id', initial.id);
+      if (!cancelled && data) setContactIds(data.map(r => r.contact_id));
+    })();
+    return () => { cancelled = true; };
+  }, [initial?.id]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -6773,6 +7047,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties }) {
       income_ytd: income_ytd ? Number(income_ytd) : null,
       expense_ytd: expense_ytd ? Number(expense_ytd) : null,
       due_date: due_date || null, notes: notes.trim() || null,
+      _contact_ids: contactIds,
     });
   }
 
@@ -6822,6 +7097,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties }) {
           </div>
           <div className="form-group"><label className="form-label">Due Date</label><input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} /></div>
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} /></div>
+          <ContactPicker contacts={contacts} selectedIds={contactIds} onChange={setContactIds} />
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">Save Investment</button>
@@ -6832,7 +7108,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties }) {
   );
 }
 
-function InvestmentsView({ investments, setInvestments, properties, userId }) {
+function InvestmentsView({ investments, setInvestments, properties, userId, contacts = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editInv, setEditInv] = useState(null);
   const [stageFilter, setStageFilter] = useState('all');
@@ -6857,12 +7133,21 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
   const netYtd = totalIncome - totalExpense;
 
   async function handleSave(data) {
+    const { _contact_ids, ...invData } = data;
+    let savedId = null;
     if (editInv) {
-      const { data: u } = await supabase.from('investments').update(data).eq('id', editInv.id).select().single();
-      if (u) setInvestments(prev => prev.map(i => i.id === u.id ? u : i));
+      const { data: u } = await supabase.from('investments').update(invData).eq('id', editInv.id).select().single();
+      if (u) { setInvestments(prev => prev.map(i => i.id === u.id ? u : i)); savedId = u.id; }
     } else {
-      const { data: c } = await supabase.from('investments').insert({ ...data, user_id: userId }).select().single();
-      if (c) setInvestments(prev => [c, ...prev]);
+      const { data: c } = await supabase.from('investments').insert({ ...invData, user_id: userId }).select().single();
+      if (c) { setInvestments(prev => [c, ...prev]); savedId = c.id; }
+    }
+    if (savedId && Array.isArray(_contact_ids)) {
+      const { error: rpcErr } = await supabase.rpc('set_investment_contacts', {
+        p_investment_id: savedId,
+        p_contact_ids: _contact_ids,
+      });
+      if (rpcErr) notify("Saved investment, but contact links failed.", 'error');
     }
     setShowModal(false); setEditInv(null);
   }
@@ -6923,7 +7208,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
           }
         </div>
       </div>
-      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} onDelete={async (i)=>{ if(!window.confirm(`Delete investment "${i.name}"?`)) return; await deleteInv(i.id); setShowModal(false); setEditInv(null); }} initial={editInv} properties={properties} />}
+      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} onDelete={async (i)=>{ if(!window.confirm(`Delete investment "${i.name}"?`)) return; await deleteInv(i.id); setShowModal(false); setEditInv(null); }} initial={editInv} properties={properties} contacts={contacts} />}
     </div>
   );
 }
@@ -6933,7 +7218,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId }) {
 // BRAIN VIEW (Soul / Memory / Playbooks / Decisions / Lessons / North Star)
 // Hybrid search (FTS + trigram), tags, strength, streak gamification
 // ─────────────────────────────────────────
-function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType }) {
+function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType, contacts = [] }) {
   const [type, setType] = useState(initial?.type || defaultType || 'memory');
   const [title, setTitle] = useState(initial?.title || '');
   const [content, setContent] = useState(initial?.content || '');
@@ -6941,6 +7226,17 @@ function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType }) {
   const [pinned, setPinned] = useState(initial?.pinned || false);
   const [tagsRaw, setTagsRaw] = useState((initial?.tags || []).join(', '));
   const [strength, setStrength] = useState(initial?.strength ?? 50);
+  const [contactIds, setContactIds] = useState([]);
+
+  useEffect(() => {
+    if (!initial?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('brain_contacts').select('contact_id').eq('brain_entry_id', initial.id);
+      if (!cancelled && data) setContactIds(data.map(r => r.contact_id));
+    })();
+    return () => { cancelled = true; };
+  }, [initial?.id]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -6949,6 +7245,7 @@ function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType }) {
     onSave({
       type, title: title.trim(), content: content.trim() || null,
       event_date: event_date || null, pinned, tags, strength,
+      _contact_ids: contactIds,
     });
   }
 
@@ -6997,6 +7294,7 @@ function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType }) {
               </label>
             </div>
           </div>
+          <ContactPicker contacts={contacts} selectedIds={contactIds} onChange={setContactIds} />
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">Save Entry</button>
@@ -7041,7 +7339,7 @@ function computeBrainStreak(brain) {
   return { current, longest, today: hitToday };
 }
 
-function BrainView({ brain, setBrain, userId, tasks = [], events = [] }) {
+function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [activeTab, setActiveTab] = useState('north-star');
@@ -7111,14 +7409,24 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [] }) {
   const displayEntries = inSearchMode ? searchResults : sorted;
 
   async function handleSave(data) {
+    const { _contact_ids, ...entryData } = data;
+    let savedEntryId = null;
     if (editEntry) {
-      const { data: u, error } = await supabase.from('brain').update(data).eq('id', editEntry.id).select().single();
+      const { data: u, error } = await supabase.from('brain').update(entryData).eq('id', editEntry.id).select().single();
       if (error) { notify("Couldn't save entry. Try again.", 'error'); return; }
-      if (u) setBrain(prev => prev.map(x => x.id === u.id ? u : x));
+      if (u) { setBrain(prev => prev.map(x => x.id === u.id ? u : x)); savedEntryId = u.id; }
     } else {
-      const { data: c, error } = await supabase.from('brain').insert({ ...data, user_id: userId }).select().single();
+      const { data: c, error } = await supabase.from('brain').insert({ ...entryData, user_id: userId }).select().single();
       if (error) { notify("Couldn't create entry. Try again.", 'error'); return; }
-      if (c) setBrain(prev => [c, ...prev]);
+      if (c) { setBrain(prev => [c, ...prev]); savedEntryId = c.id; }
+    }
+    // Sync contact links via RPC (replace full set)
+    if (savedEntryId && Array.isArray(_contact_ids)) {
+      const { error: rpcErr } = await supabase.rpc('set_brain_contacts', {
+        p_brain_id: savedEntryId,
+        p_contact_ids: _contact_ids,
+      });
+      if (rpcErr) notify("Saved entry, but contact links failed.", 'error');
     }
     setShowModal(false); setEditEntry(null);
     // Trigger background embedding generation (silent — fails gracefully if function not deployed)
@@ -7299,7 +7607,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [] }) {
           }
         </div>
       </div>
-      {showModal && <BrainEntryModal onClose={()=>{setShowModal(false);setEditEntry(null);}} onSave={handleSave} onDelete={async (e)=>{ if(!window.confirm(`Delete "${e.title}"?`)) return; await deleteEntry(e.id); setShowModal(false); setEditEntry(null); }} initial={editEntry} defaultType={activeTab} />}
+      {showModal && <BrainEntryModal onClose={()=>{setShowModal(false);setEditEntry(null);}} onSave={handleSave} onDelete={async (e)=>{ if(!window.confirm(`Delete "${e.title}"?`)) return; await deleteEntry(e.id); setShowModal(false); setEditEntry(null); }} initial={editEntry} defaultType={activeTab} contacts={contacts} />}
     </div>
   );
 }
@@ -9977,8 +10285,8 @@ export default function App() {
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
-              : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
-              : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events}/>
+              : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
+              : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events} contacts={contacts}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks}/>
               : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
