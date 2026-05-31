@@ -616,7 +616,7 @@ function computeTaskStreak(tasks) {
 // ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
-function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = [], properties = [], userId }) {
+function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = [], properties = [], events = [], userId }) {
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
   const [system, setSystem] = useState(initialSystem);
@@ -898,6 +898,23 @@ function TaskModal({ onClose, onSave, initial, defaultSystem, brain, contacts = 
               </div>
             )}
           </div>
+          {/* Pass 4 Finding #5: events linked to this task (read-only reverse view) */}
+          {initial?.id && (() => {
+            const linked = events.filter(e => e.task_id === initial.id);
+            if (linked.length === 0) return null;
+            return (
+              <div className="form-group" style={{padding:'10px',background:'var(--bg-base)',borderRadius:'6px',border:'1px solid var(--border)'}}>
+                <div style={{fontSize:'12px',fontWeight:600,color:'var(--text-2)',marginBottom:'6px'}}>📅 Linked events ({linked.length})</div>
+                {linked.slice(0, 5).map(ev => (
+                  <div key={ev.id} style={{padding:'4px 8px',fontSize:'11px',color:'var(--text-2)',display:'flex',justifyContent:'space-between',gap:'8px'}}>
+                    <span>{ev.title}</span>
+                    {ev.start_at && <span style={{color:'var(--text-3)',whiteSpace:'nowrap'}}>{new Date(ev.start_at).toLocaleDateString()}</span>}
+                  </div>
+                ))}
+                {linked.length > 5 && <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px'}}>+ {linked.length - 5} more</div>}
+              </div>
+            );
+          })()}
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">Save Task</button>
@@ -1322,7 +1339,7 @@ function useDropTarget({ type, onDrop }) {
 // ─────────────────────────────────────────────────────────────────────
 // TASKS VIEW — main component
 // ─────────────────────────────────────────────────────────────────────
-function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts, properties }) {
+function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts, properties, events = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const viewMode = (taskViewMode === 'sequence' || taskViewMode === 'matrix') ? taskViewMode : 'sequence';
@@ -1715,7 +1732,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           />
         )}
 
-        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} properties={properties || []} userId={userId} />}
+        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} properties={properties || []} events={events} userId={userId} />}
       </div>
     </DragProvider>
   );
@@ -3393,7 +3410,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 // ─────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [] }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [] }) {
   const [editTask, setEditTask] = useState(null);
 
   // Save edits to a task triggered from the dashboard. Mirrors the logic in
@@ -3492,6 +3509,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
             brain={brain}
             contacts={contacts}
             properties={properties}
+            events={events}
             userId={user.id}
           />
         )}
@@ -6750,7 +6768,7 @@ function computeBrainStreak(brain) {
   return { current, longest, today: hitToday };
 }
 
-function BrainView({ brain, setBrain, userId, tasks = [] }) {
+function BrainView({ brain, setBrain, userId, tasks = [], events = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [activeTab, setActiveTab] = useState('north-star');
@@ -6955,6 +6973,8 @@ function BrainView({ brain, setBrain, userId, tasks = [] }) {
                   // Pass 3 Finding #2: reverse view — count tasks referencing this brain entry
                   const derivedTaskCount = tasks.filter(t => t.brain_entry_id === entry.id).length;
                   const derivedTaskCompleted = tasks.filter(t => t.brain_entry_id === entry.id && t.completed).length;
+                  // Pass 4 Finding #6: events linked to this brain entry
+                  const derivedEventCount = events.filter(e => e.brain_entry_id === entry.id).length;
                   return (
                     <div key={entry.id} className="task-item" style={{cursor:'pointer',flexDirection:'column',alignItems:'stretch',gap:'8px'}} onClick={()=>{setEditEntry(entry);setShowModal(true);}}>
                       <div style={{display:'flex',alignItems:'center',gap:'8px',width:'100%'}}>
@@ -6977,6 +6997,13 @@ function BrainView({ brain, setBrain, userId, tasks = [] }) {
                               title={`${derivedTaskCount} task${derivedTaskCount === 1 ? '' : 's'} linked${derivedTaskCompleted > 0 ? ` · ${derivedTaskCompleted} done` : ''}`}
                               style={{fontSize:'10px',color:'var(--text-3)',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',padding:'2px 6px',whiteSpace:'nowrap'}}>
                               ✅ {derivedTaskCompleted > 0 ? `${derivedTaskCompleted}/${derivedTaskCount}` : derivedTaskCount}
+                            </span>
+                          )}
+                          {derivedEventCount > 0 && (
+                            <span
+                              title={`${derivedEventCount} event${derivedEventCount === 1 ? '' : 's'} linked`}
+                              style={{fontSize:'10px',color:'var(--text-3)',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',padding:'2px 6px',whiteSpace:'nowrap'}}>
+                              📅 {derivedEventCount}
                             </span>
                           )}
                           {entry.event_date && <span className="task-due">{entry.event_date}</span>}
@@ -7391,11 +7418,12 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 // ─────────────────────────────────────────
 // PLAYBOOKS VIEW — Triggerable, step-aware playbooks
 // ─────────────────────────────────────────
-function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, setPlaybookRuns, tasks, setTasks, userId, setView, setTaskFilter }) {
+function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, setPlaybookRuns, tasks, setTasks, userId, setView, setTaskFilter, events = [] }) {
   const playbooks = brain.filter(b => b.type === 'playbook');
   const [parsingId, setParsingId] = useState(null);
   const [runningId, setRunningId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [expandedRunId, setExpandedRunId] = useState(null);  // Pass 4 #7
   const [showRunModal, setShowRunModal] = useState(null); // playbook obj
   const [runNote, setRunNote] = useState('');
   const [flash, setFlash] = useState(null);
@@ -7573,13 +7601,51 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
                   {runs.length > 0 && (
                     <div style={{borderTop:'1px solid var(--border)',paddingTop:'10px',marginTop:'2px'}}>
                       <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:'6px'}}>Recent runs</div>
-                      {runs.slice(0, 3).map(r => (
-                        <div key={r.id} style={{display:'flex',gap:'8px',fontSize:'11px',color:'var(--text-2)',padding:'2px 0'}}>
-                          <span style={{color:'var(--text-3)'}}>{new Date(r.created_at).toLocaleDateString()}</span>
-                          <span>{r.tasks_created} tasks</span>
-                          {r.trigger_note && <span style={{color:'var(--text-3)',fontStyle:'italic'}}>· {r.trigger_note.slice(0,40)}{r.trigger_note.length>40?'…':''}</span>}
-                        </div>
-                      ))}
+                      {runs.slice(0, 3).map(r => {
+                        const isOpen = expandedRunId === r.id;
+                        // Pass 4 #7: spawned tasks + events for this run
+                        const spawnedTasks = tasks.filter(t => t.playbook_run_id === r.id);
+                        const spawnedEvents = events.filter(e => e.playbook_run_id === r.id);
+                        const totalSpawned = spawnedTasks.length + spawnedEvents.length;
+                        return (
+                          <div key={r.id} style={{padding:'2px 0'}}>
+                            <div
+                              onClick={() => setExpandedRunId(isOpen ? null : r.id)}
+                              style={{display:'flex',gap:'8px',fontSize:'11px',color:'var(--text-2)',cursor: totalSpawned > 0 ? 'pointer' : 'default',alignItems:'center'}}>
+                              <span style={{color:'var(--text-3)'}}>{new Date(r.created_at).toLocaleDateString()}</span>
+                              <span>{r.tasks_created} tasks</span>
+                              {r.trigger_note && <span style={{color:'var(--text-3)',fontStyle:'italic'}}>· {r.trigger_note.slice(0,40)}{r.trigger_note.length>40?'…':''}</span>}
+                              {totalSpawned > 0 && (
+                                <span style={{color:'var(--accent)',fontSize:'10px',marginLeft:'auto'}}>{isOpen ? '▾' : '▸'}</span>
+                              )}
+                            </div>
+                            {isOpen && totalSpawned > 0 && (
+                              <div style={{padding:'6px 10px 6px 16px',background:'var(--bg-base)',borderRadius:'4px',marginTop:'4px',border:'1px solid var(--border)'}}>
+                                {spawnedTasks.length > 0 && (
+                                  <>
+                                    <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'3px'}}>Tasks ({spawnedTasks.length})</div>
+                                    {spawnedTasks.map(t => (
+                                      <div key={t.id} style={{fontSize:'11px',color: t.completed ? 'var(--text-3)' : 'var(--text-1)',textDecoration: t.completed ? 'line-through' : 'none',padding:'2px 0'}}>
+                                        {t.completed ? '✓' : '○'} {t.title}
+                                      </div>
+                                    ))}
+                                  </>
+                                )}
+                                {spawnedEvents.length > 0 && (
+                                  <>
+                                    <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',marginTop: spawnedTasks.length > 0 ? '6px' : '0',marginBottom:'3px'}}>Events ({spawnedEvents.length})</div>
+                                    {spawnedEvents.map(ev => (
+                                      <div key={ev.id} style={{fontSize:'11px',color:'var(--text-1)',padding:'2px 0'}}>
+                                        📅 {ev.title} {ev.start_at && <span style={{color:'var(--text-3)',fontSize:'10px'}}>· {new Date(ev.start_at).toLocaleDateString()}</span>}
+                                      </div>
+                                    ))}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -9234,14 +9300,14 @@ export default function App() {
           )}
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
-            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties}/>
-            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties}/>
+            : view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
+            : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/>
             : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
             : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
             : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
             : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id}/>
-            : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks}/>
-            : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange}/>
+            : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events}/>
+            : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
             : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties}/>
             : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
             : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
