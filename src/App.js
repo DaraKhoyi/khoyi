@@ -1412,6 +1412,86 @@ function useDropTarget({ type, onDrop }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// HEADER SEARCH — reusable icon-button + expanding input pair
+// ─────────────────────────────────────────────────────────────────────
+// Used by views that previously had a permanent search input bar
+// (TasksView, ContactsView, NotesView). The icon-button lives in the
+// header alongside other action buttons (.btn-view-toggle styling).
+// Clicking opens the input below the header; clicking again (or Esc,
+// or the × button on the input) collapses it and clears the query.
+// When closed but a query is active, a small accent dot appears on
+// the icon as a "you have an active filter" cue.
+function HeaderSearchIcon({ value, open, onToggle }) {
+  const hasValue = (value || '').trim().length > 0;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={hasValue ? `Search: "${value}"` : 'Search'}
+      aria-label="Search"
+      aria-pressed={open}
+      className={`btn-view-toggle${open ? ' active' : ''}`}
+      style={{position:'relative'}}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/>
+        <line x1="16.6" y1="16.6" x2="21" y2="21"/>
+      </svg>
+      {hasValue && !open && (
+        <span style={{
+          position:'absolute', top:'5px', right:'5px',
+          width:'8px', height:'8px', borderRadius:'50%',
+          background:'var(--accent)', border:'2px solid var(--bg-base)',
+          pointerEvents:'none', boxSizing:'content-box',
+        }} aria-hidden="true"/>
+      )}
+    </button>
+  );
+}
+
+function HeaderSearchInput({ value, onChange, placeholder, onClose, autoFocus = true, style }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (autoFocus && ref.current) {
+      // setTimeout so the input is mounted before we focus, and so a parent's
+      // mouse-down on the icon doesn't immediately re-blur.
+      const t = setTimeout(() => ref.current?.focus(), 0);
+      return () => clearTimeout(t);
+    }
+  }, [autoFocus]);
+  return (
+    <div style={{position:'relative', marginBottom:'10px', ...style}}>
+      <input
+        ref={ref}
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Escape') { onChange(''); onClose(); } }}
+        placeholder={placeholder}
+        style={{
+          width:'100%', padding:'9px 38px 9px 12px',
+          background:'var(--bg-card)', border:'1px solid var(--accent)',
+          borderRadius:'8px', color:'var(--text-1)', fontSize:'13px',
+          outline:'none', boxSizing:'border-box',
+        }}
+      />
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}  // don't blur input first
+        onClick={() => { onChange(''); onClose(); }}
+        title="Close search (Esc)"
+        aria-label="Close search"
+        style={{
+          position:'absolute', right:'6px', top:'50%', transform:'translateY(-50%)',
+          background:'none', border:'none', color:'var(--text-3)', fontSize:'18px',
+          cursor:'pointer', lineHeight:1, padding:'4px 8px',
+        }}>×</button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // TASKS VIEW — main component
 // ─────────────────────────────────────────────────────────────────────
 function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts, properties, events = [] }) {
@@ -1423,6 +1503,9 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   const [datePickerTask, setDatePickerTask] = useState(null);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
+  // Search bar collapses into a header icon. Open it on demand.
+  // Independent of taskSearch — closing the input also clears the value (via × button).
+  const [searchOpen, setSearchOpen] = useState(false);
   const moreButtonRef = useRef(null);
   const [moreMenuPos, setMoreMenuPos] = useState({ top: 0, left: 0 });
 
@@ -1652,6 +1735,11 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
+            <HeaderSearchIcon
+              value={taskSearch}
+              open={searchOpen}
+              onToggle={() => setSearchOpen(o => !o)}
+            />
             <button
               type="button"
               onClick={() => setTaskViewMode('sequence')}
@@ -1772,31 +1860,16 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           document.body
         )}
 
-        {/* Search input */}
-        <div style={{position:'relative',marginBottom:'10px'}}>
-          <input
-            type="text"
+        {/* Search input — only renders when the header search icon is toggled open.
+            Header icon shows an accent dot when a query is active but the input is closed. */}
+        {searchOpen && (
+          <HeaderSearchInput
             value={taskSearch}
-            onChange={e=>setTaskSearch(e.target.value)}
+            onChange={setTaskSearch}
             placeholder="🔍 Search tasks (title or notes)…"
-            style={{
-              width:'100%', padding:'9px 34px 9px 12px',
-              background:'var(--bg-card)', border:'1px solid var(--border)',
-              borderRadius:'8px', color:'var(--text-1)', fontSize:'13px',
-              outline:'none', boxSizing:'border-box',
-            }}
+            onClose={() => setSearchOpen(false)}
           />
-          {taskSearch && (
-            <button
-              onClick={()=>setTaskSearch('')}
-              title="Clear search"
-              style={{
-                position:'absolute', right:'6px', top:'50%', transform:'translateY(-50%)',
-                background:'none', border:'none', color:'var(--text-3)', fontSize:'18px',
-                cursor:'pointer', lineHeight:1, padding:'4px 8px',
-              }}>×</button>
-          )}
-        </div>
+        )}
 
         {/* View switcher (SEQUENCE / MATRIX) lives in the header now —
             see the icon buttons next to the + at the top right. */}
@@ -5842,6 +5915,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added'
   const [search, setSearch] = useState('');
+  // Search input collapses into a header icon; open it on demand.
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Email-to-contact linking state
   const [linkSummary, setLinkSummary] = useState(null);  // { suggestions_count, auto_filled, auto_linked } or null when never scanned
@@ -6065,8 +6140,25 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}><h2>Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
-        <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
+        <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
+          <HeaderSearchIcon
+            value={search}
+            open={searchOpen}
+            onToggle={() => setSearchOpen(o => !o)}
+          />
+          <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
+        </div>
       </div>
+
+      {/* Search input — collapsible. Only renders when icon is toggled open. */}
+      {searchOpen && (
+        <HeaderSearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="🔍 Search contacts (name, email, company)…"
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
         <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
           title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
@@ -6131,7 +6223,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
 
       <div className="panel">
         <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
-          <input className="form-input" placeholder="Search contacts…" value={search} onChange={e=>setSearch(e.target.value)} style={{margin:0}} />
+          {/* Search lives in header icon now — see the magnifying-glass next to the + button.
+              Type filter + sort take the row to themselves. */}
           <div style={{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}}>
             <div style={{flex:'1 1 220px',minWidth:0}}>
               <label style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,display:'block',marginBottom:'4px'}}>Filter by type</label>
@@ -8669,6 +8762,8 @@ function NotesView({ notes, setNotes, userId }) {
   const [editBody, setEditBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  // Search input collapses into a header icon; open it on demand.
+  const [searchOpen, setSearchOpen] = useState(false);
   const saveTimer = useRef(null);
   const bodyRef = useRef(null);
 
@@ -8761,22 +8856,32 @@ function NotesView({ notes, setNotes, userId }) {
 
       {/* ── LEFT: note list ── */}
       <div style={{ width: '260px', minWidth: '260px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap:'8px' }}>
+          <div style={{minWidth:0, flex:1}}>
             <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Notes</h2>
             <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>{notes.length} note{notes.length !== 1 ? 's' : ''}</p>
           </div>
-          <button className="btn-add-circle btn-add-circle-sm" onClick={createNote} title="New Note" aria-label="New Note">+</button>
+          <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
+            <HeaderSearchIcon
+              value={search}
+              open={searchOpen}
+              onToggle={() => setSearchOpen(o => !o)}
+            />
+            <button className="btn-add-circle btn-add-circle-sm" onClick={createNote} title="New Note" aria-label="New Note">+</button>
+          </div>
         </div>
 
-        {/* Search */}
-        <input
-          className="form-input"
-          placeholder="Search notes…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ fontSize: '13px' }}
-        />
+        {/* Search input — only renders when the header magnifier is toggled open.
+            Icon gets an accent dot when a query is active but the bar is closed. */}
+        {searchOpen && (
+          <HeaderSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="🔍 Search notes…"
+            onClose={() => setSearchOpen(false)}
+            style={{marginBottom:0}}
+          />
+        )}
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
