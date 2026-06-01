@@ -63,17 +63,15 @@ body {
   letter-spacing: -0.01em;
 }
 .brand-mark {
-  width: 32px; height: 32px;
+  width: 34px; height: 34px;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--bg-base);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 16px;
+  background-image: url('icon-192.png');
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
 }
-.brand-name { color: var(--accent); }
+.brand-name { color: var(--text-1); font-weight: 700; }
 .brand-suffix { color: var(--text-2); font-weight: 600; }
 .icon-btn {
   width: 38px; height: 38px;
@@ -352,7 +350,7 @@ textarea::placeholder { color: var(--text-3); }
 
   <header class="header">
     <div class="brand">
-      <span class="brand-mark">P↗</span>
+      <span class="brand-mark" aria-hidden="true"></span>
       <span><span class="brand-name">Prism</span> <span class="brand-suffix">Launch</span></span>
     </div>
     <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">
