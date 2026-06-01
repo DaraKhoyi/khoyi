@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0d0f14">
+<title>Prism Launch</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Launch">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+:root {
+  --bg-base:   #0d0f14;
+  --bg-card:   #161921;
+  --bg-hover:  #1e2230;
+  --border:    #252a38;
+  --accent:    #c5a95e;
+  --accent-2:  #dac48a;
+  --text-1:    #e8eaf0;
+  --text-2:    #9499b0;
+  --text-3:    #555e7a;
+  --green:     #22c55e;
+  --red:       #ef4444;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg-base);
+  color: var(--text-1);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: contain;
+}
+body {
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  gap: 14px;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 2px 0;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 19px;
+  letter-spacing: -0.01em;
+}
+.brand-mark {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg-base);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+}
+.brand-name { color: var(--accent); }
+.brand-suffix { color: var(--text-2); font-weight: 600; }
+.icon-btn {
+  width: 38px; height: 38px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.icon-btn:hover, .icon-btn:active { background: var(--bg-hover); color: var(--text-1); }
+.icon-btn.active { background: var(--accent); color: var(--bg-base); border-color: var(--accent); }
+
+/* Compose card */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.card.compose { flex: 1; min-height: 180px; }
+textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 16px;          /* iOS won't zoom on focus */
+  line-height: 1.45;
+  resize: none;
+  outline: none;
+  min-height: 140px;
+  padding: 4px 2px;
+  flex: 1;
+}
+textarea::placeholder { color: var(--text-3); }
+
+.compose-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.char-count {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.compose-actions-right { display: flex; align-items: center; gap: 8px; }
+.mic-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.mic-btn.recording {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+  50%      { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
+}
+
+/* Section labels */
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-3);
+  font-weight: 700;
+  padding: 4px 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.section-label button {
+  background: none; border: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Saved prompts */
+.prompts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.prompt-row button.prompt-main {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-1);
+  text-align: left;
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt-row button.prompt-main:hover, .prompt-row button.prompt-main:active {
+  background: var(--bg-hover);
+}
+.prompt-row .prompt-delete {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-3);
+  width: 38px;
+  height: 38px;
+  font-size: 17px;
+  cursor: pointer;
+}
+.prompt-row .prompt-delete:hover { color: var(--red); background: var(--bg-hover); }
+
+/* Launch button */
+.launch-btn {
+  width: 100%;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(180deg, var(--accent-2) 0%, var(--accent) 100%);
+  color: var(--bg-base);
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(197,169,94,0.25);
+  transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
+  position: sticky;
+  bottom: max(env(safe-area-inset-bottom), 14px);
+}
+.launch-btn:active { transform: scale(0.985); }
+.launch-btn:disabled {
+  background: var(--bg-hover);
+  color: var(--text-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  top: max(env(safe-area-inset-top), 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  color: var(--text-1);
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 1000;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.modal-backdrop.show { display: flex; }
+@media (min-width: 640px) {
+  .modal-backdrop { align-items: center; }
+}
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 86dvh;
+  overflow-y: auto;
+}
+.modal h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  color: var(--text-1);
+}
+.modal .hint {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin: 0 0 14px;
+}
+.modal input[type="text"], .modal input[type="url"], .modal textarea {
+  width: 100%;
+  padding: 11px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.modal textarea { min-height: 80px; resize: vertical; }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.btn-primary { background: var(--accent); color: var(--bg-base); }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+
+/* Empty state */
+.empty-prompts {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 10px 4px;
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="header">
+    <div class="brand">
+      <span class="brand-mark">P↗</span>
+      <span><span class="brand-name">Prism</span> <span class="brand-suffix">Launch</span></span>
+    </div>
+    <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </header>
+
+  <section class="card compose">
+    <textarea id="prompt-input" placeholder="What do you want Claude to do?
+e.g. Find all Priority A tasks due this week and show me the ones linked to Jala Ibrahim." enterkeyhint="go"></textarea>
+    <div class="compose-actions">
+      <span class="char-count"><span id="char-count">0</span> chars</span>
+      <div class="compose-actions-right">
+        <button id="save-prompt-btn" class="icon-btn" title="Save this prompt for reuse" aria-label="Save prompt">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button id="mic-btn" class="mic-btn" title="Voice input" aria-label="Voice input">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">
+      <span>Saved prompts</span>
+      <button id="add-saved-btn" type="button">+ Add</button>
+    </div>
+    <div id="prompts-list" class="prompts-list"></div>
+  </section>
+
+  <button id="launch-btn" class="launch-btn">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12"/>
+      <polyline points="12 5 19 12 12 19"/>
+    </svg>
+    <span id="launch-label">Launch into Claude</span>
+  </button>
+
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="toast"></div>
+
+<!-- Settings modal -->
+<div id="settings-modal" class="modal-backdrop">
+  <div class="modal">
+    <h2>Settings</h2>
+    <p class="hint">
+      Paste the URL of your Claude project (find it in Claude.ai by opening the DarasApp project — the URL ends in <code>/project/{id}</code>). The launcher uses it to drop you into the right project, ready to paste your prompt.
+    </p>
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Claude project URL</label>
+    <input id="project-url-input" type="url" placeholder="https://claude.ai/project/...">
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">After launch behavior</label>
+    <select id="launch-behavior" style="width:100%;padding:11px 12px;background:var(--bg-hover);border:1px solid var(--border);border-radius:9px;color:var(--text-1);font:inherit;font-size:14px;margin-bottom:12px;">
+      <option value="clear">Clear the prompt</option>
+      <option value="keep">Keep it (in case I need to relaunch)</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="settings-close">Cancel</button>
+      <button class="btn btn-primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add-saved modal -->
+<div id="save-modal" class="modal-backdrop">
+  <div class="modal">
+    <h2>Save this prompt</h2>
+    <p class="hint">Give it a short label so you can find it again. Then it'll be one tap to send.</p>
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Label</label>
+    <input id="save-label-input" type="text" placeholder="e.g. Daily standup">
+    <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Prompt</label>
+    <textarea id="save-body-input" placeholder=""></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="save-cancel">Cancel</button>
+      <button class="btn btn-primary" id="save-confirm">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ──────────────────────────────────────────────────────────
+// Persisted state
+// ──────────────────────────────────────────────────────────
+const KEY_URL = 'prismlaunch.projectUrl';
+const KEY_PROMPTS = 'prismlaunch.prompts';
+const KEY_BEHAVIOR = 'prismlaunch.launchBehavior';
+
+const defaultPrompts = [
+  { label: "What's my day look like?",      body: "Run a quick check-in: my Priority A tasks for today, any Priority A tasks from the past week that are still open, and any tentative calendar events in the next 7 days. Tell me what to focus on." },
+  { label: "Find emails about…",            body: "Search my inbox for emails about: " },
+  { label: "Create a Priority A task",      body: "Create a Priority A task: " },
+  { label: "Build a P&L for…",              body: "Build a P&L working document for: " },
+  { label: "Status update",                 body: "Where are we on the DarasApp build? Read the pinned status note and summarize what's done in the last week plus what's next." },
+];
+
+function loadPrompts() {
+  try {
+    const raw = localStorage.getItem(KEY_PROMPTS);
+    if (raw) return JSON.parse(raw);
+  } catch (_) { /* fall through */ }
+  return defaultPrompts.slice();
+}
+function savePrompts(p) {
+  localStorage.setItem(KEY_PROMPTS, JSON.stringify(p));
+}
+function loadProjectUrl() {
+  return localStorage.getItem(KEY_URL) || '';
+}
+function loadBehavior() {
+  return localStorage.getItem(KEY_BEHAVIOR) || 'clear';
+}
+
+// ──────────────────────────────────────────────────────────
+// DOM
+// ──────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const promptInput      = $('prompt-input');
+const charCount        = $('char-count');
+const launchBtn        = $('launch-btn');
+const launchLabel      = $('launch-label');
+const promptsList      = $('prompts-list');
+const settingsBtn      = $('settings-btn');
+const settingsModal    = $('settings-modal');
+const settingsClose    = $('settings-close');
+const settingsSave     = $('settings-save');
+const projectUrlInput  = $('project-url-input');
+const launchBehaviorEl = $('launch-behavior');
+const savePromptBtn    = $('save-prompt-btn');
+const saveModal        = $('save-modal');
+const saveLabelInput   = $('save-label-input');
+const saveBodyInput    = $('save-body-input');
+const saveCancel       = $('save-cancel');
+const saveConfirm      = $('save-confirm');
+const addSavedBtn      = $('add-saved-btn');
+const micBtn           = $('mic-btn');
+const toastEl          = $('toast');
+
+let prompts = loadPrompts();
+let toastTimer = null;
+
+// ──────────────────────────────────────────────────────────
+// Render
+// ──────────────────────────────────────────────────────────
+function renderPrompts() {
+  promptsList.innerHTML = '';
+  if (prompts.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-prompts';
+    empty.textContent = 'No saved prompts yet. Tap + Add or save one from the composer.';
+    promptsList.appendChild(empty);
+    return;
+  }
+  prompts.forEach((p, idx) => {
+    const row = document.createElement('div');
+    row.className = 'prompt-row';
+
+    const main = document.createElement('button');
+    main.className = 'prompt-main';
+    main.type = 'button';
+    main.textContent = p.label;
+    main.title = p.body;
+    main.addEventListener('click', () => {
+      promptInput.value = p.body;
+      promptInput.focus();
+      // Place caret at end so users can append
+      const end = promptInput.value.length;
+      promptInput.setSelectionRange(end, end);
+      updateCharCount();
+    });
+
+    const del = document.createElement('button');
+    del.className = 'prompt-delete';
+    del.type = 'button';
+    del.title = 'Delete this saved prompt';
+    del.setAttribute('aria-label', 'Delete saved prompt');
+    del.textContent = '×';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete "${p.label}"?`)) {
+        prompts.splice(idx, 1);
+        savePrompts(prompts);
+        renderPrompts();
+      }
+    });
+
+    row.appendChild(main);
+    row.appendChild(del);
+    promptsList.appendChild(row);
+  });
+}
+
+function updateCharCount() {
+  charCount.textContent = promptInput.value.length;
+  const trimmed = promptInput.value.trim();
+  launchBtn.disabled = trimmed.length === 0;
+}
+
+function showToast(message, kind) {
+  toastEl.textContent = message;
+  toastEl.style.borderColor = kind === 'error' ? 'var(--red)' : 'var(--accent)';
+  toastEl.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2500);
+}
+
+// ──────────────────────────────────────────────────────────
+// Launch (copy + open Claude)
+// ──────────────────────────────────────────────────────────
+async function launch() {
+  const text = promptInput.value.trim();
+  if (!text) return;
+  const projectUrl = loadProjectUrl();
+  if (!projectUrl) {
+    openSettings();
+    showToast('Set your project URL first', 'error');
+    return;
+  }
+
+  // 1. Copy to clipboard. Has to run synchronously inside the click handler
+  //    on iOS / Android Chrome or the permission gets denied.
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch (err) {
+    // Fallback: an off-screen textarea + execCommand. Older browsers.
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      copied = true;
+    } catch (_) {
+      copied = false;
+    }
+  }
+
+  // 2. Build the destination URL. We append /new so they land in a fresh
+  //    chat inside the project, ready to paste.
+  let dest = projectUrl.replace(/\/+$/, '');
+  if (!/\/new$/.test(dest)) dest = dest + '/new';
+
+  // 3. Open Claude. On iOS PWA in standalone mode, window.open creates a
+  //    new tab in mobile Safari (the PWA can't host the Claude.ai content).
+  //    We use _blank to force this. If popup is blocked, location.href is
+  //    the fallback.
+  const opened = window.open(dest, '_blank', 'noopener');
+  if (!opened) {
+    window.location.href = dest;
+  }
+
+  // 4. Feedback
+  showToast(copied ? '📋 Copied. Paste into Claude.' : '⚠️ Couldn\'t auto-copy. Highlight & paste.', copied ? '' : 'error');
+
+  // 5. Clear if configured
+  if (loadBehavior() === 'clear') {
+    setTimeout(() => {
+      promptInput.value = '';
+      updateCharCount();
+    }, 500);
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+// Settings modal
+// ──────────────────────────────────────────────────────────
+function openSettings() {
+  projectUrlInput.value = loadProjectUrl();
+  launchBehaviorEl.value = loadBehavior();
+  settingsModal.classList.add('show');
+  setTimeout(() => projectUrlInput.focus(), 100);
+}
+function closeSettings() {
+  settingsModal.classList.remove('show');
+}
+
+settingsBtn.addEventListener('click', openSettings);
+settingsClose.addEventListener('click', closeSettings);
+settingsModal.addEventListener('click', (e) => {
+  if (e.target === settingsModal) closeSettings();
+});
+settingsSave.addEventListener('click', () => {
+  const url = projectUrlInput.value.trim();
+  if (url && !/^https:\/\/claude\.ai\/project\//.test(url)) {
+    if (!confirm("That doesn't look like a Claude project URL (should start with https://claude.ai/project/). Save anyway?")) return;
+  }
+  localStorage.setItem(KEY_URL, url);
+  localStorage.setItem(KEY_BEHAVIOR, launchBehaviorEl.value);
+  closeSettings();
+  showToast('Settings saved');
+});
+
+// ──────────────────────────────────────────────────────────
+// Save-prompt modal
+// ──────────────────────────────────────────────────────────
+function openSaveModal(prefillBody) {
+  saveLabelInput.value = '';
+  saveBodyInput.value = prefillBody || '';
+  saveModal.classList.add('show');
+  setTimeout(() => saveLabelInput.focus(), 100);
+}
+savePromptBtn.addEventListener('click', () => {
+  const body = promptInput.value.trim();
+  if (!body) {
+    showToast('Compose a prompt first', 'error');
+    return;
+  }
+  openSaveModal(body);
+});
+addSavedBtn.addEventListener('click', () => openSaveModal(''));
+saveCancel.addEventListener('click', () => saveModal.classList.remove('show'));
+saveModal.addEventListener('click', (e) => {
+  if (e.target === saveModal) saveModal.classList.remove('show');
+});
+saveConfirm.addEventListener('click', () => {
+  const label = saveLabelInput.value.trim();
+  const body  = saveBodyInput.value.trim();
+  if (!label) { showToast('Add a label', 'error'); return; }
+  if (!body)  { showToast('Add a prompt body', 'error'); return; }
+  prompts.unshift({ label, body });
+  savePrompts(prompts);
+  renderPrompts();
+  saveModal.classList.remove('show');
+  showToast('Saved');
+});
+
+// ──────────────────────────────────────────────────────────
+// Voice input (Web Speech API)
+// ──────────────────────────────────────────────────────────
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let recording = false;
+
+if (!SR) {
+  // Hide the mic button on browsers without speech recognition
+  micBtn.style.display = 'none';
+}
+
+function startRecording() {
+  if (!SR) return;
+  recognition = new SR();
+  recognition.lang = 'en-US';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  const baseText = promptInput.value ? (promptInput.value.replace(/\s+$/, '') + ' ') : '';
+  let finalAccum = '';
+
+  recognition.onresult = (evt) => {
+    let interim = '';
+    for (let i = evt.resultIndex; i < evt.results.length; i++) {
+      const r = evt.results[i];
+      if (r.isFinal) finalAccum += r[0].transcript + ' ';
+      else interim += r[0].transcript;
+    }
+    promptInput.value = baseText + finalAccum + interim;
+    updateCharCount();
+  };
+
+  recognition.onerror = (e) => {
+    showToast('Voice: ' + (e.error || 'error'), 'error');
+    stopRecording();
+  };
+  recognition.onend = () => {
+    if (recording) {
+      // Auto-restart if user hasn't tapped stop (browsers often stop after silence)
+      try { recognition.start(); } catch (_) { stopRecording(); }
+    }
+  };
+
+  try {
+    recognition.start();
+    recording = true;
+    micBtn.classList.add('recording');
+    micBtn.title = 'Tap to stop';
+  } catch (e) {
+    showToast('Could not start mic', 'error');
+  }
+}
+
+function stopRecording() {
+  if (recognition) {
+    try { recognition.stop(); } catch (_) {}
+    recognition = null;
+  }
+  recording = false;
+  micBtn.classList.remove('recording');
+  micBtn.title = 'Voice input';
+}
+
+micBtn.addEventListener('click', () => {
+  if (recording) stopRecording();
+  else startRecording();
+});
+
+// ──────────────────────────────────────────────────────────
+// Event wiring
+// ──────────────────────────────────────────────────────────
+promptInput.addEventListener('input', updateCharCount);
+launchBtn.addEventListener('click', launch);
+
+// Keyboard shortcut: Cmd/Ctrl+Enter to launch from the textarea
+promptInput.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    launch();
+  }
+});
+
+// First-run detection
+window.addEventListener('load', () => {
+  renderPrompts();
+  updateCharCount();
+  if (!loadProjectUrl()) {
+    // Auto-open settings on first launch
+    setTimeout(openSettings, 400);
+  }
+});
+</script>
+</body>
+</html>
