@@ -4273,12 +4273,94 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
 
 // Contact detail modal: shows DISC profile, evidence trail, baseline test entry,
 // and re-analyze. Replaces directly opening the edit form when clicking a contact.
-function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate, userId, contacts = [] }) {
+function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [] }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
   const [evidence, setEvidence] = useState([]);
   const [loadingEvidence, setLoadingEvidence] = useState(true);
   const [showBaselineForm, setShowBaselineForm] = useState(false);
+
+  // Brain entries + investments linked to this contact
+  const [linkedBrain, setLinkedBrain] = useState([]);
+  const [linkedInvestments, setLinkedInvestments] = useState([]);
+
+  // Quick-add task / event inline forms
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDue, setNewTaskDue] = useState(new Date().toISOString().slice(0,10));
+  const [newTaskQuadrant, setNewTaskQuadrant] = useState('B');
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState('');
+  const [newEventStart, setNewEventStart] = useState('');
+  const [newEventDuration, setNewEventDuration] = useState(60);
+  const [newEventLocation, setNewEventLocation] = useState('');
+  const [savingQuickAdd, setSavingQuickAdd] = useState(false);
+
+  // Add a task linked to this contact (uses set_task_contacts RPC for clean linking)
+  async function addQuickTask() {
+    if (!newTaskTitle.trim()) return;
+    setSavingQuickAdd(true);
+    try {
+      // Get the next rank in this quadrant so it lands at the bottom
+      const { data: maxRow } = await supabase.from('tasks')
+        .select('eisenhower_rank')
+        .eq('user_id', userId)
+        .eq('eisenhower_quadrant', newTaskQuadrant)
+        .eq('completed', false)
+        .order('eisenhower_rank', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextRank = (maxRow?.eisenhower_rank || 0) + 1;
+      const priorityMap = { A: 'high', B: 'high', C: 'medium', D: 'low' };
+      const { data: t, error } = await supabase.from('tasks').insert({
+        user_id: userId,
+        title: newTaskTitle.trim(),
+        due_date: newTaskDue || null,
+        priority: priorityMap[newTaskQuadrant],
+        priority_system: 'eisenhower',
+        eisenhower_quadrant: newTaskQuadrant,
+        eisenhower_rank: nextRank,
+        status: 'open',
+      }).select().single();
+      if (error) throw error;
+      // Link via RPC
+      await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [contact.id] });
+      // Refresh linked tasks list
+      setLinkedTasks(prev => [{ ...t }, ...prev]);
+      setNewTaskTitle(''); setNewTaskQuadrant('B'); setShowAddTask(false);
+    } catch (e) {
+      notify("Couldn't save task: " + (e.message || e), 'error');
+    } finally {
+      setSavingQuickAdd(false);
+    }
+  }
+
+  // Add an event linked to this contact (events table has contact_id directly)
+  async function addQuickEvent() {
+    if (!newEventTitle.trim() || !newEventStart) return;
+    setSavingQuickAdd(true);
+    try {
+      const start = new Date(newEventStart);
+      const end = new Date(start.getTime() + (Number(newEventDuration) || 60) * 60000);
+      const { data: ev, error } = await supabase.from('events').insert({
+        user_id: userId,
+        title: newEventTitle.trim(),
+        start_at: start.toISOString(),
+        end_at: end.toISOString(),
+        location: newEventLocation.trim() || null,
+        contact_id: contact.id,
+        all_day: false,
+      }).select().single();
+      if (error) throw error;
+      setLinkedEvents(prev => [ev, ...prev]);
+      setNewEventTitle(''); setNewEventStart(''); setNewEventLocation(''); setNewEventDuration(60);
+      setShowAddEvent(false);
+    } catch (e) {
+      notify("Couldn't save event: " + (e.message || e), 'error');
+    } finally {
+      setSavingQuickAdd(false);
+    }
+  }
 
   // Baseline form local state
   const [baseD, setBaseD] = useState(profile?.baseline_d_score ?? 50);
@@ -4382,6 +4464,28 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
         .or(`contact_a_id.eq.${contact.id},contact_b_id.eq.${contact.id}`)
         .order('created_at', { ascending: false });
       if (!cancelled && relRows) setRelationships(relRows);
+
+      // Linked brain entries (via brain_contacts junction — added May 31, 2026)
+      const { data: bcRows } = await supabase.from('brain_contacts').select('brain_entry_id').eq('contact_id', contact.id);
+      if (bcRows && bcRows.length > 0) {
+        const ids = bcRows.map(r => r.brain_entry_id);
+        const { data: brainRows } = await supabase.from('brain')
+          .select('id, type, title, pinned, event_date, strength, tags').in('id', ids);
+        if (!cancelled && brainRows) setLinkedBrain(brainRows);
+      } else if (!cancelled) {
+        setLinkedBrain([]);
+      }
+
+      // Linked investments (via investment_contacts junction — added May 31, 2026)
+      const { data: icRows } = await supabase.from('investment_contacts').select('investment_id').eq('contact_id', contact.id);
+      if (icRows && icRows.length > 0) {
+        const ids = icRows.map(r => r.investment_id);
+        const { data: invRows } = await supabase.from('investments')
+          .select('id, name, kind, stage, amount, income_ytd, expense_ytd').in('id', ids);
+        if (!cancelled && invRows) setLinkedInvestments(invRows);
+      } else if (!cancelled) {
+        setLinkedInvestments([]);
+      }
     })();
     return () => { cancelled = true; };
   }, [contact?.id]);
@@ -4774,6 +4878,14 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
       <div className="modal" style={{maxWidth:'640px'}}>
         <div className="modal-header">
           <h3 style={{display:'flex',alignItems:'center',gap:'8px'}}>
+            {onBack && (
+              <button type="button" onClick={onBack} title="Back to edit"
+                style={{background:'none',border:'none',color:'var(--text-2)',cursor:'pointer',fontSize:'18px',padding:'2px 8px',lineHeight:1,borderRadius:'4px'}}
+                onMouseEnter={e=>{e.currentTarget.style.background='var(--bg-hover)';e.currentTarget.style.color='var(--text-1)';}}
+                onMouseLeave={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='var(--text-2)';}}>
+                ←
+              </button>
+            )}
             <span>{contact.name || '(unnamed)'}</span>
             {profile?.primary_letter && (
               <span className="pill" style={{
@@ -5079,12 +5191,34 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
 
         {/* ========== LINKED TASKS PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
-          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-            ✅ Tasks ({linkedTasks.length})
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>
+              ✅ Tasks ({linkedTasks.length})
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddTask(v=>!v)} style={{fontSize:'11px'}}>
+              {showAddTask ? '× Cancel' : '+ Add'}
+            </button>
           </div>
-          {linkedTasks.length === 0 && (
+          {showAddTask && (
+            <div style={{padding:'8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'8px',display:'flex',flexDirection:'column',gap:'6px'}}>
+              <input className="form-input" placeholder="Task title…" value={newTaskTitle} onChange={e=>setNewTaskTitle(e.target.value)} autoFocus style={{margin:0,fontSize:'12px',padding:'6px 8px'}} />
+              <div style={{display:'flex',gap:'6px'}}>
+                <input className="form-input" type="date" value={newTaskDue} onChange={e=>setNewTaskDue(e.target.value)} style={{margin:0,fontSize:'12px',padding:'5px 8px',flex:1}} />
+                <select className="form-select" value={newTaskQuadrant} onChange={e=>setNewTaskQuadrant(e.target.value)} style={{margin:0,fontSize:'12px',padding:'5px 8px',flex:'0 0 90px'}}>
+                  <option value="A">A · Urg+Imp</option>
+                  <option value="B">B · Imp</option>
+                  <option value="C">C · Urg</option>
+                  <option value="D">D · Neither</option>
+                </select>
+                <button className="btn btn-primary btn-sm" onClick={addQuickTask} disabled={!newTaskTitle.trim() || savingQuickAdd} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
+                  {savingQuickAdd ? '↻' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+          {linkedTasks.length === 0 && !showAddTask && (
             <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
-              No tasks linked. Link this contact when creating or editing a task.
+              No tasks linked. Tap + Add to create one.
             </div>
           )}
           {(tasksExpanded ? linkedTasks : linkedTasks.slice(0, 3)).map(t => (
@@ -5106,14 +5240,32 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
           )}
         </div>
 
-        {/* ========== LINKED EVENTS PANEL (Pass 3) ========== */}
+        {/* ========== LINKED EVENTS PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
-          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-            📅 Events ({linkedEvents.length})
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>
+              📅 Events ({linkedEvents.length})
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddEvent(v=>!v)} style={{fontSize:'11px'}}>
+              {showAddEvent ? '× Cancel' : '+ Add'}
+            </button>
           </div>
-          {linkedEvents.length === 0 && (
+          {showAddEvent && (
+            <div style={{padding:'8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'8px',display:'flex',flexDirection:'column',gap:'6px'}}>
+              <input className="form-input" placeholder="Event title…" value={newEventTitle} onChange={e=>setNewEventTitle(e.target.value)} autoFocus style={{margin:0,fontSize:'12px',padding:'6px 8px'}} />
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                <input className="form-input" type="datetime-local" value={newEventStart} onChange={e=>setNewEventStart(e.target.value)} style={{margin:0,fontSize:'12px',padding:'5px 8px',flex:'1 1 180px'}} />
+                <input className="form-input" type="number" min="5" step="5" value={newEventDuration} onChange={e=>setNewEventDuration(e.target.value)} title="Duration (minutes)" style={{margin:0,fontSize:'12px',padding:'5px 8px',width:'70px'}} />
+                <button className="btn btn-primary btn-sm" onClick={addQuickEvent} disabled={!newEventTitle.trim() || !newEventStart || savingQuickAdd} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
+                  {savingQuickAdd ? '↻' : 'Save'}
+                </button>
+              </div>
+              <input className="form-input" placeholder="Location (optional)" value={newEventLocation} onChange={e=>setNewEventLocation(e.target.value)} style={{margin:0,fontSize:'12px',padding:'5px 8px'}} />
+            </div>
+          )}
+          {linkedEvents.length === 0 && !showAddEvent && (
             <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
-              No events linked to this contact.
+              No events linked. Tap + Add to create one.
             </div>
           )}
           {linkedEvents.slice(0, 10).map(e => (
@@ -5126,6 +5278,46 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
             <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px'}}>Showing 10 of {linkedEvents.length}.</div>
           )}
         </div>
+
+        {/* ========== LINKED BRAIN ENTRIES ========== */}
+        {linkedBrain.length > 0 && (
+          <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+              🧠 Brain ({linkedBrain.length})
+            </div>
+            {linkedBrain.slice(0, 10).map(b => (
+              <div key={b.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
+                <div style={{color:'var(--text-1)',display:'flex',alignItems:'center',gap:'6px'}}>
+                  {b.pinned && <span title="Pinned" style={{color:'var(--accent)'}}>★</span>}
+                  <span>{b.title}</span>
+                </div>
+                <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'capitalize'}}>{b.type}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ========== LINKED INVESTMENTS ========== */}
+        {linkedInvestments.length > 0 && (
+          <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
+              💼 Investments ({linkedInvestments.length})
+            </div>
+            {linkedInvestments.map(inv => (
+              <div key={inv.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
+                  <div style={{color:'var(--text-1)',fontWeight:500}}>{inv.name}</div>
+                  <span style={{fontSize:'10px',color:'var(--text-3)',textTransform:'capitalize'}}>{inv.stage}</span>
+                </div>
+                {inv.amount != null && (
+                  <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>
+                    ${Number(inv.amount).toLocaleString()}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ========== LINKED PROPERTIES PANEL (Pass 3) ========== */}
         {linkedProperties.length > 0 && (
@@ -5455,22 +5647,47 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onProfileUpdate
   );
 }
 
-function ContactModal({ onClose, onSave, onDelete, initial }) {
+function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
   const [email, setEmail] = useState(initial?.email || '');
   const [phone, setPhone] = useState(initial?.phone || '');
   const [company, setCompany] = useState(initial?.company || '');
   const [role, setRole] = useState(initial?.role || '');
+  const [profession, setProfession] = useState(initial?.profession || '');
   const [priority, setPriority] = useState(initial?.priority || 'normal');
   const [notes, setNotes] = useState(initial?.notes || '');
+  // Home address (one only)
+  const [homeAddress, setHomeAddress] = useState(initial?.home_address || '');
+  const [homeCity, setHomeCity] = useState(initial?.home_city || '');
+  const [homeState, setHomeState] = useState(initial?.home_state || '');
+  const [homeZip, setHomeZip] = useState(initial?.home_zip || '');
+  const [homeOwnership, setHomeOwnership] = useState(initial?.home_ownership || '');
+  const [homePurchaseYear, setHomePurchaseYear] = useState(initial?.home_purchase_year || '');
+  // Business address (one only — no own/rent toggle)
+  const [businessAddress, setBusinessAddress] = useState(initial?.business_address || '');
+  const [businessCity, setBusinessCity] = useState(initial?.business_city || '');
+  const [businessState, setBusinessState] = useState(initial?.business_state || '');
+  const [businessZip, setBusinessZip] = useState(initial?.business_zip || '');
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim()) return;
     onSave({
       name: name.trim(), type, email: email.trim() || null, phone: phone.trim() || null,
-      company: company.trim() || null, role: role.trim() || null, priority, notes: notes.trim() || null,
+      company: company.trim() || null, role: role.trim() || null,
+      profession: profession.trim() || null,
+      priority, notes: notes.trim() || null,
+      home_address: homeAddress.trim() || null,
+      home_city: homeCity.trim() || null,
+      home_state: homeState.trim() || null,
+      home_zip: homeZip.trim() || null,
+      home_ownership: homeOwnership || null,
+      home_purchase_year: homePurchaseYear ? Number(homePurchaseYear) : null,
+      business_address: businessAddress.trim() || null,
+      business_city: businessCity.trim() || null,
+      business_state: businessState.trim() || null,
+      business_zip: businessZip.trim() || null,
     });
   }
 
@@ -5480,6 +5697,12 @@ function ContactModal({ onClose, onSave, onDelete, initial }) {
         <div className="modal-header">
           <h3>{initial ? 'Edit Contact' : 'New Contact'}</h3>
           <div className="modal-header-actions">
+            {initial && onShowDetails && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onShowDetails(initial)}
+                title="View activity, DISC, timeline" style={{fontSize:'11px',padding:'4px 10px'}}>
+                More →
+              </button>
+            )}
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
@@ -5509,9 +5732,46 @@ function ContactModal({ onClose, onSave, onDelete, initial }) {
           </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Company</label><input className="form-input" value={company} onChange={e=>setCompany(e.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Role</label><input className="form-input" value={role} onChange={e=>setRole(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Role / Title</label><input className="form-input" value={role} onChange={e=>setRole(e.target.value)} /></div>
           </div>
-          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Context, history, anything to remember…" /></div>
+          <div className="form-group"><label className="form-label">Profession</label><input className="form-input" value={profession} onChange={e=>setProfession(e.target.value)} placeholder="e.g. Realtor, Attorney, Jeweler, Doctor…" /></div>
+
+          {/* HOME ADDRESS */}
+          <div style={{marginTop:'18px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'10px'}}>🏠 Home Address</div>
+            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={homeAddress} onChange={e=>setHomeAddress(e.target.value)} /></div>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">City</label><input className="form-input" value={homeCity} onChange={e=>setHomeCity(e.target.value)} /></div>
+              <div className="form-group" style={{maxWidth:'80px'}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={homeState} onChange={e=>setHomeState(e.target.value.toUpperCase())} /></div>
+              <div className="form-group" style={{maxWidth:'100px'}}><label className="form-label">ZIP</label><input className="form-input" value={homeZip} onChange={e=>setHomeZip(e.target.value)} /></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">Own / Rent</label>
+                <select className="form-select" value={homeOwnership} onChange={e=>setHomeOwnership(e.target.value)}>
+                  <option value="">—</option>
+                  <option value="own">Own</option>
+                  <option value="rent">Rent</option>
+                </select>
+              </div>
+              {homeOwnership === 'own' && (
+                <div className="form-group"><label className="form-label">Year Purchased</label>
+                  <input className="form-input" type="number" min="1800" max="2100" value={homePurchaseYear} onChange={e=>setHomePurchaseYear(e.target.value)} placeholder="e.g. 1998" /></div>
+              )}
+            </div>
+          </div>
+
+          {/* BUSINESS ADDRESS */}
+          <div style={{marginTop:'12px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'10px'}}>🏢 Business Address</div>
+            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={businessAddress} onChange={e=>setBusinessAddress(e.target.value)} /></div>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">City</label><input className="form-input" value={businessCity} onChange={e=>setBusinessCity(e.target.value)} /></div>
+              <div className="form-group" style={{maxWidth:'80px'}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
+              <div className="form-group" style={{maxWidth:'100px'}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
+            </div>
+          </div>
+
+          <div className="form-group" style={{marginTop:'14px'}}><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Context, history, anything to remember…" /></div>
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">Save Contact</button>
@@ -6309,7 +6569,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                   const p = profileByContact.get(c.id);
                   const discColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
                   return (
-                    <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>setDetailContact(c)}>
+                    <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditContact(c);setShowModal(true);}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
                           {c.name}
@@ -6375,7 +6635,13 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           }
         </div>
       </div>
-      {showModal && <ContactModal onClose={()=>{setShowModal(false);setEditContact(null);}} onSave={handleSave} onDelete={async (c)=>{ if(!window.confirm(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); }} initial={editContact} />}
+      {showModal && <ContactModal
+        onClose={()=>{setShowModal(false);setEditContact(null);}}
+        onSave={handleSave}
+        onDelete={async (c)=>{ if(!window.confirm(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); }}
+        onShowDetails={(c)=>{ setShowModal(false); setDetailContact(c); }}
+        initial={editContact}
+      />}
       {detailContact && (
         <ContactDetailModal
           contact={detailContact}
@@ -6384,6 +6650,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           contacts={contacts}
           onClose={() => setDetailContact(null)}
           onEdit={() => { setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
+          onBack={() => { setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
           onProfileUpdate={handleProfileUpdate}
         />
       )}
