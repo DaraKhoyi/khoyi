@@ -1638,10 +1638,56 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   return (
     <DragProvider onDragStart={() => setIsDragging(true)} onDragEnd={() => setIsDragging(false)}>
       <div className="view">
-        <div className="view-header">
-          <h2>Tasks</h2>
-          <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+        {/* Header: title + subtitle on left  ·  view-mode icons + add button on right
+            The icons replace the old standalone Sequence/Matrix text-button row
+            that used to live below the search. Layout is flex with flex-start
+            alignment so the icons line up with the title baseline, not the
+            "32 active" subtitle. */}
+        <div className="view-header" style={{
+          display:'flex', alignItems:'flex-start', justifyContent:'space-between',
+          gap:'12px', marginBottom:'10px',
+        }}>
+          <div style={{minWidth:0, flex:1}}>
+            <h2 style={{margin:0}}>Tasks</h2>
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
+          </div>
+          <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
+            <button
+              type="button"
+              onClick={() => setTaskViewMode('sequence')}
+              title="Sequence view — flat ranked list"
+              aria-label="Sequence view"
+              aria-pressed={viewMode === 'sequence'}
+              className={`btn-view-toggle${viewMode === 'sequence' ? ' active' : ''}`}>
+              {/* Sequence icon: ordered list (dot + line, x3) */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="9" y1="6"  x2="20" y2="6" />
+                <line x1="9" y1="12" x2="20" y2="12" />
+                <line x1="9" y1="18" x2="20" y2="18" />
+                <circle cx="4.5" cy="6"  r="1.5" fill="currentColor" stroke="none"/>
+                <circle cx="4.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+                <circle cx="4.5" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTaskViewMode('matrix')}
+              title="Matrix view — Eisenhower quadrants"
+              aria-label="Matrix view"
+              aria-pressed={viewMode === 'matrix'}
+              className={`btn-view-toggle${viewMode === 'matrix' ? ' active' : ''}`}>
+              {/* Matrix icon: 2×2 grid */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3"  y="3"  width="8" height="8" rx="1.5"/>
+                <rect x="13" y="3"  width="8" height="8" rx="1.5"/>
+                <rect x="3"  y="13" width="8" height="8" rx="1.5"/>
+                <rect x="13" y="13" width="8" height="8" rx="1.5"/>
+              </svg>
+            </button>
             <button className="btn-add-circle" onClick={openNew} title="New Task" aria-label="New Task">+</button>
           </div>
         </div>
@@ -1752,25 +1798,8 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           )}
         </div>
 
-        {/* View switcher */}
-        <div style={{display:'flex',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',marginBottom:'14px'}}>
-          {[
-            { id: 'sequence', label: 'Sequence' },
-            { id: 'matrix',   label: 'Matrix' },
-          ].map(v => (
-            <button key={v.id}
-              onClick={() => setTaskViewMode(v.id)}
-              style={{
-                flex:1, padding:'7px 0', border:'none', borderRadius:'6px',
-                fontSize:'11px', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.03em',
-                background: viewMode === v.id ? 'var(--accent)' : 'transparent',
-                color: viewMode === v.id ? '#000' : 'var(--text-2)',
-                cursor:'pointer', transition:'.18s'
-              }}>
-              {v.label}
-            </button>
-          ))}
-        </div>
+        {/* View switcher (SEQUENCE / MATRIX) lives in the header now —
+            see the icon buttons next to the + at the top right. */}
 
         {/* "Move past due to Today" button */}
         {filter === 'today' && (() => {

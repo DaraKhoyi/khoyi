@@ -531,6 +531,40 @@ body {
 .btn-add-circle.btn-add-circle-sm { width: 32px; height: 32px; font-size: 19px; }
 .btn-add-circle.btn-add-circle-lg { width: 52px; height: 52px; font-size: 28px; }
 
+/* ─── VIEW-TOGGLE ICON BUTTONS ─── */
+/* Square icon buttons used in header rows next to the .btn-add-circle.
+   Used by TasksView to switch between Sequence and Matrix layouts.
+   Active state mirrors the gold-on-dark treatment of the add button.        */
+.btn-view-toggle {
+  width: 38px; height: 38px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.btn-view-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-3);
+  color: var(--text-1);
+}
+.btn-view-toggle:active { transform: scale(0.94); }
+.btn-view-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-view-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-base);
+}
+.btn-view-toggle.active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(1.06);
+}
+
 /* ─── YEAR VIEW — 6 months in a 3×2 grid (responsive) ─── */
 .year-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 10px; }
 @media (max-width: 900px) { .year-grid { grid-template-columns: repeat(2, 1fr); } }
