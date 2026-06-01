@@ -2609,6 +2609,12 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [selectedThread, setSelectedThread] = useState(null);
   const [selectedMessages, setSelectedMessages] = useState([]);
 
+  // Client-side search across visible threads — collapses into a header icon.
+  // Matches subject, snippet, sender name, and sender address (lowercased).
+  // Filtering is local; we don't refetch from the server when typing.
+  const [inboxSearch, setInboxSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+
   // Pass 4 Batch D: email triage (per Q2 = auto on sync + persist + full output)
   // triageCache is a map { thread_id → triage_row } populated lazily as we
   // open threads or as background auto-triage finishes. Mirrors what's in the
@@ -3322,6 +3328,24 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   const unreadCount = threads.filter(t => t.has_unread).length;
 
+  // Client-side filter for the header search icon. Lowercased substring match
+  // across subject, snippet, and every participant's name/email. useMemo so
+  // we don't re-walk the participants array on every unrelated render.
+  const filteredThreads = useMemo(() => {
+    const q = (inboxSearch || '').trim().toLowerCase();
+    if (!q) return threads;
+    return threads.filter(t => {
+      if ((t.subject || '').toLowerCase().includes(q)) return true;
+      if ((t.snippet || '').toLowerCase().includes(q)) return true;
+      const parts = Array.isArray(t.participants) ? t.participants : [];
+      return parts.some(p => {
+        if (typeof p === 'string') return p.toLowerCase().includes(q);
+        return (p?.name || '').toLowerCase().includes(q)
+            || (p?.email || '').toLowerCase().includes(q);
+      });
+    });
+  }, [threads, inboxSearch]);
+
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
@@ -3350,9 +3374,25 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
             {backfill?.running ? `↻ Backfill (round ${backfill.round})` : '⤓ Pull 365d'}
           </button>
           <button className="btn btn-ghost" onClick={runSync} disabled={syncing}>{syncing ? 'Syncing…' : '↻ Sync'}</button>
+          <HeaderSearchIcon
+            value={inboxSearch}
+            open={searchOpen}
+            onToggle={() => setSearchOpen(o => !o)}
+          />
           <button className="btn btn-primary" onClick={openCompose}>✏️ Compose</button>
         </div>
       </div>
+
+      {/* Search input — collapsible. Filters threads client-side by subject,
+          snippet, and sender name/email. Doesn't refetch from server. */}
+      {searchOpen && (
+        <HeaderSearchInput
+          value={inboxSearch}
+          onChange={setInboxSearch}
+          placeholder="🔍 Search this inbox (subject, sender, body)…"
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
 
       {backfill && (
         <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',
@@ -3397,10 +3437,22 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
             <div className="panel-body">
               {loadingThreads
                 ? <div className="loading-screen" style={{minHeight:'200px'}}><div className="spinner"/></div>
-                : threads.length === 0
-                  ? <div className="empty-state"><div className="empty-icon">📭</div><p>{tab==='sent'?'No sent messages yet.':'Inbox is empty.'}</p></div>
+                : filteredThreads.length === 0
+                  ? <div className="empty-state">
+                      <div className="empty-icon">{inboxSearch ? '🔍' : '📭'}</div>
+                      <p>
+                        {inboxSearch
+                          ? <>No threads match <strong>"{inboxSearch}"</strong>.</>
+                          : (tab==='sent' ? 'No sent messages yet.' : 'Inbox is empty.')}
+                      </p>
+                      {inboxSearch && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setInboxSearch(''); setSearchOpen(false); }} style={{marginTop:'8px'}}>
+                          Clear search
+                        </button>
+                      )}
+                    </div>
                   : <div className="email-list">
-                      {threads.map(thread => {
+                      {filteredThreads.map(thread => {
                         const sender = senderFromThread(thread);
                         const senderProfile = profileForEmail(sender.email);
                         // Pass 4 Batch D: triage indicator in thread list — colored dot
