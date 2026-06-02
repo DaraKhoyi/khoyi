@@ -9353,55 +9353,6 @@ const fmtHours = (mins) => {
 };
 const today_ymd = () => new Date().toISOString().slice(0, 10);
 
-// 4 quick-start lead-gen system templates. Sensible defaults for any
-// real-estate agent. Each can be one-tap activated; agent then edits.
-const QUICK_START_SYSTEMS = [
-  {
-    name: 'Sphere of Influence (SOI)',
-    category: 'traditional',
-    description: 'Friends, family, past clients, neighbors. Highest-quality lead source.',
-    color: '#c5a95e',
-    monthly_budget: 100,
-    daily_tasks: [
-      { desc: 'Reach out to 5 SOI contacts (call, text, or DM)', daily_target: 5 },
-      { desc: 'Add 1 personal touch (handwritten card, gift, visit)', daily_target: 1 },
-    ],
-  },
-  {
-    name: 'Past Client Referrals',
-    category: 'traditional',
-    description: 'Mining past closings for repeat business and referrals.',
-    color: '#3b82f6',
-    monthly_budget: 150,
-    daily_tasks: [
-      { desc: 'Call or text 3 past clients', daily_target: 3 },
-      { desc: 'Send 1 home-anniversary or value-update message', daily_target: 1 },
-    ],
-  },
-  {
-    name: 'Open Houses',
-    category: 'traditional',
-    description: 'In-person open house events to generate buyer/seller leads.',
-    color: '#22c55e',
-    monthly_budget: 75,
-    daily_tasks: [
-      { desc: 'Invite 5 neighbors to upcoming open house', daily_target: 5 },
-      { desc: 'Follow up with prior open-house visitors', daily_target: 3 },
-    ],
-  },
-  {
-    name: 'Online Leads (Zillow / Realtor.com)',
-    category: 'digital',
-    description: 'Paid online lead generation platforms. High volume, lower conversion.',
-    color: '#ef4444',
-    monthly_budget: 500,
-    daily_tasks: [
-      { desc: 'Respond to every online lead within 5 minutes', daily_target: 5 },
-      { desc: 'Follow-up call sequence on yesterday\'s leads', daily_target: 3 },
-    ],
-  },
-];
-
 // ─── FinanceView — root component ────────────────────────────────────
 function FinanceView({ userId }) {
   const [subView, setSubView] = useState('dashboard');
@@ -9413,12 +9364,13 @@ function FinanceView({ userId }) {
   const [transactions, setTransactions] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
+  const [templates, setTemplates] = useState([]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     const last30 = new Date(); last30.setDate(last30.getDate() - 30);
     const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0,10);
-    const [s, tc, pb, sys, tx, comp, te] = await Promise.all([
+    const [s, tc, pb, sys, tx, comp, te, tmpl] = await Promise.all([
       supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
       supabase.from('tax_categories').select('*').eq('user_id', userId).eq('is_archived', false).order('sort_order'),
       supabase.from('personal_budget_lines').select('*').eq('user_id', userId).order('sort_order'),
@@ -9426,6 +9378,7 @@ function FinanceView({ userId }) {
       supabase.from('transactions').select('*').eq('user_id', userId).eq('is_archived', false).order('date', { ascending: false }).limit(500),
       supabase.from('prospecting_completions').select('*').eq('user_id', userId).gte('date', last30.toISOString().slice(0,10)).order('date', { ascending: false }),
       supabase.from('time_entries').select('*').eq('user_id', userId).gte('occurred_at', yearStart).order('occurred_at', { ascending: false }),
+      supabase.from('lead_gen_system_templates').select('*').order('system_number'),
     ]);
     setSettings(s.data);
     setTaxCategories(tc.data || []);
@@ -9434,6 +9387,7 @@ function FinanceView({ userId }) {
     setTransactions(tx.data || []);
     setCompletions(comp.data || []);
     setTimeEntries(te.data || []);
+    setTemplates(tmpl.data || []);
     setLoading(false);
   }, [userId]);
 
@@ -9561,6 +9515,7 @@ function FinanceView({ userId }) {
         <FinanceSystems
           userId={userId} systems={systems} reload={loadAll}
           transactions={transactions} completions={completions} timeEntries={timeEntries}
+          templates={templates}
           settings={settings} readOnly={readOnly} isCoach={isCoach} maxSystems={maxSystems}
         />
       )}
@@ -10338,12 +10293,17 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
 }
 
 // ─── FinanceSystems ─────────────────────────────────────────────────
-function FinanceSystems({ userId, systems, reload, transactions, completions, timeEntries, settings, readOnly, isCoach, maxSystems }) {
+function FinanceSystems({ userId, systems, reload, transactions, completions, timeEntries, templates, settings, readOnly, isCoach, maxSystems }) {
   const [showModal, setShowModal] = useState(false);
   const [editSystem, setEditSystem] = useState(null);
   const [showTimeModal, setShowTimeModal] = useState(null);  // system object or null
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [activatingTemplate, setActivatingTemplate] = useState(null);
   const activeNonOverhead = systems.filter(s => !s.is_overhead);
   const atCap = activeNonOverhead.length >= maxSystems && !isCoach;
+
+  // Names of currently-active systems so we can mark templates already activated
+  const activeNames = new Set(activeNonOverhead.map(s => s.name.toLowerCase()));
 
   function statsForSystem(sys) {
     const yearStart = new Date(new Date().getFullYear(), 0, 1);
@@ -10373,17 +10333,6 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
     return { label: '⚠ Underwater', color: 'var(--red)' };
   }
 
-  async function quickStart(template) {
-    if (readOnly) return;
-    const tasksWithIds = template.daily_tasks.map(t => ({ id: crypto.randomUUID(), ...t }));
-    await supabase.from('lead_gen_systems').insert({
-      user_id: userId, name: template.name, category: template.category,
-      description: template.description, monthly_budget: template.monthly_budget,
-      color: template.color, daily_tasks: tasksWithIds,
-    });
-    reload();
-  }
-
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
@@ -10393,33 +10342,31 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
           </p>
         </div>
         {!readOnly && (
-          <button className="btn-add-circle" disabled={atCap}
-            onClick={() => { if (atCap) { if (window.__notify) window.__notify(`Max ${maxSystems} systems — ask coach to raise`, 'error'); return; } setEditSystem(null); setShowModal(true); }}
-            title={atCap ? `At cap of ${maxSystems}` : "Activate new system"} aria-label="Activate new system"
-            style={{opacity:atCap?0.5:1}}>+</button>
+          <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+            <button onClick={() => setShowLibrary(true)}
+              style={{padding:'7px 12px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',cursor:'pointer',fontSize:'12px',fontWeight:700,whiteSpace:'nowrap'}}>
+              📚 Browse 85 systems
+            </button>
+            <button className="btn-add-circle" disabled={atCap}
+              onClick={() => { if (atCap) { if (window.__notify) window.__notify(`Max ${maxSystems} systems — ask coach to raise`, 'error'); return; } setEditSystem(null); setShowModal(true); }}
+              title={atCap ? `At cap of ${maxSystems}` : "Custom system"} aria-label="Custom system"
+              style={{opacity:atCap?0.5:1}}>+</button>
+          </div>
         )}
       </div>
 
-      {/* Quick-start templates when agent has 0 non-overhead systems */}
+      {/* Empty state when 0 active non-overhead systems */}
       {activeNonOverhead.length === 0 && !readOnly && (
-        <div className="panel" style={{padding:'14px',background:'linear-gradient(135deg, rgba(197,169,94,0.08) 0%, rgba(197,169,94,0.02) 100%)',border:'1px solid var(--accent)'}}>
-          <h3 style={{margin:'0 0 4px',fontSize:'14px',color:'var(--text-1)'}}>🚀 Quick-start lead-gen systems</h3>
-          <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 12px'}}>
-            One tap to activate any of these starters. Edit names, budgets, and daily tasks after.
+        <div className="panel" style={{padding:'18px',background:'linear-gradient(135deg, rgba(197,169,94,0.08) 0%, rgba(197,169,94,0.02) 100%)',border:'1px solid var(--accent)',textAlign:'center'}}>
+          <div style={{fontSize:'32px',marginBottom:'8px'}}>🎯</div>
+          <h3 style={{margin:'0 0 6px',fontSize:'14px',color:'var(--text-1)'}}>Pick your lead-gen systems</h3>
+          <p style={{fontSize:'12px',color:'var(--text-3)',margin:'0 0 14px',lineHeight:1.5}}>
+            Browse 85 proven systems from Buffini, Tom Ferry, Mike Ferry, Krista Mashore, Ricky Carruth, Gary Keller, Jeff Glover, Chris Voss, and more — organized by Digital / Traditional / Niche with DISC fit scores.
           </p>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:'8px'}}>
-            {QUICK_START_SYSTEMS.map((t, i) => (
-              <button key={i} onClick={() => quickStart(t)}
-                style={{textAlign:'left',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',cursor:'pointer',color:'var(--text-1)'}}>
-                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}}>
-                  <span style={{display:'inline-block',width:'10px',height:'10px',borderRadius:'3px',background:t.color}}/>
-                  <strong style={{fontSize:'13px'}}>{t.name}</strong>
-                </div>
-                <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 6px',lineHeight:1.4}}>{t.description}</p>
-                <div style={{fontSize:'10px',color:'var(--text-2)'}}>${t.monthly_budget}/mo · {t.daily_tasks.length} daily task{t.daily_tasks.length!==1?'s':''}</div>
-              </button>
-            ))}
-          </div>
+          <button onClick={() => setShowLibrary(true)}
+            style={{padding:'10px 18px',background:'var(--accent)',color:'var(--bg-base)',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:700}}>
+            📚 Open the System Library →
+          </button>
         </div>
       )}
 
@@ -10493,6 +10440,21 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
           userId={userId} system={showTimeModal}
           onClose={() => setShowTimeModal(null)}
           onSaved={() => { setShowTimeModal(null); reload(); }}
+        />
+      )}
+      {showLibrary && (
+        <TemplateLibraryModal
+          templates={templates || []} activeNames={activeNames}
+          atCap={atCap} maxSystems={maxSystems} isCoach={isCoach}
+          onClose={() => setShowLibrary(false)}
+          onPick={(t) => { setShowLibrary(false); setActivatingTemplate(t); }}
+        />
+      )}
+      {activatingTemplate && (
+        <TemplateActivateModal
+          userId={userId} template={activatingTemplate}
+          onClose={() => setActivatingTemplate(null)}
+          onActivated={() => { setActivatingTemplate(null); reload(); }}
         />
       )}
     </div>
@@ -10737,6 +10699,254 @@ function SystemModal({ userId, initial, onClose, onSaved }) {
             <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : initial ? 'Save changes' : 'Activate system'}</button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── TemplateLibraryModal — browse the 85 lead-gen systems ──────────
+function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoach, onClose, onPick }) {
+  const [search, setSearch] = useState('');
+  const [sectionFilter, setSectionFilter] = useState('all');
+  const [discFilter, setDiscFilter] = useState('all');  // 'all' | 'D' | 'I' | 'S' | 'C'
+
+  const SECTION_COLORS = {
+    digital: '#3b82f6',
+    traditional: '#22c55e',
+    niche: '#c5a95e',
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return templates.filter(t => {
+      if (sectionFilter !== 'all' && t.section !== sectionFilter) return false;
+      if (discFilter !== 'all') {
+        const fit = t[`disc_${discFilter.toLowerCase()}`];
+        if (fit !== 'best') return false;
+      }
+      if (q) {
+        const hay = `${t.name} ${t.description}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [templates, search, sectionFilter, discFilter]);
+
+  // Group by section for nice display
+  const grouped = useMemo(() => {
+    const g = { digital: [], traditional: [], niche: [] };
+    filtered.forEach(t => { if (g[t.section]) g[t.section].push(t); });
+    return g;
+  }, [filtered]);
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{maxWidth:'720px',maxHeight:'90vh',display:'flex',flexDirection:'column',padding:0}}>
+        {/* Header (sticky) */}
+        <div style={{padding:'16px 16px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg-card)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+            <h3 style={{margin:0,fontSize:'15px'}}>📚 Lead-Gen System Library</h3>
+            <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
+          </div>
+          <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px'}}>
+            {filtered.length} of {templates.length} systems · {atCap ? `at cap (${maxSystems}) — coach can raise` : isCoach ? 'coach mode: unlimited' : `slots open`}
+          </div>
+          <input
+            type="text" placeholder="🔍 Search by name or description…"
+            value={search} onChange={e => setSearch(e.target.value)}
+            style={{width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',fontSize:'13px',marginBottom:'8px'}}
+          />
+          <div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'4px'}}>
+            {[['all','All'],['digital','Digital'],['traditional','Traditional'],['niche','Niche']].map(([id, label]) => (
+              <button key={id} onClick={() => setSectionFilter(id)}
+                style={{padding:'4px 10px',border:'none',borderRadius:'999px',fontSize:'11px',fontWeight:600,cursor:'pointer',
+                  background: sectionFilter === id ? 'var(--accent)' : 'var(--bg-hover)',
+                  color: sectionFilter === id ? 'var(--bg-base)' : 'var(--text-2)'}}>
+                {label}
+              </button>
+            ))}
+            <span style={{color:'var(--text-3)',fontSize:'11px',padding:'4px 4px'}}>·</span>
+            <span style={{color:'var(--text-3)',fontSize:'11px',padding:'4px 0'}}>Best fit for:</span>
+            {['all','D','I','S','C'].map(d => (
+              <button key={d} onClick={() => setDiscFilter(d)}
+                style={{padding:'4px 10px',border:'1px solid var(--border)',borderRadius:'999px',fontSize:'11px',fontWeight:700,cursor:'pointer',
+                  background: discFilter === d ? 'var(--text-1)' : 'transparent',
+                  color: discFilter === d ? 'var(--bg-base)' : 'var(--text-3)'}}>
+                {d === 'all' ? 'Any' : d}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Scrolling list */}
+        <div style={{padding:'12px 16px',overflowY:'auto',flex:1}}>
+          {filtered.length === 0 ? (
+            <p style={{textAlign:'center',color:'var(--text-3)',padding:'40px 20px',fontStyle:'italic'}}>No systems match these filters.</p>
+          ) : (
+            ['digital','traditional','niche'].map(sec => {
+              const items = grouped[sec];
+              if (!items || items.length === 0) return null;
+              const secLabel = sec.charAt(0).toUpperCase() + sec.slice(1);
+              return (
+                <div key={sec} style={{marginBottom:'14px'}}>
+                  <div style={{fontSize:'10px',color:SECTION_COLORS[sec],textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:800,marginBottom:'6px'}}>
+                    {secLabel} · {items.length}
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    {items.map(t => {
+                      const alreadyActive = activeNames.has(t.name.toLowerCase());
+                      return (
+                        <button key={t.id} onClick={() => onPick(t)}
+                          style={{textAlign:'left',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',cursor:'pointer',color:'var(--text-1)',width:'100%'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',flexWrap:'wrap'}}>
+                            <span style={{fontSize:'10px',color:'var(--text-3)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>#{t.system_number}</span>
+                            <strong style={{fontSize:'13px',flex:1,minWidth:0}}>{t.name}</strong>
+                            {alreadyActive && <span style={{fontSize:'9px',color:'var(--green)',padding:'1px 6px',background:'rgba(34,197,94,0.15)',borderRadius:'3px',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>✓ Active</span>}
+                          </div>
+                          <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 6px',lineHeight:1.4,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{t.description}</p>
+                          <div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',fontSize:'10px',color:'var(--text-3)'}}>
+                            {['D','I','S','C'].map(letter => {
+                              const fit = t[`disc_${letter.toLowerCase()}`];
+                              const fitColor = fit === 'best' ? 'var(--green)' : fit === 'ok' ? '#f59e0b' : fit === 'hard' ? 'var(--red)' : 'var(--text-3)';
+                              return (
+                                <span key={letter} style={{padding:'1px 5px',borderRadius:'3px',background:`${fitColor}1a`,color:fitColor,fontSize:'9px',fontWeight:700}}>
+                                  {letter}:{fit ? fit[0].toUpperCase() : '—'}
+                                </span>
+                              );
+                            })}
+                            <span style={{color:'var(--text-3)'}}>·</span>
+                            <span>{t.total_weekly_actions}/wk</span>
+                            {t.suggested_monthly_budget && <span>· ${t.suggested_monthly_budget}/mo</span>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TemplateActivateModal — preview + activate a template ──────────
+function TemplateActivateModal({ userId, template, onClose, onActivated }) {
+  const [monthlyBudget, setMonthlyBudget] = useState(Number(template.suggested_monthly_budget) || 0);
+  const [color, setColor] = useState(
+    template.section === 'digital' ? '#3b82f6'
+    : template.section === 'traditional' ? '#22c55e'
+    : '#c5a95e'
+  );
+  const [saving, setSaving] = useState(false);
+
+  // Convert each weekly task to a daily task (spread across 5 working days,
+  // rounded up, minimum 1). Description gets a "(N×/wk)" suffix so the
+  // weekly cadence stays visible to the agent.
+  const weeklyTasks = Array.isArray(template.weekly_tasks) ? template.weekly_tasks : [];
+  const dailyTasks = weeklyTasks.map(t => ({
+    id: t.id || crypto.randomUUID(),
+    desc: t.desc + (t.weekly_target ? ` (${t.weekly_target}×/wk)` : ''),
+    daily_target: Math.max(1, Math.round(Number(t.weekly_target || 1) / 5)),
+  }));
+
+  async function handleActivate() {
+    setSaving(true);
+    const { error } = await supabase.from('lead_gen_systems').insert({
+      user_id: userId,
+      name: template.name,
+      category: template.section,
+      description: template.description,
+      monthly_budget: Number(monthlyBudget) || 0,
+      color,
+      daily_tasks: dailyTasks,
+      target_leads_per_month: 0,
+    });
+    setSaving(false);
+    if (error) { if (window.__notify) window.__notify('Activation failed: ' + error.message, 'error'); return; }
+    if (window.__notify) window.__notify(`Activated "${template.name}"`, 'success');
+    onActivated();
+  }
+
+  const colorOptions = ['#6c63ff','#ef4444','#f59e0b','#22c55e','#3b82f6','#ec4899','#06b6d4','#c5a95e','#8b5cf6','#10b981'];
+  const sectionLabel = template.section.charAt(0).toUpperCase() + template.section.slice(1);
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{maxWidth:'560px',maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+          <div>
+            <div style={{fontSize:'10px',color:'var(--text-3)',fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase'}}>
+              #{template.system_number} · {sectionLabel} · {template.total_weekly_actions} actions/wk
+            </div>
+            <h3 style={{margin:'2px 0 0',fontSize:'16px'}}>{template.name}</h3>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer'}}>×</button>
+        </div>
+
+        <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,marginBottom:'12px'}}>{template.description}</p>
+
+        {template.coach_read && (
+          <div style={{padding:'10px',background:'rgba(197,169,94,0.08)',borderLeft:'3px solid var(--accent)',borderRadius:'4px',marginBottom:'12px'}}>
+            <div style={{fontSize:'10px',color:'var(--accent)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'3px'}}>Coach's read</div>
+            <p style={{fontSize:'12px',color:'var(--text-1)',fontStyle:'italic',margin:0,lineHeight:1.4}}>{template.coach_read}</p>
+          </div>
+        )}
+
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'6px',marginBottom:'12px'}}>
+          {['D','I','S','C'].map(letter => {
+            const fit = template[`disc_${letter.toLowerCase()}`];
+            const fitColor = fit === 'best' ? 'var(--green)' : fit === 'ok' ? '#f59e0b' : fit === 'hard' ? 'var(--red)' : 'var(--text-3)';
+            const fitLabel = fit === 'best' ? 'BEST FIT' : fit === 'ok' ? 'OK FIT' : fit === 'hard' ? 'HARD' : '—';
+            return (
+              <div key={letter} style={{padding:'8px 4px',background:`${fitColor}14`,border:`1px solid ${fitColor}55`,borderRadius:'6px',textAlign:'center'}}>
+                <div style={{fontSize:'14px',fontWeight:800,color:fitColor}}>{letter}</div>
+                <div style={{fontSize:'9px',color:fitColor,fontWeight:700,letterSpacing:'0.04em'}}>{fitLabel}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="form-row">
+          <div className="form-group" style={{flex:1}}>
+            <label className="form-label">Monthly budget</label>
+            <input className="form-input" type="number" step="10" value={monthlyBudget} onChange={e => setMonthlyBudget(Number(e.target.value) || 0)} />
+            <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>Suggested: ${template.suggested_monthly_budget}</div>
+          </div>
+          <div className="form-group" style={{flex:1}}>
+            <label className="form-label">Color</label>
+            <div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}>
+              {colorOptions.map(c => (
+                <button key={c} type="button" onClick={() => setColor(c)}
+                  style={{width:'22px',height:'22px',borderRadius:'5px',background:c,border:color===c?'3px solid var(--text-1)':'2px solid var(--border)',cursor:'pointer'}}/>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Weekly execution ({weeklyTasks.length} tasks)</label>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'6px',fontStyle:'italic'}}>
+            Daily targets calculated from weekly cadence (÷5 working days, rounded up). Adjust after activation in the system's edit modal.
+          </div>
+          <div style={{background:'var(--bg-base)',borderRadius:'6px',padding:'8px',maxHeight:'200px',overflowY:'auto'}}>
+            {weeklyTasks.map((t, i) => (
+              <div key={i} style={{padding:'4px 0',fontSize:'11px',color:'var(--text-2)',borderBottom:i<weeklyTasks.length-1?'1px solid var(--border)':'none',display:'flex',justifyContent:'space-between',gap:'8px'}}>
+                <span style={{flex:1,minWidth:0}}>• {t.desc}</span>
+                <span style={{color:'var(--text-3)',whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>{t.weekly_target}×/wk</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={handleActivate} disabled={saving}>
+            {saving ? 'Activating…' : `✓ Activate "${template.name}"`}
+          </button>
+        </div>
       </div>
     </div>
   );
