@@ -601,3 +601,94 @@ body {
   .panel-header-compact { flex-direction: column; align-items: stretch; }
   .panel-header-compact .filter-chip-row { justify-content: flex-start; }
 }
+
+/* ─── TASK DRAG & DROP — VISUAL FEEDBACK ──────────────────────────────
+   Two pieces of feedback during a task drag:
+   1. Drop zones at bottom (DropZoneCell): each has a color-coded dashed
+      border (green=today, white=tomorrow, red=pick-date). On drag hover
+      the cell scales 1.15× and the border goes solid + glows.
+   2. Between-task gap: while dragging over a quadrant, the row the task
+      WOULD land above gets data-drop-above="true". CSS opens a gap of
+      ~36px and renders an accent-colored line marking the insertion
+      point — visual confirmation before release.
+*/
+
+/* Drop-zone borders — green / white / red per action */
+.tasks-pro-drop-target[data-drop-action="today"] {
+  border: 2px dashed var(--green, #22c55e);
+  color: var(--green, #22c55e);
+  transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.tasks-pro-drop-target[data-drop-action="tomorrow"] {
+  border: 2px dashed #ffffff;
+  color: #ffffff;
+  transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.tasks-pro-drop-target[data-drop-action="pick"] {
+  border: 2px dashed var(--red, #ef4444);
+  color: var(--red, #ef4444);
+  transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+/* Hover state when the dragged task is over a drop zone — 15% bigger,
+   border goes solid, glow in the action color. */
+.tasks-pro-drop-target.drop-hover {
+  transform: scale(1.15);
+  border-style: solid !important;
+  background: var(--bg-card);
+  z-index: 201;  /* lift above sibling cells while scaled */
+}
+.tasks-pro-drop-target[data-drop-action="today"].drop-hover {
+  background: rgba(34, 197, 94, 0.18);
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.55), 0 4px 12px rgba(0,0,0,0.3);
+}
+.tasks-pro-drop-target[data-drop-action="tomorrow"].drop-hover {
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.55), 0 4px 12px rgba(0,0,0,0.3);
+}
+.tasks-pro-drop-target[data-drop-action="pick"].drop-hover {
+  background: rgba(239, 68, 68, 0.18);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.55), 0 4px 12px rgba(0,0,0,0.3);
+}
+
+/* Quadrant containers (no data-drop-action) — also get a subtle hover */
+.tasks-pro-drop-target:not([data-drop-action]).drop-hover {
+  background: rgba(197, 169, 94, 0.06);
+  transition: background .15s ease;
+}
+
+/* Between-task gap indicator. When a row has data-drop-above="true",
+   open ~36px of space above it and render a glowing line where the
+   dragged task will land. */
+[data-task-row] {
+  transition: margin-top .15s ease;
+  position: relative;
+}
+[data-task-row][data-drop-above="true"] {
+  margin-top: 36px;
+}
+[data-task-row][data-drop-above="true"]::before {
+  content: '';
+  position: absolute;
+  top: -20px;
+  left: 8px;
+  right: 8px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 0 10px var(--accent), 0 0 4px var(--accent);
+  pointer-events: none;
+}
+[data-task-row][data-drop-above="true"]::after {
+  content: '';
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  pointer-events: none;
+}

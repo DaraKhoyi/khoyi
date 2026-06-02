@@ -7,6 +7,44 @@ import './index.css';
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
 if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 
+// ─── PRISM MIRROR PRINCIPLE ─────────────────────────────────────────
+// Core PrismOS rule for any AI that drafts communication on behalf of the
+// user (email, text, DM, voicemail script, social DM, etc.). Pass this
+// verbatim into the system prompt of every drafting feature.
+//
+// The principle is simple in two parts:
+//   1. MIRROR them. If we know the contact's DISC profile, shape the
+//      cadence to match — direct and outcome-focused for a D, warm and
+//      story-led for an I, steady and unhurried for an S, precise and
+//      well-evidenced for a C.
+//   2. SOUND LIKE THE USER. Mirroring is not impersonation. The user's
+//      voice — their phrasings, humor, sign-offs, sentence rhythm — must
+//      stay intact. Robotic AI tells ("As an AI", "I'd be happy to
+//      assist", "I hope this email finds you well", formulaic structure,
+//      excessive hedging) are out. If a real person wouldn't write it
+//      that way, neither do we.
+//
+// The goal: meet them where they are, in your own voice — never sound
+// like a machine wrote it.
+export const PRISM_MIRROR_PRINCIPLE = `# Prism Mirror Principle
+
+When drafting communication for the user, follow two rules:
+
+**1. Mirror the recipient.** If their DISC profile is known, shape the message to match their behavioral cadence:
+- **D (Dominant):** direct, brief, bottom-line first, outcome-focused, minimal pleasantries
+- **I (Influencer):** warm, enthusiastic, story-led, social, optimistic, exclamation points OK
+- **S (Steady):** unhurried, friendly, relationship-oriented, no pressure, reassuring
+- **C (Conscientious):** precise, evidence-backed, organized, detail-rich, factual tone
+
+**2. Sound like the user, not an AI.** Mirroring is *not* impersonation of the recipient and *not* a license to sound robotic. Preserve the user's natural voice — their phrasings, sense of humor, sign-offs, sentence rhythm. Avoid the AI tells:
+- ❌ "As an AI…", "I'd be happy to assist", "I hope this email finds you well"
+- ❌ Formulaic openings and closings
+- ❌ Excessive hedging, qualifiers, or disclaimers
+- ❌ Bullet-point answers when prose would feel more human
+- ❌ Over-explanation, restating the question, signposting structure
+
+If a real person who knows the user wouldn't recognize the draft as theirs, rewrite it. The test isn't "is it correct?" — it's "would the user actually send this?"`;
+
 // Contact segment types. Order = display order in dropdowns and filter pills.
 // "All" is a UI-only filter sentinel; it isn't stored.
 const CONTACT_TYPES = [
@@ -1201,6 +1239,12 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
   // on every move.
   useEffect(() => {
     if (!activeDrag) return;
+    // Helper: clear all gap indicators across the document
+    function clearGapIndicators() {
+      document.querySelectorAll('[data-drop-above="true"]').forEach(el => {
+        el.removeAttribute('data-drop-above');
+      });
+    }
     function onMove(e) {
       const pt = e.touches ? e.touches[0] : e;
       pointerRef.current = { x: pt.clientX, y: pt.clientY };
@@ -1222,13 +1266,36 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
         }
       }
       hoveredZoneRef.current = hovered;
-      // Highlight: write to DOM directly to avoid re-render storms
+      // Highlight zones: write to DOM directly to avoid re-render storms
       dropZonesRef.current.forEach(z => {
         const zEl = z.getElement?.();
         if (!zEl) return;
         if (hovered && hovered.id === z.id) zEl.classList.add('drop-hover');
         else zEl.classList.remove('drop-hover');
       });
+      // Gap indicator: only inside a quadrant. Find the row whose midpoint
+      // the pointer is above and mark it with data-drop-above="true". CSS
+      // turns that into a visible spacer + line. Skip when hovering a
+      // bottom drop zone (date-change) — that doesn't need a gap preview.
+      clearGapIndicators();
+      if (hovered && hovered.type === 'quadrant') {
+        const zEl = hovered.getElement?.();
+        if (zEl) {
+          const rows = zEl.querySelectorAll('[data-task-row]');
+          // Don't highlight if the dragged task is the only row, or if
+          // pointer is below all rows (then the task drops at the end —
+          // no gap indicator needed).
+          for (const row of rows) {
+            const taskId = row.getAttribute('data-task-row');
+            if (taskId === activeDrag.taskId) continue;  // skip self
+            const r = row.getBoundingClientRect();
+            if (pt.clientY < r.top + r.height / 2) {
+              row.setAttribute('data-drop-above', 'true');
+              break;
+            }
+          }
+        }
+      }
     }
     function onUp(e) {
       const pt = e.changedTouches ? e.changedTouches[0] : e;
@@ -1242,11 +1309,12 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
           if (z.type === 'zone') break;
         }
       }
-      // Clear highlights
+      // Clear highlights + gap indicators
       dropZonesRef.current.forEach(z => {
         const zEl = z.getElement?.();
         if (zEl) zEl.classList.remove('drop-hover');
       });
+      clearGapIndicators();
       if (target && target.onDrop) {
         try {
           target.onDrop(activeDrag, { clientX: pt.clientX, clientY: pt.clientY });
@@ -1262,6 +1330,7 @@ function DragProvider({ onDragStart, onDragEnd, children }) {
         const zEl = z.getElement?.();
         if (zEl) zEl.classList.remove('drop-hover');
       });
+      clearGapIndicators();
       setActiveDrag(null);
       if (onDragEnd) onDragEnd();
     }
@@ -2326,16 +2395,15 @@ function DropZoneCell({ label, action, onDrop }) {
       data-drop-action={action}
       style={{
         background:'var(--bg-card)',
-        border:'2px dashed var(--accent)',
         borderRadius:'8px',
         padding:'14px 8px',
         textAlign:'center',
         fontSize:'10px', fontWeight:900, textTransform:'uppercase', letterSpacing:'0.05em',
-        color:'var(--accent)',
         minHeight:'48px',
         display:'flex', alignItems:'center', justifyContent:'center',
         boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
-        transition:'transform .12s, background .12s',
+        // border, color, transform are controlled by CSS (see index.css)
+        // — base color per action, scale(1.15) on .drop-hover
       }}>
       {label}
     </div>
@@ -10741,6 +10809,27 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
   // Names of currently-active systems so we can mark templates already activated
   const activeNames = new Set(activeNonOverhead.map(s => s.name.toLowerCase()));
 
+  // Soft-deactivate a system from the card-level icon. Same logic as SystemModal's
+  // handleDelete: any transactions still attributed to this system move to
+  // Overhead so the ledger doesn't get orphans, then is_active flips false.
+  async function deactivateSystem(sys) {
+    if (sys.is_overhead) return;
+    if (!window.confirm(`Deactivate "${sys.name}"?\n\nTransactions attributed to it will move to Overhead. You can reactivate from the System Library later by activating the same template again.`)) return;
+    const { data: overhead } = await supabase
+      .from('lead_gen_systems').select('id')
+      .eq('user_id', userId).eq('is_overhead', true).maybeSingle();
+    if (overhead) {
+      await supabase.from('transactions')
+        .update({ lead_gen_system_id: overhead.id })
+        .eq('lead_gen_system_id', sys.id);
+    }
+    await supabase.from('lead_gen_systems')
+      .update({ is_active: false, deactivated_at: new Date().toISOString() })
+      .eq('id', sys.id);
+    if (window.__notify) window.__notify(`Deactivated "${sys.name}"`, 'success');
+    reload();
+  }
+
   function statsForSystem(sys) {
     const yearStart = new Date(new Date().getFullYear(), 0, 1);
     const sysTx = transactions.filter(t => t.lead_gen_system_id === sys.id && t.scope === 'business' && new Date(t.date) >= yearStart);
@@ -10823,6 +10912,9 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
                     style={{background:'var(--bg-hover)',border:'1px solid var(--border)',padding:'4px 10px',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>⏱ Log time</button>
                   <button onClick={() => { setEditSystem(sys); setShowModal(true); }}
                     style={{background:'transparent',border:'1px solid var(--border)',padding:'4px 10px',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>Edit</button>
+                  <button onClick={() => deactivateSystem(sys)}
+                    title="Deactivate system" aria-label={`Deactivate ${sys.name}`}
+                    style={{background:'transparent',border:'1px solid var(--border)',padding:'4px 8px',borderRadius:'6px',color:'var(--red)',cursor:'pointer',fontSize:'14px',lineHeight:1,fontWeight:700}}>⏏</button>
                 </>
               )}
             </div>
@@ -11549,7 +11641,7 @@ function BusinessReport({ transactions, taxCategories, systems, advExpanded, set
         <span style={{fontWeight:800,color:net>=0?'var(--green)':'var(--red)',fontSize:'16px',fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(net)}</span>
       </div>
       <div style={{marginTop:'14px',padding:'10px',background:'var(--bg-base)',borderRadius:'6px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.5}}>
-        <strong style={{color:'var(--text-2)'}}>For your CPA:</strong> Working summary. Final Schedule C will reflect mileage × IRS rate, Meals × 50%, and any depreciation. Phase 4 generates the line-by-line preview.
+        <strong style={{color:'var(--text-2)'}}>For your CPA:</strong> Working summary. Final Schedule C will reflect mileage × IRS rate, each category × its <code style={{fontSize:'10px',padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px'}}>deduction_pct</code> (Meals currently 100% per current IRS rules — adjustable per category), and any depreciation. Phase 4 generates the line-by-line preview.
         {isCoach && <div style={{marginTop:'6px',color:'var(--accent)'}}>🎯 Coach view: full underlying transactions visible in Ledger.</div>}
       </div>
     </div>
