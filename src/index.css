@@ -658,37 +658,12 @@ body {
 }
 
 /* Between-task gap indicator. When a row has data-drop-above="true",
-   open ~36px of space above it and render a glowing line where the
-   dragged task will land. */
+   open a subtle gap above it so the user sees roughly where the task
+   will land. No line or marker — the gap itself is the signal. */
 [data-task-row] {
   transition: margin-top .15s ease;
   position: relative;
 }
 [data-task-row][data-drop-above="true"] {
-  margin-top: 36px;
-}
-[data-task-row][data-drop-above="true"]::before {
-  content: '';
-  position: absolute;
-  top: -20px;
-  left: 8px;
-  right: 8px;
-  height: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  box-shadow: 0 0 10px var(--accent), 0 0 4px var(--accent);
-  pointer-events: none;
-}
-[data-task-row][data-drop-above="true"]::after {
-  content: '';
-  position: absolute;
-  top: -24px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
-  pointer-events: none;
+  margin-top: 11px;
 }
