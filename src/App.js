@@ -9553,7 +9553,8 @@ function FinanceView({ userId }) {
       {subView === 'ledger' && (
         <FinanceLedger
           userId={userId} transactions={transactions} setTransactions={setTransactions}
-          taxCategories={taxCategories} systems={systems} trackPersonal={trackPersonal} readOnly={readOnly}
+          taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
+          trackPersonal={trackPersonal} readOnly={readOnly}
         />
       )}
       {subView === 'systems' && (
@@ -10044,7 +10045,7 @@ function WaterfallRow({ label, value, icon, sub, tone }) {
 }
 
 // ─── FinanceLedger ───────────────────────────────────────────────────
-function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, trackPersonal, readOnly }) {
+function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, trackPersonal, readOnly }) {
   const [showModal, setShowModal] = useState(false);
   const [editTx, setEditTx] = useState(null);
   const [period, setPeriod] = useState('ytd');
@@ -10144,6 +10145,7 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
           {filtered.map(t => {
             const cat = taxCategories.find(c => c.id === t.tax_category_id);
             const sys = systems.find(s => s.id === t.lead_gen_system_id);
+            const pcat = (personalBudget || []).find(p => p.id === t.personal_budget_line_id);
             return (
               <div key={t.id} onClick={() => { if (!readOnly) { setEditTx(t); setShowModal(true); } }}
                 style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderBottom:'1px solid var(--border)',cursor:readOnly?'default':'pointer'}}>
@@ -10155,7 +10157,11 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
                     <span>{t.date}</span>
                     {cat && <span style={{padding:'2px 6px',borderRadius:'3px',background:`${cat.color}22`,color:cat.color,fontSize:'10px',fontWeight:600}}>{cat.name}</span>}
                     {sys && t.scope === 'business' && <span style={{padding:'2px 6px',borderRadius:'3px',background:`${sys.color}22`,color:sys.color,fontSize:'10px',fontWeight:600}}>{sys.name}</span>}
-                    {t.scope === 'personal' && <span style={{padding:'2px 6px',borderRadius:'3px',background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'10px',fontWeight:600}}>personal</span>}
+                    {t.scope === 'personal' && (
+                      pcat
+                        ? <span style={{padding:'2px 6px',borderRadius:'3px',background:'rgba(59,130,246,0.15)',color:'#3b82f6',fontSize:'10px',fontWeight:600}}>{pcat.category}</span>
+                        : <span style={{padding:'2px 6px',borderRadius:'3px',background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'10px',fontWeight:600}}>personal</span>
+                    )}
                   </div>
                 </div>
                 <span style={{fontSize:'15px',fontWeight:700,color:Number(t.amount)>=0?'var(--green)':'var(--text-1)',flexShrink:0,fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(t.amount)}</span>
@@ -10168,7 +10174,7 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
       {showModal && (
         <TransactionModal
           userId={userId} initial={editTx} trackPersonal={trackPersonal}
-          taxCategories={taxCategories} systems={systems}
+          taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
           onClose={() => { setShowModal(false); setEditTx(null); }}
           onSaved={onSaved}
           onDelete={editTx ? () => deleteTx(editTx) : null}
@@ -10178,15 +10184,17 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
   );
 }
 
-function TransactionModal({ userId, initial, taxCategories, systems, trackPersonal, onClose, onSaved, onDelete }) {
+function TransactionModal({ userId, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved, onDelete }) {
   const overheadSystem = systems.find(s => s.is_overhead);
   const advertisingCat = taxCategories.find(c => /advert/i.test(c.name));
+  const personalCats = personalBudget || [];
   const [date, setDate] = useState(initial?.date || new Date().toISOString().slice(0,10));
   const [amount, setAmount] = useState(initial ? Math.abs(Number(initial.amount)) : '');
   const [direction, setDirection] = useState(initial && Number(initial.amount) > 0 ? 'in' : 'out');
   const [scope, setScope] = useState(initial?.scope || 'business');
   const [taxCategoryId, setTaxCategoryId] = useState(initial?.tax_category_id || taxCategories[0]?.id || '');
   const [systemId, setSystemId] = useState(initial?.lead_gen_system_id || overheadSystem?.id || '');
+  const [personalBudgetLineId, setPersonalBudgetLineId] = useState(initial?.personal_budget_line_id || personalCats[0]?.id || '');
   const [payee, setPayee] = useState(initial?.payee || '');
   const [description, setDescription] = useState(initial?.description || '');
   const [account, setAccount] = useState(initial?.account || '');
@@ -10211,6 +10219,7 @@ function TransactionModal({ userId, initial, taxCategories, systems, trackPerson
       user_id: userId, date, amount: signedAmount, scope,
       tax_category_id: scope === 'business' ? (taxCategoryId || null) : null,
       lead_gen_system_id: scope === 'business' ? (systemId || overheadSystem?.id || null) : null,
+      personal_budget_line_id: scope === 'personal' ? (personalBudgetLineId || null) : null,
       payee: payee.trim() || null,
       description: description.trim() || null,
       account: account.trim() || null,
@@ -10287,6 +10296,21 @@ function TransactionModal({ userId, initial, taxCategories, systems, trackPerson
                 </select>
               </div>
             </>
+          )}
+
+          {scope === 'personal' && (
+            <div className="form-group">
+              <label className="form-label">Category</label>
+              {personalCats.length === 0 ? (
+                <div style={{fontSize:'12px',color:'var(--text-3)',fontStyle:'italic',padding:'8px',background:'var(--bg-base)',borderRadius:'6px'}}>
+                  No personal categories yet. Add them in Blueprint → Personal expenses.
+                </div>
+              ) : (
+                <select className="form-input" value={personalBudgetLineId} onChange={e => setPersonalBudgetLineId(e.target.value)}>
+                  {personalCats.map(p => <option key={p.id} value={p.id}>{p.category}</option>)}
+                </select>
+              )}
+            </div>
           )}
 
           <div className="form-group">
@@ -10757,7 +10781,7 @@ function FinanceReports({ settings, transactions, taxCategories, systems, person
       {reportType === 'personal' && trackPersonal && (
         <PersonalReport
           transactions={transactions.filter(t => t.scope === 'personal' && inPeriod(t.date))}
-          personalBudget={personalBudget}
+          personalBudget={personalBudget} period={period}
         />
       )}
       {reportType === 'roi' && (
@@ -10886,7 +10910,7 @@ function BusinessReport({ transactions, taxCategories, systems, advExpanded, set
   );
 }
 
-function PersonalReport({ transactions, personalBudget }) {
+function PersonalReport({ transactions, personalBudget, period }) {
   const personalExpense = Math.abs(transactions.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0));
   const personalIncome = transactions.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const budgetedAnnual = personalBudget.reduce((s, line) => {
@@ -10895,26 +10919,103 @@ function PersonalReport({ transactions, personalBudget }) {
     return s + Number(line.monthly_amount || 0) * 12;
   }, 0);
 
+  // How many "months of budget" the current period represents.
+  // month / last-month = 1 month; ytd = months elapsed this year; all = use annual.
+  const now = new Date();
+  const periodMonths = period === 'month' ? 1
+    : period === 'last-month' ? 1
+    : period === 'ytd' ? Math.max(1, now.getMonth() + 1)
+    : 12;
+
+  // Aggregate spending by personal_budget_line_id (expenses only — negative amounts)
+  const spendByCat = {};
+  transactions.filter(t => Number(t.amount) < 0).forEach(t => {
+    const k = t.personal_budget_line_id || 'uncategorized';
+    spendByCat[k] = (spendByCat[k] || 0) + Math.abs(Number(t.amount));
+  });
+
+  // Build category-vs-budget rows
+  const categoryRows = personalBudget.map(line => {
+    const actual = spendByCat[line.id] || 0;
+    // Period budget: vacations/savings use annual_amount × (periodMonths/12);
+    // others use monthly_amount × periodMonths
+    const usesAnnual = line.is_vacation || line.is_savings;
+    const periodBudget = usesAnnual
+      ? Number(line.annual_amount || 0) * (periodMonths / 12)
+      : Number(line.monthly_amount || 0) * periodMonths;
+    const pct = periodBudget > 0 ? actual / periodBudget : null;
+    return { line, actual, periodBudget, pct };
+  }).sort((a, b) => b.actual - a.actual);
+
+  const uncategorizedActual = spendByCat['uncategorized'] || 0;
+  const totalBudgeted = categoryRows.reduce((s, r) => s + r.periodBudget, 0);
+  const overallPct = totalBudgeted > 0 ? personalExpense / totalBudgeted : null;
+
   return (
     <div className="panel" style={{padding:'16px'}}>
       <h3 style={{margin:'0 0 4px',fontSize:'15px',color:'var(--text-1)'}}>Personal — Spending Summary</h3>
-      <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 14px'}}>Personal cash flow vs. annual budget. Separate from tax reports.</p>
+      <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 14px'}}>Personal cash flow vs. budget. Separate from tax reports.</p>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'14px'}}>
         <KpiTile label="Period spending" value={fmtUSD(personalExpense)} sub="actual" />
+        <KpiTile label="Period budget" value={fmtUSD(totalBudgeted)} sub={`${periodMonths} mo${periodMonths===1?'':'s'}`} />
+        <KpiTile label="Vs budget" value={overallPct === null ? '—' : `${Math.round(overallPct*100)}%`} sub={overallPct === null ? 'no budget set' : overallPct > 1 ? 'over' : 'under'} />
         <KpiTile label="Period income" value={fmtUSD(personalIncome)} sub="personal" />
         <KpiTile label="Annual target" value={fmtUSD(budgetedAnnual)} sub="from Blueprint" />
       </div>
+
+      {/* By-category breakdown */}
       {transactions.length === 0 ? (
         <p style={{fontSize:'12px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center',padding:'20px'}}>No personal transactions in this period.</p>
       ) : (
+        <div style={{marginBottom:'14px'}}>
+          <div style={{fontWeight:700,color:'var(--text-1)',marginBottom:'8px',fontSize:'13px'}}>By category — actual vs. period budget</div>
+          {categoryRows.filter(r => r.actual > 0 || r.periodBudget > 0).map(({ line, actual, periodBudget, pct }) => {
+            const overBudget = pct !== null && pct > 1;
+            const barFill = pct === null ? 0 : Math.min(100, pct * 100);
+            const barColor = pct === null ? 'var(--text-3)' : pct > 1 ? 'var(--red)' : pct > 0.8 ? '#f59e0b' : 'var(--green)';
+            return (
+              <div key={line.id} style={{padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',fontSize:'12px',marginBottom:'4px'}}>
+                  <span style={{color:'var(--text-1)',fontWeight:500}}>{line.category}</span>
+                  <span style={{fontVariantNumeric:'tabular-nums',color:overBudget?'var(--red)':'var(--text-1)'}}>
+                    {fmtUSDCents(actual)}
+                    {periodBudget > 0 && <span style={{color:'var(--text-3)',marginLeft:'6px'}}>/ {fmtUSD(periodBudget)}</span>}
+                    {pct !== null && <span style={{color:barColor,marginLeft:'6px',fontWeight:700}}>{Math.round(pct*100)}%</span>}
+                  </span>
+                </div>
+                {periodBudget > 0 && (
+                  <div style={{position:'relative',height:'5px',background:'var(--bg-hover)',borderRadius:'3px',overflow:'hidden'}}>
+                    <div style={{width:`${barFill}%`,height:'100%',background:barColor,transition:'width 0.4s'}}/>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {uncategorizedActual > 0 && (
+            <div style={{padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'12px',display:'flex',justifyContent:'space-between'}}>
+              <span style={{color:'var(--text-3)',fontStyle:'italic'}}>Uncategorized</span>
+              <span style={{fontVariantNumeric:'tabular-nums',color:'var(--text-3)'}}>{fmtUSDCents(uncategorizedActual)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Transactions list */}
+      {transactions.length > 0 && (
         <div>
           <div style={{fontWeight:700,color:'var(--text-1)',marginBottom:'8px',fontSize:'13px'}}>Recent personal transactions</div>
-          {transactions.slice(0, 30).map(t => (
-            <div key={t.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',fontSize:'12px',borderBottom:'1px solid var(--border)'}}>
-              <span style={{color:'var(--text-2)'}}>{t.date} — {t.payee || t.description || '(no payee)'}</span>
-              <span style={{color:Number(t.amount)>=0?'var(--green)':'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(t.amount)}</span>
-            </div>
-          ))}
+          {transactions.slice(0, 30).map(t => {
+            const pcat = personalBudget.find(p => p.id === t.personal_budget_line_id);
+            return (
+              <div key={t.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',fontSize:'12px',borderBottom:'1px solid var(--border)'}}>
+                <span style={{color:'var(--text-2)',minWidth:0,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {t.date} — {t.payee || t.description || '(no payee)'}
+                  {pcat && <span style={{marginLeft:'6px',color:'#3b82f6',fontSize:'10px',padding:'1px 5px',background:'rgba(59,130,246,0.15)',borderRadius:'3px'}}>{pcat.category}</span>}
+                </span>
+                <span style={{color:Number(t.amount)>=0?'var(--green)':'var(--text-1)',fontVariantNumeric:'tabular-nums',flexShrink:0,marginLeft:'8px'}}>{fmtUSDCents(t.amount)}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
