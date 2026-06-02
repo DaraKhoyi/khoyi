@@ -10154,6 +10154,13 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
   const [description, setDescription] = useState(initial?.description || '');
   const [account, setAccount] = useState(initial?.account || '');
   const [saving, setSaving] = useState(false);
+  // Receipt-parsing state
+  const [receiptUrl, setReceiptUrl] = useState(initial?.receipt_url || null);
+  const [receiptPath, setReceiptPath] = useState(null);
+  const [parsing, setParsing] = useState(false);
+  const [parseInfo, setParseInfo] = useState(null);  // { confidence, vendor, notes }
+  const [enteredVia, setEnteredVia] = useState(initial?.entered_via || 'manual');
+  const fileInputRef = useRef(null);
 
   useEffect(() => { if (!trackPersonal) setScope('business'); }, [trackPersonal]);
 
@@ -10161,6 +10168,76 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
     setSystemId(sysId);
     const sys = systems.find(s => s.id === sysId);
     if (sys && !sys.is_overhead && advertisingCat) setTaxCategoryId(advertisingCat.id);
+  }
+
+  // ── Photo-receipt capture flow ────────────────────────────────────
+  async function handleReceiptPicked(file) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      if (window.__notify) window.__notify('Image too large (10MB max)', 'error');
+      return;
+    }
+    setParsing(true);
+    setParseInfo(null);
+    try {
+      // 1. Upload to storage under {userId}/{timestamp}.{ext}
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('receipts').upload(path, file, {
+        contentType: file.type || 'image/jpeg',
+        upsert: false,
+      });
+      if (upErr) throw new Error('Upload failed: ' + upErr.message);
+      setReceiptPath(path);
+
+      // 2. Get a temporary URL for preview
+      const { data: signed } = await supabase.storage.from('receipts').createSignedUrl(path, 3600);
+      if (signed?.signedUrl) setReceiptUrl(signed.signedUrl);
+
+      // 3. Call parse-receipt
+      const { data, error } = await supabase.functions.invoke('parse-receipt', {
+        body: { receipt_path: path },
+      });
+      if (error) throw new Error('Parse failed: ' + error.message);
+      if (data?.error) throw new Error(data.error);
+
+      // 4. Pre-fill form fields with what Claude extracted
+      const extracted = data;
+      if (extracted.amount) setAmount(Math.abs(Number(extracted.amount)));
+      if (extracted.date) setDate(extracted.date);
+      if (extracted.vendor) setPayee(extracted.vendor);
+      if (extracted.description_guess) setDescription(extracted.description_guess);
+      // Categories: only apply if Claude found a match in our chart of accounts
+      if (extracted.is_business_likely !== false) {
+        setScope('business');
+        if (extracted.suggested_tax_category_id) setTaxCategoryId(extracted.suggested_tax_category_id);
+        if (extracted.suggested_lead_gen_system_id) setSystemId(extracted.suggested_lead_gen_system_id);
+        else if (overheadSystem) setSystemId(overheadSystem.id);
+      } else if (trackPersonal) {
+        setScope('personal');
+      }
+      // Direction: receipts are expenses unless Claude detects refund (amount<0)
+      setDirection(Number(extracted.amount) < 0 ? 'in' : 'out');
+      setEnteredVia('photo');
+      setParseInfo({
+        confidence: extracted.confidence,
+        vendor: extracted.vendor,
+        notes: extracted.notes,
+      });
+      if (window.__notify) window.__notify(`Receipt parsed · ${Math.round(extracted.confidence * 100)}% confidence`, 'success');
+    } catch (err) {
+      console.error('Receipt parse error:', err);
+      if (window.__notify) window.__notify('Could not parse receipt: ' + err.message, 'error');
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  function clearReceipt() {
+    setReceiptUrl(null);
+    setReceiptPath(null);
+    setParseInfo(null);
+    if (enteredVia === 'photo') setEnteredVia('manual');
   }
 
   async function handleSubmit(e) {
@@ -10178,7 +10255,9 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
       payee: payee.trim() || null,
       description: description.trim() || null,
       account: account.trim() || null,
-      entered_via: 'manual',
+      receipt_url: receiptPath || (initial?.receipt_url ?? null),
+      entered_via: enteredVia,
+      ai_confidence: parseInfo?.confidence ?? initial?.ai_confidence ?? null,
     };
     if (initial) {
       const { data, error } = await supabase.from('transactions').update(payload).eq('id', initial.id).select().single();
@@ -10194,11 +10273,57 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
 
   return (
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{maxWidth:'460px'}}>
+      <div className="modal" style={{maxWidth:'460px',maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
           <h3 style={{margin:0}}>{initial ? 'Edit transaction' : 'New transaction'}</h3>
           {onDelete && <button onClick={onDelete} title="Delete" style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'18px',padding:'4px 8px'}}>🗑️</button>}
         </div>
+
+        {/* Receipt capture — only on new transactions */}
+        {!initial && (
+          <div style={{marginBottom:'14px'}}>
+            {!receiptUrl && !parsing && (
+              <button type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{width:'100%',padding:'12px',background:'linear-gradient(135deg, rgba(197,169,94,0.12) 0%, rgba(197,169,94,0.04) 100%)',border:'1px dashed var(--accent)',borderRadius:'10px',color:'var(--accent)',cursor:'pointer',fontSize:'13px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
+                📷 Snap receipt — AI will fill it in
+              </button>
+            )}
+            {parsing && (
+              <div style={{padding:'14px',background:'var(--bg-hover)',borderRadius:'10px',display:'flex',alignItems:'center',gap:'10px',fontSize:'12px',color:'var(--text-2)'}}>
+                <span className="spinner" style={{width:'16px',height:'16px',border:'2px solid var(--accent)',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite',flexShrink:0}}/>
+                <span>Reading your receipt…</span>
+              </div>
+            )}
+            {receiptUrl && !parsing && (
+              <div style={{padding:'8px',background:'var(--bg-hover)',borderRadius:'10px'}}>
+                <div style={{display:'flex',gap:'10px',alignItems:'flex-start'}}>
+                  <img src={receiptUrl} alt="Receipt"
+                    style={{width:'70px',height:'70px',objectFit:'cover',borderRadius:'6px',flexShrink:0,background:'var(--bg-base)'}}/>
+                  <div style={{flex:1,minWidth:0,fontSize:'11px',color:'var(--text-2)',lineHeight:1.4}}>
+                    {parseInfo ? (
+                      <>
+                        <div style={{color:'var(--accent)',fontWeight:700,marginBottom:'2px'}}>
+                          ✓ Parsed · {Math.round((parseInfo.confidence || 0) * 100)}% confidence
+                        </div>
+                        {parseInfo.vendor && <div>Vendor: <strong style={{color:'var(--text-1)'}}>{parseInfo.vendor}</strong></div>}
+                        <div style={{fontStyle:'italic',color:'var(--text-3)',marginTop:'2px'}}>Review fields below before saving.</div>
+                      </>
+                    ) : (
+                      <div style={{color:'var(--text-3)'}}>Receipt attached</div>
+                    )}
+                  </div>
+                  <button type="button" onClick={clearReceipt} title="Remove receipt"
+                    style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'16px',padding:'0 4px',flexShrink:0}}>×</button>
+                </div>
+              </div>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/*,application/pdf" capture="environment"
+              style={{display:'none'}}
+              onChange={(e) => { handleReceiptPicked(e.target.files?.[0]); e.target.value = ''; }}/>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',marginBottom:'12px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
             <button type="button" onClick={() => setDirection('out')}
