@@ -630,9 +630,12 @@ body {
   transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
-/* Hover state when the dragged task is over a drop zone — 15% bigger,
-   border goes solid, glow in the action color. */
-.tasks-pro-drop-target.drop-hover {
+/* Hover state when the dragged task is over a BOTTOM drop zone — 15%
+   bigger, border goes solid, glow in the action color. The
+   [data-drop-action] selector excludes the quadrant containers (which
+   share the same class but should NOT scale during drag, since their
+   children are the task rows). */
+.tasks-pro-drop-target[data-drop-action].drop-hover {
   transform: scale(1.15);
   border-style: solid !important;
   background: var(--bg-card);
