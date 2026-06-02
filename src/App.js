@@ -9305,6 +9305,908 @@ function NotesView({ notes, setNotes, userId }) {
 
 // ─────────────────────────────────────────
 // PRISM VIEW — DISC profiles + voice cards (Phase Zero foundation)
+// ═════════════════════════════════════════════════════════════════════
+// FINANCE MODULE — Phase 1 (Dashboard, Blueprint, Ledger)
+// ═════════════════════════════════════════════════════════════════════
+// Real-estate-agent accounting + reverse-engineered business planning.
+// Built from the AgentOS v9.9.94 finance model, redesigned natively.
+//
+// Locked design decisions (per Dara's intake):
+//   1. Simplified tax categories (10 broad, mapped to Schedule C)
+//   2. Every business transaction requires a lead-gen system (default Overhead)
+//   3. Subtle gamification — fuel gauge + tier + streak + badges
+//   4. Value-of-time in separate Time-ROI panel ONLY (never in P&L)
+//   5. Commission income linked to deals (Phase 3)
+//   6. Photo receipt → AI parse as primary entry (Phase 2)
+//
+// Phase 1 ships: Dashboard skeleton + fuel gauge, full Blueprint with
+// cascade math, manual transaction entry + ledger.
+// Phases 2-5 add: AI receipt parser, deals/income, time-ROI, gamification.
+
+const TIER_BANDS = [
+  { id: 'rookie',       label: 'Rookie',       color: '#cd7f32' },  // bronze
+  { id: 'producer',     label: 'Producer',     color: '#c0c0c0' },  // silver
+  { id: 'top_producer', label: 'Top Producer', color: '#c5a95e' },  // gold
+  { id: 'mega',         label: 'Mega',         color: '#fbbf24' },  // gold w/ halo
+];
+
+function computeTier(ytdGCI, settings) {
+  if (!settings) return TIER_BANDS[0];
+  if (ytdGCI >= settings.tier_mega_min) return TIER_BANDS[3];
+  if (ytdGCI >= settings.tier_top_producer_min) return TIER_BANDS[2];
+  if (ytdGCI >= settings.tier_producer_min) return TIER_BANDS[1];
+  return TIER_BANDS[0];
+}
+
+// USD formatter — used everywhere in finance views
+const fmtUSD = (n) => {
+  const v = Number(n) || 0;
+  const isNeg = v < 0;
+  return (isNeg ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+};
+const fmtUSDCents = (n) => {
+  const v = Number(n) || 0;
+  const isNeg = v < 0;
+  return (isNeg ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const fmtPct = (n, digits = 1) => `${(Number(n) * 100).toFixed(digits)}%`;
+
+// ─── FinanceView — root component ────────────────────────────────────
+function FinanceView({ userId }) {
+  const [subView, setSubView] = useState('dashboard');
+  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState(null);
+  const [taxCategories, setTaxCategories] = useState([]);
+  const [personalBudget, setPersonalBudget] = useState([]);
+  const [systems, setSystems] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    const [s, tc, pb, sys, tx] = await Promise.all([
+      supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('tax_categories').select('*').eq('user_id', userId).eq('is_archived', false).order('sort_order'),
+      supabase.from('personal_budget_lines').select('*').eq('user_id', userId).order('sort_order'),
+      supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_active', true).order('is_overhead', { ascending: false }).order('name'),
+      supabase.from('transactions').select('*').eq('user_id', userId).eq('is_archived', false).order('date', { ascending: false }).limit(500),
+    ]);
+    setSettings(s.data);
+    setTaxCategories(tc.data || []);
+    setPersonalBudget(pb.data || []);
+    setSystems(sys.data || []);
+    setTransactions(tx.data || []);
+    setLoading(false);
+  }, [userId]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Derived YTD numbers (used by Dashboard fuel gauge + KPI tiles)
+  const yearStart = new Date(new Date().getFullYear(), 0, 1);
+  const ytdTx = transactions.filter(t => new Date(t.date) >= yearStart);
+  const ytdIncome  = ytdTx.filter(t => t.scope === 'business' && Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
+  const ytdExpense = ytdTx.filter(t => t.scope === 'business' && Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0);
+  const ytdNet = ytdIncome + ytdExpense;
+  const tier = computeTier(ytdIncome, settings);
+
+  if (loading) return <div className="loading-screen"><div className="spinner"/></div>;
+
+  return (
+    <div className="view">
+      {/* Header — tab navigation across the 5 finance sub-views */}
+      <div className="view-header" style={{display:'flex',flexDirection:'column',gap:'10px',marginBottom:'12px'}}>
+        <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'12px'}}>
+          <div>
+            <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px'}}>
+              📊 Finance
+              {settings && (
+                <span style={{
+                  padding:'3px 10px', borderRadius:'12px',
+                  fontSize:'10px', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase',
+                  background:`${tier.color}22`, color:tier.color, border:`1px solid ${tier.color}66`,
+                }}>{tier.label}</span>
+              )}
+            </h2>
+            <span style={{fontSize:'12px',color:'var(--text-3)'}}>
+              YTD: <strong style={{color:ytdNet>=0?'var(--green)':'var(--red)'}}>{fmtUSD(ytdNet)}</strong> net
+              {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(ytdIncome)} in</span>
+              {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(-ytdExpense)} out</span>
+            </span>
+          </div>
+        </div>
+        {/* Sub-nav tabs */}
+        <div style={{display:'flex',gap:'4px',overflowX:'auto',scrollbarWidth:'none',msOverflowStyle:'none'}}>
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: '⚡' },
+            { id: 'blueprint', label: 'Blueprint', icon: '📐' },
+            { id: 'ledger',    label: 'Ledger',    icon: '📒' },
+            { id: 'systems',   label: 'Systems',   icon: '🎯' },
+            { id: 'reports',   label: 'Reports',   icon: '📈' },
+          ].map(t => (
+            <button key={t.id} onClick={() => setSubView(t.id)}
+              style={{
+                padding:'8px 14px', border:'none', borderRadius:'999px',
+                fontSize:'12px', fontWeight:700, letterSpacing:'0.02em',
+                whiteSpace:'nowrap', cursor:'pointer',
+                background: subView === t.id ? 'var(--accent)' : 'var(--bg-hover)',
+                color: subView === t.id ? 'var(--bg-base)' : 'var(--text-2)',
+                transition: 'all 0.15s',
+              }}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {subView === 'dashboard' && (
+        <FinanceDashboard
+          userId={userId} settings={settings} ytdIncome={ytdIncome} ytdExpense={ytdExpense}
+          ytdNet={ytdNet} transactions={transactions} tier={tier}
+          onGoLedger={() => setSubView('ledger')}
+          onGoBlueprint={() => setSubView('blueprint')}
+        />
+      )}
+      {subView === 'blueprint' && (
+        <FinanceBlueprint
+          userId={userId} settings={settings} setSettings={setSettings}
+          personalBudget={personalBudget} setPersonalBudget={setPersonalBudget}
+          systems={systems} reload={loadAll}
+        />
+      )}
+      {subView === 'ledger' && (
+        <FinanceLedger
+          userId={userId} transactions={transactions} setTransactions={setTransactions}
+          taxCategories={taxCategories} systems={systems}
+        />
+      )}
+      {subView === 'systems' && (
+        <FinanceSystems
+          userId={userId} systems={systems} reload={loadAll} transactions={transactions}
+        />
+      )}
+      {subView === 'reports' && (
+        <FinanceReports
+          settings={settings} transactions={transactions} taxCategories={taxCategories} systems={systems}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── FinanceDashboard ────────────────────────────────────────────────
+// Fuel gauge + KPI tiles + recent activity + quick-action FAB.
+function FinanceDashboard({ settings, ytdIncome, ytdExpense, ytdNet, transactions, tier, onGoLedger, onGoBlueprint }) {
+  const goal = Number(settings?.annual_gci_goal) || 150000;
+  const pct = goal > 0 ? Math.min(1, ytdIncome / goal) : 0;
+  // Pace — straight-line: this many days into the year ÷ 365
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const dayOfYear = Math.floor((now - yearStart) / (1000 * 60 * 60 * 24)) + 1;
+  const expectedPct = dayOfYear / 365;
+  const expectedYTD = goal * expectedPct;
+  const paceDelta = ytdIncome - expectedYTD;
+  const paceStatus = paceDelta >= 0
+    ? { label: `Ahead by ${fmtUSD(paceDelta)}`, color: 'var(--green)' }
+    : { label: `Behind by ${fmtUSD(-paceDelta)}`, color: 'var(--red)' };
+
+  // Recent transactions
+  const recent = transactions.slice(0, 6);
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      {/* Fuel Gauge */}
+      <div className="panel" style={{padding:'18px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'8px',flexWrap:'wrap',gap:'8px'}}>
+          <span style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>YTD GCI vs goal</span>
+          <span style={{fontSize:'11px',color:paceStatus.color,fontWeight:600}}>{paceStatus.label}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'10px'}}>
+          <span style={{fontSize:'26px',fontWeight:800,color:'var(--text-1)'}}>{fmtUSD(ytdIncome)}</span>
+          <span style={{fontSize:'14px',color:'var(--text-3)'}}>of {fmtUSD(goal)}</span>
+        </div>
+        {/* The bar */}
+        <div style={{position:'relative',height:'14px',background:'var(--bg-base)',borderRadius:'7px',overflow:'hidden',border:'1px solid var(--border)'}}>
+          {/* Gold fill */}
+          <div style={{
+            width:`${pct * 100}%`, height:'100%',
+            background:`linear-gradient(90deg, ${tier.color} 0%, var(--accent-2) 100%)`,
+            transition:'width 0.5s ease',
+          }}/>
+          {/* Pace marker */}
+          <div style={{
+            position:'absolute', top:'-3px', bottom:'-3px',
+            left:`${expectedPct * 100}%`, width:'2px',
+            background:paceStatus.color, opacity:0.7,
+          }} title={`Pace: ${fmtUSD(expectedYTD)} by day ${dayOfYear}`}/>
+        </div>
+        <div style={{marginTop:'6px',fontSize:'11px',color:'var(--text-3)'}}>
+          {fmtPct(pct, 0)} to goal · pace marker at {fmtPct(expectedPct, 0)} (day {dayOfYear} of 365)
+        </div>
+      </div>
+
+      {/* KPI tiles */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:'10px'}}>
+        <KpiTile label="This month net" value={fmtUSD(monthNet(transactions, 'business'))} sub="business" />
+        <KpiTile label="YTD expense" value={fmtUSD(-ytdExpense)} sub="business deductions" />
+        <KpiTile label="Projected EOY" value={fmtUSD(goal && expectedPct > 0 ? ytdIncome / expectedPct : ytdIncome)} sub="straight-line projection" />
+        <KpiTile label="Next tax estimate" value={fmtUSD(nextTaxEstimate(ytdIncome, settings))} sub={nextQuarterDueLabel()} />
+      </div>
+
+      {/* Recent activity + actions */}
+      <div className="panel" style={{padding:'12px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+          <span style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Recent activity</span>
+          <button className="btn btn-ghost btn-sm" onClick={onGoLedger}>View all →</button>
+        </div>
+        {recent.length === 0 ? (
+          <div style={{padding:'20px',textAlign:'center'}}>
+            <div style={{fontSize:'32px',marginBottom:'6px'}}>📒</div>
+            <p style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'10px'}}>No transactions yet.</p>
+            <button className="btn btn-primary btn-sm" onClick={onGoLedger}>Add your first transaction</button>
+          </div>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+            {recent.map(t => (
+              <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 4px',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{color:'var(--text-1)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.payee || t.description || '(no payee)'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-3)'}}>{t.date} · {t.scope}</div>
+                </div>
+                <span style={{fontWeight:700,color:Number(t.amount)>=0?'var(--green)':'var(--text-1)',flexShrink:0,fontVariantNumeric:'tabular-nums'}}>
+                  {fmtUSDCents(t.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Quick links to other sub-views */}
+      <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+        <button className="btn btn-ghost" onClick={onGoBlueprint}>📐 Open Blueprint</button>
+        <button className="btn btn-ghost" onClick={onGoLedger}>+ Add transaction</button>
+      </div>
+    </div>
+  );
+}
+
+function KpiTile({ label, value, sub }) {
+  return (
+    <div className="panel" style={{padding:'12px'}}>
+      <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700,marginBottom:'4px'}}>{label}</div>
+      <div style={{fontSize:'18px',fontWeight:700,color:'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>{value}</div>
+      <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{sub}</div>
+    </div>
+  );
+}
+
+function monthNet(transactions, scope) {
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+  return transactions
+    .filter(t => new Date(t.date) >= monthStart && (!scope || t.scope === scope))
+    .reduce((s, t) => s + Number(t.amount), 0);
+}
+
+function nextTaxEstimate(ytdIncome, settings) {
+  if (!settings) return 0;
+  // Rough quarterly: YTD × tax% × (1 / current_quarter_progress)
+  return Math.max(0, ytdIncome * Number(settings.estimated_tax_pct) / 4);
+}
+
+function nextQuarterDueLabel() {
+  const now = new Date();
+  // Estimated tax due dates: Apr 15, Jun 15, Sep 15, Jan 15
+  const dates = [
+    { date: new Date(now.getFullYear(), 3, 15),  label: 'due Apr 15' },
+    { date: new Date(now.getFullYear(), 5, 15),  label: 'due Jun 15' },
+    { date: new Date(now.getFullYear(), 8, 15),  label: 'due Sep 15' },
+    { date: new Date(now.getFullYear()+1, 0, 15), label: 'due Jan 15' },
+  ];
+  const next = dates.find(d => d.date > now);
+  return next ? next.label : 'this quarter';
+}
+
+// ─── FinanceBlueprint ────────────────────────────────────────────────
+// The reverse-engineering Blueprint. Personal + business → required GCI →
+// transactions → daily/weekly minimums.
+function FinanceBlueprint({ userId, settings, setSettings, personalBudget, setPersonalBudget, systems, reload }) {
+  const [saving, setSaving] = useState(false);
+
+  // Cascade math — live, recomputes on every change
+  const personalAnnual = personalBudget.reduce((sum, line) => {
+    if (line.is_vacation) {
+      // Vacations entered as annual lump sum
+      return sum + Number(line.annual_amount || 0);
+    }
+    if (line.is_savings) {
+      // Savings target is annual (entered as annual)
+      return sum + Number(line.annual_amount || (Number(line.monthly_amount || 0) * 12));
+    }
+    return sum + Number(line.monthly_amount || 0) * 12;
+  }, 0);
+
+  const businessAnnual = systems.reduce((s, sys) => s + Number(sys.monthly_budget || 0) * 12, 0);
+  const grandTotalNeed = personalAnnual + businessAnnual;
+  const taxPct = Number(settings?.estimated_tax_pct) || 0.25;
+  const grossNeeded = grandTotalNeed / (1 - taxPct);
+  const gciGoal = grossNeeded;
+  const gciPerTxn = Number(settings?.avg_transaction_price || 0) * Number(settings?.avg_commission_pct || 0) * Number(settings?.broker_split_pct || 0);
+  const txnsNeeded = gciPerTxn > 0 ? Math.ceil(gciGoal / gciPerTxn) : 0;
+  // Industry-benchmark funnel
+  const rates = { signedToClose: 0.85, apptToSigned: 0.60, convoToAppt: 0.20, leadToConvo: 0.30 };
+  const signedNeeded = Math.ceil(txnsNeeded / rates.signedToClose);
+  const apptsNeeded  = Math.ceil(signedNeeded / rates.apptToSigned);
+  const convosNeeded = Math.ceil(apptsNeeded  / rates.convoToAppt);
+  const leadsNeeded  = Math.ceil(convosNeeded / rates.leadToConvo);
+  const weeklyLeads  = Math.ceil(leadsNeeded / 48);
+
+  async function updateBudgetLine(id, patch) {
+    setPersonalBudget(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    await supabase.from('personal_budget_lines').update(patch).eq('id', id);
+  }
+
+  async function updateSetting(patch) {
+    setSettings(prev => ({ ...prev, ...patch }));
+    await supabase.from('finance_settings').update(patch).eq('user_id', userId);
+  }
+
+  async function saveBlueprint() {
+    setSaving(true);
+    await updateSetting({ annual_gci_goal: Math.round(gciGoal) });
+    setSaving(false);
+    if (window.__notify) window.__notify(`Blueprint saved · GCI goal: ${fmtUSD(gciGoal)}`, 'success');
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      {/* The cascade summary at the top — always visible while editing below */}
+      <div className="panel" style={{padding:'16px',background:'linear-gradient(135deg, rgba(197,169,94,0.08) 0%, rgba(197,169,94,0.02) 100%)',border:'1px solid var(--accent)'}}>
+        <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700,marginBottom:'6px'}}>Your required GCI</div>
+        <div style={{fontSize:'32px',fontWeight:800,color:'var(--accent)',fontVariantNumeric:'tabular-nums'}}>{fmtUSD(gciGoal)}</div>
+        <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'4px',lineHeight:1.5}}>
+          To net <strong>{fmtUSD(grandTotalNeed)}</strong> after {fmtPct(taxPct, 0)} tax · requires <strong>{txnsNeeded} closed deals</strong> at avg {fmtUSD(Number(settings?.avg_transaction_price || 0))} × {fmtPct(Number(settings?.avg_commission_pct || 0), 2)} × {fmtPct(Number(settings?.broker_split_pct || 0), 0)} split
+        </div>
+        <div style={{marginTop:'10px',display:'flex',gap:'12px',flexWrap:'wrap'}}>
+          <button className="btn btn-primary btn-sm" onClick={saveBlueprint} disabled={saving}>
+            {saving ? 'Saving…' : '💾 Save as goal'}
+          </button>
+        </div>
+      </div>
+
+      {/* Personal Budget */}
+      <div className="panel" style={{padding:'14px'}}>
+        <h3 style={{margin:'0 0 4px',fontSize:'14px',color:'var(--text-1)'}}>Personal expenses</h3>
+        <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 12px'}}>
+          Your real life. Enter monthly amounts. Savings and vacations are entered as <em>annual</em> targets — they're the non-negotiables that force a real income goal.
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+          {personalBudget.map(line => (
+            <BudgetRow key={line.id} line={line} onChange={updateBudgetLine} />
+          ))}
+        </div>
+        <div style={{marginTop:'12px',padding:'10px 12px',background:'var(--bg-base)',borderRadius:'8px',display:'flex',justifyContent:'space-between'}}>
+          <span style={{fontSize:'12px',color:'var(--text-2)',fontWeight:600}}>Personal annual</span>
+          <span style={{fontSize:'14px',color:'var(--text-1)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmtUSD(personalAnnual)}</span>
+        </div>
+      </div>
+
+      {/* Business expenses summary */}
+      <div className="panel" style={{padding:'14px'}}>
+        <h3 style={{margin:'0 0 4px',fontSize:'14px',color:'var(--text-1)'}}>Business expenses</h3>
+        <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 12px'}}>
+          Sum of all your lead-gen system budgets + overhead. Edit individual budgets in the Systems tab.
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+          {systems.length === 0 ? (
+            <div style={{fontSize:'12px',color:'var(--text-3)',fontStyle:'italic',padding:'8px'}}>No active systems yet.</div>
+          ) : (
+            systems.map(sys => (
+              <div key={sys.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 8px',fontSize:'12px'}}>
+                <span style={{color:'var(--text-2)',display:'flex',alignItems:'center',gap:'6px'}}>
+                  <span style={{display:'inline-block',width:'8px',height:'8px',borderRadius:'2px',background:sys.color}}/>
+                  {sys.name}{sys.is_overhead && <em style={{color:'var(--text-3)'}}> (default bucket)</em>}
+                </span>
+                <span style={{color:'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>{fmtUSD(Number(sys.monthly_budget) * 12)}/yr</span>
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{marginTop:'12px',padding:'10px 12px',background:'var(--bg-base)',borderRadius:'8px',display:'flex',justifyContent:'space-between'}}>
+          <span style={{fontSize:'12px',color:'var(--text-2)',fontWeight:600}}>Business annual</span>
+          <span style={{fontSize:'14px',color:'var(--text-1)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmtUSD(businessAnnual)}</span>
+        </div>
+      </div>
+
+      {/* Strategy inputs */}
+      <div className="panel" style={{padding:'14px'}}>
+        <h3 style={{margin:'0 0 12px',fontSize:'14px',color:'var(--text-1)'}}>Strategy inputs</h3>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:'10px'}}>
+          <SettingInput label="Avg transaction price" value={settings?.avg_transaction_price} prefix="$" onSave={v => updateSetting({ avg_transaction_price: v })} />
+          <SettingInput label="Commission %" value={Number(settings?.avg_commission_pct) * 100} suffix="%" onSave={v => updateSetting({ avg_commission_pct: v / 100 })} step="0.01" />
+          <SettingInput label="Your split with broker" value={Number(settings?.broker_split_pct) * 100} suffix="%" onSave={v => updateSetting({ broker_split_pct: v / 100 })} step="0.5" />
+          <SettingInput label="Estimated tax %" value={Number(settings?.estimated_tax_pct) * 100} suffix="%" onSave={v => updateSetting({ estimated_tax_pct: v / 100 })} step="1" />
+        </div>
+      </div>
+
+      {/* Funnel waterfall */}
+      <div className="panel" style={{padding:'14px'}}>
+        <h3 style={{margin:'0 0 4px',fontSize:'14px',color:'var(--text-1)'}}>Activity waterfall</h3>
+        <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 12px'}}>
+          What you actually have to do. Funnel rates are industry benchmarks (Tom Ferry / NAR) — they'll auto-tune once your pipeline has enough data.
+        </p>
+        <WaterfallRow label="Closed transactions needed" value={txnsNeeded} icon="🏆" tone="gold" />
+        <WaterfallRow label="Signed clients" value={signedNeeded} icon="✍️" sub={`${fmtPct(rates.signedToClose, 0)} signed → close`} />
+        <WaterfallRow label="Appointments" value={apptsNeeded} icon="🤝" sub={`${fmtPct(rates.apptToSigned, 0)} appt → signed`} />
+        <WaterfallRow label="Real conversations" value={convosNeeded} icon="💬" sub={`${fmtPct(rates.convoToAppt, 0)} convo → appt`} />
+        <WaterfallRow label="Total leads" value={leadsNeeded} icon="🎯" sub={`${fmtPct(rates.leadToConvo, 0)} lead → convo`} />
+        <div style={{marginTop:'14px',padding:'12px',background:'var(--bg-base)',borderRadius:'8px',border:'1px dashed var(--accent)'}}>
+          <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Weekly minimum (48 working weeks)</div>
+          <div style={{fontSize:'22px',color:'var(--accent)',fontWeight:800,marginTop:'4px',fontVariantNumeric:'tabular-nums'}}>{weeklyLeads} leads per week</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BudgetRow({ line, onChange }) {
+  // Vacations + Savings use annual_amount; everything else uses monthly_amount
+  const usesAnnual = line.is_vacation || line.is_savings;
+  const value = usesAnnual
+    ? (line.annual_amount ?? '')
+    : (line.monthly_amount ?? '');
+  const placeholder = usesAnnual ? 'annual' : 'monthly';
+  const accent = line.is_vacation ? '#22c55e' : line.is_savings ? '#3b82f6' : 'transparent';
+
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'6px 8px',borderRadius:'6px'}}>
+      <div style={{width:'4px',height:'24px',background:accent,borderRadius:'2px',flexShrink:0}}/>
+      <span style={{flex:1,fontSize:'13px',color:'var(--text-1)',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+        {line.category}
+        {usesAnnual && <span style={{color:accent,fontSize:'10px',marginLeft:'6px',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>annual</span>}
+      </span>
+      <span style={{color:'var(--text-3)',fontSize:'13px'}}>$</span>
+      <input
+        type="number"
+        step="1"
+        value={value}
+        placeholder={placeholder}
+        onChange={e => {
+          const v = e.target.value === '' ? 0 : Number(e.target.value);
+          if (usesAnnual) onChange(line.id, { annual_amount: v });
+          else onChange(line.id, { monthly_amount: v });
+        }}
+        style={{
+          width:'110px', padding:'5px 8px', textAlign:'right',
+          background:'var(--bg-base)', border:'1px solid var(--border)',
+          borderRadius:'4px', color:'var(--text-1)', fontSize:'13px',
+          fontVariantNumeric:'tabular-nums',
+        }}
+      />
+    </div>
+  );
+}
+
+function SettingInput({ label, value, prefix, suffix, onSave, step = "1" }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  return (
+    <div>
+      <label style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700,display:'block',marginBottom:'4px'}}>{label}</label>
+      <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
+        {prefix && <span style={{color:'var(--text-3)',fontSize:'13px'}}>{prefix}</span>}
+        <input
+          type="number" step={step} value={local ?? ''}
+          onChange={e => setLocal(e.target.value === '' ? 0 : Number(e.target.value))}
+          onBlur={() => onSave(local)}
+          style={{
+            flex:1, padding:'6px 10px', textAlign:'right',
+            background:'var(--bg-base)', border:'1px solid var(--border)',
+            borderRadius:'6px', color:'var(--text-1)', fontSize:'13px',
+            fontVariantNumeric:'tabular-nums',
+          }}
+        />
+        {suffix && <span style={{color:'var(--text-3)',fontSize:'13px'}}>{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+function WaterfallRow({ label, value, icon, sub, tone }) {
+  const valColor = tone === 'gold' ? 'var(--accent)' : 'var(--text-1)';
+  const valBold  = tone === 'gold' ? 800 : 600;
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 4px',borderBottom:'1px solid var(--border)'}}>
+      <span style={{fontSize:'18px'}}>{icon}</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:'13px',color:'var(--text-1)',fontWeight:500}}>{label}</div>
+        {sub && <div style={{fontSize:'10px',color:'var(--text-3)'}}>{sub}</div>}
+      </div>
+      <span style={{fontSize:tone==='gold'?'18px':'15px',color:valColor,fontWeight:valBold,fontVariantNumeric:'tabular-nums'}}>{value.toLocaleString()}</span>
+    </div>
+  );
+}
+
+// ─── FinanceLedger ───────────────────────────────────────────────────
+// Manual transaction entry + list view. (Phase 2 adds AI photo capture.)
+function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editTx, setEditTx] = useState(null);
+  const [period, setPeriod] = useState('ytd');  // 'month' | 'ytd' | 'all'
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  // Filter by period
+  const filtered = useMemo(() => {
+    const now = new Date();
+    let cutoff = null;
+    if (period === 'month') {
+      cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (period === 'ytd') {
+      cutoff = new Date(now.getFullYear(), 0, 1);
+    }
+    let result = cutoff ? transactions.filter(t => new Date(t.date) >= cutoff) : transactions;
+    const q = (search || '').trim().toLowerCase();
+    if (q) {
+      result = result.filter(t =>
+        (t.payee || '').toLowerCase().includes(q)
+        || (t.description || '').toLowerCase().includes(q)
+        || (t.account || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [transactions, period, search]);
+
+  function onSaved(saved) {
+    if (editTx) {
+      setTransactions(prev => prev.map(t => t.id === saved.id ? saved : t));
+    } else {
+      setTransactions(prev => [saved, ...prev]);
+    }
+    setShowModal(false);
+    setEditTx(null);
+  }
+
+  async function deleteTx(tx) {
+    if (!window.confirm(`Delete this transaction? (${fmtUSDCents(tx.amount)} to ${tx.payee || 'no payee'})`)) return;
+    await supabase.from('transactions').update({ is_archived: true }).eq('id', tx.id);
+    setTransactions(prev => prev.filter(t => t.id !== tx.id));
+    setShowModal(false);
+    setEditTx(null);
+  }
+
+  const totalIn  = filtered.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
+  const totalOut = filtered.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0);
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+      {/* Header: filters + search icon + + button */}
+      <div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}>
+        {[
+          { id: 'month', label: 'This month' },
+          { id: 'ytd',   label: 'YTD' },
+          { id: 'all',   label: 'All' },
+        ].map(p => (
+          <button key={p.id} onClick={() => setPeriod(p.id)}
+            style={{
+              padding:'6px 12px',border:'none',borderRadius:'999px',fontSize:'12px',fontWeight:600,
+              background: period === p.id ? 'var(--accent)' : 'var(--bg-hover)',
+              color: period === p.id ? 'var(--bg-base)' : 'var(--text-2)',
+              cursor:'pointer',
+            }}>
+            {p.label}
+          </button>
+        ))}
+        <div style={{flex:1}}/>
+        <HeaderSearchIcon value={search} open={searchOpen} onToggle={() => setSearchOpen(o => !o)} />
+        <button className="btn-add-circle" onClick={() => { setEditTx(null); setShowModal(true); }} title="New transaction" aria-label="New transaction">+</button>
+      </div>
+
+      {searchOpen && (
+        <HeaderSearchInput value={search} onChange={setSearch} placeholder="🔍 Search payee / description / account…" onClose={() => setSearchOpen(false)} />
+      )}
+
+      {/* Period totals */}
+      <div className="panel" style={{padding:'10px 14px',display:'flex',justifyContent:'space-around',gap:'12px',fontVariantNumeric:'tabular-nums'}}>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>In</div>
+          <div style={{fontSize:'16px',color:'var(--green)',fontWeight:700}}>{fmtUSD(totalIn)}</div>
+        </div>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Out</div>
+          <div style={{fontSize:'16px',color:'var(--red)',fontWeight:700}}>{fmtUSD(totalOut)}</div>
+        </div>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Net</div>
+          <div style={{fontSize:'16px',color:(totalIn+totalOut)>=0?'var(--green)':'var(--red)',fontWeight:700}}>{fmtUSD(totalIn + totalOut)}</div>
+        </div>
+      </div>
+
+      {/* List */}
+      {filtered.length === 0 ? (
+        <div className="panel"><div className="panel-body"><div className="empty-state" style={{padding:'40px 20px',textAlign:'center'}}>
+          <div className="empty-icon">📒</div>
+          <p style={{fontSize:'14px',color:'var(--text-1)',marginBottom:'4px'}}>No transactions in this period.</p>
+          <p style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'14px'}}>Tap + to add one. Photo-receipt entry coming in Phase 2.</p>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>+ Add transaction</button>
+        </div></div></div>
+      ) : (
+        <div className="panel"><div className="panel-body" style={{padding:0}}>
+          {filtered.map(t => {
+            const cat = taxCategories.find(c => c.id === t.tax_category_id);
+            const sys = systems.find(s => s.id === t.lead_gen_system_id);
+            return (
+              <div key={t.id}
+                onClick={() => { setEditTx(t); setShowModal(true); }}
+                style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontSize:'14px',color:'var(--text-1)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {t.payee || t.description || '(no payee)'}
+                  </div>
+                  <div style={{fontSize:'11px',color:'var(--text-3)',display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'2px'}}>
+                    <span>{t.date}</span>
+                    {cat && <span style={{padding:'2px 6px',borderRadius:'3px',background:`${cat.color}22`,color:cat.color,fontSize:'10px',fontWeight:600}}>{cat.name}</span>}
+                    {sys && t.scope === 'business' && <span style={{padding:'2px 6px',borderRadius:'3px',background:`${sys.color}22`,color:sys.color,fontSize:'10px',fontWeight:600}}>{sys.name}</span>}
+                    {t.scope === 'personal' && <span style={{padding:'2px 6px',borderRadius:'3px',background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'10px',fontWeight:600}}>personal</span>}
+                  </div>
+                </div>
+                <span style={{fontSize:'15px',fontWeight:700,color:Number(t.amount)>=0?'var(--green)':'var(--text-1)',flexShrink:0,fontVariantNumeric:'tabular-nums'}}>
+                  {fmtUSDCents(t.amount)}
+                </span>
+              </div>
+            );
+          })}
+        </div></div>
+      )}
+
+      {showModal && (
+        <TransactionModal
+          userId={userId} initial={editTx}
+          taxCategories={taxCategories} systems={systems}
+          onClose={() => { setShowModal(false); setEditTx(null); }}
+          onSaved={onSaved}
+          onDelete={editTx ? () => deleteTx(editTx) : null}
+        />
+      )}
+    </div>
+  );
+}
+
+function TransactionModal({ userId, initial, taxCategories, systems, onClose, onSaved, onDelete }) {
+  const overheadSystem = systems.find(s => s.is_overhead);
+  const [date, setDate] = useState(initial?.date || new Date().toISOString().slice(0,10));
+  const [amount, setAmount] = useState(initial ? Math.abs(Number(initial.amount)) : '');
+  const [direction, setDirection] = useState(initial && Number(initial.amount) > 0 ? 'in' : 'out');
+  const [scope, setScope] = useState(initial?.scope || 'business');
+  const [taxCategoryId, setTaxCategoryId] = useState(initial?.tax_category_id || taxCategories[0]?.id || '');
+  const [systemId, setSystemId] = useState(initial?.lead_gen_system_id || overheadSystem?.id || '');
+  const [payee, setPayee] = useState(initial?.payee || '');
+  const [description, setDescription] = useState(initial?.description || '');
+  const [account, setAccount] = useState(initial?.account || '');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!amount || Number(amount) <= 0) {
+      if (window.__notify) window.__notify('Enter an amount', 'error');
+      return;
+    }
+    setSaving(true);
+    const signedAmount = direction === 'in' ? Math.abs(Number(amount)) : -Math.abs(Number(amount));
+    const payload = {
+      user_id: userId,
+      date,
+      amount: signedAmount,
+      scope,
+      tax_category_id: scope === 'business' ? (taxCategoryId || null) : null,
+      lead_gen_system_id: scope === 'business' ? (systemId || overheadSystem?.id || null) : null,
+      payee: payee.trim() || null,
+      description: description.trim() || null,
+      account: account.trim() || null,
+      entered_via: 'manual',
+    };
+    if (initial) {
+      const { data, error } = await supabase.from('transactions').update(payload).eq('id', initial.id).select().single();
+      if (error) { if (window.__notify) window.__notify('Save failed: ' + error.message, 'error'); setSaving(false); return; }
+      onSaved(data);
+    } else {
+      const { data, error } = await supabase.from('transactions').insert(payload).select().single();
+      if (error) { if (window.__notify) window.__notify('Save failed: ' + error.message, 'error'); setSaving(false); return; }
+      onSaved(data);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{maxWidth:'460px'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
+          <h3 style={{margin:0}}>{initial ? 'Edit transaction' : 'New transaction'}</h3>
+          {onDelete && (
+            <button onClick={onDelete} title="Delete" style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'18px',padding:'4px 8px'}}>🗑️</button>
+          )}
+        </div>
+        <form onSubmit={handleSubmit}>
+          {/* Direction toggle (in/out) */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',marginBottom:'12px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
+            <button type="button" onClick={() => setDirection('out')}
+              style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:700,fontSize:'13px',cursor:'pointer',
+                background:direction==='out'?'var(--red)':'transparent',
+                color:direction==='out'?'#fff':'var(--text-2)'}}>
+              Expense
+            </button>
+            <button type="button" onClick={() => setDirection('in')}
+              style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:700,fontSize:'13px',cursor:'pointer',
+                background:direction==='in'?'var(--green)':'transparent',
+                color:direction==='in'?'#fff':'var(--text-2)'}}>
+              Income
+            </button>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group" style={{flex:2}}>
+              <label className="form-label">Amount</label>
+              <input className="form-input" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus required />
+            </div>
+            <div className="form-group" style={{flex:1}}>
+              <label className="form-label">Date</label>
+              <input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} required />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Scope</label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
+              <button type="button" onClick={() => setScope('business')}
+                style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:600,fontSize:'12px',cursor:'pointer',
+                  background:scope==='business'?'var(--accent)':'transparent',
+                  color:scope==='business'?'var(--bg-base)':'var(--text-2)'}}>
+                Business
+              </button>
+              <button type="button" onClick={() => setScope('personal')}
+                style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:600,fontSize:'12px',cursor:'pointer',
+                  background:scope==='personal'?'var(--accent)':'transparent',
+                  color:scope==='personal'?'var(--bg-base)':'var(--text-2)'}}>
+                Personal
+              </button>
+            </div>
+          </div>
+
+          {scope === 'business' && (
+            <>
+              <div className="form-group">
+                <label className="form-label">Tax category</label>
+                <select className="form-input" value={taxCategoryId} onChange={e => setTaxCategoryId(e.target.value)}>
+                  {taxCategories.map(c => <option key={c.id} value={c.id}>{c.name} ({c.schedule_c_line})</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Lead-gen system</label>
+                <select className="form-input" value={systemId} onChange={e => setSystemId(e.target.value)}>
+                  {systems.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_overhead?' (default)':''}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+
+          <div className="form-group">
+            <label className="form-label">Payee {direction === 'in' ? '(from)' : '(to)'}</label>
+            <input className="form-input" type="text" value={payee} onChange={e => setPayee(e.target.value)} placeholder={direction === 'in' ? 'Who paid you' : 'Who did you pay'} />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group" style={{flex:2}}>
+              <label className="form-label">Description (optional)</label>
+              <input className="form-input" type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="What was this for?" />
+            </div>
+            <div className="form-group" style={{flex:1}}>
+              <label className="form-label">Account</label>
+              <input className="form-input" type="text" value={account} onChange={e => setAccount(e.target.value)} placeholder="Biz Visa" />
+            </div>
+          </div>
+
+          <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : initial ? 'Save changes' : 'Add transaction'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── FinanceSystems (Phase 1: stub view, full build in Phase 2) ─────
+function FinanceSystems({ systems }) {
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+      <div className="panel" style={{padding:'14px'}}>
+        <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,margin:'0 0 14px'}}>
+          Your active lead-generation systems. Phase 1 ships with the Overhead bucket only.
+          Phase 2 adds the 35-system template library, activation flow with DISC-fit scoring, and per-system ROI tracking.
+        </p>
+        {systems.map(sys => (
+          <div key={sys.id} style={{padding:'10px',background:'var(--bg-base)',borderRadius:'8px',marginBottom:'6px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}}>
+              <span style={{display:'inline-block',width:'10px',height:'10px',borderRadius:'3px',background:sys.color}}/>
+              <strong style={{color:'var(--text-1)'}}>{sys.name}</strong>
+              {sys.is_overhead && <span style={{fontSize:'10px',color:'var(--text-3)',padding:'2px 6px',background:'var(--bg-hover)',borderRadius:'3px',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>Default bucket</span>}
+            </div>
+            {sys.description && <p style={{fontSize:'11px',color:'var(--text-3)',margin:'4px 0',lineHeight:1.4}}>{sys.description}</p>}
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>
+              Monthly budget: <strong style={{color:'var(--text-2)'}}>{fmtUSD(Number(sys.monthly_budget))}</strong>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── FinanceReports (Phase 1: simple P&L, full build in Phase 4) ────
+function FinanceReports({ transactions, taxCategories, systems }) {
+  const yearStart = new Date(new Date().getFullYear(), 0, 1);
+  const ytdBiz = transactions.filter(t => t.scope === 'business' && new Date(t.date) >= yearStart);
+  const income  = ytdBiz.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
+  const byCategory = {};
+  ytdBiz.filter(t => Number(t.amount) < 0).forEach(t => {
+    const k = t.tax_category_id || 'uncategorized';
+    byCategory[k] = (byCategory[k] || 0) + Math.abs(Number(t.amount));
+  });
+  const totalExpense = Object.values(byCategory).reduce((s, n) => s + n, 0);
+  const net = income - totalExpense;
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+      <div className="panel" style={{padding:'14px'}}>
+        <h3 style={{margin:'0 0 14px',fontSize:'14px',color:'var(--text-1)'}}>YTD P&amp;L Summary (business)</h3>
+
+        <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'2px solid var(--border)'}}>
+          <span style={{fontWeight:700,color:'var(--text-1)'}}>Income</span>
+          <span style={{fontWeight:700,color:'var(--green)',fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(income)}</span>
+        </div>
+
+        <div style={{padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontWeight:700,color:'var(--text-1)',marginBottom:'8px'}}>Expenses by tax category</div>
+          {Object.keys(byCategory).length === 0 ? (
+            <p style={{fontSize:'12px',color:'var(--text-3)',fontStyle:'italic',margin:0}}>No expenses recorded YTD.</p>
+          ) : (
+            Object.entries(byCategory).sort((a,b) => b[1] - a[1]).map(([cid, total]) => {
+              const cat = taxCategories.find(c => c.id === cid);
+              return (
+                <div key={cid} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',fontSize:'13px'}}>
+                  <span style={{color:'var(--text-2)',display:'flex',alignItems:'center',gap:'6px'}}>
+                    {cat && <span style={{width:'8px',height:'8px',borderRadius:'2px',background:cat.color,display:'inline-block'}}/>}
+                    {cat?.name || 'Uncategorized'}
+                  </span>
+                  <span style={{color:'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(total)}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div style={{display:'flex',justifyContent:'space-between',padding:'10px 0 4px',borderBottom:'2px solid var(--border)'}}>
+          <span style={{fontWeight:700,color:'var(--text-1)'}}>Total expenses</span>
+          <span style={{fontWeight:700,color:'var(--red)',fontVariantNumeric:'tabular-nums'}}>({fmtUSDCents(totalExpense)})</span>
+        </div>
+
+        <div style={{display:'flex',justifyContent:'space-between',padding:'14px 0 4px'}}>
+          <span style={{fontWeight:800,color:'var(--text-1)',fontSize:'15px'}}>Net YTD</span>
+          <span style={{fontWeight:800,color:net>=0?'var(--green)':'var(--red)',fontSize:'15px',fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(net)}</span>
+        </div>
+      </div>
+
+      <div className="panel" style={{padding:'14px'}}>
+        <p style={{fontSize:'12px',color:'var(--text-3)',margin:0,lineHeight:1.5,fontStyle:'italic'}}>
+          Phase 4 adds: full Schedule C preview (ready for CPA), quarterly tax estimate, Time-ROI panel per system, goal pace chart, and per-system attribution analytics.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// END FINANCE MODULE
+// ═════════════════════════════════════════════════════════════════════
+
 // ─────────────────────────────────────────
 const DISC_LETTERS = ['D', 'I', 'S', 'C'];
 const DISC_NAMES = { D: 'Dominant', I: 'Influencing', S: 'Steady', C: 'Conscientious' };
@@ -10667,6 +11569,7 @@ export default function App() {
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
+    { id: 'finance',     icon: '📊', label: 'Finance',     badge: null },
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
     { id: 'playbooks',   icon: '📚', label: 'Playbooks',   badge: brain.filter(b=>b.type==='playbook').length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
@@ -10739,6 +11642,7 @@ export default function App() {
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
+              : view==='finance'     ? <FinanceView userId={user.id}/>
               : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events} contacts={contacts}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks}/>
