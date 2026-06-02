@@ -9365,12 +9365,28 @@ function FinanceView({ userId }) {
   const [completions, setCompletions] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [recurringTemplates, setRecurringTemplates] = useState([]);
+  const recurringRanRef = useRef(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     const last30 = new Date(); last30.setDate(last30.getDate() - 30);
     const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0,10);
-    const [s, tc, pb, sys, tx, comp, te, tmpl] = await Promise.all([
+
+    // First, advance any due recurring templates (one call per session)
+    if (!recurringRanRef.current) {
+      recurringRanRef.current = true;
+      try {
+        const { data: runResult } = await supabase.functions.invoke('run-recurring-transactions', { body: {} });
+        if (runResult?.created > 0 && window.__notify) {
+          window.__notify(`${runResult.created} recurring transaction${runResult.created>1?'s':''} added`, 'success');
+        }
+      } catch (e) {
+        console.warn('Recurring runner failed (non-fatal):', e);
+      }
+    }
+
+    const [s, tc, pb, sys, tx, comp, te, tmpl, rec] = await Promise.all([
       supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
       supabase.from('tax_categories').select('*').eq('user_id', userId).eq('is_archived', false).order('sort_order'),
       supabase.from('personal_budget_lines').select('*').eq('user_id', userId).order('sort_order'),
@@ -9379,6 +9395,7 @@ function FinanceView({ userId }) {
       supabase.from('prospecting_completions').select('*').eq('user_id', userId).gte('date', last30.toISOString().slice(0,10)).order('date', { ascending: false }),
       supabase.from('time_entries').select('*').eq('user_id', userId).gte('occurred_at', yearStart).order('occurred_at', { ascending: false }),
       supabase.from('lead_gen_system_templates').select('*').order('system_number'),
+      supabase.from('recurring_transactions').select('*').eq('user_id', userId).order('next_run_date'),
     ]);
     setSettings(s.data);
     setTaxCategories(tc.data || []);
@@ -9388,6 +9405,7 @@ function FinanceView({ userId }) {
     setCompletions(comp.data || []);
     setTimeEntries(te.data || []);
     setTemplates(tmpl.data || []);
+    setRecurringTemplates(rec.data || []);
     setLoading(false);
   }, [userId]);
 
@@ -9508,6 +9526,7 @@ function FinanceView({ userId }) {
         <FinanceLedger
           userId={userId} transactions={transactions} setTransactions={setTransactions}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
+          recurringTemplates={recurringTemplates} setRecurringTemplates={setRecurringTemplates}
           trackPersonal={trackPersonal} readOnly={readOnly}
         />
       )}
@@ -10000,13 +10019,16 @@ function WaterfallRow({ label, value, icon, sub, tone }) {
 }
 
 // ─── FinanceLedger ───────────────────────────────────────────────────
-function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, trackPersonal, readOnly }) {
+function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, recurringTemplates, setRecurringTemplates, trackPersonal, readOnly }) {
+  const [ledgerMode, setLedgerMode] = useState('transactions');  // 'transactions' | 'recurring'
   const [showModal, setShowModal] = useState(false);
   const [editTx, setEditTx] = useState(null);
   const [period, setPeriod] = useState('ytd');
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [scopeFilter, setScopeFilter] = useState('business');
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [editRecurring, setEditRecurring] = useState(null);
 
   useEffect(() => { if (!trackPersonal) setScopeFilter('business'); }, [trackPersonal]);
 
@@ -10043,6 +10065,29 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+      {/* Mode tabs */}
+      <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',width:'fit-content'}}>
+        <button onClick={() => setLedgerMode('transactions')}
+          style={{padding:'6px 14px',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:700,cursor:'pointer',
+            background: ledgerMode === 'transactions' ? 'var(--accent)' : 'transparent',
+            color: ledgerMode === 'transactions' ? 'var(--bg-base)' : 'var(--text-2)'}}>📒 Transactions</button>
+        <button onClick={() => setLedgerMode('recurring')}
+          style={{padding:'6px 14px',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:700,cursor:'pointer',
+            background: ledgerMode === 'recurring' ? 'var(--accent)' : 'transparent',
+            color: ledgerMode === 'recurring' ? 'var(--bg-base)' : 'var(--text-2)'}}>🔁 Recurring{(recurringTemplates?.length || 0) > 0 ? ` · ${recurringTemplates.length}` : ''}</button>
+      </div>
+
+      {ledgerMode === 'recurring' ? (
+        <RecurringList
+          userId={userId} recurringTemplates={recurringTemplates || []}
+          setRecurringTemplates={setRecurringTemplates}
+          taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
+          trackPersonal={trackPersonal} readOnly={readOnly}
+          onAdd={() => { setEditRecurring(null); setShowRecurringModal(true); }}
+          onEdit={(r) => { setEditRecurring(r); setShowRecurringModal(true); }}
+        />
+      ) : (
+      <>
       <div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}>
         {[
           { id: 'month', label: 'This month' },
@@ -10135,6 +10180,272 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
           onDelete={editTx ? () => deleteTx(editTx) : null}
         />
       )}
+      </>
+      )}
+
+      {showRecurringModal && (
+        <RecurringTemplateModal
+          userId={userId} initial={editRecurring} trackPersonal={trackPersonal}
+          taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
+          onClose={() => { setShowRecurringModal(false); setEditRecurring(null); }}
+          onSaved={(saved) => {
+            if (editRecurring) setRecurringTemplates(prev => prev.map(r => r.id === saved.id ? saved : r));
+            else setRecurringTemplates(prev => [...prev, saved].sort((a, b) => a.next_run_date.localeCompare(b.next_run_date)));
+            setShowRecurringModal(false); setEditRecurring(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── RecurringList — list of recurring transaction templates ─────────
+function RecurringList({ userId, recurringTemplates, setRecurringTemplates, taxCategories, systems, personalBudget, trackPersonal, readOnly, onAdd, onEdit }) {
+  const active = recurringTemplates.filter(r => r.is_active);
+  const paused = recurringTemplates.filter(r => !r.is_active);
+
+  async function togglePause(r) {
+    const newActive = !r.is_active;
+    await supabase.from('recurring_transactions').update({ is_active: newActive }).eq('id', r.id);
+    setRecurringTemplates(prev => prev.map(x => x.id === r.id ? { ...x, is_active: newActive } : x));
+  }
+
+  async function deleteTemplate(r) {
+    if (!window.confirm(`Delete recurring template "${r.template_payee || r.template_description || 'untitled'}"? Past transactions stay; only the future schedule is removed.`)) return;
+    await supabase.from('recurring_transactions').delete().eq('id', r.id);
+    setRecurringTemplates(prev => prev.filter(x => x.id !== r.id));
+  }
+
+  function renderRow(r) {
+    const cat = taxCategories.find(c => c.id === r.template_tax_category_id);
+    const sys = systems.find(s => s.id === r.template_system_id);
+    const isExpense = Number(r.template_amount) < 0;
+    const today = new Date().toISOString().slice(0, 10);
+    const isDue = r.is_active && r.next_run_date <= today;
+    return (
+      <div key={r.id}
+        onClick={() => !readOnly && onEdit(r)}
+        style={{
+          display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',
+          background: r.is_active ? 'var(--bg-base)' : 'rgba(85,94,122,0.08)',
+          border:'1px solid var(--border)',
+          borderLeft: isDue ? '3px solid var(--accent)' : '1px solid var(--border)',
+          borderRadius:'8px',cursor:readOnly?'default':'pointer',opacity:r.is_active?1:0.6,
+        }}>
+        <div style={{minWidth:0,flex:1}}>
+          <div style={{fontSize:'13px',color:'var(--text-1)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {r.template_payee || r.template_description || '(untitled)'}
+          </div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'2px'}}>
+            <span style={{textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,color:'var(--accent)'}}>🔁 {r.frequency}</span>
+            <span>next: <strong style={{color:isDue?'var(--accent)':'var(--text-2)'}}>{r.next_run_date}</strong></span>
+            {cat && <span style={{padding:'1px 5px',borderRadius:'3px',background:`${cat.color}22`,color:cat.color,fontWeight:600}}>{cat.name}</span>}
+            {sys && r.template_scope === 'business' && <span style={{padding:'1px 5px',borderRadius:'3px',background:`${sys.color}22`,color:sys.color,fontWeight:600}}>{sys.name}</span>}
+            {r.template_scope === 'personal' && <span style={{padding:'1px 5px',borderRadius:'3px',background:'var(--bg-hover)',color:'var(--text-3)',fontWeight:600}}>personal</span>}
+          </div>
+        </div>
+        <span style={{fontSize:'14px',fontWeight:700,color:isExpense?'var(--text-1)':'var(--green)',fontVariantNumeric:'tabular-nums',flexShrink:0}}>
+          {fmtUSDCents(r.template_amount)}
+        </span>
+        {!readOnly && (
+          <div style={{display:'flex',gap:'4px',flexShrink:0}} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => togglePause(r)} title={r.is_active ? 'Pause' : 'Resume'}
+              style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'14px',padding:'4px'}}>
+              {r.is_active ? '⏸' : '▶️'}
+            </button>
+            <button onClick={() => deleteTemplate(r)} title="Delete"
+              style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'14px',padding:'4px'}}>
+              🗑️
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
+        <p style={{fontSize:'12px',color:'var(--text-3)',margin:0,lineHeight:1.5}}>
+          Templates auto-create transactions on schedule. {active.length} active{paused.length > 0 ? ` · ${paused.length} paused` : ''}.
+        </p>
+        {!readOnly && (
+          <button className="btn-add-circle" onClick={onAdd} title="New recurring template" aria-label="New recurring template">+</button>
+        )}
+      </div>
+
+      {recurringTemplates.length === 0 ? (
+        <div className="panel"><div className="empty-state" style={{padding:'30px 20px',textAlign:'center'}}>
+          <div className="empty-icon">🔁</div>
+          <p style={{fontSize:'13px',color:'var(--text-1)',marginBottom:'4px'}}>No recurring templates yet.</p>
+          <p style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'12px',lineHeight:1.5}}>
+            Set up monthly MLS dues, software subscriptions, NAR fees, anything that hits on a schedule. The app auto-adds the transaction each period.
+          </p>
+          {!readOnly && <button className="btn btn-primary btn-sm" onClick={onAdd}>+ New recurring template</button>}
+        </div></div>
+      ) : (
+        <>
+          {active.length > 0 && (
+            <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+              {active.map(renderRow)}
+            </div>
+          )}
+          {paused.length > 0 && (
+            <div style={{display:'flex',flexDirection:'column',gap:'4px',marginTop:'8px'}}>
+              <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700,paddingLeft:'4px'}}>
+                Paused
+              </div>
+              {paused.map(renderRow)}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function RecurringTemplateModal({ userId, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved }) {
+  const overheadSystem = systems.find(s => s.is_overhead);
+  const advertisingCat = taxCategories.find(c => /advert/i.test(c.name));
+  const [amount, setAmount] = useState(initial ? Math.abs(Number(initial.template_amount)) : '');
+  const [direction, setDirection] = useState(initial && Number(initial.template_amount) > 0 ? 'in' : 'out');
+  const [scope, setScope] = useState(initial?.template_scope || 'business');
+  const [taxCategoryId, setTaxCategoryId] = useState(initial?.template_tax_category_id || taxCategories[0]?.id || '');
+  const [systemId, setSystemId] = useState(initial?.template_system_id || overheadSystem?.id || '');
+  const [payee, setPayee] = useState(initial?.template_payee || '');
+  const [description, setDescription] = useState(initial?.template_description || '');
+  const [account, setAccount] = useState(initial?.template_account || '');
+  const [frequency, setFrequency] = useState(initial?.frequency || 'monthly');
+  const [nextRunDate, setNextRunDate] = useState(initial?.next_run_date || new Date().toISOString().slice(0,10));
+  const [saving, setSaving] = useState(false);
+
+  function onSystemChange(sysId) {
+    setSystemId(sysId);
+    const sys = systems.find(s => s.id === sysId);
+    if (sys && !sys.is_overhead && advertisingCat) setTaxCategoryId(advertisingCat.id);
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!amount || Number(amount) <= 0) { if (window.__notify) window.__notify('Enter an amount', 'error'); return; }
+    setSaving(true);
+    const signedAmount = direction === 'in' ? Math.abs(Number(amount)) : -Math.abs(Number(amount));
+    const payload = {
+      user_id: userId,
+      template_amount: signedAmount,
+      template_scope: scope,
+      template_tax_category_id: scope === 'business' ? (taxCategoryId || null) : null,
+      template_system_id: scope === 'business' ? (systemId || overheadSystem?.id || null) : null,
+      template_payee: payee.trim() || null,
+      template_description: description.trim() || null,
+      template_account: account.trim() || null,
+      frequency,
+      next_run_date: nextRunDate,
+      is_active: true,
+    };
+    if (initial) {
+      const { data, error } = await supabase.from('recurring_transactions').update(payload).eq('id', initial.id).select().single();
+      if (error) { if (window.__notify) window.__notify('Save failed: ' + error.message, 'error'); setSaving(false); return; }
+      onSaved(data);
+    } else {
+      const { data, error } = await supabase.from('recurring_transactions').insert(payload).select().single();
+      if (error) { if (window.__notify) window.__notify('Save failed: ' + error.message, 'error'); setSaving(false); return; }
+      onSaved(data);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{maxWidth:'460px',maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
+          <h3 style={{margin:0}}>🔁 {initial ? 'Edit recurring' : 'New recurring template'}</h3>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',marginBottom:'12px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
+            <button type="button" onClick={() => setDirection('out')}
+              style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:700,fontSize:'13px',cursor:'pointer',
+                background:direction==='out'?'var(--red)':'transparent',color:direction==='out'?'#fff':'var(--text-2)'}}>Expense</button>
+            <button type="button" onClick={() => setDirection('in')}
+              style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:700,fontSize:'13px',cursor:'pointer',
+                background:direction==='in'?'var(--green)':'transparent',color:direction==='in'?'#fff':'var(--text-2)'}}>Income</button>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group" style={{flex:2}}>
+              <label className="form-label">Amount</label>
+              <input className="form-input" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus required />
+            </div>
+            <div className="form-group" style={{flex:1}}>
+              <label className="form-label">Frequency</label>
+              <select className="form-input" value={frequency} onChange={e => setFrequency(e.target.value)}>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Next run date</label>
+            <input className="form-input" type="date" value={nextRunDate} onChange={e => setNextRunDate(e.target.value)} required />
+            <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>
+              The first auto-created transaction will land on this date. If it's today or earlier, it fires next time the app opens.
+            </div>
+          </div>
+
+          {trackPersonal && (
+            <div className="form-group">
+              <label className="form-label">Scope</label>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
+                <button type="button" onClick={() => setScope('business')}
+                  style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:600,fontSize:'12px',cursor:'pointer',
+                    background:scope==='business'?'var(--accent)':'transparent',color:scope==='business'?'var(--bg-base)':'var(--text-2)'}}>Business</button>
+                <button type="button" onClick={() => setScope('personal')}
+                  style={{padding:'8px',border:'none',borderRadius:'6px',fontWeight:600,fontSize:'12px',cursor:'pointer',
+                    background:scope==='personal'?'var(--accent)':'transparent',color:scope==='personal'?'var(--bg-base)':'var(--text-2)'}}>Personal</button>
+              </div>
+            </div>
+          )}
+
+          {scope === 'business' && (
+            <>
+              <div className="form-group">
+                <label className="form-label">Lead-gen system</label>
+                <select className="form-input" value={systemId} onChange={e => onSystemChange(e.target.value)}>
+                  {systems.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_overhead?' (default)':''}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Tax category</label>
+                <select className="form-input" value={taxCategoryId} onChange={e => setTaxCategoryId(e.target.value)}>
+                  {taxCategories.map(c => <option key={c.id} value={c.id}>{c.name} ({c.schedule_c_line})</option>)}
+                </select>
+              </div>
+            </>
+          )}
+
+          <div className="form-group">
+            <label className="form-label">Payee</label>
+            <input className="form-input" type="text" value={payee} onChange={e => setPayee(e.target.value)} placeholder="e.g. Stellar MLS, NAR, Adobe" />
+          </div>
+          <div className="form-row">
+            <div className="form-group" style={{flex:2}}>
+              <label className="form-label">Description (optional)</label>
+              <input className="form-input" type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="What is this charge?" />
+            </div>
+            <div className="form-group" style={{flex:1}}>
+              <label className="form-label">Account</label>
+              <input className="form-input" type="text" value={account} onChange={e => setAccount(e.target.value)} placeholder="Biz Visa" />
+            </div>
+          </div>
+
+          <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : initial ? 'Save changes' : '✓ Create recurring'}</button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
