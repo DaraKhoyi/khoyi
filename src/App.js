@@ -7754,6 +7754,16 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
   const [businessCity, setBusinessCity] = useState(initial?.business_city || '');
   const [businessState, setBusinessState] = useState(initial?.business_state || '');
   const [businessZip, setBusinessZip] = useState(initial?.business_zip || '');
+  // 1099-NEC / W-9 — collapsed by default; sensitive PII (TIN) lives here
+  const [show1099, setShow1099]                 = useState(!!(initial?.is_1099_vendor));
+  const [is1099Vendor, setIs1099Vendor]         = useState(!!(initial?.is_1099_vendor));
+  const [entityType, setEntityType]             = useState(initial?.entity_type || '');
+  const [taxIdType, setTaxIdType]               = useState(initial?.tax_id_type || '');
+  const [taxIdFull, setTaxIdFull]               = useState(initial?.tax_id_full || '');
+  const [w9Collected, setW9Collected]           = useState(!!(initial?.w9_collected));
+  const [w9CollectedDate, setW9CollectedDate]   = useState(initial?.w9_collected_date || '');
+  const [exempt1099Reason, setExempt1099Reason] = useState(initial?.exempt_1099_reason || '');
+  const [force1099, setForce1099]               = useState(!!(initial?.force_1099));
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -7792,6 +7802,15 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
       business_city: businessCity.trim() || null,
       business_state: businessState.trim() || null,
       business_zip: businessZip.trim() || null,
+      // 1099-NEC / W-9 — empty strings → null so the DB CHECK constraints stay happy
+      is_1099_vendor: is1099Vendor,
+      entity_type: entityType || null,
+      tax_id_type: taxIdType || null,
+      tax_id_full: taxIdFull.trim() || null,
+      w9_collected: w9Collected,
+      w9_collected_date: w9CollectedDate || null,
+      exempt_1099_reason: exempt1099Reason.trim() || null,
+      force_1099: force1099,
     });
   }
 
@@ -7878,6 +7897,102 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
               <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
               <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
             </div>
+          </div>
+
+          {/* 1099-NEC / W-9 — collapsible. Contains sensitive PII (TIN); only
+              shown for active 1099 vendors by default. */}
+          <div style={{marginTop:'12px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+            <button type="button" onClick={() => setShow1099(v => !v)}
+              style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: show1099 ? '10px' : 0}}>
+              <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                📑 1099 / W-9 {is1099Vendor && <span style={{color:'var(--accent)'}}>· flagged</span>}
+                {w9Collected && <span style={{color:'var(--green)'}}> · W-9 ✓</span>}
+              </span>
+              <span style={{color:'var(--text-3)',fontSize:'12px'}}>{show1099 ? '▼' : '▶'}</span>
+            </button>
+            {show1099 && (
+              <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+                  <input type="checkbox" checked={is1099Vendor} onChange={e => setIs1099Vendor(e.target.checked)}/>
+                  <span style={{fontSize:'12px',color:'var(--text-1)',fontWeight:600}}>Track as 1099-NEC vendor</span>
+                </label>
+                <div style={{fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',marginTop:'-4px',marginLeft:'24px',lineHeight:1.5}}>
+                  Check this for any independent contractor / service vendor paid $600+ in a calendar year (Cynthia, attorneys, contractors, etc.).
+                </div>
+
+                {is1099Vendor && (
+                  <>
+                    <div className="form-group" style={{marginBottom:0}}>
+                      <label className="form-label">Entity type (from W-9)</label>
+                      <select className="form-select" value={entityType} onChange={e => setEntityType(e.target.value)}>
+                        <option value="">— Not set —</option>
+                        <option value="individual">Individual</option>
+                        <option value="sole_prop">Sole proprietor</option>
+                        <option value="partnership">Partnership</option>
+                        <option value="llc_single">LLC — single member (disregarded)</option>
+                        <option value="llc_multi">LLC — multi-member (partnership)</option>
+                        <option value="llc_s_corp">LLC taxed as S-corp</option>
+                        <option value="llc_c_corp">LLC taxed as C-corp</option>
+                        <option value="s_corp">S corporation</option>
+                        <option value="c_corp">C corporation</option>
+                        <option value="nonprofit">Tax-exempt / nonprofit</option>
+                        <option value="other">Other</option>
+                      </select>
+                      <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px',lineHeight:1.5}}>
+                        Corps generally do NOT need 1099s — except attorneys, which always do. Use Force 1099 below for those.
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group" style={{flex:'0 0 110px',marginBottom:0}}>
+                        <label className="form-label">TIN type</label>
+                        <select className="form-select" value={taxIdType} onChange={e => setTaxIdType(e.target.value)}>
+                          <option value="">—</option>
+                          <option value="ssn">SSN</option>
+                          <option value="ein">EIN</option>
+                        </select>
+                      </div>
+                      <div className="form-group" style={{flex:1,marginBottom:0}}>
+                        <label className="form-label">Tax ID number</label>
+                        <input className="form-input" type="text" value={taxIdFull}
+                          onChange={e => setTaxIdFull(e.target.value)}
+                          placeholder={taxIdType === 'ein' ? '12-3456789' : '123-45-6789'}
+                          autoComplete="off"/>
+                      </div>
+                    </div>
+                    <div style={{fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',marginTop:'-4px',lineHeight:1.5}}>
+                      ⚠ Sensitive. Stored encrypted at rest by Supabase; only you can read it (RLS). Used only on the 1099-NEC year-end report.
+                    </div>
+
+                    <div className="form-row">
+                      <label className="form-group" style={{flex:1,display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',marginBottom:0}}>
+                        <input type="checkbox" checked={w9Collected} onChange={e => setW9Collected(e.target.checked)}/>
+                        <span style={{fontSize:'12px',color:'var(--text-1)'}}>Signed W-9 on file</span>
+                      </label>
+                      {w9Collected && (
+                        <div className="form-group" style={{flex:1,marginBottom:0}}>
+                          <label className="form-label">Date received</label>
+                          <input className="form-input" type="date" value={w9CollectedDate}
+                            onChange={e => setW9CollectedDate(e.target.value)}/>
+                        </div>
+                      )}
+                    </div>
+
+                    <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+                      <input type="checkbox" checked={force1099} onChange={e => setForce1099(e.target.checked)}/>
+                      <span style={{fontSize:'12px',color:'var(--text-1)'}}>Force 1099 even if corporation (attorneys, etc.)</span>
+                    </label>
+
+                    <div className="form-group" style={{marginBottom:0}}>
+                      <label className="form-label">Exempt reason (optional)</label>
+                      <input className="form-input" type="text" value={exempt1099Reason}
+                        onChange={e => setExempt1099Reason(e.target.value)}
+                        placeholder='e.g. "Paid via credit card" — those go on 1099-K, not 1099-NEC'/>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="form-group" style={{marginTop:'14px'}}><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Context, history, anything to remember…" /></div>
@@ -15510,6 +15625,9 @@ function FinanceReports({ userId, settings, transactions, taxCategories, systems
       {reportType === 'quarterly' && (
         <QuarterlyTaxReport userId={userId} taxCategories={taxCategories} />
       )}
+      {reportType === 'form_1099' && (
+        <Form1099Report userId={userId} />
+      )}
     </div>
   );
 }
@@ -15520,8 +15638,9 @@ function ReportHeader({ reportType, setReportType, period, setPeriod, trackPerso
   options.push({ id:'roi', label:'🎯 Operations · ROI' });
   options.push({ id:'schedule_c', label:'📋 Schedule C' });
   options.push({ id:'quarterly', label:'💵 Quarterly Tax' });
-  // Schedule C + Quarterly Tax both use their own year selectors, hide the period dropdown
-  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly';
+  options.push({ id:'form_1099', label:'📑 1099s' });
+  // These three use their own year selectors, hide the period dropdown
+  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099';
 
   return (
     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -16846,6 +16965,389 @@ function TaxSettingsModal({ settings, onSave, onClose }) {
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Form1099Report ──────────────────────────────────────────────────
+// Year-end 1099-NEC vendor summary. Surfaces every vendor paid through
+// business transactions, with a running annual total. The IRS requires
+// a 1099-NEC for any non-corporate service vendor paid $600+ in a
+// calendar year (with attorneys ALWAYS getting a 1099 even if a corp).
+// Deadlines: copy to vendor by Jan 31; IRS filing by Feb 28 (paper) /
+// Mar 31 (electronic). Penalty $60–$310 per missed form depending on
+// lateness.
+//
+// Vendor identification: rolls up transactions by tax_id_full ($-match)
+// where present, else by contact_id, else by lowercased payee string.
+// This keeps cash payees who don't have a contact record from getting
+// lost — they show up as "unmatched payees" and can be linked to a
+// contact (or excluded with a reason).
+
+// Rule: does this vendor need a 1099-NEC?
+function needs1099(contact, paidYTD) {
+  if (!contact) return false;
+  if (paidYTD < 600) return false;
+  if (contact.exempt_1099_reason) return false;
+  if (contact.force_1099) return true;
+  // Corporations (S-corp / C-corp / LLC taxed as corp) are exempt unless
+  // force_1099 is set (e.g., attorneys)
+  const corp = ['s_corp','c_corp','llc_s_corp','llc_c_corp','nonprofit'];
+  if (corp.includes(contact.entity_type)) return false;
+  // Sole props, partnerships, LLCs (disregarded/multi), individuals: required
+  return true;
+}
+
+// Label for the "why no 1099" column
+function exemptionReason(contact, paidYTD) {
+  if (!contact) return null;
+  if (paidYTD < 600) return 'Below $600';
+  if (contact.exempt_1099_reason) return contact.exempt_1099_reason;
+  if (contact.force_1099) return null;
+  if (contact.entity_type === 's_corp' || contact.entity_type === 'llc_s_corp') return 'S corp — exempt';
+  if (contact.entity_type === 'c_corp' || contact.entity_type === 'llc_c_corp') return 'C corp — exempt';
+  if (contact.entity_type === 'nonprofit') return 'Nonprofit — exempt';
+  return null;
+}
+
+function Form1099Report({ userId }) {
+  const now = new Date();
+  const [taxYear, setTaxYear] = useState(now.getFullYear());
+  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('1099_required');  // '1099_required' | 'all_flagged' | 'over_600' | 'all'
+
+  const yearOptions = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2];
+
+  // 1099-NEC deadline countdown — Jan 31 of (taxYear + 1). For 2026 returns,
+  // that's Jan 31, 2027. Computed inline since `now` changes every render.
+  const deadline = new Date(taxYear + 1, 0, 31);
+  const daysToDeadline = Math.round((deadline - now) / 86400000);
+
+  // Load data scoped to the selected year. Only need business-scope
+  // negative-amount transactions (payments to vendors).
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const start = `${taxYear}-01-01`;
+      const end = `${taxYear}-12-31`;
+      const [{ data: tx }, { data: c }] = await Promise.all([
+        supabase.from('transactions').select('*')
+          .eq('user_id', userId).eq('scope', 'business').eq('is_archived', false)
+          .gte('date', start).lte('date', end).lt('amount', 0)
+          .limit(5000),
+        supabase.from('contacts').select('id, name, company, type, is_1099_vendor, entity_type, tax_id_last4, tax_id_type, w9_collected, w9_collected_date, exempt_1099_reason, force_1099, business_address, business_city, business_state, business_zip, home_address, home_city, home_state, home_zip, email, phone')
+          .eq('user_id', userId).limit(5000),
+      ]);
+      if (cancelled) return;
+      setTransactions(tx || []);
+      setContacts(c || []);
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId, taxYear]);
+
+  // Build vendor summary: aggregate by contact_id where present, else by
+  // lowercased payee string. Each "vendor" gets paidYTD, txCount, last
+  // payment date, and the contact reference if linked.
+  const vendors = useMemo(() => {
+    const map = new Map();
+    function keyFor(t) {
+      // Prefer contact_id; if a transaction has both payee and contact_id,
+      // contact_id wins. Else fall back to lowercased payee.
+      // Note: transactions table doesn't have contact_id directly — payee is
+      // a string. Link via payee match to contacts.name or .company.
+      // (Future improvement: add transactions.contact_id FK.)
+      const payee = (t.payee || '').trim();
+      if (!payee) return '__no_payee__';
+      // Try to find a contact whose name OR company matches the payee
+      const c = contacts.find(c => 
+        (c.name && c.name.toLowerCase() === payee.toLowerCase()) ||
+        (c.company && c.company.toLowerCase() === payee.toLowerCase())
+      );
+      return c ? `c:${c.id}` : `p:${payee.toLowerCase()}`;
+    }
+    transactions.forEach(t => {
+      const k = keyFor(t);
+      if (!map.has(k)) {
+        const isContact = k.startsWith('c:');
+        const contact = isContact ? contacts.find(c => c.id === k.slice(2)) : null;
+        map.set(k, {
+          key: k,
+          payee: t.payee || '(no payee)',
+          contact,
+          paidYTD: 0,
+          txCount: 0,
+          lastPayment: null,
+          transactions: [],
+        });
+      }
+      const v = map.get(k);
+      v.paidYTD += Math.abs(Number(t.amount) || 0);
+      v.txCount += 1;
+      v.transactions.push(t);
+      if (!v.lastPayment || (t.date && t.date > v.lastPayment)) v.lastPayment = t.date;
+    });
+    // Sort by paid descending
+    return Array.from(map.values()).sort((a, b) => b.paidYTD - a.paidYTD);
+  }, [transactions, contacts]);
+
+  // Filter for the table display
+  const filteredVendors = useMemo(() => {
+    let v = vendors;
+    if (filter === '1099_required') {
+      v = v.filter(x => needs1099(x.contact, x.paidYTD));
+    } else if (filter === 'all_flagged') {
+      v = v.filter(x => x.contact?.is_1099_vendor || x.contact?.force_1099);
+    } else if (filter === 'over_600') {
+      v = v.filter(x => x.paidYTD >= 600);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      v = v.filter(x => 
+        x.payee.toLowerCase().includes(q) ||
+        (x.contact?.name || '').toLowerCase().includes(q) ||
+        (x.contact?.company || '').toLowerCase().includes(q)
+      );
+    }
+    return v;
+  }, [vendors, filter, search]);
+
+  // KPI rollups
+  const kpis = useMemo(() => {
+    const over600 = vendors.filter(v => v.paidYTD >= 600);
+    const required = vendors.filter(v => needs1099(v.contact, v.paidYTD));
+    const w9Collected = required.filter(v => v.contact?.w9_collected).length;
+    const tinOnFile = required.filter(v => v.contact?.tax_id_last4).length;
+    return {
+      over600Count: over600.length,
+      requiredCount: required.length,
+      requiredTotalPaid: required.reduce((s, v) => s + v.paidYTD, 0),
+      w9Collected, w9Missing: required.length - w9Collected,
+      tinOnFile, tinMissing: required.length - tinOnFile,
+    };
+  }, [vendors]);
+
+  // Toggle is_1099_vendor / w9_collected inline from the report
+  async function quickToggle(contactId, field, value) {
+    if (!contactId) return;
+    const patch = { [field]: value };
+    if (field === 'w9_collected' && value && !contacts.find(c => c.id === contactId)?.w9_collected_date) {
+      patch.w9_collected_date = new Date().toISOString().slice(0, 10);
+    }
+    const { data, error } = await supabase
+      .from('contacts').update(patch).eq('id', contactId).select().single();
+    if (error) {
+      if (window.__notify) window.__notify('Update failed: ' + error.message, 'error');
+      return;
+    }
+    setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...data } : c));
+  }
+
+  // Promote an unmatched payee to a vendor contact
+  async function promoteToContact(payeeName) {
+    const { data, error } = await supabase
+      .from('contacts')
+      .insert({ user_id: userId, name: payeeName, type: 'vendor', is_1099_vendor: true })
+      .select().single();
+    if (error) {
+      if (window.__notify) window.__notify('Could not create contact: ' + error.message, 'error');
+      return;
+    }
+    setContacts(prev => [...prev, data]);
+    if (window.__notify) window.__notify(`Created contact: ${payeeName} · flagged 1099`, 'success');
+  }
+
+  // CSV export of all 1099-required vendors
+  function exportCSV() {
+    const headers = ['Vendor', 'Company', 'TIN type', 'TIN last 4', 'Address', 'City', 'State', 'ZIP', 'Email', 'Phone', 'Paid YTD', 'W-9 received', 'Entity type'];
+    const rows = filteredVendors.map(v => {
+      const c = v.contact;
+      const addr = c?.business_address || c?.home_address || '';
+      const city = c?.business_city || c?.home_city || '';
+      const st = c?.business_state || c?.home_state || '';
+      const zip = c?.business_zip || c?.home_zip || '';
+      return [
+        c?.name || v.payee,
+        c?.company || '',
+        c?.tax_id_type || '',
+        c?.tax_id_last4 ? `XXX-XX-${c.tax_id_last4}` : '',
+        addr, city, st, zip,
+        c?.email || '',
+        c?.phone || '',
+        v.paidYTD.toFixed(2),
+        c?.w9_collected ? (c.w9_collected_date || 'yes') : 'no',
+        c?.entity_type || '',
+      ];
+    });
+    const csv = [headers, ...rows].map(r => r.map(cell => {
+      const s = String(cell ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `1099-vendors-${taxYear}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const fmt = (n) => `$${Math.round(n || 0).toLocaleString()}`;
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+          <span style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)'}}>Tax year:</span>
+          <select value={taxYear} onChange={e => setTaxYear(Number(e.target.value))}
+            style={{padding:'6px 14px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-1)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>
+            {yearOptions.map(y => (
+              <option key={y} value={y}>{y}{y === now.getFullYear() ? ' (current)' : ''}</option>
+            ))}
+          </select>
+        </div>
+        <button onClick={exportCSV} disabled={filteredVendors.length === 0}
+          style={{padding:'6px 14px',background:'var(--accent)',border:'none',borderRadius:'6px',color:'var(--bg-base)',cursor:'pointer',fontSize:'11.5px',fontWeight:700,opacity:filteredVendors.length===0?0.4:1}}>
+          ⬇ Export CSV
+        </button>
+      </div>
+
+      {/* Deadline countdown */}
+      <div style={{
+        padding:'10px 14px',
+        background: daysToDeadline < 0
+          ? 'rgba(239,68,68,0.10)'
+          : daysToDeadline < 30
+            ? 'rgba(245,158,11,0.10)'
+            : 'var(--bg-base)',
+        border: `1px solid ${daysToDeadline < 0 ? 'var(--red)' : daysToDeadline < 30 ? '#f59e0b' : 'var(--border)'}`,
+        borderRadius:'8px',
+        fontSize:'12px',
+        color:'var(--text-2)',
+      }}>
+        <strong style={{color:'var(--text-1)'}}>
+          {daysToDeadline < 0
+            ? `⚠ ${Math.abs(daysToDeadline)} days PAST the Jan 31 deadline`
+            : daysToDeadline === 0
+              ? 'Today is the Jan 31 deadline'
+              : `${daysToDeadline} days to the Jan 31 deadline`}
+        </strong>
+        {' — '} 1099-NEC forms must be sent to vendors by January 31, {taxYear + 1} and filed with the IRS by February 28 (paper) or March 31 (electronic). Penalty: $60–$310 per late form.
+      </div>
+
+      {/* KPI strip */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))',gap:'8px'}}>
+        <KpiBox label="Vendors paid $600+" value={kpis.over600Count} sub={`${vendors.length} vendors total`}/>
+        <KpiBox label="1099-NEC required" value={kpis.requiredCount} sub={fmt(kpis.requiredTotalPaid)} color="var(--accent)"/>
+        <KpiBox label="W-9 collected" value={`${kpis.w9Collected} / ${kpis.requiredCount}`} sub={kpis.w9Missing > 0 ? `${kpis.w9Missing} missing` : 'all on file'} color={kpis.w9Missing > 0 ? 'var(--red)' : 'var(--green)'}/>
+        <KpiBox label="TIN on file" value={`${kpis.tinOnFile} / ${kpis.requiredCount}`} sub={kpis.tinMissing > 0 ? `${kpis.tinMissing} missing` : 'all on file'} color={kpis.tinMissing > 0 ? 'var(--red)' : 'var(--green)'}/>
+      </div>
+
+      {/* Filter + search */}
+      <div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',flexWrap:'wrap'}}>
+          {[
+            { id: '1099_required', label: '1099 required' },
+            { id: 'all_flagged',   label: 'All flagged' },
+            { id: 'over_600',      label: '$600+ paid' },
+            { id: 'all',           label: 'All vendors' },
+          ].map(o => (
+            <button key={o.id} onClick={() => setFilter(o.id)}
+              style={{padding:'5px 11px',border:'none',borderRadius:'6px',fontSize:'11px',fontWeight:700,cursor:'pointer',
+                background:filter===o.id?'var(--accent)':'transparent',
+                color:filter===o.id?'var(--bg-base)':'var(--text-2)'}}>{o.label}</button>
+          ))}
+        </div>
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search vendor…"
+          style={{flex:'1 1 180px',padding:'6px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-1)',fontSize:'11.5px',outline:'none'}}/>
+      </div>
+
+      {/* Vendor table */}
+      {loading ? (
+        <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Loading…</div>
+      ) : filteredVendors.length === 0 ? (
+        <div style={{padding:'24px',textAlign:'center',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text-3)',fontStyle:'italic'}}>
+          No vendors match the current filter.
+        </div>
+      ) : (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+          <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,display:'grid',gridTemplateColumns:'1fr 100px 90px 70px 80px',gap:'8px',alignItems:'center'}}>
+            <span>Vendor</span>
+            <span style={{textAlign:'right'}}>Paid YTD</span>
+            <span>Entity</span>
+            <span>W-9</span>
+            <span style={{textAlign:'right'}}>1099?</span>
+          </div>
+          {filteredVendors.map(v => {
+            const c = v.contact;
+            const required = needs1099(c, v.paidYTD);
+            const reason = exemptionReason(c, v.paidYTD);
+            return (
+              <div key={v.key} style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',display:'grid',gridTemplateColumns:'1fr 100px 90px 70px 80px',gap:'8px',alignItems:'center',fontSize:'12px'}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {c?.name || v.payee}
+                    {!c && (
+                      <button type="button" onClick={() => promoteToContact(v.payee)}
+                        title="Create a contact for this payee"
+                        style={{marginLeft:'8px',padding:'1px 7px',background:'transparent',border:'1px dashed var(--accent)',borderRadius:'4px',color:'var(--accent)',cursor:'pointer',fontSize:'9px',fontWeight:700}}>
+                        + Add as contact
+                      </button>
+                    )}
+                  </div>
+                  <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'1px'}}>
+                    {c?.company || ''}{c?.company ? ' · ' : ''}{v.txCount} tx
+                    {c?.tax_id_last4 && <> · TIN ···{c.tax_id_last4}</>}
+                  </div>
+                </div>
+                <div style={{textAlign:'right',fontWeight:700,fontVariantNumeric:'tabular-nums',color:v.paidYTD >= 600 ? 'var(--text-1)' : 'var(--text-3)'}}>
+                  {fmt(v.paidYTD)}
+                </div>
+                <div style={{fontSize:'10.5px',color:'var(--text-3)'}}>
+                  {c?.entity_type ? c.entity_type.replace(/_/g, ' ') : (c ? '—' : 'no contact')}
+                </div>
+                <div>
+                  {c ? (
+                    <button type="button" onClick={() => quickToggle(c.id, 'w9_collected', !c.w9_collected)}
+                      style={{padding:'2px 7px',background:c.w9_collected?'rgba(34,197,94,0.15)':'transparent',border:`1px solid ${c.w9_collected?'var(--green)':'var(--border)'}`,borderRadius:'4px',color:c.w9_collected?'var(--green)':'var(--text-3)',cursor:'pointer',fontSize:'10px',fontWeight:700}}>
+                      {c.w9_collected ? '✓ yes' : '○ no'}
+                    </button>
+                  ) : (
+                    <span style={{fontSize:'10px',color:'var(--text-3)'}}>—</span>
+                  )}
+                </div>
+                <div style={{textAlign:'right'}}>
+                  {required ? (
+                    <span style={{padding:'2px 7px',background:'rgba(197,169,94,0.15)',border:'1px solid var(--accent)',borderRadius:'4px',color:'var(--accent)',fontSize:'10px',fontWeight:700}}>required</span>
+                  ) : reason ? (
+                    <span title={reason} style={{padding:'2px 7px',background:'transparent',border:'1px solid var(--border)',borderRadius:'4px',color:'var(--text-3)',fontSize:'10px',fontWeight:600}}>exempt</span>
+                  ) : c ? (
+                    <button type="button" onClick={() => quickToggle(c.id, 'is_1099_vendor', !c.is_1099_vendor)}
+                      style={{padding:'2px 7px',background:'transparent',border:'1px dashed var(--border)',borderRadius:'4px',color:c.is_1099_vendor?'var(--accent)':'var(--text-3)',cursor:'pointer',fontSize:'10px',fontWeight:600}}>
+                      {c.is_1099_vendor ? 'flagged' : 'flag'}
+                    </button>
+                  ) : (
+                    <span style={{fontSize:'10px',color:'var(--text-3)'}}>—</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Boundary note */}
+      <div style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
+        <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>What this report does NOT do.</div>
+        It does not generate the actual 1099-NEC form (PDF) — your CPA or filing service (Tax1099, Track1099, QuickBooks, etc.) handles that. Export the CSV and hand it off. It also does not handle 1099-MISC (rent, royalties, prizes), 1099-K (merchant card payments — those are handled by the processor), or state-level filings. Florida has no state 1099 requirement.
       </div>
     </div>
   );
