@@ -6227,30 +6227,44 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             </button>
           </div>
           {showAddRel && (
-            <div style={{padding:'8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'8px',display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
-              <select className="form-select" value={relTargetId} onChange={e => setRelTargetId(e.target.value)}
-                style={{flex:'1 1 160px',fontSize:'12px',padding:'5px 8px',margin:0,minWidth:0}}>
-                <option value="">— Pick contact —</option>
-                {contacts.filter(c => c.id !== contact.id).map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <select className="form-select" value={relType} onChange={e => setRelType(e.target.value)}
-                style={{flex:'0 0 130px',fontSize:'12px',padding:'5px 8px',margin:0}}>
-                <option value="spouse">Spouse</option>
-                <option value="parent">Parent of…</option>
-                <option value="child">Child of…</option>
-                <option value="sibling">Sibling</option>
-                <option value="business_partner">Business partner</option>
-                <option value="partner">Partner</option>
-                <option value="friend">Friend</option>
-                <option value="colleague">Colleague</option>
-                <option value="other">Other</option>
-              </select>
-              <button className="btn btn-primary btn-sm" onClick={addRelationship}
-                disabled={savingRel || !relTargetId} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
-                {savingRel ? '↻' : 'Save'}
-              </button>
+            <div style={{padding:'10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'8px',display:'flex',flexDirection:'column',gap:'8px'}}>
+              {/* Search-based contact picker — type to find, or create on the fly.
+                  The default type of any newly-created contact is inferred from
+                  the relationship type below: family-style relationships create
+                  family contacts; business_partner creates a partner; etc. */}
+              <SingleContactPicker
+                value={relTargetId || null}
+                onChange={(id) => setRelTargetId(id || '')}
+                contacts={contacts}
+                setContacts={setContacts}
+                currentContactId={contact.id}
+                userId={userId}
+                placeholder="Search contacts or type to create…"
+                defaultNewContactType={
+                  ['spouse','parent','child','sibling'].includes(relType) ? 'family'
+                  : relType === 'business_partner' ? 'partner'
+                  : relType === 'colleague' ? 'other'
+                  : 'other'
+                }
+              />
+              <div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}>
+                <select className="form-select" value={relType} onChange={e => setRelType(e.target.value)}
+                  style={{flex:'1 1 auto',fontSize:'12px',padding:'6px 9px',margin:0,minWidth:'140px'}}>
+                  <option value="spouse">Spouse</option>
+                  <option value="parent">Parent of…</option>
+                  <option value="child">Child of…</option>
+                  <option value="sibling">Sibling</option>
+                  <option value="business_partner">Business partner</option>
+                  <option value="partner">Partner</option>
+                  <option value="friend">Friend</option>
+                  <option value="colleague">Colleague</option>
+                  <option value="other">Other</option>
+                </select>
+                <button className="btn btn-primary btn-sm" onClick={addRelationship}
+                  disabled={savingRel || !relTargetId} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
+                  {savingRel ? '↻ Saving' : 'Save'}
+                </button>
+              </div>
             </div>
           )}
           {relationships.length === 0 && !showAddRel && (
