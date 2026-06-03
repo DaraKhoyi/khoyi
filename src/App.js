@@ -15507,6 +15507,9 @@ function FinanceReports({ userId, settings, transactions, taxCategories, systems
       {reportType === 'schedule_c' && (
         <ScheduleCReport userId={userId} taxCategories={taxCategories} />
       )}
+      {reportType === 'quarterly' && (
+        <QuarterlyTaxReport userId={userId} taxCategories={taxCategories} />
+      )}
     </div>
   );
 }
@@ -15516,8 +15519,9 @@ function ReportHeader({ reportType, setReportType, period, setPeriod, trackPerso
   if (trackPersonal) options.push({ id:'personal', label:'🏠 Personal' });
   options.push({ id:'roi', label:'🎯 Operations · ROI' });
   options.push({ id:'schedule_c', label:'📋 Schedule C' });
-  // Schedule C uses its own year selector, hide the period dropdown
-  const showPeriod = reportType !== 'schedule_c';
+  options.push({ id:'quarterly', label:'💵 Quarterly Tax' });
+  // Schedule C + Quarterly Tax both use their own year selectors, hide the period dropdown
+  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly';
 
   return (
     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -16134,6 +16138,715 @@ function SCLine({ num, label, amount, subtitle, expanded, onToggle, children, ha
         </div>
       </button>
       {expanded && hasData && children}
+    </div>
+  );
+}
+
+// ─── 2026 federal tax constants ─────────────────────────────────────
+// From IRS Rev. Proc. 2025-32. The seven-bracket structure was made
+// permanent by the One Big Beautiful Bill Act (OBBBA, July 2025); the
+// boundaries below are the inflation-adjusted 2026 amounts.
+// Update once the IRS announces the 2027 schedule.
+const TAX_BRACKETS_2026 = {
+  single: [
+    { rate: 0.10, min: 0,        max: 12400 },
+    { rate: 0.12, min: 12400,    max: 50400 },
+    { rate: 0.22, min: 50400,    max: 105700 },
+    { rate: 0.24, min: 105700,   max: 201775 },
+    { rate: 0.32, min: 201775,   max: 256225 },
+    { rate: 0.35, min: 256225,   max: 640600 },
+    { rate: 0.37, min: 640600,   max: null },
+  ],
+  mfj: [
+    { rate: 0.10, min: 0,        max: 24800 },
+    { rate: 0.12, min: 24800,    max: 100800 },
+    { rate: 0.22, min: 100800,   max: 211400 },
+    { rate: 0.24, min: 211400,   max: 403550 },
+    { rate: 0.32, min: 403550,   max: 512450 },
+    { rate: 0.35, min: 512450,   max: 768700 },
+    { rate: 0.37, min: 768700,   max: null },
+  ],
+  // Married filing separately uses single brackets with halved breakpoints —
+  // approximated here.
+  mfs: [
+    { rate: 0.10, min: 0,        max: 12400 },
+    { rate: 0.12, min: 12400,    max: 50400 },
+    { rate: 0.22, min: 50400,    max: 105700 },
+    { rate: 0.24, min: 105700,   max: 201775 },
+    { rate: 0.32, min: 201775,   max: 256225 },
+    { rate: 0.35, min: 256225,   max: 384350 },
+    { rate: 0.37, min: 384350,   max: null },
+  ],
+  hoh: [
+    { rate: 0.10, min: 0,        max: 17700 },
+    { rate: 0.12, min: 17700,    max: 67450 },
+    { rate: 0.22, min: 67450,    max: 105700 },
+    { rate: 0.24, min: 105700,   max: 201775 },
+    { rate: 0.32, min: 201775,   max: 256200 },
+    { rate: 0.35, min: 256200,   max: 640600 },
+    { rate: 0.37, min: 640600,   max: null },
+  ],
+};
+const STD_DEDUCTION_2026 = {
+  single: 16100,
+  mfj: 32200,
+  mfs: 16100,
+  hoh: 24150,
+};
+const SE_TAX_2026 = {
+  ss_wage_base: 184500,                          // 2026 Social Security wage base
+  ss_rate: 0.124,                                // SS tax rate (employer + employee)
+  medicare_rate: 0.029,                          // Medicare tax rate
+  additional_medicare_rate: 0.009,               // Additional Medicare on high earners
+  additional_medicare_threshold_single: 200000,
+  additional_medicare_threshold_mfj: 250000,
+  se_deduction_factor: 0.9235,                   // 1 - (0.0765 / 2) ≈ accounts for the
+                                                 //   "employer half" excluded from SE base
+};
+// Note on SSTB (Specified Service Trade or Business): real-estate brokers
+// are NOT classified as SSTBs by the IRS — only specific professions like
+// law, health, and accounting are. Real-estate agents qualify for the full
+// QBI deduction regardless of income. SSTB thresholds are $201,775 single
+// / $403,500 MFJ in 2026 if ever needed for other use cases.
+
+// ─── Tax computation helpers ────────────────────────────────────────
+function computeSETax(netProfit, filingStatus = 'single') {
+  const c = SE_TAX_2026;
+  if (!Number.isFinite(netProfit) || netProfit <= 0) {
+    return { ssTax: 0, medicareTax: 0, additionalMedicare: 0, total: 0, aboveLineDeduction: 0, seEarnings: 0 };
+  }
+  // Net earnings subject to SE tax (the 0.9235 factor "evens out" the
+  // employer half of SS/Medicare that wouldn't be subject to SE tax)
+  const seEarnings = netProfit * c.se_deduction_factor;
+  const ssTax = Math.min(seEarnings, c.ss_wage_base) * c.ss_rate;
+  const medicareTax = seEarnings * c.medicare_rate;
+  const addlThreshold = filingStatus === 'mfj'
+    ? c.additional_medicare_threshold_mfj
+    : c.additional_medicare_threshold_single;
+  const additionalMedicare = Math.max(0, seEarnings - addlThreshold) * c.additional_medicare_rate;
+  const total = ssTax + medicareTax + additionalMedicare;
+  // Above-the-line deduction = half of (SS + Medicare). The Additional
+  // Medicare 0.9% is NOT deductible above-the-line.
+  const aboveLineDeduction = (ssTax + medicareTax) / 2;
+  return { ssTax, medicareTax, additionalMedicare, total, aboveLineDeduction, seEarnings };
+}
+
+function computeFederalIncomeTax(taxableIncome, filingStatus = 'single') {
+  const brackets = TAX_BRACKETS_2026[filingStatus] || TAX_BRACKETS_2026.single;
+  if (!Number.isFinite(taxableIncome) || taxableIncome <= 0) {
+    return { tax: 0, marginalRate: brackets[0].rate, effectiveRate: 0, usedBrackets: [] };
+  }
+  let tax = 0;
+  let lastBracket = brackets[0];
+  const usedBrackets = [];
+  for (const b of brackets) {
+    if (taxableIncome > b.min) {
+      const top = Math.min(taxableIncome, b.max == null ? Infinity : b.max);
+      const inBracket = Math.max(0, top - b.min);
+      const t = inBracket * b.rate;
+      tax += t;
+      usedBrackets.push({ ...b, incomeInBracket: inBracket, taxInBracket: t });
+      lastBracket = b;
+    }
+  }
+  return {
+    tax,
+    marginalRate: lastBracket.rate,
+    effectiveRate: tax / taxableIncome,
+    usedBrackets,
+  };
+}
+
+// Computes Schedule C net profit from transactions + mileage. Used by
+// QuarterlyTaxReport so its number lines up with the ScheduleCReport.
+function computeNetProfitFromData(transactions, taxCategories, mileageEntries) {
+  const grossReceipts = transactions
+    .filter(t => Number(t.amount) > 0)
+    .reduce((s, t) => s + Number(t.amount), 0);
+  const catMap = Object.fromEntries(taxCategories.map(c => [c.id, c]));
+  const businessExpenses = transactions
+    .filter(t => Number(t.amount) < 0 && t.tax_category_id)
+    .reduce((s, t) => {
+      const cat = catMap[t.tax_category_id];
+      if (!cat) return s;
+      // Skip categories not on Schedule C (estimated tax payments, etc.)
+      if (cat.schedule_c_line === '(not Schedule C)') return s;
+      const ded = Number(cat.deduction_pct || 1);
+      return s + Math.abs(Number(t.amount)) * ded;
+    }, 0);
+  const mileageDeduction = (mileageEntries || [])
+    .filter(m => m.category === 'business')
+    .reduce((s, m) => s + Number(m.computed_deduction || 0), 0);
+  return {
+    grossReceipts,
+    businessExpenses,
+    mileageDeduction,
+    totalExpenses: businessExpenses + mileageDeduction,
+    netProfit: grossReceipts - businessExpenses - mileageDeduction,
+  };
+}
+
+// The full annual-tax projection. Pure function — takes settings + YTD
+// data, returns everything the UI needs to render.
+function computeQuarterlyTaxProjection({
+  ytdNetProfit, monthsElapsed, year, filingStatus, otherIncome, withholding,
+  useQbi, itemizedDeductions, priorYearTax, priorYearAgi, ytdEstimatedPaid,
+}) {
+  // Annualize YTD net profit to a full-year projection.
+  // If we're in month 6, multiply by 12/6 = 2. Early in the year this is
+  // noisy — by Q3 it stabilizes. Tail end of year, basically YTD = annual.
+  const annualizedNetProfit = monthsElapsed > 0
+    ? (ytdNetProfit * 12 / monthsElapsed)
+    : ytdNetProfit;
+
+  // SE tax computed on the annualized projection
+  const se = computeSETax(annualizedNetProfit, filingStatus);
+
+  // Adjusted Gross Income: Schedule C net + other income − half SE tax
+  const agi = annualizedNetProfit + (otherIncome || 0) - se.aboveLineDeduction;
+
+  // QBI deduction (Sec 199A). For real-estate agents (NOT an SSTB), full 20%
+  // applies regardless of income. For SSTBs above the threshold, the
+  // deduction phases out — out of scope for v1.
+  let qbiDeduction = 0;
+  if (useQbi && annualizedNetProfit > 0) {
+    const qbiBase = annualizedNetProfit - se.aboveLineDeduction;
+    qbiDeduction = Math.max(0, Math.min(qbiBase * 0.20, Math.max(0, agi) * 0.20));
+  }
+
+  // Use itemized if it exceeds the standard
+  const stdDeduction = STD_DEDUCTION_2026[filingStatus] || STD_DEDUCTION_2026.single;
+  const deductionUsed = (itemizedDeductions && itemizedDeductions > stdDeduction)
+    ? itemizedDeductions
+    : stdDeduction;
+  const deductionType = (itemizedDeductions && itemizedDeductions > stdDeduction) ? 'itemized' : 'standard';
+
+  // Taxable income after all deductions
+  const taxableIncome = Math.max(0, agi - deductionUsed - qbiDeduction);
+
+  // Federal income tax via bracket walk
+  const fed = computeFederalIncomeTax(taxableIncome, filingStatus);
+
+  // Total tax owed for the projected year (SE + federal income)
+  const totalAnnualTax = se.total + fed.tax;
+
+  // Net of W-2 withholding (if the user has any). Estimated payments
+  // counted separately below in "currently owed" math.
+  const totalAfterWithholding = Math.max(0, totalAnnualTax - (withholding || 0));
+
+  // IRS safe harbor: pay 100% of prior-year tax (110% if AGI > $150K)
+  // Avoids underpayment penalty regardless of actual current-year income.
+  const safeHarborMultiplier = (priorYearAgi || 0) > 150000 ? 1.10 : 1.00;
+  const safeHarborAnnual = priorYearTax ? Math.max(0, priorYearTax * safeHarborMultiplier - (withholding || 0)) : null;
+
+  // The lower of the two strategies (current-year 90% rule vs prior-year safe harbor)
+  const quarterlyByCurrentYear = totalAfterWithholding / 4;
+  const quarterlyBySafeHarbor = safeHarborAnnual != null ? safeHarborAnnual / 4 : null;
+  const recommendedQuarterly = quarterlyBySafeHarbor != null
+    ? Math.min(quarterlyByCurrentYear, quarterlyBySafeHarbor)
+    : quarterlyByCurrentYear;
+
+  // Quarterly due dates (Apr 15 / Jun 15 / Sep 15 / Jan 15 of next year)
+  const quarters = [
+    { id: 'Q1', label: 'Q1', due: new Date(year, 3, 15), covers: 'Jan–Mar' },
+    { id: 'Q2', label: 'Q2', due: new Date(year, 5, 15), covers: 'Apr–May' },
+    { id: 'Q3', label: 'Q3', due: new Date(year, 8, 15), covers: 'Jun–Aug' },
+    { id: 'Q4', label: 'Q4', due: new Date(year + 1, 0, 15), covers: 'Sep–Dec' },
+  ];
+  const now = new Date();
+  const quartersPassed = quarters.filter(q => q.due <= now).length;
+  const expectedYtdPaid = quartersPassed * recommendedQuarterly;
+  const currentlyOwed = Math.max(0, expectedYtdPaid - (ytdEstimatedPaid || 0));
+  const nextDueQuarter = quarters.find(q => q.due > now) || null;
+
+  return {
+    annualizedNetProfit, se, agi, qbiDeduction, deductionUsed, deductionType,
+    taxableIncome, fed, totalAnnualTax, totalAfterWithholding,
+    safeHarborAnnual, quarterlyByCurrentYear, quarterlyBySafeHarbor, recommendedQuarterly,
+    quarters, quartersPassed, expectedYtdPaid, currentlyOwed, nextDueQuarter,
+  };
+}
+
+// ─── QuarterlyTaxReport ──────────────────────────────────────────────
+// Self-employment tax + federal income tax projection with a quarterly
+// payment schedule. Sits on top of the same Schedule C data, then layers
+// on SE tax (Schedule SE) and federal bracket math to produce the
+// actionable number: "set aside $X per quarter."
+//
+// Florida has no state income tax — no state-side math needed.
+function QuarterlyTaxReport({ userId, taxCategories }) {
+  const now = new Date();
+  const [taxYear, setTaxYear] = useState(now.getFullYear());
+  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState([]);
+  const [mileageEntries, setMileageEntries] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showWorkings, setShowWorkings] = useState(false);
+
+  const yearOptions = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2];
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const start = `${taxYear}-01-01`;
+      const end = `${taxYear}-12-31`;
+      const [{ data: tx }, { data: m }, { data: s }] = await Promise.all([
+        supabase.from('transactions').select('*')
+          .eq('user_id', userId).eq('is_archived', false)
+          .gte('date', start).lte('date', end)
+          .order('date', { ascending: true }).limit(5000),
+        supabase.from('mileage_entries').select('*')
+          .eq('user_id', userId).eq('category', 'business')
+          .gte('date', start).lte('date', end)
+          .order('date', { ascending: true }).limit(5000),
+        supabase.from('user_tax_settings').select('*')
+          .eq('user_id', userId).maybeSingle(),
+      ]);
+      if (cancelled) return;
+      setTransactions(tx || []);
+      setMileageEntries(m || []);
+      setSettings(s || { filing_status: 'single', estimated_other_income: 0, withholding_ytd: 0, use_qbi_deduction: true, itemized_deductions: 0 });
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId, taxYear]);
+
+  // Estimated tax payment YTD: sum of transactions in the Estimated Tax
+  // Payments category for the selected year. Lets the user log Q1, Q2 etc.
+  // in the Ledger as transactions and have them flow into "already paid".
+  const estPaymentCat = useMemo(() =>
+    taxCategories.find(c => c.name === 'Estimated Tax Payments'),
+    [taxCategories]
+  );
+  const ytdEstimatedPaid = useMemo(() => {
+    if (!estPaymentCat) return 0;
+    return transactions
+      .filter(t => t.tax_category_id === estPaymentCat.id)
+      .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+  }, [transactions, estPaymentCat]);
+
+  // YTD net profit (business scope only — Schedule C)
+  const ytd = useMemo(() => {
+    const bizTx = transactions.filter(t => t.scope === 'business');
+    return computeNetProfitFromData(bizTx, taxCategories, mileageEntries);
+  }, [transactions, taxCategories, mileageEntries]);
+
+  // How many months are elapsed in the selected tax year (for annualization).
+  // Recomputes each render — cheap, and `now` is captured fresh each time.
+  const currentMonthInThisYear = now.getMonth() + 1;
+  const monthsElapsed = taxYear < now.getFullYear()
+    ? 12
+    : taxYear > now.getFullYear()
+      ? 1
+      : currentMonthInThisYear;
+
+  // Run the projection
+  const projection = useMemo(() => {
+    if (!settings) return null;
+    return computeQuarterlyTaxProjection({
+      ytdNetProfit: ytd.netProfit,
+      monthsElapsed,
+      year: taxYear,
+      filingStatus: settings.filing_status || 'single',
+      otherIncome: Number(settings.estimated_other_income) || 0,
+      withholding: Number(settings.withholding_ytd) || 0,
+      useQbi: !!settings.use_qbi_deduction,
+      itemizedDeductions: Number(settings.itemized_deductions) || 0,
+      priorYearTax: Number(settings.prior_year_tax_owed) || null,
+      priorYearAgi: Number(settings.prior_year_agi) || null,
+      ytdEstimatedPaid,
+    });
+  }, [settings, ytd.netProfit, monthsElapsed, taxYear, ytdEstimatedPaid]);
+
+  async function saveSettings(patch) {
+    const updates = { user_id: userId, ...settings, ...patch, updated_at: new Date().toISOString() };
+    const { data, error } = await supabase
+      .from('user_tax_settings').upsert(updates).select().single();
+    if (error) {
+      if (window.__notify) window.__notify('Save failed: ' + error.message, 'error');
+      return;
+    }
+    setSettings(data);
+  }
+
+  const fmt = (n) => `$${Math.round(n || 0).toLocaleString()}`;
+  const fmtPct = (n) => `${(n * 100).toFixed(1)}%`;
+
+  if (loading || !settings || !projection) {
+    return <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Loading…</div>;
+  }
+
+  const filingStatusLabel = {
+    single: 'Single', mfj: 'Married filing jointly',
+    mfs: 'Married filing separately', hoh: 'Head of household',
+  }[settings.filing_status || 'single'];
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+          <span style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)'}}>Tax year:</span>
+          <select value={taxYear} onChange={e => setTaxYear(Number(e.target.value))}
+            style={{padding:'6px 14px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-1)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>
+            {yearOptions.map(y => (
+              <option key={y} value={y}>{y}{y === now.getFullYear() ? ' (current)' : ''}</option>
+            ))}
+          </select>
+        </div>
+        <button onClick={() => setShowSettings(true)}
+          style={{padding:'6px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11.5px',fontWeight:600}}>
+          ⚙ Tax settings · {filingStatusLabel}
+        </button>
+      </div>
+
+      {/* HEADLINE — what to set aside / owe now */}
+      <div style={{
+        padding:'18px',
+        background: projection.currentlyOwed > 0
+          ? 'linear-gradient(135deg, rgba(239,68,68,0.10), rgba(245,158,11,0.10))'
+          : 'linear-gradient(135deg, rgba(34,197,94,0.10), rgba(59,130,246,0.06))',
+        border: `2px solid ${projection.currentlyOwed > 0 ? 'var(--red)' : 'var(--green)'}`,
+        borderRadius:'12px',
+      }}>
+        <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>
+          {projection.currentlyOwed > 0 ? 'You are behind on estimated payments' : 'On track with estimated payments'}
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:'12px',marginTop:'8px',flexWrap:'wrap'}}>
+          <div>
+            <div style={{fontSize:'30px',fontWeight:800,color: projection.currentlyOwed > 0 ? 'var(--red)' : 'var(--green)',fontVariantNumeric:'tabular-nums',lineHeight:1}}>
+              {fmt(projection.currentlyOwed > 0 ? projection.currentlyOwed : projection.recommendedQuarterly)}
+            </div>
+            <div style={{fontSize:'11.5px',color:'var(--text-2)',marginTop:'5px'}}>
+              {projection.currentlyOwed > 0
+                ? `Catch-up needed now · ${projection.quartersPassed} of 4 quarters elapsed`
+                : `Set aside per quarter · next due ${projection.nextDueQuarter?.due.toLocaleDateString('en-US', {month:'short', day:'numeric'}) || '—'}`}
+            </div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>YTD paid</div>
+            <div style={{fontSize:'18px',fontWeight:700,color:'var(--text-1)',fontVariantNumeric:'tabular-nums',marginTop:'4px'}}>{fmt(ytdEstimatedPaid)}</div>
+            <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>via Estimated Tax Payments</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quarterly schedule */}
+      <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+        <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'10px'}}>
+          Quarterly Payment Schedule · {taxYear}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))',gap:'8px'}}>
+          {projection.quarters.map((q, idx) => {
+            const isPast = q.due <= now;
+            const dueDateStr = q.due.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: q.due.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+            return (
+              <div key={q.id} style={{
+                padding:'10px 12px',
+                background: isPast ? 'var(--bg-base)' : 'var(--bg-hover)',
+                border: `1px solid ${isPast ? 'var(--border)' : 'var(--accent)'}`,
+                borderRadius:'8px',
+                opacity: isPast ? 0.75 : 1,
+              }}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+                  <span style={{fontSize:'12px',fontWeight:700,color:'var(--text-1)'}}>{q.label}</span>
+                  <span style={{fontSize:'9px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>{q.covers}</span>
+                </div>
+                <div style={{fontSize:'17px',fontWeight:800,color:'var(--accent)',fontVariantNumeric:'tabular-nums',marginTop:'6px'}}>
+                  {fmt(projection.recommendedQuarterly)}
+                </div>
+                <div style={{fontSize:'10px',color:isPast?'var(--text-3)':'var(--text-2)',marginTop:'3px'}}>
+                  Due {dueDateStr}{isPast ? ' · past' : ''}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{fontSize:'10.5px',color:'var(--text-3)',marginTop:'10px',lineHeight:1.5,fontStyle:'italic'}}>
+          To log a paid estimate, add a transaction in the Ledger with category <strong style={{color:'var(--text-2)'}}>Estimated Tax Payments</strong>. The YTD paid total above will pick it up automatically.
+        </div>
+      </div>
+
+      {/* Annual projection summary */}
+      <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px',flexWrap:'wrap',gap:'8px'}}>
+          <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Annual Projection</div>
+          <button onClick={() => setShowWorkings(v => !v)}
+            style={{padding:'4px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'4px',color:'var(--text-3)',cursor:'pointer',fontSize:'10.5px',fontWeight:600}}>
+            {showWorkings ? '× Hide working' : '+ Show working'}
+          </button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))',gap:'10px'}}>
+          <KpiBox label="Net profit YTD" value={fmt(ytd.netProfit)} sub={`${monthsElapsed} mo of ${taxYear}`}/>
+          <KpiBox label="Annualized" value={fmt(projection.annualizedNetProfit)} sub="projected to year-end"/>
+          <KpiBox label="SE tax (15.3%)" value={fmt(projection.se.total)} sub="Schedule SE" color="#f59e0b"/>
+          <KpiBox label="Federal income tax" value={fmt(projection.fed.tax)} sub={`${fmtPct(projection.fed.effectiveRate)} effective`} color="#3b82f6"/>
+          <KpiBox label="Total annual tax" value={fmt(projection.totalAnnualTax)} sub={`marginal ${fmtPct(projection.fed.marginalRate + 0.153)}`} color="var(--red)"/>
+        </div>
+      </div>
+
+      {/* Workings — full walk through the math */}
+      {showWorkings && (
+        <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+          <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'10px'}}>
+            Working — how we got there
+          </div>
+
+          {/* Step 1: Net profit */}
+          <WorkingsSection title="1. Schedule C net profit" total={ytd.netProfit}>
+            <WorkingsRow label="Gross receipts (income transactions)" amount={ytd.grossReceipts}/>
+            <WorkingsRow label="− Business expenses (deductible portion)" amount={-ytd.businessExpenses}/>
+            <WorkingsRow label="− Mileage deduction (Line 9)" amount={-ytd.mileageDeduction}/>
+          </WorkingsSection>
+
+          <WorkingsSection title={`2. Annualize to full year (×${(12/monthsElapsed).toFixed(2)})`} total={projection.annualizedNetProfit}/>
+
+          <WorkingsSection title="3. Self-employment tax" total={projection.se.total}>
+            <WorkingsRow label={`SE earnings = net profit × ${SE_TAX_2026.se_deduction_factor}`} amount={projection.se.seEarnings}/>
+            <WorkingsRow label={`Social Security tax (12.4% capped at ${fmt(SE_TAX_2026.ss_wage_base)})`} amount={projection.se.ssTax}/>
+            <WorkingsRow label="Medicare tax (2.9%, no cap)" amount={projection.se.medicareTax}/>
+            {projection.se.additionalMedicare > 0 && (
+              <WorkingsRow label={`Additional Medicare (0.9% above ${settings.filing_status === 'mfj' ? '$250K' : '$200K'})`} amount={projection.se.additionalMedicare}/>
+            )}
+          </WorkingsSection>
+
+          <WorkingsSection title="4. Adjusted Gross Income (AGI)" total={projection.agi}>
+            <WorkingsRow label="Schedule C net profit (annualized)" amount={projection.annualizedNetProfit}/>
+            <WorkingsRow label="+ Other income" amount={Number(settings.estimated_other_income) || 0}/>
+            <WorkingsRow label="− Half of SE tax (above-the-line deduction)" amount={-projection.se.aboveLineDeduction}/>
+          </WorkingsSection>
+
+          <WorkingsSection title="5. Taxable income" total={projection.taxableIncome}>
+            <WorkingsRow label="AGI" amount={projection.agi}/>
+            <WorkingsRow label={`− ${projection.deductionType === 'itemized' ? 'Itemized' : 'Standard'} deduction (${filingStatusLabel})`} amount={-projection.deductionUsed}/>
+            {projection.qbiDeduction > 0 && (
+              <WorkingsRow label="− QBI deduction (20% of qualified biz income, Sec 199A)" amount={-projection.qbiDeduction}/>
+            )}
+          </WorkingsSection>
+
+          <WorkingsSection title="6. Federal income tax (bracket walk)" total={projection.fed.tax}>
+            {projection.fed.usedBrackets.map((b, i) => (
+              <WorkingsRow key={i}
+                label={`${(b.rate*100).toFixed(0)}% bracket · ${fmt(b.incomeInBracket)} of income`}
+                amount={b.taxInBracket}/>
+            ))}
+          </WorkingsSection>
+
+          <WorkingsSection title="7. Total annual tax" total={projection.totalAnnualTax}>
+            <WorkingsRow label="SE tax" amount={projection.se.total}/>
+            <WorkingsRow label="Federal income tax" amount={projection.fed.tax}/>
+          </WorkingsSection>
+
+          {projection.safeHarborAnnual != null && (
+            <WorkingsSection title="8. Safe harbor comparison" total={null}>
+              <WorkingsRow label={`Current-year projection ÷ 4`} amount={projection.quarterlyByCurrentYear}/>
+              <WorkingsRow label={`Prior-year safe harbor ÷ 4 (× ${(projection.safeHarborAnnual / Number(settings.prior_year_tax_owed || 1) * 100 / 100).toFixed(2)})`} amount={projection.quarterlyBySafeHarbor || 0}/>
+              <WorkingsRow label="Recommended (the lower of the two)" amount={projection.recommendedQuarterly} bold/>
+            </WorkingsSection>
+          )}
+        </div>
+      )}
+
+      {/* Boundary note */}
+      <div style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
+        <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>This is a projection, not a tax return.</div>
+        Florida residents have no state income tax — federal only. The numbers above assume real-estate agents are NOT classified as a Specified Service Trade or Business (SSTB), so the full 20% QBI deduction applies. AMT not modeled. The Additional Child Tax Credit, EITC, and other targeted credits are not included. Have your CPA review before sending the IRS a payment.
+      </div>
+
+      {/* Settings modal */}
+      {showSettings && (
+        <TaxSettingsModal
+          settings={settings}
+          onSave={async (patch) => { await saveSettings(patch); }}
+          onClose={() => setShowSettings(false)}/>
+      )}
+    </div>
+  );
+}
+
+// Small KPI tile (separate from RecruitingKpiTile so it's self-contained
+// and doesn't depend on the recruiting feature)
+function KpiBox({ label, value, sub, color }) {
+  return (
+    <div style={{padding:'10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+      <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>{label}</div>
+      <div style={{fontSize:'17px',fontWeight:800,fontVariantNumeric:'tabular-nums',marginTop:'4px',color: color || 'var(--text-1)'}}>{value}</div>
+      {sub && <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{sub}</div>}
+    </div>
+  );
+}
+
+// Section in the "show working" math walkthrough
+function WorkingsSection({ title, total, children }) {
+  return (
+    <div style={{marginBottom:'14px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 10px',background:'var(--bg-hover)',borderRadius:'6px 6px 0 0',borderBottom:'1px solid var(--border)'}}>
+        <span style={{fontSize:'12px',fontWeight:700,color:'var(--text-1)'}}>{title}</span>
+        {total != null && (
+          <span style={{fontSize:'13px',fontWeight:800,color:'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>
+            ${Math.round(total).toLocaleString()}
+          </span>
+        )}
+      </div>
+      {children && (
+        <div style={{padding:'4px 10px 8px',background:'var(--bg-base)',borderRadius:'0 0 6px 6px',border:'1px solid var(--border)',borderTop:'none'}}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorkingsRow({ label, amount, bold }) {
+  return (
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,0.04)',fontSize:'11.5px'}}>
+      <span style={{color:'var(--text-2)',fontWeight: bold ? 700 : 400}}>{label}</span>
+      <span style={{color: amount < 0 ? 'var(--red)' : 'var(--text-1)', fontVariantNumeric:'tabular-nums', fontWeight: bold ? 800 : 600}}>
+        {amount < 0 ? '−' : ''}${Math.round(Math.abs(amount)).toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
+// Modal to capture filing status, prior-year safe harbor data, other income, etc.
+function TaxSettingsModal({ settings, onSave, onClose }) {
+  const [filingStatus, setFilingStatus] = useState(settings.filing_status || 'single');
+  const [otherIncome, setOtherIncome] = useState(settings.estimated_other_income ?? 0);
+  const [withholding, setWithholding] = useState(settings.withholding_ytd ?? 0);
+  const [priorYearTax, setPriorYearTax] = useState(settings.prior_year_tax_owed ?? '');
+  const [priorYearAgi, setPriorYearAgi] = useState(settings.prior_year_agi ?? '');
+  const [useQbi, setUseQbi] = useState(settings.use_qbi_deduction !== false);
+  const [itemized, setItemized] = useState(settings.itemized_deductions ?? 0);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    await onSave({
+      filing_status: filingStatus,
+      estimated_other_income: Number(otherIncome) || 0,
+      withholding_ytd: Number(withholding) || 0,
+      prior_year_tax_owed: priorYearTax === '' ? null : Number(priorYearTax),
+      prior_year_agi: priorYearAgi === '' ? null : Number(priorYearAgi),
+      use_qbi_deduction: useQbi,
+      itemized_deductions: Number(itemized) || 0,
+    });
+    setSaving(false);
+    onClose();
+  }
+
+  const inputStyle = {
+    width:'100%', padding:'7px 9px',
+    background:'var(--bg-base)', color:'var(--text-1)',
+    border:'1px solid var(--border)', borderRadius:'6px',
+    fontSize:'12.5px', outline:'none',
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{maxWidth:'480px',maxHeight:'92vh',overflowY:'auto'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
+          <h3 style={{margin:0,fontSize:'15px'}}>Tax settings</h3>
+          <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Filing status</label>
+          <select value={filingStatus} onChange={e => setFilingStatus(e.target.value)} style={inputStyle}>
+            <option value="single">Single</option>
+            <option value="mfj">Married filing jointly</option>
+            <option value="mfs">Married filing separately</option>
+            <option value="hoh">Head of household</option>
+          </select>
+        </div>
+
+        <div style={{marginTop:'14px',marginBottom:'8px',fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>This year</div>
+
+        <div className="form-group">
+          <label className="form-label">Other annual income (spouse W-2, side W-2, interest…)</label>
+          <div style={{position:'relative'}}>
+            <span style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'12px',pointerEvents:'none'}}>$</span>
+            <input type="number" step="100" value={otherIncome}
+              onChange={e => setOtherIncome(e.target.value)}
+              style={{...inputStyle, paddingLeft:'20px'}}/>
+          </div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>Added to your Schedule C net profit when computing AGI.</div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Federal tax already withheld YTD (from W-2 income)</label>
+          <div style={{position:'relative'}}>
+            <span style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'12px',pointerEvents:'none'}}>$</span>
+            <input type="number" step="100" value={withholding}
+              onChange={e => setWithholding(e.target.value)}
+              style={{...inputStyle, paddingLeft:'20px'}}/>
+          </div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>Subtracted from total tax owed. Skip if you're a pure 1099 contractor.</div>
+        </div>
+
+        <div style={{marginTop:'14px',marginBottom:'8px',fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Safe harbor (prior year)</div>
+        <div style={{fontSize:'10.5px',color:'var(--text-3)',marginBottom:'8px',fontStyle:'italic',lineHeight:1.5}}>
+          Paying 100% of last year's tax (110% if AGI &gt; $150K) avoids the underpayment penalty regardless of how this year goes. From last year's Form 1040.
+        </div>
+
+        <div className="form-row">
+          <div className="form-group" style={{flex:1}}>
+            <label className="form-label">Prior year tax owed</label>
+            <div style={{position:'relative'}}>
+              <span style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'12px',pointerEvents:'none'}}>$</span>
+              <input type="number" step="100" value={priorYearTax}
+                onChange={e => setPriorYearTax(e.target.value)}
+                placeholder="From 1040 Line 24"
+                style={{...inputStyle, paddingLeft:'20px'}}/>
+            </div>
+          </div>
+          <div className="form-group" style={{flex:1}}>
+            <label className="form-label">Prior year AGI</label>
+            <div style={{position:'relative'}}>
+              <span style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'12px',pointerEvents:'none'}}>$</span>
+              <input type="number" step="1000" value={priorYearAgi}
+                onChange={e => setPriorYearAgi(e.target.value)}
+                placeholder="From 1040 Line 11"
+                style={{...inputStyle, paddingLeft:'20px'}}/>
+            </div>
+          </div>
+        </div>
+
+        <div style={{marginTop:'14px',marginBottom:'8px',fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Deductions</div>
+
+        <div className="form-group">
+          <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+            <input type="checkbox" checked={useQbi} onChange={e => setUseQbi(e.target.checked)}/>
+            <span style={{fontSize:'12px',color:'var(--text-1)'}}>Apply 20% QBI deduction (Sec. 199A)</span>
+          </label>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',marginLeft:'24px',lineHeight:1.5}}>
+            Real-estate brokers / agents generally qualify for the full deduction. Disable only if your CPA tells you otherwise.
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Itemized deductions (if you itemize)</label>
+          <div style={{position:'relative'}}>
+            <span style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'12px',pointerEvents:'none'}}>$</span>
+            <input type="number" step="100" value={itemized}
+              onChange={e => setItemized(e.target.value)}
+              placeholder="0 = use standard"
+              style={{...inputStyle, paddingLeft:'20px'}}/>
+          </div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>
+            Standard deductions 2026: $16,100 single · $32,200 MFJ · $24,150 HoH. Used unless your itemized exceeds.
+          </div>
+        </div>
+
+        <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'16px'}}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
