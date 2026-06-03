@@ -6789,6 +6789,266 @@ function MultiContactPicker({ value, onChange, contacts, setContacts, currentCon
   );
 }
 
+// ─── SingleContactPicker ─────────────────────────────────────────────
+// Search-with-autocomplete picker for single-value contact_ref fields
+// (Spouse / partner, Lender, Title rep, Referred by, etc.). Mirrors
+// the MultiContactPicker UX but holds exactly one selected contact:
+//   - When unset: a search input. Type a name to filter; ↑/↓ to move,
+//     Enter to pick. Same '+ Create new contact: \"X\"' affordance when
+//     no exact match exists.
+//   - When set: shows the selected contact as a chip with avatar +
+//     name + secondary line. × clears the value and returns to search.
+// Respects def.ref_filter so e.g. the 'Lender' field only surfaces
+// vendor/partner contacts in the dropdown.
+function SingleContactPicker({ value, onChange, contacts, setContacts, currentContactId, userId, refFilter, placeholder, defaultNewContactType = 'other' }) {
+  const [inputText, setInputText] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const selected = value ? contacts.find(c => c.id === value) : null;
+  const refMissing = value && !selected;
+
+  // Apply ref_filter (e.g. lender field only shows vendor/partner contacts)
+  // and exclude the current contact (no self-links).
+  const pool = useMemo(() => {
+    let p = contacts || [];
+    if (refFilter && Array.isArray(refFilter.contact_type_in) && refFilter.contact_type_in.length) {
+      p = p.filter(c => refFilter.contact_type_in.includes(c.type));
+    }
+    if (currentContactId) p = p.filter(c => c.id !== currentContactId);
+    return p;
+  }, [contacts, refFilter, currentContactId]);
+
+  const q = inputText.trim().toLowerCase();
+  const suggestions = useMemo(() => {
+    if (!q) return [];
+    return pool
+      .filter(c => {
+        const name = (c.name || '').toLowerCase();
+        const email = (c.email || '').toLowerCase();
+        const company = (c.company || '').toLowerCase();
+        return name.includes(q) || email.includes(q) || company.includes(q);
+      })
+      .sort((a, b) => {
+        const aN = (a.name || '').toLowerCase();
+        const bN = (b.name || '').toLowerCase();
+        const aStart = aN.startsWith(q) ? 0 : 1;
+        const bStart = bN.startsWith(q) ? 0 : 1;
+        if (aStart !== bStart) return aStart - bStart;
+        return aN.localeCompare(bN);
+      })
+      .slice(0, 6);
+  }, [q, pool]);
+
+  const exactMatch = q && pool.some(c => (c.name || '').toLowerCase() === q);
+  const showCreateOption = q.length >= 2 && !exactMatch;
+
+  function pick(id) {
+    onChange(id);
+    setInputText('');
+    setShowDropdown(false);
+    setHighlightIdx(0);
+  }
+  function clearSelection() {
+    onChange(null);
+    setInputText('');
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  async function createAndPick() {
+    const name = inputText.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .insert({ user_id: userId, name, type: defaultNewContactType, status: 'active' })
+        .select().single();
+      if (error) throw error;
+      if (setContacts) {
+        setContacts(prev => [...prev, data].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+      }
+      pick(data.id);
+      if (window.__notify) window.__notify(`Created contact: ${name}`, 'success');
+    } catch (err) {
+      if (window.__notify) window.__notify('Could not create: ' + err.message, 'error');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function onKeyDown(e) {
+    const total = suggestions.length + (showCreateOption ? 1 : 0);
+    if (e.key === 'ArrowDown' && total > 0) {
+      e.preventDefault();
+      setShowDropdown(true);
+      setHighlightIdx(i => Math.min(total - 1, i + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIdx(i => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightIdx < suggestions.length && suggestions[highlightIdx]) {
+        pick(suggestions[highlightIdx].id);
+      } else if (showCreateOption) {
+        createAndPick();
+      }
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false);
+    }
+  }
+
+  useEffect(() => {
+    function onPointer(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('touchstart', onPointer);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('touchstart', onPointer);
+    };
+  }, []);
+
+  // VIEW: selected → chip with avatar + remove
+  if (selected) {
+    return (
+      <div style={{
+        display:'flex',alignItems:'center',gap:'8px',
+        padding:'7px 10px',background:'var(--bg-base)',
+        border:'1px solid var(--border)',borderRadius:'6px',
+      }}>
+        <span style={{
+          width:'28px',height:'28px',borderRadius:'50%',
+          background:'var(--bg-hover)',display:'flex',
+          alignItems:'center',justifyContent:'center',
+          fontSize:'10.5px',fontWeight:700,color:'var(--text-2)',flexShrink:0,
+        }}>{pickerInitials(selected.name, selected.email)}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:'12.5px',fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {selected.name || '(unnamed)'}
+          </div>
+          {(selected.email || selected.company) && (
+            <div style={{fontSize:'10.5px',color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+              {selected.email || ''}{selected.email && selected.company ? ' · ' : ''}{selected.company || ''}
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={clearSelection}
+          title="Remove" aria-label="Remove linked contact"
+          style={{
+            background:'none',border:'none',color:'var(--text-3)',
+            cursor:'pointer',fontSize:'15px',padding:'2px 6px',
+            borderRadius:'4px',lineHeight:1,
+          }}>×</button>
+      </div>
+    );
+  }
+
+  // VIEW: missing-ref (value points to a deleted contact)
+  if (refMissing) {
+    return (
+      <div style={{
+        display:'flex',alignItems:'center',justifyContent:'space-between',
+        padding:'7px 10px',background:'var(--bg-base)',
+        border:'1px dashed var(--red)',borderRadius:'6px',
+        fontSize:'11.5px',color:'var(--red)',
+      }}>
+        <span style={{fontStyle:'italic'}}>Linked contact was deleted</span>
+        <button type="button" onClick={clearSelection}
+          style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'15px',padding:'2px 6px'}}>×</button>
+      </div>
+    );
+  }
+
+  // VIEW: nothing selected → search input + dropdown
+  return (
+    <div ref={containerRef} style={{position:'relative'}}>
+      <input ref={inputRef} type="text" value={inputText}
+        onChange={(e) => { setInputText(e.target.value); setShowDropdown(true); setHighlightIdx(0); }}
+        onFocus={() => { if (inputText) setShowDropdown(true); }}
+        onKeyDown={onKeyDown}
+        autoComplete="off" autoCorrect="off" spellCheck={false}
+        placeholder={placeholder || 'Search contacts…'}
+        style={{
+          width:'100%',
+          background:'var(--bg-base)',color:'var(--text-1)',
+          border:'1px solid var(--border)',borderRadius:'6px',
+          padding:'7px 9px',fontSize:'12.5px',outline:'none',
+        }}/>
+
+      {showDropdown && (suggestions.length > 0 || showCreateOption) && (
+        <div style={{
+          position:'absolute',top:'100%',left:0,right:0,marginTop:'3px',
+          background:'var(--bg-card)',border:'1px solid var(--border)',
+          borderRadius:'8px',boxShadow:'0 10px 24px rgba(0,0,0,0.4)',
+          maxHeight:'260px',overflowY:'auto',zIndex:200,
+        }}>
+          {suggestions.map((c, idx) => (
+            <button key={c.id} type="button"
+              onMouseDown={(e) => { e.preventDefault(); pick(c.id); }}
+              onMouseEnter={() => setHighlightIdx(idx)}
+              style={{
+                width:'100%',padding:'8px 11px',
+                background: idx === highlightIdx ? 'var(--bg-hover)' : 'transparent',
+                border:'none',cursor:'pointer',color:'var(--text-1)',
+                display:'flex',alignItems:'center',gap:'10px',textAlign:'left',
+                borderBottom:'1px solid var(--border)',
+              }}>
+              <span style={{
+                width:'26px',height:'26px',borderRadius:'50%',
+                background:'var(--bg-hover)',display:'flex',
+                alignItems:'center',justifyContent:'center',
+                fontSize:'10px',fontWeight:700,color:'var(--text-2)',flexShrink:0,
+              }}>{pickerInitials(c.name, c.email)}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:'12.5px',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {c.name || '(unnamed)'}
+                </div>
+                {(c.email || c.company || c.type) && (
+                  <div style={{fontSize:'10.5px',color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {c.email || c.company || ''}
+                    {c.email && c.company ? ` · ${c.company}` : ''}
+                    {!c.email && !c.company && c.type ? c.type : ''}
+                  </div>
+                )}
+              </div>
+            </button>
+          ))}
+          {showCreateOption && (
+            <button type="button"
+              onMouseDown={(e) => { e.preventDefault(); createAndPick(); }}
+              onMouseEnter={() => setHighlightIdx(suggestions.length)}
+              disabled={creating}
+              style={{
+                width:'100%',padding:'9px 11px',
+                background: highlightIdx === suggestions.length ? 'var(--bg-hover)' : 'transparent',
+                border:'none',cursor: creating ? 'wait' : 'pointer',color:'var(--accent)',
+                display:'flex',alignItems:'center',gap:'8px',textAlign:'left',
+                fontSize:'12.5px',fontWeight:600,
+              }}>
+              <span style={{
+                width:'26px',height:'26px',borderRadius:'50%',
+                background:'rgba(197,169,94,0.15)',display:'flex',
+                alignItems:'center',justifyContent:'center',
+                fontSize:'14px',color:'var(--accent)',flexShrink:0,
+              }}>+</span>
+              <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {creating ? 'Creating…' : <>Create new contact: <span style={{color:'var(--text-1)'}}>"{inputText.trim()}"</span></>}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CustomFieldsPanel({ userId, contact, contacts = [], setContacts }) {
   const [definitions, setDefinitions] = useState([]);
   const [values, setValues] = useState({});  // keyed by field_definition_id
@@ -7123,29 +7383,26 @@ function CustomFieldRow({ def, value, contacts, setContacts, currentContactId, u
       ); break;
     }
     case 'contact_ref': {
-      // Filter contacts based on ref_filter if provided. Otherwise show all.
-      let pool = contacts || [];
-      const filt = def.ref_filter || null;
-      if (filt && filt.contact_type_in && Array.isArray(filt.contact_type_in)) {
-        pool = pool.filter(c => filt.contact_type_in.includes(c.type));
-      }
-      // Exclude self
-      pool = pool.filter(c => c.id !== (value?.contact_id || ''));
-      const sortedPool = [...pool].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      const currentRef = local || '';
-      const refMissing = currentRef && !pool.find(c => c.id === currentRef);
+      // Map the field's group to a sensible default contact type for newly-
+      // created contacts. Family-group ref fields create family members;
+      // real-estate-pro fields create vendors; everything else falls back
+      // to 'other'. The user can edit the type later on the contact record.
+      let defaultNewType = 'other';
+      if (def.group_name === 'family') defaultNewType = 'family';
+      else if (def.group_name === 'real_estate_pros') defaultNewType = 'vendor';
+      else if (def.group_name === 'buyer' || def.group_name === 'seller') defaultNewType = 'vendor';
       editor = (
-        <select value={currentRef}
-          onChange={e => { setLocal(e.target.value); commit(e.target.value || null); }}
-          style={inputBase}>
-          <option value="">— Not set —</option>
-          {refMissing && <option value={currentRef} disabled>(linked contact missing)</option>}
-          {sortedPool.map(c => (
-            <option key={c.id} value={c.id}>
-              {c.name || '(unnamed)'}{c.company ? ` · ${c.company}` : ''}
-            </option>
-          ))}
-        </select>
+        <SingleContactPicker
+          value={local || null}
+          onChange={(id) => { setLocal(id || ''); commit(id || null); }}
+          contacts={contacts || []}
+          setContacts={setContacts}
+          currentContactId={currentContactId}
+          userId={userId}
+          refFilter={def.ref_filter || null}
+          placeholder={def.placeholder || 'Search contacts…'}
+          defaultNewContactType={defaultNewType}
+        />
       ); break;
     }
     case 'lead_gen_system_ref': {
