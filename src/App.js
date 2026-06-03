@@ -13582,6 +13582,7 @@ function FinanceView({ userId }) {
       )}
       {subView === 'reports' && (
         <FinanceReports
+          userId={userId}
           settings={settings} transactions={transactions} taxCategories={taxCategories}
           systems={systems} personalBudget={personalBudget} timeEntries={timeEntries}
           trackPersonal={trackPersonal} isCoach={isCoach}
@@ -15457,7 +15458,7 @@ function TemplateActivateModal({ userId, template, onClose, onActivated }) {
 // ─── FinanceReports ──────────────────────────────────────────────────
 // Two reports: Business/Tax (CPA handoff) and Personal (if tracking is on).
 // PLUS the Operations ROI report — time-cost included, gamified.
-function FinanceReports({ settings, transactions, taxCategories, systems, personalBudget, timeEntries, trackPersonal, isCoach }) {
+function FinanceReports({ userId, settings, transactions, taxCategories, systems, personalBudget, timeEntries, trackPersonal, isCoach }) {
   const [reportType, setReportType] = useState('business');
   const [period, setPeriod] = useState('ytd');
   const [advExpanded, setAdvExpanded] = useState(false);
@@ -15503,6 +15504,9 @@ function FinanceReports({ settings, transactions, taxCategories, systems, person
           systems={systems} settings={settings} period={period}
         />
       )}
+      {reportType === 'schedule_c' && (
+        <ScheduleCReport userId={userId} taxCategories={taxCategories} />
+      )}
     </div>
   );
 }
@@ -15511,6 +15515,9 @@ function ReportHeader({ reportType, setReportType, period, setPeriod, trackPerso
   const options = [{ id:'business', label:'💼 Business · Tax' }];
   if (trackPersonal) options.push({ id:'personal', label:'🏠 Personal' });
   options.push({ id:'roi', label:'🎯 Operations · ROI' });
+  options.push({ id:'schedule_c', label:'📋 Schedule C' });
+  // Schedule C uses its own year selector, hide the period dropdown
+  const showPeriod = reportType !== 'schedule_c';
 
   return (
     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -15522,13 +15529,15 @@ function ReportHeader({ reportType, setReportType, period, setPeriod, trackPerso
               color:reportType===o.id?'var(--bg-base)':'var(--text-2)'}}>{o.label}</button>
         ))}
       </div>
-      <select value={period} onChange={e => setPeriod(e.target.value)}
-        style={{padding:'6px 12px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
-        <option value="month">This month</option>
-        <option value="last-month">Last month</option>
-        <option value="ytd">Year to date</option>
-        <option value="all">All time</option>
-      </select>
+      {showPeriod && (
+        <select value={period} onChange={e => setPeriod(e.target.value)}
+          style={{padding:'6px 12px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+          <option value="month">This month</option>
+          <option value="last-month">Last month</option>
+          <option value="ytd">Year to date</option>
+          <option value="all">All time</option>
+        </select>
+      )}
     </div>
   );
 }
@@ -15618,6 +15627,513 @@ function BusinessReport({ transactions, taxCategories, systems, advExpanded, set
         <strong style={{color:'var(--text-2)'}}>For your CPA:</strong> Working summary. Final Schedule C will reflect mileage × IRS rate, each category × its <code style={{fontSize:'10px',padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px'}}>deduction_pct</code> (Meals currently 100% per current IRS rules — adjustable per category), and any depreciation. Phase 4 generates the line-by-line preview.
         {isCoach && <div style={{marginTop:'6px',color:'var(--accent)'}}>🎯 Coach view: full underlying transactions visible in Ledger.</div>}
       </div>
+    </div>
+  );
+}
+
+// ─── ScheduleCReport ─────────────────────────────────────────────────
+// IRS Form 1040 Schedule C preview for sole-proprietor real-estate
+// agents. Aggregates a tax year's data into the actual Schedule C line
+// items so future-Dara (or his CPA) gets a one-page handoff instead of
+// a transactions dump.
+//
+// Sources:
+//   Line 1 (gross receipts)         <- positive-amount transactions in business scope
+//                                      (Commission Income category lives here, plus any
+//                                       other income transactions like rebates received)
+//   Line 9 (car & truck)            <- mileage_entries.computed_deduction (business category)
+//   Lines 8 / 15 / 17 / 18 / 23 /
+//     24a / 27a (expenses)          <- negative transactions grouped by tax_category.schedule_c_line,
+//                                      with deduction_pct applied (e.g. meals 50%)
+//
+// Each line is expandable to show contributing tax categories and
+// transaction counts, so the user can verify the rollup before sending
+// to a CPA.
+//
+// What this v1 does NOT do:
+//   - Line 10 / Commissions paid out (would need a transaction subtype)
+//   - Line 13 / Depreciation (would need an asset register)
+//   - Line 30 / Home office (would need a measured workspace setup)
+//   - Self-employment tax projection (deferred to its own report)
+//   - 1099 vendor summary (deferred)
+//   - Real PDF export (use browser Print -> Save as PDF for v1)
+
+// IRS Schedule C Part II line items in form order. Some lines combine
+// multiple of our tax-category mappings; the seeded tax_categories
+// reference these exact strings via the schedule_c_line column.
+const SCHEDULE_C_LINES = [
+  { num: '8',   label: 'Advertising' },
+  { num: '9',   label: 'Car and truck expenses', isMileage: true },
+  { num: '10',  label: 'Commissions and fees paid out' },
+  { num: '11',  label: 'Contract labor' },
+  { num: '13',  label: 'Depreciation and Section 179' },
+  { num: '14',  label: 'Employee benefit programs' },
+  { num: '15',  label: 'Insurance (other than health)' },
+  { num: '16a', label: 'Interest — mortgage' },
+  { num: '16b', label: 'Interest — other' },
+  { num: '17',  label: 'Legal and professional services' },
+  { num: '18',  label: 'Office expense' },
+  { num: '19',  label: 'Pension and profit-sharing plans' },
+  { num: '20a', label: 'Rent or lease — vehicles, machinery, equipment' },
+  { num: '20b', label: 'Rent or lease — other business property' },
+  { num: '21',  label: 'Repairs and maintenance' },
+  { num: '22',  label: 'Supplies' },
+  { num: '23',  label: 'Taxes and licenses' },
+  { num: '24a', label: 'Travel' },
+  { num: '24b', label: 'Meals (50% deductible)' },
+  { num: '25',  label: 'Utilities' },
+  { num: '26',  label: 'Wages (less employment credits)' },
+  { num: '27a', label: 'Other expenses' },
+];
+
+function ScheduleCReport({ userId, taxCategories }) {
+  const now = new Date();
+  const [taxYear, setTaxYear] = useState(now.getFullYear());
+  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState([]);
+  const [mileageEntries, setMileageEntries] = useState([]);
+  const [expandedLines, setExpandedLines] = useState({});  // { lineNum: bool }
+  const [expandedTxLists, setExpandedTxLists] = useState({});  // { lineNum: bool }
+
+  // Year selector — current + 3 prior years (most users will want the
+  // current or just-completed tax year)
+  const currentYear = now.getFullYear();
+  const yearOptions = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3];
+
+  // Fetch the full year's transactions + mileage when the selected
+  // year changes. We do not piggyback on FinanceView's transactions
+  // because that's capped at 500 rows; a busy year-end Schedule C run
+  // needs everything in scope.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const start = `${taxYear}-01-01`;
+      const end = `${taxYear}-12-31`;
+      const [{ data: tx }, { data: m }] = await Promise.all([
+        supabase.from('transactions').select('*')
+          .eq('user_id', userId).eq('scope', 'business').eq('is_archived', false)
+          .gte('date', start).lte('date', end)
+          .order('date', { ascending: true }).limit(5000),
+        supabase.from('mileage_entries').select('*')
+          .eq('user_id', userId).eq('category', 'business')
+          .gte('date', start).lte('date', end)
+          .order('date', { ascending: true }).limit(5000),
+      ]);
+      if (cancelled) return;
+      setTransactions(tx || []);
+      setMileageEntries(m || []);
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId, taxYear]);
+
+  // Build the per-line rollup. For each Schedule C line:
+  //   - find tax_categories where schedule_c_line matches (normalize "Line 17" vs "17")
+  //   - sum the absolute value of negative transactions in those categories
+  //   - apply each category's deduction_pct (e.g. meals 50%)
+  //   - for Line 9, sum mileage_entries.computed_deduction instead
+  const rollup = useMemo(() => {
+    // Normalize a schedule_c_line value (e.g. "Line 17", "17", " line 17 ") to "17"
+    function normalize(line) {
+      if (!line) return '';
+      return String(line).replace(/^line\s*/i, '').trim().toLowerCase();
+    }
+    // Group tax_categories by normalized line
+    const catsByLine = {};
+    taxCategories.forEach(c => {
+      const key = normalize(c.schedule_c_line);
+      if (!key) return;
+      if (!catsByLine[key]) catsByLine[key] = [];
+      catsByLine[key].push(c);
+    });
+    // Build the per-line totals
+    const lineRollup = {};
+    SCHEDULE_C_LINES.forEach(L => {
+      const key = normalize(L.num);
+      const cats = catsByLine[key] || [];
+      let totalRaw = 0;
+      let totalDeductible = 0;
+      const perCategory = [];
+      cats.forEach(cat => {
+        const catTx = transactions.filter(t => t.tax_category_id === cat.id && Number(t.amount) < 0);
+        const catRaw = catTx.reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+        const ded = Number(cat.deduction_pct || 1);
+        const catDeductible = catRaw * ded;
+        totalRaw += catRaw;
+        totalDeductible += catDeductible;
+        perCategory.push({
+          category: cat,
+          rawAmount: catRaw,
+          deductionPct: ded,
+          deductibleAmount: catDeductible,
+          txCount: catTx.length,
+          transactions: catTx,
+        });
+      });
+      // Special case: Line 9 from mileage
+      let mileageMiles = 0;
+      let mileageDeduction = 0;
+      let mileageCount = 0;
+      if (L.isMileage) {
+        mileageEntries.forEach(m => {
+          mileageMiles += (Number(m.miles) || 0) * (m.is_round_trip ? 2 : 1);
+          mileageDeduction += Number(m.computed_deduction) || 0;
+          mileageCount += 1;
+        });
+        totalDeductible += mileageDeduction;
+      }
+      lineRollup[L.num] = {
+        ...L,
+        cats,
+        perCategory,
+        totalRaw,
+        totalDeductible,
+        mileageMiles, mileageDeduction, mileageCount,
+        hasData: totalDeductible > 0,
+      };
+    });
+
+    // Part I — Income (Line 1: gross receipts)
+    const incomeTx = transactions.filter(t => Number(t.amount) > 0);
+    const grossReceipts = incomeTx.reduce((s, t) => s + Number(t.amount), 0);
+    // Group income by category for the drilldown
+    const incomeByCategory = {};
+    incomeTx.forEach(t => {
+      const k = t.tax_category_id || '__uncat__';
+      if (!incomeByCategory[k]) incomeByCategory[k] = { category: taxCategories.find(c => c.id === k) || null, amount: 0, txCount: 0, transactions: [] };
+      incomeByCategory[k].amount += Number(t.amount);
+      incomeByCategory[k].txCount += 1;
+      incomeByCategory[k].transactions.push(t);
+    });
+
+    // Totals
+    const totalExpenses = SCHEDULE_C_LINES.reduce((s, L) => s + lineRollup[L.num].totalDeductible, 0);
+    const tentativeProfit = grossReceipts - totalExpenses;  // Line 29
+
+    // Uncategorized expenses (warn the user — these don't flow to any line)
+    const uncatExpenses = transactions.filter(t => Number(t.amount) < 0 && !t.tax_category_id);
+    const uncatTotal = uncatExpenses.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+    // Categorized expenses with no schedule_c_line set
+    const catsMissingLine = taxCategories.filter(c => !c.schedule_c_line);
+    const missingLineTx = transactions.filter(t => Number(t.amount) < 0 && catsMissingLine.some(c => c.id === t.tax_category_id));
+    const missingLineTotal = missingLineTx.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+
+    return {
+      grossReceipts, incomeByCategory, incomeTxCount: incomeTx.length,
+      lineRollup, totalExpenses, tentativeProfit,
+      uncatExpenses, uncatTotal,
+      missingLineTx, missingLineTotal,
+    };
+  }, [transactions, taxCategories, mileageEntries]);
+
+  function toggle(lineNum) {
+    setExpandedLines(prev => ({ ...prev, [lineNum]: !prev[lineNum] }));
+  }
+  function toggleTxList(lineNum) {
+    setExpandedTxLists(prev => ({ ...prev, [lineNum]: !prev[lineNum] }));
+  }
+  function expandAll() {
+    const next = {};
+    SCHEDULE_C_LINES.forEach(L => { next[L.num] = true; });
+    setExpandedLines(next);
+  }
+  function collapseAll() {
+    setExpandedLines({});
+    setExpandedTxLists({});
+  }
+
+  return (
+    <div className="schedule-c-report" style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      {/* ─── Print stylesheet — strip chrome, force single-column print ─── */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .schedule-c-report, .schedule-c-report * { visibility: visible !important; }
+          .schedule-c-report { position: absolute !important; left: 0; top: 0; width: 100%; padding: 20px !important; background: white !important; color: black !important; }
+          .schedule-c-report .no-print { display: none !important; }
+          .schedule-c-report .sc-line { break-inside: avoid; border-color: #ddd !important; background: white !important; color: black !important; }
+          .schedule-c-report .sc-line-num { color: #555 !important; }
+          .schedule-c-report .sc-line-amt { color: black !important; }
+          .schedule-c-report .sc-summary { break-inside: avoid; }
+        }
+      `}</style>
+
+      {/* Header bar */}
+      <div className="no-print" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+          <span style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)'}}>Tax year:</span>
+          <select value={taxYear} onChange={e => setTaxYear(Number(e.target.value))}
+            style={{padding:'6px 14px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-1)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>
+            {yearOptions.map(y => (
+              <option key={y} value={y}>{y}{y === now.getFullYear() ? ' (current)' : ''}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+          <button onClick={expandAll} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>Expand all</button>
+          <button onClick={collapseAll} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>Collapse</button>
+          <button onClick={() => window.print()} style={{padding:'5px 12px',background:'var(--accent)',border:'none',borderRadius:'6px',color:'var(--bg-base)',cursor:'pointer',fontSize:'11px',fontWeight:700}}>🖨 Print / Save PDF</button>
+        </div>
+      </div>
+
+      {/* Title block — visible in print */}
+      <div style={{textAlign:'center',padding:'14px',borderTop:'2px solid var(--text-1)',borderBottom:'2px solid var(--text-1)'}}>
+        <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>IRS Form 1040</div>
+        <div style={{fontSize:'18px',fontWeight:800,color:'var(--text-1)',marginTop:'2px'}}>Schedule C · Profit or Loss From Business</div>
+        <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'4px'}}>Tax Year {taxYear} · Sole Proprietorship</div>
+      </div>
+
+      {loading ? (
+        <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Loading…</div>
+      ) : (
+        <>
+          {/* Warnings — uncategorized + missing-line categories */}
+          {(rollup.uncatTotal > 0 || rollup.missingLineTotal > 0) && (
+            <div className="no-print" style={{padding:'10px 14px',background:'rgba(245,158,11,0.10)',border:'1px solid rgba(245,158,11,0.4)',borderRadius:'8px',fontSize:'12px',color:'var(--text-2)',lineHeight:1.5}}>
+              <div style={{fontWeight:700,color:'#f59e0b',marginBottom:'4px'}}>⚠ Data quality</div>
+              {rollup.uncatTotal > 0 && (
+                <div>
+                  ${rollup.uncatTotal.toFixed(0).toLocaleString()} of expenses across {rollup.uncatExpenses.length} transactions have no tax category assigned. These are not included in any line below. Fix in the Ledger to capture them.
+                </div>
+              )}
+              {rollup.missingLineTotal > 0 && (
+                <div style={{marginTop:'4px'}}>
+                  ${rollup.missingLineTotal.toFixed(0).toLocaleString()} of expenses across {rollup.missingLineTx.length} transactions are categorized but their tax category has no Schedule C line mapped. Fix in Finance → Blueprint → Categories.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── Part I — Income ─── */}
+          <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+            <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'10px'}}>
+              Part I · Income
+            </div>
+            <SCLine
+              num="1" label="Gross receipts or sales"
+              amount={rollup.grossReceipts}
+              subtitle={`${rollup.incomeTxCount} income transaction${rollup.incomeTxCount === 1 ? '' : 's'}`}
+              expanded={!!expandedLines['1']}
+              onToggle={() => toggle('1')}
+              isPositive
+              hasData={rollup.grossReceipts > 0}
+            >
+              {Object.values(rollup.incomeByCategory).length === 0 ? (
+                <div style={{padding:'10px 14px',fontSize:'11.5px',color:'var(--text-3)',fontStyle:'italic'}}>No income transactions recorded for {taxYear}.</div>
+              ) : (
+                <div style={{padding:'4px 14px 12px',display:'flex',flexDirection:'column',gap:'4px'}}>
+                  {Object.values(rollup.incomeByCategory)
+                    .sort((a, b) => b.amount - a.amount)
+                    .map((ic, i) => (
+                      <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'11.5px'}}>
+                        <span style={{color:'var(--text-2)'}}>
+                          {ic.category?.name || '— Uncategorized —'}
+                          <span style={{color:'var(--text-3)',marginLeft:'8px',fontSize:'10px'}}>
+                            ({ic.txCount} tx)
+                          </span>
+                        </span>
+                        <span style={{color:'var(--green)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>
+                          ${ic.amount.toFixed(2).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </SCLine>
+
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',marginTop:'6px',background:'var(--bg-base)',borderRadius:'6px',borderLeft:'3px solid var(--green)'}}>
+              <span style={{fontSize:'12px',fontWeight:700,color:'var(--text-1)'}}>Line 7 · Gross income</span>
+              <span style={{fontSize:'15px',fontWeight:800,color:'var(--green)',fontVariantNumeric:'tabular-nums'}}>
+                ${rollup.grossReceipts.toFixed(2).toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* ─── Part II — Expenses ─── */}
+          <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+            <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'10px'}}>
+              Part II · Expenses
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+              {SCHEDULE_C_LINES.map(L => {
+                const rl = rollup.lineRollup[L.num];
+                const showLine = rl.hasData || rl.cats.length > 0 || L.isMileage;
+                if (!showLine) return null;
+                return (
+                  <SCLine key={L.num}
+                    num={L.num} label={L.label}
+                    amount={rl.totalDeductible}
+                    subtitle={
+                      L.isMileage
+                        ? `${rl.mileageCount} trip${rl.mileageCount===1?'':'s'} · ${Math.round(rl.mileageMiles).toLocaleString()} mi`
+                        : rl.cats.map(c => c.name).join(' · ')
+                    }
+                    expanded={!!expandedLines[L.num]}
+                    onToggle={() => toggle(L.num)}
+                    hasData={rl.hasData}
+                  >
+                    {/* Per-category breakdown */}
+                    {!L.isMileage && rl.perCategory.length > 0 && (
+                      <div style={{padding:'4px 14px 8px',display:'flex',flexDirection:'column',gap:'4px'}}>
+                        {rl.perCategory.map((pc, i) => (
+                          <div key={i}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'11.5px',gap:'8px'}}>
+                              <span style={{color:'var(--text-2)',minWidth:0,flex:1}}>
+                                {pc.category.name}
+                                <span style={{color:'var(--text-3)',marginLeft:'8px',fontSize:'10px'}}>
+                                  ({pc.txCount} tx
+                                  {pc.deductionPct !== 1 && ` · ${(pc.deductionPct * 100).toFixed(0)}% deductible`})
+                                </span>
+                              </span>
+                              <span style={{color:'var(--text-1)',fontWeight:700,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>
+                                {pc.deductionPct !== 1 ? (
+                                  <>
+                                    <span style={{color:'var(--text-3)',fontWeight:400,fontSize:'10px'}}>${pc.rawAmount.toFixed(0).toLocaleString()} → </span>
+                                    ${pc.deductibleAmount.toFixed(2).toLocaleString()}
+                                  </>
+                                ) : (
+                                  <>${pc.deductibleAmount.toFixed(2).toLocaleString()}</>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {/* Tx list toggle */}
+                        {rl.perCategory.some(pc => pc.txCount > 0) && (
+                          <button type="button" onClick={() => toggleTxList(L.num)}
+                            className="no-print"
+                            style={{alignSelf:'flex-start',marginTop:'4px',padding:'3px 8px',background:'transparent',border:'1px dashed var(--border)',borderRadius:'4px',color:'var(--text-3)',cursor:'pointer',fontSize:'10px',fontWeight:600}}>
+                            {expandedTxLists[L.num] ? '× Hide transactions' : `+ Show ${rl.perCategory.reduce((s,pc)=>s+pc.txCount,0)} transactions`}
+                          </button>
+                        )}
+                        {expandedTxLists[L.num] && (
+                          <div style={{marginTop:'6px',padding:'8px',background:'var(--bg-base)',borderRadius:'4px',maxHeight:'220px',overflowY:'auto'}}>
+                            {rl.perCategory.flatMap(pc => pc.transactions)
+                              .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+                              .map(t => (
+                                <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'3px 0',fontSize:'10.5px',color:'var(--text-3)',gap:'8px'}}>
+                                  <span style={{flexShrink:0,fontVariantNumeric:'tabular-nums'}}>{t.date}</span>
+                                  <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                                    {t.payee || t.description || '(no description)'}
+                                  </span>
+                                  <span style={{color:'var(--text-2)',fontWeight:600,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>
+                                    ${Math.abs(Number(t.amount)).toFixed(2)}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* Mileage breakdown */}
+                    {L.isMileage && (
+                      <div style={{padding:'8px 14px 12px'}}>
+                        {rl.mileageCount === 0 ? (
+                          <div style={{fontSize:'11.5px',color:'var(--text-3)',fontStyle:'italic'}}>
+                            No mileage entries for {taxYear}. Log trips under <strong>🚗 Mileage</strong> to populate this line.
+                          </div>
+                        ) : (
+                          <div style={{fontSize:'11.5px',color:'var(--text-2)',display:'flex',flexDirection:'column',gap:'3px'}}>
+                            <div style={{display:'flex',justifyContent:'space-between'}}>
+                              <span>Business miles driven</span>
+                              <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{Math.round(rl.mileageMiles).toLocaleString()} mi</span>
+                            </div>
+                            <div style={{display:'flex',justifyContent:'space-between'}}>
+                              <span>Standard mileage rate × miles</span>
+                              <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums'}}>${rl.mileageDeduction.toFixed(2).toLocaleString()}</span>
+                            </div>
+                            <div style={{fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',marginTop:'4px'}}>
+                              From {rl.mileageCount} logged trip{rl.mileageCount===1?'':'s'}. Mileage uses the IRS standard rate for the entry's date.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </SCLine>
+                );
+              })}
+            </div>
+            {/* Line 28 total */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',marginTop:'8px',background:'var(--bg-base)',borderRadius:'6px',borderLeft:'3px solid var(--red)'}}>
+              <span style={{fontSize:'12px',fontWeight:700,color:'var(--text-1)'}}>Line 28 · Total expenses</span>
+              <span style={{fontSize:'15px',fontWeight:800,color:'var(--red)',fontVariantNumeric:'tabular-nums'}}>
+                ${rollup.totalExpenses.toFixed(2).toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* ─── Summary box ─── */}
+          <div className="sc-summary" style={{padding:'16px',background:'var(--bg-card)',border:`2px solid ${rollup.tentativeProfit >= 0 ? 'var(--green)' : 'var(--red)'}`,borderRadius:'10px'}}>
+            <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'10px'}}>Summary</div>
+            <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0'}}>
+                <span style={{fontSize:'12px',color:'var(--text-2)'}}>Line 7 · Gross income</span>
+                <span style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--text-1)'}}>${rollup.grossReceipts.toFixed(2).toLocaleString()}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0'}}>
+                <span style={{fontSize:'12px',color:'var(--text-2)'}}>Line 28 · Total expenses</span>
+                <span style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--text-1)'}}>− ${rollup.totalExpenses.toFixed(2).toLocaleString()}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0',borderTop:'1px solid var(--border)',marginTop:'4px'}}>
+                <span style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)'}}>Line 29 · Tentative profit / (loss)</span>
+                <span style={{fontSize:'19px',fontWeight:800,fontVariantNumeric:'tabular-nums',color: rollup.tentativeProfit >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                  ${rollup.tentativeProfit.toFixed(2).toLocaleString()}
+                </span>
+              </div>
+              <div style={{fontSize:'10.5px',color:'var(--text-3)',fontStyle:'italic',marginTop:'4px',lineHeight:1.5}}>
+                This is the Schedule C bottom-line that flows to Form 1040 Line 3 (subject to SE tax on Schedule SE). Line 30 (home office) and Line 31 (net) are not yet computed — handled by your CPA or a dedicated home-office worksheet.
+              </div>
+            </div>
+          </div>
+
+          {/* ─── What this report does NOT cover ─── */}
+          <div className="no-print" style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
+            <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>This preview is not a tax return.</div>
+            It rolls your tracked transactions and mileage into the Schedule C line items so your CPA has a one-page handoff. It does <em>not</em> compute home-office (Line 30), depreciation (Line 13), 1099 vendor summary, self-employment tax (Schedule SE), quarterly estimated payments, or the federal income-tax bracket calculation. Have a CPA review before filing.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Reusable expandable line for Schedule C — shows num, label, amount,
+// optional drilldown content when expanded. Lines with no data render
+// dimmed so the form still reads "complete" even if nothing applies.
+function SCLine({ num, label, amount, subtitle, expanded, onToggle, children, hasData, isPositive }) {
+  const dim = !hasData;
+  const amtColor = !hasData ? 'var(--text-3)' : (isPositive ? 'var(--green)' : 'var(--text-1)');
+  return (
+    <div className="sc-line" style={{
+      background: dim ? 'transparent' : 'var(--bg-base)',
+      border: `1px solid ${dim ? 'var(--border)' : 'var(--border)'}`,
+      borderRadius: '6px',
+      overflow: 'hidden',
+      opacity: dim ? 0.55 : 1,
+    }}>
+      <button type="button" onClick={onToggle} disabled={!hasData}
+        style={{width:'100%',padding:'8px 12px',background:'transparent',border:'none',color:'var(--text-1)',cursor: hasData ? 'pointer' : 'default',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',textAlign:'left'}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:'10px',minWidth:0,flex:1}}>
+          <span className="sc-line-num" style={{fontSize:'10px',color:'var(--text-3)',fontWeight:700,minWidth:'36px',textTransform:'uppercase',letterSpacing:'0.04em'}}>{num}</span>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:'12.5px',fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{label}</div>
+            {subtitle && hasData && (
+              <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'1px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{subtitle}</div>
+            )}
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexShrink:0}}>
+          <span className="sc-line-amt" style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',color:amtColor,whiteSpace:'nowrap'}}>
+            ${Number(amount || 0).toFixed(2).toLocaleString()}
+          </span>
+          {hasData && (
+            <span style={{color:'var(--text-3)',fontSize:'10px',transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',transition:'transform 0.15s'}}>›</span>
+          )}
+        </div>
+      </button>
+      {expanded && hasData && children}
     </div>
   );
 }
