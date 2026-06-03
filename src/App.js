@@ -2695,6 +2695,15 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
   const [inputText, setInputText] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(0);
+  // Pending contact awaiting an email. When a user taps a no-email
+  // suggestion we don't immediately commit (you can't send to a contact
+  // without an email). Instead we open an inline form to capture one.
+  const [pendingNoEmail, setPendingNoEmail] = useState(null);  // { contact, draftEmail }
+  // Whether to render the dropdown above the input instead of below it.
+  // Flipped when there isn't enough vertical space below (e.g. mobile
+  // soft keyboard is open and would cover the dropdown).
+  const [dropdownAbove, setDropdownAbove] = useState(false);
+  const [dropdownMaxHeight, setDropdownMaxHeight] = useState(320);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -2722,6 +2731,12 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
   //   company contains    =  15
   // Then add +20 if there's recent communication (inbound/outbound in last
   // 30 days) — surfaces the people the user actually talks to.
+  //
+  // Contacts WITHOUT an email are also included (with a -30 penalty so
+  // they rank below contacts that can be emailed directly). Tapping a
+  // no-email suggestion opens an inline editor to add the email rather
+  // than committing — the picker stays useful even when contact data is
+  // incomplete, instead of looking broken.
   const suggestions = useMemo(() => {
     const q = inputText.trim().toLowerCase();
     if (!q) return [];
@@ -2730,10 +2745,9 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
     const RECENCY_WINDOW = 30 * 86400000;
     const scored = [];
     for (const c of contacts) {
-      if (!c.email) continue;
-      if (existing.has(c.email.toLowerCase())) continue;
+      if (c.email && existing.has(c.email.toLowerCase())) continue;
       const name = (c.name || '').toLowerCase();
-      const email = c.email.toLowerCase();
+      const email = (c.email || '').toLowerCase();
       const company = (c.company || '').toLowerCase();
       let score = 0;
       if (name.startsWith(q)) score += 100;
@@ -2743,17 +2757,21 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
       for (const w of words) {
         if (w !== words[0] && w.startsWith(q)) { score += 60; break; }
       }
-      if (email.startsWith(q)) score += 50;
-      else if (email.includes(q)) score += 25;
+      if (email) {
+        if (email.startsWith(q)) score += 50;
+        else if (email.includes(q)) score += 25;
+      }
       if (company.startsWith(q)) score += 30;
       else if (company.includes(q)) score += 15;
-      // Recency boost
+      // Recency boost (only meaningful when we have an email anyway)
       const recent = c.last_inbound_at || c.last_outbound_at;
       if (recent && now - new Date(recent).getTime() < RECENCY_WINDOW) score += 20;
+      // No-email penalty so missing-data contacts sit below those we can send to
+      if (!c.email) score -= 30;
       if (score > 0) scored.push({ contact: c, score });
     }
     scored.sort((a, b) => b.score - a.score || (a.contact.name || '').localeCompare(b.contact.name || ''));
-    return scored.slice(0, 6).map(s => s.contact);
+    return scored.slice(0, 8).map(s => s.contact);
   }, [inputText, contacts, recipients]);
 
   // Commit a recipient (from suggestion click, keyboard, or free-form email)
@@ -2779,6 +2797,27 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
   function removeRecipient(email) {
     const next = recipients.filter(r => r.email.toLowerCase() !== email.toLowerCase());
     onChange(next.map(r => r.email).join(', '));
+  }
+
+  // Persist a new email back to the contact record AND commit as a chip.
+  // Called from the inline "add email" editor when the user taps a
+  // contact-without-email suggestion. Updates the contact in Supabase so
+  // future compose sessions find them on the first keystroke.
+  async function saveAndCommitPendingEmail() {
+    if (!pendingNoEmail) return;
+    const email = pendingNoEmail.draftEmail.trim();
+    const c = pendingNoEmail.contact;
+    if (!EMAIL_RE.test(email)) return;
+    // Optimistic commit so the chip lands immediately even if the DB write is slow.
+    commitRecipient(email, c.name, c.id);
+    setPendingNoEmail(null);
+    // Best-effort write-back; non-blocking
+    try {
+      await supabase.from('contacts').update({ email }).eq('id', c.id);
+      if (window.__notify) window.__notify(`Added ${email} to ${c.name}'s contact record.`, 'success');
+    } catch (err) {
+      if (window.__notify) window.__notify('Email saved locally but could not be written back to the contact.', 'error');
+    }
   }
 
   function onKeyDown(e) {
@@ -2846,6 +2885,7 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
     function onDocPointer(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setShowDropdown(false);
+        setPendingNoEmail(null);
       }
     }
     document.addEventListener('mousedown', onDocPointer);
@@ -2855,6 +2895,40 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
       document.removeEventListener('touchstart', onDocPointer);
     };
   }, []);
+
+  // Smart dropdown positioning. When the soft keyboard is open on mobile,
+  // a fixed-top-100% dropdown gets covered and looks broken. Measure
+  // available vertical space and flip above when needed. Recomputes on
+  // visualViewport resize so it adapts as the keyboard opens/closes.
+  useEffect(() => {
+    if (!showDropdown) return;
+    function recompute() {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      // visualViewport is the trustworthy "what's actually visible" value on
+      // mobile when the keyboard is open. innerHeight stays at the full layout
+      // viewport size and would lie about available space.
+      const vv = window.visualViewport;
+      const viewBottom = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
+      const viewTop = vv ? vv.offsetTop : 0;
+      const below = viewBottom - rect.bottom - 8;
+      const above = rect.top - viewTop - 8;
+      const ideal = 320;
+      const flip = below < 160 && above > below;
+      setDropdownAbove(flip);
+      setDropdownMaxHeight(Math.max(120, Math.min(ideal, flip ? above : below)));
+    }
+    recompute();
+    const vv = window.visualViewport;
+    window.addEventListener('resize', recompute);
+    vv?.addEventListener?.('resize', recompute);
+    vv?.addEventListener?.('scroll', recompute);
+    return () => {
+      window.removeEventListener('resize', recompute);
+      vv?.removeEventListener?.('resize', recompute);
+      vv?.removeEventListener?.('scroll', recompute);
+    };
+  }, [showDropdown, suggestions.length, pendingNoEmail]);
 
   return (
     <div ref={containerRef} style={{position:'relative'}}>
@@ -2918,65 +2992,154 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
           placeholder={recipients.length === 0 ? (placeholder || 'Type a name or email…') : ''}/>
       </div>
 
-      {showDropdown && suggestions.length > 0 && (
+      {showDropdown && (pendingNoEmail || suggestions.length > 0 || inputText.trim().length >= 2) && (
         <div style={{
-          position:'absolute', top:'100%', left:0, right:0, marginTop:'3px',
+          position:'absolute',
+          ...(dropdownAbove
+            ? { bottom: '100%', marginBottom: '4px' }
+            : { top: '100%', marginTop: '4px' }),
+          left:0, right:0,
           background:'var(--bg-card)', border:'1px solid var(--border)',
           borderRadius:'8px', boxShadow:'0 10px 28px rgba(0,0,0,0.45)',
-          maxHeight:'320px', overflowY:'auto', zIndex:50,
+          maxHeight: `${dropdownMaxHeight}px`, overflowY:'auto', zIndex:200,
         }}>
-          {suggestions.map((c, idx) => {
-            const profile = profiles.find(p => p.contact_id === c.id);
-            const isHi = idx === highlightIdx;
-            return (
-              <button key={c.id} type="button"
-                onMouseDown={(e) => { e.preventDefault(); commitRecipient(c.email, c.name, c.id); }}
-                onMouseEnter={() => setHighlightIdx(idx)}
+          {pendingNoEmail ? (
+            // Inline "add email" editor — shown after tapping a no-email contact.
+            <div style={{padding:'12px'}}>
+              <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>
+                No email on file for {pendingNoEmail.contact.name}
+              </div>
+              <div style={{fontSize:'12px',color:'var(--text-1)',marginBottom:'10px',lineHeight:1.5}}>
+                Add one now to send and save it back to {pendingNoEmail.contact.name}'s contact record.
+              </div>
+              <input
+                type="email" autoFocus
+                value={pendingNoEmail.draftEmail}
+                onChange={(e) => setPendingNoEmail({ ...pendingNoEmail, draftEmail: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveAndCommitPendingEmail();
+                  } else if (e.key === 'Escape') {
+                    setPendingNoEmail(null);
+                  }
+                }}
+                placeholder="name@example.com"
                 style={{
-                  width:'100%', padding:'9px 11px',
-                  background: isHi ? 'var(--bg-hover)' : 'transparent',
-                  border:'none', cursor:'pointer', color:'var(--text-1)',
-                  display:'flex', alignItems:'center', gap:'10px', textAlign:'left',
-                  borderBottom: idx < suggestions.length - 1 ? '1px solid var(--border)' : 'none',
-                }}>
-                <span style={{
-                  flexShrink:0, width:'30px', height:'30px', borderRadius:'50%',
-                  background:'var(--bg-hover)', display:'flex',
-                  alignItems:'center', justifyContent:'center',
-                  fontSize:'10.5px', fontWeight:700, color:'var(--text-2)',
-                }}>{pickerInitials(c.name, c.email)}</span>
-                <div style={{flex:1, minWidth:0}}>
-                  <div style={{
-                    fontSize:'13px', fontWeight:600,
-                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                  }}>{highlightMatch(c.name || c.email, inputText)}</div>
-                  <div style={{
-                    fontSize:'11px', color:'var(--text-3)',
-                    display:'flex', gap:'6px', alignItems:'center',
-                    overflow:'hidden',
+                  width:'100%', padding:'8px 10px', fontSize:'13px',
+                  background:'var(--bg-base)', color:'var(--text-1)',
+                  border:'1px solid var(--border)', borderRadius:'6px', outline:'none',
+                }}
+              />
+              <div style={{display:'flex',gap:'6px',justifyContent:'flex-end',marginTop:'10px'}}>
+                <button type="button" onMouseDown={(e) => { e.preventDefault(); setPendingNoEmail(null); }}
+                  style={{padding:'6px 10px',fontSize:'11px',background:'transparent',color:'var(--text-3)',border:'1px solid var(--border)',borderRadius:'6px',cursor:'pointer'}}>
+                  Cancel
+                </button>
+                <button type="button" onMouseDown={(e) => { e.preventDefault(); saveAndCommitPendingEmail(); }}
+                  disabled={!EMAIL_RE.test(pendingNoEmail.draftEmail.trim())}
+                  style={{
+                    padding:'6px 12px',fontSize:'11px',fontWeight:600,
+                    background: EMAIL_RE.test(pendingNoEmail.draftEmail.trim()) ? 'var(--accent)' : 'var(--bg-hover)',
+                    color: EMAIL_RE.test(pendingNoEmail.draftEmail.trim()) ? 'var(--bg-base)' : 'var(--text-3)',
+                    border:'none',borderRadius:'6px',
+                    cursor: EMAIL_RE.test(pendingNoEmail.draftEmail.trim()) ? 'pointer' : 'not-allowed',
                   }}>
-                    <span style={{
-                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                    }}>{highlightMatch(c.email, inputText)}</span>
-                    {c.company && (
-                      <span style={{
-                        flexShrink:0,
-                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                        maxWidth:'160px',
-                      }}>· {c.company}</span>
-                    )}
-                  </div>
-                </div>
-                {profile?.primary_letter && RECIPIENT_DISC_COLORS[profile.primary_letter] && (
+                  Save & add
+                </button>
+              </div>
+            </div>
+          ) : suggestions.length > 0 ? (
+            suggestions.map((c, idx) => {
+              const profile = profiles.find(p => p.contact_id === c.id);
+              const isHi = idx === highlightIdx;
+              const noEmail = !c.email;
+              return (
+                <button key={c.id} type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    if (noEmail) {
+                      setPendingNoEmail({ contact: c, draftEmail: '' });
+                    } else {
+                      commitRecipient(c.email, c.name, c.id);
+                    }
+                  }}
+                  onMouseEnter={() => setHighlightIdx(idx)}
+                  style={{
+                    width:'100%', padding:'9px 11px',
+                    background: isHi ? 'var(--bg-hover)' : 'transparent',
+                    border:'none', cursor:'pointer', color:'var(--text-1)',
+                    display:'flex', alignItems:'center', gap:'10px', textAlign:'left',
+                    borderBottom: idx < suggestions.length - 1 ? '1px solid var(--border)' : 'none',
+                    opacity: noEmail ? 0.85 : 1,
+                  }}>
                   <span style={{
-                    fontSize:'9px', padding:'2px 5px', borderRadius:'3px',
-                    background: RECIPIENT_DISC_COLORS[profile.primary_letter],
-                    color:'#fff', fontWeight:700, flexShrink:0, letterSpacing:'0.04em',
-                  }}>{profile.primary_letter}</span>
-                )}
-              </button>
-            );
-          })}
+                    flexShrink:0, width:'30px', height:'30px', borderRadius:'50%',
+                    background:'var(--bg-hover)', display:'flex',
+                    alignItems:'center', justifyContent:'center',
+                    fontSize:'10.5px', fontWeight:700, color:'var(--text-2)',
+                  }}>{pickerInitials(c.name, c.email)}</span>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{
+                      fontSize:'13px', fontWeight:600,
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                      display:'flex', alignItems:'center', gap:'6px',
+                    }}>
+                      <span style={{overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                        {highlightMatch(c.name || c.email || '(unnamed)', inputText)}
+                      </span>
+                      {noEmail && (
+                        <span style={{
+                          fontSize:'9px', padding:'1px 5px', borderRadius:'3px',
+                          background:'var(--bg-base)', color:'var(--text-3)',
+                          border:'1px dashed var(--border)', flexShrink:0,
+                          textTransform:'uppercase', letterSpacing:'0.05em', fontWeight:700,
+                        }}>+ add email</span>
+                      )}
+                    </div>
+                    <div style={{
+                      fontSize:'11px', color:'var(--text-3)',
+                      display:'flex', gap:'6px', alignItems:'center',
+                      overflow:'hidden',
+                    }}>
+                      {c.email ? (
+                        <span style={{overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                          {highlightMatch(c.email, inputText)}
+                        </span>
+                      ) : (
+                        <span style={{fontStyle:'italic'}}>tap to add an email</span>
+                      )}
+                      {c.company && (
+                        <span style={{
+                          flexShrink:0,
+                          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                          maxWidth:'160px',
+                        }}>· {c.company}</span>
+                      )}
+                    </div>
+                  </div>
+                  {profile?.primary_letter && RECIPIENT_DISC_COLORS[profile.primary_letter] && (
+                    <span style={{
+                      fontSize:'9px', padding:'2px 5px', borderRadius:'3px',
+                      background: RECIPIENT_DISC_COLORS[profile.primary_letter],
+                      color:'#fff', fontWeight:700, flexShrink:0, letterSpacing:'0.04em',
+                    }}>{profile.primary_letter}</span>
+                  )}
+                </button>
+              );
+            })
+          ) : (
+            // Empty state — query has 2+ chars but matches nothing. Better
+            // than silently rendering nothing (which looks broken).
+            <div style={{padding:'14px',fontSize:'12px',color:'var(--text-3)',lineHeight:1.5}}>
+              <div style={{fontWeight:600,color:'var(--text-2)',marginBottom:'4px'}}>No match for "{inputText.trim()}"</div>
+              {EMAIL_RE.test(inputText.trim()) ? (
+                <>Press <kbd style={{padding:'1px 5px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'3px',fontSize:'10px'}}>Enter</kbd> to send to this address anyway.</>
+              ) : (
+                <>Keep typing the full email, or add this person in Contacts first.</>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
