@@ -5686,7 +5686,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               </div>
             )}
 
-            {/* Primary action bar — tap to Call / Text / Email */}
+            {/* Primary action bar — uses the default phone/email for one-tap actions */}
             {(contact.phone || contact.email) && (
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}>
                 {contact.phone && (
@@ -5722,32 +5722,63 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               </div>
             )}
 
-            {/* Tappable contact details — also functional links */}
-            <div style={{fontSize:'12.5px',color:'var(--text-2)',lineHeight:1.7}}>
-              {contact.email && (
-                <div>
-                  <a href={`mailto:${contact.email}`} style={{color:'var(--text-2)',textDecoration:'none'}}
-                    onMouseEnter={e=>{e.currentTarget.style.color='var(--accent)';}}
-                    onMouseLeave={e=>{e.currentTarget.style.color='var(--text-2)';}}>
-                    📧 {contact.email}
-                  </a>
-                </div>
-              )}
-              {contact.phone && (
-                <div>
-                  <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none'}}
-                    onMouseEnter={e=>{e.currentTarget.style.color='var(--accent)';}}
-                    onMouseLeave={e=>{e.currentTarget.style.color='var(--text-2)';}}>
-                    📞 {contact.phone}
-                  </a>
-                </div>
-              )}
-              {contact.type && (
-                <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'6px',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>
-                  {contact.type}
-                </div>
-              )}
-            </div>
+            {/* All emails (labeled) — each row is tappable, default starred */}
+            {Array.isArray(contact.emails) && contact.emails.length > 0 && (
+              <div style={{marginBottom:'6px'}}>
+                {contact.emails.filter(e => e?.value).map((e, idx) => (
+                  <div key={idx} style={{display:'flex',alignItems:'center',gap:'8px',padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
+                    <span style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,minWidth:'52px'}}>{e.label || 'Email'}</span>
+                    <a href={`mailto:${e.value}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+                      onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
+                      onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-2)';}}>
+                      ✉️ {e.value}
+                    </a>
+                    {e.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* All phones (labeled) — each row has its own Call + Text icons */}
+            {Array.isArray(contact.phones) && contact.phones.length > 0 && (
+              <div>
+                {contact.phones.filter(p => p?.value).map((p, idx) => (
+                  <div key={idx} style={{display:'flex',alignItems:'center',gap:'8px',padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
+                    <span style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,minWidth:'52px'}}>{p.label || 'Phone'}</span>
+                    <a href={`tel:${p.value.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+                      onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
+                      onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-2)';}}>
+                      📞 {p.value}
+                    </a>
+                    <a href={`sms:${p.value.replace(/[^\d+]/g, '')}`} title="Text"
+                      style={{color:'var(--text-3)',textDecoration:'none',fontSize:'14px',padding:'2px 4px'}}
+                      onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
+                      onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-3)';}}>
+                      💬
+                    </a>
+                    {p.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Fallback when arrays are empty but legacy columns have data */}
+            {(!Array.isArray(contact.emails) || contact.emails.length === 0) && contact.email && (
+              <div style={{padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
+                <a href={`mailto:${contact.email}`} style={{color:'var(--text-2)',textDecoration:'none'}}>📧 {contact.email}</a>
+              </div>
+            )}
+            {(!Array.isArray(contact.phones) || contact.phones.length === 0) && contact.phone && (
+              <div style={{padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
+                <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none'}}>📞 {contact.phone}</a>
+              </div>
+            )}
+
+            {contact.type && (
+              <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>
+                {contact.type}
+              </div>
+            )}
           </div>
 
           {analyzeMsg && (
@@ -7314,11 +7345,127 @@ function AddCustomFieldModal({ userId, existingKeys, onClose, onCreated }) {
   );
 }
 
+// ─── MultiValueField ────────────────────────────────────────────────
+// Reusable editor for multi-entry contact fields (phones, emails).
+// Each entry has a value, a label (Mobile / Work / Home / etc., picked
+// from a standard list or custom), and an is_default flag. The default
+// entry is the one shown in the contact's compact display and used by
+// quick actions like Call / Email. Modeled after iOS Contacts and
+// Google Contacts which converged on the same pattern.
+const PHONE_LABEL_OPTIONS = ['Mobile', 'Work', 'Home', 'Main', 'Fax', 'Pager', 'Other'];
+const EMAIL_LABEL_OPTIONS = ['Personal', 'Work', 'School', 'Other'];
+
+function MultiValueField({ values, onChange, kind, addLabel }) {
+  const standard = kind === 'email' ? EMAIL_LABEL_OPTIONS : PHONE_LABEL_OPTIONS;
+  const arr = Array.isArray(values) ? values : [];
+
+  function update(i, patch) {
+    onChange(arr.map((v, idx) => idx === i ? { ...v, ...patch } : v));
+  }
+  function remove(i) {
+    const next = arr.filter((_, idx) => idx !== i);
+    // If we removed the default, make the first remaining entry the default
+    if (arr[i]?.is_default && next.length > 0 && !next.some(x => x.is_default)) {
+      next[0] = { ...next[0], is_default: true };
+    }
+    onChange(next);
+  }
+  function setDefault(i) {
+    onChange(arr.map((v, idx) => ({ ...v, is_default: idx === i })));
+  }
+  function add() {
+    const next = [...arr, { value: '', label: standard[0], is_default: arr.length === 0 }];
+    onChange(next);
+  }
+  function handleLabelChange(i, raw) {
+    if (raw === '__custom__') {
+      const cur = arr[i]?.label && !standard.includes(arr[i].label) ? arr[i].label : '';
+      const custom = window.prompt('Custom label?', cur);
+      if (custom && custom.trim()) update(i, { label: custom.trim() });
+    } else {
+      update(i, { label: raw });
+    }
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+      {arr.map((v, i) => {
+        const isCustom = v.label && !standard.includes(v.label);
+        return (
+          <div key={i} style={{display:'flex',gap:'4px',alignItems:'stretch'}}>
+            <select
+              value={isCustom ? '__current_custom__' : (v.label || standard[0])}
+              onChange={(e) => handleLabelChange(i, e.target.value === '__current_custom__' ? v.label : e.target.value)}
+              style={{
+                width:'88px',flexShrink:0,
+                background:'var(--bg-base)',color:'var(--text-1)',
+                border:'1px solid var(--border)',borderRadius:'6px',
+                padding:'7px 4px',fontSize:'12px',
+              }}>
+              {isCustom && <option value="__current_custom__">{v.label}</option>}
+              {standard.map(l => <option key={l} value={l}>{l}</option>)}
+              <option value="__custom__">Custom…</option>
+            </select>
+            <input
+              type={kind === 'email' ? 'email' : 'tel'}
+              value={v.value || ''}
+              onChange={(e) => update(i, { value: e.target.value })}
+              placeholder={kind === 'email' ? 'name@example.com' : '(555) 555-5555'}
+              style={{
+                flex:1,minWidth:0,
+                background:'var(--bg-base)',color:'var(--text-1)',
+                border:'1px solid var(--border)',borderRadius:'6px',
+                padding:'7px 9px',fontSize:'12.5px',outline:'none',
+              }}/>
+            <button type="button" onClick={() => setDefault(i)}
+              title={v.is_default ? 'Default — used for quick actions' : 'Make this the default'}
+              aria-pressed={v.is_default}
+              style={{
+                flexShrink:0,padding:'4px 9px',cursor:'pointer',
+                background:'var(--bg-base)',
+                border:`1px solid ${v.is_default ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius:'6px', color: v.is_default ? 'var(--accent)' : 'var(--text-3)',
+                fontSize:'13px',lineHeight:1,
+              }}>{v.is_default ? '★' : '☆'}</button>
+            <button type="button" onClick={() => remove(i)}
+              title="Remove" aria-label="Remove"
+              style={{
+                flexShrink:0,padding:'4px 8px',cursor:'pointer',
+                background:'var(--bg-base)',
+                border:'1px solid var(--border)',borderRadius:'6px',
+                color:'var(--text-3)',fontSize:'14px',lineHeight:1,
+              }}>×</button>
+          </div>
+        );
+      })}
+      <button type="button" onClick={add}
+        style={{
+          alignSelf:'flex-start',padding:'5px 11px',
+          background:'transparent',border:'1px dashed var(--border)',
+          borderRadius:'6px',color:'var(--text-3)',cursor:'pointer',
+          fontSize:'11.5px',fontWeight:600,
+        }}>{addLabel}</button>
+    </div>
+  );
+}
+
 function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
-  const [email, setEmail] = useState(initial?.email || '');
-  const [phone, setPhone] = useState(initial?.phone || '');
+  // phones + emails: arrays of {value, label, is_default}. Initial state seeded
+  // from the array column if present, else synthesized from the legacy single
+  // phone/email columns. New contacts start with a single empty Mobile/Personal
+  // entry so the form shows familiar field shapes.
+  const [phones, setPhones] = useState(() => {
+    if (Array.isArray(initial?.phones) && initial.phones.length > 0) return initial.phones;
+    if (initial?.phone) return [{ value: initial.phone, label: 'Mobile', is_default: true }];
+    return [{ value: '', label: 'Mobile', is_default: true }];
+  });
+  const [emails, setEmails] = useState(() => {
+    if (Array.isArray(initial?.emails) && initial.emails.length > 0) return initial.emails;
+    if (initial?.email) return [{ value: initial.email, label: 'Personal', is_default: true }];
+    return [{ value: '', label: 'Personal', is_default: true }];
+  });
   const [company, setCompany] = useState(initial?.company || '');
   const [role, setRole] = useState(initial?.role || '');
   const [profession, setProfession] = useState(initial?.profession || '');
@@ -7340,8 +7487,27 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
   function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim()) return;
+    // Normalize phones/emails: drop empties, guarantee exactly one default.
+    function normalize(arr) {
+      const cleaned = (arr || [])
+        .map(v => ({ value: (v.value || '').trim(), label: v.label || '', is_default: !!v.is_default }))
+        .filter(v => v.value);
+      if (cleaned.length === 0) return [];
+      if (!cleaned.some(v => v.is_default)) cleaned[0].is_default = true;
+      // Ensure only one default
+      let seenDefault = false;
+      return cleaned.map(v => {
+        if (v.is_default && !seenDefault) { seenDefault = true; return v; }
+        return { ...v, is_default: false };
+      });
+    }
+    const cleanPhones = normalize(phones);
+    const cleanEmails = normalize(emails);
     onSave({
-      name: name.trim(), type, email: email.trim() || null, phone: phone.trim() || null,
+      name: name.trim(), type,
+      phones: cleanPhones, emails: cleanEmails,
+      // phone/email columns intentionally omitted — the database trigger
+      // derives them from the default entries in the arrays.
       company: company.trim() || null, role: role.trim() || null,
       profession: profession.trim() || null,
       priority, notes: notes.trim() || null,
@@ -7393,9 +7559,13 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
               </select>
             </div>
           </div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Email</label><input className="form-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={phone} onChange={e=>setPhone(e.target.value)} /></div>
+          <div className="form-group">
+            <label className="form-label">Emails</label>
+            <MultiValueField values={emails} onChange={setEmails} kind="email" addLabel="+ Add email"/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Phones</label>
+            <MultiValueField values={phones} onChange={setPhones} kind="phone" addLabel="+ Add phone"/>
           </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Company</label><input className="form-input" value={company} onChange={e=>setCompany(e.target.value)} /></div>
@@ -7407,10 +7577,11 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
           <div style={{marginTop:'18px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
             <div style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'10px'}}>🏠 Home Address</div>
             <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={homeAddress} onChange={e=>setHomeAddress(e.target.value)} /></div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">City</label><input className="form-input" value={homeCity} onChange={e=>setHomeCity(e.target.value)} /></div>
-              <div className="form-group" style={{maxWidth:'80px'}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={homeState} onChange={e=>setHomeState(e.target.value.toUpperCase())} /></div>
-              <div className="form-group" style={{maxWidth:'100px'}}><label className="form-label">ZIP</label><input className="form-input" value={homeZip} onChange={e=>setHomeZip(e.target.value)} /></div>
+            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={homeCity} onChange={e=>setHomeCity(e.target.value)} /></div>
+            {/* State + ZIP share one row even on mobile — keeps a compact 2-line address */}
+            <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px',marginBottom:'8px'}}>
+              <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={homeState} onChange={e=>setHomeState(e.target.value.toUpperCase())} /></div>
+              <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={homeZip} onChange={e=>setHomeZip(e.target.value)} /></div>
             </div>
             <div className="form-row">
               <div className="form-group"><label className="form-label">Own / Rent</label>
@@ -7431,10 +7602,10 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
           <div style={{marginTop:'12px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
             <div style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'10px'}}>🏢 Business Address</div>
             <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={businessAddress} onChange={e=>setBusinessAddress(e.target.value)} /></div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">City</label><input className="form-input" value={businessCity} onChange={e=>setBusinessCity(e.target.value)} /></div>
-              <div className="form-group" style={{maxWidth:'80px'}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
-              <div className="form-group" style={{maxWidth:'100px'}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
+            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={businessCity} onChange={e=>setBusinessCity(e.target.value)} /></div>
+            <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px'}}>
+              <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
+              <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
             </div>
           </div>
 
