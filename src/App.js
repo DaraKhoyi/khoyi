@@ -2506,6 +2506,152 @@ const TRIAGE_ACTIONS = {
   snooze:           { label: 'Snooze' },
 };
 
+// ─── SwipeableEmailRow ───────────────────────────────────────────────
+// Mobile-style swipe gestures for inbox rows:
+//   - Swipe LEFT→RIGHT  → delete (trash)        🗑️  red panel reveals from the left
+//   - Swipe RIGHT→LEFT  → archive               📥  green panel reveals from the right
+// Visual feedback during drag: action icon and color intensify as the
+// swipe approaches the commit threshold (100px). Below threshold on
+// release, the row snaps back. Above threshold, it animates off-screen
+// and the action fires. Vertical drags (scroll) are not captured —
+// direction is locked after the first ~6px of movement.
+function SwipeableEmailRow({ onArchive, onDelete, onClick, enabled = true, children }) {
+  const fgRef = useRef(null);
+  const deleteBgRef = useRef(null);
+  const archiveBgRef = useRef(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const movedRef = useRef(false);
+  const directionRef = useRef(null);  // 'h' | 'v' | null
+  const committedRef = useRef(false);
+  const THRESHOLD = 100;
+
+  function snap() {
+    if (fgRef.current) {
+      fgRef.current.style.transition = 'transform .22s ease';
+      fgRef.current.style.transform = 'translateX(0)';
+    }
+    if (deleteBgRef.current) deleteBgRef.current.style.opacity = '0';
+    if (archiveBgRef.current) archiveBgRef.current.style.opacity = '0';
+  }
+
+  function flyOff(direction) {
+    // direction: 1 (right, delete) or -1 (left, archive)
+    if (fgRef.current) {
+      const w = fgRef.current.offsetWidth || 400;
+      fgRef.current.style.transition = 'transform .22s ease, opacity .22s ease';
+      fgRef.current.style.transform = `translateX(${direction * (w + 80)}px)`;
+      fgRef.current.style.opacity = '0';
+    }
+  }
+
+  function onStart(clientX, clientY) {
+    if (!enabled) return;
+    startXRef.current = clientX;
+    startYRef.current = clientY;
+    isDraggingRef.current = true;
+    movedRef.current = false;
+    directionRef.current = null;
+    committedRef.current = false;
+    if (fgRef.current) fgRef.current.style.transition = 'none';
+  }
+
+  function onMove(clientX, clientY) {
+    if (!isDraggingRef.current) return;
+    const dx = clientX - startXRef.current;
+    const dy = clientY - startYRef.current;
+    // Direction lock after a small move — keeps vertical scroll free
+    if (!directionRef.current && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+      directionRef.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    }
+    if (directionRef.current !== 'h') return;
+    movedRef.current = true;
+    if (fgRef.current) fgRef.current.style.transform = `translateX(${dx}px)`;
+    const intensity = Math.min(1, Math.abs(dx) / THRESHOLD);
+    if (dx > 0) {
+      if (deleteBgRef.current) deleteBgRef.current.style.opacity = String(intensity);
+      if (archiveBgRef.current) archiveBgRef.current.style.opacity = '0';
+    } else if (dx < 0) {
+      if (archiveBgRef.current) archiveBgRef.current.style.opacity = String(intensity);
+      if (deleteBgRef.current) deleteBgRef.current.style.opacity = '0';
+    } else {
+      if (deleteBgRef.current) deleteBgRef.current.style.opacity = '0';
+      if (archiveBgRef.current) archiveBgRef.current.style.opacity = '0';
+    }
+  }
+
+  function onEnd(clientX) {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    const dx = clientX - startXRef.current;
+    if (directionRef.current !== 'h' || !movedRef.current) {
+      snap();
+      return;
+    }
+    if (dx > THRESHOLD) {
+      committedRef.current = true;
+      flyOff(1);
+      setTimeout(() => onDelete && onDelete(), 220);
+      return;
+    }
+    if (dx < -THRESHOLD) {
+      committedRef.current = true;
+      flyOff(-1);
+      setTimeout(() => onArchive && onArchive(), 220);
+      return;
+    }
+    snap();
+  }
+
+  const wasSwipe = () => movedRef.current && directionRef.current === 'h';
+
+  return (
+    <div style={{position:'relative', overflow:'hidden'}}
+      onTouchStart={(e) => { const t = e.touches[0]; onStart(t.clientX, t.clientY); }}
+      onTouchMove={(e) => { const t = e.touches[0]; onMove(t.clientX, t.clientY); }}
+      onTouchEnd={(e) => { const t = e.changedTouches[0]; onEnd(t.clientX); }}
+      onTouchCancel={() => { isDraggingRef.current = false; snap(); }}
+      onMouseDown={(e) => onStart(e.clientX, e.clientY)}
+      onMouseMove={(e) => { if (isDraggingRef.current) onMove(e.clientX, e.clientY); }}
+      onMouseUp={(e) => onEnd(e.clientX)}
+      onMouseLeave={() => { if (isDraggingRef.current) { isDraggingRef.current = false; snap(); } }}
+      onClickCapture={(e) => {
+        // If a horizontal swipe happened (committed or not), suppress the click.
+        if (wasSwipe()) { e.stopPropagation(); e.preventDefault(); }
+      }}
+    >
+      {/* Delete background (revealed when swiping right) */}
+      <div ref={deleteBgRef} style={{
+        position:'absolute', inset:0,
+        background:'#ef4444',
+        display:'flex', alignItems:'center', justifyContent:'flex-start',
+        padding:'0 22px', gap:'8px',
+        opacity:0, pointerEvents:'none',
+      }}>
+        <span style={{fontSize:'22px'}}>🗑️</span>
+        <span style={{fontSize:'12px', color:'#fff', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em'}}>Delete</span>
+      </div>
+      {/* Archive background (revealed when swiping left) */}
+      <div ref={archiveBgRef} style={{
+        position:'absolute', inset:0,
+        background:'#10b981',
+        display:'flex', alignItems:'center', justifyContent:'flex-end',
+        padding:'0 22px', gap:'8px',
+        opacity:0, pointerEvents:'none',
+      }}>
+        <span style={{fontSize:'12px', color:'#fff', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em'}}>Archive</span>
+        <span style={{fontSize:'22px'}}>📥</span>
+      </div>
+      {/* Foreground — the actual row, slides during drag */}
+      <div ref={fgRef} style={{position:'relative', background:'var(--bg-base)', willChange:'transform'}}
+        onClick={(e) => { if (!wasSwipe()) onClick && onClick(e); }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
 // INBOX VIEW — Gmail-aware
 // Reads from email_threads/email_messages when an account is connected.
@@ -2844,6 +2990,48 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   }, [account.id, tab]);
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
+
+  // ── Per-thread actions for swipe gestures ─────────────────────────
+  // These do the same work as trashCurrentThread / modifyThread('archive')
+  // but target a specific row (not selectedThread). Used by the swipe
+  // wrappers in the inbox list — left→right swipe = delete (trash),
+  // right→left swipe = archive.
+  async function swipeArchiveThread(thread) {
+    if (!thread || !account) return;
+    try {
+      // Drop from local list immediately (the swipe animation already showed intent).
+      // We refetch on error to put it back if the action failed.
+      setThreads(prev => prev.filter(t => t.id !== thread.id));
+      if (selectedThread?.id === thread.id) { setSelectedThread(null); setSelectedMessages([]); }
+      const { data, error } = await supabase.functions.invoke('gmail-modify', {
+        body: { account_id: account.id, thread_id: thread.provider_thread_id, action: 'archive' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (window.__notify) window.__notify(`Archived "${(thread.subject || '(no subject)').slice(0, 40)}"`, 'success');
+    } catch (err) {
+      if (window.__notify) window.__notify('Could not archive: ' + (err.message || err), 'error');
+      // Restore the row by refetching the inbox list (simplest, safest).
+      setThreads(prev => [thread, ...prev]);
+    }
+  }
+
+  async function swipeDeleteThread(thread) {
+    if (!thread || !account) return;
+    try {
+      setThreads(prev => prev.filter(t => t.id !== thread.id));
+      if (selectedThread?.id === thread.id) { setSelectedThread(null); setSelectedMessages([]); }
+      const { data, error } = await supabase.functions.invoke('gmail-trash', {
+        body: { account_id: account.id, thread_id: thread.provider_thread_id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (window.__notify) window.__notify(`Moved to Trash: "${(thread.subject || '(no subject)').slice(0, 40)}"`, 'success');
+    } catch (err) {
+      if (window.__notify) window.__notify('Could not delete: ' + (err.message || err), 'error');
+      setThreads(prev => [thread, ...prev]);
+    }
+  }
 
   async function openThread(thread) {
     setSelectedThread(thread);
@@ -3527,38 +3715,47 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                         // hover tip with category name. Subtle so it doesn't shout.
                         const threadTriage = triageCache[thread.id];
                         const triageCat = threadTriage ? TRIAGE_CATEGORIES[threadTriage.category] : null;
+                        // Swipe gestures enabled only on the Inbox tab (Sent/Snoozed
+                        // don't have a meaningful archive/delete action from a list row).
+                        const swipeEnabled = tab === 'inbox';
                         return (
-                          <div key={thread.id} className={`email-item ${thread.has_unread?'email-unread':''}`} onClick={()=>openThread(thread)} style={{cursor:'pointer'}}>
-                            {thread.has_unread && <div className="unread-dot"/>}
-                            <div className="email-avatar">{initials(sender.name, sender.email)}</div>
-                            <div className="email-content" style={{minWidth:0}}>
-                              <div className="email-from" style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
-                                {triageCat && (
-                                  <span
-                                    title={`AI triage: ${triageCat.label} → ${TRIAGE_ACTIONS[threadTriage.action]?.label || threadTriage.action}`}
-                                    style={{width:'7px',height:'7px',borderRadius:'50%',background:triageCat.color,flexShrink:0,display:'inline-block'}} />
-                                )}
-                                {(thread.labels || []).includes('STARRED') && (
-                                  <span style={{color:'#f59e0b',fontSize:'12px',flexShrink:0}} title="Starred">★</span>
-                                )}
-                                <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{sender.name || sender.email || '(unknown)'}</span>
-                                {senderProfile && (
-                                  <span className="pill pill-purple" style={{fontSize:'10px',padding:'2px 6px'}}>
-                                    {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
-                                  </span>
-                                )}
-                                {thread.message_count > 1 && <span style={{color:'var(--text-3)',fontSize:'12px'}}>({thread.message_count})</span>}
-                                {thread.snoozed_until && new Date(thread.snoozed_until) > new Date() && (
-                                  <span style={{fontSize:'10px',color:'var(--accent)',padding:'2px 6px',background:'rgba(197,169,94,0.10)',borderRadius:'4px'}}>
-                                    ⏰ until {new Date(thread.snoozed_until).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
-                                  </span>
-                                )}
+                          <SwipeableEmailRow key={thread.id}
+                            enabled={swipeEnabled}
+                            onDelete={() => swipeDeleteThread(thread)}
+                            onArchive={() => swipeArchiveThread(thread)}
+                            onClick={() => openThread(thread)}>
+                            <div className={`email-item ${thread.has_unread?'email-unread':''}`} style={{cursor:'pointer'}}>
+                              {thread.has_unread && <div className="unread-dot"/>}
+                              <div className="email-avatar">{initials(sender.name, sender.email)}</div>
+                              <div className="email-content" style={{minWidth:0}}>
+                                <div className="email-from" style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
+                                  {triageCat && (
+                                    <span
+                                      title={`AI triage: ${triageCat.label} → ${TRIAGE_ACTIONS[threadTriage.action]?.label || threadTriage.action}`}
+                                      style={{width:'7px',height:'7px',borderRadius:'50%',background:triageCat.color,flexShrink:0,display:'inline-block'}} />
+                                  )}
+                                  {(thread.labels || []).includes('STARRED') && (
+                                    <span style={{color:'#f59e0b',fontSize:'12px',flexShrink:0}} title="Starred">★</span>
+                                  )}
+                                  <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{sender.name || sender.email || '(unknown)'}</span>
+                                  {senderProfile && (
+                                    <span className="pill pill-purple" style={{fontSize:'10px',padding:'2px 6px'}}>
+                                      {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
+                                    </span>
+                                  )}
+                                  {thread.message_count > 1 && <span style={{color:'var(--text-3)',fontSize:'12px'}}>({thread.message_count})</span>}
+                                  {thread.snoozed_until && new Date(thread.snoozed_until) > new Date() && (
+                                    <span style={{fontSize:'10px',color:'var(--accent)',padding:'2px 6px',background:'rgba(197,169,94,0.10)',borderRadius:'4px'}}>
+                                      ⏰ until {new Date(thread.snoozed_until).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="email-subject" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.subject || '(no subject)'}</div>
+                                <div className="email-preview" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.snippet || ''}</div>
                               </div>
-                              <div className="email-subject" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.subject || '(no subject)'}</div>
-                              <div className="email-preview" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.snippet || ''}</div>
+                              <span className="email-time" style={{flexShrink:0}}>{timeAgo(thread.last_message_at)}</span>
                             </div>
-                            <span className="email-time" style={{flexShrink:0}}>{timeAgo(thread.last_message_at)}</span>
-                          </div>
+                          </SwipeableEmailRow>
                         );
                       })}
                     </div>
