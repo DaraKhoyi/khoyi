@@ -2652,6 +2652,337 @@ function SwipeableEmailRow({ onArchive, onDelete, onClick, enabled = true, child
   );
 }
 
+// ─── RecipientPicker ────────────────────────────────────────────────
+// State-of-the-art "To" field for the email composer:
+//   - Chip-based UI (each recipient becomes a removable token)
+//   - Autocomplete dropdown ranked by name/email/company match + recency
+//   - Keyboard nav (Arrow Up/Down, Enter/Tab/comma to commit, Esc to close,
+//     Backspace at empty input removes last chip)
+//   - Paste of comma-separated emails splits and commits each
+//   - Tap a suggestion (mouse or touch) to commit
+//   - DISC profile pill shown inline when known (matches Prism Mirror)
+//   - Shape-compatible with the existing `composeTo` string state:
+//     value is a comma-separated email string, onChange emits the same.
+//     This means no changes to the send/reply handlers — they keep parsing
+//     composeTo.split(',') and everything just works.
+const RECIPIENT_DISC_COLORS = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function highlightMatch(text, q) {
+  if (!q || !text) return text;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx < 0) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <span style={{background:'rgba(197,169,94,0.30)',color:'var(--text-1)',fontWeight:700}}>
+        {text.slice(idx, idx + q.length)}
+      </span>
+      {text.slice(idx + q.length)}
+    </>
+  );
+}
+
+function pickerInitials(name, email) {
+  const s = (name || email || '?').trim();
+  if (!s) return '?';
+  const parts = s.replace(/[<>"]/g, '').split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return s.slice(0, 2).toUpperCase();
+}
+
+function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeholder, autoFocus }) {
+  const [inputText, setInputText] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Parse the comma-separated string into displayable chips. Each chip
+  // gets a name (if a contact exists at that email) and a contactId for
+  // looking up the DISC profile.
+  const recipients = useMemo(() => {
+    return (value || '')
+      .split(',')
+      .map(e => e.trim())
+      .filter(Boolean)
+      .map(email => {
+        const c = contacts.find(c => c.email && c.email.toLowerCase() === email.toLowerCase());
+        return { email, name: c?.name || '', contactId: c?.id || null };
+      });
+  }, [value, contacts]);
+
+  // Suggestion ranking. Higher score = better match. We score per field:
+  //   name starts-with    = 100
+  //   name word-boundary  =  60
+  //   name contains       =  40
+  //   email starts-with   =  50
+  //   email contains      =  25
+  //   company starts-with =  30
+  //   company contains    =  15
+  // Then add +20 if there's recent communication (inbound/outbound in last
+  // 30 days) — surfaces the people the user actually talks to.
+  const suggestions = useMemo(() => {
+    const q = inputText.trim().toLowerCase();
+    if (!q) return [];
+    const existing = new Set(recipients.map(r => r.email.toLowerCase()));
+    const now = Date.now();
+    const RECENCY_WINDOW = 30 * 86400000;
+    const scored = [];
+    for (const c of contacts) {
+      if (!c.email) continue;
+      if (existing.has(c.email.toLowerCase())) continue;
+      const name = (c.name || '').toLowerCase();
+      const email = c.email.toLowerCase();
+      const company = (c.company || '').toLowerCase();
+      let score = 0;
+      if (name.startsWith(q)) score += 100;
+      else if (name.includes(q)) score += 40;
+      // word-boundary match (typing the surname or middle word)
+      const words = name.split(/\s+/);
+      for (const w of words) {
+        if (w !== words[0] && w.startsWith(q)) { score += 60; break; }
+      }
+      if (email.startsWith(q)) score += 50;
+      else if (email.includes(q)) score += 25;
+      if (company.startsWith(q)) score += 30;
+      else if (company.includes(q)) score += 15;
+      // Recency boost
+      const recent = c.last_inbound_at || c.last_outbound_at;
+      if (recent && now - new Date(recent).getTime() < RECENCY_WINDOW) score += 20;
+      if (score > 0) scored.push({ contact: c, score });
+    }
+    scored.sort((a, b) => b.score - a.score || (a.contact.name || '').localeCompare(b.contact.name || ''));
+    return scored.slice(0, 6).map(s => s.contact);
+  }, [inputText, contacts, recipients]);
+
+  // Commit a recipient (from suggestion click, keyboard, or free-form email)
+  function commitRecipient(email, name, contactId) {
+    if (!email) return false;
+    const trimmed = String(email).trim();
+    if (!EMAIL_RE.test(trimmed)) return false;
+    if (recipients.some(r => r.email.toLowerCase() === trimmed.toLowerCase())) {
+      // Already there — clear the input and reset
+      setInputText('');
+      setShowDropdown(false);
+      setHighlightIdx(0);
+      return true;
+    }
+    const next = [...recipients, { email: trimmed, name: name || '', contactId: contactId || null }];
+    onChange(next.map(r => r.email).join(', '));
+    setInputText('');
+    setShowDropdown(false);
+    setHighlightIdx(0);
+    return true;
+  }
+
+  function removeRecipient(email) {
+    const next = recipients.filter(r => r.email.toLowerCase() !== email.toLowerCase());
+    onChange(next.map(r => r.email).join(', '));
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'ArrowDown') {
+      if (suggestions.length > 0) {
+        setShowDropdown(true);
+        setHighlightIdx(i => Math.min(suggestions.length - 1, i + 1));
+        e.preventDefault();
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (suggestions.length > 0) {
+        setShowDropdown(true);
+        setHighlightIdx(i => Math.max(0, i - 1));
+        e.preventDefault();
+      }
+    } else if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+      // Commit. Prefer highlighted suggestion; else free-form email.
+      const txt = inputText.trim();
+      if (showDropdown && suggestions[highlightIdx]) {
+        const c = suggestions[highlightIdx];
+        commitRecipient(c.email, c.name, c.id);
+        e.preventDefault();
+      } else if (txt && EMAIL_RE.test(txt)) {
+        commitRecipient(txt, null, null);
+        e.preventDefault();
+      } else if (e.key === ',') {
+        // Comma with no valid email yet — just absorb it
+        e.preventDefault();
+      }
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false);
+    } else if (e.key === 'Backspace' && inputText === '' && recipients.length > 0) {
+      removeRecipient(recipients[recipients.length - 1].email);
+    }
+  }
+
+  function onInputChange(e) {
+    const txt = e.target.value;
+    // Paste-or-type containing commas: split, commit each valid email, keep tail
+    if (txt.includes(',')) {
+      const parts = txt.split(',');
+      const tail = parts.pop();
+      let committedAny = false;
+      for (const p of parts.map(s => s.trim()).filter(Boolean)) {
+        if (EMAIL_RE.test(p)) {
+          const c = contacts.find(c => c.email && c.email.toLowerCase() === p.toLowerCase());
+          commitRecipient(p, c?.name || null, c?.id || null);
+          committedAny = true;
+        }
+      }
+      if (committedAny) {
+        setInputText(tail.trim());
+        setShowDropdown(Boolean(tail.trim()));
+        setHighlightIdx(0);
+        return;
+      }
+    }
+    setInputText(txt);
+    setShowDropdown(Boolean(txt));
+    setHighlightIdx(0);
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function onDocPointer(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', onDocPointer);
+    document.addEventListener('touchstart', onDocPointer);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer);
+      document.removeEventListener('touchstart', onDocPointer);
+    };
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{position:'relative'}}>
+      <div
+        onClick={() => inputRef.current?.focus()}
+        style={{
+          display:'flex',flexWrap:'wrap',alignItems:'center',gap:'4px',
+          minHeight:'40px',padding:'5px 8px',cursor:'text',
+          background:'var(--bg-base)',color:'var(--text-1)',
+          border:'1px solid var(--border)',borderRadius:'8px',
+          fontSize:'13px',
+        }}>
+        {recipients.map(r => {
+          const profile = r.contactId ? profiles.find(p => p.contact_id === r.contactId) : null;
+          return (
+            <span key={r.email}
+              style={{
+                display:'inline-flex',alignItems:'center',gap:'4px',
+                padding:'3px 4px 3px 9px',background:'var(--bg-hover)',
+                border:'1px solid var(--border)',borderRadius:'14px',
+                fontSize:'12px',color:'var(--text-1)',maxWidth:'100%',
+              }}
+              title={r.email}>
+              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'200px'}}>
+                {r.name || r.email}
+                {r.name && (
+                  <span style={{color:'var(--text-3)',marginLeft:'4px',fontSize:'10.5px'}}>
+                    &lt;{r.email}&gt;
+                  </span>
+                )}
+              </span>
+              {profile?.primary_letter && RECIPIENT_DISC_COLORS[profile.primary_letter] && (
+                <span style={{
+                  fontSize:'9px',padding:'1px 4px',borderRadius:'3px',
+                  background: RECIPIENT_DISC_COLORS[profile.primary_letter],
+                  color:'#fff',fontWeight:700,flexShrink:0,letterSpacing:'0.04em',
+                }}>{profile.primary_letter}</span>
+              )}
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); removeRecipient(r.email); }}
+                aria-label={`Remove ${r.name || r.email}`}
+                style={{
+                  background:'none',border:'none',color:'var(--text-3)',
+                  cursor:'pointer',padding:'2px 4px',fontSize:'14px',
+                  lineHeight:1,flexShrink:0,
+                }}>×</button>
+            </span>
+          );
+        })}
+        <input ref={inputRef} type="text" value={inputText}
+          onChange={onInputChange} onKeyDown={onKeyDown}
+          onFocus={() => { if (inputText) setShowDropdown(true); }}
+          autoFocus={autoFocus}
+          autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+          style={{
+            flex:1, minWidth:'140px',
+            border:'none', outline:'none',
+            background:'transparent', color:'var(--text-1)',
+            fontSize:'13px', padding:'4px',
+          }}
+          placeholder={recipients.length === 0 ? (placeholder || 'Type a name or email…') : ''}/>
+      </div>
+
+      {showDropdown && suggestions.length > 0 && (
+        <div style={{
+          position:'absolute', top:'100%', left:0, right:0, marginTop:'3px',
+          background:'var(--bg-card)', border:'1px solid var(--border)',
+          borderRadius:'8px', boxShadow:'0 10px 28px rgba(0,0,0,0.45)',
+          maxHeight:'320px', overflowY:'auto', zIndex:50,
+        }}>
+          {suggestions.map((c, idx) => {
+            const profile = profiles.find(p => p.contact_id === c.id);
+            const isHi = idx === highlightIdx;
+            return (
+              <button key={c.id} type="button"
+                onMouseDown={(e) => { e.preventDefault(); commitRecipient(c.email, c.name, c.id); }}
+                onMouseEnter={() => setHighlightIdx(idx)}
+                style={{
+                  width:'100%', padding:'9px 11px',
+                  background: isHi ? 'var(--bg-hover)' : 'transparent',
+                  border:'none', cursor:'pointer', color:'var(--text-1)',
+                  display:'flex', alignItems:'center', gap:'10px', textAlign:'left',
+                  borderBottom: idx < suggestions.length - 1 ? '1px solid var(--border)' : 'none',
+                }}>
+                <span style={{
+                  flexShrink:0, width:'30px', height:'30px', borderRadius:'50%',
+                  background:'var(--bg-hover)', display:'flex',
+                  alignItems:'center', justifyContent:'center',
+                  fontSize:'10.5px', fontWeight:700, color:'var(--text-2)',
+                }}>{pickerInitials(c.name, c.email)}</span>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{
+                    fontSize:'13px', fontWeight:600,
+                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                  }}>{highlightMatch(c.name || c.email, inputText)}</div>
+                  <div style={{
+                    fontSize:'11px', color:'var(--text-3)',
+                    display:'flex', gap:'6px', alignItems:'center',
+                    overflow:'hidden',
+                  }}>
+                    <span style={{
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                    }}>{highlightMatch(c.email, inputText)}</span>
+                    {c.company && (
+                      <span style={{
+                        flexShrink:0,
+                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                        maxWidth:'160px',
+                      }}>· {c.company}</span>
+                    )}
+                  </div>
+                </div>
+                {profile?.primary_letter && RECIPIENT_DISC_COLORS[profile.primary_letter] && (
+                  <span style={{
+                    fontSize:'9px', padding:'2px 5px', borderRadius:'3px',
+                    background: RECIPIENT_DISC_COLORS[profile.primary_letter],
+                    color:'#fff', fontWeight:700, flexShrink:0, letterSpacing:'0.04em',
+                  }}>{profile.primary_letter}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
 // INBOX VIEW — Gmail-aware
 // Reads from email_threads/email_messages when an account is connected.
@@ -4145,13 +4476,23 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                   </select>
                 )}
               </div>
-              <div className="form-group"><label className="form-label">To</label><input className="form-input" type="text" value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="recipient@example.com (comma-separated for multiple)" required /></div>
+              <div className="form-group">
+                <label className="form-label">To</label>
+                <RecipientPicker
+                  value={composeTo}
+                  onChange={setComposeTo}
+                  contacts={contacts}
+                  profiles={profiles}
+                  placeholder="Type a name or email…"
+                  autoFocus={!composeReplyMeta}
+                />
+              </div>
               <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" required /></div>
               <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required /></div>
               {sendMsg && <p style={{fontSize:'13px',color: sendMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',margin:'4px 0'}}>{sendMsg}</p>}
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={sending}>{sending?'Sending…':'Send'}</button>
+                <button type="submit" className="btn btn-primary" disabled={sending || !composeTo.trim()}>{sending?'Sending…':'Send'}</button>
               </div>
             </form>
           </div>
