@@ -13518,6 +13518,7 @@ function FinanceView({ userId }) {
   const [taxCategories, setTaxCategories] = useState([]);
   const [personalBudget, setPersonalBudget] = useState([]);
   const [systems, setSystems] = useState([]);
+  const [recruitingSystems, setRecruitingSystems] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
@@ -13543,7 +13544,7 @@ function FinanceView({ userId }) {
       }
     }
 
-    const [s, tc, pb, sys, tx, comp, te, tmpl, rec] = await Promise.all([
+    const [s, tc, pb, sys, tx, comp, te, tmpl, rec, rsys] = await Promise.all([
       supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
       supabase.from('tax_categories').select('*').eq('user_id', userId).eq('is_archived', false).order('sort_order'),
       supabase.from('personal_budget_lines').select('*').eq('user_id', userId).order('sort_order'),
@@ -13553,11 +13554,13 @@ function FinanceView({ userId }) {
       supabase.from('time_entries').select('*').eq('user_id', userId).gte('occurred_at', yearStart).order('occurred_at', { ascending: false }),
       supabase.from('lead_gen_system_templates').select('*').order('system_number'),
       supabase.from('recurring_transactions').select('*').eq('user_id', userId).order('next_run_date'),
+      supabase.from('recruiting_systems').select('*').eq('user_id', userId).eq('is_active', true).order('is_overhead', { ascending: false }).order('name'),
     ]);
     setSettings(s.data);
     setTaxCategories(tc.data || []);
     setPersonalBudget(pb.data || []);
     setSystems(sys.data || []);
+    setRecruitingSystems(rsys.data || []);
     setTransactions(tx.data || []);
     setCompletions(comp.data || []);
     setTimeEntries(te.data || []);
@@ -13699,7 +13702,8 @@ function FinanceView({ userId }) {
         <FinanceReports
           userId={userId}
           settings={settings} transactions={transactions} taxCategories={taxCategories}
-          systems={systems} personalBudget={personalBudget} timeEntries={timeEntries}
+          systems={systems} recruitingSystems={recruitingSystems}
+          personalBudget={personalBudget} timeEntries={timeEntries}
           trackPersonal={trackPersonal} isCoach={isCoach}
         />
       )}
@@ -15573,7 +15577,7 @@ function TemplateActivateModal({ userId, template, onClose, onActivated }) {
 // ─── FinanceReports ──────────────────────────────────────────────────
 // Two reports: Business/Tax (CPA handoff) and Personal (if tracking is on).
 // PLUS the Operations ROI report — time-cost included, gamified.
-function FinanceReports({ userId, settings, transactions, taxCategories, systems, personalBudget, timeEntries, trackPersonal, isCoach }) {
+function FinanceReports({ userId, settings, transactions, taxCategories, systems, recruitingSystems, personalBudget, timeEntries, trackPersonal, isCoach }) {
   const [reportType, setReportType] = useState('business');
   const [period, setPeriod] = useState('ytd');
   const [advExpanded, setAdvExpanded] = useState(false);
@@ -15601,7 +15605,7 @@ function FinanceReports({ userId, settings, transactions, taxCategories, systems
       {reportType === 'business' && (
         <BusinessReport
           transactions={transactions.filter(t => t.scope === 'business' && inPeriod(t.date))}
-          taxCategories={taxCategories} systems={systems}
+          taxCategories={taxCategories} systems={systems} recruitingSystems={recruitingSystems}
           advExpanded={advExpanded} setAdvExpanded={setAdvExpanded}
           isCoach={isCoach}
         />
@@ -15665,7 +15669,7 @@ function ReportHeader({ reportType, setReportType, period, setPeriod, trackPerso
   );
 }
 
-function BusinessReport({ transactions, taxCategories, systems, advExpanded, setAdvExpanded, isCoach }) {
+function BusinessReport({ transactions, taxCategories, systems, recruitingSystems = [], advExpanded, setAdvExpanded, isCoach }) {
   const income = transactions.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const expenseByCategory = {};
   transactions.filter(t => Number(t.amount) < 0).forEach(t => {
@@ -15686,17 +15690,98 @@ function BusinessReport({ transactions, taxCategories, systems, advExpanded, set
     });
   }
 
+  // ─── Cost-center rollup ────────────────────────────────────────────
+  // Three buckets, summed by precedence so a single transaction doesn't
+  // double-count: if a transaction has recruiting_system_id, it's
+  // brokerage ops; else if it has lead_gen_system_id, it's agent lead gen;
+  // else it's other / unattributed. The precedence reflects how Dara's
+  // attributing in practice — recruiting work is the more specific tag.
+  const recruitingBySystem = {};
+  const leadGenBySystem = {};
+  let otherTotal = 0;
+  let recruitingTotal = 0;
+  let leadGenTotal = 0;
+  transactions.filter(t => Number(t.amount) < 0).forEach(t => {
+    const amt = Math.abs(Number(t.amount));
+    if (t.recruiting_system_id) {
+      recruitingBySystem[t.recruiting_system_id] = (recruitingBySystem[t.recruiting_system_id] || 0) + amt;
+      recruitingTotal += amt;
+    } else if (t.lead_gen_system_id) {
+      leadGenBySystem[t.lead_gen_system_id] = (leadGenBySystem[t.lead_gen_system_id] || 0) + amt;
+      leadGenTotal += amt;
+    } else {
+      otherTotal += amt;
+    }
+  });
+  const costCenterTotal = recruitingTotal + leadGenTotal + otherTotal;
+
   return (
     <div className="panel" style={{padding:'16px'}}>
       <h3 style={{margin:'0 0 4px',fontSize:'15px',color:'var(--text-1)'}}>Business — Tax Summary</h3>
       <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 14px'}}>
         Schedule C-ready. Hand this to your CPA. Mileage and Meals 50% applied in Phase 4.
       </p>
+
       <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'2px solid var(--border)'}}>
         <span style={{fontWeight:700,color:'var(--text-1)'}}>Gross commission income</span>
         <span style={{fontWeight:700,color:'var(--green)',fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(income)}</span>
       </div>
-      <div style={{padding:'8px 0'}}>
+
+      {/* ─── COST CENTERS ─── */}
+      {costCenterTotal > 0 && (
+        <div style={{padding:'14px 0 8px',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontWeight:700,color:'var(--text-1)',marginBottom:'4px'}}>Expenses by cost center</div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'10px',lineHeight:1.5}}>
+            Strategic view — where the money is going by purpose. Tax view (by Schedule C line) is below.
+          </div>
+
+          {/* Brokerage Ops & Recruiting */}
+          {recruitingTotal > 0 && (
+            <CostCenterBlock
+              icon="🪪"
+              title="Brokerage Operations & Recruiting"
+              subtitle="Building the agent base — overhead of running the franchise"
+              total={recruitingTotal}
+              accentColor="#7c5cff"
+              percentOfTotal={costCenterTotal > 0 ? recruitingTotal / costCenterTotal : 0}
+              systems={recruitingSystems}
+              bySystemMap={recruitingBySystem}
+              unassignedLabel="Other recruiting (unassigned system)"
+            />
+          )}
+
+          {/* Agent Lead Generation */}
+          {leadGenTotal > 0 && (
+            <CostCenterBlock
+              icon="📈"
+              title="Agent Lead Generation"
+              subtitle="Acquiring leads — direct income production"
+              total={leadGenTotal}
+              accentColor="var(--accent)"
+              percentOfTotal={costCenterTotal > 0 ? leadGenTotal / costCenterTotal : 0}
+              systems={systems}
+              bySystemMap={leadGenBySystem}
+              unassignedLabel="Other lead gen (unassigned system)"
+            />
+          )}
+
+          {/* Other — no cost-center tag */}
+          {otherTotal > 0 && (
+            <CostCenterBlock
+              icon="💼"
+              title="Other Business Expenses"
+              subtitle="No cost-center tag — usually office, utilities, professional fees"
+              total={otherTotal}
+              accentColor="var(--text-3)"
+              percentOfTotal={costCenterTotal > 0 ? otherTotal / costCenterTotal : 0}
+              systems={null}
+              bySystemMap={null}
+            />
+          )}
+        </div>
+      )}
+
+      <div style={{padding:'14px 0 8px'}}>
         <div style={{fontWeight:700,color:'var(--text-1)',marginBottom:'8px'}}>Deductible expenses by Schedule C line</div>
         {Object.keys(expenseByCategory).length === 0 ? (
           <p style={{fontSize:'12px',color:'var(--text-3)',fontStyle:'italic',margin:0}}>No expenses recorded in this period.</p>
@@ -15750,6 +15835,82 @@ function BusinessReport({ transactions, taxCategories, systems, advExpanded, set
         <strong style={{color:'var(--text-2)'}}>For your CPA:</strong> Working summary. Final Schedule C will reflect mileage × IRS rate, each category × its <code style={{fontSize:'10px',padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px'}}>deduction_pct</code> (Meals currently 100% per current IRS rules — adjustable per category), and any depreciation. Phase 4 generates the line-by-line preview.
         {isCoach && <div style={{marginTop:'6px',color:'var(--accent)'}}>🎯 Coach view: full underlying transactions visible in Ledger.</div>}
       </div>
+    </div>
+  );
+}
+
+// Cost-center display block — renders a labeled header tile + collapsible
+// per-system breakdown. Used by BusinessReport for the strategic view
+// (recruiting vs lead-gen vs other) that sits above the tax-category
+// rollup.
+function CostCenterBlock({ icon, title, subtitle, total, accentColor, percentOfTotal, systems, bySystemMap, unassignedLabel }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasBreakdown = systems && bySystemMap;
+  const breakdownEntries = hasBreakdown
+    ? Object.entries(bySystemMap).sort((a, b) => b[1] - a[1])
+    : [];
+
+  return (
+    <div style={{marginBottom:'8px',borderLeft:`3px solid ${accentColor}`,paddingLeft:'10px'}}>
+      <button type="button" onClick={() => hasBreakdown && setExpanded(v => !v)}
+        disabled={!hasBreakdown}
+        style={{
+          width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',
+          background:'transparent',border:'none',padding:'6px 0',cursor: hasBreakdown ? 'pointer' : 'default',
+          color:'var(--text-1)',gap:'8px',textAlign:'left',
+        }}>
+        <div style={{display:'flex',alignItems:'baseline',gap:'8px',minWidth:0,flex:1}}>
+          <span style={{fontSize:'15px',flexShrink:0}}>{icon}</span>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</div>
+            <div style={{fontSize:'10.5px',color:'var(--text-3)',marginTop:'1px'}}>{subtitle}</div>
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'baseline',gap:'10px',flexShrink:0}}>
+          <span style={{fontSize:'10px',color:'var(--text-3)',fontWeight:600,fontVariantNumeric:'tabular-nums'}}>
+            {(percentOfTotal * 100).toFixed(0)}%
+          </span>
+          <span style={{fontSize:'14px',fontWeight:800,color:'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>
+            {fmtUSDCents(total)}
+          </span>
+          {hasBreakdown && (
+            <span style={{color:'var(--text-3)',fontSize:'11px',transform: expanded ? 'rotate(90deg)' : 'rotate(0)',transition:'transform 0.15s'}}>›</span>
+          )}
+        </div>
+      </button>
+      {/* Tiny inline percentage bar */}
+      <div style={{height:'2px',width:'100%',background:'var(--bg-base)',borderRadius:'1px',marginBottom:'4px',overflow:'hidden'}}>
+        <div style={{width: `${(percentOfTotal*100).toFixed(1)}%`, height:'100%',background:accentColor,borderRadius:'1px',transition:'width 0.2s'}}/>
+      </div>
+      {expanded && hasBreakdown && (
+        <div style={{padding:'4px 0 8px',marginLeft:'24px'}}>
+          {breakdownEntries.length === 0 ? (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No spend by system.</div>
+          ) : (
+            breakdownEntries.map(([sid, amt]) => {
+              const sys = systems.find(s => s.id === sid);
+              const pct = total > 0 ? amt / total : 0;
+              return (
+                <div key={sid} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'3px 0',fontSize:'11.5px',gap:'8px'}}>
+                  <span style={{color:'var(--text-2)',display:'flex',alignItems:'center',gap:'6px',minWidth:0,flex:1}}>
+                    <span style={{width:'6px',height:'6px',borderRadius:'2px',background: sys?.color || 'var(--text-3)',display:'inline-block',flexShrink:0}}/>
+                    <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      {sys?.name || unassignedLabel || 'Unassigned'}
+                      {sys?.is_overhead && <span style={{fontSize:'9px',color:'var(--text-3)',marginLeft:'4px',padding:'0 4px',background:'var(--bg-hover)',borderRadius:'3px'}}>overhead</span>}
+                    </span>
+                  </span>
+                  <span style={{fontSize:'10px',color:'var(--text-3)',fontVariantNumeric:'tabular-nums',flexShrink:0}}>
+                    {(pct*100).toFixed(0)}%
+                  </span>
+                  <span style={{color:'var(--text-1)',fontVariantNumeric:'tabular-nums',fontWeight:600,flexShrink:0}}>
+                    {fmtUSDCents(amt)}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }
