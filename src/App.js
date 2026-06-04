@@ -14811,9 +14811,20 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
     return null;
   }
 
-  function onFile(e) {
-    const file = e.target.files?.[0];
+  // Drag-and-drop state for the upload step
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // Process a File object (from input or drop). Validates that it's a
+  // CSV, then parses + advances to the map step.
+  function processFile(file) {
     if (!file) return;
+    // Validate MIME / extension — browsers don't always set type for CSV
+    // (especially on drag from Finder), so fall back to extension check.
+    const isCsv = (file.type === 'text/csv' || file.type === 'application/vnd.ms-excel' || /\.csv$/i.test(file.name));
+    if (!isCsv) {
+      setError(`Not a CSV file (${file.name}). Drop a .csv exported from your bank or credit card.`);
+      return;
+    }
     setFileName(file.name);
     setError('');
     setAppliedProfileId(null);
@@ -14855,6 +14866,31 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
     };
     reader.onerror = () => setError('Failed to read file.');
     reader.readAsText(file);
+  }
+
+  function onFile(e) {
+    processFile(e.target.files?.[0]);
+  }
+
+  // Drag handlers — onDragOver must call preventDefault for drop to fire
+  function onDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  }
+  function onDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only clear if leaving the drop zone entirely (not entering a child)
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setIsDragOver(false);
+  }
+  function onDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) processFile(file);
   }
 
   // Persist current mapping as a reusable profile
@@ -15180,13 +15216,29 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
                 </div>
               </div>
             )}
-            <div style={{padding:'30px 20px',border:'2px dashed var(--border)',borderRadius:'10px',textAlign:'center'}}>
-              <div style={{fontSize:'32px',marginBottom:'10px'}}>📄</div>
-              <p style={{fontSize:'13px',color:'var(--text-1)',marginBottom:'4px',fontWeight:600}}>Drop or pick a CSV file</p>
+            <div onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+              style={{
+                padding:'30px 20px',
+                border:`2px dashed ${isDragOver ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius:'10px',textAlign:'center',
+                background: isDragOver ? 'rgba(197,169,94,0.06)' : 'transparent',
+                transition: 'border-color 0.12s, background 0.12s',
+              }}>
+              <div style={{fontSize:'32px',marginBottom:'10px',transition:'transform 0.12s',transform: isDragOver ? 'scale(1.1)' : 'scale(1)'}}>
+                {isDragOver ? '📥' : '📄'}
+              </div>
+              <p style={{fontSize:'13px',color:isDragOver?'var(--accent)':'var(--text-1)',marginBottom:'4px',fontWeight:600}}>
+                {isDragOver ? 'Drop to import' : 'Drag a CSV file here, or pick one'}
+              </p>
               <p style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'16px'}}>From your bank, credit card, or any financial source.</p>
               <input type="file" accept=".csv,text/csv" onChange={onFile}
                 style={{display:'inline-block',padding:'6px 12px',background:'var(--accent)',color:'var(--bg-base)',border:'none',borderRadius:'6px',fontWeight:700,cursor:'pointer',fontSize:'12px'}}/>
             </div>
+            {error && (
+              <div style={{marginTop:'10px',padding:'8px 10px',background:'rgba(239,68,68,0.10)',border:'1px solid var(--red)',borderRadius:'6px',fontSize:'11px',color:'var(--red)'}}>
+                {error}
+              </div>
+            )}
             <div style={{marginTop:'14px',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
               <strong style={{color:'var(--text-2)',display:'block',marginBottom:'4px'}}>What works:</strong>
               Standard CSV with a header row. Handles bank exports from BofA, Chase, Wells Fargo, Capital One, Amex, Citi, and most credit unions. Date can be MM/DD/YYYY or YYYY-MM-DD. Amount can be one column (negative = expense) or two columns (Debit + Credit).
