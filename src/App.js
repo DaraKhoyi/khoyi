@@ -13712,6 +13712,168 @@ function FinanceView({ userId }) {
 }
 
 // ─── FinanceDashboard ────────────────────────────────────────────────
+// ─── QuarterlyTaxBanner ──────────────────────────────────────────────
+// Compact dashboard surface for the Quarterly Tax projection. Lives at
+// the top of FinanceDashboard so the "set aside this month" number is
+// visible the moment you open Finance — no need to dig into Reports →
+// Quarterly Tax to see whether you're on track.
+//
+// Self-fetching: pulls user_tax_settings, tax_categories, current-year
+// business transactions, and current-year business mileage. Reuses the
+// existing pure functions computeNetProfitFromData() and
+// computeQuarterlyTaxProjection() so the number matches the Reports tab
+// exactly.
+//
+// Four render states:
+//   1. Loading        → returns null (no flash of empty UI)
+//   2. No settings    → small "Set up tax tracking" prompt with hint
+//   3. Behind         → red banner with catch-up amount + next due date
+//   4. On track       → green banner with per-quarter amount + next due date
+function QuarterlyTaxBanner({ userId }) {
+  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState(null);
+  const [projection, setProjection] = useState(null);
+  const [ytdPaid, setYtdPaid] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const now = new Date();
+      const yearStart = `${now.getFullYear()}-01-01`;
+      const yearEnd = `${now.getFullYear()}-12-31`;
+      const [s, tc, tx, mile] = await Promise.all([
+        supabase.from('user_tax_settings').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('tax_categories').select('*').eq('user_id', userId).eq('is_archived', false),
+        supabase.from('transactions').select('*').eq('user_id', userId).eq('is_archived', false).eq('scope', 'business').gte('date', yearStart).lte('date', yearEnd).limit(5000),
+        supabase.from('mileage_entries').select('*').eq('user_id', userId).eq('category', 'business').gte('date', yearStart).lte('date', yearEnd).limit(5000),
+      ]);
+      if (cancelled) return;
+      setSettings(s.data);
+      if (!s.data) { setLoading(false); return; }
+
+      const taxCats = tc.data || [];
+      const transactions = tx.data || [];
+      const mileage = mile.data || [];
+      const estPaymentCat = taxCats.find(c => c.name === 'Estimated Tax Payments');
+      const paid = estPaymentCat
+        ? transactions
+            .filter(t => t.tax_category_id === estPaymentCat.id)
+            .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0)
+        : 0;
+      setYtdPaid(paid);
+
+      const np = computeNetProfitFromData(transactions, taxCats, mileage);
+      const monthsElapsed = now.getMonth() + 1;
+      const proj = computeQuarterlyTaxProjection({
+        ytdNetProfit: np.netProfit,
+        monthsElapsed,
+        year: now.getFullYear(),
+        filingStatus: s.data.filing_status || 'single',
+        otherIncome: Number(s.data.estimated_other_income) || 0,
+        withholding: Number(s.data.withholding_ytd) || 0,
+        useQbi: !!s.data.use_qbi_deduction,
+        itemizedDeductions: Number(s.data.itemized_deductions) || 0,
+        priorYearTax: Number(s.data.prior_year_tax_owed) || null,
+        priorYearAgi: Number(s.data.prior_year_agi) || null,
+        ytdEstimatedPaid: paid,
+      });
+      setProjection(proj);
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  if (loading) return null;
+  const fmt = (n) => `$${Math.round(n || 0).toLocaleString()}`;
+
+  // State 2: no settings configured — small nudge to set them up
+  if (!settings) {
+    return (
+      <div style={{
+        padding:'10px 14px',
+        background:'var(--bg-card)',
+        border:'1px dashed var(--border)',
+        borderRadius:'10px',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'space-between',
+        gap:'10px',
+        flexWrap:'wrap',
+      }}>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
+          <span style={{fontSize:'18px',flexShrink:0}}>💵</span>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-1)'}}>Set up quarterly tax tracking</div>
+            <div style={{fontSize:'10.5px',color:'var(--text-3)',marginTop:'1px'}}>
+              Enter filing status + prior-year tax → get an automatic "set aside" number every month.
+            </div>
+          </div>
+        </div>
+        <div style={{fontSize:'10px',color:'var(--text-3)',whiteSpace:'nowrap'}}>
+          Reports → 💵 Quarterly Tax → ⚙ Tax settings
+        </div>
+      </div>
+    );
+  }
+
+  // Banner data
+  const isBehind = projection.currentlyOwed > 0;
+  const isNothingOwed = projection.totalAnnualTax <= 0;
+  const accent = isBehind ? 'var(--red)' : isNothingOwed ? 'var(--text-3)' : 'var(--green)';
+  const headlineAmount = isBehind ? projection.currentlyOwed : projection.recommendedQuarterly;
+  const nextDue = projection.nextDueQuarter;
+  const nextDueLabel = nextDue
+    ? nextDue.due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : 'year-end';
+
+  // State 3/4: configured — show the projection banner
+  return (
+    <div style={{
+      padding:'12px 14px',
+      background: isBehind
+        ? 'linear-gradient(135deg, rgba(239,68,68,0.10), rgba(245,158,11,0.08))'
+        : isNothingOwed
+          ? 'var(--bg-card)'
+          : 'linear-gradient(135deg, rgba(34,197,94,0.08), rgba(59,130,246,0.05))',
+      border: `1px solid ${accent}`,
+      borderRadius:'10px',
+      display:'flex',
+      alignItems:'center',
+      justifyContent:'space-between',
+      gap:'12px',
+      flexWrap:'wrap',
+    }}>
+      <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0,flex:1}}>
+        <span style={{fontSize:'22px',flexShrink:0}}>{isBehind ? '⚠️' : isNothingOwed ? '💵' : '✓'}</span>
+        <div style={{minWidth:0,flex:1}}>
+          <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>
+            {isBehind
+              ? 'Behind on estimated tax payments'
+              : isNothingOwed
+                ? 'No estimated tax owed at current run rate'
+                : `Set aside per quarter · next due ${nextDueLabel}`}
+          </div>
+          <div style={{display:'flex',alignItems:'baseline',gap:'8px',marginTop:'3px',flexWrap:'wrap'}}>
+            <span style={{fontSize:'22px',fontWeight:800,color:accent,fontVariantNumeric:'tabular-nums',lineHeight:1}}>
+              {fmt(headlineAmount)}
+            </span>
+            {!isNothingOwed && (
+              <span style={{fontSize:'11px',color:'var(--text-3)'}}>
+                · {fmt(ytdPaid)} paid YTD of {fmt(projection.expectedYtdPaid)} expected
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div style={{fontSize:'10px',color:'var(--text-3)',whiteSpace:'nowrap',textAlign:'right'}}>
+        Annual proj. {fmt(projection.totalAnnualTax)}<br/>
+        <span style={{color:'var(--text-3)'}}>open Reports → 💵 Quarterly Tax for breakdown</span>
+      </div>
+    </div>
+  );
+}
+
 function FinanceDashboard({
   userId, settings, setSettings, ytdIncome, ytdExpense, ytdNet,
   transactions, systems, tier, completions, setCompletions, readOnly,
@@ -13788,6 +13950,7 @@ function FinanceDashboard({
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      <QuarterlyTaxBanner userId={userId} />
       <div className="panel" style={{padding:'18px'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'8px',flexWrap:'wrap',gap:'8px'}}>
           <span style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>YTD GCI vs goal</span>
