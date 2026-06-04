@@ -19480,7 +19480,7 @@ function BudgetSection({ title, subtitle, rows, rowPrefix, expandedRow, setExpan
 //   shows projected BALANCE. Without it, shows projected NET ACTIVITY
 //   (cumulative income - expenses from today).
 
-// Confidence per deal status — used for UI tagging + (future) weighting.
+// Confidence per deal status — used for UI tagging + weighting.
 // Hoisted to module scope so useMemo doesn't need it as a dependency.
 const DEAL_STATUS_CONFIDENCE = {
   closing:         'high',     // about to close
@@ -19489,8 +19489,24 @@ const DEAL_STATUS_CONFIDENCE = {
   lead:            'low',      // earliest stage
 };
 
+// Probability factor applied to each deal's expected commission when
+// confidence weighting is on. These reflect typical real-estate
+// fall-through rates by stage. Conservative on early-stage to avoid the
+// classic optimism trap (every active listing is going to close!).
+//   closing         — about to close: 90% (still some inspection/financing risk)
+//   under_contract  — contract signed: 75% (~25% fall-through is realistic)
+//   active          — listed only:     35% (most listings take months or relist)
+//   lead            — earliest:        15% (most leads never convert at all)
+const DEAL_STATUS_PROBABILITY = {
+  closing:         0.90,
+  under_contract:  0.75,
+  active:          0.35,
+  lead:            0.15,
+};
+
 function CashFlowForecast({ userId, settings }) {
   const [horizonDays, setHorizonDays] = useState(90);  // 30 | 60 | 90
+  const [useConfidenceWeighting, setUseConfidenceWeighting] = useState(true);
   const [recurring, setRecurring] = useState([]);
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19606,11 +19622,15 @@ function CashFlowForecast({ userId, settings }) {
     for (const d of deals) {
       const closeDate = estimateDealClose(d);
       if (!closeDate || closeDate > horizonISO) continue;
-      const amt = dealExpectedCommission(d);
-      if (amt <= 0) continue;
+      const rawAmount = dealExpectedCommission(d);
+      if (rawAmount <= 0) continue;
+      const probability = useConfidenceWeighting ? (DEAL_STATUS_PROBABILITY[d.status] ?? 1) : 1;
+      const amount = rawAmount * probability;
       events.push({
         date: closeDate < todayISO ? todayISO : closeDate,  // overdue → bucket today
-        amount: amt,
+        amount,
+        rawAmount,
+        probability,
         payee: d.name || d.client_name || d.address || `Deal ${d.id.slice(0, 8)}`,
         source: 'deal',
         sourceId: d.id,
@@ -19681,7 +19701,7 @@ function CashFlowForecast({ userId, settings }) {
         eventCount: events.length,
       },
     };
-  }, [recurring, deals, horizonDays, cashBalance, cashAsOf]);
+  }, [recurring, deals, horizonDays, cashBalance, cashAsOf, useConfidenceWeighting]);
 
   async function saveBalance() {
     setSavingBalance(true);
@@ -19759,13 +19779,21 @@ function CashFlowForecast({ userId, settings }) {
     <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
       {/* Header */}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
-        <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
-          {[30, 60, 90].map(d => (
-            <button key={d} onClick={() => setHorizonDays(d)}
-              style={{padding:'5px 12px',border:'none',borderRadius:'6px',fontSize:'11.5px',fontWeight:700,cursor:'pointer',
-                background:horizonDays===d?'var(--accent)':'transparent',
-                color:horizonDays===d?'var(--bg-base)':'var(--text-2)'}}>{d} days</button>
-          ))}
+        <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+          <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
+            {[30, 60, 90].map(d => (
+              <button key={d} onClick={() => setHorizonDays(d)}
+                style={{padding:'5px 12px',border:'none',borderRadius:'6px',fontSize:'11.5px',fontWeight:700,cursor:'pointer',
+                  background:horizonDays===d?'var(--accent)':'transparent',
+                  color:horizonDays===d?'var(--bg-base)':'var(--text-2)'}}>{d} days</button>
+            ))}
+          </div>
+          <label title="Apply probability factors to pipeline income by deal stage (closing 90%, under_contract 75%, active 35%, lead 15%). Reflects typical fall-through rates so you don't budget around the optimistic scenario."
+            style={{display:'flex',alignItems:'center',gap:'5px',cursor:'pointer',fontSize:'11px',color:'var(--text-2)',padding:'4px 8px',border:'1px solid var(--border)',borderRadius:'6px',background:useConfidenceWeighting?'rgba(197,169,94,0.08)':'transparent'}}>
+            <input type="checkbox" checked={useConfidenceWeighting} onChange={e => setUseConfidenceWeighting(e.target.checked)}
+              style={{cursor:'pointer',margin:0}}/>
+            <span style={{fontWeight:700,color:useConfidenceWeighting?'var(--accent)':'var(--text-2)'}}>⚖ Confidence-weighted</span>
+          </label>
         </div>
         <button onClick={() => setShowSettings(s => !s)}
           style={{padding:'5px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>
@@ -19940,7 +19968,7 @@ function CashFlowForecast({ userId, settings }) {
                       {e.payee}
                       {e.source === 'deal' && (
                         <span style={{fontSize:'9px',color:'var(--text-3)',marginLeft:'6px',padding:'1px 5px',background:'var(--bg-hover)',borderRadius:'3px',fontWeight:600}}>
-                          {e.sourceStatus}{e.dealEstimate ? ' · est.' : ''}
+                          {e.sourceStatus}{e.dealEstimate ? ' · est.' : ''}{useConfidenceWeighting && e.probability < 1 ? ` · ${Math.round(e.probability*100)}%` : ''}
                         </span>
                       )}
                       {e.source === 'recurring' && (
@@ -19949,8 +19977,15 @@ function CashFlowForecast({ userId, settings }) {
                         </span>
                       )}
                     </span>
-                    <span style={{flexShrink:0,fontVariantNumeric:'tabular-nums',fontWeight:700,color: e.amount >= 0 ? 'var(--green)' : 'var(--red)'}}>
-                      {e.amount >= 0 ? '+' : '−'}{fmt(Math.abs(e.amount))}
+                    <span style={{flexShrink:0,textAlign:'right',lineHeight:1.2}}>
+                      <span style={{fontVariantNumeric:'tabular-nums',fontWeight:700,color: e.amount >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                        {e.amount >= 0 ? '+' : '−'}{fmt(Math.abs(e.amount))}
+                      </span>
+                      {e.source === 'deal' && useConfidenceWeighting && e.probability < 1 && (
+                        <div style={{fontSize:'9px',color:'var(--text-3)',fontVariantNumeric:'tabular-nums'}}>
+                          of {fmt(e.rawAmount)} raw
+                        </div>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -19968,7 +20003,7 @@ function CashFlowForecast({ userId, settings }) {
       {/* Boundary note */}
       <div style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
         <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>How this projection is built.</div>
-        Recurring transactions are projected forward from their <code style={{padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px',fontSize:'10px'}}>next_run_date</code> by frequency. Open deals contribute expected commission income on their close_date (or contract_date + 30 days if no close set, flagged "est."). Deals weighted by confidence: closing (high), under_contract (medium), active/lead (low) — all currently included at full value (no probability discount). Projection does NOT include: unplanned expenses, manual one-off items, taxes (see Quarterly Tax tab), or transactions you log directly after this forecast loads. Refresh to recompute.
+        Recurring transactions are projected forward from their <code style={{padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px',fontSize:'10px'}}>next_run_date</code> by frequency. Open deals contribute expected commission income on their close_date (or contract_date + 30 days if no close set, flagged "est."). With <strong>confidence weighting</strong> on (default), each deal is discounted by typical fall-through rates: closing 90%, under_contract 75%, active 35%, lead 15%. Toggle off to see the raw optimistic case. Projection does NOT include: unplanned expenses, manual one-off items, taxes (see Quarterly Tax tab), or transactions you log directly after this forecast loads.
       </div>
     </div>
   );
