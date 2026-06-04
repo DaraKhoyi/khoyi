@@ -16878,6 +16878,9 @@ function FinanceReports({ userId, settings, transactions, taxCategories, systems
       {reportType === 'budgets' && (
         <BudgetReport userId={userId} systems={systems} recruitingSystems={recruitingSystems} />
       )}
+      {reportType === 'cashflow' && (
+        <CashFlowForecast userId={userId} settings={settings} />
+      )}
     </div>
   );
 }
@@ -16887,11 +16890,12 @@ function ReportHeader({ reportType, setReportType, period, setPeriod, trackPerso
   if (trackPersonal) options.push({ id:'personal', label:'🏠 Personal' });
   options.push({ id:'roi', label:'🎯 Operations · ROI' });
   options.push({ id:'budgets', label:'💰 Budgets' });
+  options.push({ id:'cashflow', label:'📈 Cash Flow' });
   options.push({ id:'schedule_c', label:'📋 Schedule C' });
   options.push({ id:'quarterly', label:'💵 Quarterly Tax' });
   options.push({ id:'form_1099', label:'📑 1099s' });
-  // These four use their own year/period selectors, hide the shared period dropdown
-  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099' && reportType !== 'budgets';
+  // These five use their own period/year selectors, hide the shared period dropdown
+  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099' && reportType !== 'budgets' && reportType !== 'cashflow';
 
   return (
     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -19130,6 +19134,514 @@ function BudgetSection({ title, subtitle, rows, rowPrefix, expandedRow, setExpan
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── CashFlowForecast ────────────────────────────────────────────────
+// 90-day forward projection. Combines:
+//   - Open pipeline deals (lead/active/under_contract/closing) with their
+//     expected close dates and expected commission income
+//   - Recurring transactions (recurring_transactions table) projected
+//     forward by frequency from next_run_date
+// Renders an inline daily-balance line chart + a chronological event
+// list so the user can see WHEN cash gets tight, not just IF.
+//
+// Starting balance:
+//   If user has set finance_settings.current_cash_balance, the chart
+//   shows projected BALANCE. Without it, shows projected NET ACTIVITY
+//   (cumulative income - expenses from today).
+
+// Confidence per deal status — used for UI tagging + (future) weighting.
+// Hoisted to module scope so useMemo doesn't need it as a dependency.
+const DEAL_STATUS_CONFIDENCE = {
+  closing:         'high',     // about to close
+  under_contract:  'medium',   // contract signed, on path to close
+  active:          'low',      // listed, not yet under contract
+  lead:            'low',      // earliest stage
+};
+
+function CashFlowForecast({ userId, settings }) {
+  const [horizonDays, setHorizonDays] = useState(90);  // 30 | 60 | 90
+  const [recurring, setRecurring] = useState([]);
+  const [deals, setDeals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [cashBalance, setCashBalance] = useState(settings?.current_cash_balance ?? '');
+  const [cashAsOf, setCashAsOf] = useState(settings?.current_cash_balance_as_of || new Date().toISOString().slice(0, 10));
+  const [savingBalance, setSavingBalance] = useState(false);
+  const [hoveredDay, setHoveredDay] = useState(null);
+
+  // Pull open deals + active recurring templates
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const [{ data: rec }, { data: dls }] = await Promise.all([
+        supabase.from('recurring_transactions').select('*')
+          .eq('user_id', userId).eq('is_active', true),
+        supabase.from('deals').select('id, name, client_name, address, status, gross_commission, net_commission, sale_price, commission_pct, close_date, contract_date, side')
+          .eq('user_id', userId)
+          .in('status', ['lead', 'active', 'under_contract', 'closing']),
+      ]);
+      if (cancelled) return;
+      setRecurring(rec || []);
+      setDeals(dls || []);
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // Refresh cash balance fields from settings if they change (e.g., after save)
+  useEffect(() => {
+    if (settings?.current_cash_balance != null) setCashBalance(String(settings.current_cash_balance));
+    if (settings?.current_cash_balance_as_of) setCashAsOf(settings.current_cash_balance_as_of);
+  }, [settings?.current_cash_balance, settings?.current_cash_balance_as_of]);
+
+  // Project a recurring template forward through the horizon, returning
+  // an array of {date, amount, payee} for every occurrence in window.
+  function projectRecurring(template, fromDate, toDate) {
+    const out = [];
+    let cursor = new Date(template.next_run_date);
+    const end = new Date(toDate);
+    const start = new Date(fromDate);
+    let safety = 200;  // avoid runaway loops
+    while (cursor <= end && safety-- > 0) {
+      if (cursor >= start) {
+        out.push({
+          date: cursor.toISOString().slice(0, 10),
+          amount: Number(template.template_amount),
+          payee: template.template_payee || 'Recurring',
+          source: 'recurring',
+          sourceId: template.id,
+          confidence: 'high',
+        });
+      }
+      // Advance by frequency
+      const f = template.frequency;
+      if (f === 'daily')       cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+      else if (f === 'weekly') cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
+      else if (f === 'biweekly') cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 14);
+      else if (f === 'monthly') cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate());
+      else if (f === 'quarterly') cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 3, cursor.getDate());
+      else if (f === 'yearly') cursor = new Date(cursor.getFullYear() + 1, cursor.getMonth(), cursor.getDate());
+      else break;  // unknown frequency
+    }
+    return out;
+  }
+
+  // Estimate when a deal will pay. Use close_date if set; otherwise
+  // estimate from contract_date + 30 days (typical real estate close
+  // window), else skip (no projectable date).
+  function estimateDealClose(deal) {
+    if (deal.close_date) return deal.close_date;
+    if (deal.contract_date) {
+      const d = new Date(deal.contract_date);
+      d.setDate(d.getDate() + 30);
+      return d.toISOString().slice(0, 10);
+    }
+    return null;
+  }
+
+  // Compute a deal's expected commission to-agent in priority order
+  function dealExpectedCommission(deal) {
+    if (deal.net_commission != null && Number(deal.net_commission) > 0) return Number(deal.net_commission);
+    if (deal.gross_commission != null && Number(deal.gross_commission) > 0) return Number(deal.gross_commission);
+    if (deal.sale_price && deal.commission_pct) {
+      return Number(deal.sale_price) * (Number(deal.commission_pct) / 100);
+    }
+    return 0;
+  }
+
+  // Confidence rolled up from DEAL_STATUS_CONFIDENCE (module-scope)
+
+  // Build the full event list and the daily projection
+  const { events, projection, summary } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString().slice(0, 10);
+    const horizonEnd = new Date(today);
+    horizonEnd.setDate(today.getDate() + horizonDays);
+    const horizonISO = horizonEnd.toISOString().slice(0, 10);
+
+    // Collect projected events
+    const events = [];
+
+    // Recurring transactions
+    for (const r of recurring) {
+      const occurrences = projectRecurring(r, todayISO, horizonISO);
+      for (const o of occurrences) events.push(o);
+    }
+
+    // Open deals
+    for (const d of deals) {
+      const closeDate = estimateDealClose(d);
+      if (!closeDate || closeDate > horizonISO) continue;
+      const amt = dealExpectedCommission(d);
+      if (amt <= 0) continue;
+      events.push({
+        date: closeDate < todayISO ? todayISO : closeDate,  // overdue → bucket today
+        amount: amt,
+        payee: d.name || d.client_name || d.address || `Deal ${d.id.slice(0, 8)}`,
+        source: 'deal',
+        sourceId: d.id,
+        sourceStatus: d.status,
+        confidence: DEAL_STATUS_CONFIDENCE[d.status] || 'low',
+        dealEstimate: !d.close_date,  // flagged if we estimated the close date
+      });
+    }
+
+    // Sort events chronologically
+    events.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Build the daily projection
+    const hasBalance = cashBalance !== '' && !Number.isNaN(Number(cashBalance));
+    const startBalance = hasBalance ? Number(cashBalance) : 0;
+    const balanceStartDate = cashAsOf || todayISO;
+
+    // Start from the as-of balance, walk forward day by day. If as-of is
+    // in the past, we walk from there; chart still only shows future.
+    const projection = [];
+    let running = startBalance;
+    const allDates = [];
+    const startWalk = new Date(Math.min(new Date(balanceStartDate), today));
+    startWalk.setHours(0, 0, 0, 0);
+
+    // Index events by date for O(1) lookup
+    const eventsByDate = {};
+    for (const e of events) {
+      (eventsByDate[e.date] ||= []).push(e);
+    }
+
+    let cursor = new Date(startWalk);
+    while (cursor <= horizonEnd) {
+      const iso = cursor.toISOString().slice(0, 10);
+      const dayEvents = eventsByDate[iso] || [];
+      const dayIn = dayEvents.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
+      const dayOut = dayEvents.filter(e => e.amount < 0).reduce((s, e) => s + Math.abs(e.amount), 0);
+      running = running + dayIn - dayOut;
+      // Only push days from today forward into the chart
+      if (cursor >= today) {
+        allDates.push(iso);
+        projection.push({
+          date: iso,
+          balance: running,
+          dayIn, dayOut,
+          dayNet: dayIn - dayOut,
+          eventCount: dayEvents.length,
+          events: dayEvents,
+        });
+      }
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    }
+
+    // Summary stats
+    const totalIn = events.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
+    const totalOut = events.filter(e => e.amount < 0).reduce((s, e) => s + Math.abs(e.amount), 0);
+    const netChange = totalIn - totalOut;
+    const minBalance = projection.length ? Math.min(...projection.map(p => p.balance)) : startBalance;
+    const minBalanceDay = projection.find(p => p.balance === minBalance);
+    const endBalance = projection.length ? projection[projection.length - 1].balance : startBalance;
+    const firstNegativeDay = projection.find(p => p.balance < 0);
+
+    return {
+      events, projection,
+      summary: {
+        hasBalance, startBalance, totalIn, totalOut, netChange,
+        minBalance, minBalanceDay, endBalance, firstNegativeDay,
+        eventCount: events.length,
+      },
+    };
+  }, [recurring, deals, horizonDays, cashBalance, cashAsOf]);
+
+  async function saveBalance() {
+    setSavingBalance(true);
+    const { error } = await supabase.from('finance_settings')
+      .update({
+        current_cash_balance: cashBalance === '' ? null : Number(cashBalance),
+        current_cash_balance_as_of: cashAsOf || null,
+      })
+      .eq('user_id', userId);
+    setSavingBalance(false);
+    if (error) {
+      if (window.__notify) window.__notify('Save failed: ' + error.message, 'error');
+      return;
+    }
+    if (window.__notify) window.__notify('Balance saved', 'success');
+    setShowSettings(false);
+  }
+
+  const fmt = (n) => `$${Math.round(n || 0).toLocaleString()}`;
+  const fmtDateShort = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  // ── SVG chart sizing ──────────────────────────────────────────────
+  const chartW = 720;  // virtual width — SVG scales to viewBox
+  const chartH = 180;
+  const padL = 50, padR = 12, padT = 12, padB = 24;
+  const plotW = chartW - padL - padR;
+  const plotH = chartH - padT - padB;
+
+  const chartData = projection;
+  const balances = chartData.map(p => p.balance);
+  const minY = Math.min(0, ...balances);   // always include zero
+  const maxY = Math.max(0, ...balances);
+  const yRange = Math.max(1, maxY - minY);
+  const xFor = (i) => padL + (chartData.length > 1 ? (i / (chartData.length - 1)) * plotW : plotW / 2);
+  const yFor = (val) => padT + plotH - ((val - minY) / yRange) * plotH;
+  const zeroY = yFor(0);
+
+  // Path data for the balance line (only if we have a balance to project)
+  const pathData = summary.hasBalance && chartData.length > 0
+    ? chartData.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(2)} ${yFor(p.balance).toFixed(2)}`).join(' ')
+    : '';
+
+  // Fill area beneath line (green above zero, red below)
+  const areaData = summary.hasBalance && chartData.length > 0
+    ? `${pathData} L ${xFor(chartData.length - 1).toFixed(2)} ${zeroY.toFixed(2)} L ${xFor(0).toFixed(2)} ${zeroY.toFixed(2)} Z`
+    : '';
+
+  // X-axis tick positions — every ~15 days for 90d, every ~10 for 60d, etc.
+  const xTickStep = Math.max(1, Math.floor(chartData.length / 6));
+  const xTicks = [];
+  for (let i = 0; i < chartData.length; i += xTickStep) xTicks.push(i);
+  if (xTicks[xTicks.length - 1] !== chartData.length - 1) xTicks.push(chartData.length - 1);
+
+  // Y-axis tick values
+  const yTickCount = 4;
+  const yTicks = [];
+  for (let i = 0; i <= yTickCount; i++) yTicks.push(minY + (yRange * i / yTickCount));
+
+  // Group events into the upcoming-events list, by week-of bucket
+  const eventGroups = useMemo(() => {
+    const groups = {};
+    for (const e of events) {
+      const d = new Date(e.date + 'T00:00:00');
+      const dayOfWeek = d.getDay();
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7));
+      const weekKey = monday.toISOString().slice(0, 10);
+      (groups[weekKey] ||= { weekStart: weekKey, items: [], net: 0 }).items.push(e);
+      groups[weekKey].net += e.amount;
+    }
+    return Object.values(groups).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  }, [events]);
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
+          {[30, 60, 90].map(d => (
+            <button key={d} onClick={() => setHorizonDays(d)}
+              style={{padding:'5px 12px',border:'none',borderRadius:'6px',fontSize:'11.5px',fontWeight:700,cursor:'pointer',
+                background:horizonDays===d?'var(--accent)':'transparent',
+                color:horizonDays===d?'var(--bg-base)':'var(--text-2)'}}>{d} days</button>
+          ))}
+        </div>
+        <button onClick={() => setShowSettings(s => !s)}
+          style={{padding:'5px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>
+          💰 Cash balance{summary.hasBalance ? `: ${fmt(summary.startBalance)}` : ': not set'}
+        </button>
+      </div>
+
+      {/* Settings inline */}
+      {showSettings && (
+        <div style={{padding:'12px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+          <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'8px'}}>Cash position</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}}>
+            <div>
+              <label style={{fontSize:'10px',color:'var(--text-3)',display:'block',marginBottom:'3px'}}>Current cash balance</label>
+              <div style={{position:'relative'}}>
+                <span style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'12px',pointerEvents:'none'}}>$</span>
+                <input type="number" step="0.01" value={cashBalance} onChange={e => setCashBalance(e.target.value)}
+                  placeholder="0.00"
+                  style={{width:'100%',padding:'6px 8px 6px 20px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'5px',color:'var(--text-1)',fontSize:'12px',outline:'none'}}/>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:'10px',color:'var(--text-3)',display:'block',marginBottom:'3px'}}>As of</label>
+              <input type="date" value={cashAsOf} onChange={e => setCashAsOf(e.target.value)}
+                style={{width:'100%',padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'5px',color:'var(--text-1)',fontSize:'12px',outline:'none'}}/>
+            </div>
+          </div>
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'10px',fontStyle:'italic',lineHeight:1.5}}>
+            Total liquid cash across whatever accounts you're tracking. Without this set, the chart shows cumulative net activity instead of balance.
+          </div>
+          <div style={{display:'flex',gap:'6px',justifyContent:'flex-end'}}>
+            <button onClick={() => setShowSettings(false)} className="btn btn-ghost btn-sm">Cancel</button>
+            <button onClick={saveBalance} disabled={savingBalance} className="btn btn-primary btn-sm">{savingBalance ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* KPI strip */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(130px, 1fr))',gap:'8px'}}>
+        <KpiBox label="Projected end balance" value={summary.hasBalance ? fmt(summary.endBalance) : fmt(summary.netChange)}
+          sub={summary.hasBalance ? `in ${horizonDays} days` : `net change · ${horizonDays}d`}
+          color={summary.hasBalance ? (summary.endBalance >= 0 ? 'var(--green)' : 'var(--red)') : (summary.netChange >= 0 ? 'var(--green)' : 'var(--red)')}/>
+        <KpiBox label="Expected income" value={fmt(summary.totalIn)} sub={`from ${deals.length} open deals + recurring`} color="var(--green)"/>
+        <KpiBox label="Expected outflows" value={fmt(summary.totalOut)} sub={`from recurring transactions`} color="var(--red)"/>
+        {summary.hasBalance && summary.firstNegativeDay ? (
+          <KpiBox label="⚠ Cash runs out" value={fmtDateShort(summary.firstNegativeDay.date)}
+            sub={`balance hits ${fmt(summary.firstNegativeDay.balance)}`} color="var(--red)"/>
+        ) : summary.hasBalance ? (
+          <KpiBox label="Lowest point" value={fmt(summary.minBalance)}
+            sub={summary.minBalanceDay ? `on ${fmtDateShort(summary.minBalanceDay.date)}` : '—'}
+            color={summary.minBalance < 0 ? 'var(--red)' : summary.minBalance < summary.startBalance * 0.25 ? '#f59e0b' : 'var(--text-1)'}/>
+        ) : (
+          <KpiBox label="Events" value={summary.eventCount} sub={`across ${horizonDays} days`}/>
+        )}
+      </div>
+
+      {/* Chart panel */}
+      <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'10px'}}>
+          <div style={{fontSize:'12px',color:'var(--text-1)',fontWeight:700}}>
+            {summary.hasBalance ? 'Projected daily balance' : 'Cumulative net activity'}
+          </div>
+          {hoveredDay && (
+            <div style={{fontSize:'11px',color:'var(--text-2)'}}>
+              <span style={{color:'var(--text-3)'}}>{fmtDateShort(hoveredDay.date)}: </span>
+              <strong style={{color: hoveredDay.balance < 0 ? 'var(--red)' : 'var(--text-1)'}}>{fmt(hoveredDay.balance)}</strong>
+              {hoveredDay.eventCount > 0 && <span style={{color:'var(--text-3)',marginLeft:'6px'}}>· {hoveredDay.eventCount} event{hoveredDay.eventCount===1?'':'s'}</span>}
+            </div>
+          )}
+        </div>
+        {loading ? (
+          <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Loading…</div>
+        ) : chartData.length === 0 ? (
+          <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)',fontStyle:'italic'}}>
+            No projected activity in the next {horizonDays} days. Add recurring transactions or open deals to populate the forecast.
+          </div>
+        ) : (
+          <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{width:'100%',height:'auto',display:'block'}} preserveAspectRatio="none">
+            {/* Y-axis gridlines + labels */}
+            {yTicks.map((v, i) => (
+              <g key={`y${i}`}>
+                <line x1={padL} y1={yFor(v)} x2={chartW - padR} y2={yFor(v)} stroke="var(--border)" strokeWidth="0.5"/>
+                <text x={padL - 4} y={yFor(v) + 3} textAnchor="end" fontSize="9" fill="var(--text-3)">
+                  ${Math.round(v).toLocaleString()}
+                </text>
+              </g>
+            ))}
+            {/* Zero line emphasized */}
+            <line x1={padL} y1={zeroY} x2={chartW - padR} y2={zeroY} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="2 2"/>
+            {/* Area fill */}
+            {summary.hasBalance && areaData && (
+              <>
+                <defs>
+                  <linearGradient id="gradGreen" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--green)" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="var(--green)" stopOpacity="0.02"/>
+                  </linearGradient>
+                </defs>
+                <path d={areaData} fill="url(#gradGreen)"/>
+              </>
+            )}
+            {/* Balance line */}
+            {pathData && (
+              <path d={pathData} fill="none" stroke="var(--accent)" strokeWidth="2"/>
+            )}
+            {/* Negative segments overlay in red */}
+            {summary.hasBalance && chartData.map((p, i) => {
+              if (i === 0) return null;
+              const prev = chartData[i - 1];
+              if (p.balance >= 0 && prev.balance >= 0) return null;
+              return (
+                <line key={`neg${i}`}
+                  x1={xFor(i - 1)} y1={yFor(prev.balance)}
+                  x2={xFor(i)} y2={yFor(p.balance)}
+                  stroke="var(--red)" strokeWidth="2"/>
+              );
+            })}
+            {/* Event markers */}
+            {chartData.map((p, i) => p.eventCount > 0 && (
+              <circle key={`m${i}`} cx={xFor(i)} cy={yFor(p.balance)} r="2.5"
+                fill={p.dayNet >= 0 ? 'var(--green)' : 'var(--red)'} stroke="var(--bg-card)" strokeWidth="1"/>
+            ))}
+            {/* Hover hit areas */}
+            {chartData.map((p, i) => (
+              <rect key={`h${i}`}
+                x={xFor(i) - (plotW / chartData.length / 2)}
+                y={padT}
+                width={plotW / chartData.length}
+                height={plotH}
+                fill="transparent"
+                onMouseEnter={() => setHoveredDay(p)}
+                onMouseLeave={() => setHoveredDay(null)}/>
+            ))}
+            {/* X-axis tick labels */}
+            {xTicks.map(i => (
+              <text key={`x${i}`} x={xFor(i)} y={chartH - 6} textAnchor="middle" fontSize="9" fill="var(--text-3)">
+                {fmtDateShort(chartData[i].date)}
+              </text>
+            ))}
+          </svg>
+        )}
+        {!summary.hasBalance && (
+          <div style={{marginTop:'8px',padding:'8px 10px',background:'rgba(245,158,11,0.08)',border:'1px solid #f59e0b',borderRadius:'6px',fontSize:'10.5px',color:'var(--text-2)'}}>
+            💡 Set your current cash balance above to see projected end-of-period balance and "cash runs out" warnings.
+          </div>
+        )}
+      </div>
+
+      {/* Upcoming events list */}
+      {!loading && events.length > 0 && (
+        <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+          <div style={{fontSize:'12px',color:'var(--text-1)',fontWeight:700,marginBottom:'10px'}}>
+            Upcoming events · {events.length} total
+          </div>
+          {eventGroups.slice(0, 8).map(g => {
+            const weekDate = new Date(g.weekStart + 'T00:00:00');
+            const weekEnd = new Date(weekDate); weekEnd.setDate(weekDate.getDate() + 6);
+            return (
+              <div key={g.weekStart} style={{marginBottom:'10px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid var(--border)',marginBottom:'4px'}}>
+                  <span style={{fontSize:'10.5px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>
+                    Week of {fmtDateShort(g.weekStart)}
+                  </span>
+                  <span style={{fontSize:'11px',color: g.net >= 0 ? 'var(--green)' : 'var(--red)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>
+                    net {g.net >= 0 ? '+' : '−'}{fmt(Math.abs(g.net))}
+                  </span>
+                </div>
+                {g.items.map((e, i) => (
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'3px 0',fontSize:'11.5px',gap:'8px'}}>
+                    <span style={{color:'var(--text-3)',fontVariantNumeric:'tabular-nums',flexShrink:0,minWidth:'48px'}}>{fmtDateShort(e.date)}</span>
+                    <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--text-2)'}}>
+                      {e.payee}
+                      {e.source === 'deal' && (
+                        <span style={{fontSize:'9px',color:'var(--text-3)',marginLeft:'6px',padding:'1px 5px',background:'var(--bg-hover)',borderRadius:'3px',fontWeight:600}}>
+                          {e.sourceStatus}{e.dealEstimate ? ' · est.' : ''}
+                        </span>
+                      )}
+                      {e.source === 'recurring' && (
+                        <span style={{fontSize:'9px',color:'var(--text-3)',marginLeft:'6px',padding:'1px 5px',background:'var(--bg-hover)',borderRadius:'3px',fontWeight:600}}>
+                          recurring
+                        </span>
+                      )}
+                    </span>
+                    <span style={{flexShrink:0,fontVariantNumeric:'tabular-nums',fontWeight:700,color: e.amount >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                      {e.amount >= 0 ? '+' : '−'}{fmt(Math.abs(e.amount))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {eventGroups.length > 8 && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',textAlign:'center',marginTop:'8px'}}>
+              + {eventGroups.length - 8} more week{eventGroups.length - 8 === 1 ? '' : 's'} of activity beyond
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Boundary note */}
+      <div style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
+        <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>How this projection is built.</div>
+        Recurring transactions are projected forward from their <code style={{padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px',fontSize:'10px'}}>next_run_date</code> by frequency. Open deals contribute expected commission income on their close_date (or contract_date + 30 days if no close set, flagged "est."). Deals weighted by confidence: closing (high), under_contract (medium), active/lead (low) — all currently included at full value (no probability discount). Projection does NOT include: unplanned expenses, manual one-off items, taxes (see Quarterly Tax tab), or transactions you log directly after this forecast loads. Refresh to recompute.
+      </div>
     </div>
   );
 }
