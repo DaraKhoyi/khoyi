@@ -13519,6 +13519,7 @@ function FinanceView({ userId }) {
   const [personalBudget, setPersonalBudget] = useState([]);
   const [systems, setSystems] = useState([]);
   const [recruitingSystems, setRecruitingSystems] = useState([]);
+  const [deals, setDeals] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
@@ -13544,7 +13545,7 @@ function FinanceView({ userId }) {
       }
     }
 
-    const [s, tc, pb, sys, tx, comp, te, tmpl, rec, rsys] = await Promise.all([
+    const [s, tc, pb, sys, tx, comp, te, tmpl, rec, rsys, dl] = await Promise.all([
       supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
       supabase.from('tax_categories').select('*').eq('user_id', userId).eq('is_archived', false).order('sort_order'),
       supabase.from('personal_budget_lines').select('*').eq('user_id', userId).order('sort_order'),
@@ -13555,6 +13556,7 @@ function FinanceView({ userId }) {
       supabase.from('lead_gen_system_templates').select('*').order('system_number'),
       supabase.from('recurring_transactions').select('*').eq('user_id', userId).order('next_run_date'),
       supabase.from('recruiting_systems').select('*').eq('user_id', userId).eq('is_active', true).order('is_overhead', { ascending: false }).order('name'),
+      supabase.from('deals').select('*').eq('user_id', userId).limit(2000),
     ]);
     setSettings(s.data);
     setTaxCategories(tc.data || []);
@@ -13566,6 +13568,7 @@ function FinanceView({ userId }) {
     setTimeEntries(te.data || []);
     setTemplates(tmpl.data || []);
     setRecurringTemplates(rec.data || []);
+    setDeals(dl.data || []);
     setLoading(false);
   }, [userId]);
 
@@ -13703,7 +13706,7 @@ function FinanceView({ userId }) {
           userId={userId}
           settings={settings} transactions={transactions} taxCategories={taxCategories}
           systems={systems} recruitingSystems={recruitingSystems}
-          personalBudget={personalBudget} timeEntries={timeEntries}
+          personalBudget={personalBudget} timeEntries={timeEntries} deals={deals}
           trackPersonal={trackPersonal} isCoach={isCoach}
         />
       )}
@@ -15740,7 +15743,7 @@ function TemplateActivateModal({ userId, template, onClose, onActivated }) {
 // ─── FinanceReports ──────────────────────────────────────────────────
 // Two reports: Business/Tax (CPA handoff) and Personal (if tracking is on).
 // PLUS the Operations ROI report — time-cost included, gamified.
-function FinanceReports({ userId, settings, transactions, taxCategories, systems, recruitingSystems, personalBudget, timeEntries, trackPersonal, isCoach }) {
+function FinanceReports({ userId, settings, transactions, taxCategories, systems, recruitingSystems, personalBudget, timeEntries, deals, trackPersonal, isCoach }) {
   const [reportType, setReportType] = useState('business');
   const [period, setPeriod] = useState('ytd');
   const [advExpanded, setAdvExpanded] = useState(false);
@@ -15783,7 +15786,9 @@ function FinanceReports({ userId, settings, transactions, taxCategories, systems
         <ROIReport
           transactions={transactions.filter(t => t.scope === 'business' && inPeriod(t.date))}
           timeEntries={timeEntries.filter(te => inPeriod(te.occurred_at))}
+          deals={deals || []}
           systems={systems} settings={settings} period={period}
+          inPeriod={inPeriod}
         />
       )}
       {reportType === 'schedule_c' && (
@@ -17790,8 +17795,38 @@ function PersonalReport({ transactions, personalBudget, period }) {
 }
 
 // THE BIG ONE — Operations ROI report. Includes time-cost. Gamified.
-function ROIReport({ transactions, timeEntries, systems, settings, period }) {
+function ROIReport({ transactions, timeEntries, deals = [], systems, settings, period, inPeriod }) {
   const hourlyRate = Number(settings?.hourly_rate || 0);
+
+  // Deal-derived stats per system:
+  //   closedDeals   — deals with status='closed' AND close_date in period
+  //   activeDeals   — deals not in a terminal state (closed / lost / referral)
+  //   pipelineEst   — sum of estimated commission for active deals
+  //                   (target_price × commission_pct × 0.5 conservative split haircut)
+  //                   Pipeline is period-independent — it reflects what's open today,
+  //                   not what closed in the reporting window.
+  function estimatedPipelineCommission(d) {
+    const price = Number(d.target_price || d.list_price || 0);
+    const pct = Number(d.commission_pct || 0.025);  // assume 2.5% if unset
+    // Apply 50% haircut: agent typically keeps ~50% of gross commission after
+    // brokerage splits, co-broke, and fees. Better to under-promise to Future-Dara.
+    return price * pct * 0.5;
+  }
+  function dealsForSystem(systemId) {
+    return deals.filter(d => d.lead_gen_system_id === systemId);
+  }
+  const dealStatsFor = (systemId) => {
+    const sysDeals = dealsForSystem(systemId);
+    const closedDeals = sysDeals.filter(d =>
+      d.status === 'closed' && d.close_date && (!inPeriod || inPeriod(d.close_date))
+    );
+    const activeDeals = sysDeals.filter(d =>
+      !['closed', 'lost'].includes(d.status)
+    );
+    const pipelineEst = activeDeals.reduce((s, d) => s + estimatedPipelineCommission(d), 0);
+    return { closedDeals, activeDeals, pipelineEst };
+  };
+
   const rows = systems.filter(s => !s.is_overhead).map(sys => {
     const sysTx = transactions.filter(t => t.lead_gen_system_id === sys.id);
     const cashSpent = Math.abs(sysTx.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0));
@@ -17802,7 +17837,14 @@ function ROIReport({ transactions, timeEntries, systems, settings, period }) {
     const totalInvested = cashSpent + timeCost;
     const cashROI = cashSpent > 0 ? incomeAttributed / cashSpent : null;
     const trueROI = totalInvested > 0 ? incomeAttributed / totalInvested : null;
-    return { system: sys, cashSpent, incomeAttributed, minutes, timeCost, totalInvested, cashROI, trueROI };
+    const dealStats = dealStatsFor(sys.id);
+    const closedCount = dealStats.closedDeals.length;
+    const costPerDeal = closedCount > 0 ? cashSpent / closedCount : null;
+    const dollarsPerDollar = cashSpent > 0 ? incomeAttributed / cashSpent : null;
+    return {
+      system: sys, cashSpent, incomeAttributed, minutes, timeCost, totalInvested,
+      cashROI, trueROI, dealStats, closedCount, costPerDeal, dollarsPerDollar,
+    };
   });
   const sortedRows = rows.sort((a, b) => (b.trueROI || 0) - (a.trueROI || 0));
   const totalCashSpent = rows.reduce((s, r) => s + r.cashSpent, 0);
@@ -17812,12 +17854,22 @@ function ROIReport({ transactions, timeEntries, systems, settings, period }) {
   const totalInvested = totalCashSpent + totalTimeCost;
   const portfolioROI = totalInvested > 0 ? totalIncome / totalInvested : null;
 
+  // Portfolio-level deal stats (across all systems, plus unattributed deals)
+  const allClosedInPeriod = deals.filter(d =>
+    d.status === 'closed' && d.close_date && (!inPeriod || inPeriod(d.close_date))
+  );
+  const allActiveDeals = deals.filter(d => !['closed', 'lost'].includes(d.status));
+  const portfolioPipelineEst = allActiveDeals.reduce((s, d) => s + estimatedPipelineCommission(d), 0);
+  const avgCommissionPerDeal = allClosedInPeriod.length > 0
+    ? allClosedInPeriod.reduce((s, d) => s + Number(d.net_commission || 0), 0) / allClosedInPeriod.length
+    : 0;
+
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
       <div className="panel" style={{padding:'16px',background:'linear-gradient(135deg, rgba(197,169,94,0.08) 0%, rgba(197,169,94,0.02) 100%)',border:'1px solid var(--accent)'}}>
         <h3 style={{margin:'0 0 4px',fontSize:'15px',color:'var(--text-1)'}}>🎯 Operations · Lead-Gen ROI</h3>
         <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 14px'}}>
-          What's working, what's not. <strong>Includes the cost of your time</strong> (hours × hourly rate). Used for course correction, never for tax filing.
+          What's working, what's not. <strong>Includes the cost of your time</strong> (hours × hourly rate) and now <strong>real deal counts + pipeline</strong> from the Deals module. Used for course correction, never for tax filing.
         </p>
 
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'10px',marginBottom:'14px'}}>
@@ -17827,6 +17879,13 @@ function ROIReport({ transactions, timeEntries, systems, settings, period }) {
           <SysStat label="Income attributed" value={fmtUSD(totalIncome)} tone="green" />
           <SysStat label="Portfolio ROI" value={portfolioROI === null ? '—' : `${portfolioROI.toFixed(2)}x`}
             tone={portfolioROI >= 3 ? 'green' : portfolioROI >= 1 ? 'normal' : portfolioROI !== null ? 'red' : 'muted'} />
+        </div>
+
+        {/* NEW — deal counts + pipeline strip */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'10px',marginBottom:'14px',padding:'10px',background:'var(--bg-base)',borderRadius:'8px'}}>
+          <SysStat label="Closed (period)" value={allClosedInPeriod.length} sub={allClosedInPeriod.length === 0 ? 'no deals yet' : `avg ${fmtUSD(avgCommissionPerDeal)}`} />
+          <SysStat label="In pipeline" value={allActiveDeals.length} sub={allActiveDeals.length === 0 ? 'no active deals' : 'leads → closing'} />
+          <SysStat label="Pipeline value est." value={fmtUSD(portfolioPipelineEst)} sub="50% split haircut" tone={portfolioPipelineEst > 0 ? 'green' : 'muted'} />
         </div>
 
         {/* The portfolio bar */}
@@ -17862,7 +17921,6 @@ function ROIReport({ transactions, timeEntries, systems, settings, period }) {
         <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.5}}>
           <strong style={{color:'var(--text-2)'}}>Course-correction guide:</strong><br/>
           🔥 ≥3x ROI — keep feeding · ✓ 1-3x — profitable, room to optimize · ⚠ &lt;1x — diagnose or cut
-          <br/><em>Note: income attribution becomes accurate once Phase 3 links commission income to deals + systems. Today the per-system income reflects manually-tagged transactions only.</em>
         </div>
       </div>
     </div>
@@ -17870,7 +17928,7 @@ function ROIReport({ transactions, timeEntries, systems, settings, period }) {
 }
 
 function ROISystemCard({ row }) {
-  const { system, cashSpent, incomeAttributed, minutes, timeCost, totalInvested, cashROI, trueROI } = row;
+  const { system, cashSpent, incomeAttributed, minutes, timeCost, totalInvested, cashROI, trueROI, dealStats, closedCount, costPerDeal, dollarsPerDollar } = row;
   const roi = trueROI || 0;
   const fillPct = Math.min(100, (roi / 3) * 100);
   const color = roi >= 3 ? 'var(--green)' : roi >= 1 ? '#f59e0b' : roi > 0 ? 'var(--red)' : 'var(--text-3)';
@@ -17878,6 +17936,8 @@ function ROISystemCard({ row }) {
     : roi >= 1 ? { label: '✓ PROFITABLE', bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' }
     : roi > 0 ? { label: '⚠ UNDERWATER', bg: 'rgba(239,68,68,0.15)', color: 'var(--red)' }
     : { label: '📊 AWAITING DATA', bg: 'rgba(85,94,122,0.15)', color: 'var(--text-3)' };
+  const activeCount = dealStats?.activeDeals?.length || 0;
+  const pipelineEst = dealStats?.pipelineEst || 0;
 
   return (
     <div className="panel" style={{padding:'14px'}}>
@@ -17909,6 +17969,25 @@ function ROISystemCard({ row }) {
         <SysStat label="Total invested" value={fmtUSD(totalInvested)} />
         <SysStat label="Income" value={fmtUSD(incomeAttributed)} tone="green" />
       </div>
+
+      {/* NEW — deal economics row */}
+      {(closedCount > 0 || activeCount > 0 || cashSpent > 0) && (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:'8px',marginTop:'8px',padding:'10px',background:'var(--bg-base)',borderRadius:'6px'}}>
+          <SysStat label="Closed deals" value={closedCount} sub={closedCount === 0 ? 'none in period' : 'period'} />
+          <SysStat label="Cost per deal"
+            value={costPerDeal != null ? fmtUSD(costPerDeal) : '—'}
+            sub={costPerDeal == null ? (closedCount === 0 ? 'no closes' : 'no cash spend') : `${closedCount} closed`}
+            tone={costPerDeal != null && costPerDeal < (incomeAttributed / Math.max(1, closedCount)) * 0.33 ? 'green' : 'normal'} />
+          <SysStat label="$ returned per $ spent"
+            value={dollarsPerDollar != null ? `$${dollarsPerDollar.toFixed(2)}` : '—'}
+            sub={dollarsPerDollar == null ? 'no cash spend' : ''}
+            tone={dollarsPerDollar != null && dollarsPerDollar >= 3 ? 'green' : dollarsPerDollar != null && dollarsPerDollar < 1 ? 'red' : 'normal'} />
+          <SysStat label="In pipeline"
+            value={activeCount}
+            sub={activeCount === 0 ? '—' : `est ${fmtUSD(pipelineEst)}`}
+            tone={activeCount > 0 ? 'green' : 'muted'} />
+        </div>
+      )}
 
       {cashROI !== null && cashROI !== trueROI && (
         <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',fontStyle:'italic'}}>
