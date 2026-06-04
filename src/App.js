@@ -14358,6 +14358,7 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editRecurring, setEditRecurring] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showBulkCategorize, setShowBulkCategorize] = useState(false);
 
   useEffect(() => { if (!trackPersonal) setScopeFilter('business'); }, [trackPersonal]);
 
@@ -14441,6 +14442,23 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
         )}
         <div style={{flex:1}}/>
         <HeaderSearchIcon value={search} open={searchOpen} onToggle={() => setSearchOpen(o => !o)} />
+        {!readOnly && (() => {
+          // Count uncategorized in the current scope (independent of period
+          // filter — backlog is backlog regardless of which month you're viewing)
+          const effectiveScope = (!trackPersonal || scopeFilter === 'business') ? 'business' :
+                                 scopeFilter === 'personal' ? 'personal' : 'business';
+          const uncategorizedCount = transactions.filter(t =>
+            t.scope === effectiveScope && !t.tax_category_id && !t.is_archived
+          ).length;
+          if (uncategorizedCount === 0) return null;
+          return (
+            <button onClick={() => setShowBulkCategorize(true)}
+              title={`Categorize ${uncategorizedCount} uncategorized ${effectiveScope} transactions`}
+              style={{padding:'5px 10px',background:'rgba(245,158,11,0.10)',border:'1px solid #f59e0b',borderRadius:'6px',color:'#f59e0b',cursor:'pointer',fontSize:'11px',fontWeight:700,whiteSpace:'nowrap'}}>
+              🏷 Categorize {uncategorizedCount}
+            </button>
+          );
+        })()}
         {!readOnly && (
           <button onClick={() => setShowImportModal(true)} title="Import CSV from bank/credit card" aria-label="Import CSV"
             style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:700,whiteSpace:'nowrap'}}>
@@ -14542,6 +14560,18 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
             setTransactions(prev => [...rows, ...prev]);
             setShowImportModal(false);
           }}
+        />
+      )}
+
+      {showBulkCategorize && (
+        <BulkCategorizeModal
+          userId={userId}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          taxCategories={taxCategories}
+          systems={systems}
+          scope={(!trackPersonal || scopeFilter === 'business') ? 'business' : scopeFilter === 'personal' ? 'personal' : 'business'}
+          onClose={() => setShowBulkCategorize(false)}
         />
       )}
     </div>
@@ -15136,6 +15166,436 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
               <button type="button" className="btn btn-primary" onClick={finishUp}>Done</button>
             </div>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Payee normalization + category auto-suggest ─────────────────────
+// Strips the bank cruft that breaks naive payee matching. After this,
+// "POS PURCHASE STARBUCKS #4521 TAMPA FL" and "STARBUCKS #1029 LUTZ FL"
+// both normalize to "starbucks" so they suggest the same category.
+function normalizePayee(s) {
+  if (!s) return '';
+  return String(s)
+    .toLowerCase()
+    // Common bank/card-network prefixes that contain no merchant info
+    .replace(/\b(pos|atm|ach|eft|wire|debit|credit|purchase|payment|deposit|withdrawal|transfer|recurring|online|online banking|automatic|electronic|p2p|venmo|zelle|paypal payment to|paypal payment from|paypal\*?|sq ?\*|tst\*?|amzn ?mktp ?us|amazon\.com|amazon mktpl|amzn digital)\b/g, ' ')
+    // Strip city/state/zip cruft at the end (e.g. "TAMPA FL", "lutz fl 33548")
+    .replace(/\s+[a-z]{3,20}\s+[a-z]{2}\s*\d{0,5}\s*$/i, ' ')
+    // Strip reference numbers, transaction IDs, store numbers
+    .replace(/[#*]\s*\d+/g, ' ')
+    .replace(/\b\d{4,}\b/g, ' ')
+    // Strip punctuation
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Build a category-suggestion lookup from past categorized transactions.
+// Returns { suggest(payee) → { categoryId, systemId, confidence, source } | null }
+// confidence: 'exact' (same normalized payee), 'prefix' (first 2 words match),
+//             'fuzzy' (first word match with >2 prior occurrences).
+function buildSuggester(categorizedTransactions) {
+  // Group prior transactions by normalized payee → most-recent category mapping
+  const byPayee = new Map();  // normalized → { cats: Map<id, {count, latest}>, syss: Map<id, {count, latest}> }
+  for (const t of categorizedTransactions) {
+    const norm = normalizePayee(t.payee);
+    if (!norm) continue;
+    if (!byPayee.has(norm)) byPayee.set(norm, { cats: new Map(), syss: new Map() });
+    const e = byPayee.get(norm);
+    if (t.tax_category_id) {
+      const c = e.cats.get(t.tax_category_id) || { count: 0, latest: '' };
+      c.count++;
+      if (t.date > c.latest) c.latest = t.date;
+      e.cats.set(t.tax_category_id, c);
+    }
+    if (t.lead_gen_system_id) {
+      const s = e.syss.get(t.lead_gen_system_id) || { count: 0, latest: '' };
+      s.count++;
+      if (t.date > s.latest) s.latest = t.date;
+      e.syss.set(t.lead_gen_system_id, s);
+    }
+  }
+  // Pre-compute first-N-word indexes for fuzzy lookups
+  const firstWordIndex = new Map();  // first word → Set of normalized payees containing it
+  const twoWordIndex = new Map();
+  for (const norm of byPayee.keys()) {
+    const words = norm.split(' ');
+    const first = words[0];
+    const two = words.slice(0, 2).join(' ');
+    if (first) {
+      if (!firstWordIndex.has(first)) firstWordIndex.set(first, new Set());
+      firstWordIndex.get(first).add(norm);
+    }
+    if (two && two !== first) {
+      if (!twoWordIndex.has(two)) twoWordIndex.set(two, new Set());
+      twoWordIndex.get(two).add(norm);
+    }
+  }
+  // Pick the most-frequent (count, then most-recent) entry from a Map
+  function topPick(m) {
+    let best = null;
+    for (const [id, info] of m.entries()) {
+      if (!best || info.count > best.info.count ||
+          (info.count === best.info.count && info.latest > best.info.latest)) {
+        best = { id, info };
+      }
+    }
+    return best ? best.id : null;
+  }
+  // Aggregate cats/syss across multiple matching normalized payees
+  function combineEntries(norms) {
+    const cats = new Map();
+    const syss = new Map();
+    for (const n of norms) {
+      const e = byPayee.get(n);
+      if (!e) continue;
+      for (const [id, info] of e.cats.entries()) {
+        const c = cats.get(id) || { count: 0, latest: '' };
+        c.count += info.count;
+        if (info.latest > c.latest) c.latest = info.latest;
+        cats.set(id, c);
+      }
+      for (const [id, info] of e.syss.entries()) {
+        const s = syss.get(id) || { count: 0, latest: '' };
+        s.count += info.count;
+        if (info.latest > s.latest) s.latest = info.latest;
+        syss.set(id, s);
+      }
+    }
+    return { cats, syss };
+  }
+
+  return {
+    suggest(payee) {
+      const norm = normalizePayee(payee);
+      if (!norm) return null;
+      // Tier 1: exact normalized match
+      if (byPayee.has(norm)) {
+        const e = byPayee.get(norm);
+        const catId = topPick(e.cats);
+        const sysId = topPick(e.syss);
+        if (catId) return { categoryId: catId, systemId: sysId, confidence: 'exact', matchedFrom: norm };
+      }
+      // Tier 2: first-2-words prefix match
+      const words = norm.split(' ');
+      if (words.length >= 2) {
+        const two = words.slice(0, 2).join(' ');
+        const matches = twoWordIndex.get(two);
+        if (matches && matches.size > 0) {
+          const { cats, syss } = combineEntries(matches);
+          const catId = topPick(cats);
+          const sysId = topPick(syss);
+          if (catId) return { categoryId: catId, systemId: sysId, confidence: 'prefix', matchedFrom: two };
+        }
+      }
+      // Tier 3: first-word fuzzy (only if >=3 prior matches to avoid noise)
+      const first = words[0];
+      if (first && first.length >= 3) {
+        const matches = firstWordIndex.get(first);
+        if (matches && matches.size > 0) {
+          const { cats, syss } = combineEntries(matches);
+          // Need at least 3 prior occurrences total to confidently fuzzy-match
+          let total = 0;
+          for (const info of cats.values()) total += info.count;
+          if (total >= 3) {
+            const catId = topPick(cats);
+            const sysId = topPick(syss);
+            if (catId) return { categoryId: catId, systemId: sysId, confidence: 'fuzzy', matchedFrom: first };
+          }
+        }
+      }
+      return null;
+    },
+  };
+}
+
+// ─── BulkCategorizeModal ─────────────────────────────────────────────
+// Cleans up the backlog of uncategorized transactions in one screen.
+// Auto-suggests tax category + lead-gen system per row from payee history,
+// then lets the user accept all or adjust per row, plus a "match this
+// payee to all similar rows" shortcut. Single batched UPDATE on save.
+function BulkCategorizeModal({ userId, transactions, setTransactions, taxCategories, systems, scope, onClose }) {
+  // The uncategorized backlog — only rows in the matching scope (so the
+  // Business and Personal flows stay separated and the dropdowns stay
+  // relevant) AND missing a tax_category_id.
+  const uncategorized = useMemo(() => transactions.filter(t =>
+    t.scope === scope && !t.tax_category_id && !t.is_archived
+  ).sort((a, b) => (b.date || '').localeCompare(a.date || '')), [transactions, scope]);
+
+  // The categorized history — used to feed the auto-suggester.
+  const suggester = useMemo(() => buildSuggester(
+    transactions.filter(t => t.scope === scope && t.tax_category_id && !t.is_archived)
+  ), [transactions, scope]);
+
+  // Per-row local state — the chosen tax_category_id + lead_gen_system_id
+  // for each transaction. Starts populated with auto-suggestions.
+  const [picks, setPicks] = useState(() => {
+    const initial = {};
+    for (const t of uncategorized) {
+      const suggestion = suggester.suggest(t.payee);
+      initial[t.id] = {
+        categoryId: suggestion?.categoryId || '',
+        systemId: suggestion?.systemId || '',
+        confidence: suggestion?.confidence || null,
+        matchedFrom: suggestion?.matchedFrom || null,
+        // Track whether the user has explicitly touched this row (so we
+        // don't overwrite their picks if they hit Accept-all-suggestions)
+        userTouched: false,
+      };
+    }
+    return initial;
+  });
+
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return uncategorized;
+    const q = search.toLowerCase();
+    return uncategorized.filter(t => (t.payee || '').toLowerCase().includes(q));
+  }, [uncategorized, search]);
+
+  function updatePick(txId, patch) {
+    setPicks(prev => ({ ...prev, [txId]: { ...prev[txId], ...patch, userTouched: true } }));
+  }
+
+  // Apply this row's pick to every other row with a similar payee
+  function applyToMatching(sourceTxId) {
+    const sourceTx = uncategorized.find(t => t.id === sourceTxId);
+    if (!sourceTx) return;
+    const sourcePick = picks[sourceTxId];
+    if (!sourcePick?.categoryId) return;
+    const sourceNorm = normalizePayee(sourceTx.payee);
+    if (!sourceNorm) return;
+    let count = 0;
+    setPicks(prev => {
+      const next = { ...prev };
+      for (const t of uncategorized) {
+        if (t.id === sourceTxId) continue;
+        if (normalizePayee(t.payee) === sourceNorm) {
+          next[t.id] = {
+            categoryId: sourcePick.categoryId,
+            systemId: sourcePick.systemId,
+            confidence: 'manual',
+            matchedFrom: sourceNorm,
+            userTouched: true,
+          };
+          count++;
+        }
+      }
+      return next;
+    });
+    if (window.__notify) window.__notify(`Applied to ${count} matching row${count===1?'':'s'}`, 'success');
+  }
+
+  // Accept all auto-suggestions (those the user hasn't explicitly touched)
+  function acceptAllSuggestions() {
+    let count = 0;
+    setPicks(prev => {
+      const next = { ...prev };
+      for (const t of uncategorized) {
+        const p = prev[t.id];
+        if (p && !p.userTouched && !p.categoryId) {
+          const sug = suggester.suggest(t.payee);
+          if (sug) {
+            next[t.id] = { ...p, categoryId: sug.categoryId, systemId: sug.systemId, confidence: sug.confidence, matchedFrom: sug.matchedFrom };
+            count++;
+          }
+        }
+      }
+      return next;
+    });
+    if (window.__notify) window.__notify(`Accepted ${count} suggestion${count===1?'':'s'}`, 'success');
+  }
+
+  function clearRow(txId) {
+    setPicks(prev => ({ ...prev, [txId]: { categoryId: '', systemId: '', confidence: null, matchedFrom: null, userTouched: true } }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    // Build the list of rows to actually update — anything with a category set
+    const toUpdate = uncategorized
+      .filter(t => picks[t.id]?.categoryId)
+      .map(t => ({
+        id: t.id,
+        tax_category_id: picks[t.id].categoryId,
+        lead_gen_system_id: picks[t.id].systemId || null,
+      }));
+    if (toUpdate.length === 0) {
+      setSaving(false);
+      onClose();
+      return;
+    }
+    // Supabase doesn't have batch UPDATE; do one per row but in parallel chunks
+    const updated = [];
+    const errors = [];
+    const chunkSize = 10;
+    for (let i = 0; i < toUpdate.length; i += chunkSize) {
+      const chunk = toUpdate.slice(i, i + chunkSize);
+      const results = await Promise.all(chunk.map(row =>
+        supabase.from('transactions')
+          .update({ tax_category_id: row.tax_category_id, lead_gen_system_id: row.lead_gen_system_id })
+          .eq('id', row.id).select().single()
+      ));
+      for (const r of results) {
+        if (r.error) errors.push(r.error.message);
+        else if (r.data) updated.push(r.data);
+      }
+    }
+    // Mirror into parent state so the UI updates immediately
+    setTransactions(prev => prev.map(t => {
+      const u = updated.find(x => x.id === t.id);
+      return u || t;
+    }));
+    if (window.__notify) {
+      if (errors.length > 0) window.__notify(`${updated.length} updated, ${errors.length} failed`, 'error');
+      else window.__notify(`Categorized ${updated.length} transaction${updated.length===1?'':'s'}`, 'success');
+    }
+    setSaving(false);
+    onClose();
+  }
+
+  // Bulk stats for the header
+  const totalUncategorized = uncategorized.length;
+  const totalPicked = Object.values(picks).filter(p => p.categoryId).length;
+  const totalAutoSuggested = Object.values(picks).filter(p => p.categoryId && p.confidence && p.confidence !== 'manual' && !p.userTouched).length;
+  const totalManual = Object.values(picks).filter(p => p.userTouched).length;
+
+  const categoryOpts = useMemo(() =>
+    [...taxCategories].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
+    [taxCategories]
+  );
+
+  return (
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{maxWidth:'880px',maxHeight:'92vh',display:'flex',flexDirection:'column'}}>
+        <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexShrink:0}}>
+          <h3 style={{margin:0,fontSize:'15px'}}>
+            Bulk categorize
+            <span style={{fontSize:'11px',color:'var(--text-3)',fontWeight:400,marginLeft:'8px'}}>
+              · {scope === 'business' ? 'Business' : 'Personal'} · {totalUncategorized} uncategorized
+            </span>
+          </h3>
+          <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
+        </div>
+
+        {totalUncategorized === 0 ? (
+          <div style={{padding:'40px 20px',textAlign:'center'}}>
+            <div style={{fontSize:'40px',marginBottom:'8px'}}>✓</div>
+            <div style={{fontSize:'14px',color:'var(--text-1)',fontWeight:600}}>Everything is categorized.</div>
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Nothing to do here.</div>
+          </div>
+        ) : (
+          <>
+            {/* KPI strip + bulk actions */}
+            <div style={{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap',flexShrink:0}}>
+              <div style={{flex:1,minWidth:'90px',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px'}}>
+                <div style={{fontSize:'9px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Auto-suggested</div>
+                <div style={{fontSize:'16px',fontWeight:800,color:'var(--accent)'}}>{totalAutoSuggested}</div>
+              </div>
+              <div style={{flex:1,minWidth:'90px',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px'}}>
+                <div style={{fontSize:'9px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Manually set</div>
+                <div style={{fontSize:'16px',fontWeight:800,color:'var(--text-1)'}}>{totalManual}</div>
+              </div>
+              <div style={{flex:1,minWidth:'90px',padding:'7px 10px',background:'var(--bg-hover)',border:'1px solid var(--accent)',borderRadius:'6px'}}>
+                <div style={{fontSize:'9px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Will save</div>
+                <div style={{fontSize:'16px',fontWeight:800,color:'var(--accent)'}}>{totalPicked} / {totalUncategorized}</div>
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:'6px',marginBottom:'10px',flexWrap:'wrap',alignItems:'center',flexShrink:0}}>
+              <button onClick={acceptAllSuggestions}
+                style={{padding:'5px 12px',background:'transparent',border:'1px solid var(--accent)',borderRadius:'5px',color:'var(--accent)',cursor:'pointer',fontWeight:700,fontSize:'11px'}}>
+                ✨ Accept all suggestions
+              </button>
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="🔍 Search by payee…"
+                style={{flex:'1 1 180px',padding:'5px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'5px',color:'var(--text-1)',fontSize:'11px',outline:'none'}}/>
+            </div>
+
+            {/* Scrollable table of rows */}
+            <div style={{flex:1,minHeight:0,overflowY:'auto',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'10px'}}>
+              {filtered.map(t => {
+                const p = picks[t.id] || {};
+                const isPicked = !!p.categoryId;
+                const isAuto = isPicked && p.confidence && p.confidence !== 'manual' && !p.userTouched;
+                return (
+                  <div key={t.id} style={{display:'grid',gridTemplateColumns:'80px 1fr 90px 1fr 1fr 30px',gap:'8px',padding:'8px 10px',borderBottom:'1px solid var(--border)',alignItems:'center',background: isPicked ? 'rgba(34,197,94,0.03)' : 'transparent'}}>
+                    {/* Date */}
+                    <div style={{fontSize:'10.5px',color:'var(--text-3)',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{t.date}</div>
+                    {/* Payee */}
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:'12px',color:'var(--text-1)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.payee || '(no payee)'}</div>
+                      {isAuto && (
+                        <div style={{fontSize:'9.5px',color:'var(--accent)',marginTop:'1px'}}>
+                          ✨ matched "{p.matchedFrom}" · {p.confidence}
+                          <button onClick={() => applyToMatching(t.id)} title="Apply to all matching"
+                            style={{background:'transparent',border:'none',color:'var(--text-3)',marginLeft:'6px',cursor:'pointer',fontSize:'9.5px',padding:0,textDecoration:'underline'}}>
+                            ↪ apply to all
+                          </button>
+                        </div>
+                      )}
+                      {p.userTouched && isPicked && (
+                        <div style={{fontSize:'9.5px',color:'var(--text-3)',marginTop:'1px'}}>
+                          <button onClick={() => applyToMatching(t.id)} title="Apply to all matching"
+                            style={{background:'transparent',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'9.5px',padding:0,textDecoration:'underline'}}>
+                            ↪ apply to all matching
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {/* Amount */}
+                    <div style={{fontSize:'11.5px',fontVariantNumeric:'tabular-nums',fontWeight:700,textAlign:'right',color: Number(t.amount) < 0 ? 'var(--red)' : 'var(--green)'}}>
+                      {fmtUSD(t.amount)}
+                    </div>
+                    {/* Category dropdown */}
+                    <select value={p.categoryId || ''} onChange={e => updatePick(t.id, { categoryId: e.target.value })}
+                      style={{padding:'4px 6px',background:isPicked?'var(--bg-base)':'transparent',border:`1px solid ${isPicked?'var(--green)':'var(--border)'}`,borderRadius:'4px',color:'var(--text-1)',fontSize:'10.5px'}}>
+                      <option value="">— category —</option>
+                      {categoryOpts.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    {/* System dropdown */}
+                    <select value={p.systemId || ''} onChange={e => updatePick(t.id, { systemId: e.target.value })}
+                      style={{padding:'4px 6px',background:'transparent',border:'1px solid var(--border)',borderRadius:'4px',color:'var(--text-2)',fontSize:'10.5px'}}>
+                      <option value="">— system —</option>
+                      {systems.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}{s.is_overhead ? ' (overhead)' : ''}</option>
+                      ))}
+                    </select>
+                    {/* Clear button */}
+                    {isPicked && (
+                      <button onClick={() => clearRow(t.id)} title="Clear"
+                        style={{background:'transparent',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'14px',padding:0}}>×</button>
+                    )}
+                    {!isPicked && <div/>}
+                  </div>
+                );
+              })}
+              {filtered.length === 0 && (
+                <div style={{padding:'30px',textAlign:'center',color:'var(--text-3)',fontStyle:'italic',fontSize:'12px'}}>
+                  No matches for "{search}".
+                </div>
+              )}
+            </div>
+
+            {/* Boundary note */}
+            <div style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'5px',fontSize:'10.5px',color:'var(--text-3)',lineHeight:1.5,marginBottom:'10px',flexShrink:0}}>
+              Auto-suggest learns from rows you've already categorized — the more history exists for a payee, the more confident the match. Rows without a category pick get skipped on save.
+            </div>
+
+            <div className="modal-actions" style={{display:'flex',justifyContent:'space-between',gap:'8px',flexShrink:0}}>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving || totalPicked === 0}>
+                {saving ? 'Saving…' : `Save ${totalPicked} ${totalPicked===1?'row':'rows'}`}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
