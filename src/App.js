@@ -16875,6 +16875,9 @@ function FinanceReports({ userId, settings, transactions, taxCategories, systems
       {reportType === 'form_1099' && (
         <Form1099Report userId={userId} />
       )}
+      {reportType === 'budgets' && (
+        <BudgetReport userId={userId} systems={systems} recruitingSystems={recruitingSystems} />
+      )}
     </div>
   );
 }
@@ -16883,11 +16886,12 @@ function ReportHeader({ reportType, setReportType, period, setPeriod, trackPerso
   const options = [{ id:'business', label:'💼 Business · Tax' }];
   if (trackPersonal) options.push({ id:'personal', label:'🏠 Personal' });
   options.push({ id:'roi', label:'🎯 Operations · ROI' });
+  options.push({ id:'budgets', label:'💰 Budgets' });
   options.push({ id:'schedule_c', label:'📋 Schedule C' });
   options.push({ id:'quarterly', label:'💵 Quarterly Tax' });
   options.push({ id:'form_1099', label:'📑 1099s' });
-  // These three use their own year selectors, hide the period dropdown
-  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099';
+  // These four use their own year/period selectors, hide the shared period dropdown
+  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099' && reportType !== 'budgets';
 
   return (
     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -18753,6 +18757,379 @@ function Form1099Report({ userId }) {
         <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>What this report does NOT do.</div>
         It does not generate the actual 1099-NEC form (PDF) — your CPA or filing service (Tax1099, Track1099, QuickBooks, etc.) handles that. Export the CSV and hand it off. It also does not handle 1099-MISC (rent, royalties, prizes), 1099-K (merchant card payments — those are handled by the processor), or state-level filings. Florida has no state 1099 requirement.
       </div>
+    </div>
+  );
+}
+
+// ─── BudgetReport ────────────────────────────────────────────────────
+// Budget vs actual for every lead-gen system and recruiting system.
+// Both tables carry monthly_budget — this report finally surfaces it
+// against actual transaction spend so the monthly review answer is
+// staring at you: "where are we overspending? where are we leaving
+// budget on the table?"
+//
+// View options:
+//   This month — MTD actual vs full-month budget, with a pace projection
+//   Last month — full month vs full month
+//   YTD        — sum YTD actual vs (monthly budget × months elapsed)
+
+function BudgetReport({ userId, systems, recruitingSystems }) {
+  const now = new Date();
+  const todayKey = now.toISOString().slice(0, 10);  // stable key for memo deps
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const currentDay = now.getDate();
+  const [view, setView] = useState('mtd');  // 'mtd' | 'last' | 'ytd'
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedRow, setExpandedRow] = useState(null);
+
+  // Date window for the selected view — depends only on stable date parts
+  const dateWindow = useMemo(() => {
+    const y = currentYear;
+    const m = currentMonth;
+    if (view === 'last') {
+      const start = new Date(y, m - 1, 1);
+      const end = new Date(y, m, 0);     // last day of prior month
+      return {
+        start: start.toISOString().slice(0, 10),
+        end:   end.toISOString().slice(0, 10),
+        label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        budgetMultiplier: 1,
+        isCurrent: false,
+      };
+    }
+    if (view === 'ytd') {
+      const start = new Date(y, 0, 1);
+      return {
+        start: start.toISOString().slice(0, 10),
+        end:   todayKey,
+        label: `${y} YTD`,
+        budgetMultiplier: m + 1,  // months elapsed including current
+        isCurrent: true,
+      };
+    }
+    // 'mtd' — this month
+    const start = new Date(y, m, 1);
+    return {
+      start: start.toISOString().slice(0, 10),
+      end:   todayKey,
+      label: new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      budgetMultiplier: 1,
+      isCurrent: true,
+    };
+  }, [view, currentYear, currentMonth, todayKey]);
+
+  // Pace factor for MTD: if we're 10 days into a 30-day month, factor = 3.0
+  const paceFactor = useMemo(() => {
+    if (view !== 'mtd') return 1;
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    return daysInMonth / Math.max(1, currentDay);
+  }, [view, currentYear, currentMonth, currentDay]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const { data } = await supabase.from('transactions')
+        .select('id, date, amount, payee, scope, tax_category_id, lead_gen_system_id, recruiting_system_id, is_archived')
+        .eq('user_id', userId).eq('scope', 'business').eq('is_archived', false)
+        .gte('date', dateWindow.start).lte('date', dateWindow.end)
+        .lt('amount', 0)
+        .limit(5000);
+      if (cancelled) return;
+      setTransactions(data || []);
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId, dateWindow.start, dateWindow.end]);
+
+  // Roll up actual spend per system within the period
+  const leadGenActuals = useMemo(() => {
+    const m = {};
+    for (const t of transactions) {
+      if (t.lead_gen_system_id && !t.recruiting_system_id) {
+        m[t.lead_gen_system_id] = (m[t.lead_gen_system_id] || 0) + Math.abs(Number(t.amount));
+      }
+    }
+    return m;
+  }, [transactions]);
+
+  const recruitingActuals = useMemo(() => {
+    const m = {};
+    for (const t of transactions) {
+      if (t.recruiting_system_id) {
+        m[t.recruiting_system_id] = (m[t.recruiting_system_id] || 0) + Math.abs(Number(t.amount));
+      }
+    }
+    return m;
+  }, [transactions]);
+
+  // Transactions for an expanded row
+  const txnsForSystem = useMemo(() => {
+    if (!expandedRow) return [];
+    const [kind, id] = expandedRow.split(':');
+    if (kind === 'lg') return transactions.filter(t => t.lead_gen_system_id === id && !t.recruiting_system_id).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    if (kind === 'r')  return transactions.filter(t => t.recruiting_system_id === id).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    return [];
+  }, [expandedRow, transactions]);
+
+  // Build the row list — inlined as useMemo (was a helper, but a stable
+  // function reference is harder than just inlining)
+  const leadGenRows = useMemo(() =>
+    (systems || [])
+      .filter(s => Number(s.monthly_budget) > 0)
+      .map(s => {
+        const periodBudget = Number(s.monthly_budget) * dateWindow.budgetMultiplier;
+        const actual = leadGenActuals[s.id] || 0;
+        const variance = actual - periodBudget;
+        const pct = periodBudget > 0 ? actual / periodBudget : 0;
+        const paced = view === 'mtd' ? actual * paceFactor : actual;
+        const pacedPct = periodBudget > 0 ? paced / periodBudget : 0;
+        return { system: s, periodBudget, actual, variance, pct, paced, pacedPct };
+      })
+      .sort((a, b) => b.actual - a.actual),
+    [systems, leadGenActuals, dateWindow.budgetMultiplier, view, paceFactor]
+  );
+  const recruitingRows = useMemo(() =>
+    (recruitingSystems || [])
+      .filter(s => Number(s.monthly_budget) > 0)
+      .map(s => {
+        const periodBudget = Number(s.monthly_budget) * dateWindow.budgetMultiplier;
+        const actual = recruitingActuals[s.id] || 0;
+        const variance = actual - periodBudget;
+        const pct = periodBudget > 0 ? actual / periodBudget : 0;
+        const paced = view === 'mtd' ? actual * paceFactor : actual;
+        const pacedPct = periodBudget > 0 ? paced / periodBudget : 0;
+        return { system: s, periodBudget, actual, variance, pct, paced, pacedPct };
+      })
+      .sort((a, b) => b.actual - a.actual),
+    [recruitingSystems, recruitingActuals, dateWindow.budgetMultiplier, view, paceFactor]
+  );
+
+  const totalBudget = leadGenRows.reduce((s, r) => s + r.periodBudget, 0) + recruitingRows.reduce((s, r) => s + r.periodBudget, 0);
+  const totalActual = leadGenRows.reduce((s, r) => s + r.actual, 0) + recruitingRows.reduce((s, r) => s + r.actual, 0);
+  const totalVariance = totalActual - totalBudget;
+  const totalPct = totalBudget > 0 ? totalActual / totalBudget : 0;
+
+  const fmt = (n) => `$${Math.round(n || 0).toLocaleString()}`;
+
+  // Color/severity for a variance — green well-under, gold approaching,
+  // amber over a little, red far over
+  function severityFor(pct) {
+    if (pct > 1.20) return { bar: 'var(--red)',    text: 'var(--red)',    label: 'far over' };
+    if (pct > 1.00) return { bar: '#f59e0b',       text: '#f59e0b',       label: 'over' };
+    if (pct > 0.90) return { bar: '#facc15',       text: 'var(--text-1)', label: 'at limit' };
+    if (pct > 0.50) return { bar: 'var(--green)',  text: 'var(--text-1)', label: 'on track' };
+    return                  { bar: 'var(--green)',  text: 'var(--text-2)', label: 'well under' };
+  }
+
+  const totalSev = severityFor(totalPct);
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+      {/* Header: view selector */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
+          {[
+            { id: 'mtd',  label: 'This month' },
+            { id: 'last', label: 'Last month' },
+            { id: 'ytd',  label: 'YTD' },
+          ].map(o => (
+            <button key={o.id} onClick={() => setView(o.id)}
+              style={{padding:'5px 12px',border:'none',borderRadius:'6px',fontSize:'11.5px',fontWeight:700,cursor:'pointer',
+                background:view===o.id?'var(--accent)':'transparent',
+                color:view===o.id?'var(--bg-base)':'var(--text-2)'}}>{o.label}</button>
+          ))}
+        </div>
+        <div style={{fontSize:'11px',color:'var(--text-3)'}}>
+          {dateWindow.label}
+          {dateWindow.budgetMultiplier > 1 && <span style={{marginLeft:'6px'}}>· budget × {dateWindow.budgetMultiplier} months</span>}
+        </div>
+      </div>
+
+      {/* HEADLINE — combined budget vs actual */}
+      <div style={{
+        padding:'16px',
+        background: totalSev.bar === 'var(--red)' ? 'rgba(239,68,68,0.08)' : totalSev.bar === '#f59e0b' ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.06)',
+        border: `2px solid ${totalSev.bar}`,
+        borderRadius:'12px',
+      }}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',flexWrap:'wrap'}}>
+          <div>
+            <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>
+              Total {view === 'mtd' ? 'MTD' : view === 'last' ? 'last month' : 'YTD'}
+            </div>
+            <div style={{fontSize:'26px',fontWeight:800,color: totalSev.text,fontVariantNumeric:'tabular-nums',marginTop:'4px',lineHeight:1}}>
+              {fmt(totalActual)} <span style={{fontSize:'14px',color:'var(--text-3)',fontWeight:600}}>/ {fmt(totalBudget)}</span>
+            </div>
+            <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'5px'}}>
+              {totalVariance >= 0 ? '↑ over by ' : '↓ under by '}
+              <strong style={{color: totalVariance >= 0 ? totalSev.text : 'var(--green)'}}>
+                {fmt(Math.abs(totalVariance))} ({(totalPct * 100).toFixed(0)}%)
+              </strong>
+            </div>
+          </div>
+          {view === 'mtd' && paceFactor > 1.05 && (
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>On pace for</div>
+              <div style={{fontSize:'18px',fontWeight:700,color: severityFor(totalActual * paceFactor / Math.max(1, totalBudget)).text,fontVariantNumeric:'tabular-nums',marginTop:'4px'}}>
+                {fmt(totalActual * paceFactor)}
+              </div>
+              <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>by month-end</div>
+            </div>
+          )}
+        </div>
+        {/* Top-level progress bar */}
+        <div style={{marginTop:'12px',height:'10px',background:'var(--bg-base)',borderRadius:'5px',overflow:'hidden',position:'relative'}}>
+          <div style={{height:'100%',width: `${Math.min(100, totalPct * 100).toFixed(1)}%`,background: totalSev.bar,borderRadius:'5px',transition:'width 0.2s'}}/>
+          {totalPct > 1 && (
+            <div style={{position:'absolute',top:0,left:'100%',transform:'translateX(-1px)',width:'2px',height:'100%',background:'var(--text-1)'}}/>
+          )}
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{padding:'30px',textAlign:'center',color:'var(--text-3)'}}>Loading…</div>
+      )}
+
+      {!loading && leadGenRows.length === 0 && recruitingRows.length === 0 && (
+        <div style={{padding:'30px',textAlign:'center',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text-3)'}}>
+          <div style={{fontSize:'14px',color:'var(--text-1)',fontWeight:600,marginBottom:'4px'}}>No budgets set</div>
+          <div style={{fontSize:'11.5px',fontStyle:'italic'}}>Add a <code style={{padding:'1px 5px',background:'var(--bg-hover)',borderRadius:'3px',fontSize:'10.5px'}}>monthly_budget</code> to any lead-gen or recruiting system to start seeing variance here.</div>
+        </div>
+      )}
+
+      {/* LEAD-GEN section */}
+      {!loading && leadGenRows.length > 0 && (
+        <BudgetSection
+          title="📈 Agent Lead Generation"
+          subtitle="Per-system budget vs actual spend"
+          rows={leadGenRows}
+          rowPrefix="lg"
+          expandedRow={expandedRow}
+          setExpandedRow={setExpandedRow}
+          txnsForExpanded={txnsForSystem}
+          severityFor={severityFor}
+          view={view}
+          fmt={fmt}
+        />
+      )}
+
+      {/* RECRUITING section */}
+      {!loading && recruitingRows.length > 0 && (
+        <BudgetSection
+          title="🪪 Brokerage Operations & Recruiting"
+          subtitle="Per-system budget vs actual spend"
+          rows={recruitingRows}
+          rowPrefix="r"
+          expandedRow={expandedRow}
+          setExpandedRow={setExpandedRow}
+          txnsForExpanded={txnsForSystem}
+          severityFor={severityFor}
+          view={view}
+          fmt={fmt}
+        />
+      )}
+
+      {/* Boundary note */}
+      <div style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
+        <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>How to read this.</div>
+        Actual rolls up every business-scope transaction tagged with the system in the selected period. Budgets come from each system's <code style={{padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px',fontSize:'10.5px'}}>monthly_budget</code> field, multiplied by months in the period (for YTD). "On pace" projects MTD actual to month-end based on calendar days elapsed — useful early in the month when raw % can mislead. Systems with no budget are hidden; transactions with no system are not counted here.
+      </div>
+    </div>
+  );
+}
+
+// One section (lead-gen or recruiting), reusable
+function BudgetSection({ title, subtitle, rows, rowPrefix, expandedRow, setExpandedRow, txnsForExpanded, severityFor, view, fmt }) {
+  const sectionTotal = rows.reduce((s, r) => s + r.actual, 0);
+  const sectionBudget = rows.reduce((s, r) => s + r.periodBudget, 0);
+  const sectionPct = sectionBudget > 0 ? sectionTotal / sectionBudget : 0;
+  return (
+    <div style={{padding:'14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+        <div>
+          <div style={{fontSize:'12.5px',color:'var(--text-1)',fontWeight:700}}>{title}</div>
+          <div style={{fontSize:'10.5px',color:'var(--text-3)',marginTop:'1px'}}>{subtitle}</div>
+        </div>
+        <div style={{fontSize:'13px',fontWeight:700,color: severityFor(sectionPct).text,fontVariantNumeric:'tabular-nums'}}>
+          {fmt(sectionTotal)} / {fmt(sectionBudget)} <span style={{fontSize:'11px',color:'var(--text-3)',marginLeft:'4px'}}>({(sectionPct*100).toFixed(0)}%)</span>
+        </div>
+      </div>
+
+      {rows.map(r => {
+        const rowKey = `${rowPrefix}:${r.system.id}`;
+        const expanded = expandedRow === rowKey;
+        const sev = severityFor(r.pct);
+        const paceSev = severityFor(r.pacedPct);
+        return (
+          <div key={rowKey} style={{borderTop:'1px solid var(--border)',padding:'10px 0'}}>
+            <button onClick={() => setExpandedRow(expanded ? null : rowKey)}
+              style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',padding:0,cursor:'pointer',gap:'10px',textAlign:'left'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
+                <span style={{width:'8px',height:'8px',borderRadius:'2px',background:r.system.color || 'var(--text-3)',flexShrink:0}}/>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontSize:'12.5px',color:'var(--text-1)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {r.system.name}
+                    {r.system.is_overhead && <span style={{fontSize:'9px',color:'var(--text-3)',marginLeft:'6px',padding:'1px 5px',background:'var(--bg-hover)',borderRadius:'3px',fontWeight:700}}>overhead</span>}
+                  </div>
+                </div>
+              </div>
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <div style={{fontSize:'12.5px',fontWeight:700,color: sev.text,fontVariantNumeric:'tabular-nums'}}>
+                  {fmt(r.actual)} <span style={{color:'var(--text-3)',fontWeight:500}}>/ {fmt(r.periodBudget)}</span>
+                </div>
+                <div style={{fontSize:'10px',color: r.variance >= 0 ? sev.text : 'var(--text-3)',marginTop:'1px',fontWeight:600}}>
+                  {r.variance >= 0 ? '+' : '−'}{fmt(Math.abs(r.variance))} ({(r.pct*100).toFixed(0)}%) <span style={{color:'var(--text-3)',fontWeight:400}}>· {sev.label}</span>
+                </div>
+              </div>
+              <span style={{color:'var(--text-3)',fontSize:'11px',transform: expanded ? 'rotate(90deg)' : 'rotate(0)',transition:'transform 0.15s',flexShrink:0}}>›</span>
+            </button>
+
+            {/* Progress bar */}
+            <div style={{marginTop:'6px',height:'5px',background:'var(--bg-base)',borderRadius:'2.5px',overflow:'hidden',position:'relative'}}>
+              <div style={{height:'100%',width: `${Math.min(100, r.pct * 100).toFixed(1)}%`,background: sev.bar,borderRadius:'2.5px',transition:'width 0.2s'}}/>
+              {/* Pace projection ghost bar (MTD only) */}
+              {view === 'mtd' && r.pacedPct > r.pct + 0.05 && (
+                <div style={{position:'absolute',top:0,left:`${Math.min(100, r.pct * 100).toFixed(1)}%`,width:`${Math.min(100 - Math.min(100, r.pct * 100), (r.pacedPct - r.pct) * 100).toFixed(1)}%`,height:'100%',background:paceSev.bar,opacity:0.3}}/>
+              )}
+              {/* 100% marker if over */}
+              {r.pct > 1 && (
+                <div style={{position:'absolute',top:0,left:'100%',transform:'translateX(-1px)',width:'2px',height:'100%',background:'var(--text-1)'}}/>
+              )}
+            </div>
+            {view === 'mtd' && r.pacedPct > r.pct + 0.05 && (
+              <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>
+                At current pace: <strong style={{color: paceSev.text,fontStyle:'normal'}}>{fmt(r.paced)} ({(r.pacedPct*100).toFixed(0)}%)</strong> by month-end
+              </div>
+            )}
+
+            {/* Expanded transactions */}
+            {expanded && (
+              <div style={{marginTop:'10px',padding:'8px 10px',background:'var(--bg-base)',borderRadius:'6px'}}>
+                {txnsForExpanded.length === 0 ? (
+                  <div style={{fontSize:'10.5px',color:'var(--text-3)',fontStyle:'italic'}}>No transactions in this period.</div>
+                ) : (
+                  <>
+                    <div style={{fontSize:'9.5px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'6px'}}>
+                      {txnsForExpanded.length} transaction{txnsForExpanded.length===1?'':'s'}
+                    </div>
+                    {txnsForExpanded.map(t => (
+                      <div key={t.id} style={{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'11px'}}>
+                        <span style={{color:'var(--text-3)',whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums',flexShrink:0}}>{t.date}</span>
+                        <span style={{color:'var(--text-2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.payee || '(no payee)'}</span>
+                        <span style={{color:'var(--red)',fontVariantNumeric:'tabular-nums',fontWeight:600,flexShrink:0}}>{fmt(Math.abs(t.amount))}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
