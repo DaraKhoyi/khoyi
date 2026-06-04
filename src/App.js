@@ -116,7 +116,7 @@ function AuthScreen() {
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <h1><span>Prism</span></h1>
+          <h1>Prism<span>OS</span></h1>
           <p>Your personal operating system</p>
         </div>
         {mode === 'login' && <>
@@ -21772,7 +21772,7 @@ export default function App() {
     <div className="app-shell" style={{flexDirection:'column'}}>
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo"><span>Prism</span></div>
+        <div className="mobile-header-logo">Prism<span>OS</span></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>
@@ -21785,7 +21785,7 @@ export default function App() {
         {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
-            <h1><span>Prism</span></h1>
+            <h1>Prism<span>OS</span></h1>
             <p>Personal OS</p>
           </div>
           <div className="sidebar-nav">
