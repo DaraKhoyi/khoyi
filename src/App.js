@@ -14560,6 +14560,13 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
             setTransactions(prev => [...rows, ...prev]);
             setShowImportModal(false);
           }}
+          onBatchRevoked={(batchId) => {
+            // Mark the affected rows as archived so the ledger drops them
+            // from view without requiring a refresh.
+            setTransactions(prev => prev.map(t =>
+              t.import_batch_id === batchId ? { ...t, is_archived: true } : t
+            ));
+          }}
         />
       )}
 
@@ -14683,8 +14690,9 @@ function guessColumn(headers, kind) {
   return '';
 }
 
-function CsvImportModal({ userId, existingTransactions, taxCategories, trackPersonal, onClose, onImported }) {
-  const [step, setStep] = useState('upload'); // 'upload' | 'map' | 'preview' | 'importing' | 'done'
+function CsvImportModal({ userId, existingTransactions, taxCategories, trackPersonal, onClose, onImported, onBatchRevoked }) {
+  const [tab, setTab] = useState('new');        // 'new' | 'recent' — top-level toggle
+  const [step, setStep] = useState('upload');   // 'upload' | 'map' | 'preview' | 'importing' | 'done'
   const [fileName, setFileName] = useState('');
   const [headers, setHeaders] = useState([]);
   const [rawRows, setRawRows] = useState([]);
@@ -14709,11 +14717,106 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
   const [selectedRowIds, setSelectedRowIds] = useState(new Set());
   const [importResult, setImportResult] = useState(null);
 
+  // Saved bank profiles (csv_import_profiles) — reusable column mappings.
+  // Loaded once on mount; used both for auto-detect (after upload) and as
+  // a manual picker if the user wants to apply a different one.
+  const [profiles, setProfiles] = useState([]);
+  const [appliedProfileId, setAppliedProfileId] = useState(null);
+  const [showSaveProfile, setShowSaveProfile] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // Recent import batches — surface in the 'Recent' tab so user can
+  // revoke (archive) a batch that imported wrong.
+  const [recentBatches, setRecentBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [revokingBatchId, setRevokingBatchId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from('csv_import_profiles').select('*')
+        .eq('user_id', userId).order('last_used_at', { ascending: false, nullsFirst: false }).order('name');
+      if (!cancelled) setProfiles(data || []);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // Load recent import batches by aggregating transactions with import_batch_id
+  async function loadRecentBatches() {
+    setLoadingBatches(true);
+    const { data } = await supabase.from('transactions')
+      .select('import_batch_id, import_source, imported_at, amount, is_archived')
+      .eq('user_id', userId)
+      .not('import_batch_id', 'is', null)
+      .order('imported_at', { ascending: false })
+      .limit(500);
+    // Group by batch
+    const map = new Map();
+    for (const t of (data || [])) {
+      if (!map.has(t.import_batch_id)) {
+        map.set(t.import_batch_id, {
+          id: t.import_batch_id, source: t.import_source, importedAt: t.imported_at,
+          rowCount: 0, activeRowCount: 0, archivedRowCount: 0,
+          totalAmount: 0, activeTotal: 0,
+        });
+      }
+      const b = map.get(t.import_batch_id);
+      b.rowCount++;
+      b.totalAmount += Number(t.amount) || 0;
+      if (t.is_archived) b.archivedRowCount++;
+      else { b.activeRowCount++; b.activeTotal += Number(t.amount) || 0; }
+    }
+    setRecentBatches(Array.from(map.values()).slice(0, 20));
+    setLoadingBatches(false);
+  }
+
+  useEffect(() => {
+    if (tab === 'recent') loadRecentBatches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  // Apply a saved profile to the current mapping state. Mostly a state
+  // assignment — does not auto-advance, lets the user verify on /map.
+  function applyProfile(p) {
+    if (!p) return;
+    setDateCol(p.date_column || '');
+    setDateFormat(p.date_format === 'dmy' ? 'dmy' : p.date_format === 'auto' ? 'auto' : 'mdy');
+    setPayeeCol(p.payee_column || '');
+    setAmountMode(p.amount_mode || 'single');
+    setAmountCol(p.amount_column || '');
+    setDebitCol(p.debit_column || '');
+    setCreditCol(p.credit_column || '');
+    setAmountSign(p.amount_sign === 'inverted' ? 'inverted' : 'standard');
+    setDescCol(p.description_column || '');
+    setExtIdCol(p.external_id_column || '');
+    setDefaultScope(p.default_scope || 'business');
+    if (p.default_account) setDefaultAccount(p.default_account);
+    setAppliedProfileId(p.id);
+  }
+
+  // Detect a profile that matches the current file's headers (all the
+  // profile's referenced columns must exist in the uploaded file). Returns
+  // the best match or null.
+  function findMatchingProfile(headerList) {
+    const headerSet = new Set(headerList);
+    for (const p of profiles) {
+      const needed = [p.date_column, p.payee_column];
+      if (p.amount_mode === 'single') needed.push(p.amount_column);
+      else needed.push(p.debit_column, p.credit_column);
+      const allPresent = needed.every(c => c && headerSet.has(c));
+      if (allPresent) return p;
+    }
+    return null;
+  }
+
   function onFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
     setError('');
+    setAppliedProfileId(null);
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -14721,23 +14824,30 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
         if (h.length === 0) { setError('File appears empty or has no header row.'); return; }
         if (r.length === 0) { setError('Header row found but no data rows.'); return; }
         setHeaders(h); setRawRows(r);
-        // Auto-guess columns
-        const guessedDate = guessColumn(h, 'date');
-        const guessedPayee = guessColumn(h, 'payee');
-        const guessedAmt = guessColumn(h, 'amount');
-        const guessedDebit = guessColumn(h, 'debit');
-        const guessedCredit = guessColumn(h, 'credit');
-        const guessedExtId = guessColumn(h, 'external_id');
-        setDateCol(guessedDate);
-        setPayeeCol(guessedPayee);
-        if (guessedAmt) {
-          setAmountMode('single'); setAmountCol(guessedAmt);
-        } else if (guessedDebit && guessedCredit) {
-          setAmountMode('debit_credit'); setDebitCol(guessedDebit); setCreditCol(guessedCredit);
-        }
-        setExtIdCol(guessedExtId);
-        // Account default = filename stem (without extension)
+        // Account default = filename stem (without extension) — always set
+        // first so a profile's default_account can override.
         setDefaultAccount(file.name.replace(/\.[^.]+$/, ''));
+        // Tier 1: try to match a saved profile against the file's headers
+        const matchingProfile = findMatchingProfile(h);
+        if (matchingProfile) {
+          applyProfile(matchingProfile);
+        } else {
+          // Tier 2: header-pattern heuristic for known bank formats
+          const guessedDate = guessColumn(h, 'date');
+          const guessedPayee = guessColumn(h, 'payee');
+          const guessedAmt = guessColumn(h, 'amount');
+          const guessedDebit = guessColumn(h, 'debit');
+          const guessedCredit = guessColumn(h, 'credit');
+          const guessedExtId = guessColumn(h, 'external_id');
+          setDateCol(guessedDate);
+          setPayeeCol(guessedPayee);
+          if (guessedAmt) {
+            setAmountMode('single'); setAmountCol(guessedAmt);
+          } else if (guessedDebit && guessedCredit) {
+            setAmountMode('debit_credit'); setDebitCol(guessedDebit); setCreditCol(guessedCredit);
+          }
+          setExtIdCol(guessedExtId);
+        }
         setStep('map');
       } catch (err) {
         setError('Could not parse CSV: ' + err.message);
@@ -14745,6 +14855,79 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
     };
     reader.onerror = () => setError('Failed to read file.');
     reader.readAsText(file);
+  }
+
+  // Persist current mapping as a reusable profile
+  async function saveAsProfile() {
+    if (!newProfileName.trim()) return;
+    setSavingProfile(true);
+    const payload = {
+      user_id: userId,
+      name: newProfileName.trim(),
+      date_column: dateCol,
+      date_format: dateFormat,
+      payee_column: payeeCol,
+      amount_mode: amountMode,
+      amount_column: amountMode === 'single' ? amountCol : null,
+      debit_column: amountMode === 'debit_credit' ? debitCol : null,
+      credit_column: amountMode === 'debit_credit' ? creditCol : null,
+      amount_sign: amountSign,
+      description_column: descCol || null,
+      external_id_column: extIdCol || null,
+      default_scope: defaultScope,
+      default_account: defaultAccount || null,
+      use_count: 1,
+      last_used_at: new Date().toISOString(),
+    };
+    const { data, error: err } = await supabase.from('csv_import_profiles').insert(payload).select().single();
+    setSavingProfile(false);
+    if (err) {
+      if (window.__notify) window.__notify('Save failed: ' + err.message, 'error');
+      return;
+    }
+    setProfiles(prev => [data, ...prev]);
+    setAppliedProfileId(data.id);
+    setShowSaveProfile(false);
+    setNewProfileName('');
+    if (window.__notify) window.__notify(`Saved profile "${data.name}"`, 'success');
+  }
+
+  // Bump the use_count + last_used_at when a profile is actually used in
+  // an import. Fire-and-forget — don't block the import flow on the update.
+  async function bumpProfileUsage(profileId) {
+    if (!profileId) return;
+    const p = profiles.find(x => x.id === profileId);
+    if (!p) return;
+    await supabase.from('csv_import_profiles')
+      .update({ use_count: (Number(p.use_count) || 0) + 1, last_used_at: new Date().toISOString() })
+      .eq('id', profileId);
+  }
+
+  // Revoke (archive) every transaction in a given import batch. Soft delete
+  // via is_archived=true — no hard delete. User can dig the rows back out
+  // by un-archiving in Supabase if needed.
+  async function revokeBatch(batchId) {
+    if (!batchId) return;
+    const batch = recentBatches.find(b => b.id === batchId);
+    if (!batch) return;
+    const confirmMsg = `Archive all ${batch.activeRowCount} active transactions from "${batch.source || 'this import'}"? They'll disappear from the Ledger but can be restored from Supabase if needed.`;
+    if (!window.confirm(confirmMsg)) return;
+    setRevokingBatchId(batchId);
+    const { error: err } = await supabase.from('transactions')
+      .update({ is_archived: true })
+      .eq('user_id', userId).eq('import_batch_id', batchId).eq('is_archived', false);
+    setRevokingBatchId(null);
+    if (err) {
+      if (window.__notify) window.__notify('Revoke failed: ' + err.message, 'error');
+      return;
+    }
+    // Mirror into local batch state
+    setRecentBatches(prev => prev.map(b => b.id === batchId
+      ? { ...b, archivedRowCount: b.archivedRowCount + b.activeRowCount, activeRowCount: 0, activeTotal: 0 }
+      : b));
+    // Tell parent so the Ledger drops the archived rows from view
+    if (onBatchRevoked) onBatchRevoked(batchId);
+    if (window.__notify) window.__notify(`Archived ${batch.activeRowCount} row${batch.activeRowCount===1?'':'s'} from this batch`, 'success');
   }
 
   // Build the parsed rows from current mapping
@@ -14866,6 +15049,8 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
       }
     }
     setImportResult({ inserted: inserted.length, errors, rows: inserted });
+    // Bump profile use count (fire-and-forget, doesn't block UI)
+    if (appliedProfileId && inserted.length > 0) bumpProfileUsage(appliedProfileId);
     setStep('done');
   }
 
@@ -14892,16 +15077,109 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
           <h3 style={{margin:0,fontSize:'15px'}}>
             Import CSV
-            <span style={{fontSize:'11px',color:'var(--text-3)',fontWeight:400,marginLeft:'8px'}}>
-              · {step === 'upload' ? 'Pick a file' : step === 'map' ? 'Map columns' : step === 'preview' ? 'Review' : step === 'importing' ? 'Importing…' : 'Done'}
-            </span>
+            {tab === 'new' && (
+              <span style={{fontSize:'11px',color:'var(--text-3)',fontWeight:400,marginLeft:'8px'}}>
+                · {step === 'upload' ? 'Pick a file' : step === 'map' ? 'Map columns' : step === 'preview' ? 'Review' : step === 'importing' ? 'Importing…' : 'Done'}
+              </span>
+            )}
           </h3>
           <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
         </div>
 
+        {/* Top-level tab toggle: New import vs Recent batches */}
+        <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',marginBottom:'12px',width:'fit-content'}}>
+          <button onClick={() => setTab('new')}
+            style={{padding:'5px 12px',border:'none',borderRadius:'6px',fontSize:'11.5px',fontWeight:700,cursor:'pointer',
+              background:tab==='new'?'var(--accent)':'transparent', color:tab==='new'?'var(--bg-base)':'var(--text-2)'}}>
+            New import
+          </button>
+          <button onClick={() => setTab('recent')}
+            style={{padding:'5px 12px',border:'none',borderRadius:'6px',fontSize:'11.5px',fontWeight:700,cursor:'pointer',
+              background:tab==='recent'?'var(--accent)':'transparent', color:tab==='recent'?'var(--bg-base)':'var(--text-2)'}}>
+            Recent imports
+          </button>
+        </div>
+
+        {/* ── RECENT IMPORTS TAB ── */}
+        {tab === 'recent' && (
+          <div>
+            {loadingBatches ? (
+              <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Loading…</div>
+            ) : recentBatches.length === 0 ? (
+              <div style={{padding:'30px',textAlign:'center',color:'var(--text-3)',fontStyle:'italic',fontSize:'12px'}}>
+                No previous CSV imports yet. Switch to "New import" to bring in your first file.
+              </div>
+            ) : (
+              <>
+                <div style={{fontSize:'10.5px',color:'var(--text-3)',marginBottom:'10px',lineHeight:1.5}}>
+                  Click revoke to archive every transaction from that batch. They'll disappear from the Ledger but stay in the database (un-archive in Supabase if needed).
+                </div>
+                {recentBatches.map(b => {
+                  const allRevoked = b.activeRowCount === 0 && b.rowCount > 0;
+                  const dateStr = b.importedAt ? new Date(b.importedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+                  return (
+                    <div key={b.id} style={{padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',marginBottom:'8px'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px'}}>
+                        <div style={{minWidth:0,flex:1}}>
+                          <div style={{fontSize:'12.5px',fontWeight:700,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                            {b.source || '(unlabeled batch)'}
+                          </div>
+                          <div style={{fontSize:'10.5px',color:'var(--text-3)',marginTop:'2px'}}>
+                            {dateStr} · {b.activeRowCount} active / {b.rowCount} total{b.archivedRowCount > 0 ? ` (${b.archivedRowCount} archived)` : ''}
+                          </div>
+                          {b.activeRowCount > 0 && (
+                            <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'4px',fontVariantNumeric:'tabular-nums'}}>
+                              net <span style={{color: b.activeTotal >= 0 ? 'var(--green)' : 'var(--red)',fontWeight:700}}>
+                                {b.activeTotal >= 0 ? '+' : '−'}${Math.abs(Math.round(b.activeTotal)).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {allRevoked ? (
+                          <span style={{fontSize:'10px',color:'var(--text-3)',padding:'4px 10px',background:'var(--bg-hover)',borderRadius:'5px',fontWeight:700,flexShrink:0}}>
+                            archived
+                          </span>
+                        ) : (
+                          <button onClick={() => revokeBatch(b.id)} disabled={revokingBatchId === b.id}
+                            style={{padding:'4px 10px',background:'transparent',border:'1px solid var(--red)',borderRadius:'5px',color:'var(--red)',cursor:'pointer',fontSize:'10.5px',fontWeight:700,flexShrink:0}}>
+                            {revokingBatchId === b.id ? 'Revoking…' : 'Revoke batch'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'10px',fontStyle:'italic',textAlign:'center'}}>
+                  Showing the {recentBatches.length} most recent batch{recentBatches.length===1?'':'es'}. Older batches still exist in the database; this view caps display.
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── NEW IMPORT TAB ── */}
+        {tab === 'new' && (<>
+
         {/* ── STEP 1: upload ── */}
         {step === 'upload' && (
           <div>
+            {profiles.length > 0 && (
+              <div style={{marginBottom:'14px',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'6px'}}>Saved bank profiles</div>
+                <div style={{fontSize:'10.5px',color:'var(--text-3)',marginBottom:'8px',lineHeight:1.5}}>
+                  Auto-detected on upload when headers match. Or pick to pre-fill the mapping.
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:'5px'}}>
+                  {profiles.slice(0, 6).map(p => (
+                    <span key={p.id} style={{padding:'3px 8px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'5px',fontSize:'10.5px',color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                      💾 {p.name}
+                      {p.use_count > 0 && <span style={{color:'var(--text-3)',fontSize:'9px'}}>·{p.use_count}×</span>}
+                    </span>
+                  ))}
+                  {profiles.length > 6 && <span style={{fontSize:'10px',color:'var(--text-3)',alignSelf:'center'}}>+{profiles.length - 6} more</span>}
+                </div>
+              </div>
+            )}
             <div style={{padding:'30px 20px',border:'2px dashed var(--border)',borderRadius:'10px',textAlign:'center'}}>
               <div style={{fontSize:'32px',marginBottom:'10px'}}>📄</div>
               <p style={{fontSize:'13px',color:'var(--text-1)',marginBottom:'4px',fontWeight:600}}>Drop or pick a CSV file</p>
@@ -14919,8 +15197,27 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
         {/* ── STEP 2: map ── */}
         {step === 'map' && (
           <div>
-            <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px'}}>
-              {fileName} · {rawRows.length} rows
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px',gap:'8px',flexWrap:'wrap'}}>
+              <div style={{fontSize:'11px',color:'var(--text-3)'}}>
+                {fileName} · {rawRows.length} rows
+              </div>
+              {profiles.length > 0 && (
+                <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                  {appliedProfileId && (
+                    <span style={{fontSize:'10px',color:'var(--accent)',padding:'2px 7px',background:'rgba(197,169,94,0.10)',border:'1px solid var(--accent)',borderRadius:'4px',fontWeight:700}}>
+                      💾 {profiles.find(p => p.id === appliedProfileId)?.name || 'profile'}
+                    </span>
+                  )}
+                  <select value={appliedProfileId || ''} onChange={e => {
+                      const p = profiles.find(x => x.id === e.target.value);
+                      if (p) applyProfile(p);
+                    }}
+                    style={{padding:'4px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'5px',color:'var(--text-2)',fontSize:'10.5px',cursor:'pointer'}}>
+                    <option value="">{appliedProfileId ? 'change profile…' : 'apply saved profile…'}</option>
+                    {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Sample rows */}
@@ -15127,6 +15424,35 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
               Duplicates are detected by exact date + amount + matching payee, or by matching bank reference ID. They're unchecked by default but you can re-select if you actually want to import them.
             </div>
 
+            {/* Save-as-profile prompt — only when not already using a saved profile */}
+            {!appliedProfileId && (
+              <div style={{marginTop:'10px',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px'}}>
+                {!showSaveProfile ? (
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                    <span style={{fontSize:'11px',color:'var(--text-2)'}}>
+                      💾 Save this mapping as a bank profile? Next time, just upload — column mapping happens automatically.
+                    </span>
+                    <button onClick={() => { setShowSaveProfile(true); setNewProfileName(defaultAccount || ''); }}
+                      style={{padding:'4px 10px',background:'transparent',border:'1px solid var(--accent)',borderRadius:'5px',color:'var(--accent)',cursor:'pointer',fontSize:'10.5px',fontWeight:700,flexShrink:0}}>
+                      Save mapping
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}>
+                    <input type="text" value={newProfileName} onChange={e => setNewProfileName(e.target.value)}
+                      placeholder='e.g. "Chase Business Checking"' autoFocus
+                      style={{flex:'1 1 200px',padding:'5px 8px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'5px',color:'var(--text-1)',fontSize:'11.5px',outline:'none'}}/>
+                    <button onClick={saveAsProfile} disabled={savingProfile || !newProfileName.trim()}
+                      style={{padding:'5px 10px',background:'var(--accent)',border:'none',borderRadius:'5px',color:'var(--bg-base)',cursor:'pointer',fontSize:'10.5px',fontWeight:700,opacity:(!newProfileName.trim())?0.4:1}}>
+                      {savingProfile ? 'Saving…' : 'Save'}
+                    </button>
+                    <button onClick={() => setShowSaveProfile(false)}
+                      style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'5px',color:'var(--text-3)',cursor:'pointer',fontSize:'10.5px'}}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="modal-actions" style={{display:'flex',justifyContent:'space-between',gap:'8px',marginTop:'14px'}}>
               <button type="button" className="btn btn-ghost" onClick={() => setStep('map')}>← Back</button>
               <button type="button" className="btn btn-primary" onClick={doImport} disabled={selectedCount === 0}>
@@ -15167,6 +15493,8 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
             </div>
           </div>
         )}
+
+        </>)}
       </div>
     </div>
   );
