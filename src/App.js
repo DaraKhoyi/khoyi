@@ -350,13 +350,31 @@ function ChatView({ robots, userId }) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  // Image attachment state — single image at a time for simplicity
+  const [pendingImageFile, setPendingImageFile] = useState(null);   // raw File
+  const [pendingImagePreview, setPendingImagePreview] = useState(null);  // object URL for thumbnail
+  const [uploadingImage, setUploadingImage] = useState(false);
+  // Lightbox viewer
+  const [viewerUrl, setViewerUrl] = useState(null);
+  // Signed-URL cache for image_path → signed URL (refresh after near-expiry)
+  const [signedUrls, setSignedUrls] = useState({});
+  // Receipt category lookup for CTA card display
+  const [taxCatMap, setTaxCatMap] = useState({});
+  const [systemMap, setSystemMap] = useState({});
+  // CTA card state — tracks which messages have had their receipt pushed
+  const [receiptPushed, setReceiptPushed] = useState({});  // messageKey -> { ok, txId, error }
+  const [receiptSaving, setReceiptSaving] = useState({});  // messageKey -> bool
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
 
   const robot = robots[0] || null;
   const robotId = robot?.id;
 
-  // Load conversation history
+  // Load conversation history. Supports both legacy format
+  // ({ user_message, assistant_response }) and current format
+  // ({ role, content, image_path?, receipt_data? }).
   useEffect(() => {
     if (!robotId || !userId) { setLoadingHistory(false); return; }
     supabase
@@ -369,13 +387,40 @@ function ChatView({ robots, userId }) {
         const entries = Array.isArray(data?.messages) ? data.messages : [];
         const flat = [];
         for (const e of entries) {
-          if (e.user_message) flat.push({ role: 'user', content: e.user_message });
-          if (e.assistant_response) flat.push({ role: 'assistant', content: e.assistant_response });
+          // Legacy paired-turn format
+          if (e.user_message != null || e.assistant_response != null) {
+            if (e.user_message) flat.push({ role: 'user', content: e.user_message });
+            if (e.assistant_response) flat.push({ role: 'assistant', content: e.assistant_response });
+            continue;
+          }
+          // Current per-turn format
+          if (e.role && (typeof e.content === 'string' || e.image_path)) {
+            const msg = { role: e.role, content: e.content || '' };
+            if (e.image_path) msg.image_path = e.image_path;
+            if (e.receipt_data) msg.receipt_data = e.receipt_data;
+            flat.push(msg);
+          }
         }
         setMessages(flat);
         setLoadingHistory(false);
       });
   }, [robotId, userId]);
+
+  // Load tax categories + lead-gen systems for receipt CTA labels
+  useEffect(() => {
+    if (!userId) return;
+    Promise.all([
+      supabase.from('tax_categories').select('id, name').eq('user_id', userId),
+      supabase.from('lead_gen_systems').select('id, name').eq('user_id', userId),
+    ]).then(([tc, ls]) => {
+      const tcMap = {};
+      (tc.data || []).forEach(c => { tcMap[c.id] = c.name; });
+      setTaxCatMap(tcMap);
+      const sMap = {};
+      (ls.data || []).forEach(s => { sMap[s.id] = s.name; });
+      setSystemMap(sMap);
+    });
+  }, [userId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -384,31 +429,105 @@ function ChatView({ robots, userId }) {
     }
   }, [messages, sending]);
 
+  // Mint a signed URL for an image_path on first render and cache it
+  const getSignedUrl = useCallback(async (imagePath) => {
+    if (!imagePath) return null;
+    if (signedUrls[imagePath]) return signedUrls[imagePath];
+    const { data } = await supabase.storage.from('receipts').createSignedUrl(imagePath, 3600);
+    const url = data?.signedUrl || null;
+    if (url) setSignedUrls(prev => ({ ...prev, [imagePath]: url }));
+    return url;
+  }, [signedUrls]);
+
+  // Cleanup the object URL when pending image changes / unmounts
+  useEffect(() => {
+    return () => {
+      if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
+    };
+  }, [pendingImagePreview]);
+
+  function pickImage(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      if (window.__notify) window.__notify('Please choose an image', 'error');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      if (window.__notify) window.__notify('Image too large (10MB max)', 'error');
+      return;
+    }
+    // Clean up previous preview URL
+    if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
+    setPendingImageFile(file);
+    setPendingImagePreview(URL.createObjectURL(file));
+  }
+
+  function clearPendingImage() {
+    if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
+    setPendingImageFile(null);
+    setPendingImagePreview(null);
+  }
+
   const send = useCallback(async () => {
-    if (!input.trim() || sending || !robot) return;
     const text = input.trim();
+    if ((!text && !pendingImageFile) || sending || !robot) return;
+    setSending(true);
+
+    // Upload image (if any) first so we have a storage path to send
+    let imagePath = null;
+    let optimisticImageUrl = null;
+    if (pendingImageFile) {
+      setUploadingImage(true);
+      try {
+        const ext = (pendingImageFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'jpg';
+        const path = `${userId}/chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('receipts').upload(path, pendingImageFile, {
+          contentType: pendingImageFile.type || 'image/jpeg',
+          upsert: false,
+        });
+        if (upErr) throw new Error('Upload failed: ' + upErr.message);
+        imagePath = path;
+        optimisticImageUrl = pendingImagePreview;  // reuse the object URL for instant display
+        // Cache the object URL so the bubble shows immediately while signed URL is fetched
+        setSignedUrls(prev => ({ ...prev, [path]: pendingImagePreview }));
+      } catch (err) {
+        if (window.__notify) window.__notify(err.message, 'error');
+        setSending(false);
+        setUploadingImage(false);
+        return;
+      } finally {
+        setUploadingImage(false);
+      }
+    }
+
+    // Optimistic user message
     const userMsg = { role: 'user', content: text };
+    if (imagePath) userMsg.image_path = imagePath;
     const optimistic = [...messages, userMsg];
     setMessages(optimistic);
     setInput('');
-    setSending(true);
-
-    // Keep focus on input after sending
+    clearPendingImage();
     setTimeout(() => inputRef.current?.focus(), 50);
 
-    const history = optimistic.slice(-21, -1).map(m => ({ role: m.role, content: m.content }));
+    const history = optimistic.slice(-21, -1).map(m => ({
+      role: m.role, content: m.content,
+      ...(m.image_path ? { image_path: m.image_path } : {}),
+    }));
 
     try {
       const { data, error } = await supabase.functions.invoke('robot-chat', {
-        body: { robot_id: robot.id, user_id: userId, message: text, history },
+        body: { robot_id: robot.id, user_id: userId, message: text, history, image_path: imagePath },
       });
       if (error) throw error;
       const reply = data?.response || data?.reply || data?.content || '';
-      if (reply) {
+      const receiptData = data?.receipt_data || null;
+      if (reply || receiptData) {
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last?.role === 'assistant' && last?.content === reply) return prev;
-          return [...prev, { role: 'assistant', content: reply }];
+          if (last?.role === 'assistant' && last?.content === reply && !receiptData) return prev;
+          const newMsg = { role: 'assistant', content: reply };
+          if (receiptData) newMsg.receipt_data = receiptData;
+          return [...prev, newMsg];
         });
       } else if (data?.error) {
         setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.error}` }]);
@@ -419,7 +538,44 @@ function ChatView({ robots, userId }) {
       setSending(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [input, sending, robot, messages, userId]);
+  }, [input, sending, robot, messages, userId, pendingImageFile, pendingImagePreview]);
+
+  // Push a parsed receipt to the transactions table — wires Ari to accounting.
+  // messageKey is the index of the assistant message holding the receipt_data.
+  const pushReceiptToAccounting = useCallback(async (messageKey, receiptData, override) => {
+    setReceiptSaving(prev => ({ ...prev, [messageKey]: true }));
+    try {
+      const scope = override?.scope || receiptData.scope || 'business';
+      const amount = Math.abs(Number(receiptData.amount || 0));
+      if (!amount) throw new Error('Missing amount on receipt');
+      // Expense = negative; receipts default to expense unless explicitly income
+      const signedAmount = -amount;
+      const payload = {
+        user_id: userId,
+        date: receiptData.date || new Date().toISOString().slice(0, 10),
+        amount: signedAmount,
+        scope,
+        tax_category_id: scope === 'business' ? (receiptData.tax_category_id || null) : null,
+        lead_gen_system_id: scope === 'business' ? (receiptData.lead_gen_system_id || null) : null,
+        personal_budget_line_id: null,
+        payee: receiptData.vendor || null,
+        description: receiptData.description_guess || null,
+        account: null,
+        receipt_url: receiptData.receipt_path || null,
+        entered_via: 'photo',
+        ai_confidence: receiptData.confidence ?? null,
+      };
+      const { data, error } = await supabase.from('transactions').insert(payload).select().single();
+      if (error) throw error;
+      setReceiptPushed(prev => ({ ...prev, [messageKey]: { ok: true, txId: data.id } }));
+      if (window.__notify) window.__notify(`Added $${amount.toFixed(2)} to accounting`, 'success');
+    } catch (err) {
+      setReceiptPushed(prev => ({ ...prev, [messageKey]: { ok: false, error: err.message || String(err) } }));
+      if (window.__notify) window.__notify('Save failed: ' + (err.message || err), 'error');
+    } finally {
+      setReceiptSaving(prev => ({ ...prev, [messageKey]: false }));
+    }
+  }, [userId]);
 
   // Handle Enter key — shift+enter = newline, enter = send
   const handleKeyDown = useCallback((e) => {
@@ -446,6 +602,8 @@ function ChatView({ robots, userId }) {
     );
   }
 
+  const canSend = (input.trim() || pendingImageFile) && !sending && !uploadingImage;
+
   return (
     <div className="chat-wrap">
       {/* Robot header */}
@@ -467,12 +625,25 @@ function ChatView({ robots, userId }) {
             <div className="chat-empty-icon">{robot.avatar_emoji || '🤖'}</div>
             <h3>Hey, I'm {robot.name}</h3>
             <p>{robot.role}<br/>What can I help you with today?</p>
+            <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'14px',fontStyle:'italic'}}>
+              Tip: tap 📷 to snap a receipt — I'll push it to accounting.
+            </p>
           </div>
         ) : (
           messages.map((m, i) => (
-            <div key={i} className={`chat-bubble-wrap ${m.role}`}>
-              <div className={`chat-bubble ${m.role}`}>{m.content}</div>
-            </div>
+            <ChatMessageBubble
+              key={i}
+              message={m}
+              messageKey={i}
+              getSignedUrl={getSignedUrl}
+              signedUrls={signedUrls}
+              onZoom={setViewerUrl}
+              taxCatMap={taxCatMap}
+              systemMap={systemMap}
+              receiptPushed={receiptPushed[i]}
+              receiptSaving={!!receiptSaving[i]}
+              onPushReceipt={(override) => pushReceiptToAccounting(i, m.receipt_data, override)}
+            />
           ))
         )}
         {sending && (
@@ -486,26 +657,193 @@ function ChatView({ robots, userId }) {
         )}
       </div>
 
+      {/* Pending image preview chip */}
+      {pendingImagePreview && (
+        <div className="chat-pending-image">
+          <img src={pendingImagePreview} alt="Attached" className="chat-pending-image-thumb"
+            onClick={() => setViewerUrl(pendingImagePreview)} />
+          <div className="chat-pending-image-info">
+            <strong>Photo attached</strong>
+            {uploadingImage ? 'Uploading…' : 'Ready to send'}
+          </div>
+          <button type="button" className="chat-pending-image-remove" onClick={clearPendingImage} title="Remove">×</button>
+        </div>
+      )}
+
       {/* Input bar */}
       <div className="chat-input-bar">
+        <button
+          type="button"
+          className="chat-attach-btn"
+          onClick={() => cameraInputRef.current?.click()}
+          disabled={sending}
+          title="Take a photo"
+          aria-label="Take a photo"
+        >
+          📷
+        </button>
+        <button
+          type="button"
+          className="chat-attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+          title="Attach from gallery"
+          aria-label="Attach image"
+          style={{fontSize:'16px'}}
+        >
+          📎
+        </button>
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"
+          style={{display:'none'}}
+          onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
+        <input ref={fileInputRef} type="file" accept="image/*"
+          style={{display:'none'}}
+          onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
         <textarea
           ref={inputRef}
           className="chat-input"
           value={input}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder={`Message ${robot.name}…`}
+          placeholder={pendingImageFile ? 'Add a caption (optional)…' : `Message ${robot.name}…`}
           rows={1}
           disabled={sending}
         />
         <button
           className="chat-send-btn"
           onClick={send}
-          disabled={!input.trim() || sending}
+          disabled={!canSend}
           aria-label="Send"
         >
           ➤
         </button>
+      </div>
+
+      {/* Full-screen image viewer */}
+      {viewerUrl && (
+        <div className="chat-image-viewer" onClick={() => setViewerUrl(null)}>
+          <img src={viewerUrl} alt="Full size" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Single message bubble — handles text, image, and optional receipt-CTA card.
+// Split out so we can lazily resolve signed URLs without re-rendering all bubbles.
+function ChatMessageBubble({
+  message, messageKey, getSignedUrl, signedUrls, onZoom,
+  taxCatMap, systemMap, receiptPushed, receiptSaving, onPushReceipt,
+}) {
+  const [imgUrl, setImgUrl] = useState(null);
+  const [scope, setScope] = useState(message.receipt_data?.scope || 'business');
+
+  useEffect(() => {
+    if (!message.image_path) return;
+    // Use cached URL if available, otherwise mint a fresh one
+    if (signedUrls[message.image_path]) {
+      setImgUrl(signedUrls[message.image_path]);
+    } else {
+      getSignedUrl(message.image_path).then(setImgUrl);
+    }
+  }, [message.image_path, signedUrls, getSignedUrl]);
+
+  const rd = message.receipt_data;
+  const taxName = rd?.tax_category_id ? taxCatMap[rd.tax_category_id] : null;
+  const sysName = rd?.lead_gen_system_id ? systemMap[rd.lead_gen_system_id] : null;
+
+  return (
+    <div className={`chat-bubble-wrap ${message.role}`}>
+      <div style={{display:'flex',flexDirection:'column',alignItems: message.role==='user'?'flex-end':'flex-start',maxWidth:'100%'}}>
+        {(message.content || message.image_path) && (
+          <div className={`chat-bubble ${message.role}`}>
+            {message.image_path && (
+              imgUrl ? (
+                <img
+                  src={imgUrl}
+                  alt={message.role === 'user' ? 'You sent an image' : 'Image'}
+                  className="chat-bubble-image"
+                  onClick={() => onZoom(imgUrl)}
+                />
+              ) : (
+                <div className="chat-bubble-image" style={{width:'200px',height:'150px',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <div className="spinner" style={{width:'16px',height:'16px',border:'2px solid var(--accent)',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}} />
+                </div>
+              )
+            )}
+            {message.content && <div>{message.content}</div>}
+          </div>
+        )}
+        {/* Receipt CTA card — shown under the assistant reply when receipt detected */}
+        {rd && message.role === 'assistant' && (
+          <div className="chat-receipt-card">
+            {receiptPushed?.ok ? (
+              <div className="chat-receipt-pushed">
+                <span>✓</span>
+                <span>Added ${Math.abs(Number(rd.amount || 0)).toFixed(2)} to accounting</span>
+              </div>
+            ) : (
+              <>
+                <div className="chat-receipt-card-header">
+                  <span>📋 Receipt detected</span>
+                  <span className="chat-receipt-card-confidence">
+                    {Math.round((rd.confidence || 0) * 100)}% confident
+                  </span>
+                </div>
+                <div className="chat-receipt-fields">
+                  <label>Vendor</label>
+                  <div style={{fontSize:'13px',color:'var(--text-1)',fontWeight:600}}>{rd.vendor || '—'}</div>
+                  <label>Amount</label>
+                  <div style={{fontSize:'14px',color:'var(--text-1)',fontWeight:700}}>${Math.abs(Number(rd.amount || 0)).toFixed(2)}</div>
+                  <label>Date</label>
+                  <div style={{fontSize:'13px',color:'var(--text-2)'}}>{rd.date || '—'}</div>
+                  <label>Scope</label>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',background:'var(--bg-hover)',padding:'2px',borderRadius:'6px'}}>
+                    <button type="button" onClick={() => setScope('business')}
+                      style={{padding:'5px',border:'none',borderRadius:'4px',fontWeight:600,fontSize:'11px',cursor:'pointer',
+                        background:scope==='business'?'var(--accent)':'transparent',
+                        color:scope==='business'?'var(--bg-base)':'var(--text-2)'}}>Business</button>
+                    <button type="button" onClick={() => setScope('personal')}
+                      style={{padding:'5px',border:'none',borderRadius:'4px',fontWeight:600,fontSize:'11px',cursor:'pointer',
+                        background:scope==='personal'?'var(--accent)':'transparent',
+                        color:scope==='personal'?'var(--bg-base)':'var(--text-2)'}}>Personal</button>
+                  </div>
+                  {scope === 'business' && taxName && (<>
+                    <label>Category</label>
+                    <div style={{fontSize:'12px',color:'var(--text-2)'}}>{taxName}</div>
+                  </>)}
+                  {scope === 'business' && sysName && (<>
+                    <label>System</label>
+                    <div style={{fontSize:'12px',color:'var(--text-2)'}}>{sysName}</div>
+                  </>)}
+                </div>
+                <div className="chat-receipt-card-actions">
+                  <button
+                    type="button"
+                    className="chat-receipt-save"
+                    onClick={() => onPushReceipt({ scope })}
+                    disabled={receiptSaving}
+                  >
+                    {receiptSaving ? 'Saving…' : 'Push to accounting →'}
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-receipt-dismiss"
+                    onClick={() => onPushReceipt({ scope, dismiss: true }) /* no-op confirm: dismiss locally */}
+                    style={{display:'none'}}  // hidden in v1 — push or do nothing
+                  >
+                    Not now
+                  </button>
+                </div>
+                {receiptPushed?.error && (
+                  <div style={{marginTop:'8px',fontSize:'11px',color:'var(--red)'}}>
+                    {receiptPushed.error}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

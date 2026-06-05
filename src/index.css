@@ -407,6 +407,175 @@ body {
 .chat-send-btn:hover:not(:disabled) { background: #d4ba73; }
 .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ─── Chat image attach + receipt card ─────────────────── */
+.chat-attach-btn {
+  background: var(--bg-base);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 42px; height: 42px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 18px; flex-shrink: 0;
+  transition: all 0.15s;
+}
+.chat-attach-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chat-attach-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Image preview chip that appears above the input when an image is staged */
+.chat-pending-image {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0 16px 8px;
+}
+.chat-pending-image-thumb {
+  width: 48px; height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--bg-base);
+  flex-shrink: 0;
+}
+.chat-pending-image-info {
+  flex: 1; min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.chat-pending-image-info strong { color: var(--text-1); display: block; }
+.chat-pending-image-remove {
+  background: none; border: none;
+  color: var(--text-3);
+  font-size: 18px; padding: 4px 8px;
+  cursor: pointer; flex-shrink: 0;
+}
+.chat-pending-image-remove:hover { color: var(--red); }
+
+/* Image inside a message bubble */
+.chat-bubble-image {
+  display: block;
+  max-width: 240px;
+  max-height: 300px;
+  border-radius: 10px;
+  margin-bottom: 6px;
+  cursor: zoom-in;
+  background: var(--bg-base);
+}
+.chat-bubble.user .chat-bubble-image { background: rgba(0,0,0,0.1); }
+
+/* Full-screen image viewer */
+.chat-image-viewer {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.92);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000;
+  cursor: zoom-out;
+  padding: 20px;
+}
+.chat-image-viewer img {
+  max-width: 100%; max-height: 100%;
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* Receipt action card under the assistant reply */
+.chat-receipt-card {
+  margin-top: 10px;
+  background: linear-gradient(135deg, rgba(197,169,94,0.1) 0%, rgba(197,169,94,0.03) 100%);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 13px;
+  max-width: 78%;
+}
+.chat-receipt-card-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.chat-receipt-card-confidence {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--bg-base);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.chat-receipt-fields {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.chat-receipt-fields label {
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: right;
+}
+.chat-receipt-fields input,
+.chat-receipt-fields select {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-1);
+  font-family: inherit;
+  width: 100%;
+  -webkit-appearance: none;
+}
+.chat-receipt-fields input:focus,
+.chat-receipt-fields select:focus { border-color: var(--accent); outline: none; }
+.chat-receipt-card-actions {
+  display: flex; gap: 8px;
+}
+.chat-receipt-card-actions button {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: opacity 0.15s, background 0.15s;
+}
+.chat-receipt-card-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-receipt-save {
+  background: var(--accent);
+  color: #000;
+}
+.chat-receipt-save:hover:not(:disabled) { background: #d4ba73; }
+.chat-receipt-dismiss {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border) !important;
+}
+.chat-receipt-dismiss:hover { color: var(--text-1); }
+.chat-receipt-pushed {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Mobile tweaks */
+@media (max-width: 640px) {
+  .chat-receipt-card { max-width: 100%; }
+  .chat-receipt-fields { grid-template-columns: 80px 1fr; gap: 4px 8px; }
+  .chat-bubble-image { max-width: 200px; max-height: 240px; }
+}
+
 .chat-empty { text-align: center; padding: 60px 20px; color: var(--text-3); }
 .chat-empty .chat-empty-icon { font-size: 44px; margin-bottom: 12px; }
 .chat-empty h3 { font-size: 16px; font-weight: 700; color: var(--text-2); margin-bottom: 6px; }

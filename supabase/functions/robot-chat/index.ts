@@ -3,8 +3,22 @@
 // system_prompt and role. Persists the rolling conversation to robot_conversations
 // so the assistant can reference prior turns.
 //
-// POST body: { robot_id: uuid, message: string, history?: [{role,content}, ...] }
-// Returns:   { response: string, meta?: { model, tokens } }
+// POST body: { robot_id: uuid, message: string, history?: [{role,content,image_path?}, ...],
+//              image_path?: string }
+// Returns:   { response: string,
+//              meta?: { model, tokens },
+//              receipt_data?: {                            // present when an image is
+//                vendor, date, amount, scope, confidence,  // detected as a receipt with
+//                tax_category_id, lead_gen_system_id,      // adequate confidence
+//                description_guess, line_items
+//              } }
+//
+// When image_path is provided:
+//   1. We call parse-receipt internally in parallel with the chat completion.
+//   2. If parse-receipt returns confidence >= 0.4, we attach receipt_data so
+//      the client can render a "Push to accounting" CTA.
+//   3. The chat completion uses Claude vision to converse about the image
+//      regardless of whether it's a receipt.
 //
 // Auth: requires a valid user JWT. Robot lookups are scoped to active=true robots.
 // Conversations are stored per (user_id, robot_id).
@@ -50,16 +64,85 @@ async function callClaude(system: string, messages: any[]) {
   return { text, usage: j.usage };
 }
 
+// Detect mime type from file path extension
+function mimeFromPath(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  if (ext === "png") return "image/png";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  if (ext === "heic" || ext === "heif") return "image/heic";
+  return "image/jpeg";
+}
+
+// Encode arbitrary bytes to base64 in chunks (avoids stack overflow on large images)
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+// Download an image from the 'receipts' bucket and return as base64 + media type.
+// Returns null on failure (e.g. file not found, mime unrecognized) so callers
+// can decide whether to proceed without vision.
+async function loadImageAsBase64(
+  supabase: any,
+  imagePath: string,
+): Promise<{ data: string; media_type: string } | null> {
+  try {
+    const { data, error } = await supabase.storage.from("receipts").download(imagePath);
+    if (error || !data) return null;
+    const ab = await data.arrayBuffer();
+    const bytes = new Uint8Array(ab);
+    if (bytes.length === 0) return null;
+    // Guard against malicious payloads — Claude vision caps around 5MB per image
+    if (bytes.length > 6 * 1024 * 1024) return null;
+    return { data: bytesToBase64(bytes), media_type: mimeFromPath(imagePath) };
+  } catch (_e) {
+    return null;
+  }
+}
+
+// Call the parse-receipt edge function with the user's JWT. Returns the
+// structured fields if the image is a receipt (confidence is part of the
+// payload — callers decide whether confidence is high enough to surface).
+// Returns null on any failure.
+async function parseReceiptInternal(
+  receiptPath: string,
+  jwt: string,
+): Promise<any | null> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/parse-receipt`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ receipt_path: receiptPath }),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (j?.error) return null;
+    return j;
+  } catch (_e) {
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const body = await req.json().catch(() => ({}));
-    const { robot_id, message, history = [] } = body || {};
-    if (!robot_id || !message || typeof message !== "string") {
-      return new Response(JSON.stringify({ error: "robot_id and message required" }), {
+    const { robot_id, message, history = [], image_path } = body || {};
+    // message can be empty string when only an image is sent
+    if (!robot_id || (typeof message !== "string" && !image_path)) {
+      return new Response(JSON.stringify({ error: "robot_id and (message or image_path) required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const userMessage = typeof message === "string" ? message : "";
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -101,23 +184,115 @@ serve(async (req) => {
       });
     }
 
+    // Validate image_path if provided: must live under the user's folder
+    if (image_path) {
+      if (typeof image_path !== "string" || !image_path.startsWith(`${userId}/`)) {
+        return new Response(JSON.stringify({ error: "Invalid image_path" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Build message list. Cap history.
     const cleanHistory = Array.isArray(history)
       ? history
           .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
           .slice(-MAX_HISTORY_TURNS)
+          .map(m => ({ role: m.role, content: m.content }))   // strip extra fields for Claude
       : [];
-    const messages = [...cleanHistory, { role: "user", content: message }];
-    const system = robot.system_prompt || `You are ${robot.name}, an AI assistant.`;
 
-    const { text, usage } = await callClaude(system, messages);
+    // Build the current user turn. With an image, content becomes an array
+    // of blocks per Anthropic's vision format. Without an image it stays a string.
+    let currentTurnContent: any = userMessage;
+    let receiptParsePromise: Promise<any | null> = Promise.resolve(null);
+
+    if (image_path) {
+      const imageData = await loadImageAsBase64(supabase, image_path);
+      if (!imageData) {
+        return new Response(JSON.stringify({
+          error: "Could not load image (not found, too large, or invalid format)",
+        }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Build vision content blocks
+      const blocks: any[] = [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: imageData.media_type,
+            data: imageData.data,
+          },
+        },
+      ];
+      // Add text block if user wrote anything; otherwise nudge Claude
+      if (userMessage.trim()) {
+        blocks.push({ type: "text", text: userMessage });
+      } else {
+        blocks.push({
+          type: "text",
+          text: "(The user shared this image without a caption — describe what you see briefly. If it's a receipt or invoice, mention what was extracted and offer to add it to accounting.)",
+        });
+      }
+      currentTurnContent = blocks;
+      // Start the parse-receipt call in parallel with the Claude conversation
+      receiptParsePromise = parseReceiptInternal(image_path, token);
+    }
+
+    const messages = [...cleanHistory, { role: "user", content: currentTurnContent }];
+    const baseSystem = robot.system_prompt || `You are ${robot.name}, an AI assistant.`;
+    // Tell the assistant what tools the UI gives her so her answers match what
+    // the user actually sees. Kept short to preserve the user's prompt voice.
+    const capabilities = [
+      "You can see and discuss images the user attaches.",
+      "When the user sends a photo of a receipt or invoice, the app automatically extracts vendor, amount, date, and category — a 'Push to accounting' button appears under your reply for them to confirm. You do not need to write any structured data yourself; just acknowledge what was found and let them confirm with the button.",
+      "If an image is unrelated to accounting, just discuss it naturally.",
+    ].join(" ");
+    const system = `${baseSystem}\n\nCapabilities: ${capabilities}`;
+
+    // Run chat completion and (if image) receipt parse in parallel
+    const [chatResult, receiptResult] = await Promise.all([
+      callClaude(system, messages),
+      receiptParsePromise,
+    ]);
+    const text = chatResult.text;
+    const usage = chatResult.usage;
+
+    // Build receipt_data response payload if confidence is meaningful
+    let receiptData: any = null;
+    if (receiptResult && typeof receiptResult.confidence === "number" && receiptResult.confidence >= 0.4) {
+      receiptData = {
+        vendor: receiptResult.vendor || null,
+        date: receiptResult.date || null,
+        amount: receiptResult.amount ?? null,
+        scope: receiptResult.is_business_likely === false ? "personal" : "business",
+        confidence: receiptResult.confidence,
+        tax_category_id: receiptResult.suggested_tax_category_id || null,
+        lead_gen_system_id: receiptResult.suggested_lead_gen_system_id || null,
+        description_guess: receiptResult.description_guess || null,
+        line_items: receiptResult.line_items || null,
+        receipt_path: image_path,
+      };
+    }
 
     // Persist conversation. Schema: { user_id, robot_id, messages jsonb }.
     // Upsert on (user_id, robot_id) — append new turns to the rolling thread.
-    const newTurns = [
-      { role: "user", content: message, ts: new Date().toISOString() },
-      { role: "assistant", content: text, ts: new Date().toISOString() },
-    ];
+    // Image attachments stored as image_path on the user turn (no signed URL —
+    // signed URLs expire; the client mints fresh ones at render time).
+    const userTurn: any = {
+      role: "user",
+      content: userMessage,
+      ts: new Date().toISOString(),
+    };
+    if (image_path) userTurn.image_path = image_path;
+    const assistantTurn: any = {
+      role: "assistant",
+      content: text,
+      ts: new Date().toISOString(),
+    };
+    if (receiptData) assistantTurn.receipt_data = receiptData;
+    const newTurns = [userTurn, assistantTurn];
     const { data: existing } = await supabase
       .from("robot_conversations")
       .select("id, messages")
@@ -138,10 +313,12 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({
+    const responsePayload: any = {
       response: text,
       meta: { model: MODEL, tokens: usage },
-    }), {
+    };
+    if (receiptData) responsePayload.receipt_data = receiptData;
+    return new Response(JSON.stringify(responsePayload), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
