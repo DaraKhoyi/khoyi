@@ -146,6 +146,58 @@ textarea::placeholder { color: var(--text-3); }
   0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
   50%      { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
 }
+/* Camera capture button — matches the mic button */
+.cam-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.cam-btn:hover, .cam-btn:active { background: var(--accent); color: var(--bg-base); border-color: var(--accent); }
+
+/* Captured-photo thumbnail strip */
+.photo-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.photo-strip:empty { display: none; }
+.photo-thumb {
+  position: relative;
+  width: 64px; height: 64px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  flex: 0 0 auto;
+  background: var(--bg-hover);
+}
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-thumb .photo-copy-hint {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(13,15,20,0.55);
+  color: #fff; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  opacity: 0; transition: opacity 0.15s;
+}
+.photo-thumb:hover .photo-copy-hint, .photo-thumb:active .photo-copy-hint { opacity: 1; }
+.photo-thumb .photo-remove {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: rgba(13,15,20,0.8);
+  color: #fff; border: none;
+  font-size: 13px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.photo-thumb .photo-remove:hover { background: var(--red); }
 
 /* Section labels */
 .section-label {
@@ -364,12 +416,19 @@ textarea::placeholder { color: var(--text-3); }
   <section class="card compose">
     <textarea id="prompt-input" placeholder="What do you want Claude to do?
 e.g. Find all Priority A tasks due this week and show me the ones linked to Jala Ibrahim." enterkeyhint="go"></textarea>
+    <div id="photo-strip" class="photo-strip"></div>
     <div class="compose-actions">
       <span class="char-count"><span id="char-count">0</span> chars</span>
       <div class="compose-actions-right">
         <button id="save-prompt-btn" class="icon-btn" title="Save this prompt for reuse" aria-label="Save prompt">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button id="cam-btn" class="cam-btn" title="Take a photo" aria-label="Take a photo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
           </svg>
         </button>
         <button id="mic-btn" class="mic-btn" title="Voice input" aria-label="Voice input">
@@ -382,6 +441,7 @@ e.g. Find all Priority A tasks due this week and show me the ones linked to Jala
         </button>
       </div>
     </div>
+    <input id="photo-input" type="file" accept="image/*" capture="environment" style="display:none">
   </section>
 
   <section>
@@ -500,6 +560,9 @@ const saveCancel       = $('save-cancel');
 const saveConfirm      = $('save-confirm');
 const addSavedBtn      = $('add-saved-btn');
 const micBtn           = $('mic-btn');
+const camBtn           = $('cam-btn');
+const photoInput       = $('photo-input');
+const photoStrip       = $('photo-strip');
 const toastEl          = $('toast');
 
 let prompts = loadPrompts();
@@ -628,6 +691,7 @@ async function launch() {
     setTimeout(() => {
       promptInput.value = '';
       updateCharCount();
+      clearPhotos();
     }, 500);
   }
 }
@@ -694,6 +758,117 @@ saveConfirm.addEventListener('click', () => {
   saveModal.classList.remove('show');
   showToast('Saved');
 });
+
+// ──────────────────────────────────────────────────────────
+// Photo capture
+//   The launcher can't inject an image into Claude.ai over a URL,
+//   so the model mirrors the prompt flow: capture → copy to clipboard
+//   → paste into Claude. Photos live for the session (in memory).
+// ──────────────────────────────────────────────────────────
+let photos = [];          // { id, url (objectURL), blob }
+let photoSeq = 0;
+
+camBtn.addEventListener('click', () => photoInput.click());
+
+photoInput.addEventListener('change', () => {
+  const files = Array.from(photoInput.files || []);
+  files.forEach((file) => {
+    if (!file.type.startsWith('image/')) return;
+    const id = ++photoSeq;
+    const url = URL.createObjectURL(file);
+    photos.push({ id, url, blob: file });
+  });
+  // Reset so capturing the same file name again still fires change
+  photoInput.value = '';
+  renderPhotos();
+  if (files.length) showToast('Photo added — tap it to copy, then paste into Claude');
+});
+
+function renderPhotos() {
+  photoStrip.innerHTML = '';
+  photos.forEach((p) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'photo-thumb';
+    thumb.title = 'Tap to copy — then paste into Claude';
+
+    const img = document.createElement('img');
+    img.src = p.url;
+    img.alt = 'Captured photo';
+    thumb.appendChild(img);
+
+    const hint = document.createElement('div');
+    hint.className = 'photo-copy-hint';
+    hint.textContent = 'Copy';
+    thumb.appendChild(hint);
+
+    const remove = document.createElement('button');
+    remove.className = 'photo-remove';
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', 'Remove photo');
+    remove.addEventListener('click', (e) => {
+      e.stopPropagation();
+      URL.revokeObjectURL(p.url);
+      photos = photos.filter((x) => x.id !== p.id);
+      renderPhotos();
+    });
+    thumb.appendChild(remove);
+
+    thumb.addEventListener('click', () => copyPhotoToClipboard(p));
+    photoStrip.appendChild(thumb);
+  });
+}
+
+// Convert any image blob to a PNG blob (broadest clipboard support, esp. Safari)
+function blobToPng(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((out) => out ? resolve(out) : reject(new Error('toBlob failed')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image decode failed')); };
+    img.src = url;
+  });
+}
+
+async function copyPhotoToClipboard(p) {
+  // Try the async Clipboard API with a PNG ClipboardItem first.
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      // Passing a promise to ClipboardItem keeps the user-gesture alive on Safari
+      const item = new ClipboardItem({ 'image/png': blobToPng(p.blob) });
+      await navigator.clipboard.write([item]);
+      showToast('📋 Photo copied — paste into Claude');
+      return;
+    }
+    throw new Error('Clipboard image API unavailable');
+  } catch (err) {
+    // Fallback: download the file so it can be attached manually in Claude
+    try {
+      const a = document.createElement('a');
+      a.href = p.url;
+      a.download = 'prism-photo-' + p.id + '.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast('⤓ Saved photo — attach it in Claude', 'error');
+    } catch (_) {
+      showToast("Couldn't copy the photo on this device", 'error');
+    }
+  }
+}
+
+function clearPhotos() {
+  photos.forEach((p) => URL.revokeObjectURL(p.url));
+  photos = [];
+  renderPhotos();
+}
 
 // ──────────────────────────────────────────────────────────
 // Voice input (Web Speech API)
