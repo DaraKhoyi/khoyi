@@ -21852,6 +21852,224 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   );
 }
 
+
+// ─────────────────────────────────────────
+// PROJECT TRACKER  (tracker schema — multi-user RBAC)
+// ─────────────────────────────────────────
+function TrackerView({ userId }) {
+  const tdb = supabase.schema('tracker');
+  const [loading, setLoading] = useState(true);
+  const [me, setMe] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [err, setErr] = useState(null);
+  const [newProj, setNewProj] = useState('');
+  const [newTask, setNewTask] = useState('');
+  const [addPid, setAddPid] = useState('');
+  const [addRole, setAddRole] = useState('viewer');
+
+  const loadCore = async () => {
+    setLoading(true); setErr(null);
+    try {
+      const [pf, pe, pr, mm] = await Promise.all([
+        tdb.from('profiles').select('*').eq('id', userId).maybeSingle(),
+        tdb.from('profiles').select('id,email,full_name,role').order('full_name'),
+        tdb.from('projects').select('*').order('created_at'),
+        tdb.from('project_members').select('*'),
+      ]);
+      if (pr.error) throw pr.error;
+      setMe(pf.data); setPeople(pe.data || []);
+      setProjects(pr.data || []); setMembers(mm.data || []);
+      setSel(s => s || (pr.data && pr.data[0] ? pr.data[0].id : null));
+    } catch (e) { setErr(e.message || String(e)); }
+    setLoading(false);
+  };
+  useEffect(() => { loadCore(); }, []);            // eslint-disable-line
+
+  const loadTasks = async (pid) => {
+    if (!pid) { setTasks([]); return; }
+    const { data } = await tdb.from('tasks').select('*').eq('project_id', pid).order('created_at');
+    setTasks(data || []);
+  };
+  useEffect(() => { loadTasks(sel); }, [sel]);      // eslint-disable-line
+
+  const appRole = (me && me.role) || 'user';
+  const isAdmin = appRole === 'admin';
+  const myRole = (pid) => {
+    const m = members.find(x => x.project_id === pid && x.user_id === userId);
+    return m ? m.role : (isAdmin ? 'manager' : null);
+  };
+  const canCreateProject = isAdmin || appRole === 'manager';
+  const canManage = (pid) => isAdmin || myRole(pid) === 'manager';
+  const canEdit   = (pid) => isAdmin || ['manager','editor'].includes(myRole(pid));
+  const nameOf = (id) => { const p = people.find(x => x.id === id); return p ? (p.full_name || p.email) : '—'; };
+
+  const createProject = async () => {
+    const name = newProj.trim(); if (!name) return;
+    const { error } = await tdb.from('projects').insert({ name, owner_id: userId, status: 'active' });
+    if (error) { setErr(error.message); return; }
+    setNewProj(''); await loadCore();
+  };
+  const addTask = async () => {
+    const title = newTask.trim(); if (!title || !sel) return;
+    const { error } = await tdb.from('tasks').insert({ project_id: sel, title, status: 'todo', priority: 'medium', created_by: userId });
+    if (error) { setErr(error.message); return; }
+    setNewTask(''); loadTasks(sel);
+  };
+  const NEXT = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
+  const patchTask = async (id, patch) => {
+    const { error } = await tdb.from('tasks').update(patch).eq('id', id);
+    if (error) { setErr(error.message); return; }
+    loadTasks(sel);
+  };
+  const delTask = async (id) => { await tdb.from('tasks').delete().eq('id', id); loadTasks(sel); };
+  const addMember = async () => {
+    if (!addPid || !sel) return;
+    const { error } = await tdb.from('project_members').insert({ project_id: sel, user_id: addPid, role: addRole });
+    if (error) { setErr(error.message); return; }
+    setAddPid(''); setAddRole('viewer'); await loadCore();
+  };
+  const setMemberRole = async (uid, role) => {
+    const { error } = await tdb.from('project_members').update({ role }).eq('project_id', sel).eq('user_id', uid);
+    if (error) { setErr(error.message); return; }
+    await loadCore();
+  };
+  const removeMember = async (uid) => {
+    await tdb.from('project_members').delete().eq('project_id', sel).eq('user_id', uid);
+    await loadCore();
+  };
+
+  const inp = { background:'var(--bg-base)', color:'var(--text-1)', border:'1px solid var(--border)', borderRadius:'6px', padding:'7px 9px', fontSize:'13px' };
+  const chip = (txt, col) => <span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
+  const PRI = { high:'var(--red)', medium:'var(--yellow)', low:'var(--text-3)' };
+  const STATUS_LABEL = { todo:'To Do', in_progress:'In Progress', done:'Done' };
+  const STATUS_COL = { todo:'var(--text-2)', in_progress:'var(--accent)', done:'var(--green)' };
+
+  if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/></div>;
+
+  const project = projects.find(p => p.id === sel);
+  const projMembers = members.filter(m => m.project_id === sel);
+  const candidates = people.filter(p => !projMembers.some(m => m.user_id === p.id));
+
+  return (
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}>
+        <div>
+          <h2 style={{margin:0}}>Projects</h2>
+          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>
+            You are {chip(appRole, 'var(--accent)')} {project && myRole(sel) ? <>· on this project: {chip(myRole(sel), STATUS_COL.in_progress)}</> : null}
+          </div>
+        </div>
+      </div>
+
+      {err && <div style={{padding:'8px 12px',marginBottom:'12px',background:'var(--accent-glow)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
+
+      <div style={{display:'flex',gap:'16px',alignItems:'flex-start',flexWrap:'wrap'}}>
+        {/* Project list */}
+        <div className="panel" style={{flex:'0 0 260px',minWidth:'240px'}}>
+          <div className="panel-header"><h3>All Projects</h3><span className="nav-badge">{projects.length}</span></div>
+          {projects.map(p => (
+            <div key={p.id} onClick={()=>setSel(p.id)} style={{padding:'10px 12px',borderRadius:'8px',cursor:'pointer',marginBottom:'6px',background: p.id===sel?'var(--bg-hover)':'transparent',border:`1px solid ${p.id===sel?'var(--accent-dim)':'transparent'}`}}>
+              <div style={{fontWeight:600,fontSize:'14px'}}>{p.name}</div>
+              <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>{members.filter(m=>m.project_id===p.id).length} members · {p.status}</div>
+            </div>
+          ))}
+          {!projects.length && <div style={{fontSize:'12px',color:'var(--text-3)',padding:'8px'}}>No projects yet.</div>}
+          {canCreateProject && (
+            <div style={{display:'flex',gap:'6px',marginTop:'10px'}}>
+              <input style={{...inp,flex:1}} placeholder="New project name" value={newProj} onChange={e=>setNewProj(e.target.value)} onKeyDown={e=>e.key==='Enter'&&createProject()} />
+              <button className="btn btn-primary btn-sm" onClick={createProject}>Add</button>
+            </div>
+          )}
+        </div>
+
+        {/* Project detail */}
+        <div style={{flex:1,minWidth:'320px'}}>
+          {!project ? <div className="panel"><div style={{color:'var(--text-3)',fontSize:'13px'}}>Select a project.</div></div> : (
+          <>
+            <div className="panel" style={{marginBottom:'16px'}}>
+              <div className="panel-header"><h3>{project.name}</h3>{chip(project.status,'var(--text-2)')}</div>
+              {project.description && <p style={{color:'var(--text-2)',fontSize:'13px',margin:'4px 0 0'}}>{project.description}</p>}
+              <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px'}}>Owner: {nameOf(project.owner_id)}</div>
+            </div>
+
+            {/* Members (managers/admins) */}
+            {canManage(sel) && (
+              <div className="panel" style={{marginBottom:'16px'}}>
+                <div className="panel-header"><h3>Members</h3><span className="nav-badge">{projMembers.length}</span></div>
+                {projMembers.map(m => (
+                  <div key={m.user_id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'6px 0',borderBottom:'1px solid var(--border)'}}>
+                    <div style={{flex:1,fontSize:'13px'}}>{nameOf(m.user_id)}{m.user_id===project.owner_id?' · owner':''}</div>
+                    <select value={m.role} onChange={e=>setMemberRole(m.user_id, e.target.value)} style={inp} disabled={m.user_id===project.owner_id}>
+                      <option value="manager">manager</option><option value="editor">editor</option><option value="viewer">viewer</option>
+                    </select>
+                    {m.user_id!==project.owner_id && <button className="btn btn-ghost btn-sm" onClick={()=>removeMember(m.user_id)}>Remove</button>}
+                  </div>
+                ))}
+                {!!candidates.length && (
+                  <div style={{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}}>
+                    <select style={{...inp,flex:1,minWidth:'140px'}} value={addPid} onChange={e=>setAddPid(e.target.value)}>
+                      <option value="">Add member…</option>
+                      {candidates.map(c=><option key={c.id} value={c.id}>{c.full_name||c.email}</option>)}
+                    </select>
+                    <select style={inp} value={addRole} onChange={e=>setAddRole(e.target.value)}>
+                      <option value="viewer">viewer</option><option value="editor">editor</option><option value="manager">manager</option>
+                    </select>
+                    <button className="btn btn-primary btn-sm" onClick={addMember}>Add</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tasks */}
+            <div className="panel">
+              <div className="panel-header"><h3>Tasks</h3><span className="nav-badge">{tasks.length}</span></div>
+              {canEdit(sel) && (
+                <div style={{display:'flex',gap:'6px',marginBottom:'12px'}}>
+                  <input style={{...inp,flex:1}} placeholder="New task…" value={newTask} onChange={e=>setNewTask(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addTask()} />
+                  <button className="btn btn-primary btn-sm" onClick={addTask}>Add</button>
+                </div>
+              )}
+              {['todo','in_progress','done'].map(st => {
+                const list = tasks.filter(t=>t.status===st);
+                if (!list.length) return null;
+                return (
+                  <div key={st} style={{marginBottom:'14px'}}>
+                    <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:STATUS_COL[st],marginBottom:'6px'}}>{STATUS_LABEL[st]} · {list.length}</div>
+                    {list.map(t => {
+                      const editable = canEdit(sel) || t.assignee_id===userId;
+                      return (
+                        <div key={t.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+                          <button title="Advance status" disabled={!editable} onClick={()=>patchTask(t.id,{status:NEXT[t.status]})}
+                            style={{width:'18px',height:'18px',borderRadius:'5px',border:`1px solid ${STATUS_COL[t.status]}`,background: t.status==='done'?'var(--green)':'transparent',cursor:editable?'pointer':'default',flexShrink:0}} />
+                          <div style={{flex:1,fontSize:'13px',textDecoration: t.status==='done'?'line-through':'none',color: t.status==='done'?'var(--text-3)':'var(--text-1)'}}>{t.title}</div>
+                          {chip(t.priority, PRI[t.priority])}
+                          {editable ? (
+                            <select value={t.assignee_id||''} onChange={e=>patchTask(t.id,{assignee_id:e.target.value||null})} style={{...inp,padding:'4px 6px',fontSize:'12px'}}>
+                              <option value="">Unassigned</option>
+                              {people.map(p=><option key={p.id} value={p.id}>{p.full_name||p.email}</option>)}
+                            </select>
+                          ) : <span style={{fontSize:'12px',color:'var(--text-3)'}}>{t.assignee_id?nameOf(t.assignee_id):'—'}</span>}
+                          {canManage(sel) && <button className="btn btn-ghost btn-sm" onClick={()=>delTask(t.id)}>✕</button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {!tasks.length && <div style={{fontSize:'12px',color:'var(--text-3)'}}>No tasks yet.</div>}
+            </div>
+          </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────
@@ -22134,6 +22352,7 @@ export default function App() {
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
     { id: 'chat',        icon: '✦',  label: robots[0]?.name || 'Assistant', badge: null },
     { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
+    { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
 
@@ -22211,6 +22430,7 @@ export default function App() {
               : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
+              : view==='tracker'     ? <TrackerView userId={user.id}/>
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
               : null}
               </ViewErrorBoundary>
