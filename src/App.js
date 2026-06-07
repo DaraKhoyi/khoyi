@@ -21856,7 +21856,156 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
 // ─────────────────────────────────────────
 // PROJECT TRACKER  (tracker schema — multi-user RBAC)
 // ─────────────────────────────────────────
-function TrackerView({ userId }) {
+function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, assignable, contacts, nameOf }) {
+  const [title, setTitle] = useState(initial?.title || '');
+  const [system, setSystem] = useState(initial?.priority_system || defaultSystem || 'eisenhower');
+  const [priority, setPriority] = useState(initial?.priority || 'medium');
+  const [quadrant, setQuadrant] = useState(initial?.eisenhower_quadrant || 'A');
+  const [rank, setRank] = useState(initial?.eisenhower_rank ?? 1);
+  const [dueDate, setDueDate] = useState(initial?.due_date || '');
+  const [notes, setNotes] = useState(initial?.notes || '');
+  const [status, setStatus] = useState(initial?.status || 'todo');
+  const [assignee, setAssignee] = useState(initial?.assignee_id || '');
+  const [contactId, setContactId] = useState(initial?.contact_id || '');
+  const [contactName, setContactName] = useState(initial?.contact_name || '');
+  const [cq, setCq] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState(null);
+
+  const contactOpts = (() => {
+    const q = cq.trim().toLowerCase();
+    if (!q) return [];
+    return (contacts || []).filter(c =>
+      (c.name||'').toLowerCase().includes(q) || (c.email||'').toLowerCase().includes(q) || (c.company||'').toLowerCase().includes(q)
+    ).slice(0, 8);
+  })();
+
+  async function suggestQuadrant() {
+    if (!title.trim()) return;
+    setSuggesting(true); setSuggestion(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('task-quadrant-suggest', { body: { title: title.trim(), notes: notes.trim()||null, due_date: dueDate||null } });
+      if (error || data?.error) setSuggestion({ error: error?.message || data?.error });
+      else { setSuggestion(data);
+        if (system==='eisenhower' && data.quadrant) setQuadrant(data.quadrant);
+        else { const map={A:'high',B:'medium',C:'medium',D:'low'}; if (data.quadrant) setPriority(map[data.quadrant]); } }
+    } catch(e){ setSuggestion({ error: e.message }); } finally { setSuggesting(false); }
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const base = { title:title.trim(), notes:notes.trim()||null, due_date:dueDate||null, status,
+      assignee_id: assignee||null, contact_id: contactId||null, contact_name: contactName||null, priority_system: system };
+    if (system==='eisenhower') onSave({ ...base, priority:'medium', eisenhower_quadrant:quadrant, eisenhower_rank:Math.max(1,parseInt(rank,10)||1) });
+    else onSave({ ...base, priority, eisenhower_quadrant:null, eisenhower_rank:null });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
+          <div className="modal-header-actions">
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete">🗑</button>}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
+        </div>
+        <form onSubmit={submit}>
+          <div className="form-group"><label className="form-label">Task</label>
+            <input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required/></div>
+          <div className="form-row">
+            <div className="form-group" style={{flex:1}}><label className="form-label">Assign to</label>
+              <select className="form-select" value={assignee} onChange={e=>setAssignee(e.target.value)}>
+                <option value="">Unassigned</option>
+                {assignable.map(p=><option key={p.id} value={p.id}>{p.full_name||p.email}</option>)}
+              </select></div>
+            <div className="form-group" style={{flex:1}}><label className="form-label">Status</label>
+              <select className="form-select" value={status} onChange={e=>setStatus(e.target.value)}>
+                <option value="todo">To Do</option><option value="in_progress">In Progress</option><option value="done">Done</option>
+              </select></div>
+          </div>
+          <div className="form-group"><label className="form-label">Priority System</label>
+            <div style={{display:'flex',gap:'6px'}}>
+              <button type="button" className={`btn btn-sm ${system==='eisenhower'?'btn-primary':'btn-ghost'}`} onClick={()=>setSystem('eisenhower')}>Eisenhower (A1, B2…)</button>
+              <button type="button" className={`btn btn-sm ${system==='simple'?'btn-primary':'btn-ghost'}`} onClick={()=>setSystem('simple')}>Simple (High/Med/Low)</button>
+            </div></div>
+          {system==='eisenhower' ? (
+            <div className="form-row">
+              <div className="form-group" style={{flex:2}}>
+                <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'space-between'}}>
+                  <span>Quadrant</span>
+                  <button type="button" onClick={suggestQuadrant} disabled={!title.trim()||suggesting} className="btn btn-sm btn-ghost" style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{suggesting?'…thinking':'✨ Suggest'}</button>
+                </label>
+                <select className="form-select" value={quadrant} onChange={e=>setQuadrant(e.target.value)}>
+                  {QUADRANTS.map(q=><option key={q.letter} value={q.letter}>{q.label} · {q.short}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{flex:1}}><label className="form-label">Rank</label>
+                <input className="form-input" type="number" min="1" value={rank} onChange={e=>setRank(e.target.value)}/></div>
+            </div>
+          ) : (
+            <div className="form-group">
+              <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'space-between'}}>
+                <span>Priority</span>
+                <button type="button" onClick={suggestQuadrant} disabled={!title.trim()||suggesting} className="btn btn-sm btn-ghost" style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{suggesting?'…thinking':'✨ Suggest'}</button>
+              </label>
+              <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
+                <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+              </select>
+            </div>
+          )}
+          {suggestion && !suggestion.error && (
+            <div style={{padding:'8px 12px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'6px',marginBottom:'10px',fontSize:'12px'}}>
+              <div style={{color:'var(--accent)',fontWeight:600,marginBottom:'2px'}}>✨ Claude suggests <strong>{suggestion.quadrant}</strong> · confidence {Math.round((suggestion.confidence||0)*100)}%</div>
+              <div style={{color:'var(--text-2)',lineHeight:1.4}}>{suggestion.reasoning}</div>
+            </div>
+          )}
+          {suggestion?.error && <div style={{padding:'8px 12px',background:'rgba(239,68,68,0.1)',border:'1px solid #ef4444',borderRadius:'6px',marginBottom:'10px',fontSize:'12px',color:'#ef4444'}}>Suggest failed: {suggestion.error}</div>}
+          <div className="form-row">
+            <div className="form-group" style={{flex:1}}>
+              <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span>Due Date</span>
+                {dueDate && <button type="button" onClick={()=>setDueDate('')} style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'10px',cursor:'pointer'}}>× Clear</button>}
+              </label>
+              <input className="form-input" type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Linked contact</label>
+            {contactId ? (
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                <span style={{flex:1,fontSize:'13px',padding:'7px 9px',background:'var(--bg-hover)',borderRadius:'6px'}}>🔗 {contactName||nameOf(contactId)}</span>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setContactId('');setContactName('');}}>Clear</button>
+              </div>
+            ) : (
+              <>
+                <input className="form-input" placeholder="Search contacts…" value={cq} onChange={e=>setCq(e.target.value)}/>
+                {!!contactOpts.length && (
+                  <div style={{border:'1px solid var(--border)',borderRadius:'6px',marginTop:'4px',maxHeight:'160px',overflowY:'auto'}}>
+                    {contactOpts.map(c=>(
+                      <div key={c.id} onClick={()=>{setContactId(c.id);setContactName(c.name||'');setCq('');}} style={{padding:'7px 10px',cursor:'pointer',fontSize:'13px',borderBottom:'1px solid var(--border)'}}>
+                        {c.name}{c.company?<span style={{color:'var(--text-3)'}}> · {c.company}</span>:null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <div className="form-group"><label className="form-label">Notes</label>
+            <textarea className="form-input" rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Details, links, context…"/></div>
+          <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'8px'}}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary">{initial?'Save':'Add Task'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TrackerView({ userId, defaultSystem, contacts = [] }) {
   const tdb = supabase.schema('tracker');
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState(null);
@@ -21867,112 +22016,97 @@ function TrackerView({ userId }) {
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState(null);
   const [newProj, setNewProj] = useState('');
-  const [newTask, setNewTask] = useState('');
   const [addPid, setAddPid] = useState('');
   const [addRole, setAddRole] = useState('viewer');
+  const [editing, setEditing] = useState(null);
+  const [showDone, setShowDone] = useState(true);
 
   const loadCore = async () => {
     setLoading(true); setErr(null);
     try {
-      const [pf, pe, pr, mm] = await Promise.all([
+      const [pf,pe,pr,mm] = await Promise.all([
         tdb.from('profiles').select('*').eq('id', userId).maybeSingle(),
         tdb.from('profiles').select('id,email,full_name,role').order('full_name'),
         tdb.from('projects').select('*').order('created_at'),
         tdb.from('project_members').select('*'),
       ]);
       if (pr.error) throw pr.error;
-      setMe(pf.data); setPeople(pe.data || []);
-      setProjects(pr.data || []); setMembers(mm.data || []);
-      setSel(s => s || (pr.data && pr.data[0] ? pr.data[0].id : null));
-    } catch (e) { setErr(e.message || String(e)); }
+      setMe(pf.data); setPeople(pe.data||[]); setProjects(pr.data||[]); setMembers(mm.data||[]);
+      setSel(s=> s || (pr.data && pr.data[0] ? pr.data[0].id : null));
+    } catch(e){ setErr(e.message||String(e)); }
     setLoading(false);
   };
-  useEffect(() => { loadCore(); }, []);            // eslint-disable-line
+  useEffect(()=>{ loadCore(); }, []);   // eslint-disable-line
 
-  const loadTasks = async (pid) => {
-    if (!pid) { setTasks([]); return; }
-    const { data } = await tdb.from('tasks').select('*').eq('project_id', pid).order('created_at');
-    setTasks(data || []);
-  };
-  useEffect(() => { loadTasks(sel); }, [sel]);      // eslint-disable-line
+  const loadTasks = async (pid) => { if(!pid){ setTasks([]); return; } const { data } = await tdb.from('tasks').select('*').eq('project_id', pid); setTasks(data||[]); };
+  useEffect(()=>{ loadTasks(sel); }, [sel]);   // eslint-disable-line
 
-  const appRole = (me && me.role) || 'user';
-  const isAdmin = appRole === 'admin';
-  const myRole = (pid) => {
-    const m = members.find(x => x.project_id === pid && x.user_id === userId);
-    return m ? m.role : (isAdmin ? 'manager' : null);
-  };
-  const canCreateProject = isAdmin || appRole === 'manager';
-  const canManage = (pid) => isAdmin || myRole(pid) === 'manager';
-  const canEdit   = (pid) => isAdmin || ['manager','editor'].includes(myRole(pid));
-  const nameOf = (id) => { const p = people.find(x => x.id === id); return p ? (p.full_name || p.email) : '—'; };
+  const appRole = (me&&me.role)||'user';
+  const isAdmin = appRole==='admin';
+  const myRole = (pid)=>{ const m=members.find(x=>x.project_id===pid && x.user_id===userId); return m?m.role:(isAdmin?'manager':null); };
+  const canCreateProject = isAdmin || appRole==='manager';
+  const canManage = (pid)=> isAdmin || myRole(pid)==='manager';
+  const canEdit = (pid)=> isAdmin || ['manager','editor'].includes(myRole(pid));
+  const nameOf = (id)=>{ const p=people.find(x=>x.id===id); return p?(p.full_name||p.email):'—'; };
 
-  const createProject = async () => {
-    const name = newProj.trim(); if (!name) return;
-    const { error } = await tdb.from('projects').insert({ name, owner_id: userId, status: 'active' });
-    if (error) { setErr(error.message); return; }
-    setNewProj(''); await loadCore();
-  };
-  const addTask = async () => {
-    const title = newTask.trim(); if (!title || !sel) return;
-    const { error } = await tdb.from('tasks').insert({ project_id: sel, title, status: 'todo', priority: 'medium', created_by: userId });
-    if (error) { setErr(error.message); return; }
-    setNewTask(''); loadTasks(sel);
-  };
-  const NEXT = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
-  const patchTask = async (id, patch) => {
-    const { error } = await tdb.from('tasks').update(patch).eq('id', id);
-    if (error) { setErr(error.message); return; }
-    loadTasks(sel);
-  };
-  const delTask = async (id) => { await tdb.from('tasks').delete().eq('id', id); loadTasks(sel); };
-  const addMember = async () => {
-    if (!addPid || !sel) return;
-    const { error } = await tdb.from('project_members').insert({ project_id: sel, user_id: addPid, role: addRole });
-    if (error) { setErr(error.message); return; }
-    setAddPid(''); setAddRole('viewer'); await loadCore();
-  };
-  const setMemberRole = async (uid, role) => {
-    const { error } = await tdb.from('project_members').update({ role }).eq('project_id', sel).eq('user_id', uid);
-    if (error) { setErr(error.message); return; }
-    await loadCore();
-  };
-  const removeMember = async (uid) => {
-    await tdb.from('project_members').delete().eq('project_id', sel).eq('user_id', uid);
-    await loadCore();
-  };
+  const projMembers = members.filter(m=>m.project_id===sel);
+  const assignable = (()=>{ const ids=new Set(projMembers.map(m=>m.user_id)); const proj=projects.find(p=>p.id===sel); if(proj) ids.add(proj.owner_id); return people.filter(p=>ids.has(p.id)); })();
 
-  const inp = { background:'var(--bg-base)', color:'var(--text-1)', border:'1px solid var(--border)', borderRadius:'6px', padding:'7px 9px', fontSize:'13px' };
-  const chip = (txt, col) => <span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
-  const PRI = { high:'var(--red)', medium:'var(--yellow)', low:'var(--text-3)' };
-  const STATUS_LABEL = { todo:'To Do', in_progress:'In Progress', done:'Done' };
-  const STATUS_COL = { todo:'var(--text-2)', in_progress:'var(--accent)', done:'var(--green)' };
+  const createProject = async ()=>{ const name=newProj.trim(); if(!name) return; const {error}=await tdb.from('projects').insert({name,owner_id:userId,status:'active'}); if(error){setErr(error.message);return;} setNewProj(''); await loadCore(); };
+  const saveTask = async (data)=>{
+    if (editing && editing.id) { const {error}=await tdb.from('tasks').update(data).eq('id',editing.id); if(error){setErr(error.message);return;} }
+    else { const {error}=await tdb.from('tasks').insert({ ...data, project_id:sel, created_by:userId }); if(error){setErr(error.message);return;} }
+    setEditing(null); loadTasks(sel);
+  };
+  const removeTask = async (t)=>{ await tdb.from('tasks').delete().eq('id',t.id); setEditing(null); loadTasks(sel); };
+  const toggleComplete = async (t)=>{ await tdb.from('tasks').update({status: t.status==='done'?'todo':'done'}).eq('id',t.id); loadTasks(sel); };
+  const addMember = async ()=>{ if(!addPid||!sel) return; const {error}=await tdb.from('project_members').insert({project_id:sel,user_id:addPid,role:addRole}); if(error){setErr(error.message);return;} setAddPid('');setAddRole('viewer'); await loadCore(); };
+  const setMemberRole = async (uid,role)=>{ await tdb.from('project_members').update({role}).eq('project_id',sel).eq('user_id',uid); await loadCore(); };
+  const removeMember = async (uid)=>{ await tdb.from('project_members').delete().eq('project_id',sel).eq('user_id',uid); await loadCore(); };
+
+  const chip=(txt,col)=><span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
+  const inp={background:'var(--bg-base)',color:'var(--text-1)',border:'1px solid var(--border)',borderRadius:'6px',padding:'7px 9px',fontSize:'13px'};
 
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/></div>;
 
-  const project = projects.find(p => p.id === sel);
-  const projMembers = members.filter(m => m.project_id === sel);
-  const candidates = people.filter(p => !projMembers.some(m => m.user_id === p.id));
+  const project = projects.find(p=>p.id===sel);
+  const candidates = people.filter(p=>!projMembers.some(m=>m.user_id===p.id));
+  const overdue = (t)=> t.due_date && t.status!=='done' && t.due_date < todayISO();
+
+  const renderRow = (t)=>{
+    const editable = canEdit(sel) || t.assignee_id===userId;
+    return (
+      <div key={t.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+        <button title="Complete" disabled={!editable} onClick={()=>toggleComplete(t)} style={{width:'18px',height:'18px',borderRadius:'5px',border:`1px solid ${t.status==='done'?'var(--green)':'var(--text-3)'}`,background:t.status==='done'?'var(--green)':'transparent',cursor:editable?'pointer':'default',flexShrink:0}}/>
+        <span className={priorityClass(t)} style={{fontSize:'10px',fontWeight:700,minWidth:'26px',textAlign:'center',padding:'2px 4px',borderRadius:'4px'}}>{priorityLabel(t)}</span>
+        <div style={{flex:1,cursor:editable?'pointer':'default'}} onClick={()=>editable&&setEditing(t)}>
+          <div style={{fontSize:'13px',textDecoration:t.status==='done'?'line-through':'none',color:t.status==='done'?'var(--text-3)':'var(--text-1)'}}>{t.title}</div>
+          <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
+            {t.assignee_id && <span>👤 {nameOf(t.assignee_id)}</span>}
+            {t.contact_id && <span>🔗 {t.contact_name||'contact'}</span>}
+            {t.due_date && <span style={{color: overdue(t)?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue(t)?' · overdue':''}</span>}
+          </div>
+        </div>
+        {canManage(sel) && <button className="btn btn-ghost btn-sm" onClick={()=>removeTask(t)}>✕</button>}
+      </div>
+    );
+  };
 
   return (
     <div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}>
         <div>
           <h2 style={{margin:0}}>Projects</h2>
-          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>
-            You are {chip(appRole, 'var(--accent)')} {project && myRole(sel) ? <>· on this project: {chip(myRole(sel), STATUS_COL.in_progress)}</> : null}
-          </div>
+          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>You are {chip(appRole,'var(--accent)')} {project&&myRole(sel)?<>· on this project: {chip(myRole(sel),'var(--accent)')}</>:null}</div>
         </div>
       </div>
-
       {err && <div style={{padding:'8px 12px',marginBottom:'12px',background:'var(--accent-glow)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 
       <div style={{display:'flex',gap:'16px',alignItems:'flex-start',flexWrap:'wrap'}}>
-        {/* Project list */}
         <div className="panel" style={{flex:'0 0 260px',minWidth:'240px'}}>
           <div className="panel-header"><h3>All Projects</h3><span className="nav-badge">{projects.length}</span></div>
-          {projects.map(p => (
-            <div key={p.id} onClick={()=>setSel(p.id)} style={{padding:'10px 12px',borderRadius:'8px',cursor:'pointer',marginBottom:'6px',background: p.id===sel?'var(--bg-hover)':'transparent',border:`1px solid ${p.id===sel?'var(--accent-dim)':'transparent'}`}}>
+          {projects.map(p=>(
+            <div key={p.id} onClick={()=>setSel(p.id)} style={{padding:'10px 12px',borderRadius:'8px',cursor:'pointer',marginBottom:'6px',background:p.id===sel?'var(--bg-hover)':'transparent',border:`1px solid ${p.id===sel?'var(--accent-dim)':'transparent'}`}}>
               <div style={{fontWeight:600,fontSize:'14px'}}>{p.name}</div>
               <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>{members.filter(m=>m.project_id===p.id).length} members · {p.status}</div>
             </div>
@@ -21980,13 +22114,12 @@ function TrackerView({ userId }) {
           {!projects.length && <div style={{fontSize:'12px',color:'var(--text-3)',padding:'8px'}}>No projects yet.</div>}
           {canCreateProject && (
             <div style={{display:'flex',gap:'6px',marginTop:'10px'}}>
-              <input style={{...inp,flex:1}} placeholder="New project name" value={newProj} onChange={e=>setNewProj(e.target.value)} onKeyDown={e=>e.key==='Enter'&&createProject()} />
+              <input style={{...inp,flex:1}} placeholder="New project name" value={newProj} onChange={e=>setNewProj(e.target.value)} onKeyDown={e=>e.key==='Enter'&&createProject()}/>
               <button className="btn btn-primary btn-sm" onClick={createProject}>Add</button>
             </div>
           )}
         </div>
 
-        {/* Project detail */}
         <div style={{flex:1,minWidth:'320px'}}>
           {!project ? <div className="panel"><div style={{color:'var(--text-3)',fontSize:'13px'}}>Select a project.</div></div> : (
           <>
@@ -21996,14 +22129,13 @@ function TrackerView({ userId }) {
               <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px'}}>Owner: {nameOf(project.owner_id)}</div>
             </div>
 
-            {/* Members (managers/admins) */}
             {canManage(sel) && (
               <div className="panel" style={{marginBottom:'16px'}}>
                 <div className="panel-header"><h3>Members</h3><span className="nav-badge">{projMembers.length}</span></div>
-                {projMembers.map(m => (
+                {projMembers.map(m=>(
                   <div key={m.user_id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'6px 0',borderBottom:'1px solid var(--border)'}}>
                     <div style={{flex:1,fontSize:'13px'}}>{nameOf(m.user_id)}{m.user_id===project.owner_id?' · owner':''}</div>
-                    <select value={m.role} onChange={e=>setMemberRole(m.user_id, e.target.value)} style={inp} disabled={m.user_id===project.owner_id}>
+                    <select value={m.role} onChange={e=>setMemberRole(m.user_id,e.target.value)} style={inp} disabled={m.user_id===project.owner_id}>
                       <option value="manager">manager</option><option value="editor">editor</option><option value="viewer">viewer</option>
                     </select>
                     {m.user_id!==project.owner_id && <button className="btn btn-ghost btn-sm" onClick={()=>removeMember(m.user_id)}>Remove</button>}
@@ -22024,48 +22156,49 @@ function TrackerView({ userId }) {
               </div>
             )}
 
-            {/* Tasks */}
             <div className="panel">
-              <div className="panel-header"><h3>Tasks</h3><span className="nav-badge">{tasks.length}</span></div>
-              {canEdit(sel) && (
-                <div style={{display:'flex',gap:'6px',marginBottom:'12px'}}>
-                  <input style={{...inp,flex:1}} placeholder="New task…" value={newTask} onChange={e=>setNewTask(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addTask()} />
-                  <button className="btn btn-primary btn-sm" onClick={addTask}>Add</button>
+              <div className="panel-header">
+                <h3>Tasks</h3>
+                <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+                  <span className="nav-badge">{tasks.filter(t=>t.status!=='done').length} open</span>
+                  {canEdit(sel) && <button className="btn btn-primary btn-sm" onClick={()=>setEditing({})}>+ New Task</button>}
                 </div>
-              )}
-              {['todo','in_progress','done'].map(st => {
-                const list = tasks.filter(t=>t.status===st);
+              </div>
+              {['todo','in_progress','done'].map(st=>{
+                const list = sortTasks(tasks.filter(t=>t.status===st));
+                if (st==='done' && !showDone) return list.length ? <div key={st} style={{margin:'10px 0'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowDone(true)}>Show {list.length} done</button></div> : null;
                 if (!list.length) return null;
+                const col = st==='todo'?'var(--text-2)':st==='in_progress'?'var(--accent)':'var(--green)';
+                const lbl = st==='todo'?'To Do':st==='in_progress'?'In Progress':'Done';
                 return (
                   <div key={st} style={{marginBottom:'14px'}}>
-                    <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:STATUS_COL[st],marginBottom:'6px'}}>{STATUS_LABEL[st]} · {list.length}</div>
-                    {list.map(t => {
-                      const editable = canEdit(sel) || t.assignee_id===userId;
-                      return (
-                        <div key={t.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
-                          <button title="Advance status" disabled={!editable} onClick={()=>patchTask(t.id,{status:NEXT[t.status]})}
-                            style={{width:'18px',height:'18px',borderRadius:'5px',border:`1px solid ${STATUS_COL[t.status]}`,background: t.status==='done'?'var(--green)':'transparent',cursor:editable?'pointer':'default',flexShrink:0}} />
-                          <div style={{flex:1,fontSize:'13px',textDecoration: t.status==='done'?'line-through':'none',color: t.status==='done'?'var(--text-3)':'var(--text-1)'}}>{t.title}</div>
-                          {chip(t.priority, PRI[t.priority])}
-                          {editable ? (
-                            <select value={t.assignee_id||''} onChange={e=>patchTask(t.id,{assignee_id:e.target.value||null})} style={{...inp,padding:'4px 6px',fontSize:'12px'}}>
-                              <option value="">Unassigned</option>
-                              {people.map(p=><option key={p.id} value={p.id}>{p.full_name||p.email}</option>)}
-                            </select>
-                          ) : <span style={{fontSize:'12px',color:'var(--text-3)'}}>{t.assignee_id?nameOf(t.assignee_id):'—'}</span>}
-                          {canManage(sel) && <button className="btn btn-ghost btn-sm" onClick={()=>delTask(t.id)}>✕</button>}
-                        </div>
-                      );
-                    })}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                      <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:col}}>{lbl} · {list.length}</div>
+                      {st==='done' && <button className="btn btn-ghost btn-sm" onClick={()=>setShowDone(false)}>Hide</button>}
+                    </div>
+                    {list.map(renderRow)}
                   </div>
                 );
               })}
-              {!tasks.length && <div style={{fontSize:'12px',color:'var(--text-3)'}}>No tasks yet.</div>}
+              {!tasks.length && <div style={{fontSize:'12px',color:'var(--text-3)'}}>No tasks yet. {canEdit(sel)?'Add the first one.':''}</div>}
             </div>
           </>
           )}
         </div>
       </div>
+
+      {editing && (
+        <TrackerTaskModal
+          initial={editing.id?editing:null}
+          defaultSystem={defaultSystem}
+          assignable={assignable}
+          contacts={contacts}
+          nameOf={nameOf}
+          onClose={()=>setEditing(null)}
+          onSave={saveTask}
+          onDelete={canManage(sel)?removeTask:null}
+        />
+      )}
     </div>
   );
 }
@@ -22430,7 +22563,7 @@ export default function App() {
               : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
-              : view==='tracker'     ? <TrackerView userId={user.id}/>
+              : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
               : null}
               </ViewErrorBoundary>
