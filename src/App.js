@@ -22204,6 +22204,54 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
 }
 
 // ─────────────────────────────────────────
+// PROJECT TASKS in personal Tasks view (assigned to / created by me)
+// ─────────────────────────────────────────
+function ProjectTasksPanel({ userId }) {
+  const tdb = supabase.schema('tracker');
+  const [rows, setRows] = useState([]);
+  const [projNames, setProjNames] = useState({});
+  const [loaded, setLoaded] = useState(false);
+  const load = async () => {
+    try {
+      const [tk, pr] = await Promise.all([
+        tdb.from('tasks').select('*').or(`assignee_id.eq.${userId},created_by.eq.${userId}`),
+        tdb.from('projects').select('id,name'),
+      ]);
+      const names = {}; (pr.data||[]).forEach(p=>names[p.id]=p.name);
+      setProjNames(names); setRows(tk.data||[]);
+    } catch (e) { /* tracker may be empty */ }
+    setLoaded(true);
+  };
+  useEffect(()=>{ load(); }, []);   // eslint-disable-line
+  const toggle = async (t)=>{ await tdb.from('tasks').update({ status: t.status==='done'?'todo':'done' }).eq('id', t.id); load(); };
+  if (loaded && !rows.length) return null;
+  const open = rows.filter(t=>t.status!=='done');
+  return (
+    <div className="panel" style={{marginBottom:'16px'}}>
+      <div className="panel-header"><h3>🗂️ From your projects</h3><span className="nav-badge">{open.length} open</span></div>
+      {!loaded ? <div style={{fontSize:'12px',color:'var(--text-3)'}}>Loading…</div> :
+        sortTasks(rows).map(t=>{
+          const overdue = t.due_date && t.status!=='done' && t.due_date < todayISO();
+          return (
+            <div key={t.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+              <button title="Complete" onClick={()=>toggle(t)} style={{width:'18px',height:'18px',borderRadius:'5px',border:`1px solid ${t.status==='done'?'var(--green)':'var(--text-3)'}`,background:t.status==='done'?'var(--green)':'transparent',cursor:'pointer',flexShrink:0}}/>
+              <span className={priorityClass(t)} style={{fontSize:'10px',fontWeight:700,minWidth:'26px',textAlign:'center',padding:'2px 4px',borderRadius:'4px'}}>{priorityLabel(t)}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:'13px',textDecoration:t.status==='done'?'line-through':'none',color:t.status==='done'?'var(--text-3)':'var(--text-1)'}}>{t.title}</div>
+                <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
+                  <span>📁 {projNames[t.project_id]||'Project'}</span>
+                  {t.contact_id && <span>🔗 {t.contact_name||'contact'}</span>}
+                  {t.due_date && <span style={{color:overdue?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue?' · overdue':''}</span>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────
 export default function App() {
@@ -22548,7 +22596,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
-              : view==='tasks'       ? <TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/>
+              : view==='tasks'       ? <><ProjectTasksPanel userId={user.id}/><TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
