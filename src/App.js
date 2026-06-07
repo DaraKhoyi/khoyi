@@ -12706,6 +12706,37 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     else if (viewMode === 'year') d.setMonth(d.getMonth() + 6*delta); // ±6 months
     setCursor(d);
   }
+
+  // ─── Touch swipe — change day/week by ±1 with a horizontal swipe ───
+  // Active only on day/week views so we don't fight month-grid taps. Rejects
+  // vertical drift so the inner time timelines can still scroll normally.
+  const touchRef = useRef(null);
+  const [swipeAnim, setSwipeAnim] = useState(null);  // 'left' | 'right' | null
+  function onSwipeTouchStart(e) {
+    if (viewMode !== 'day' && viewMode !== 'week') return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    touchRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }
+  function onSwipeTouchEnd(e) {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (!start) return;
+    if (viewMode !== 'day' && viewMode !== 'week') return;
+    const t = (e.changedTouches && e.changedTouches[0]) || null;
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    const dt = Date.now() - start.t;
+    // Thresholds: must travel ≥50px horizontally, dominated by horizontal (|dx|>2·|dy|),
+    // and complete within ~700ms so a slow drag while reading doesn't trigger nav.
+    if (Math.abs(dx) < 50 || Math.abs(dx) < 2 * Math.abs(dy) || dt > 700) return;
+    const delta = dx < 0 ? 1 : -1;   // swipe left → next, swipe right → prev
+    setSwipeAnim(delta > 0 ? 'left' : 'right');
+    shiftCursor(delta);
+    // Clear the slide animation class after it plays
+    setTimeout(() => setSwipeAnim(null), 220);
+  }
   function goToday() {
     setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   }
@@ -12908,7 +12939,12 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
           </div>
           <button className="btn btn-ghost btn-sm" onClick={goToday}>Today</button>
         </div>
-        <div className="panel-body" style={{padding:viewMode==='month'?'10px':'0'}}>
+        <div
+          className={`panel-body${swipeAnim ? ' cal-swipe-' + swipeAnim : ''}`}
+          style={{padding:viewMode==='month'?'10px':'0'}}
+          onTouchStart={onSwipeTouchStart}
+          onTouchEnd={onSwipeTouchEnd}
+        >
           {viewMode==='month' && <MonthGrid
             cells={cells} month={month} today={today}
             eventsForDay={eventsForDay}

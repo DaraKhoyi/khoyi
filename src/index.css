@@ -407,6 +407,12 @@ body {
 .chat-send-btn:hover:not(:disabled) { background: #d4ba73; }
 .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ─── Calendar swipe slide animation (day/week views) ──────── */
+@keyframes cal-slide-in-left  { from { transform: translateX(24px);  opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
+@keyframes cal-slide-in-right { from { transform: translateX(-24px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
+.cal-swipe-left  { animation: cal-slide-in-left  0.22s ease-out; }
+.cal-swipe-right { animation: cal-slide-in-right 0.22s ease-out; }
+
 /* ─── Chat image attach + receipt card ─────────────────── */
 .chat-attach-btn {
   background: var(--bg-base);
