@@ -13849,11 +13849,49 @@ async function sysCheckAnthropic() {
   return { status: 'healthy', detail: bits.length ? bits.join(' · ') : 'API reachable' };
 }
 
+function sysFmtUntil(ts) {
+  if (!ts) return null;
+  const s = Math.round((new Date(ts).getTime() - Date.now()) / 1000);
+  if (s <= 0) return 'expired';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+async function sysCheckPush() {
+  const { data, error } = await supabase.from('email_accounts')
+    .select('email_address, watch_expires_at, is_active');
+  if (error) return { status: 'down', detail: error.message };
+  const active = (data || []).filter(a => a.is_active);
+  if (!active.length) return { status: 'unconfigured', detail: 'No active accounts' };
+  const now = Date.now();
+  const accounts = active.map(a => {
+    let st = 'healthy', issue = 'Armed';
+    if (!a.watch_expires_at) { st = 'down'; issue = 'Not armed'; }
+    else {
+      const ms = new Date(a.watch_expires_at).getTime() - now;
+      if (ms <= 0) { st = 'down'; issue = 'Watch expired'; }
+      else if (ms < 24 * 60 * 60 * 1000) { st = 'degraded'; issue = `Armed · ${sysFmtUntil(a.watch_expires_at)} left`; }
+      else { issue = `Armed · ${sysFmtUntil(a.watch_expires_at)} left`; }
+    }
+    return { email: a.email_address, st, issue };
+  });
+  const worst = accounts.reduce((w, a) => SYS_RANK[a.st] > SYS_RANK[w] ? a.st : w, 'healthy');
+  const bad = accounts.filter(a => a.st !== 'healthy').length;
+  const detail = bad
+    ? `${bad} of ${accounts.length} watch(es) need attention`
+    : `Live push armed on ${accounts.length} account${accounts.length !== 1 ? 's' : ''} · renews daily`;
+  return { status: worst, detail, meta: { accounts } };
+}
+
 const SYSTEMS = [
   { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
   { id: 'supabase',  icon: '⚡', name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
   { id: 'gmail_dara',  icon: '📬', name: 'Gmail (dara@brokerdara.com)', category: 'Integration', description: 'Google email account & sync', check: () => sysCheckGmailAccount('dara@brokerdara.com') },
   { id: 'gmail_khoyi', icon: '📬', name: 'Gmail (khoyi1234@gmail.com)', category: 'Integration', description: 'Google email + calendar account & sync', check: () => sysCheckGmailAccount('khoyi1234@gmail.com') },
+  { id: 'push',        icon: '📡', name: 'Live Sync (Push)', category: 'Real-time', description: 'Gmail push notifications → instant sync (watch auto-renews daily)', check: sysCheckPush },
   { id: 'gcal',      icon: '📅', name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
   { id: 'anthropic', icon: '✦',  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: sysCheckAnthropic },
 ];
@@ -13989,7 +14027,7 @@ function SystemsView() {
             </div>
           )}
 
-          {sys.id === 'gmail' && r.meta?.accounts?.length > 0 && (
+          {r.meta?.accounts?.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Accounts</div>
               {r.meta.accounts.map((a, i) => (
