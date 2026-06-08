@@ -13700,21 +13700,51 @@ async function sysCheckAuth() {
   return { status: 'healthy', detail: exp ? `Token valid until ${exp.toLocaleTimeString()}` : 'Session active' };
 }
 
+function sysFmtAgo(ts) {
+  if (!ts) return null;
+  const s = Math.round((Date.now() - new Date(ts).getTime()) / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 async function sysCheckGmail() {
   const { data, error } = await supabase.from('email_accounts')
-    .select('email_address, token_expires_at, last_sync_at, last_sync_error, is_active, purposes');
+    .select('email_address, last_sync_at, last_sync_error, is_active, purposes')
+    .order('email_address');
   if (error) return { status: 'down', detail: error.message };
   if (!data || !data.length) return { status: 'unconfigured', detail: 'No email accounts connected' };
+  // Sync is driven by a 5-min cron, so freshness is the real heartbeat — NOT
+  // token expiry (access tokens churn hourly by design). Healthy < 15m,
+  // Stale (degraded) 15m–24h, Stalled (down) > 24h.
+  const FRESH_MS = 15 * 60 * 1000;
+  const STALE_MS = 24 * 60 * 60 * 1000;
   const now = Date.now();
   const accounts = data.map(a => {
-    let st = 'healthy', issue = 'OK';
-    if (a.is_active === false) { st = 'down'; issue = 'Inactive'; }
-    else if (a.last_sync_error) { st = 'degraded'; issue = 'Sync error'; }
-    else if (a.token_expires_at && new Date(a.token_expires_at).getTime() < now) { st = 'degraded'; issue = 'Token expired'; }
+    const agoTxt = sysFmtAgo(a.last_sync_at);
+    let st = 'healthy', issue = agoTxt ? `Synced ${agoTxt}` : 'Synced';
+    if (a.is_active === false) {
+      st = 'down'; issue = 'Inactive';
+    } else if (!a.last_sync_at) {
+      st = 'down'; issue = 'Never synced';
+    } else {
+      const age = now - new Date(a.last_sync_at).getTime();
+      if (age > STALE_MS) { st = 'down'; issue = `Stalled · ${agoTxt}`; }
+      else if (age > FRESH_MS) { st = 'degraded'; issue = `Stale · ${agoTxt}`; }
+    }
+    // A logged sync error is always worth flagging (at least degraded).
+    if (a.last_sync_error && st === 'healthy') st = 'degraded';
     return { email: a.email_address || '(unknown)', st, issue };
   });
   const worst = accounts.reduce((w, a) => SYS_RANK[a.st] > SYS_RANK[w] ? a.st : w, 'healthy');
-  return { status: worst, detail: `${accounts.length} account${accounts.length !== 1 ? 's' : ''} connected`, meta: { accounts } };
+  const bad = accounts.filter(a => a.st !== 'healthy').length;
+  const detail = bad === 0
+    ? `${accounts.length} account${accounts.length !== 1 ? 's' : ''} syncing normally`
+    : `${bad} of ${accounts.length} account${accounts.length !== 1 ? 's' : ''} not syncing`;
+  return { status: worst, detail, meta: { accounts } };
 }
 
 async function sysCheckCalendarSync() {
