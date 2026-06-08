@@ -898,6 +898,17 @@ function isTopPriority(t) {
   return t.priority === 'high';
 }
 // Date helpers (local-time YYYY-MM-DD comparison)
+// Guards date <input> values: a missing or implausible date (year < 2015 or
+// > 2100, usually a mis-scrolled year wheel) renders as empty so the native
+// picker opens on the current month instead of getting "stuck" in the past.
+function cleanDateInput(v) {
+  if (!v) return '';
+  const s = String(v).slice(0, 10);
+  const y = parseInt(s.slice(0, 4), 10);
+  if (!y || y < 2015 || y > 2100) return '';
+  return s;
+}
+
 function todayISO() {
   const d = new Date();
   const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
@@ -9922,13 +9933,13 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
         <div className="form-row">
           <div className="form-group" style={{flex:1}}>
             <label className="form-label">Opened</label>
-            <input type="date" value={openedDate || ''}
+            <input type="date" value={cleanDateInput(openedDate)}
               onChange={e => { setOpenedDate(e.target.value); commit('opened_date', e.target.value); }}
               style={inputStyle}/>
           </div>
           <div className="form-group" style={{flex:1}}>
             <label className="form-label">{side === 'listing' || side === 'both' ? 'Listed' : 'List date'}</label>
-            <input type="date" value={listDate || ''}
+            <input type="date" value={cleanDateInput(listDate)}
               onChange={e => { setListDate(e.target.value); commit('list_date', e.target.value); }}
               style={inputStyle}/>
           </div>
@@ -9936,13 +9947,13 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
         <div className="form-row">
           <div className="form-group" style={{flex:1}}>
             <label className="form-label">Under contract</label>
-            <input type="date" value={contractDate || ''}
+            <input type="date" value={cleanDateInput(contractDate)}
               onChange={e => { setContractDate(e.target.value); commit('contract_date', e.target.value); }}
               style={inputStyle}/>
           </div>
           <div className="form-group" style={{flex:1}}>
             <label className="form-label">{deal.status === 'closed' ? 'Closed' : 'Expected close'}</label>
-            <input type="date" value={closeDate || ''}
+            <input type="date" value={cleanDateInput(closeDate)}
               onChange={e => { setCloseDate(e.target.value); commit('close_date', e.target.value); }}
               style={inputStyle}/>
           </div>
@@ -9955,7 +9966,7 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
             <div className="form-row">
               <div className="form-group" style={{flex:1}}>
                 <label className="form-label">Lost on</label>
-                <input type="date" value={lostDate || ''}
+                <input type="date" value={cleanDateInput(lostDate)}
                   onChange={e => { setLostDate(e.target.value); commit('lost_date', e.target.value); }}
                   style={inputStyle}/>
               </div>
@@ -10030,7 +10041,7 @@ function CloseDealModal({ deal, onClose, onConfirm }) {
   const [salePrice, setSalePrice]             = useState(deal.sale_price ?? '');
   const [commissionPct, setCommissionPct]     = useState(deal.commission_pct ?? '');
   const [grossCommission, setGrossCommission] = useState(deal.gross_commission ?? '');
-  const [closeDate, setCloseDate]             = useState(deal.close_date || new Date().toISOString().slice(0,10));
+  const [closeDate, setCloseDate]             = useState(cleanDateInput(deal.close_date) || new Date().toISOString().slice(0,10));
   const [confirming, setConfirming]           = useState(false);
 
   // Live net based on whatever is in the form right now
