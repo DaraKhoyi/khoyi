@@ -13775,12 +13775,23 @@ async function sysCheckGitHub() {
   return { status: 'healthy', detail: bits.length ? bits.join(' · ') : 'Repo reachable' };
 }
 
+async function sysCheckAnthropic() {
+  // API key lives server-side in the anthropic-status edge function (never in this public bundle).
+  const { data, error } = await supabase.functions.invoke('anthropic-status');
+  if (error) return { status: 'down', detail: error.message || 'anthropic-status unreachable' };
+  if (!data || data.ok === false) return { status: 'down', detail: data?.message || data?.error || 'Anthropic check failed' };
+  const bits = [];
+  if (typeof data.model_count === 'number') bits.push(`${data.model_count} models available`);
+  if (typeof data.latency_ms === 'number') bits.push(`${data.latency_ms}ms`);
+  return { status: 'healthy', detail: bits.length ? bits.join(' · ') : 'API reachable' };
+}
+
 const SYSTEMS = [
   { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
   { id: 'supabase',  icon: '⚡', name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
   { id: 'gmail',     icon: '📬', name: 'Gmail',           category: 'Integration', description: 'Connected Google email accounts & sync',       check: sysCheckGmail },
   { id: 'gcal',      icon: '📅', name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
-  { id: 'anthropic', icon: '✦',  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: null },
+  { id: 'anthropic', icon: '✦',  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: sysCheckAnthropic },
 ];
 
 function SystemsView() {
