@@ -13760,8 +13760,23 @@ async function sysCheckStorage() {
   return { status: 'healthy', detail: 'Receipts bucket reachable' };
 }
 
+async function sysCheckGitHub() {
+  // PAT lives server-side in the github-status edge function (never in this public bundle).
+  const { data, error } = await supabase.functions.invoke('github-status');
+  if (error) return { status: 'down', detail: error.message || 'github-status unreachable' };
+  if (!data || data.ok === false) return { status: 'down', detail: data?.message || data?.error || 'GitHub check failed' };
+  const pushTxt = data.pushed_at ? sysFmtAgo(data.pushed_at) : null;
+  const ps = data.pages?.status;
+  if (ps === 'errored') return { status: 'down', detail: `Pages build errored${data.pages?.error ? ' — ' + data.pages.error : ''}` };
+  if (ps === 'building') return { status: 'degraded', detail: 'Pages build in progress' };
+  const bits = [];
+  if (ps === 'built') bits.push('Pages built');
+  if (pushTxt) bits.push(`last push ${pushTxt}`);
+  return { status: 'healthy', detail: bits.length ? bits.join(' · ') : 'Repo reachable' };
+}
+
 const SYSTEMS = [
-  { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: null },
+  { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
   { id: 'supabase',  icon: '⚡', name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
   { id: 'gmail',     icon: '📬', name: 'Gmail',           category: 'Integration', description: 'Connected Google email accounts & sync',       check: sysCheckGmail },
   { id: 'gcal',      icon: '📅', name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
