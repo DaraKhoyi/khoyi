@@ -13687,7 +13687,7 @@ const SYS_RANK = { down: 4, degraded: 3, unknown: 2, unconfigured: 1, healthy: 0
 
 async function sysCheckDatabase() {
   const t0 = performance.now();
-  const { error } = await supabase.from('user_settings').select('id', { count: 'exact', head: true });
+  const { error } = await supabase.from('user_settings').select('user_id', { count: 'exact', head: true });
   const ms = Math.round(performance.now() - t0);
   if (error) return { status: 'down', detail: error.message };
   return { status: ms > 1500 ? 'degraded' : 'healthy', detail: `Postgres responded in ${ms}ms` };
