@@ -987,6 +987,17 @@ function ContactPicker({ contacts = [], selectedIds = [], onChange, label = 'Con
 // ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
+async function emailAssignTask(taskId, email) {
+  if (!taskId || !email || !email.to) return { error: null };
+  const { data: accs } = await supabase.from('email_accounts').select('id').contains('purposes', ['email']).order('created_at').limit(1);
+  const acc = accs && accs[0];
+  if (!acc) return { error: 'No connected email account — connect Gmail in Settings.' };
+  const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', { body: { account_id: acc.id, to: email.to, subject: email.subject, body_text: email.body } });
+  if (se || (sr && sr.error)) return { error: 'Email send failed: ' + ((se && se.message) || (sr && sr.error)) };
+  await supabase.from('tasks').update({ assignment_method: 'email', assignee_email: email.to, email_thread_id: sr.provider_thread_id, email_message_id: sr.provider_message_id }).eq('id', taskId);
+  return { error: null };
+}
+
 function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, contacts = [], properties = [], events = [], userId }) {
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
@@ -1005,6 +1016,11 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   const [contactIds, setContactIds] = useState([]);
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
+  // Email assignment (works for any task)
+  const [emailMode, setEmailMode] = useState(initial?.assignment_method === 'email');
+  const [emailTo, setEmailTo] = useState(initial?.assignee_email || '');
+  const [emailMsg, setEmailMsg] = useState('');
+  const emailAlreadySent = !!(initial && initial.email_thread_id);
 
   // Load existing contact links when editing
   useEffect(() => {
@@ -1074,6 +1090,9 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
       property_id: propertyId || null,
       recurring_config,
       recurring: recurring === 'none' ? null : recurring,  // legacy text column
+      assignee_email: emailMode ? (emailTo.trim() || null) : null,
+      assignment_method: emailMode ? 'email' : (initial?.assignment_method || 'self'),
+      _email: (emailMode && emailTo.trim() && !emailAlreadySent) ? { to: emailTo.trim(), subject: title.trim(), body: emailMsg } : null,
     };
     if (system === 'eisenhower') {
       const r = Math.max(1, parseInt(rank, 10) || 1);
@@ -1229,6 +1248,28 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
             </div>
           )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional details…" /></div>
+
+          <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
+              <input type="checkbox" checked={emailMode} disabled={emailAlreadySent} onChange={e=>{
+                const on=e.target.checked; setEmailMode(on);
+                if(on && !emailMsg){
+                  const lc = contactIds.map(id=>contacts.find(c=>c.id===id)).filter(Boolean);
+                  if(!emailTo && lc[0] && lc[0].email) setEmailTo(lc[0].email);
+                  setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n\u2022 ${title||'(task)'}\n${due_date?`\u2022 Due: ${due_date}\n`:''}${(notes||'').trim()?`\nDetails:\n${notes.trim()}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
+                }
+              }}/>
+              <span>\ud83d\udce7 Assign by email \u2014 no app account needed</span>
+            </label>
+            {emailAlreadySent && <div style={{fontSize:'11px',color:'var(--green)',marginTop:'6px'}}>\u2713 Sent to {initial.assignee_email}. Replies are tracked automatically.</div>}
+            {emailMode && !emailAlreadySent && (
+              <div style={{marginTop:'10px'}}>
+                <input className="form-input" type="email" placeholder="their@email.com" value={emailTo} onChange={e=>setEmailTo(e.target.value)} style={{marginBottom:'8px'}}/>
+                <textarea className="form-textarea" rows={6} value={emailMsg} onChange={e=>setEmailMsg(e.target.value)} placeholder="Message to the assignee (their details / instructions)\u2026"/>
+                <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Your notes above are included. They just reply; Claude reads the reply and flags this task for your review.</div>
+              </div>
+            )}
+          </div>
 
           <div className="form-group">
             <label className="form-label">Linked contacts {linkedContacts.length > 0 && <span style={{color:'var(--text-3)',fontWeight:400}}>({linkedContacts.length})</span>}</label>
@@ -1971,7 +2012,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   function openNew() { setEditTask(null); setShowModal(true); }
 
   async function handleSave(data) {
-    const { _contact_ids, ...taskData } = data;
+    const { _contact_ids, _email, ...taskData } = data;
     let savedTaskId = null;
     if (editTask) {
       const { data: updated, error } = await supabase.from('tasks').update(taskData).eq('id', editTask.id).select().single();
@@ -2011,6 +2052,11 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         // Do not close the modal — give the user a chance to retry
         return;
       }
+    }
+    if (savedTaskId && _email) {
+      const { error: emErr } = await emailAssignTask(savedTaskId, _email);
+      if (emErr) { notify(emErr, 'error'); return; }
+      notify('Task emailed to ' + _email.to, 'success');
     }
     setShowModal(false); setEditTask(null);
   }
@@ -5013,7 +5059,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
   // TasksView so behavior (priority system, task_contacts sync) is identical.
   async function handleTaskSave(data) {
     if (!editTask) return;
-    const { _contact_ids, ...taskData } = data;
+    const { _contact_ids, _email, ...taskData } = data;
     const { data: updated, error } = await supabase.from('tasks')
       .update(taskData).eq('id', editTask.id).select().single();
     if (error) {
@@ -5033,6 +5079,11 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         notify("Task saved but contact links failed to update.", 'error');
         return;
       }
+    }
+    if (_email) {
+      const { error: emErr } = await emailAssignTask(editTask.id, _email);
+      if (emErr) { notify(emErr, 'error'); return; }
+      notify('Task emailed to ' + _email.to, 'success');
     }
     setEditTask(null);
   }
@@ -21890,7 +21941,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
     if (on) {
       const c = contacts.find(x=>x.id===contactId);
       if (c && c.email && !emailTo) setEmailTo(c.email);
-      if (!emailMsg) setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n• ${title || '(task)'}\n${dueDate?`• Due: ${dueDate}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
+      if (!emailMsg) setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n• ${title || '(task)'}\n${dueDate?`• Due: ${dueDate}\n`:''}${(notes||'').trim()?`\nDetails:\n${notes.trim()}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
     }
   }
 
@@ -22330,6 +22381,38 @@ function ProjectTasksPanel({ userId }) {
   );
 }
 
+
+// ─────────────────────────────────────────
+// EMAIL REPLIES review (personal email-assigned tasks)
+// ─────────────────────────────────────────
+function EmailRepliesPanel() {
+  const [rows, setRows] = useState([]); const [loaded, setLoaded] = useState(false);
+  const load = async () => {
+    try { const { data } = await supabase.from('tasks').select('id,title,reply_intent,reply_confidence,last_reply_excerpt,assignee_email').eq('reply_needs_review', true).order('last_reply_at', { ascending: false }); setRows(data || []); } catch (e) {}
+    setLoaded(true);
+  };
+  useEffect(() => { load(); }, []);   // eslint-disable-line
+  const confirmDone = async (t) => { await supabase.from('tasks').update({ completed: true, status: 'done', completed_at: new Date().toISOString(), reply_needs_review: false }).eq('id', t.id); load(); };
+  const dismiss = async (t) => { await supabase.from('tasks').update({ reply_needs_review: false }).eq('id', t.id); load(); };
+  if (loaded && !rows.length) return null;
+  return (
+    <div className="panel" style={{marginBottom:'16px'}}>
+      <div className="panel-header"><h3>\ud83d\udce8 Email replies to review</h3><span className="nav-badge">{rows.length}</span></div>
+      {rows.map(t => (
+        <div key={t.id} style={{padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600}}>{t.title}</div>
+          <div style={{fontSize:'11px',color:'var(--accent)',margin:'2px 0'}}>\u2728 Claude read it as <strong>{t.reply_intent}</strong> \u00b7 {Math.round((t.reply_confidence||0)*100)}% \u00b7 from {t.assignee_email}</div>
+          {t.last_reply_excerpt && <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',marginBottom:'6px',whiteSpace:'pre-wrap',maxHeight:'70px',overflowY:'auto'}}>{t.last_reply_excerpt}</div>}
+          <div style={{display:'flex',gap:'6px'}}>
+            <button className="btn btn-primary btn-sm" onClick={()=>confirmDone(t)}>Mark done</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>dismiss(t)}>Dismiss</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────
@@ -22675,7 +22758,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
-              : view==='tasks'       ? <><ProjectTasksPanel userId={user.id}/><TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
+              : view==='tasks'       ? <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
