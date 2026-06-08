@@ -13711,6 +13711,34 @@ function sysFmtAgo(ts) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+async function sysCheckGmailAccount(email) {
+  const { data, error } = await supabase.from('email_accounts')
+    .select('email_address, last_sync_at, last_sync_error, is_active')
+    .eq('email_address', email)
+    .maybeSingle();
+  if (error) return { status: 'down', detail: error.message };
+  if (!data) return { status: 'unconfigured', detail: 'Account not connected' };
+  // Sync is driven by a 5-min cron, so freshness is the heartbeat.
+  const FRESH_MS = 15 * 60 * 1000;
+  const STALE_MS = 24 * 60 * 60 * 1000;
+  const agoTxt = sysFmtAgo(data.last_sync_at);
+  let status = 'healthy', detail = agoTxt ? `Synced ${agoTxt}` : 'Synced';
+  if (data.is_active === false) {
+    status = 'down'; detail = 'Inactive';
+  } else if (!data.last_sync_at) {
+    status = 'down'; detail = 'Never synced';
+  } else {
+    const age = Date.now() - new Date(data.last_sync_at).getTime();
+    if (age > STALE_MS) { status = 'down'; detail = `Stalled · last synced ${agoTxt}`; }
+    else if (age > FRESH_MS) { status = 'degraded'; detail = `Stale · last synced ${agoTxt}`; }
+  }
+  if (data.last_sync_error) {
+    if (status === 'healthy') status = 'degraded';
+    detail += ` · error: ${String(data.last_sync_error).slice(0, 80)}`;
+  }
+  return { status, detail };
+}
+
 async function sysCheckGmail() {
   const { data, error } = await supabase.from('email_accounts')
     .select('email_address, last_sync_at, last_sync_error, is_active, purposes')
@@ -13789,7 +13817,8 @@ async function sysCheckAnthropic() {
 const SYSTEMS = [
   { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
   { id: 'supabase',  icon: '⚡', name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
-  { id: 'gmail',     icon: '📬', name: 'Gmail',           category: 'Integration', description: 'Connected Google email accounts & sync',       check: sysCheckGmail },
+  { id: 'gmail_dara',  icon: '📬', name: 'Gmail (dara@brokerdara.com)', category: 'Integration', description: 'Google email account & sync', check: () => sysCheckGmailAccount('dara@brokerdara.com') },
+  { id: 'gmail_khoyi', icon: '📬', name: 'Gmail (khoyi1234@gmail.com)', category: 'Integration', description: 'Google email + calendar account & sync', check: () => sysCheckGmailAccount('khoyi1234@gmail.com') },
   { id: 'gcal',      icon: '📅', name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
   { id: 'anthropic', icon: '✦',  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: sysCheckAnthropic },
 ];
