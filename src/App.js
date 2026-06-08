@@ -13668,6 +13668,196 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
     </div>
   );
 }
+/* ─────────────────────────────────────────────────────────────
+   SYSTEMS — infrastructure health dashboard.
+   Each system has an async check() returning:
+     { status: 'healthy' | 'degraded' | 'down' | 'unconfigured' | 'unknown',
+       detail: string, meta?: object }
+   TO HOOK UP A NEW SYSTEM: add an entry to SYSTEMS with a check() fn.
+   A null check renders as "Not wired" so it stays a visible TODO.
+   ───────────────────────────────────────────────────────────── */
+const SYS_STATUS = {
+  healthy:      { label: 'Healthy',   pill: 'pill-green',  dot: 'var(--green)'  },
+  degraded:     { label: 'Degraded',  pill: 'pill-yellow', dot: 'var(--yellow)' },
+  down:         { label: 'Down',      pill: 'pill-red',    dot: 'var(--red)'    },
+  unconfigured: { label: 'Not wired', pill: 'pill',        dot: 'var(--text-3)' },
+  unknown:      { label: 'Unknown',   pill: 'pill',        dot: 'var(--text-3)' },
+};
+const SYS_RANK = { down: 4, degraded: 3, unknown: 2, unconfigured: 1, healthy: 0 };
+
+async function sysCheckDatabase() {
+  const t0 = performance.now();
+  const { error } = await supabase.from('user_settings').select('id', { count: 'exact', head: true });
+  const ms = Math.round(performance.now() - t0);
+  if (error) return { status: 'down', detail: error.message };
+  return { status: ms > 1500 ? 'degraded' : 'healthy', detail: `Postgres responded in ${ms}ms` };
+}
+
+async function sysCheckAuth() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data?.session) return { status: 'down', detail: 'No active session' };
+  const exp = data.session.expires_at ? new Date(data.session.expires_at * 1000) : null;
+  return { status: 'healthy', detail: exp ? `Token valid until ${exp.toLocaleTimeString()}` : 'Session active' };
+}
+
+async function sysCheckGmail() {
+  const { data, error } = await supabase.from('email_accounts')
+    .select('email_address, token_expires_at, last_sync_at, last_sync_error, is_active, purposes');
+  if (error) return { status: 'down', detail: error.message };
+  if (!data || !data.length) return { status: 'unconfigured', detail: 'No email accounts connected' };
+  const now = Date.now();
+  const accounts = data.map(a => {
+    let st = 'healthy', issue = 'OK';
+    if (a.is_active === false) { st = 'down'; issue = 'Inactive'; }
+    else if (a.last_sync_error) { st = 'degraded'; issue = 'Sync error'; }
+    else if (a.token_expires_at && new Date(a.token_expires_at).getTime() < now) { st = 'degraded'; issue = 'Token expired'; }
+    return { email: a.email_address || '(unknown)', st, issue };
+  });
+  const worst = accounts.reduce((w, a) => SYS_RANK[a.st] > SYS_RANK[w] ? a.st : w, 'healthy');
+  return { status: worst, detail: `${accounts.length} account${accounts.length !== 1 ? 's' : ''} connected`, meta: { accounts } };
+}
+
+async function sysCheckCalendarSync() {
+  const { count, error } = await supabase.from('events').select('id', { count: 'exact', head: true }).eq('sync_status', 'pending_push');
+  if (error) return { status: 'unknown', detail: error.message };
+  if (count > 25) return { status: 'degraded', detail: `${count} events still queued to push to Google` };
+  return { status: 'healthy', detail: count > 0 ? `${count} event(s) queued for next sync` : 'All events synced to Google' };
+}
+
+async function sysCheckStorage() {
+  const { error } = await supabase.storage.from('receipts').list('', { limit: 1 });
+  if (error) return { status: 'down', detail: error.message };
+  return { status: 'healthy', detail: 'Receipts bucket reachable' };
+}
+
+const SYSTEMS = [
+  { id: 'database',   icon: '🗄️', name: 'Database',          category: 'Core',          description: 'Supabase Postgres — primary data store',          check: sysCheckDatabase },
+  { id: 'auth',       icon: '🔑', name: 'Authentication',    category: 'Core',          description: 'Supabase Auth session & token',                   check: sysCheckAuth },
+  { id: 'gmail',      icon: '📬', name: 'Gmail / Email',     category: 'Integration',   description: 'Connected Google accounts, tokens & sync',        check: sysCheckGmail },
+  { id: 'calsync',    icon: '📅', name: 'Calendar Sync',     category: 'Integration',   description: 'Event push queue to Google Calendar',             check: sysCheckCalendarSync },
+  { id: 'storage',    icon: '📦', name: 'Storage',           category: 'Core',          description: 'Supabase Storage — receipts bucket',              check: sysCheckStorage },
+  { id: 'ari',        icon: '✦',  name: 'Ari Assistant',     category: 'Edge Function', description: 'robot-chat edge function (AI assistant)',         check: null },
+  { id: 'taskingest', icon: '📥', name: 'Email Task Ingest', category: 'Edge Function', description: 'task-email-ingest cron (reply classifier)',       check: null },
+];
+
+function SystemsView() {
+  const [results, setResults] = useState({});
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [, setTick] = useState(0); // re-render so "checked Xs ago" labels stay fresh
+
+  async function runCheck(sys) {
+    setResults(r => ({ ...r, [sys.id]: { ...(r[sys.id] || {}), running: true } }));
+    if (!sys.check) {
+      setResults(r => ({ ...r, [sys.id]: { status: 'unconfigured', detail: 'Health check not wired yet — add a check() in SYSTEMS', checkedAt: Date.now(), running: false } }));
+      return;
+    }
+    try {
+      const res = await sys.check();
+      setResults(r => ({ ...r, [sys.id]: { ...res, checkedAt: Date.now(), running: false } }));
+    } catch (e) {
+      setResults(r => ({ ...r, [sys.id]: { status: 'down', detail: e?.message || 'Check threw an error', checkedAt: Date.now(), running: false } }));
+    }
+  }
+
+  async function runAll() {
+    setCheckingAll(true);
+    await Promise.all(SYSTEMS.map(runCheck));
+    setCheckingAll(false);
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { runAll(); }, []);
+  useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 15000); return () => clearInterval(t); }, []);
+
+  function ago(ts) {
+    if (!ts) return 'never';
+    const s = Math.round((Date.now() - ts) / 1000);
+    if (s < 5) return 'just now';
+    if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+    return `${Math.floor(m / 60)}h ago`;
+  }
+
+  const counts = SYSTEMS.reduce((acc, s) => {
+    const st = results[s.id]?.status || 'unknown';
+    acc[st] = (acc[st] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <div className="page-header-row" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+        <div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Systems</h2>
+          <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>Health &amp; status of every connected system</p>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={runAll} disabled={checkingAll}>
+          {checkingAll ? 'Checking…' : '↻ Re-check all'}
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', margin: '14px 0 18px' }}>
+        {['healthy', 'degraded', 'down', 'unconfigured'].map(st => (
+          counts[st] ? (
+            <span key={st} className={`pill ${SYS_STATUS[st].pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: SYS_STATUS[st].dot, display: 'inline-block' }} />
+              {counts[st]} {SYS_STATUS[st].label}
+            </span>
+          ) : null
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+        {SYSTEMS.map(sys => {
+          const r = results[sys.id] || {};
+          const st = r.status || 'unknown';
+          const meta = SYS_STATUS[st] || SYS_STATUS.unknown;
+          return (
+            <div key={sys.id} className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                  <span style={{ fontSize: '18px' }}>{sys.icon}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sys.name}</span>
+                </div>
+                <span className={`pill ${meta.pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: meta.dot, display: 'inline-block' }} />
+                  {r.running ? 'Checking…' : meta.label}
+                </span>
+              </div>
+
+              <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{sys.category}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-2)' }}>{sys.description}</div>
+
+              {r.detail && (
+                <div style={{ fontSize: '12px', color: st === 'down' ? 'var(--red)' : st === 'degraded' ? 'var(--yellow)' : 'var(--text-2)' }}>
+                  {r.detail}
+                </div>
+              )}
+
+              {sys.id === 'gmail' && r.meta?.accounts?.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '2px' }}>
+                  {r.meta.accounts.map((a, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '11px', padding: '5px 8px', background: 'var(--bg-hover)', borderRadius: '6px' }}>
+                      <span style={{ color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email}</span>
+                      <span style={{ color: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0 }}>{a.issue}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: 'auto', paddingTop: '6px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{r.checkedAt ? `Checked ${ago(r.checkedAt)}` : '—'}</span>
+                <button className="btn btn-ghost btn-sm" onClick={() => runCheck(sys)} disabled={r.running}>Re-check</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function NotesView({ notes, setNotes, userId }) {
   const [selected, setSelected] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -22707,6 +22897,7 @@ export default function App() {
     { id: 'chat',        icon: '✦',  label: robots[0]?.name || 'Assistant', badge: null },
     { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
     { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
+    { id: 'systems',     icon: '🩺', label: 'Systems',     badge: null },
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
 
@@ -22785,6 +22976,7 @@ export default function App() {
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
+              : view==='systems'     ? <SystemsView />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
               : null}
               </ViewErrorBoundary>
