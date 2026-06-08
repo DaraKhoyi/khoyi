@@ -1023,6 +1023,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   const [recurring, setRecurring] = useState(
     initial?.recurring_config?.interval || 'none'
   );
+  const [showDatePicker, setShowDatePicker] = useState(false);
   // Linked contacts (many-to-many via task_contacts)
   const [contactIds, setContactIds] = useState([]);
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
@@ -1199,7 +1200,20 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                   </button>
                 )}
               </label>
-              <input className="form-input" type="date" value={due_date} onChange={e=>setDueDate(e.target.value)} />
+              <button type="button" className="form-input" onClick={() => setShowDatePicker(true)}
+                style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',cursor:'pointer',textAlign:'left',width:'100%'}}>
+                <span style={{color: due_date ? 'var(--text-1)' : 'var(--text-3)'}}>
+                  {due_date ? new Date(due_date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric', year:'numeric'}) : 'Select a date…'}
+                </span>
+                <span style={{fontSize:'15px'}}>📅</span>
+              </button>
+              {showDatePicker && (
+                <DatePickerModal
+                  initial={due_date || todayISO()}
+                  onPick={(iso) => { setDueDate(iso); setShowDatePicker(false); }}
+                  onCancel={() => setShowDatePicker(false)}
+                />
+              )}
             </div>
             <div className="form-group" style={{flex:1}}>
               <label className="form-label">Recurring</label>
@@ -1270,13 +1284,13 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                   setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n\u2022 ${title||'(task)'}\n${due_date?`\u2022 Due: ${due_date}\n`:''}${(notes||'').trim()?`\nDetails:\n${notes.trim()}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
                 }
               }}/>
-              <span>\ud83d\udce7 Assign by email \u2014 no app account needed</span>
+              <span>📧 Assign by email — no app account needed</span>
             </label>
-            {emailAlreadySent && <div style={{fontSize:'11px',color:'var(--green)',marginTop:'6px'}}>\u2713 Sent to {initial.assignee_email}. Replies are tracked automatically.</div>}
+            {emailAlreadySent && <div style={{fontSize:'11px',color:'var(--green)',marginTop:'6px'}}>✓ Sent to {initial.assignee_email}. Replies are tracked automatically.</div>}
             {emailMode && !emailAlreadySent && (
               <div style={{marginTop:'10px'}}>
                 <input className="form-input" type="email" placeholder="their@email.com" value={emailTo} onChange={e=>setEmailTo(e.target.value)} style={{marginBottom:'8px'}}/>
-                <textarea className="form-textarea" rows={6} value={emailMsg} onChange={e=>setEmailMsg(e.target.value)} placeholder="Message to the assignee (their details / instructions)\u2026"/>
+                <textarea className="form-textarea" rows={6} value={emailMsg} onChange={e=>setEmailMsg(e.target.value)} placeholder="Message to the assignee (their details / instructions)…"/>
                 <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Your notes above are included. They just reply; Claude reads the reply and flags this task for your review.</div>
               </div>
             )}
