@@ -3579,7 +3579,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
           })}
         </div>
       )}
-      <GmailInboxView key={account.id} account={account} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} />
+      <GmailInboxView key={account.id} account={account} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} reloadData={reloadData} />
     </div>
   );
 }
@@ -3726,7 +3726,7 @@ function PlainTextBody({ text }) {
   );
 }
 
-function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId }) {
+function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData }) {
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [tab, setTab] = useState('inbox');
@@ -4397,6 +4397,43 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     return opts;
   }
 
+  // Create a new contact from the sender of the currently-open email.
+  // Uses from_name + from_address; guards against duplicates by email.
+  async function createContactFromSender(msg) {
+    setShowMoreMenu(false);
+    if (!msg) return;
+    const email = (msg.from_address || '').trim().toLowerCase();
+    if (!email) {
+      if (window.__notify) window.__notify('No sender email address found on this message', 'error');
+      return;
+    }
+    // Duplicate guard — match on email (case-insensitive)
+    const existing = (contacts || []).find(c => (c.email || '').trim().toLowerCase() === email);
+    if (existing) {
+      if (window.__notify) window.__notify(`${existing.name || email} is already in your contacts`, 'error');
+      return;
+    }
+    const senderName = (msg.from_name || '').trim() || email;
+    try {
+      const { data: created, error } = await supabase.from('contacts').insert({
+        user_id: userId,
+        name: senderName,
+        email,
+        type: 'lead',
+        priority: 'normal',
+        status: 'active',
+        last_contact_at: msg.received_at || msg.internal_date || null,
+        notes: `Created from inbound email${msg.subject ? ` — "${msg.subject}"` : ''}.`,
+      }).select().single();
+      if (error) throw error;
+      if (window.__notify) window.__notify(`Added ${created.name} to contacts`, 'success');
+      // Refresh app-wide data so the new contact shows up everywhere
+      if (reloadData) reloadData();
+    } catch (e) {
+      if (window.__notify) window.__notify("Couldn't create contact: " + (e.message || e), 'error');
+    }
+  }
+
   function openReply(msg, replyAll = false) {
     if (!msg) return;
     // Normalize a recipient (string or {name, email}) to a plain email
@@ -4787,6 +4824,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                             onClick={() => { openForward(latest); setShowMoreMenu(false); }}
                             style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
                             ↪ Forward
+                          </button>
+
+                          {/* Add sender to contacts */}
+                          <button
+                            onClick={() => createContactFromSender(latest)}
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
+                            👤 Add sender to contacts
                           </button>
 
                           <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
