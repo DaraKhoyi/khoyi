@@ -3548,19 +3548,40 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
 // fake-email LegacyInboxView and the underlying `emails` table.)
 // ─────────────────────────────────────────
 function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData }) {
-  // Find the email-purpose Google account. Once a user has gone through OAuth
-  // for email, we KEEP that view forever — even if is_active or sync errors
-  // would otherwise hide it. The user explicitly disconnects via Settings if
-  // they want it gone. This is the "lock in" guarantee.
-  const emailAccount =
-    emailAccounts.find(a => (a.purposes || []).includes('email') && a.refresh_token) ||
-    emailAccounts.find(a => (a.scopes || []).some(s => s.includes('gmail')) && a.refresh_token) ||
-    null;
+  // All connected email-capable Google accounts (locked-in once OAuth'd for email).
+  const mailAccounts = emailAccounts.filter(a =>
+    ((a.purposes || []).includes('email') || (a.scopes || []).some(s => s.includes('gmail'))) && a.refresh_token
+  );
+  const [selectedId, setSelectedId] = useState(null);
+  const account = mailAccounts.find(a => a.id === selectedId) || mailAccounts[0] || null;
 
-  if (emailAccount) {
-    return <GmailInboxView account={emailAccount} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} />;
-  }
-  return <InboxConnectScreen setView={setView} reloadData={reloadData} />;
+  if (!account) return <InboxConnectScreen setView={setView} reloadData={reloadData} />;
+
+  return (
+    <div>
+      {mailAccounts.length > 1 && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          {mailAccounts.map(a => {
+            const active = a.id === account.id;
+            return (
+              <button key={a.id} onClick={() => setSelectedId(a.id)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
+                  fontWeight: active ? 700 : 500,
+                  background: active ? 'rgba(197,169,94,0.14)' : 'var(--bg-card)',
+                  color: active ? '#C5A95E' : 'var(--text-2)',
+                  border: `1px solid ${active ? '#C5A95E' : 'var(--border)'}`,
+                }}>
+                📬 {a.email_address}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <GmailInboxView key={account.id} account={account} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} />
+    </div>
+  );
 }
 
 // Shown in the Inbox tab when no Gmail account is connected.
@@ -3879,6 +3900,20 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   }, [account.id, tab]);
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
+
+  // Sync on open: when you arrive at this account's inbox, pull fresh mail then
+  // refresh the list, so opening the app shows the latest without a manual click.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await supabase.functions.invoke('gmail-sync', { body: { account_id: account.id } });
+        if (!cancelled) await loadThreads();
+      } catch (_) { /* non-fatal — the manual Sync button still works */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account.id]);
 
   // ── Per-thread actions for swipe gestures ─────────────────────────
   // These do the same work as trashCurrentThread / modifyThread('archive')
