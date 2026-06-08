@@ -3642,6 +3642,74 @@ function InboxConnectScreen({ setView, reloadData }) {
 // ─── Gmail inbox ─────────────────────────────────────────────────
 // Renders email HTML in a sandboxed iframe. Sandbox blocks scripts/popups
 // so even malicious email HTML can't escape into the app. Auto-sizes height.
+// Renders a message's attachments as chips. Bytes are fetched on demand via the
+// gmail-attachment edge function (keeps large files out of the DB/initial load).
+// Viewable types (PDF, images) open in a new tab; everything else downloads.
+function MessageAttachments({ message, account }) {
+  const [atts, setAtts] = useState(null);
+  const [busy, setBusy] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('email_attachments')
+        .select('id, filename, mime_type, size_bytes, provider_attachment_id')
+        .eq('message_id', message.id);
+      if (!cancelled) setAtts(data || []);
+    })();
+    return () => { cancelled = true; };
+  }, [message.id]);
+
+  if (!atts || atts.length === 0) return null;
+
+  const fmtSize = (n) => !n ? '' : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
+  const iconFor = (mt) => (mt || '').startsWith('image/') ? '🖼' : (mt || '') === 'application/pdf' ? '📄' : (mt || '').includes('sheet') || (mt || '').includes('excel') ? '📊' : (mt || '').includes('word') ? '📝' : '📎';
+
+  async function open(att) {
+    setBusy(att.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('gmail-attachment', {
+        body: { account_id: account.id, provider_message_id: message.provider_message_id, provider_attachment_id: att.provider_attachment_id },
+      });
+      if (error || !data?.ok) throw new Error(data?.error || error?.message || 'Could not fetch attachment');
+      const b64 = data.data.replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: att.mime_type || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const viewable = /^(image\/|application\/pdf)/.test(att.mime_type || '');
+      const a = document.createElement('a');
+      a.href = url;
+      if (viewable) a.target = '_blank'; else a.download = att.filename || 'attachment';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      alert('Could not open attachment: ' + (e?.message || e));
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <div style={{ padding: '0 16px 14px' }}>
+      <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
+        📎 {atts.length} attachment{atts.length !== 1 ? 's' : ''}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        {atts.map(att => (
+          <button key={att.id} onClick={() => open(att)} disabled={busy === att.id}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '8px 12px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', maxWidth: '100%' }}>
+            <span style={{ fontSize: '18px', flexShrink: 0 }}>{iconFor(att.mime_type)}</span>
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0 }}>
+              <span style={{ fontSize: '12.5px', color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '210px' }}>{att.filename || 'attachment'}</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{busy === att.id ? 'Opening…' : fmtSize(att.size_bytes)}</span>
+            </span>
+            <span style={{ fontSize: '14px', color: 'var(--accent)', flexShrink: 0 }}>↓</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EmailHtmlFrame({ html }) {
   const iframeRef = useRef(null);
   const [height, setHeight] = useState(200);
@@ -5018,7 +5086,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {cat.icon} {cat.label}
                         </span>
                         <span style={{fontSize:'11px',color:'var(--text-2)'}}>→ <strong>{act.label}</strong></span>
-                        <span style={{fontSize:'10px',color:'var(--text-3)'}}>· {confidencePct}% confident</span>
+                        <span style={{fontSize:'10px',color:'var(--text-2)'}}>· {confidencePct}% confident</span>
                       </div>
                       {triage.summary && (
                         <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4,marginBottom:'4px'}}>
@@ -5026,7 +5094,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                         </div>
                       )}
                       {triage.reasoning && (
-                        <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',lineHeight:1.4}}>
+                        <div style={{fontSize:'12.5px',color:'var(--text-2)',fontStyle:'italic',lineHeight:1.5}}>
                           {triage.reasoning}
                         </div>
                       )}
@@ -5112,6 +5180,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                               </div>
                             )}
                           </div>
+
+                          {msg.has_attachments && <MessageAttachments message={msg} account={account} />}
 
                           {/* Per-message reply buttons (Gmail-style: at bottom of each message in a thread) */}
                           {isLast && (
