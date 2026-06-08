@@ -13677,9 +13677,9 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
    A null check renders as "Not wired" so it stays a visible TODO.
    ───────────────────────────────────────────────────────────── */
 const SYS_STATUS = {
-  healthy:      { label: 'Healthy',   pill: 'pill-green',  dot: 'var(--green)'  },
+  healthy:      { label: 'Online',    pill: 'pill-green',  dot: 'var(--green)'  },
   degraded:     { label: 'Degraded',  pill: 'pill-yellow', dot: 'var(--yellow)' },
-  down:         { label: 'Down',      pill: 'pill-red',    dot: 'var(--red)'    },
+  down:         { label: 'Offline',   pill: 'pill-red',    dot: 'var(--red)'    },
   unconfigured: { label: 'Not wired', pill: 'pill',        dot: 'var(--text-3)' },
   unknown:      { label: 'Unknown',   pill: 'pill',        dot: 'var(--text-3)' },
 };
@@ -13761,13 +13761,11 @@ async function sysCheckStorage() {
 }
 
 const SYSTEMS = [
-  { id: 'database',   icon: '🗄️', name: 'Database',          category: 'Core',          description: 'Supabase Postgres — primary data store',          check: sysCheckDatabase },
-  { id: 'auth',       icon: '🔑', name: 'Authentication',    category: 'Core',          description: 'Supabase Auth session & token',                   check: sysCheckAuth },
-  { id: 'gmail',      icon: '📬', name: 'Gmail / Email',     category: 'Integration',   description: 'Connected Google accounts, tokens & sync',        check: sysCheckGmail },
-  { id: 'calsync',    icon: '📅', name: 'Calendar Sync',     category: 'Integration',   description: 'Event push queue to Google Calendar',             check: sysCheckCalendarSync },
-  { id: 'storage',    icon: '📦', name: 'Storage',           category: 'Core',          description: 'Supabase Storage — receipts bucket',              check: sysCheckStorage },
-  { id: 'ari',        icon: '✦',  name: 'Ari Assistant',     category: 'Edge Function', description: 'robot-chat edge function (AI assistant)',         check: null },
-  { id: 'taskingest', icon: '📥', name: 'Email Task Ingest', category: 'Edge Function', description: 'task-email-ingest cron (reply classifier)',       check: null },
+  { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: null },
+  { id: 'supabase',  icon: '⚡', name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
+  { id: 'gmail',     icon: '📬', name: 'Gmail',           category: 'Integration', description: 'Connected Google email accounts & sync',       check: sysCheckGmail },
+  { id: 'gcal',      icon: '📅', name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
+  { id: 'anthropic', icon: '✦',  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: null },
 ];
 
 function SystemsView() {
@@ -13814,40 +13812,62 @@ function SystemsView() {
   const r = results[sys.id] || {};
   const st = r.status || 'unknown';
   const meta = SYS_STATUS[st] || SYS_STATUS.unknown;
+  const GOLD = '#C5A95E';
+
+  const tally = SYSTEMS.reduce((a, s) => { const k = results[s.id]?.status || 'unknown'; a[k] = (a[k] || 0) + 1; return a; }, {});
+  const online = tally.healthy || 0, offline = tally.down || 0, degraded = tally.degraded || 0;
 
   return (
     <div style={{ display: 'flex', gap: '18px', height: 'calc(100dvh - 64px)' }}>
 
       {/* ── LEFT: vertical systems menu ── */}
-      <div style={{ width: '210px', minWidth: '210px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ minWidth: 0 }}>
-            <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Systems</h2>
-            <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>{SYSTEMS.length} systems</p>
-          </div>
+      <div style={{ width: '212px', minWidth: '212px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Systems</h2>
           <button className="btn-add-circle btn-add-circle-sm" onClick={runAll} disabled={checkingAll} title="Re-check all" aria-label="Re-check all">↻</button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
-          {SYSTEMS.map(item => {
+        {/* online / offline nub */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          <span className="pill pill-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)' }} />{online} online
+          </span>
+          <span className="pill pill-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--red)' }} />{offline} offline
+          </span>
+          {degraded > 0 && (
+            <span className="pill pill-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--yellow)' }} />{degraded} degraded
+            </span>
+          )}
+        </div>
+
+        {/* the bar */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {SYSTEMS.map((item, idx) => {
             const ir = results[item.id] || {};
-            const ist = ir.status || 'unknown';
-            const idot = (SYS_STATUS[ist] || SYS_STATUS.unknown).dot;
+            const im = SYS_STATUS[ir.status || 'unknown'] || SYS_STATUS.unknown;
             const active = item.id === selected;
             return (
               <div
                 key={item.id}
                 onClick={() => setSelected(item.id)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '9px',
-                  padding: '9px 10px', borderRadius: '8px', cursor: 'pointer',
-                  background: active ? 'var(--bg-hover)' : 'transparent',
-                  border: active ? '1px solid var(--border)' : '1px solid transparent',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '11px 12px', cursor: 'pointer',
+                  borderBottom: idx < SYSTEMS.length - 1 ? '1px solid var(--border)' : 'none',
+                  borderLeft: `3px solid ${active ? GOLD : 'transparent'}`,
+                  background: active ? 'rgba(197,169,94,0.12)' : 'transparent',
                 }}
               >
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: idot, flexShrink: 0, boxShadow: ir.running ? `0 0 0 3px color-mix(in srgb, ${idot} 30%, transparent)` : 'none' }} />
-                <span style={{ fontSize: '14px' }}>{item.icon}</span>
-                <span style={{ fontSize: '13px', fontWeight: active ? 600 : 500, color: active ? 'var(--text-1)' : 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
+                <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: active ? 700 : 600, color: active ? GOLD : 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: im.dot, flexShrink: 0, boxShadow: ir.running ? `0 0 0 3px ${im.dot}33` : 'none' }} />
+                    <span style={{ fontSize: '11px', color: im.dot }}>{ir.running ? 'Checking…' : im.label}</span>
+                  </div>
+                </div>
               </div>
             );
           })}
