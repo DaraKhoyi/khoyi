@@ -4397,8 +4397,56 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     return opts;
   }
 
+  // Best-effort extraction of a phone number from an email body / signature.
+  // Returns a formatted US number or null. Prefers numbers next to a label
+  // (cell/mobile/phone/tel/direct/office/p:/c:/m:/o:/d:) over bare matches.
+  function extractPhoneFromEmail(msg) {
+    let text = msg.body_text || '';
+    if (!text && msg.body_html) {
+      // crude tag strip
+      text = msg.body_html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr)>/gi, '\n').replace(/<[^>]+>/g, ' ');
+      // decode a few common entities
+      text = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+    }
+    if (!text) text = msg.snippet || '';
+    if (!text) return null;
+
+    const phoneRe = /(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/g;
+    const labelRe = /(cell|mobile|phone|tel|direct|office|\bp\b|\bc\b|\bm\b|\bo\b|\bd\b)\s*[:.]?\s*$/i;
+
+    const normalize = (raw) => {
+      const digits = raw.replace(/\D/g, '');
+      let d = digits;
+      if (d.length === 11 && d[0] === '1') d = d.slice(1);
+      if (d.length !== 10) return null;                 // reject non-10-digit junk
+      return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+    };
+
+    // Pass 1 — prefer a phone preceded by a phone-label on the same line
+    const lines = text.split(/\n+/);
+    for (const line of lines) {
+      const m = line.match(phoneRe);
+      if (!m) continue;
+      for (const candidate of m) {
+        const idx = line.indexOf(candidate);
+        const before = line.slice(Math.max(0, idx - 14), idx);
+        if (labelRe.test(before)) {
+          const f = normalize(candidate);
+          if (f) return f;
+        }
+      }
+    }
+    // Pass 2 — first valid phone-shaped match anywhere
+    const all = text.match(phoneRe) || [];
+    for (const candidate of all) {
+      const f = normalize(candidate);
+      if (f) return f;
+    }
+    return null;
+  }
+
   // Create a new contact from the sender of the currently-open email.
-  // Uses from_name + from_address; guards against duplicates by email.
+  // Uses from_name + from_address, and tries to pull a phone from the signature.
   async function createContactFromSender(msg) {
     setShowMoreMenu(false);
     if (!msg) return;
@@ -4414,7 +4462,9 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       return;
     }
     const senderName = (msg.from_name || '').trim() || email;
+    const foundPhone = extractPhoneFromEmail(msg);
     try {
+      // Step 1: insert WITHOUT phone (a DB trigger blanks phone on INSERT)
       const { data: created, error } = await supabase.from('contacts').insert({
         user_id: userId,
         name: senderName,
@@ -4426,8 +4476,18 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         notes: `Created from inbound email${msg.subject ? ` — "${msg.subject}"` : ''}.`,
       }).select().single();
       if (error) throw error;
-      if (window.__notify) window.__notify(`Added ${created.name} to contacts`, 'success');
-      // Refresh app-wide data so the new contact shows up everywhere
+
+      // Step 2: set phone separately so it survives the trigger
+      if (foundPhone) {
+        await supabase.from('contacts').update({ phone: foundPhone }).eq('id', created.id);
+      }
+
+      if (window.__notify) {
+        window.__notify(
+          foundPhone ? `Added ${created.name} — phone ${foundPhone}` : `Added ${created.name} to contacts`,
+          'success'
+        );
+      }
       if (reloadData) reloadData();
     } catch (e) {
       if (window.__notify) window.__notify("Couldn't create contact: " + (e.message || e), 'error');
