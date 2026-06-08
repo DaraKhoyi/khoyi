@@ -21871,6 +21871,11 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
   const [cq, setCq] = useState('');
   const [suggesting, setSuggesting] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
+  // Email assignment
+  const [emailMode, setEmailMode] = useState(initial?.assignment_method === 'email');
+  const [emailTo, setEmailTo] = useState(initial?.assignee_email || '');
+  const [emailMsg, setEmailMsg] = useState('');
+  const alreadySent = !!(initial && initial.email_thread_id);
 
   const contactOpts = (() => {
     const q = cq.trim().toLowerCase();
@@ -21879,6 +21884,15 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
       (c.name||'').toLowerCase().includes(q) || (c.email||'').toLowerCase().includes(q) || (c.company||'').toLowerCase().includes(q)
     ).slice(0, 8);
   })();
+
+  function enableEmail(on) {
+    setEmailMode(on);
+    if (on) {
+      const c = contacts.find(x=>x.id===contactId);
+      if (c && c.email && !emailTo) setEmailTo(c.email);
+      if (!emailMsg) setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n• ${title || '(task)'}\n${dueDate?`• Due: ${dueDate}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
+    }
+  }
 
   async function suggestQuadrant() {
     if (!title.trim()) return;
@@ -21895,8 +21909,12 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
   function submit(e) {
     e.preventDefault();
     if (!title.trim()) return;
+    const wantEmail = emailMode && emailTo.trim() && !alreadySent;
     const base = { title:title.trim(), notes:notes.trim()||null, due_date:dueDate||null, status,
-      assignee_id: assignee||null, contact_id: contactId||null, contact_name: contactName||null, priority_system: system };
+      assignee_id: emailMode ? null : (assignee||null),
+      assignee_email: emailMode ? emailTo.trim() : null,
+      contact_id: contactId||null, contact_name: contactName||null, priority_system: system,
+      _email: wantEmail ? { to: emailTo.trim(), subject: title.trim(), body: emailMsg } : null };
     if (system==='eisenhower') onSave({ ...base, priority:'medium', eisenhower_quadrant:quadrant, eisenhower_rank:Math.max(1,parseInt(rank,10)||1) });
     else onSave({ ...base, priority, eisenhower_quadrant:null, eisenhower_rank:null });
   }
@@ -21915,16 +21933,32 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
           <div className="form-group"><label className="form-label">Task</label>
             <input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required/></div>
           <div className="form-row">
-            <div className="form-group" style={{flex:1}}><label className="form-label">Assign to</label>
-              <select className="form-select" value={assignee} onChange={e=>setAssignee(e.target.value)}>
-                <option value="">Unassigned</option>
+            <div className="form-group" style={{flex:1}}><label className="form-label">Assign to {emailMode && <span style={{color:'var(--text-3)',fontSize:'10px'}}>· via email</span>}</label>
+              <select className="form-select" value={assignee} onChange={e=>setAssignee(e.target.value)} disabled={emailMode}>
+                <option value="">{emailMode?'— (email assignment)':'Unassigned'}</option>
                 {assignable.map(p=><option key={p.id} value={p.id}>{p.full_name||p.email}</option>)}
               </select></div>
             <div className="form-group" style={{flex:1}}><label className="form-label">Status</label>
               <select className="form-select" value={status} onChange={e=>setStatus(e.target.value)}>
-                <option value="todo">To Do</option><option value="in_progress">In Progress</option><option value="done">Done</option>
+                <option value="todo">To Do</option><option value="in_progress">In Progress</option><option value="done">Done</option><option value="rejected">Rejected</option>
               </select></div>
           </div>
+
+          <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
+              <input type="checkbox" checked={emailMode} onChange={e=>enableEmail(e.target.checked)} disabled={alreadySent}/>
+              <span>📧 Assign by email — no app account needed</span>
+            </label>
+            {alreadySent && <div style={{fontSize:'11px',color:'var(--green)',marginTop:'6px'}}>✓ Sent to {initial.assignee_email}. Their replies are tracked automatically.</div>}
+            {emailMode && !alreadySent && (
+              <div style={{marginTop:'10px'}}>
+                <input className="form-input" type="email" placeholder="their@email.com" value={emailTo} onChange={e=>setEmailTo(e.target.value)} style={{marginBottom:'8px'}}/>
+                <textarea className="form-input" rows={5} value={emailMsg} onChange={e=>setEmailMsg(e.target.value)} placeholder="Message…"/>
+                <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>They just reply to the email; Claude reads the reply and updates this task (you confirm anything that changes status).</div>
+              </div>
+            )}
+          </div>
+
           <div className="form-group"><label className="form-label">Priority System</label>
             <div style={{display:'flex',gap:'6px'}}>
               <button type="button" className={`btn btn-sm ${system==='eisenhower'?'btn-primary':'btn-ghost'}`} onClick={()=>setSystem('eisenhower')}>Eisenhower (A1, B2…)</button>
@@ -21984,7 +22018,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
                 {!!contactOpts.length && (
                   <div style={{border:'1px solid var(--border)',borderRadius:'6px',marginTop:'4px',maxHeight:'160px',overflowY:'auto'}}>
                     {contactOpts.map(c=>(
-                      <div key={c.id} onClick={()=>{setContactId(c.id);setContactName(c.name||'');setCq('');}} style={{padding:'7px 10px',cursor:'pointer',fontSize:'13px',borderBottom:'1px solid var(--border)'}}>
+                      <div key={c.id} onClick={()=>{setContactId(c.id);setContactName(c.name||'');setCq(''); if(emailMode && c.email && !emailTo) setEmailTo(c.email);}} style={{padding:'7px 10px',cursor:'pointer',fontSize:'13px',borderBottom:'1px solid var(--border)'}}>
                         {c.name}{c.company?<span style={{color:'var(--text-3)'}}> · {c.company}</span>:null}
                       </div>
                     ))}
@@ -21997,7 +22031,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
             <textarea className="form-input" rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Details, links, context…"/></div>
           <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'8px'}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">{initial?'Save':'Add Task'}</button>
+            <button type="submit" className="btn btn-primary">{!initial && emailMode && emailTo.trim() ? 'Add & Email' : (initial?'Save':'Add Task')}</button>
           </div>
         </form>
       </div>
@@ -22013,6 +22047,8 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
   const [projects, setProjects] = useState([]);
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [taskMsgs, setTaskMsgs] = useState([]);
+  const [sendingAccount, setSendingAccount] = useState(null);
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState(null);
   const [newProj, setNewProj] = useState('');
@@ -22024,21 +22060,30 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
   const loadCore = async () => {
     setLoading(true); setErr(null);
     try {
-      const [pf,pe,pr,mm] = await Promise.all([
+      const [pf,pe,pr,mm,acc] = await Promise.all([
         tdb.from('profiles').select('*').eq('id', userId).maybeSingle(),
         tdb.from('profiles').select('id,email,full_name,role').order('full_name'),
         tdb.from('projects').select('*').order('created_at'),
         tdb.from('project_members').select('*'),
+        supabase.from('email_accounts').select('id,email_address,purposes').contains('purposes',['email']).order('created_at').limit(1),
       ]);
       if (pr.error) throw pr.error;
       setMe(pf.data); setPeople(pe.data||[]); setProjects(pr.data||[]); setMembers(mm.data||[]);
+      setSendingAccount((acc.data&&acc.data[0])||null);
       setSel(s=> s || (pr.data && pr.data[0] ? pr.data[0].id : null));
     } catch(e){ setErr(e.message||String(e)); }
     setLoading(false);
   };
   useEffect(()=>{ loadCore(); }, []);   // eslint-disable-line
 
-  const loadTasks = async (pid) => { if(!pid){ setTasks([]); return; } const { data } = await tdb.from('tasks').select('*').eq('project_id', pid); setTasks(data||[]); };
+  const loadTasks = async (pid) => {
+    if(!pid){ setTasks([]); setTaskMsgs([]); return; }
+    const { data } = await tdb.from('tasks').select('*').eq('project_id', pid);
+    setTasks(data||[]);
+    const ids = (data||[]).map(t=>t.id);
+    if (ids.length) { const { data:m } = await tdb.from('task_messages').select('*').in('task_id', ids).order('created_at',{ascending:false}); setTaskMsgs(m||[]); }
+    else setTaskMsgs([]);
+  };
   useEffect(()=>{ loadTasks(sel); }, [sel]);   // eslint-disable-line
 
   const appRole = (me&&me.role)||'user';
@@ -22053,41 +22098,75 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
   const assignable = (()=>{ const ids=new Set(projMembers.map(m=>m.user_id)); const proj=projects.find(p=>p.id===sel); if(proj) ids.add(proj.owner_id); return people.filter(p=>ids.has(p.id)); })();
 
   const createProject = async ()=>{ const name=newProj.trim(); if(!name) return; const {error}=await tdb.from('projects').insert({name,owner_id:userId,status:'active'}); if(error){setErr(error.message);return;} setNewProj(''); await loadCore(); };
+
   const saveTask = async (data)=>{
-    if (editing && editing.id) { const {error}=await tdb.from('tasks').update(data).eq('id',editing.id); if(error){setErr(error.message);return;} }
-    else { const {error}=await tdb.from('tasks').insert({ ...data, project_id:sel, created_by:userId }); if(error){setErr(error.message);return;} }
+    const email = data._email; delete data._email;
+    let taskId = editing && editing.id;
+    if (taskId) { const {error}=await tdb.from('tasks').update(data).eq('id',taskId); if(error){setErr(error.message);return;} }
+    else { const {data:ins,error}=await tdb.from('tasks').insert({ ...data, project_id:sel, created_by:userId }).select('id').single(); if(error){setErr(error.message);return;} taskId=ins.id; }
+    if (email && taskId) {
+      if (!sendingAccount) { setErr('No connected email account to send from. Connect Gmail in Settings.'); }
+      else {
+        const { data:sr, error:se } = await supabase.functions.invoke('gmail-send', { body: { account_id: sendingAccount.id, to: email.to, subject: email.subject, body_text: email.body } });
+        if (se || sr?.error) { setErr('Email send failed: '+(se?.message||sr?.error)); }
+        else {
+          await tdb.from('tasks').update({ assignment_method:'email', assignee_email:email.to, email_thread_id:sr.provider_thread_id, email_message_id:sr.provider_message_id }).eq('id',taskId);
+          await tdb.from('task_messages').insert({ task_id:taskId, direction:'out', email_message_id:sr.provider_message_id, thread_id:sr.provider_thread_id, to_address:email.to, subject:email.subject, body_excerpt:(email.body||'').slice(0,600) });
+        }
+      }
+    }
     setEditing(null); loadTasks(sel);
   };
   const removeTask = async (t)=>{ await tdb.from('tasks').delete().eq('id',t.id); setEditing(null); loadTasks(sel); };
   const toggleComplete = async (t)=>{ await tdb.from('tasks').update({status: t.status==='done'?'todo':'done'}).eq('id',t.id); loadTasks(sel); };
+  const clearReview = async (taskId)=>{ await tdb.from('task_messages').update({needs_review:false}).eq('task_id',taskId).eq('needs_review',true); loadTasks(sel); };
+  const applyReview = async (t,status)=>{ await tdb.from('tasks').update({status}).eq('id',t.id); await tdb.from('task_messages').update({needs_review:false,applied:true}).eq('task_id',t.id).eq('needs_review',true); loadTasks(sel); };
   const addMember = async ()=>{ if(!addPid||!sel) return; const {error}=await tdb.from('project_members').insert({project_id:sel,user_id:addPid,role:addRole}); if(error){setErr(error.message);return;} setAddPid('');setAddRole('viewer'); await loadCore(); };
   const setMemberRole = async (uid,role)=>{ await tdb.from('project_members').update({role}).eq('project_id',sel).eq('user_id',uid); await loadCore(); };
   const removeMember = async (uid)=>{ await tdb.from('project_members').delete().eq('project_id',sel).eq('user_id',uid); await loadCore(); };
 
   const chip=(txt,col)=><span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
   const inp={background:'var(--bg-base)',color:'var(--text-1)',border:'1px solid var(--border)',borderRadius:'6px',padding:'7px 9px',fontSize:'13px'};
+  const INTENT_STATUS={completed:'done',rejected:'rejected',update:'in_progress'};
 
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/></div>;
 
   const project = projects.find(p=>p.id===sel);
   const candidates = people.filter(p=>!projMembers.some(m=>m.user_id===p.id));
-  const overdue = (t)=> t.due_date && t.status!=='done' && t.due_date < todayISO();
+  const overdue = (t)=> t.due_date && t.status!=='done' && t.status!=='rejected' && t.due_date < todayISO();
 
   const renderRow = (t)=>{
     const editable = canEdit(sel) || t.assignee_id===userId;
+    const reviews = taskMsgs.filter(m=>m.task_id===t.id && m.direction==='in' && m.needs_review);
+    const latest = reviews[0];
     return (
-      <div key={t.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
-        <button title="Complete" disabled={!editable} onClick={()=>toggleComplete(t)} style={{width:'18px',height:'18px',borderRadius:'5px',border:`1px solid ${t.status==='done'?'var(--green)':'var(--text-3)'}`,background:t.status==='done'?'var(--green)':'transparent',cursor:editable?'pointer':'default',flexShrink:0}}/>
-        <span className={priorityClass(t)} style={{fontSize:'10px',fontWeight:700,minWidth:'26px',textAlign:'center',padding:'2px 4px',borderRadius:'4px'}}>{priorityLabel(t)}</span>
-        <div style={{flex:1,cursor:editable?'pointer':'default'}} onClick={()=>editable&&setEditing(t)}>
-          <div style={{fontSize:'13px',textDecoration:t.status==='done'?'line-through':'none',color:t.status==='done'?'var(--text-3)':'var(--text-1)'}}>{t.title}</div>
-          <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
-            {t.assignee_id && <span>👤 {nameOf(t.assignee_id)}</span>}
-            {t.contact_id && <span>🔗 {t.contact_name||'contact'}</span>}
-            {t.due_date && <span style={{color: overdue(t)?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue(t)?' · overdue':''}</span>}
+      <div key={t.id} style={{borderBottom:'1px solid var(--border)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'9px 0'}}>
+          <button title="Complete" disabled={!editable} onClick={()=>toggleComplete(t)} style={{width:'18px',height:'18px',borderRadius:'5px',border:`1px solid ${t.status==='done'?'var(--green)':'var(--text-3)'}`,background:t.status==='done'?'var(--green)':'transparent',cursor:editable?'pointer':'default',flexShrink:0}}/>
+          <span className={priorityClass(t)} style={{fontSize:'10px',fontWeight:700,minWidth:'26px',textAlign:'center',padding:'2px 4px',borderRadius:'4px'}}>{priorityLabel(t)}</span>
+          <div style={{flex:1,cursor:editable?'pointer':'default'}} onClick={()=>editable&&setEditing(t)}>
+            <div style={{fontSize:'13px',textDecoration:t.status==='done'?'line-through':'none',color:t.status==='done'?'var(--text-3)':(t.status==='rejected'?'var(--red)':'var(--text-1)')}}>{t.title}{t.status==='rejected'?' · rejected':''}</div>
+            <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
+              {t.assignee_id ? <span>👤 {nameOf(t.assignee_id)}</span> : (t.assignee_email ? <span>📧 {t.assignee_email}</span> : null)}
+              {t.contact_id && <span>🔗 {t.contact_name||'contact'}</span>}
+              {t.due_date && <span style={{color: overdue(t)?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue(t)?' · overdue':''}</span>}
+              {!!reviews.length && <span style={{color:'var(--accent)'}}>💬 {reviews.length} new repl{reviews.length>1?'ies':'y'}</span>}
+            </div>
           </div>
+          {canManage(sel) && <button className="btn btn-ghost btn-sm" onClick={()=>removeTask(t)}>✕</button>}
         </div>
-        {canManage(sel) && <button className="btn btn-ghost btn-sm" onClick={()=>removeTask(t)}>✕</button>}
+        {latest && canEdit(sel) && (
+          <div style={{margin:'0 0 10px 28px',padding:'10px 12px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'8px'}}>
+            <div style={{fontSize:'11px',color:'var(--accent)',fontWeight:600,marginBottom:'3px'}}>✨ Claude read the reply: <strong>{latest.ai_intent}</strong> · {Math.round((latest.ai_confidence||0)*100)}%</div>
+            {latest.ai_note && <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'4px'}}>{latest.ai_note}</div>}
+            {latest.body_excerpt && <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',marginBottom:'8px',whiteSpace:'pre-wrap',maxHeight:'80px',overflowY:'auto'}}>{latest.body_excerpt}</div>}
+            <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+              {INTENT_STATUS[latest.ai_intent] && <button className="btn btn-primary btn-sm" onClick={()=>applyReview(t, INTENT_STATUS[latest.ai_intent])}>Confirm → {INTENT_STATUS[latest.ai_intent]==='done'?'Done':INTENT_STATUS[latest.ai_intent]==='rejected'?'Rejected':'In progress'}</button>}
+              <button className="btn btn-ghost btn-sm" onClick={()=>applyReview(t,'done')}>Mark done</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>clearReview(t.id)}>Dismiss</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -22160,16 +22239,16 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
               <div className="panel-header">
                 <h3>Tasks</h3>
                 <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
-                  <span className="nav-badge">{tasks.filter(t=>t.status!=='done').length} open</span>
+                  <span className="nav-badge">{tasks.filter(t=>t.status!=='done'&&t.status!=='rejected').length} open</span>
                   {canEdit(sel) && <button className="btn btn-primary btn-sm" onClick={()=>setEditing({})}>+ New Task</button>}
                 </div>
               </div>
-              {['todo','in_progress','done'].map(st=>{
+              {['todo','in_progress','done','rejected'].map(st=>{
                 const list = sortTasks(tasks.filter(t=>t.status===st));
-                if (st==='done' && !showDone) return list.length ? <div key={st} style={{margin:'10px 0'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowDone(true)}>Show {list.length} done</button></div> : null;
+                if ((st==='done'||st==='rejected') && !showDone) return (st==='done' && list.length) ? <div key={st} style={{margin:'10px 0'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowDone(true)}>Show completed / rejected</button></div> : null;
                 if (!list.length) return null;
-                const col = st==='todo'?'var(--text-2)':st==='in_progress'?'var(--accent)':'var(--green)';
-                const lbl = st==='todo'?'To Do':st==='in_progress'?'In Progress':'Done';
+                const col = st==='todo'?'var(--text-2)':st==='in_progress'?'var(--accent)':st==='done'?'var(--green)':'var(--red)';
+                const lbl = st==='todo'?'To Do':st==='in_progress'?'In Progress':st==='done'?'Done':'Rejected';
                 return (
                   <div key={st} style={{marginBottom:'14px'}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
