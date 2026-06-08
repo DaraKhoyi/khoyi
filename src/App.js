@@ -13774,6 +13774,7 @@ function SystemsView() {
   const [results, setResults] = useState({});
   const [checkingAll, setCheckingAll] = useState(false);
   const [, setTick] = useState(0); // re-render so "checked Xs ago" labels stay fresh
+  const [selected, setSelected] = useState(SYSTEMS[0].id);
 
   async function runCheck(sys) {
     setResults(r => ({ ...r, [sys.id]: { ...(r[sys.id] || {}), running: true } }));
@@ -13809,80 +13810,95 @@ function SystemsView() {
     return `${Math.floor(m / 60)}h ago`;
   }
 
-  const counts = SYSTEMS.reduce((acc, s) => {
-    const st = results[s.id]?.status || 'unknown';
-    acc[st] = (acc[st] || 0) + 1;
-    return acc;
-  }, {});
+  const sys = SYSTEMS.find(s => s.id === selected) || SYSTEMS[0];
+  const r = results[sys.id] || {};
+  const st = r.status || 'unknown';
+  const meta = SYS_STATUS[st] || SYS_STATUS.unknown;
 
   return (
-    <div>
-      <div className="page-header-row" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-        <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Systems</h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>Health &amp; status of every connected system</p>
+    <div style={{ display: 'flex', gap: '18px', height: 'calc(100dvh - 64px)' }}>
+
+      {/* ── LEFT: vertical systems menu ── */}
+      <div style={{ width: '210px', minWidth: '210px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Systems</h2>
+            <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>{SYSTEMS.length} systems</p>
+          </div>
+          <button className="btn-add-circle btn-add-circle-sm" onClick={runAll} disabled={checkingAll} title="Re-check all" aria-label="Re-check all">↻</button>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={runAll} disabled={checkingAll}>
-          {checkingAll ? 'Checking…' : '↻ Re-check all'}
-        </button>
-      </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', margin: '14px 0 18px' }}>
-        {['healthy', 'degraded', 'down', 'unconfigured'].map(st => (
-          counts[st] ? (
-            <span key={st} className={`pill ${SYS_STATUS[st].pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: SYS_STATUS[st].dot, display: 'inline-block' }} />
-              {counts[st]} {SYS_STATUS[st].label}
-            </span>
-          ) : null
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-        {SYSTEMS.map(sys => {
-          const r = results[sys.id] || {};
-          const st = r.status || 'unknown';
-          const meta = SYS_STATUS[st] || SYS_STATUS.unknown;
-          return (
-            <div key={sys.id} className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  <span style={{ fontSize: '18px' }}>{sys.icon}</span>
-                  <span style={{ fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sys.name}</span>
-                </div>
-                <span className={`pill ${meta.pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: meta.dot, display: 'inline-block' }} />
-                  {r.running ? 'Checking…' : meta.label}
-                </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
+          {SYSTEMS.map(item => {
+            const ir = results[item.id] || {};
+            const ist = ir.status || 'unknown';
+            const idot = (SYS_STATUS[ist] || SYS_STATUS.unknown).dot;
+            const active = item.id === selected;
+            return (
+              <div
+                key={item.id}
+                onClick={() => setSelected(item.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '9px',
+                  padding: '9px 10px', borderRadius: '8px', cursor: 'pointer',
+                  background: active ? 'var(--bg-hover)' : 'transparent',
+                  border: active ? '1px solid var(--border)' : '1px solid transparent',
+                }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: idot, flexShrink: 0, boxShadow: ir.running ? `0 0 0 3px color-mix(in srgb, ${idot} 30%, transparent)` : 'none' }} />
+                <span style={{ fontSize: '14px' }}>{item.icon}</span>
+                <span style={{ fontSize: '13px', fontWeight: active ? 600 : 500, color: active ? 'var(--text-1)' : 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
               </div>
+            );
+          })}
+        </div>
+      </div>
 
-              <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{sys.category}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-2)' }}>{sys.description}</div>
-
-              {r.detail && (
-                <div style={{ fontSize: '12px', color: st === 'down' ? 'var(--red)' : st === 'degraded' ? 'var(--yellow)' : 'var(--text-2)' }}>
-                  {r.detail}
-                </div>
-              )}
-
-              {sys.id === 'gmail' && r.meta?.accounts?.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '2px' }}>
-                  {r.meta.accounts.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '11px', padding: '5px 8px', background: 'var(--bg-hover)', borderRadius: '6px' }}>
-                      <span style={{ color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email}</span>
-                      <span style={{ color: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0 }}>{a.issue}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: 'auto', paddingTop: '6px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{r.checkedAt ? `Checked ${ago(r.checkedAt)}` : '—'}</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => runCheck(sys)} disabled={r.running}>Re-check</button>
+      {/* ── RIGHT: selected system detail ── */}
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+        <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <span style={{ fontSize: '22px' }}>{sys.icon}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: '17px', color: 'var(--text-1)' }}>{sys.name}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{sys.category}</div>
               </div>
             </div>
-          );
-        })}
+            <span className={`pill ${meta.pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.dot, display: 'inline-block' }} />
+              {r.running ? 'Checking…' : meta.label}
+            </span>
+          </div>
+
+          <div style={{ fontSize: '13px', color: 'var(--text-2)' }}>{sys.description}</div>
+
+          {r.detail && (
+            <div style={{ fontSize: '13px', fontWeight: 500, color: st === 'down' ? 'var(--red)' : st === 'degraded' ? 'var(--yellow)' : st === 'healthy' ? 'var(--green)' : 'var(--text-2)' }}>
+              {r.detail}
+            </div>
+          )}
+
+          {sys.id === 'gmail' && r.meta?.accounts?.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Accounts</div>
+              {r.meta.accounts.map((a, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '12px', padding: '8px 10px', background: 'var(--bg-hover)', borderRadius: '8px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email}</span>
+                  </span>
+                  <span style={{ color: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0, fontWeight: 500 }}>{a.issue}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '2px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-3)' }}>{r.checkedAt ? `Checked ${ago(r.checkedAt)}` : 'Not checked yet'}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => runCheck(sys)} disabled={r.running}>Re-check</button>
+          </div>
+        </div>
       </div>
     </div>
   );
