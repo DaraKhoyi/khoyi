@@ -33,5 +33,19 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script>
+      // Register the service worker. Chrome won't offer to install this as a real
+      // PWA (no browser chrome) unless a service worker with a fetch handler is
+      // active. Without this, "Add to Home Screen" produces a plain bookmark that
+      // keeps the URL bar visible — which is the bug we're fixing.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function (err) {
+            // eslint-disable-next-line no-console
+            console.warn('SW registration failed:', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>
