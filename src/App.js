@@ -22983,48 +22983,155 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
 
 // ─────────────────────────────────────────
 // PROJECT TASKS in personal Tasks view (assigned to / created by me)
+// Surfaces only tasks that are: open AND due today or earlier. Completed
+// items live in the Completed Tasks view; tasks without a due date are
+// hidden from this surface (they live in the full project tracker).
 // ─────────────────────────────────────────
 function ProjectTasksPanel({ userId }) {
   const tdb = supabase.schema('tracker');
   const [rows, setRows] = useState([]);
   const [projNames, setProjNames] = useState({});
+  const [projects, setProjects] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [sendingAccount, setSendingAccount] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [editing, setEditing] = useState(null);   // the row being edited via tap
+
   const load = async () => {
     try {
-      const [tk, pr] = await Promise.all([
+      const [tk, pr, pe, mm, ct, acc] = await Promise.all([
         tdb.from('tasks').select('*').or(`assignee_id.eq.${userId},created_by.eq.${userId}`),
-        tdb.from('projects').select('id,name'),
+        tdb.from('projects').select('id,name,owner_id'),
+        tdb.from('profiles').select('id,email,full_name,role').order('full_name'),
+        tdb.from('project_members').select('*'),
+        supabase.from('contacts').select('id,name,email,company').eq('user_id', userId).order('name'),
+        supabase.from('email_accounts').select('id,email_address,purposes').contains('purposes',['email']).order('created_at').limit(1),
       ]);
       const names = {}; (pr.data||[]).forEach(p=>names[p.id]=p.name);
-      setProjNames(names); setRows(tk.data||[]);
+      setProjNames(names);
+      setProjects(pr.data||[]);
+      setPeople(pe.data||[]);
+      setMembers(mm.data||[]);
+      setContacts(ct.data||[]);
+      setSendingAccount((acc.data && acc.data[0])||null);
+      setRows(tk.data||[]);
     } catch (e) { /* tracker may be empty */ }
     setLoaded(true);
   };
   useEffect(()=>{ load(); }, []);   // eslint-disable-line
-  const toggle = async (t)=>{ await tdb.from('tasks').update({ status: t.status==='done'?'todo':'done' }).eq('id', t.id); load(); };
-  if (loaded && !rows.length) return null;
-  const open = rows.filter(t=>t.status!=='done');
+
+  // Save handler for the modal — mirrors the Project Tracker page logic but
+  // scoped to whatever task is currently being edited from this panel.
+  const saveTask = async (data) => {
+    if (!editing || !editing.id) { setEditing(null); return; }
+    const email = data._email; delete data._email;
+    const { error } = await tdb.from('tasks').update(data).eq('id', editing.id);
+    if (error) { if (window.__notify) window.__notify('Save failed: ' + error.message, 'error'); return; }
+    // If an outbound email assignment was attached, send it
+    if (email) {
+      if (!sendingAccount) {
+        if (window.__notify) window.__notify('No email account connected — task saved but not emailed', 'warn');
+      } else {
+        const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', {
+          body: { account_id: sendingAccount.id, to: email.to, subject: email.subject, body_text: email.body },
+        });
+        if (!se && !sr?.error) {
+          await tdb.from('tasks').update({
+            assignment_method:'email', assignee_email: email.to,
+            email_thread_id: sr.provider_thread_id, email_message_id: sr.provider_message_id,
+          }).eq('id', editing.id);
+          await tdb.from('task_messages').insert({
+            task_id: editing.id, direction:'out',
+            email_message_id: sr.provider_message_id, thread_id: sr.provider_thread_id,
+            to_address: email.to, subject: email.subject,
+            body_excerpt: (email.body||'').slice(0,600),
+          });
+        }
+      }
+    }
+    setEditing(null);
+    load();
+  };
+  const removeTask = async (t) => {
+    await tdb.from('tasks').delete().eq('id', t.id);
+    setEditing(null);
+    load();
+  };
+
+  const toggle = async (t) => {
+    await tdb.from('tasks').update({ status: t.status==='done'?'todo':'done' }).eq('id', t.id);
+    load();
+  };
+
+  // Build the filtered list: open + has due date + due today or earlier
+  const today = todayISO();
+  const visible = rows.filter(t =>
+    t.status !== 'done' &&        // hide completed (they live in Completed view)
+    !!t.due_date &&               // hide tasks without a due date
+    t.due_date <= today           // only due today or earlier
+  );
+
+  // Empty after filtering = panel collapses. Don't render the empty shell.
+  if (loaded && visible.length === 0) return null;
+
+  // Build the assignable list for whichever task is being edited (project members
+  // of that task's project, plus the project owner).
+  const assignableFor = (task) => {
+    if (!task || !task.project_id) return people;
+    const proj = projects.find(p => p.id === task.project_id);
+    const ids = new Set(members.filter(m => m.project_id === task.project_id).map(m => m.user_id));
+    if (proj) ids.add(proj.owner_id);
+    return people.filter(p => ids.has(p.id));
+  };
+  const nameOf = (id) => { const p = people.find(x=>x.id===id); return p ? (p.full_name || p.email) : '—'; };
+
   return (
     <div className="panel" style={{marginBottom:'16px'}}>
-      <div className="panel-header"><h3>🗂️ From your projects</h3><span className="nav-badge">{open.length} open</span></div>
+      <div className="panel-header">
+        <h3>🗂️ From your projects</h3>
+        <span className="nav-badge">{visible.length} due</span>
+      </div>
       {!loaded ? <div style={{fontSize:'12px',color:'var(--text-3)'}}>Loading…</div> :
-        sortTasks(rows).map(t=>{
-          const overdue = t.due_date && t.status!=='done' && t.due_date < todayISO();
+        sortTasks(visible).map(t=>{
+          const overdue = t.due_date && t.due_date < today;
           return (
-            <div key={t.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
-              <button title="Complete" onClick={()=>toggle(t)} style={{width:'18px',height:'18px',borderRadius:'5px',border:`1px solid ${t.status==='done'?'var(--green)':'var(--text-3)'}`,background:t.status==='done'?'var(--green)':'transparent',cursor:'pointer',flexShrink:0}}/>
+            <div
+              key={t.id}
+              onClick={()=>setEditing(t)}
+              style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}}
+            >
+              <button
+                title="Complete"
+                onClick={(e)=>{ e.stopPropagation(); toggle(t); }}
+                style={{width:'20px',height:'20px',borderRadius:'5px',border:'1px solid var(--text-3)',background:'transparent',cursor:'pointer',flexShrink:0}}
+              />
               <span className={priorityClass(t)} style={{fontSize:'10px',fontWeight:700,minWidth:'26px',textAlign:'center',padding:'2px 4px',borderRadius:'4px'}}>{priorityLabel(t)}</span>
-              <div style={{flex:1}}>
-                <div style={{fontSize:'13px',textDecoration:t.status==='done'?'line-through':'none',color:t.status==='done'?'var(--text-3)':'var(--text-1)'}}>{t.title}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:'13px',color:'var(--text-1)'}}>{t.title}</div>
                 <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
                   <span>📁 {projNames[t.project_id]||'Project'}</span>
                   {t.contact_id && <span>🔗 {t.contact_name||'contact'}</span>}
-                  {t.due_date && <span style={{color:overdue?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue?' · overdue':''}</span>}
+                  <span style={{color:overdue?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue?' · overdue':''}</span>
                 </div>
               </div>
             </div>
           );
         })}
+
+      {editing && (
+        <TrackerTaskModal
+          initial={editing}
+          defaultSystem={editing.priority_system || 'eisenhower'}
+          assignable={assignableFor(editing)}
+          contacts={contacts}
+          nameOf={nameOf}
+          onClose={()=>setEditing(null)}
+          onSave={saveTask}
+          onDelete={removeTask}
+        />
+      )}
     </div>
   );
 }
