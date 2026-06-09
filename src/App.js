@@ -4578,24 +4578,28 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   function openReply(msg, replyAll = false) {
     if (!msg) return;
-    // Normalize a recipient (string or {name, email}) to a plain email
-    const toEmail = (r) => {
-      if (!r) return null;
-      if (typeof r === 'string') return r.trim();
-      if (typeof r === 'object') return r.email ? String(r.email).trim() : null;
-      return null;
+    // Normalize anything we might get for an address — string, {name,email},
+    // or a JSONB array of {name,email} — into a flat list of plain emails.
+    // reply_to in particular comes back from Gmail as an array; the old code
+    // dropped it into the To field unflattened, which stringified to
+    // "[object Object]" and broke send.
+    const extractEmails = (r) => {
+      if (!r) return [];
+      if (Array.isArray(r)) return r.flatMap(extractEmails);
+      if (typeof r === 'string') return r.trim() ? [r.trim()] : [];
+      if (typeof r === 'object' && r.email) return [String(r.email).trim()];
+      return [];
     };
-    const replyTo = msg.reply_to || msg.from_address || '';
-    let toList = [replyTo].filter(Boolean);
+    // Prefer Reply-To header (sender's preferred reply path, e.g. through Google
+    // Docs share notification → real human), fall back to From.
+    const primary = extractEmails(msg.reply_to);
+    let toList = primary.length ? primary : extractEmails(msg.from_address);
     if (replyAll) {
       const myAddrs = new Set([
         account.email_address.toLowerCase(),
         ...verifiedAliases.map(a => a.email_address.toLowerCase()),
       ]);
-      const extraTos = (msg.to_addresses || [])
-        .map(toEmail)
-        .filter(Boolean)
-        .filter(a => !myAddrs.has(a.toLowerCase()));
+      const extraTos = extractEmails(msg.to_addresses).filter(a => !myAddrs.has(a.toLowerCase()));
       toList = Array.from(new Set([...toList, ...extraTos]));
     }
     const subj = (msg.subject || '').match(/^re:/i) ? msg.subject : `Re: ${msg.subject || ''}`;
