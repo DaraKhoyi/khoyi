@@ -29,6 +29,69 @@ body {
 /* ─── LAYOUT ─── */
 .app-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 
+/* When running as installed PWA (iOS especially), respect the notch/safe-area.
+   When running in a normal browser tab, env(safe-area-inset-*) is 0 so this
+   is a no-op. */
+@supports (padding: env(safe-area-inset-top)) {
+  .app-shell {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg-base);
+  }
+}
+
+/* ─── PWA install banner ─────────────────────────── */
+.pwa-install-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(197,169,94,0.15) 0%, rgba(197,169,94,0.05) 100%);
+  border-bottom: 1px solid var(--accent);
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-1);
+  z-index: 200;
+}
+.pwa-install-icon {
+  font-size: 22px;
+  color: var(--accent);
+  flex-shrink: 0;
+  line-height: 1;
+}
+.pwa-install-text {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  line-height: 1.35;
+}
+.pwa-install-text strong { color: var(--text-1); font-size: 13px; font-weight: 700; }
+.pwa-install-text span   { color: var(--text-2); font-size: 11px; }
+.pwa-install-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.pwa-install-btn:hover { background: #d4ba73; }
+.pwa-install-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.pwa-install-dismiss:hover { color: var(--text-1); }
+
 /* Desktop sidebar */
 .sidebar {
   width: var(--sidebar-w);

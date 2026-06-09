@@ -23064,6 +23064,106 @@ function EmailRepliesPanel() {
 // ─────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// PWA INSTALL PROMPT
+// ─────────────────────────────────────────
+// When the site is opened in a regular mobile browser tab, the URL bar,
+// address bar, and tab counter eat ~110px of vertical space and constantly
+// remind the user this is "just a website." Installing the PWA solves that
+// — when launched from the home screen it runs without browser chrome.
+//
+// This component:
+//   1. Hides itself entirely once running standalone (already installed)
+//   2. On Android Chrome / Edge: captures beforeinstallprompt and offers a
+//      one-tap Install button that fires the real browser install dialog
+//   3. On iOS Safari: the event doesn't fire (Apple doesn't expose it), so
+//      it shows static instructions: "Tap Share, then Add to Home Screen"
+//   4. Remembers a dismissal for 7 days via localStorage so it doesn't nag
+function InstallPwaPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [visible, setVisible] = useState(false);
+  const [showIosHelp, setShowIosHelp] = useState(false);
+
+  useEffect(() => {
+    // If already running as installed PWA, never show
+    const inStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true; // iOS-specific flag
+    if (inStandalone) return;
+
+    // Respect dismissal window (7 days)
+    try {
+      const dismissed = Number(localStorage.getItem('pwa_install_dismissed_at') || 0);
+      if (dismissed && Date.now() - dismissed < 7 * 24 * 60 * 60 * 1000) return;
+    } catch (_) {}
+
+    // Detect iOS Safari — beforeinstallprompt never fires there
+    const ua = window.navigator.userAgent || '';
+    const isIos = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+    if (isIos && isSafari) {
+      setShowIosHelp(true);
+      setVisible(true);
+      return;
+    }
+
+    // Android Chrome path
+    function onBeforeInstall(e) {
+      e.preventDefault();          // stop the mini-infobar; we'll show our own UI
+      setDeferredPrompt(e);
+      setVisible(true);
+    }
+    function onInstalled() {
+      setVisible(false);
+      setDeferredPrompt(null);
+    }
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  async function handleInstall() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch (_) {}
+    setDeferredPrompt(null);
+    setVisible(false);
+  }
+  function dismiss() {
+    try { localStorage.setItem('pwa_install_dismissed_at', String(Date.now())); } catch (_) {}
+    setVisible(false);
+  }
+  if (!visible) return null;
+
+  return (
+    <div className="pwa-install-banner">
+      <div className="pwa-install-icon">⤓</div>
+      <div className="pwa-install-text">
+        {showIosHelp ? (
+          <>
+            <strong>Install PrismOS</strong>
+            <span>Tap <span style={{whiteSpace:'nowrap'}}>Share ↑</span>, then <span style={{whiteSpace:'nowrap'}}>"Add to Home Screen"</span></span>
+          </>
+        ) : (
+          <>
+            <strong>Install PrismOS</strong>
+            <span>Hide the browser bar — install as an app</span>
+          </>
+        )}
+      </div>
+      {!showIosHelp && (
+        <button type="button" className="pwa-install-btn" onClick={handleInstall}>Install</button>
+      )}
+      <button type="button" className="pwa-install-dismiss" onClick={dismiss} aria-label="Dismiss">×</button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// APP COMPONENT
+// ─────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -23355,6 +23455,7 @@ export default function App() {
 
   return (
     <div className="app-shell" style={{flexDirection:'column'}}>
+      <InstallPwaPrompt />
       {/* Mobile header */}
       <div className="mobile-header">
         <div className="mobile-header-logo">Prism<span>OS</span></div>

@@ -2,10 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="MyLife — Personal Operating System" />
-    <title>MyLife</title>
+    <!-- viewport-fit=cover lets the dark page extend behind iOS notch/home bar so
+         when installed, the screen has no white edges. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <!-- Theme color = address bar tint when in a browser; matches app bg -->
+    <meta name="theme-color" content="#0d0f14" />
+    <meta name="description" content="PrismOS — Dara's personal operating system" />
+
+    <!-- PWA manifest — was missing; without this Chrome can't offer 'Install' -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+    <!-- Android Chrome: enable standalone behavior when launched from home screen -->
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- iOS Safari: identical mechanism. Without these the URL bar shows even after
+         'Add to Home Screen'. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PrismOS" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
+
+    <!-- Standard icons -->
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon-32.png" />
+
+    <title>PrismOS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   </head>
