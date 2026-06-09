@@ -5670,6 +5670,9 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
   const [evidence, setEvidence] = useState([]);
   const [loadingEvidence, setLoadingEvidence] = useState(true);
+  // Evidence list is collapsed by default — it's reference detail, not the
+  // primary signal. The DISC summary and reasoning above already tell the story.
+  const [showEvidence, setShowEvidence] = useState(false);
   const [showBaselineForm, setShowBaselineForm] = useState(false);
 
   // Brain entries + investments linked to this contact
@@ -6559,42 +6562,53 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           {/* Recordings section */}
           <ContactRecordingsSection contact={contact} userId={userId} onTranscribed={reanalyze} />
 
-          {/* Evidence trail */}
+          {/* Evidence trail — collapsed by default; tap header to expand */}
           {hasInference && (
             <div>
-              <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'8px'}}>What Claude considered</div>
-              {loadingEvidence ? (
-                <div style={{padding:'12px',color:'var(--text-3)',fontSize:'12px'}}>Loading evidence…</div>
-              ) : evidence.length === 0 ? (
-                <div style={{padding:'12px',background:'var(--bg-base)',border:'1px dashed var(--border)',borderRadius:'6px',color:'var(--text-3)',fontSize:'12px'}}>
-                  No evidence pieces recorded.
-                </div>
-              ) : (
-                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-                  {evidence.map(e => {
-                    const sigs = [
-                      e.signals_d ? `D:${e.signals_d}` : null,
-                      e.signals_i ? `I:${e.signals_i}` : null,
-                      e.signals_s ? `S:${e.signals_s}` : null,
-                      e.signals_c ? `C:${e.signals_c}` : null,
-                    ].filter(Boolean);
-                    return (
-                      <div key={e.id} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',fontSize:'11px'}}>
-                        <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'2px',flexWrap:'wrap'}}>
-                          <span style={{fontWeight:600,color:'var(--accent)',fontSize:'10px'}}>{e.source_kind}</span>
-                          {sigs.length > 0 && <span style={{fontFamily:'monospace',color:'var(--text-2)',fontSize:'10px'}}>{sigs.join(' ')}</span>}
-                          <span style={{color:'var(--text-3)',fontSize:'10px',marginLeft:'auto'}}>weight {Number(e.weight || 0).toFixed(2)}</span>
-                        </div>
-                        {e.reasoning && <div style={{color:'var(--text-1)',marginBottom:'4px',lineHeight:1.4}}>{e.reasoning}</div>}
-                        {e.source_excerpt && (
-                          <div style={{color:'var(--text-3)',fontSize:'10px',whiteSpace:'pre-wrap',lineHeight:1.4,maxHeight:'60px',overflow:'hidden',fontStyle:'italic'}}>
-                            "{e.source_excerpt.slice(0, 240)}{e.source_excerpt.length > 240 ? '…' : ''}"
+              <button type="button" onClick={() => setShowEvidence(v => !v)}
+                style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: showEvidence ? '8px' : 0,textAlign:'left'}}>
+                <span style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600}}>
+                  What Claude considered
+                  {!loadingEvidence && evidence.length > 0 && (
+                    <span style={{color:'var(--accent)',marginLeft:'6px'}}>· {evidence.length} {evidence.length === 1 ? 'item' : 'items'}</span>
+                  )}
+                </span>
+                <span style={{color:'var(--text-3)',fontSize:'12px'}}>{showEvidence ? '▼ Hide' : '▶ Show'}</span>
+              </button>
+              {showEvidence && (
+                loadingEvidence ? (
+                  <div style={{padding:'12px',color:'var(--text-3)',fontSize:'12px'}}>Loading evidence…</div>
+                ) : evidence.length === 0 ? (
+                  <div style={{padding:'12px',background:'var(--bg-base)',border:'1px dashed var(--border)',borderRadius:'6px',color:'var(--text-3)',fontSize:'12px'}}>
+                    No evidence pieces recorded.
+                  </div>
+                ) : (
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    {evidence.map(e => {
+                      const sigs = [
+                        e.signals_d ? `D:${e.signals_d}` : null,
+                        e.signals_i ? `I:${e.signals_i}` : null,
+                        e.signals_s ? `S:${e.signals_s}` : null,
+                        e.signals_c ? `C:${e.signals_c}` : null,
+                      ].filter(Boolean);
+                      return (
+                        <div key={e.id} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',fontSize:'11px'}}>
+                          <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'2px',flexWrap:'wrap'}}>
+                            <span style={{fontWeight:600,color:'var(--accent)',fontSize:'10px'}}>{e.source_kind}</span>
+                            {sigs.length > 0 && <span style={{fontFamily:'monospace',color:'var(--text-2)',fontSize:'10px'}}>{sigs.join(' ')}</span>}
+                            <span style={{color:'var(--text-3)',fontSize:'10px',marginLeft:'auto'}}>weight {Number(e.weight || 0).toFixed(2)}</span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          {e.reasoning && <div style={{color:'var(--text-1)',marginBottom:'4px',lineHeight:1.4}}>{e.reasoning}</div>}
+                          {e.source_excerpt && (
+                            <div style={{color:'var(--text-3)',fontSize:'10px',whiteSpace:'pre-wrap',lineHeight:1.4,maxHeight:'60px',overflow:'hidden',fontStyle:'italic'}}>
+                              "{e.source_excerpt.slice(0, 240)}{e.source_excerpt.length > 240 ? '…' : ''}"
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
               )}
             </div>
           )}
