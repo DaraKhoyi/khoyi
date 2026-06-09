@@ -8377,6 +8377,10 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
   const [businessCity, setBusinessCity] = useState(initial?.business_city || '');
   const [businessState, setBusinessState] = useState(initial?.business_state || '');
   const [businessZip, setBusinessZip] = useState(initial?.business_zip || '');
+  // Address sections are collapsed by default — most contacts don't need a tap on
+  // these to fill the screen. Each toggles independently.
+  const [showHomeAddr, setShowHomeAddr] = useState(false);
+  const [showBizAddr, setShowBizAddr] = useState(false);
   // 1099-NEC / W-9 — collapsed by default; sensitive PII (TIN) lives here
   const [show1099, setShow1099]                 = useState(!!(initial?.is_1099_vendor));
   const [is1099Vendor, setIs1099Vendor]         = useState(!!(initial?.is_1099_vendor));
@@ -8486,41 +8490,88 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
           </div>
           <div className="form-group"><label className="form-label">Profession</label><input className="form-input" value={profession} onChange={e=>setProfession(e.target.value)} placeholder="e.g. Realtor, Attorney, Jeweler, Doctor…" /></div>
 
-          {/* HOME ADDRESS */}
-          <div style={{marginTop:'18px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'10px'}}>🏠 Home Address</div>
-            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={homeAddress} onChange={e=>setHomeAddress(e.target.value)} /></div>
-            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={homeCity} onChange={e=>setHomeCity(e.target.value)} /></div>
-            {/* State + ZIP share one row even on mobile — keeps a compact 2-line address */}
-            <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px',marginBottom:'8px'}}>
-              <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={homeState} onChange={e=>setHomeState(e.target.value.toUpperCase())} /></div>
-              <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={homeZip} onChange={e=>setHomeZip(e.target.value)} /></div>
-            </div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">Own / Rent</label>
-                <select className="form-select" value={homeOwnership} onChange={e=>setHomeOwnership(e.target.value)}>
-                  <option value="">—</option>
-                  <option value="own">Own</option>
-                  <option value="rent">Rent</option>
-                </select>
+          {/* HOME ADDRESS — collapsed by default; tap header to expand */}
+          {(() => {
+            const homeSummary = [homeAddress, [homeCity, homeState].filter(Boolean).join(', '), homeZip]
+              .filter(Boolean).join(' · ').trim();
+            return (
+              <div style={{marginTop:'18px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                <button type="button" onClick={() => setShowHomeAddr(v => !v)}
+                  style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: showHomeAddr ? '10px' : 0,textAlign:'left'}}>
+                  <span style={{display:'flex',flexDirection:'column',gap:'3px',flex:1,minWidth:0}}>
+                    <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                      🏠 Home Address
+                      {homeOwnership && <span style={{color:'var(--accent)',marginLeft:'6px'}}>· {homeOwnership === 'own' ? 'Own' : 'Rent'}</span>}
+                    </span>
+                    {!showHomeAddr && (
+                      <span style={{fontSize:'13px',color: homeSummary ? 'var(--text-1)' : 'var(--text-3)',fontStyle: homeSummary ? 'normal' : 'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {homeSummary || 'Tap to add'}
+                      </span>
+                    )}
+                  </span>
+                  <span style={{color:'var(--text-3)',fontSize:'12px',marginLeft:'10px',flexShrink:0}}>{showHomeAddr ? '▼ Hide' : '▶ Edit'}</span>
+                </button>
+                {showHomeAddr && (
+                  <>
+                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={homeAddress} onChange={e=>setHomeAddress(e.target.value)} /></div>
+                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={homeCity} onChange={e=>setHomeCity(e.target.value)} /></div>
+                    {/* State + ZIP share one row even on mobile — keeps a compact 2-line address */}
+                    <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px',marginBottom:'8px'}}>
+                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={homeState} onChange={e=>setHomeState(e.target.value.toUpperCase())} /></div>
+                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={homeZip} onChange={e=>setHomeZip(e.target.value)} /></div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group"><label className="form-label">Own / Rent</label>
+                        <select className="form-select" value={homeOwnership} onChange={e=>setHomeOwnership(e.target.value)}>
+                          <option value="">—</option>
+                          <option value="own">Own</option>
+                          <option value="rent">Rent</option>
+                        </select>
+                      </div>
+                      {homeOwnership === 'own' && (
+                        <div className="form-group"><label className="form-label">Year Purchased</label>
+                          <input className="form-input" type="number" min="1800" max="2100" value={homePurchaseYear} onChange={e=>setHomePurchaseYear(e.target.value)} placeholder="e.g. 1998" /></div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
-              {homeOwnership === 'own' && (
-                <div className="form-group"><label className="form-label">Year Purchased</label>
-                  <input className="form-input" type="number" min="1800" max="2100" value={homePurchaseYear} onChange={e=>setHomePurchaseYear(e.target.value)} placeholder="e.g. 1998" /></div>
-              )}
-            </div>
-          </div>
+            );
+          })()}
 
-          {/* BUSINESS ADDRESS */}
-          <div style={{marginTop:'12px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'10px'}}>🏢 Business Address</div>
-            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={businessAddress} onChange={e=>setBusinessAddress(e.target.value)} /></div>
-            <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={businessCity} onChange={e=>setBusinessCity(e.target.value)} /></div>
-            <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px'}}>
-              <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
-              <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
-            </div>
-          </div>
+          {/* BUSINESS ADDRESS — collapsed by default; tap header to expand */}
+          {(() => {
+            const bizSummary = [businessAddress, [businessCity, businessState].filter(Boolean).join(', '), businessZip]
+              .filter(Boolean).join(' · ').trim();
+            return (
+              <div style={{marginTop:'12px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                <button type="button" onClick={() => setShowBizAddr(v => !v)}
+                  style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: showBizAddr ? '10px' : 0,textAlign:'left'}}>
+                  <span style={{display:'flex',flexDirection:'column',gap:'3px',flex:1,minWidth:0}}>
+                    <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                      🏢 Business Address
+                    </span>
+                    {!showBizAddr && (
+                      <span style={{fontSize:'13px',color: bizSummary ? 'var(--text-1)' : 'var(--text-3)',fontStyle: bizSummary ? 'normal' : 'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {bizSummary || 'Tap to add'}
+                      </span>
+                    )}
+                  </span>
+                  <span style={{color:'var(--text-3)',fontSize:'12px',marginLeft:'10px',flexShrink:0}}>{showBizAddr ? '▼ Hide' : '▶ Edit'}</span>
+                </button>
+                {showBizAddr && (
+                  <>
+                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={businessAddress} onChange={e=>setBusinessAddress(e.target.value)} /></div>
+                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={businessCity} onChange={e=>setBusinessCity(e.target.value)} /></div>
+                    <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px'}}>
+                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
+                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* 1099-NEC / W-9 — collapsible. Contains sensitive PII (TIN); only
               shown for active 1099 vendors by default. */}
