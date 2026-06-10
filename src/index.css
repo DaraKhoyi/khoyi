@@ -724,6 +724,23 @@ body {
 .day-event-time { font-size: 10px; color: var(--text-3); }
 .day-event-title { font-size: 12px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day-event-loc { font-size: 10px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Auto-scheduled task blocks (Motion-style) ── */
+.day-event-block.task-block, .week-event-block.task-block {
+  background: var(--accent-glow);
+  border: 1px dashed var(--accent);
+  border-left: 3px solid var(--accent);
+  cursor: default;
+}
+.day-event-block.task-block.overdue, .week-event-block.task-block.overdue {
+  background: rgba(239,68,68,0.12);
+  border: 1px dashed #ef4444;
+  border-left: 3px solid #ef4444;
+}
+.task-block-check { cursor: pointer; font-size: 14px; line-height: 1; color: var(--accent); flex-shrink: 0; user-select: none; }
+.day-event-block.task-block.overdue .task-block-check { color: #ef4444; }
+.week-event-block.task-block .week-event-time { color: var(--accent); }
+.week-event-block.task-block.overdue .week-event-time { color: #ef4444; }
 .day-tasks-scroll { flex: 1; overflow-y: auto; max-height: 70vh; padding: 0; }
 
 /* Task rows: checkbox + priority STACKED vertically on the left;

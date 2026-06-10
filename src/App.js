@@ -1034,6 +1034,13 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   const [emailMsg, setEmailMsg] = useState('');
   const emailAlreadySent = !!(initial && initial.email_thread_id);
 
+  // Auto-scheduling (Motion-style)
+  const [autoSchedule, setAutoSchedule] = useState(!!initial?.auto_schedule);
+  const [durationMin, setDurationMin] = useState(initial?.duration_minutes || 30);
+  const [schedPriority, setSchedPriority] = useState(initial?.schedule_priority || 'normal'); // normal|asap
+  const [hardDeadline, setHardDeadline] = useState(!!initial?.is_hard_deadline);
+  const [minChunk, setMinChunk] = useState(initial?.min_chunk_minutes || 0);
+
   // Load existing contact links when editing
   useEffect(() => {
     if (!initial?.id) return;
@@ -1104,6 +1111,12 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
       recurring: recurring === 'none' ? null : recurring,  // legacy text column
       assignee_email: emailMode ? (emailTo.trim() || null) : null,
       assignment_method: emailMode ? 'email' : (initial?.assignment_method || 'self'),
+      // Auto-scheduling
+      auto_schedule: autoSchedule,
+      duration_minutes: autoSchedule ? Math.max(5, parseInt(durationMin, 10) || 30) : (initial?.duration_minutes ?? null),
+      schedule_priority: autoSchedule && schedPriority === 'asap' ? 'asap' : null,
+      is_hard_deadline: autoSchedule ? hardDeadline : false,
+      min_chunk_minutes: autoSchedule && parseInt(minChunk, 10) > 0 ? parseInt(minChunk, 10) : null,
       _email: (emailMode && emailTo.trim() && !emailAlreadySent) ? { to: emailTo.trim(), subject: title.trim(), body: emailMsg } : null,
     };
     if (system === 'eisenhower') {
@@ -1273,6 +1286,55 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
             </div>
           )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional details…" /></div>
+
+          {/* ── Auto-schedule (Motion-style) ── */}
+          <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
+              <input type="checkbox" checked={autoSchedule} onChange={e=>setAutoSchedule(e.target.checked)}/>
+              <span>🗓️ Auto-schedule onto my calendar</span>
+            </label>
+            {autoSchedule && (
+              <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'10px'}}>
+                <div className="form-row">
+                  <div className="form-group" style={{flex:1,marginBottom:0}}>
+                    <label className="form-label">Estimated time</label>
+                    <select className="form-select" value={durationMin} onChange={e=>setDurationMin(e.target.value)}>
+                      <option value={15}>15 min</option>
+                      <option value={30}>30 min</option>
+                      <option value={45}>45 min</option>
+                      <option value={60}>1 hour</option>
+                      <option value={90}>1.5 hours</option>
+                      <option value={120}>2 hours</option>
+                      <option value={180}>3 hours</option>
+                      <option value={240}>4 hours</option>
+                      <option value={480}>Full day (8h)</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{flex:1,marginBottom:0}}>
+                    <label className="form-label">Split into chunks of</label>
+                    <select className="form-select" value={minChunk} onChange={e=>setMinChunk(e.target.value)}>
+                      <option value={0}>Don't split</option>
+                      <option value={30}>30 min</option>
+                      <option value={60}>1 hour</option>
+                      <option value={90}>1.5 hours</option>
+                      <option value={120}>2 hours</option>
+                    </select>
+                  </div>
+                </div>
+                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
+                  <input type="checkbox" checked={schedPriority==='asap'} onChange={e=>setSchedPriority(e.target.checked?'asap':'normal')}/>
+                  <span>⚡ ASAP — schedule before everything else</span>
+                </label>
+                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
+                  <input type="checkbox" checked={hardDeadline} onChange={e=>setHardDeadline(e.target.checked)} disabled={!due_date}/>
+                  <span>🔒 Hard deadline — work past hours if needed to hit the due date{!due_date && <em style={{color:'var(--text-3)'}}> (set a due date first)</em>}</span>
+                </label>
+                <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.4}}>
+                  PrismOS finds open time in your working hours, places this task around your meetings, and reshuffles it automatically if you miss it. Manage working hours in Settings.
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
             <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
@@ -2083,6 +2145,11 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
       if (emErr) { notify(emErr, 'error'); return; }
       notify('Task emailed to ' + _email.to, 'success');
     }
+    // Auto-schedule: ask the scheduler to (re)place blocks; calendar will pick them up on next event refresh.
+    if (taskData.auto_schedule) {
+      supabase.functions.invoke('task-autoschedule', { body: {} }).catch(() => {});
+      notify('Scheduling onto your calendar…', 'success');
+    }
     setShowModal(false); setEditTask(null);
   }
 
@@ -2097,6 +2164,9 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
       return;
     }
     if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+    if (updated && updated.auto_schedule && newCompleted) {
+      supabase.functions.invoke('task-autoschedule', { body: {} }).catch(() => {});
+    }
   }, [setTasks]);
 
   // Move task to quadrant at position. The drop handler in QuadrantGroup passes
@@ -13316,14 +13386,39 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     return s.getFullYear() === year && s.getMonth() === month;
   });
 
+  const [scheduling, setScheduling] = useState(false);
+  async function refreshSchedule() {
+    setScheduling(true);
+    try {
+      const { error } = await supabase.functions.invoke('task-autoschedule', { body: {} });
+      if (error) throw error;
+      // refetch events so new task blocks appear
+      const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+      if (fresh) setEvents(fresh);
+      setFlash({ type:'success', text:'Schedule refreshed.' });
+    } catch (e) {
+      setFlash({ type:'error', text:`Schedule failed: ${e.message}` });
+    } finally {
+      setScheduling(false);
+      setTimeout(()=>setFlash(null), 3500);
+    }
+  }
+
+  const taskBlockCount = events.filter(e => e.event_kind === 'task_block').length;
+
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}>
           <h2>📅 Calendar</h2>
-          <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total</p>
+          <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total{taskBlockCount>0?` · ${taskBlockCount} scheduled task block${taskBlockCount===1?'':'s'}`:''}</p>
         </div>
         <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
+          <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={refreshSchedule} disabled={scheduling}
+            title="Auto-schedule tasks onto the calendar" aria-label="Refresh schedule"
+            style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
+            <span className={scheduling?'spinning':''} style={{fontSize:'15px',display:'inline-block'}}>🗓️</span>
+          </button>
           {hasCalendarScope ? (
             <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={()=>syncCalendar('both')} disabled={syncing}
               title={`Refresh — ${calendarAccount.email_address}`} aria-label="Refresh calendar">
@@ -13597,12 +13692,14 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
                 ))}
                 {dayEv.map(ev => {
                   const {top, height} = evPosition(ev);
+                  const isBlock = ev.event_kind === 'task_block';
+                  const overdue = isBlock && (ev.category === 'task_overdue' || (ev.end_at && new Date(ev.end_at) < today));
                   return (
-                    <div key={ev.id} className="week-event-block"
+                    <div key={ev.id} className={`week-event-block${isBlock?' task-block':''}${overdue?' overdue':''}`}
                       style={{top: `${top}px`, height: `${height}px`}}
                       onClick={(e)=>{e.stopPropagation();onEventClick(ev);}}
                       title={ev.title}>
-                      <div className="week-event-time">{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>
+                      <div className="week-event-time">{isBlock?'🗓 ':''}{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>
                       <div className="week-event-title">{ev.title}</div>
                     </div>
                   );
@@ -13679,6 +13776,22 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
             ))}
             {nonAllDay.map(ev => {
               const {top, height} = evPosition(ev);
+              if (ev.event_kind === 'task_block') {
+                const overdue = ev.category === 'task_overdue' || (ev.end_at && new Date(ev.end_at) < today);
+                const t = (tasks || []).find(x => x.id === ev.task_id);
+                return (
+                  <div key={ev.id} className={`day-event-block task-block${overdue?' overdue':''}`}
+                    style={{top: `${top}px`, height: `${height}px`}}
+                    title={ev.title}>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span className="task-block-check"
+                        onClick={(e)=>{e.stopPropagation(); if(t) toggleTask(t);}}>{t?.completed?'☑':'☐'}</span>
+                      <span className="day-event-title" style={{textDecoration:t?.completed?'line-through':'none'}}>{ev.title}</span>
+                    </div>
+                    <div className="day-event-time">{overdue?'⚠ overdue · ':''}{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}{ev.description && ev.description.includes('part') ? ' · '+ev.description.replace('Auto-scheduled · ','') : ''}</div>
+                  </div>
+                );
+              }
               return (
                 <div key={ev.id} className="day-event-block"
                   style={{top: `${top}px`, height: `${height}px`}}
@@ -22437,6 +22550,103 @@ function EmailAliasesPanel({ emailAliases, setEmailAliases, emailAccounts, userI
 // ─────────────────────────────────────────
 // SETTINGS VIEW
 // ─────────────────────────────────────────
+function WorkingHoursSection({ userId }) {
+  const DAYS = [['mon','Monday'],['tue','Tuesday'],['wed','Wednesday'],['thu','Thursday'],['fri','Friday'],['sat','Saturday'],['sun','Sunday']];
+  const [sched, setSched] = useState(null);
+  const [days, setDays] = useState({});
+  const [mirror, setMirror] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let { data } = await supabase.from('schedules').select('*').eq('user_id', userId).eq('is_default', true).limit(1);
+      let s = data && data[0];
+      if (!s) {
+        const { data: created } = await supabase.from('schedules').insert({
+          user_id: userId, name: 'Work hours', is_default: true,
+          hours: { mon:[[9,17]], tue:[[9,17]], wed:[[9,17]], thu:[[9,17]], fri:[[9,17]] },
+          timezone: 'America/New_York',
+        }).select().single();
+        s = created;
+      }
+      if (cancelled || !s) return;
+      const h = s.hours || {};
+      const next = {};
+      for (const [k] of DAYS) {
+        const w = h[k] && h[k][0];
+        next[k] = w ? { enabled: true, start: w[0], end: w[1] } : { enabled: false, start: 9, end: 17 };
+      }
+      setSched(s); setDays(next); setMirror(!!s.mirror_to_google); setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  function setDay(k, patch) { setDays(prev => ({ ...prev, [k]: { ...prev[k], ...patch } })); }
+
+  async function save() {
+    setSaving(true); setMsg('');
+    const hours = {};
+    for (const [k] of DAYS) if (days[k]?.enabled) hours[k] = [[Number(days[k].start), Number(days[k].end)]];
+    const { error } = await supabase.from('schedules')
+      .update({ hours, mirror_to_google: mirror, updated_at: new Date().toISOString() })
+      .eq('id', sched.id);
+    if (error) setMsg('Error: ' + error.message);
+    else {
+      setMsg('Working hours saved. Re-scheduling…');
+      supabase.functions.invoke('task-autoschedule', { body: {} }).catch(() => {});
+    }
+    setSaving(false);
+  }
+
+  const HOPTS = []; for (let h = 0; h <= 24; h += 0.5) HOPTS.push(h);
+  const hlabel = (h) => { const hh = Math.floor(h), mm = (h - hh) * 60; const ap = hh < 12 || hh === 24 ? 'AM' : 'PM'; let d = hh % 12; if (d === 0) d = 12; return `${d}:${mm===0?'00':'30'} ${hh===24?'AM':ap}`; };
+
+  return (
+    <div className="panel" style={{marginBottom:'18px'}}>
+      <div className="panel-header"><h3>🗓️ Working Hours</h3></div>
+      <div className="panel-body">
+        {loading ? <p style={{color:'var(--text-3)'}}>Loading…</p> : (
+          <>
+            <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
+              Auto-scheduled tasks are placed only inside these hours, around your meetings. Times are in your local timezone.
+            </p>
+            {msg && <div className={msg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{msg}</div>}
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              {DAYS.map(([k,label]) => (
+                <div key={k} style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
+                  <label style={{display:'flex',alignItems:'center',gap:'7px',width:'120px',cursor:'pointer',fontSize:'13px'}}>
+                    <input type="checkbox" checked={!!days[k]?.enabled} onChange={e=>setDay(k,{enabled:e.target.checked})}/>
+                    <span style={{color:days[k]?.enabled?'var(--text-1)':'var(--text-3)'}}>{label}</span>
+                  </label>
+                  {days[k]?.enabled ? (
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      <select className="form-select" style={{width:'auto',padding:'4px 8px'}} value={days[k].start} onChange={e=>setDay(k,{start:Number(e.target.value)})}>
+                        {HOPTS.filter(h=>h<24).map(h=><option key={h} value={h}>{hlabel(h)}</option>)}
+                      </select>
+                      <span style={{color:'var(--text-3)'}}>to</span>
+                      <select className="form-select" style={{width:'auto',padding:'4px 8px'}} value={days[k].end} onChange={e=>setDay(k,{end:Number(e.target.value)})}>
+                        {HOPTS.filter(h=>h>days[k].start).map(h=><option key={h} value={h}>{hlabel(h)}</option>)}
+                      </select>
+                    </div>
+                  ) : <span style={{fontSize:'12px',color:'var(--text-3)'}}>Off</span>}
+                </div>
+              ))}
+            </div>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)',marginTop:'14px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
+              <input type="checkbox" checked={mirror} onChange={e=>setMirror(e.target.checked)}/>
+              <span>Also push task blocks to my real Google Calendar <em style={{color:'var(--text-3)'}}>(off by default — blocks update often)</em></span>
+            </label>
+            <button className="btn btn-primary" style={{marginTop:'14px'}} onClick={save} disabled={saving}>{saving?'Saving…':'Save working hours'}</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -22569,6 +22779,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             </div>
           </div>
         </div>
+        <WorkingHoursSection userId={userId} />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>About you</h3></div>
           <div className="panel-body">
