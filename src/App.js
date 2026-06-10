@@ -13387,6 +13387,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   });
 
   const [scheduling, setScheduling] = useState(false);
+  const [showFlex, setShowFlex] = useState(false);
   async function refreshSchedule() {
     setScheduling(true);
     try {
@@ -13414,6 +13415,13 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
           <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total{taskBlockCount>0?` · ${taskBlockCount} scheduled task block${taskBlockCount===1?'':'s'}`:''}</p>
         </div>
         <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
+          {viewMode==='day' && (
+            <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={()=>setShowFlex(true)}
+              title="Flexible hours for this day — block time, start late, day off" aria-label="Flexible hours"
+              style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
+              <span style={{fontSize:'15px',display:'inline-block'}}>⏰</span>
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={refreshSchedule} disabled={scheduling}
             title="Auto-schedule tasks onto the calendar" aria-label="Refresh schedule"
             style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
@@ -13575,6 +13583,15 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         contacts={contacts}
         properties={properties}
       />}
+      {showFlex && <FlexibleHoursModal
+        date={cursor}
+        userId={userId}
+        onClose={()=>setShowFlex(false)}
+        onApplied={async ()=>{
+          setShowFlex(false);
+          await refreshSchedule();
+        }}
+      />}
     </div>
   );
 }
@@ -13582,6 +13599,134 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 // ─────────────────────────────────────────
 // CALENDAR VIEW HELPERS — Month / Week / Day / Year sub-components
 // ─────────────────────────────────────────
+
+// Flexible Hours — one-day exceptions to the working-hours schedule.
+// Writes a flexible_hours row whose `rules` the scheduler reads.
+function FlexibleHoursModal({ date, userId, onClose, onApplied }) {
+  const dateKey = ymd(date);
+  const niceDate = date.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' });
+  const [blockDay, setBlockDay] = useState(false);
+  const [startLater, setStartLater] = useState('');
+  const [stopEarly, setStopEarly] = useState('');
+  const [blocks, setBlocks] = useState([]); // [{start,end}]
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('flexible_hours').select('*').eq('user_id', userId).eq('date', dateKey);
+      const row = data && data[0];
+      if (!cancelled && row && Array.isArray(row.rules)) {
+        for (const r of row.rules) {
+          if (r.type === 'block_day') setBlockDay(true);
+          else if (r.type === 'start_later') setStartLater(r.time || '');
+          else if (r.type === 'stop_early') setStopEarly(r.time || '');
+          else if (r.type === 'block') setBlocks(prev => [...prev, { start: r.start, end: r.end }]);
+        }
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [userId, dateKey]);
+
+  function addBlock() { setBlocks(prev => [...prev, { start: '12:00', end: '13:00' }]); }
+  function setBlock(i, patch) { setBlocks(prev => prev.map((b, idx) => idx === i ? { ...b, ...patch } : b)); }
+  function removeBlock(i) { setBlocks(prev => prev.filter((_, idx) => idx !== i)); }
+
+  function buildRules() {
+    if (blockDay) return [{ type: 'block_day' }];
+    const rules = [];
+    if (startLater) rules.push({ type: 'start_later', time: startLater });
+    if (stopEarly) rules.push({ type: 'stop_early', time: stopEarly });
+    for (const b of blocks) if (b.start && b.end && b.end > b.start) rules.push({ type: 'block', start: b.start, end: b.end });
+    return rules;
+  }
+
+  async function apply() {
+    setSaving(true);
+    const rules = buildRules();
+    // one row per date: clear then insert
+    await supabase.from('flexible_hours').delete().eq('user_id', userId).eq('date', dateKey);
+    if (rules.length) await supabase.from('flexible_hours').insert({ user_id: userId, date: dateKey, rules });
+    setSaving(false);
+    onApplied();
+  }
+
+  async function clearAll() {
+    setSaving(true);
+    await supabase.from('flexible_hours').delete().eq('user_id', userId).eq('date', dateKey);
+    setSaving(false);
+    onApplied();
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{maxWidth:'440px'}}>
+        <div className="modal-header">
+          <h3>⏰ Flexible Hours · {niceDate}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div style={{padding:'4px 2px'}}>
+          {loading ? <p style={{color:'var(--text-3)',padding:'12px'}}>Loading…</p> : (
+            <>
+              <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
+                Adjust just this day. The scheduler reshuffles your auto-scheduled tasks around these rules.
+              </p>
+
+              <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:'8px',marginBottom:'10px',background:'var(--bg-base)'}}>
+                <input type="checkbox" checked={blockDay} onChange={e=>setBlockDay(e.target.checked)}/>
+                <span>🚫 Block the whole day — schedule no tasks</span>
+              </label>
+
+              {!blockDay && (
+                <>
+                  <div className="form-row" style={{marginBottom:'10px'}}>
+                    <div className="form-group" style={{flex:1,marginBottom:0}}>
+                      <label className="form-label">Start tasks later</label>
+                      <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                        <input type="time" className="form-input" value={startLater} onChange={e=>setStartLater(e.target.value)} style={{flex:1}}/>
+                        {startLater && <button type="button" onClick={()=>setStartLater('')} style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'16px'}}>×</button>}
+                      </div>
+                    </div>
+                    <div className="form-group" style={{flex:1,marginBottom:0}}>
+                      <label className="form-label">Stop tasks early</label>
+                      <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                        <input type="time" className="form-input" value={stopEarly} onChange={e=>setStopEarly(e.target.value)} style={{flex:1}}/>
+                        {stopEarly && <button type="button" onClick={()=>setStopEarly('')} style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'16px'}}>×</button>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{marginBottom:'4px'}}>
+                    <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span>Block out specific hours</span>
+                      <button type="button" onClick={addBlock} className="btn btn-sm btn-ghost" style={{padding:'2px 8px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>+ Add block</button>
+                    </label>
+                    {blocks.length === 0 && <p style={{fontSize:'11px',color:'var(--text-3)',margin:'4px 0 0'}}>e.g. lunch, school pickup, an appointment.</p>}
+                    {blocks.map((b, i) => (
+                      <div key={i} style={{display:'flex',gap:'6px',alignItems:'center',marginTop:'8px'}}>
+                        <input type="time" className="form-input" value={b.start} onChange={e=>setBlock(i,{start:e.target.value})} style={{flex:1}}/>
+                        <span style={{color:'var(--text-3)'}}>to</span>
+                        <input type="time" className="form-input" value={b.end} onChange={e=>setBlock(i,{end:e.target.value})} style={{flex:1}}/>
+                        <button type="button" onClick={()=>removeBlock(i)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'16px'}}>🗑</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <div style={{display:'flex',gap:'8px',marginTop:'18px'}}>
+                <button className="btn btn-primary" style={{flex:1}} onClick={apply} disabled={saving}>{saving?'Applying…':'Apply & reschedule'}</button>
+                <button className="btn btn-ghost" onClick={clearAll} disabled={saving} title="Remove all flexible-hours rules for this day">Clear day</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // MONTH — 6-row grid of 7 days
 function MonthGrid({ cells, month, today, eventsForDay, onDayClick, onEventClick }) {
