@@ -12933,12 +12933,17 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
   const [contactId, setContactId] = useState(init.contact_id || '');
   const [brainEntryId, setBrainEntryId] = useState(init.brain_entry_id || '');
   const [propertyId, setPropertyId] = useState(init.property_id || '');
+  // Recurrence
+  const [recurFreq, setRecurFreq] = useState(init.recur_freq || 'none');
+  const [recurInterval, setRecurInterval] = useState(init.recur_interval || 1);
+  const [recurUntil, setRecurUntil] = useState(init.recur_until || '');
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim()) return;
     const start_at = allDay ? `${startDate}T00:00:00` : `${startDate}T${startTime}:00`;
     const end_at = allDay ? `${endDate}T00:00:00` : `${endDate}T${endTime}:00`;
+    const repeats = recurFreq !== 'none';
     onSave({
       title: title.trim(),
       all_day: allDay,
@@ -12949,6 +12954,9 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
       contact_id: contactId || null,
       brain_entry_id: brainEntryId || null,
       property_id: propertyId || null,
+      recur_freq: repeats ? recurFreq : null,
+      recur_interval: repeats ? Math.max(1, Number(recurInterval) || 1) : 1,
+      recur_until: repeats && recurUntil ? recurUntil : null,
     });
   }
 
@@ -12978,6 +12986,44 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
             {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">End time</label><input className="form-input" type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} /></div>}
           </div>
           <div className="form-group"><label className="form-label">Location</label><input className="form-input" value={location} onChange={e=>setLocation(e.target.value)} placeholder="Optional" /></div>
+
+          {/* Recurrence */}
+          <div className="form-group">
+            <label className="form-label">Repeat</label>
+            <select className="form-select" value={recurFreq} onChange={e=>setRecurFreq(e.target.value)}>
+              <option value="none">Does not repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+          {recurFreq !== 'none' && (
+            <div className="form-row">
+              <div className="form-group" style={{flex:1}}>
+                <label className="form-label">Every</label>
+                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                  <input className="form-input" type="number" min="1" max="99" value={recurInterval}
+                    onChange={e=>setRecurInterval(e.target.value)} style={{width:'70px'}} />
+                  <span style={{color:'var(--text-2)',fontSize:'13px'}}>
+                    {recurFreq === 'daily' ? (recurInterval==1?'day':'days')
+                      : recurFreq === 'weekly' ? (recurInterval==1?'week':'weeks')
+                      : recurFreq === 'monthly' ? (recurInterval==1?'month':'months')
+                      : (recurInterval==1?'year':'years')}
+                  </span>
+                </div>
+              </div>
+              <div className="form-group" style={{flex:1}}>
+                <label className="form-label">Until (optional)</label>
+                <input className="form-input" type="date" value={recurUntil} onChange={e=>setRecurUntil(e.target.value)} />
+              </div>
+            </div>
+          )}
+          {recurFreq !== 'none' && initial && (
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'-6px',marginBottom:'10px',fontStyle:'italic'}}>
+              Edits and deletes apply to the whole series.
+            </div>
+          )}
           {contacts && contacts.length > 0 && (
             <div className="form-group">
               <label className="form-label">Linked contact</label>
@@ -13102,9 +13148,66 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   function addDaysLocal(d, n) {
     const r = new Date(d); r.setDate(r.getDate()+n); return r;
   }
+  // ─── Recurrence expansion ───────────────────────────────
+  // Events with recur_freq are stored once (the master). For display we expand
+  // them into virtual occurrences within a window around the cursor. Virtual
+  // instances carry _masterId so edits/clicks resolve back to the real row.
+  function advanceDate(d, freq, interval) {
+    const n = new Date(d);
+    if (freq === 'daily') n.setDate(n.getDate() + interval);
+    else if (freq === 'weekly') n.setDate(n.getDate() + 7 * interval);
+    else if (freq === 'monthly') n.setMonth(n.getMonth() + interval);
+    else if (freq === 'yearly') n.setFullYear(n.getFullYear() + interval);
+    return n;
+  }
+  const displayEvents = React.useMemo(() => {
+    // Window: 13 months back to 14 months forward of the cursor — covers
+    // month/week/day and the ±6-month year view comfortably.
+    const winStart = new Date(cursor.getFullYear(), cursor.getMonth() - 13, 1);
+    const winEnd   = new Date(cursor.getFullYear(), cursor.getMonth() + 14, 0, 23, 59, 59);
+    const out = [];
+    for (const ev of (events || [])) {
+      if (!ev.recur_freq) { out.push(ev); continue; }
+      const start = new Date(ev.start_at);
+      const dur = (ev.end_at ? new Date(ev.end_at) : new Date(start.getTime() + 3600000)) - start;
+      const interval = Math.max(1, ev.recur_interval || 1);
+      const until = ev.recur_until ? new Date(ev.recur_until + 'T23:59:59') : null;
+      const maxCount = ev.recur_count || 100000;
+      let occ = new Date(start), i = 0, guard = 0;
+      while (i < maxCount && guard < 6000) {
+        guard++;
+        if (occ > winEnd) break;
+        if (until && occ > until) break;
+        if (occ >= winStart) {
+          const oStart = new Date(occ);
+          out.push({
+            ...ev,
+            id: i === 0 ? ev.id : `${ev.id}__r${i}`,
+            start_at: oStart.toISOString(),
+            end_at: new Date(oStart.getTime() + dur).toISOString(),
+            _masterId: ev.id,
+            _recurInstance: i > 0,
+          });
+        }
+        occ = advanceDate(occ, ev.recur_freq, interval);
+        i++;
+      }
+    }
+    return out;
+  }, [events, cursor]);
+
+  // Resolve a (possibly virtual) event to its real master row before editing.
+  function openEditEvent(ev) {
+    const realId = ev._masterId || ev.id;
+    const master = (events || []).find(e => e.id === realId) || ev;
+    setEditEvent(master);
+    setModalDate(null);
+    setShowModal(true);
+  }
+
   function eventsForDay(d) {
     const key = ymd(d);
-    return events.filter(ev => {
+    return displayEvents.filter(ev => {
       const s = new Date(ev.start_at);
       return ymd(s) === key;
     }).sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
@@ -13303,15 +13406,15 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             cells={cells} month={month} today={today}
             eventsForDay={eventsForDay}
             onDayClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
-            onEventClick={(ev)=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}
+            onEventClick={openEditEvent}
           />}
           {viewMode==='week' && <WeekTimeline
             startDate={startOfWeek(cursor)}
             today={today}
             hourStart={VIEW_HOUR_START} hourEnd={VIEW_HOUR_END}
-            events={events}
+            events={displayEvents}
             onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
-            onEventClick={(ev)=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}
+            onEventClick={openEditEvent}
           />}
           {viewMode==='day' && <DayTimelineWithTasks
             date={cursor} today={today}
@@ -13319,12 +13422,12 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             events={eventsForDay(cursor)}
             tasks={tasks} setTasks={setTasks}
             onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
-            onEventClick={(ev)=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}
+            onEventClick={openEditEvent}
           />}
           {viewMode==='year' && <YearGrid
             startMonth={new Date(year, month, 1)}
             today={today}
-            events={events}
+            events={displayEvents}
             onMonthClick={(d)=>{setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); changeViewMode('month');}}
             onDayClick={(d)=>{setCursor(d); changeViewMode('day');}}
           />}
@@ -13336,7 +13439,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         <div className="panel-header"><h3>Upcoming</h3></div>
         <div className="panel-body">
           {(() => {
-            const upcoming = events
+            const upcoming = displayEvents
               .filter(ev => new Date(ev.end_at || ev.start_at) >= new Date(today.getFullYear(),today.getMonth(),today.getDate()))
               .sort((a,b)=>new Date(a.start_at)-new Date(b.start_at))
               .slice(0,10);
@@ -13345,13 +13448,14 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
               {upcoming.map(ev => {
                 const s = new Date(ev.start_at);
                 return (
-                  <div key={ev.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditEvent(ev);setModalDate(null);setShowModal(true);}}>
+                  <div key={ev.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>openEditEvent(ev)}>
                     <div style={{minWidth:'52px',textAlign:'center'}}>
                       <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase'}}>{MONTH_NAMES[s.getMonth()].slice(0,3)}</div>
                       <div style={{fontSize:'18px',fontWeight:700,color:'var(--text-1)',lineHeight:1}}>{s.getDate()}</div>
                     </div>
                     <span className="task-text">
                       {ev.title}
+                      {ev.recur_freq && <span title="Repeats" style={{marginLeft:'6px',fontSize:'11px',color:'var(--text-3)'}}>↻</span>}
                       {ev.google_event_id && <span title="Synced with Google" style={{marginLeft:'6px',fontSize:'10px',color:'var(--accent)'}}>●</span>}
                       {ev.location && <span style={{display:'block',fontSize:'11px',color:'var(--text-3)'}}>📍 {ev.location}</span>}
                     </span>
