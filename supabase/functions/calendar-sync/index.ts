@@ -35,6 +35,50 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
 }
 
 // Convert a Supabase event row to a Google Calendar event resource
+// Build a Google RRULE array from our structured recurrence fields.
+function toRRule(ev: any): string[] | undefined {
+  if (!ev.recur_freq) return undefined;
+  const freqMap: Record<string,string> = { daily:"DAILY", weekly:"WEEKLY", monthly:"MONTHLY", yearly:"YEARLY" };
+  const f = freqMap[ev.recur_freq];
+  if (!f) return undefined;
+  let rule = `RRULE:FREQ=${f}`;
+  const iv = Math.max(1, ev.recur_interval || 1);
+  if (iv > 1) rule += `;INTERVAL=${iv}`;
+  if (ev.recur_count) {
+    rule += `;COUNT=${ev.recur_count}`;
+  } else if (ev.recur_until) {
+    const ymd = String(ev.recur_until).slice(0,10).replaceAll("-", ""); // YYYYMMDD
+    // UNTIL value type must match DTSTART: DATE for all-day, UTC datetime otherwise
+    rule += ev.all_day ? `;UNTIL=${ymd}` : `;UNTIL=${ymd}T235959Z`;
+  }
+  return [rule];
+}
+
+// Parse a Google recurrence array into our structured fields.
+function parseRRule(recurrence: any): { recur_freq: string|null; recur_interval: number; recur_until: string|null; recur_count: number|null } {
+  const none = { recur_freq: null, recur_interval: 1, recur_until: null, recur_count: null };
+  if (!Array.isArray(recurrence) || !recurrence.length) return none;
+  const line = recurrence.find((r: string) => typeof r === "string" && r.toUpperCase().startsWith("RRULE"));
+  if (!line) return none;
+  const body = line.replace(/^RRULE:/i, "");
+  const parts: Record<string,string> = {};
+  for (const kv of body.split(";")) {
+    const [k, v] = kv.split("=");
+    if (k && v) parts[k.toUpperCase()] = v;
+  }
+  const freqMap: Record<string,string> = { DAILY:"daily", WEEKLY:"weekly", MONTHLY:"monthly", YEARLY:"yearly" };
+  const recur_freq = freqMap[(parts.FREQ||"").toUpperCase()] || null;
+  if (!recur_freq) return none; // unsupported FREQ (e.g. HOURLY) — treat as non-recurring
+  const recur_interval = parts.INTERVAL ? Math.max(1, parseInt(parts.INTERVAL)) : 1;
+  let recur_until: string|null = null;
+  if (parts.UNTIL) {
+    const m = parts.UNTIL.match(/^(\d{4})(\d{2})(\d{2})/);
+    if (m) recur_until = `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  const recur_count = parts.COUNT ? parseInt(parts.COUNT) : null;
+  return { recur_freq, recur_interval, recur_until, recur_count };
+}
+
 function toGoogleEvent(ev: any) {
   const g: any = {
     summary: ev.title,
@@ -48,6 +92,8 @@ function toGoogleEvent(ev: any) {
     g.start = { dateTime: new Date(ev.start_at).toISOString() };
     g.end = { dateTime: new Date(ev.end_at || ev.start_at).toISOString() };
   }
+  const rr = toRRule(ev);
+  if (rr) g.recurrence = rr;
   return g;
 }
 
@@ -56,6 +102,7 @@ function fromGoogleEvent(g: any, userId: string, calendarId: string) {
   const allDay = !!(g.start?.date);
   const startAt = allDay ? `${g.start.date}T00:00:00Z` : g.start?.dateTime;
   const endAt = allDay ? `${g.end?.date || g.start.date}T00:00:00Z` : g.end?.dateTime;
+  const rec = parseRRule(g.recurrence);
   return {
     user_id: userId,
     title: g.summary || "(no title)",
@@ -64,6 +111,10 @@ function fromGoogleEvent(g: any, userId: string, calendarId: string) {
     start_at: startAt,
     end_at: endAt || null,
     all_day: allDay,
+    recur_freq: rec.recur_freq,
+    recur_interval: rec.recur_interval,
+    recur_until: rec.recur_until,
+    recur_count: rec.recur_count,
     google_event_id: g.id,
     google_calendar_id: calendarId,
     google_etag: g.etag || null,
@@ -198,7 +249,10 @@ serve(async (req) => {
 
       do {
         const params = new URLSearchParams();
-        params.set("singleEvents", "true");
+        // singleEvents=false → recurring series come back as a single master
+        // carrying its RRULE (we store one row + expand client-side), rather
+        // than being flattened into individual instances.
+        params.set("singleEvents", "false");
         params.set("maxResults", "250");
         if (useSyncToken && !fullResync) {
           params.set("syncToken", useSyncToken);
@@ -208,7 +262,7 @@ serve(async (req) => {
           const timeMax = new Date(Date.now() + 365 * 864e5).toISOString();
           params.set("timeMin", timeMin);
           params.set("timeMax", timeMax);
-          params.set("orderBy", "startTime");
+          // NOTE: orderBy=startTime is only valid with singleEvents=true, so omitted here.
         }
         if (pageToken) params.set("pageToken", pageToken);
 
@@ -236,6 +290,10 @@ serve(async (req) => {
             continue;
           }
           if (!g.start) continue; // skip malformed
+          // Skip modified single instances of a recurring series — PrismOS
+          // tracks the series at the master level and doesn't model per-instance
+          // exceptions yet. (These items carry a recurringEventId.)
+          if (g.recurringEventId) continue;
           const row = fromGoogleEvent(g, user_id, calendar_id);
           // Upsert on (user_id, google_calendar_id, google_event_id)
           const { data: existing } = await supabase
