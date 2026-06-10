@@ -15,31 +15,59 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 2048;
 const MAX_HISTORY_TURNS = 20; // keep prompt size sane
-async function callClaude(system, messages) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system,
-      messages
-    })
-  });
-  if (!r.ok) {
-    const t = await r.text();
-    throw new Error(`Anthropic ${r.status}: ${t.slice(0, 400)}`);
+// Transient Anthropic statuses worth retrying (rate limit / overload / 5xx).
+// Every image turn fires two concurrent vision calls (chat + parse-receipt), so
+// brief 429/529 bursts are expected under load — we retry instead of hard-failing.
+const RETRYABLE_STATUS = new Set([
+  429,
+  500,
+  502,
+  503,
+  529
+]);
+async function callClaude(system, messages, maxAttempts = 3) {
+  let lastErr = null;
+  for(let attempt = 1; attempt <= maxAttempts; attempt++){
+    let r = null;
+    try {
+      r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: MAX_TOKENS,
+          system,
+          messages
+        })
+      });
+    } catch (e) {
+      // Network-level failure — always retryable.
+      lastErr = e;
+    }
+    if (r) {
+      if (r.ok) {
+        const j = await r.json();
+        const text = (j.content || []).filter((b)=>b.type === "text").map((b)=>b.text).join("");
+        return {
+          text,
+          usage: j.usage
+        };
+      }
+      const t = await r.text().catch(()=>"");
+      lastErr = new Error(`Anthropic ${r.status}: ${t.slice(0, 300)}`);
+      // Fail fast on non-transient errors (400 bad request, 401 auth, 413 too large).
+      if (!RETRYABLE_STATUS.has(r.status)) throw lastErr;
+    }
+    if (attempt === maxAttempts) break;
+    // Exponential backoff with jitter: ~0.5s, ~1.1s.
+    const backoff = Math.round(400 * Math.pow(2, attempt - 1) + Math.random() * 300);
+    await new Promise((res)=>setTimeout(res, backoff));
   }
-  const j = await r.json();
-  const text = (j.content || []).filter((b)=>b.type === "text").map((b)=>b.text).join("");
-  return {
-    text,
-    usage: j.usage
-  };
+  throw lastErr || new Error("Anthropic call failed");
 }
 // Detect mime type from file path extension
 function mimeFromPath(path) {
@@ -285,13 +313,18 @@ serve(async (req)=>{
       "If an image is unrelated to accounting, just discuss it naturally."
     ].join(" ");
     const system = `${baseSystem}\n\nCapabilities: ${capabilities}`;
-    // Run chat completion and (if image) receipt parse in parallel
-    const [chatResult, receiptResult] = await Promise.all([
+    // Run chat completion and (if image) receipt parse in parallel. We use
+    // allSettled so a transient model error on the chat call never nukes the
+    // whole turn — if the receipt parsed, we still surface its card.
+    const [chatSettled, receiptSettled] = await Promise.allSettled([
       callClaude(system, messages),
       receiptParsePromise
     ]);
-    const text = chatResult.text;
-    const usage = chatResult.usage;
+    const chatResult = chatSettled.status === "fulfilled" ? chatSettled.value : null;
+    const receiptResult = receiptSettled.status === "fulfilled" ? receiptSettled.value : null;
+    if (chatSettled.status === "rejected") {
+      console.error("callClaude failed:", String(chatSettled.reason?.message || chatSettled.reason));
+    }
     // Build receipt_data response payload if confidence is meaningful
     let receiptData = null;
     if (receiptResult && typeof receiptResult.confidence === "number" && receiptResult.confidence >= 0.4) {
@@ -308,50 +341,71 @@ serve(async (req)=>{
         receipt_path: image_path
       };
     }
+    // Resolve the reply text. On chat failure, degrade gracefully instead of
+    // throwing a 500 (which the client shows as a raw "non-2xx" red error).
+    const chatFailed = !chatResult;
+    let text;
+    let usage = null;
+    if (chatResult) {
+      text = chatResult.text;
+      usage = chatResult.usage;
+    } else if (receiptData) {
+      const amt = receiptData.amount != null ? ` for $${Number(receiptData.amount).toFixed(2)}` : "";
+      const vend = receiptData.vendor ? ` from ${receiptData.vendor}` : "";
+      text = `I hit a brief hiccup writing back, but I did read your receipt${vend}${amt}. Tap **Push to accounting** below to log it.`;
+    } else {
+      text = "I'm having trouble reaching my AI service right now — give it a moment and try again.";
+    }
     // Persist conversation. Schema: { user_id, robot_id, messages jsonb }.
     // Upsert on (user_id, robot_id) ﻗ append new turns to the rolling thread.
     // Image attachments stored as image_path on the user turn (no signed URL ﻗ
     // signed URLs expire; the client mints fresh ones at render time).
-    const userTurn = {
-      role: "user",
-      content: userMessage,
-      ts: new Date().toISOString()
-    };
-    if (image_path) userTurn.image_path = image_path;
-    const assistantTurn = {
-      role: "assistant",
-      content: text,
-      ts: new Date().toISOString()
-    };
-    if (receiptData) assistantTurn.receipt_data = receiptData;
-    const newTurns = [
-      userTurn,
-      assistantTurn
-    ];
-    const { data: existing } = await supabase.from("robot_conversations").select("id, messages").eq("user_id", userId).eq("robot_id", robot_id).maybeSingle();
-    if (existing) {
-      const merged = Array.isArray(existing.messages) ? [
-        ...existing.messages,
-        ...newTurns
-      ] : newTurns;
-      // Cap stored history to last 200 turns to keep row size sane
-      const capped = merged.slice(-200);
-      await supabase.from("robot_conversations").update({
-        messages: capped,
-        updated_at: new Date().toISOString()
-      }).eq("id", existing.id);
-    } else {
-      await supabase.from("robot_conversations").insert({
-        user_id: userId,
-        robot_id,
-        messages: newTurns
-      });
+    // Skip storing a junk turn on pure failure (chat errored AND no receipt) so
+    // the user can retry cleanly.
+    const skipPersist = chatFailed && !receiptData;
+    if (!skipPersist) {
+      const userTurn = {
+        role: "user",
+        content: userMessage,
+        ts: new Date().toISOString()
+      };
+      if (image_path) userTurn.image_path = image_path;
+      const assistantTurn = {
+        role: "assistant",
+        content: text,
+        ts: new Date().toISOString()
+      };
+      if (receiptData) assistantTurn.receipt_data = receiptData;
+      const newTurns = [
+        userTurn,
+        assistantTurn
+      ];
+      const { data: existing } = await supabase.from("robot_conversations").select("id, messages").eq("user_id", userId).eq("robot_id", robot_id).maybeSingle();
+      if (existing) {
+        const merged = Array.isArray(existing.messages) ? [
+          ...existing.messages,
+          ...newTurns
+        ] : newTurns;
+        // Cap stored history to last 200 turns to keep row size sane
+        const capped = merged.slice(-200);
+        await supabase.from("robot_conversations").update({
+          messages: capped,
+          updated_at: new Date().toISOString()
+        }).eq("id", existing.id);
+      } else {
+        await supabase.from("robot_conversations").insert({
+          user_id: userId,
+          robot_id,
+          messages: newTurns
+        });
+      }
     }
     const responsePayload = {
       response: text,
       meta: {
         model: MODEL,
-        tokens: usage
+        tokens: usage,
+        degraded: chatFailed
       }
     };
     if (receiptData) responsePayload.receipt_data = receiptData;
