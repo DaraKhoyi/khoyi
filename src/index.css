@@ -739,6 +739,10 @@ body {
 }
 .task-block-check { cursor: pointer; font-size: 14px; line-height: 1; color: var(--accent); flex-shrink: 0; user-select: none; }
 .day-event-block.task-block.overdue .task-block-check { color: #ef4444; }
+.task-block-pin { margin-left: auto; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+.day-event-block.task-block { touch-action: pan-x; }
+.day-event-block.task-block.pinned { border-style: solid; box-shadow: inset 0 0 0 1px var(--accent); }
+.day-event-block.task-block.dragging { z-index: 50; opacity: 0.92; box-shadow: 0 6px 18px rgba(0,0,0,0.45); border-style: solid; cursor: grabbing; transition: none; }
 .week-event-block.task-block .week-event-time { color: var(--accent); }
 .week-event-block.task-block.overdue .week-event-time { color: #ef4444; }
 .day-tasks-scroll { flex: 1; overflow-y: auto; max-height: 70vh; padding: 0; }

@@ -13407,6 +13407,42 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 
   const taskBlockCount = events.filter(e => e.event_kind === 'task_block').length;
 
+  // Drag a task block to a new time → move the event, pin the task there, reflow the rest.
+  async function moveTaskBlock(ev, newStart) {
+    if (!ev.task_id) return;
+    const durMs = (ev.end_at ? new Date(ev.end_at) : new Date(new Date(ev.start_at).getTime()+3600000)) - new Date(ev.start_at);
+    const newStartISO = newStart.toISOString();
+    const newEndISO = new Date(newStart.getTime() + durMs).toISOString();
+    // optimistic UI
+    setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, start_at:newStartISO, end_at:newEndISO } : e));
+    if (setTasks) setTasks(prev => prev.map(t => t.id === ev.task_id ? { ...t, pin_at:newStartISO } : t));
+    try {
+      await supabase.from('events').update({ start_at:newStartISO, end_at:newEndISO }).eq('id', ev.id);
+      await supabase.from('tasks').update({ pin_at:newStartISO }).eq('id', ev.task_id);
+      setFlash({ type:'success', text:'Pinned to new time — reflowing the rest…' });
+      await refreshSchedule();
+    } catch (e) {
+      setFlash({ type:'error', text:`Move failed: ${e.message}` });
+      setTimeout(()=>setFlash(null), 3500);
+    }
+  }
+
+  // Long-press a task block → toggle pinned (locked at its current time).
+  async function toggleBlockPin(ev) {
+    if (!ev.task_id) return;
+    const t = (tasks || []).find(x => x.id === ev.task_id);
+    const newPin = t?.pin_at ? null : ev.start_at;
+    if (setTasks) setTasks(prev => prev.map(x => x.id === ev.task_id ? { ...x, pin_at:newPin } : x));
+    try {
+      await supabase.from('tasks').update({ pin_at:newPin }).eq('id', ev.task_id);
+      setFlash({ type:'success', text: newPin ? '📌 Pinned in place.' : 'Unpinned — free to reschedule.' });
+      setTimeout(()=>setFlash(null), 2500);
+    } catch (e) {
+      setFlash({ type:'error', text:`Pin failed: ${e.message}` });
+      setTimeout(()=>setFlash(null), 3500);
+    }
+  }
+
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
@@ -13526,6 +13562,8 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             tasks={tasks} setTasks={setTasks}
             onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
             onEventClick={openEditEvent}
+            onBlockMove={moveTaskBlock}
+            onTogglePin={toggleBlockPin}
           />}
           {viewMode==='year' && <YearGrid
             startMonth={new Date(year, month, 1)}
@@ -13859,10 +13897,91 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
 }
 
 // DAY — Hour timeline + tasks panel (tasks panel 60% / events 40%, per request)
-function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, setTasks, onCellClick, onEventClick }) {
+// A single auto-scheduled task block on the day timeline.
+// Long-press → pin/unpin · drag vertically → reschedule (snaps to 15 min).
+function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hourEnd, date, timelineRef, onToggleComplete, onMove, onTogglePin }) {
+  const [dragging, setDragging] = useState(false);
+  const [dragTop, setDragTop] = useState(top);
+  const press = useRef({ startY:0, origTop:top, moved:false, longPressed:false, pointerId:null, timer:null });
+  const pinned = !!task?.pin_at;
+  const SNAP_MIN = 15;
+  const spanPx = (hourEnd - hourStart) * HOUR_PX;
+
+  function topToDate(px) {
+    const clamped = Math.max(0, Math.min(px, spanPx - 8));
+    let mins = (clamped / HOUR_PX) * 60;
+    mins = Math.round(mins / SNAP_MIN) * SNAP_MIN;
+    const total = hourStart * 60 + mins;
+    const d = new Date(date);
+    d.setHours(Math.floor(total / 60), total % 60, 0, 0);
+    return d;
+  }
+  function liveLabel(px) {
+    const d = topToDate(px);
+    let h = d.getHours(); const m = d.getMinutes();
+    const ap = h < 12 ? 'AM' : 'PM'; let hh = h % 12; if (hh === 0) hh = 12;
+    return `${hh}:${pad2(m)} ${ap}`;
+  }
+
+  function onPointerDown(e) {
+    if (e.target.closest('.task-block-check, .task-block-pin')) return; // let those handle themselves
+    const p = press.current;
+    p.startY = e.clientY; p.origTop = top; p.moved = false; p.longPressed = false; p.pointerId = e.pointerId;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    p.timer = setTimeout(() => {
+      if (!p.moved) { p.longPressed = true; navigator.vibrate?.(15); onTogglePin?.(ev); }
+    }, 480);
+  }
+  function onPointerMove(e) {
+    const p = press.current;
+    if (p.pointerId == null) return;
+    const dy = e.clientY - p.startY;
+    if (!p.moved && Math.abs(dy) > 6) {
+      p.moved = true; clearTimeout(p.timer); setDragging(true);
+    }
+    if (p.moved) {
+      e.preventDefault();
+      setDragTop(Math.max(0, Math.min(p.origTop + dy, spanPx - 8)));
+    }
+  }
+  function endPress(e) {
+    const p = press.current;
+    clearTimeout(p.timer);
+    try { e.currentTarget.releasePointerCapture?.(p.pointerId); } catch { /* noop */ }
+    if (p.moved) {
+      const newStart = topToDate(dragTop);
+      const cur = new Date(ev.start_at);
+      if (newStart.getTime() !== cur.getTime()) onMove?.(ev, newStart);
+    }
+    p.pointerId = null; p.moved = false;
+    setDragging(false);
+  }
+
+  const curTop = dragging ? dragTop : top;
+  return (
+    <div className={`day-event-block task-block${overdue?' overdue':''}${pinned?' pinned':''}${dragging?' dragging':''}`}
+      style={{top: `${curTop}px`, height: `${height}px`, touchAction:'pan-x'}}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPress} onPointerCancel={endPress}
+      title={pinned ? 'Pinned · long-press to unpin · drag to move' : 'Long-press to pin · drag to reschedule'}>
+      <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+        <span className="task-block-check" onPointerDown={e=>e.stopPropagation()}
+          onClick={(e)=>{e.stopPropagation(); onToggleComplete?.();}}>{task?.completed?'☑':'☐'}</span>
+        <span className="day-event-title" style={{textDecoration:task?.completed?'line-through':'none'}}>{ev.title}</span>
+        {pinned && <span className="task-block-pin" onPointerDown={e=>e.stopPropagation()}
+          onClick={(e)=>{e.stopPropagation(); onTogglePin?.(ev);}} title="Unpin">📌</span>}
+      </div>
+      <div className="day-event-time">
+        {dragging ? `→ ${liveLabel(dragTop)}` : `${overdue?'⚠ overdue · ':''}${pad2(new Date(ev.start_at).getHours())}:${pad2(new Date(ev.start_at).getMinutes())}${ev.description && ev.description.includes('part') ? ' · '+ev.description.replace('Auto-scheduled · ','') : ''}`}
+      </div>
+    </div>
+  );
+}
+
+function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, setTasks, onCellClick, onEventClick, onBlockMove, onTogglePin }) {
   const HOUR_PX = 52;
   const hours = []; for (let h = hourStart; h < hourEnd; h++) hours.push(h);
   const isToday = ymd(date) === ymd(today);
+  const timelineRef = useRef(null);
 
   const nonAllDay = events.filter(e => !e.all_day);
   const allDay = events.filter(e => e.all_day);
@@ -13912,7 +14031,7 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
           </div>
         )}
         <div className="day-timeline-scroll">
-          <div className="day-timeline" style={{height: `${hours.length*HOUR_PX}px`}}>
+          <div className="day-timeline" ref={timelineRef} style={{height: `${hours.length*HOUR_PX}px`}}>
             {hours.map(h => (
               <div key={h} className="day-hour-row" style={{height: `${HOUR_PX}px`}}
                 onClick={()=>{ const nd = new Date(date); nd.setHours(h,0,0,0); onCellClick(nd); }}>
@@ -13925,16 +14044,11 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
                 const overdue = ev.category === 'task_overdue' || (ev.end_at && new Date(ev.end_at) < today);
                 const t = (tasks || []).find(x => x.id === ev.task_id);
                 return (
-                  <div key={ev.id} className={`day-event-block task-block${overdue?' overdue':''}`}
-                    style={{top: `${top}px`, height: `${height}px`}}
-                    title={ev.title}>
-                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                      <span className="task-block-check"
-                        onClick={(e)=>{e.stopPropagation(); if(t) toggleTask(t);}}>{t?.completed?'☑':'☐'}</span>
-                      <span className="day-event-title" style={{textDecoration:t?.completed?'line-through':'none'}}>{ev.title}</span>
-                    </div>
-                    <div className="day-event-time">{overdue?'⚠ overdue · ':''}{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}{ev.description && ev.description.includes('part') ? ' · '+ev.description.replace('Auto-scheduled · ','') : ''}</div>
-                  </div>
+                  <DayTaskBlock key={ev.id} ev={ev} task={t} top={top} height={height}
+                    overdue={overdue} HOUR_PX={HOUR_PX} hourStart={hourStart} hourEnd={hourEnd}
+                    date={date} timelineRef={timelineRef}
+                    onToggleComplete={()=>{ if(t) toggleTask(t); }}
+                    onMove={onBlockMove} onTogglePin={onTogglePin} />
                 );
               }
               return (
