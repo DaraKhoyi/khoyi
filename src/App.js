@@ -14172,10 +14172,46 @@ async function sysCheckGmail() {
 }
 
 async function sysCheckCalendarSync() {
+  // 1. There must be an active google account flagged for calendar use.
+  //    The calendar-sync function picks by purposes @> ['calendar']; we
+  //    mirror that here.
+  const { data: accounts, error: aErr } = await supabase
+    .from('email_accounts')
+    .select('email_address, purposes, scopes, last_sync_at, last_sync_error')
+    .eq('provider', 'google').eq('is_active', true);
+  if (aErr) return { status: 'unknown', detail: aErr.message };
+  const calAccts = (accounts || []).filter(a => (a.purposes || []).includes('calendar'));
+  if (calAccts.length === 0) {
+    return { status: 'down', detail: 'No Google account connected for calendar. Open Settings → Connect Calendar Account.' };
+  }
+  // 2. Every calendar-tagged account must actually have the calendar scope.
+  //    If purposes says 'calendar' but scopes don't include 'calendar', some
+  //    other OAuth flow silently stripped the permission — this is the bug
+  //    that kept hitting Dara before the merge fix landed.
+  const broken = calAccts.filter(a => !((a.scopes || []).some(s => s.includes('calendar'))));
+  if (broken.length > 0) {
+    return {
+      status: 'down',
+      detail: `${broken[0].email_address}: purposes says calendar, but the OAuth token has no calendar scope. Reconnect via Settings → Connect Calendar.`,
+    };
+  }
+  // 3. Check sync recency. last_sync_at is updated by gmail-sync, not
+  //    calendar-sync directly, but the same refresh path covers both — if
+  //    it hasn't run in over an hour something is wrong.
+  const stalest = calAccts.reduce((acc, a) =>
+    !acc || (a.last_sync_at && a.last_sync_at < acc.last_sync_at) ? a : acc, null);
+  if (stalest && stalest.last_sync_at) {
+    const ageMin = (Date.now() - new Date(stalest.last_sync_at).getTime()) / 60000;
+    if (ageMin > 60) {
+      return { status: 'degraded', detail: `Last token refresh ${Math.round(ageMin)}min ago on ${stalest.email_address}` };
+    }
+  }
+  // 4. Pending-push queue depth (the original check)
   const { count, error } = await supabase.from('events').select('id', { count: 'exact', head: true }).eq('sync_status', 'pending_push');
   if (error) return { status: 'unknown', detail: error.message };
-  if (count > 25) return { status: 'degraded', detail: `${count} events still queued to push to Google` };
-  return { status: 'healthy', detail: count > 0 ? `${count} event(s) queued for next sync` : 'All events synced to Google' };
+  if (count > 25) return { status: 'degraded', detail: `${count} events queued to push to Google` };
+  const acctList = calAccts.map(a => a.email_address).join(', ');
+  return { status: 'healthy', detail: `Calendar on ${acctList}${count > 0 ? ` · ${count} queued` : ''}` };
 }
 
 async function sysCheckStorage() {
