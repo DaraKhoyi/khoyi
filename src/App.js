@@ -1025,6 +1025,18 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
   const isPinned = !!initial?.pin_at;
   const [unpinned, setUnpinned] = useState(false);
 
+  // A pin fixes the block in place and overrides scheduling changes. If the user
+  // moves "start on or after" past the pinned time, or asks for ASAP, the pin now
+  // contradicts their intent — release it automatically so the change takes effect.
+  useEffect(() => {
+    if (!isPinned || unpinned) return;
+    const pinMs = initial?.pin_at ? new Date(initial.pin_at).getTime() : null;
+    const startMs = schedStartDate ? new Date(schedStartDate + 'T00:00:00').getTime() : null;
+    const startConflicts = pinMs != null && startMs != null && pinMs < startMs;
+    if (startConflicts || schedPriority === 'asap') setUnpinned(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedStartDate, schedPriority]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -13535,6 +13547,8 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     }
     if (_email) { await emailAssignTask(editingTask.id, _email).catch(()=>{}); }
     setEditingTask(null);
+    setFlash({ type:'success', text:'✓ Saved — updating your schedule…' });
+    setTimeout(()=>setFlash(null), 2500);
     await refreshSchedule(); // reschedule + refetch so block changes show immediately
   }
   async function handleTaskDelete(t) {
