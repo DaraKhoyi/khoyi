@@ -1469,7 +1469,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                   )}
                   {filteredContactOptions.map(c => (
                     <button key={c.id} type="button"
-                      onClick={() => { setContactIds(prev => [...prev, c.id]); setContactQuery(''); }}
+                      onClick={() => { setContactIds(prev => prev.includes(c.id) ? prev : [...prev, c.id]); setContactQuery(''); setContactPickerOpen(false); }}
                       style={{display:'block',width:'100%',textAlign:'left',padding:'6px 8px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',fontSize:'12px',color:'var(--text-1)'}}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'none'}>
@@ -13539,17 +13539,31 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   async function handleTaskSave(data) {
     const { _contact_ids, _email, ...taskData } = data;
     if (!editingTask) return;
-    const { data: updated, error } = await supabase.from('tasks').update(taskData).eq('id', editingTask.id).select().single();
-    if (error) { setFlash({ type:'error', text:"Couldn't save task." }); setTimeout(()=>setFlash(null), 3000); return; }
-    if (updated && setTasks) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
-    if (Array.isArray(_contact_ids)) {
-      await supabase.rpc('set_task_contacts', { p_task_id: editingTask.id, p_contact_ids: _contact_ids }).catch(()=>{});
+    try {
+      const { data: updated, error } = await supabase.from('tasks').update(taskData).eq('id', editingTask.id).select().single();
+      if (error) {
+        setFlash({ type:'error', text:`Couldn't save: ${error.message || error.code || 'unknown error'}` });
+        setTimeout(()=>setFlash(null), 5000);
+        return; // keep modal open so the edit isn't lost
+      }
+      if (updated && setTasks) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+      // Contact links — surface failures instead of swallowing them.
+      if (Array.isArray(_contact_ids)) {
+        const { error: cErr } = await supabase.rpc('set_task_contacts', { p_task_id: editingTask.id, p_contact_ids: _contact_ids });
+        if (cErr) {
+          setFlash({ type:'error', text:`Task saved, but contacts didn't link: ${cErr.message || cErr.code}` });
+          setTimeout(()=>setFlash(null), 5000);
+        }
+      }
+      if (_email) { await emailAssignTask(editingTask.id, _email).catch(()=>{}); }
+      setEditingTask(null); // success → close
+      setFlash(prev => prev && prev.type === 'error' ? prev : { type:'success', text:'✓ Saved' });
+      setTimeout(()=>setFlash(null), 2500);
+      try { await refreshSchedule(); } catch { /* non-fatal: row already saved */ }
+    } catch (e) {
+      setFlash({ type:'error', text:`Save failed: ${e.message || String(e)}` });
+      setTimeout(()=>setFlash(null), 5000);
     }
-    if (_email) { await emailAssignTask(editingTask.id, _email).catch(()=>{}); }
-    setEditingTask(null);
-    setFlash({ type:'success', text:'✓ Saved — updating your schedule…' });
-    setTimeout(()=>setFlash(null), 2500);
-    await refreshSchedule(); // reschedule + refetch so block changes show immediately
   }
   async function handleTaskDelete(t) {
     if (!window.confirm(`Delete "${t.title}"?`)) return;
