@@ -1023,6 +1023,7 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
   const [schedId, setSchedId] = useState(initial?.schedule_id || '');
   const [schedules, setSchedules] = useState([]);
   const isPinned = !!initial?.pin_at;
+  const [unpinned, setUnpinned] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1042,9 +1043,10 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
       min_chunk_minutes: autoSchedule && parseInt(minChunk, 10) > 0 ? parseInt(minChunk, 10) : null,
       schedule_start_date: autoSchedule && schedStartDate ? schedStartDate : null,
       schedule_id: autoSchedule && schedId ? schedId : null,
+      ...(isPinned && unpinned ? { pin_at: null } : {}),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSchedule, durationMin, schedPriority, hardDeadline, minChunk, schedStartDate, schedId]);
+  }, [autoSchedule, durationMin, schedPriority, hardDeadline, minChunk, schedStartDate, schedId, unpinned]);
 
   return (
     <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
@@ -1109,7 +1111,15 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
           </label>
           {initial?.schedule_state && initial.schedule_state !== 'unscheduled' && (
             <div style={{fontSize:'11.5px',padding:'8px 10px',borderRadius:'6px',background:'var(--bg-card)',border:'1px solid var(--border)',lineHeight:1.5}}>
-              {isPinned && <div style={{color:'var(--accent)'}}>📌 Pinned in place{initial.pin_at?` · ${new Date(initial.pin_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}`:''}</div>}
+              {isPinned && !unpinned && (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap'}}>
+                  <div style={{color:'var(--accent)'}}>📌 Pinned{initial.pin_at?` · ${new Date(initial.pin_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}`:''} — held here; scheduling changes won't move it.</div>
+                  <button type="button" onClick={()=>setUnpinned(true)} style={{background:'var(--bg-base)',border:'1px solid var(--accent-dim)',color:'var(--accent)',borderRadius:'6px',padding:'3px 10px',fontSize:'11px',cursor:'pointer',whiteSpace:'nowrap'}}>Unpin</button>
+                </div>
+              )}
+              {isPinned && unpinned && (
+                <div style={{color:'var(--green)'}}>✓ Will reschedule automatically when you save.</div>
+              )}
               {initial.schedule_state === 'scheduled' && initial.eta && !isPinned && (
                 <div style={{color:'var(--green)'}}>✓ Scheduled · ends {new Date(initial.eta).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
               )}
