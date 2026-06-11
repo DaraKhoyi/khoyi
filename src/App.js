@@ -13506,6 +13506,37 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     }
   }
 
+  // Tap a task block → open the underlying task in the editor
+  const [editingTask, setEditingTask] = useState(null);
+  function openTaskFromBlock(ev) {
+    if (!ev.task_id) return;
+    const t = (tasks || []).find(x => x.id === ev.task_id);
+    if (t) setEditingTask(t);
+    else { setFlash({ type:'error', text:'Task not found.' }); setTimeout(()=>setFlash(null), 2500); }
+  }
+  async function handleTaskSave(data) {
+    const { _contact_ids, _email, ...taskData } = data;
+    if (!editingTask) return;
+    const { data: updated, error } = await supabase.from('tasks').update(taskData).eq('id', editingTask.id).select().single();
+    if (error) { setFlash({ type:'error', text:"Couldn't save task." }); setTimeout(()=>setFlash(null), 3000); return; }
+    if (updated && setTasks) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+    if (Array.isArray(_contact_ids)) {
+      await supabase.rpc('set_task_contacts', { p_task_id: editingTask.id, p_contact_ids: _contact_ids }).catch(()=>{});
+    }
+    if (_email) { await emailAssignTask(editingTask.id, _email).catch(()=>{}); }
+    setEditingTask(null);
+    await refreshSchedule(); // reschedule + refetch so block changes show immediately
+  }
+  async function handleTaskDelete(t) {
+    if (!window.confirm(`Delete "${t.title}"?`)) return;
+    await supabase.from('events').delete().eq('task_id', t.id).eq('event_kind', 'task_block');
+    await supabase.from('tasks').delete().eq('id', t.id);
+    if (setTasks) setTasks(prev => prev.filter(x => x.id !== t.id));
+    setEditingTask(null);
+    const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+    if (fresh) setEvents(fresh);
+  }
+
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
@@ -13617,6 +13648,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             events={displayEvents}
             onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
             onEventClick={openEditEvent}
+            onEditTask={openTaskFromBlock}
           />}
           {viewMode==='day' && <DayTimelineWithTasks
             date={cursor} today={today}
@@ -13627,6 +13659,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             onEventClick={openEditEvent}
             onBlockMove={moveTaskBlock}
             onTogglePin={toggleBlockPin}
+            onEditTask={openTaskFromBlock}
           />}
           {viewMode==='year' && <YearGrid
             startMonth={new Date(year, month, 1)}
@@ -13692,6 +13725,18 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
           setShowFlex(false);
           await refreshSchedule();
         }}
+      />}
+      {editingTask && <TaskModal
+        onClose={()=>setEditingTask(null)}
+        onSave={handleTaskSave}
+        onDelete={handleTaskDelete}
+        initial={editingTask}
+        defaultSystem={editingTask.priority_system || 'eisenhower'}
+        brain={brain}
+        contacts={contacts || []}
+        properties={properties || []}
+        events={events}
+        userId={userId}
       />}
     </div>
   );
@@ -13873,7 +13918,7 @@ function MonthGrid({ cells, month, today, eventsForDay, onDayClick, onEventClick
 }
 
 // WEEK — 7 day columns × hourly rows. Events absolutely positioned by start/end.
-function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClick, onEventClick }) {
+function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClick, onEventClick, onEditTask }) {
   const HOUR_PX = 44;
   const hours = []; for (let h = hourStart; h < hourEnd; h++) hours.push(h);
   const days = []; for (let i = 0; i < 7; i++) { const d = new Date(startDate); d.setDate(d.getDate()+i); days.push(d); }
@@ -13943,7 +13988,7 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
                   return (
                     <div key={ev.id} className={`week-event-block${isBlock?' task-block':''}${overdue?' overdue':''}`}
                       style={{top: `${top}px`, height: `${height}px`}}
-                      onClick={(e)=>{e.stopPropagation();onEventClick(ev);}}
+                      onClick={(e)=>{e.stopPropagation(); if(isBlock && onEditTask) onEditTask(ev); else onEventClick(ev);}}
                       title={ev.title}>
                       <div className="week-event-time">{isBlock?'🗓 ':''}{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>
                       <div className="week-event-title">{ev.title}</div>
@@ -13962,7 +14007,7 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
 // DAY — Hour timeline + tasks panel (tasks panel 60% / events 40%, per request)
 // A single auto-scheduled task block on the day timeline.
 // Long-press → pin/unpin · drag vertically → reschedule (snaps to 15 min).
-function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hourEnd, date, timelineRef, onToggleComplete, onMove, onTogglePin }) {
+function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hourEnd, date, timelineRef, onToggleComplete, onMove, onTogglePin, onTap }) {
   const [dragging, setDragging] = useState(false);
   const [dragTop, setDragTop] = useState(top);
   const press = useRef({ startY:0, origTop:top, moved:false, longPressed:false, pointerId:null, timer:null });
@@ -14015,6 +14060,9 @@ function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hour
       const newStart = topToDate(dragTop);
       const cur = new Date(ev.start_at);
       if (newStart.getTime() !== cur.getTime()) onMove?.(ev, newStart);
+    } else if (!p.longPressed && p.pointerId != null) {
+      // a plain tap (no drag, no long-press) → open the task editor
+      onTap?.(ev);
     }
     p.pointerId = null; p.moved = false;
     setDragging(false);
@@ -14040,7 +14088,7 @@ function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hour
   );
 }
 
-function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, setTasks, onCellClick, onEventClick, onBlockMove, onTogglePin }) {
+function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, setTasks, onCellClick, onEventClick, onBlockMove, onTogglePin, onEditTask }) {
   const HOUR_PX = 52;
   const hours = []; for (let h = hourStart; h < hourEnd; h++) hours.push(h);
   const isToday = ymd(date) === ymd(today);
@@ -14095,7 +14143,7 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
                     overdue={overdue} HOUR_PX={HOUR_PX} hourStart={hourStart} hourEnd={hourEnd}
                     date={date} timelineRef={timelineRef}
                     onToggleComplete={()=>{ if(t) toggleTask(t); }}
-                    onMove={onBlockMove} onTogglePin={onTogglePin} />
+                    onMove={onBlockMove} onTogglePin={onTogglePin} onTap={onEditTask} />
                 );
               }
               return (
