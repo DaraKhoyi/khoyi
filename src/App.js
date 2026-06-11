@@ -13709,7 +13709,9 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         </div>
       </div>
 
-      {/* Upcoming list */}
+      {/* Upcoming list — only in month/year overviews; the day/week timelines
+          already show events inline, so the panel just steals vertical space there. */}
+      {(viewMode === 'month' || viewMode === 'year') && (
       <div className="panel">
         <div className="panel-header"><h3>Upcoming</h3></div>
         <div className="panel-body">
@@ -13744,6 +13746,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
           })()}
         </div>
       </div>
+      )}
 
       {showModal && <EventModal
         onClose={()=>{setShowModal(false);setEditEvent(null);}}
