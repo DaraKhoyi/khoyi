@@ -1009,6 +1009,124 @@ async function emailAssignTask(taskId, email) {
   return { error: null };
 }
 
+// ── Shared auto-schedule controls ──
+// Single source of truth so EVERY task editor (personal + project tracker) gets
+// identical scheduling fields. Self-contained: manages its own state and bubbles
+// the persisted payload up via onChange. `dueDate` gates the hard-deadline option.
+function AutoScheduleFields({ initial, dueDate, onChange }) {
+  const [autoSchedule, setAutoSchedule] = useState(!!initial?.auto_schedule);
+  const [durationMin, setDurationMin] = useState(initial?.duration_minutes || 30);
+  const [schedPriority, setSchedPriority] = useState(initial?.schedule_priority || 'normal'); // normal|asap
+  const [hardDeadline, setHardDeadline] = useState(!!initial?.is_hard_deadline);
+  const [minChunk, setMinChunk] = useState(initial?.min_chunk_minutes || 0);
+  const [schedStartDate, setSchedStartDate] = useState(initial?.schedule_start_date || '');
+  const [schedId, setSchedId] = useState(initial?.schedule_id || '');
+  const [schedules, setSchedules] = useState([]);
+  const isPinned = !!initial?.pin_at;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('schedules').select('id,name,is_default').order('is_default', { ascending: false });
+      if (!cancelled && data) setSchedules(data);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    onChange?.({
+      auto_schedule: autoSchedule,
+      duration_minutes: autoSchedule ? Math.max(5, parseInt(durationMin, 10) || 30) : (initial?.duration_minutes ?? null),
+      schedule_priority: autoSchedule && schedPriority === 'asap' ? 'asap' : null,
+      is_hard_deadline: autoSchedule ? hardDeadline : false,
+      min_chunk_minutes: autoSchedule && parseInt(minChunk, 10) > 0 ? parseInt(minChunk, 10) : null,
+      schedule_start_date: autoSchedule && schedStartDate ? schedStartDate : null,
+      schedule_id: autoSchedule && schedId ? schedId : null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSchedule, durationMin, schedPriority, hardDeadline, minChunk, schedStartDate, schedId]);
+
+  return (
+    <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
+      <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
+        <input type="checkbox" checked={autoSchedule} onChange={e=>setAutoSchedule(e.target.checked)}/>
+        <span>🗓️ Auto-schedule onto my calendar</span>
+      </label>
+      {autoSchedule && (
+        <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'10px'}}>
+          <div className="form-row">
+            <div className="form-group" style={{flex:1,marginBottom:0}}>
+              <label className="form-label">Estimated time</label>
+              <select className="form-select" value={durationMin} onChange={e=>setDurationMin(e.target.value)}>
+                <option value={15}>15 min</option>
+                <option value={30}>30 min</option>
+                <option value={45}>45 min</option>
+                <option value={60}>1 hour</option>
+                <option value={90}>1.5 hours</option>
+                <option value={120}>2 hours</option>
+                <option value={180}>3 hours</option>
+                <option value={240}>4 hours</option>
+                <option value={480}>Full day (8h)</option>
+              </select>
+            </div>
+            <div className="form-group" style={{flex:1,marginBottom:0}}>
+              <label className="form-label">Split into chunks of</label>
+              <select className="form-select" value={minChunk} onChange={e=>setMinChunk(e.target.value)}>
+                <option value={0}>Don't split</option>
+                <option value={30}>30 min</option>
+                <option value={60}>1 hour</option>
+                <option value={90}>1.5 hours</option>
+                <option value={120}>2 hours</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group" style={{flex:1,marginBottom:0}}>
+              <label className="form-label">Start on or after</label>
+              <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                <input type="date" className="form-input" value={schedStartDate} onChange={e=>setSchedStartDate(e.target.value)} style={{flex:1}}/>
+                {schedStartDate && <button type="button" onClick={()=>setSchedStartDate('')} style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'16px'}}>×</button>}
+              </div>
+              <span style={{fontSize:'10px',color:'var(--text-3)'}}>Won't be scheduled before this date.</span>
+            </div>
+            {schedules.length > 1 && (
+              <div className="form-group" style={{flex:1,marginBottom:0}}>
+                <label className="form-label">Working hours</label>
+                <select className="form-select" value={schedId} onChange={e=>setSchedId(e.target.value)}>
+                  <option value="">Default</option>
+                  {schedules.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_default?' (default)':''}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
+            <input type="checkbox" checked={schedPriority==='asap'} onChange={e=>setSchedPriority(e.target.checked?'asap':'normal')}/>
+            <span>⚡ ASAP — schedule before everything else</span>
+          </label>
+          <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
+            <input type="checkbox" checked={hardDeadline} onChange={e=>setHardDeadline(e.target.checked)} disabled={!dueDate}/>
+            <span>🔒 Hard deadline — work past hours if needed to hit the due date{!dueDate && <em style={{color:'var(--text-3)'}}> (set a due date first)</em>}</span>
+          </label>
+          {initial?.schedule_state && initial.schedule_state !== 'unscheduled' && (
+            <div style={{fontSize:'11.5px',padding:'8px 10px',borderRadius:'6px',background:'var(--bg-card)',border:'1px solid var(--border)',lineHeight:1.5}}>
+              {isPinned && <div style={{color:'var(--accent)'}}>📌 Pinned in place{initial.pin_at?` · ${new Date(initial.pin_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}`:''}</div>}
+              {initial.schedule_state === 'scheduled' && initial.eta && !isPinned && (
+                <div style={{color:'var(--green)'}}>✓ Scheduled · ends {new Date(initial.eta).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
+              )}
+              {initial.schedule_state === 'could_not_fit' && (
+                <div style={{color:'var(--yellow)'}}>⚠ Couldn't fit{initial.could_not_fit_reason?` — ${initial.could_not_fit_reason}`:''}</div>
+              )}
+            </div>
+          )}
+          <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.4}}>
+            PrismOS finds open time in your working hours, places this task around your meetings, and reshuffles it automatically if you miss it. Manage working hours in Settings.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, contacts = [], properties = [], events = [], userId }) {
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
@@ -1034,25 +1152,8 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   const [emailMsg, setEmailMsg] = useState('');
   const emailAlreadySent = !!(initial && initial.email_thread_id);
 
-  // Auto-scheduling (Motion-style)
-  const [autoSchedule, setAutoSchedule] = useState(!!initial?.auto_schedule);
-  const [durationMin, setDurationMin] = useState(initial?.duration_minutes || 30);
-  const [schedPriority, setSchedPriority] = useState(initial?.schedule_priority || 'normal'); // normal|asap
-  const [hardDeadline, setHardDeadline] = useState(!!initial?.is_hard_deadline);
-  const [minChunk, setMinChunk] = useState(initial?.min_chunk_minutes || 0);
-  const [schedStartDate, setSchedStartDate] = useState(initial?.schedule_start_date || '');
-  const [schedId, setSchedId] = useState(initial?.schedule_id || '');
-  const [schedules, setSchedules] = useState([]);
-  const isPinned = !!initial?.pin_at;
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase.from('schedules').select('id,name,is_default').order('is_default', { ascending: false });
-      if (!cancelled && data) setSchedules(data);
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  // Auto-scheduling — handled by the shared <AutoScheduleFields> component below.
+  const [schedFields, setSchedFields] = useState({});
 
   // Load existing contact links when editing
   useEffect(() => {
@@ -1124,14 +1225,8 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
       recurring: recurring === 'none' ? null : recurring,  // legacy text column
       assignee_email: emailMode ? (emailTo.trim() || null) : null,
       assignment_method: emailMode ? 'email' : (initial?.assignment_method || 'self'),
-      // Auto-scheduling
-      auto_schedule: autoSchedule,
-      duration_minutes: autoSchedule ? Math.max(5, parseInt(durationMin, 10) || 30) : (initial?.duration_minutes ?? null),
-      schedule_priority: autoSchedule && schedPriority === 'asap' ? 'asap' : null,
-      is_hard_deadline: autoSchedule ? hardDeadline : false,
-      min_chunk_minutes: autoSchedule && parseInt(minChunk, 10) > 0 ? parseInt(minChunk, 10) : null,
-      schedule_start_date: autoSchedule && schedStartDate ? schedStartDate : null,
-      schedule_id: autoSchedule && schedId ? schedId : null,
+      // Auto-scheduling (from shared component)
+      ...schedFields,
       _email: (emailMode && emailTo.trim() && !emailAlreadySent) ? { to: emailTo.trim(), subject: title.trim(), body: emailMsg } : null,
     };
     if (system === 'eisenhower') {
@@ -1302,84 +1397,8 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
           )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional details…" /></div>
 
-          {/* ── Auto-schedule (Motion-style) ── */}
-          <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
-            <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
-              <input type="checkbox" checked={autoSchedule} onChange={e=>setAutoSchedule(e.target.checked)}/>
-              <span>🗓️ Auto-schedule onto my calendar</span>
-            </label>
-            {autoSchedule && (
-              <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'10px'}}>
-                <div className="form-row">
-                  <div className="form-group" style={{flex:1,marginBottom:0}}>
-                    <label className="form-label">Estimated time</label>
-                    <select className="form-select" value={durationMin} onChange={e=>setDurationMin(e.target.value)}>
-                      <option value={15}>15 min</option>
-                      <option value={30}>30 min</option>
-                      <option value={45}>45 min</option>
-                      <option value={60}>1 hour</option>
-                      <option value={90}>1.5 hours</option>
-                      <option value={120}>2 hours</option>
-                      <option value={180}>3 hours</option>
-                      <option value={240}>4 hours</option>
-                      <option value={480}>Full day (8h)</option>
-                    </select>
-                  </div>
-                  <div className="form-group" style={{flex:1,marginBottom:0}}>
-                    <label className="form-label">Split into chunks of</label>
-                    <select className="form-select" value={minChunk} onChange={e=>setMinChunk(e.target.value)}>
-                      <option value={0}>Don't split</option>
-                      <option value={30}>30 min</option>
-                      <option value={60}>1 hour</option>
-                      <option value={90}>1.5 hours</option>
-                      <option value={120}>2 hours</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group" style={{flex:1,marginBottom:0}}>
-                    <label className="form-label">Start on or after</label>
-                    <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
-                      <input type="date" className="form-input" value={schedStartDate} onChange={e=>setSchedStartDate(e.target.value)} style={{flex:1}}/>
-                      {schedStartDate && <button type="button" onClick={()=>setSchedStartDate('')} style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'16px'}}>×</button>}
-                    </div>
-                    <span style={{fontSize:'10px',color:'var(--text-3)'}}>Won't be scheduled before this date.</span>
-                  </div>
-                  {schedules.length > 1 && (
-                    <div className="form-group" style={{flex:1,marginBottom:0}}>
-                      <label className="form-label">Working hours</label>
-                      <select className="form-select" value={schedId} onChange={e=>setSchedId(e.target.value)}>
-                        <option value="">Default</option>
-                        {schedules.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_default?' (default)':''}</option>)}
-                      </select>
-                    </div>
-                  )}
-                </div>
-                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
-                  <input type="checkbox" checked={schedPriority==='asap'} onChange={e=>setSchedPriority(e.target.checked?'asap':'normal')}/>
-                  <span>⚡ ASAP — schedule before everything else</span>
-                </label>
-                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
-                  <input type="checkbox" checked={hardDeadline} onChange={e=>setHardDeadline(e.target.checked)} disabled={!due_date}/>
-                  <span>🔒 Hard deadline — work past hours if needed to hit the due date{!due_date && <em style={{color:'var(--text-3)'}}> (set a due date first)</em>}</span>
-                </label>
-                {initial?.schedule_state && initial.schedule_state !== 'unscheduled' && (
-                  <div style={{fontSize:'11.5px',padding:'8px 10px',borderRadius:'6px',background:'var(--bg-card)',border:'1px solid var(--border)',lineHeight:1.5}}>
-                    {isPinned && <div style={{color:'var(--accent)'}}>📌 Pinned in place{initial.pin_at?` · ${new Date(initial.pin_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}`:''}</div>}
-                    {initial.schedule_state === 'scheduled' && initial.eta && !isPinned && (
-                      <div style={{color:'var(--green)'}}>✓ Scheduled · ends {new Date(initial.eta).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
-                    )}
-                    {initial.schedule_state === 'could_not_fit' && (
-                      <div style={{color:'var(--yellow)'}}>⚠ Couldn't fit{initial.could_not_fit_reason?` — ${initial.could_not_fit_reason}`:''}</div>
-                    )}
-                  </div>
-                )}
-                <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.4}}>
-                  PrismOS finds open time in your working hours, places this task around your meetings, and reshuffles it automatically if you miss it. Manage working hours in Settings.
-                </div>
-              </div>
-            )}
-          </div>
+          {/* ── Auto-schedule (shared component) ── */}
+          <AutoScheduleFields initial={initial} dueDate={due_date} onChange={setSchedFields} />
 
           <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
             <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
@@ -23234,6 +23253,8 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
   const [emailTo, setEmailTo] = useState(initial?.assignee_email || '');
   const [emailMsg, setEmailMsg] = useState('');
   const alreadySent = !!(initial && initial.email_thread_id);
+  // Auto-scheduling (shared component)
+  const [schedFields, setSchedFields] = useState({});
 
   const contactOpts = (() => {
     const q = cq.trim().toLowerCase();
@@ -23272,6 +23293,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
       assignee_id: emailMode ? null : (assignee||null),
       assignee_email: emailMode ? emailTo.trim() : null,
       contact_id: contactId||null, contact_name: contactName||null, priority_system: system,
+      ...schedFields,
       _email: wantEmail ? { to: emailTo.trim(), subject: title.trim(), body: emailMsg } : null };
     if (system==='eisenhower') onSave({ ...base, priority:'medium', eisenhower_quadrant:quadrant, eisenhower_rank:Math.max(1,parseInt(rank,10)||1) });
     else onSave({ ...base, priority, eisenhower_quadrant:null, eisenhower_rank:null });
@@ -23387,6 +23409,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
           </div>
           <div className="form-group"><label className="form-label">Notes</label>
             <textarea className="form-input" rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Details, links, context…"/></div>
+          <AutoScheduleFields initial={initial} dueDate={dueDate} onChange={setSchedFields} />
           <div style={{display:'flex',gap:'8px',justifyContent:'flex-end',marginTop:'8px'}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">{!initial && emailMode && emailTo.trim() ? 'Add & Email' : (initial?'Save':'Add Task')}</button>
@@ -23473,6 +23496,7 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
         }
       }
     }
+    if (data.auto_schedule) supabase.functions.invoke('task-autoschedule', { body: {} }).catch(()=>{});
     setEditing(null); loadTasks(sel);
   };
   const removeTask = async (t)=>{ await tdb.from('tasks').delete().eq('id',t.id); setEditing(null); loadTasks(sel); };
@@ -23710,6 +23734,7 @@ function ProjectTasksPanel({ userId }) {
         }
       }
     }
+    if (data.auto_schedule) supabase.functions.invoke('task-autoschedule', { body: {} }).catch(()=>{});
     setEditing(null);
     load();
   };
