@@ -1052,8 +1052,8 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
         <input type="checkbox" checked={autoSchedule} onChange={e=>setAutoSchedule(e.target.checked)}/>
         <span>🗓️ Auto-schedule onto my calendar</span>
       </label>
-      {autoSchedule && (
-        <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'10px'}}>
+      <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'10px',opacity:autoSchedule?1:0.94}}>
+        {!autoSchedule && <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.4,fontStyle:'italic'}}>Set the details below, then check the box above to place this on your calendar.</div>}
           <div className="form-row">
             <div className="form-group" style={{flex:1,marginBottom:0}}>
               <label className="form-label">Estimated time</label>
@@ -1122,7 +1122,6 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
             PrismOS finds open time in your working hours, places this task around your meetings, and reshuffles it automatically if you miss it. Manage working hours in Settings.
           </div>
         </div>
-      )}
     </div>
   );
 }
