@@ -1040,6 +1040,19 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   const [schedPriority, setSchedPriority] = useState(initial?.schedule_priority || 'normal'); // normal|asap
   const [hardDeadline, setHardDeadline] = useState(!!initial?.is_hard_deadline);
   const [minChunk, setMinChunk] = useState(initial?.min_chunk_minutes || 0);
+  const [schedStartDate, setSchedStartDate] = useState(initial?.schedule_start_date || '');
+  const [schedId, setSchedId] = useState(initial?.schedule_id || '');
+  const [schedules, setSchedules] = useState([]);
+  const isPinned = !!initial?.pin_at;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('schedules').select('id,name,is_default').order('is_default', { ascending: false });
+      if (!cancelled && data) setSchedules(data);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Load existing contact links when editing
   useEffect(() => {
@@ -1117,6 +1130,8 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
       schedule_priority: autoSchedule && schedPriority === 'asap' ? 'asap' : null,
       is_hard_deadline: autoSchedule ? hardDeadline : false,
       min_chunk_minutes: autoSchedule && parseInt(minChunk, 10) > 0 ? parseInt(minChunk, 10) : null,
+      schedule_start_date: autoSchedule && schedStartDate ? schedStartDate : null,
+      schedule_id: autoSchedule && schedId ? schedId : null,
       _email: (emailMode && emailTo.trim() && !emailAlreadySent) ? { to: emailTo.trim(), subject: title.trim(), body: emailMsg } : null,
     };
     if (system === 'eisenhower') {
@@ -1321,6 +1336,25 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                     </select>
                   </div>
                 </div>
+                <div className="form-row">
+                  <div className="form-group" style={{flex:1,marginBottom:0}}>
+                    <label className="form-label">Start on or after</label>
+                    <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                      <input type="date" className="form-input" value={schedStartDate} onChange={e=>setSchedStartDate(e.target.value)} style={{flex:1}}/>
+                      {schedStartDate && <button type="button" onClick={()=>setSchedStartDate('')} style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'16px'}}>×</button>}
+                    </div>
+                    <span style={{fontSize:'10px',color:'var(--text-3)'}}>Won't be scheduled before this date.</span>
+                  </div>
+                  {schedules.length > 1 && (
+                    <div className="form-group" style={{flex:1,marginBottom:0}}>
+                      <label className="form-label">Working hours</label>
+                      <select className="form-select" value={schedId} onChange={e=>setSchedId(e.target.value)}>
+                        <option value="">Default</option>
+                        {schedules.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_default?' (default)':''}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
                 <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
                   <input type="checkbox" checked={schedPriority==='asap'} onChange={e=>setSchedPriority(e.target.checked?'asap':'normal')}/>
                   <span>⚡ ASAP — schedule before everything else</span>
@@ -1329,6 +1363,17 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                   <input type="checkbox" checked={hardDeadline} onChange={e=>setHardDeadline(e.target.checked)} disabled={!due_date}/>
                   <span>🔒 Hard deadline — work past hours if needed to hit the due date{!due_date && <em style={{color:'var(--text-3)'}}> (set a due date first)</em>}</span>
                 </label>
+                {initial?.schedule_state && initial.schedule_state !== 'unscheduled' && (
+                  <div style={{fontSize:'11.5px',padding:'8px 10px',borderRadius:'6px',background:'var(--bg-card)',border:'1px solid var(--border)',lineHeight:1.5}}>
+                    {isPinned && <div style={{color:'var(--accent)'}}>📌 Pinned in place{initial.pin_at?` · ${new Date(initial.pin_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}`:''}</div>}
+                    {initial.schedule_state === 'scheduled' && initial.eta && !isPinned && (
+                      <div style={{color:'var(--green)'}}>✓ Scheduled · ends {new Date(initial.eta).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
+                    )}
+                    {initial.schedule_state === 'could_not_fit' && (
+                      <div style={{color:'var(--yellow)'}}>⚠ Couldn't fit{initial.could_not_fit_reason?` — ${initial.could_not_fit_reason}`:''}</div>
+                    )}
+                  </div>
+                )}
                 <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.4}}>
                   PrismOS finds open time in your working hours, places this task around your meetings, and reshuffles it automatically if you miss it. Manage working hours in Settings.
                 </div>
