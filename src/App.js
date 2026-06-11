@@ -5850,7 +5850,8 @@ function isoToLocalInput(iso) {
   return d.toISOString().slice(0, 16);
 }
 
-function ContactActivityTimeline({ contact, userId, onContactPatch }) {
+function ActivityTimeline({ entityType = 'contact', entityId, contact = null, userId, onContactPatch }) {
+  const isContact = entityType === 'contact';
   const [timeline, setTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -5874,17 +5875,17 @@ function ContactActivityTimeline({ contact, userId, onContactPatch }) {
   const [editDur, setEditDur] = useState('');
 
   useEffect(() => {
-    if (!contact?.id) return;
+    if (!entityId) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       const { data } = await supabase.from('contact_interactions')
-        .select('*').eq('contact_id', contact.id)
+        .select('*').eq('entity_type', entityType).eq('entity_id', entityId)
         .order('occurred_at', { ascending: false });
       if (!cancelled) { setTimeline(data || []); setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [contact?.id]);
+  }, [entityType, entityId]);
 
   function relTime(ts) {
     if (!ts) return '';
@@ -5919,7 +5920,11 @@ function ContactActivityTimeline({ contact, userId, onContactPatch }) {
       const k = ACTIVITY_KINDS[kind];
       const occ = whenLocal ? new Date(whenLocal).toISOString() : new Date().toISOString();
       const row = {
-        user_id: userId, contact_id: contact.id, kind,
+        user_id: userId,
+        entity_type: entityType,
+        entity_id: entityId,
+        contact_id: isContact ? entityId : null,
+        kind,
         channel: k.directional ? k.channel : null,
         direction: k.directional ? direction : null,
         occurred_at: occ,
@@ -5933,8 +5938,8 @@ function ContactActivityTimeline({ contact, userId, onContactPatch }) {
       if (error) throw error;
       setTimeline(prev => [data, ...prev]);
 
-      // Bump the contact's last-contact signals for directional entries
-      if (k.directional) {
+      // Bump the contact's last-contact signals for directional entries (contacts only)
+      if (k.directional && isContact && contact) {
         const occT = new Date(occ).getTime();
         const patch = {};
         if (direction === 'inbound' && (!contact.last_inbound_at || occT > new Date(contact.last_inbound_at).getTime())) patch.last_inbound_at = occ;
@@ -5954,13 +5959,14 @@ function ContactActivityTimeline({ contact, userId, onContactPatch }) {
 
       // Optional: schedule a linked follow-up task
       if (followUpOn && followUpWhen) {
+        const followLabel = isContact && contact ? contact.name : (k.label + ' follow-up');
         const { data: t } = await supabase.from('tasks').insert({
           user_id: userId,
-          title: `Follow up: ${contact.name}`,
+          title: `Follow up: ${followLabel}`,
           due_date: followUpWhen.slice(0, 10),
           priority: 'high', priority_system: 'eisenhower', eisenhower_quadrant: 'B', status: 'open',
         }).select().single();
-        if (t) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [contact.id] }); } catch (_) {} }
+        if (t && isContact) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [entityId] }); } catch (_) {} }
       }
 
       setBody(''); setDuration(''); setFollowUpOn(false); setFollowUpWhen(''); setWhenLocal(nowLocalInput());
@@ -6148,7 +6154,7 @@ function ContactActivityTimeline({ contact, userId, onContactPatch }) {
         <div style={{ fontSize: '12px', color: 'var(--text-3)', padding: '12px 0' }}>Loading timeline…</div>
       ) : timeline.length === 0 ? (
         <div style={{ fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic', padding: '14px', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: '8px' }}>
-          No activity logged yet. Capture a call, meeting, or note above — every entry is time-stamped to this contact's timeline.
+          No activity logged yet. Capture a call, meeting, or note above — every entry is time-stamped to this timeline.
         </div>
       ) : (
         <>
@@ -6336,7 +6342,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         setLinkedTasks([]);
       }
 
-      // (Dated notes + manual interactions now load inside ContactActivityTimeline,
+      // (Dated notes + manual interactions now load inside ActivityTimeline,
       // which renders the unified activity stream from public.contact_interactions.)
 
       // Pass 3: linked events
@@ -7158,7 +7164,9 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             </div>
           )}
 
-          <ContactActivityTimeline
+          <ActivityTimeline
+            entityType="contact"
+            entityId={contact.id}
             contact={contact}
             userId={userId}
             onContactPatch={(patch) => {
@@ -12367,28 +12375,9 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
           </div>
         )}
 
-        <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
-          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>📝 Dated notes ({propertyNotes.length})</div>
-          <div style={{display:'flex',gap:'6px',marginBottom:'8px'}}>
-            <input className="form-input" placeholder="Add a note (stamped with today's date)…"
-              value={newNoteBody} onChange={e => setNewNoteBody(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addDatedNote(); } }}
-              style={{flex:1,padding:'6px 10px',fontSize:'12px',margin:0}} />
-            <button className="btn btn-primary btn-sm" onClick={addDatedNote} disabled={savingNote || !newNoteBody.trim()} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
-              {savingNote ? '↻' : '+ Add'}
-            </button>
-          </div>
-          {propertyNotes.length === 0 ? (
-            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No notes yet.</div>
-          ) : propertyNotes.map(n => (
-            <div key={n.id} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',marginBottom:'4px',fontSize:'12px'}}>
-              <div style={{color:'var(--text-1)',whiteSpace:'pre-wrap',marginBottom:'4px'}}>{n.body}</div>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <span style={{fontSize:'10px',color:'var(--text-3)'}}>{new Date(n.created_at).toLocaleString()}</span>
-                <button onClick={() => deleteDatedNote(n.id)} title="Delete" style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'12px',padding:'0 4px'}}>×</button>
-              </div>
-            </div>
-          ))}
+        <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
+          <ActivityTimeline entityType="property" entityId={property.id} userId={userId} />
         </div>
 
         {property.notes && (
@@ -12708,7 +12697,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
 // ─────────────────────────────────────────
 // INVESTMENTS VIEW
 // ─────────────────────────────────────────
-function InvestmentModal({ onClose, onSave, onDelete, initial, properties, contacts = [] }) {
+function InvestmentModal({ onClose, onSave, onDelete, initial, properties, contacts = [], userId }) {
   const [name, setName] = useState(initial?.name || '');
   const [kind, setKind] = useState(initial?.kind || 'deal');
   const [stage, setStage] = useState(initial?.stage || 'screening');
@@ -12795,6 +12784,12 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
             <button type="submit" className="btn btn-primary">Save Investment</button>
           </div>
         </form>
+        {initial?.id && (
+          <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
+            <ActivityTimeline entityType="investment" entityId={initial.id} userId={userId} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -12900,7 +12895,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId, cont
           }
         </div>
       </div>
-      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} onDelete={async (i)=>{ if(!window.confirm(`Delete investment "${i.name}"?`)) return; await deleteInv(i.id); setShowModal(false); setEditInv(null); }} initial={editInv} properties={properties} contacts={contacts} />}
+      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} onDelete={async (i)=>{ if(!window.confirm(`Delete investment "${i.name}"?`)) return; await deleteInv(i.id); setShowModal(false); setEditInv(null); }} initial={editInv} properties={properties} contacts={contacts} userId={userId} />}
     </div>
   );
 }
