@@ -928,3 +928,9 @@ body {
 [data-task-row][data-drop-above="true"] {
   margin-top: 11px;
 }
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+  100% { opacity: 1; transform: scale(1); }
+}

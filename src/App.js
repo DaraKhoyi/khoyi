@@ -5873,6 +5873,67 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
   const [mentionQuery, setMentionQuery] = useState(null);
   const contactName = (id) => { const c = contacts.find(x => x.id === id); return c ? c.name : null; };
 
+  // Voice-to-note (Web Speech API) + AI cleanup
+  const [recording, setRecording] = useState(false);
+  const [interim, setInterim] = useState('');
+  const [cleaning, setCleaning] = useState(false);
+  const recRef = useRef(null);
+  const speechSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  function startDictation() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { notify('Voice capture isn’t supported in this browser — try Chrome.', 'error'); return; }
+    const rec = new SR();
+    rec.lang = 'en-US';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (ev) => {
+      let finalText = '', interimText = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        if (res.isFinal) finalText += res[0].transcript;
+        else interimText += res[0].transcript;
+      }
+      if (finalText) {
+        setBody(prev => {
+          const sep = (!prev || prev.endsWith(' ') || prev.endsWith('\n')) ? '' : ' ';
+          return prev + sep + finalText.trim() + ' ';
+        });
+      }
+      setInterim(interimText);
+    };
+    rec.onerror = (e) => {
+      setRecording(false); setInterim('');
+      if (e.error && e.error !== 'no-speech' && e.error !== 'aborted') notify('Voice error: ' + e.error, 'error');
+    };
+    rec.onend = () => { setRecording(false); setInterim(''); };
+    recRef.current = rec;
+    try { rec.start(); setRecording(true); } catch (_) {}
+  }
+  function stopDictation() {
+    try { recRef.current && recRef.current.stop(); } catch (_) {}
+    setRecording(false); setInterim('');
+  }
+  async function cleanupWithAri() {
+    if (!body.trim() || cleaning) return;
+    if (recording) stopDictation();
+    setCleaning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-note-cleanup', { body: { text: body, kind } });
+      if (error) throw error;
+      if (data && data.cleaned) {
+        setBody(data.cleaned);
+        // Re-capture any @mentions that survived cleanup
+        setMentionIds(prev => prev.filter(id => { const n = contactName(id); return n && data.cleaned.includes('@' + n); }));
+      } else if (data && data.error) {
+        throw new Error(data.error);
+      }
+    } catch (e) {
+      notify("Couldn't clean up the note: " + (e.message || e), 'error');
+    } finally { setCleaning(false); }
+  }
+  useEffect(() => () => { try { recRef.current && recRef.current.abort(); } catch (_) {} }, []);
+
   // Inline edit
   const [editId, setEditId] = useState(null);
   const [editBody, setEditBody] = useState('');
@@ -6147,6 +6208,27 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             );
           })}
         </div>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px' }}>
+          {speechSupported && (
+            <button type="button" onClick={() => recording ? stopDictation() : startDictation()}
+              title={recording ? 'Stop dictation' : 'Dictate a note'}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+                border: `1px solid ${recording ? 'var(--red)' : 'var(--border)'}`,
+                background: recording ? 'rgba(239,68,68,0.12)' : 'transparent',
+                color: recording ? 'var(--red)' : 'var(--text-2)' }}>
+              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: recording ? 'var(--red)' : 'var(--text-3)', animation: recording ? 'pulse 1s infinite' : 'none' }} />
+              {recording ? 'Recording… tap to stop' : '🎤 Dictate'}
+            </button>
+          )}
+          {body.trim() && (
+            <button type="button" onClick={cleanupWithAri} disabled={cleaning}
+              title="Tighten this into a clean note with Ari"
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, cursor: cleaning ? 'default' : 'pointer',
+                border: '1px solid var(--accent)', background: 'rgba(197,169,94,0.10)', color: 'var(--accent)', opacity: cleaning ? 0.6 : 1 }}>
+              {cleaning ? '✨ Cleaning…' : '✨ Clean up with Ari'}
+            </button>
+          )}
+        </div>
         <div style={{ position: 'relative' }}>
           <textarea ref={composerRef} className="form-textarea" value={body}
             onChange={e => {
@@ -6159,6 +6241,9 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); addEntry(); } }}
             placeholder={k.placeholder + '   ·  @ to mention, # to tag'}
             style={{ minHeight: '64px', fontSize: '13px', padding: '8px 10px', margin: 0, marginBottom: '8px', width: '100%' }} />
+          {recording && interim && (
+            <div style={{ marginTop: '-4px', marginBottom: '8px', fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic' }}>{interim}…</div>
+          )}
           {mentionQuery !== null && contacts.length > 0 && (() => {
             const q = mentionQuery.toLowerCase();
             const matches = contacts.filter(c => c.name && c.name.toLowerCase().includes(q)).slice(0, 6);
