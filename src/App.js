@@ -14058,21 +14058,6 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
     return { top: (startMin/60)*HOUR_PX, height: Math.max(22, ((endMin - startMin)/60)*HOUR_PX) };
   }
 
-  // Tasks: filter to what's relevant for this day, matching the TasksView 'Today' logic.
-  // - When viewing today: tasks due today OR past-due (not completed)
-  // - When viewing any other day: tasks due exactly on that day (not completed)
-  // Sort by Eisenhower/simple rank (same as Tasks list).
-  const viewDateStr = ymd(date);
-  const todayStr = ymd(today);
-  const openTasks = sortTasks(
-    (tasks || []).filter(t => {
-      if (t.completed) return false;
-      if (!t.due_date) return false;
-      if (viewDateStr === todayStr) return t.due_date <= todayStr; // today + past due
-      return t.due_date === viewDateStr;                            // exact match
-    })
-  ).slice(0, 50);
-
   async function toggleTask(task) {
     if (!setTasks) return;
     const { data: u } = await supabase.from('tasks').update({ completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null }).eq('id', task.id).select().single();
@@ -14081,7 +14066,6 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
 
   return (
     <div className="day-view">
-      {/* Events column (40%) */}
       <div className="day-events-col">
         <div className="day-col-header">
           <span>{isToday ? 'Today' : `${MONTH_NAMES[date.getMonth()].slice(0,3)} ${date.getDate()}`}</span>
@@ -14127,27 +14111,6 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
               );
             })}
           </div>
-        </div>
-      </div>
-      {/* Tasks column (60%) */}
-      <div className="day-tasks-col">
-        <div className="day-col-header">
-          <span>Tasks</span>
-          <span style={{fontSize:'10px',color:'var(--text-3)'}}>{openTasks.length} open</span>
-        </div>
-        <div className="day-tasks-scroll">
-          {openTasks.length === 0
-            ? <div className="empty-state" style={{padding:'20px 0'}}><p>No open tasks.</p></div>
-            : openTasks.map(t => (
-                <div key={t.id} className="day-task-row" onClick={()=>toggleTask(t)}>
-                  <div className="day-task-meta-col">
-                    <span className="day-task-check">{t.completed ? '☑' : '☐'}</span>
-                    <span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>
-                  </div>
-                  <span className="day-task-text" style={{fontStyle: t.recurring ? 'italic' : 'normal'}} title={t.title}>{t.title}</span>
-                </div>
-              ))
-          }
         </div>
       </div>
     </div>

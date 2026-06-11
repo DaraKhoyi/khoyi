@@ -707,10 +707,9 @@ body {
 .week-event-title { font-size: 11px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ─── DAY VIEW (events ~60% | tasks ~40%, thin divider, no gap) ─── */
-.day-view { display: grid; grid-template-columns: 58% 42%; gap: 0; min-height: 500px; }
-.day-events-col, .day-tasks-col { background: var(--bg-base); border: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
-.day-events-col { border-radius: 8px 0 0 8px; border-right: none; }
-.day-tasks-col { border-radius: 0 8px 8px 0; }
+.day-view { display: block; min-height: 500px; }
+.day-events-col { background: var(--bg-base); border: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; border-radius: 8px; }
+.day-tasks-col { display: none; }
 .day-col-header { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: var(--text-1); background: var(--bg-card); }
 .day-col-header > :last-child { color: var(--text-1) !important; opacity: 0.7; font-weight: 600; }
 .day-allday-row { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid var(--border); }
