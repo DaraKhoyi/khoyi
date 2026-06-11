@@ -5850,11 +5850,12 @@ function isoToLocalInput(iso) {
   return d.toISOString().slice(0, 16);
 }
 
-function ActivityTimeline({ entityType = 'contact', entityId, contact = null, userId, onContactPatch }) {
+function ActivityTimeline({ entityType = 'contact', entityId, contact = null, userId, onContactPatch, contacts = [] }) {
   const isContact = entityType === 'contact';
   const [timeline, setTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState(null);
 
   // Composer
   const [kind, setKind] = useState('note');
@@ -5866,6 +5867,11 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
   const [followUpWhen, setFollowUpWhen] = useState('');
   const [saving, setSaving] = useState(false);
   const composerRef = useRef(null);
+
+  // @mention autocomplete
+  const [mentionIds, setMentionIds] = useState([]);
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const contactName = (id) => { const c = contacts.find(x => x.id === id); return c ? c.name : null; };
 
   // Inline edit
   const [editId, setEditId] = useState(null);
@@ -5879,13 +5885,27 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from('contact_interactions')
-        .select('*').eq('entity_type', entityType).eq('entity_id', entityId)
-        .order('occurred_at', { ascending: false });
+      let query = supabase.from('contact_interactions').select('*');
+      if (isContact) {
+        // A contact's timeline includes entries logged on it AND entries logged
+        // elsewhere (property, investment, another contact) that @mention it.
+        query = query.or(`and(entity_type.eq.contact,entity_id.eq.${entityId}),mentions.cs.{${entityId}}`);
+      } else {
+        query = query.eq('entity_type', entityType).eq('entity_id', entityId);
+      }
+      const { data } = await query.order('occurred_at', { ascending: false });
       if (!cancelled) { setTimeline(data || []); setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [entityType, entityId]);
+  }, [entityType, entityId, isContact]);
+
+  // Parse #hashtags from free text → lowercased tag array
+  function parseTags(text) {
+    const out = new Set();
+    const re = /#([\p{L}\w][\p{L}\w-]*)/gu;
+    let m; while ((m = re.exec(text || ''))) out.add(m[1].toLowerCase());
+    return Array.from(out);
+  }
 
   function relTime(ts) {
     if (!ts) return '';
@@ -5919,6 +5939,8 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     try {
       const k = ACTIVITY_KINDS[kind];
       const occ = whenLocal ? new Date(whenLocal).toISOString() : new Date().toISOString();
+      // Keep only mentions whose @Name still appears in the body
+      const liveMentions = mentionIds.filter(id => { const n = contactName(id); return n && body.includes('@' + n); });
       const row = {
         user_id: userId,
         entity_type: entityType,
@@ -5933,6 +5955,8 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
         duration_minutes: (k.duration && duration) ? Number(duration) : null,
         follow_up_at: (followUpOn && followUpWhen) ? new Date(followUpWhen).toISOString() : null,
         pinned: false,
+        mentions: liveMentions,
+        tags: parseTags(body),
       };
       const { data, error } = await supabase.from('contact_interactions').insert(row).select().single();
       if (error) throw error;
@@ -5970,6 +5994,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
       }
 
       setBody(''); setDuration(''); setFollowUpOn(false); setFollowUpWhen(''); setWhenLocal(nowLocalInput());
+      setMentionIds([]); setMentionQuery(null);
     } catch (e) {
       notify("Couldn't log activity: " + (e.message || e), 'error');
     } finally { setSaving(false); }
@@ -5992,6 +6017,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     };
     if (k.directional) patch.direction = editDir;
     if (k.duration) patch.duration_minutes = editDur ? Number(editDur) : null;
+    patch.tags = parseTags(editBody);
     const { data } = await supabase.from('contact_interactions').update(patch).eq('id', e.id).select().single();
     if (data) setTimeline(prev => prev.map(x => x.id === data.id ? data : x).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at)));
     setEditId(null); setEditBody('');
@@ -6008,7 +6034,9 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
 
   const k = ACTIVITY_KINDS[kind];
   const presentKinds = ACTIVITY_ORDER.filter(kk => timeline.some(t => (t.kind || 'note') === kk));
-  const filtered = filter === 'all' ? timeline : timeline.filter(t => (t.kind || 'note') === filter);
+  const allTags = Array.from(new Set(timeline.flatMap(t => t.tags || []))).sort();
+  let filtered = filter === 'all' ? timeline : timeline.filter(t => (t.kind || 'note') === filter);
+  if (tagFilter) filtered = filtered.filter(t => (t.tags || []).includes(tagFilter));
   const pinned = filtered.filter(t => t.pinned);
   const unpinned = filtered.filter(t => !t.pinned);
 
@@ -6057,6 +6085,12 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: e.body || e.brief ? '5px' : 0 }}>
             <span style={{ fontSize: '12px' }}>{kk.icon}</span>
             <span style={{ fontSize: '11px', fontWeight: 700, color: kk.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{kk.label}</span>
+            {!(e.entity_type === entityType && e.entity_id === entityId) && (
+              <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0 5px' }}
+                title="Logged on another record; shown here because it mentions this contact">
+                ↗ {e.entity_type === 'contact' ? (contactName(e.entity_id) || 'contact') : e.entity_type === 'property' ? '🏠 property' : e.entity_type === 'investment' ? '💼 investment' : e.entity_type}
+              </span>
+            )}
             {kk.directional && e.direction && (
               <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{e.direction === 'outbound' ? '⬆ you → them' : '⬇ them → you'}</span>
             )}
@@ -6070,6 +6104,19 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             </div>
           </div>
           {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.body || e.brief}</div>}
+          {((e.mentions && e.mentions.length > 0) || (e.tags && e.tags.length > 0)) && (
+            <div style={{ marginTop: '6px', display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+              {(e.mentions || []).map(id => {
+                const nm = contactName(id);
+                if (!nm) return null;
+                return <span key={'m' + id} style={{ fontSize: '10px', color: 'var(--accent)', background: 'var(--accent-dim, rgba(197,169,94,0.12))', border: '1px solid var(--accent)', borderRadius: '999px', padding: '1px 7px' }}>👤 {nm}</span>;
+              })}
+              {(e.tags || []).map(tg => (
+                <button key={'t' + tg} onClick={() => setTagFilter(tagFilter === tg ? null : tg)}
+                  style={{ fontSize: '10px', color: tagFilter === tg ? 'var(--bg-base)' : 'var(--text-2)', background: tagFilter === tg ? 'var(--text-2)' : 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '999px', padding: '1px 7px', cursor: 'pointer' }}>#{tg}</button>
+              ))}
+            </div>
+          )}
           {(edited || e.follow_up_at) && (
             <div style={{ marginTop: '5px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {edited && <span style={{ fontSize: '10px', color: 'var(--text-3)', fontStyle: 'italic' }}>edited {relTime(e.updated_at)}</span>}
@@ -6100,10 +6147,46 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             );
           })}
         </div>
-        <textarea ref={composerRef} className="form-textarea" value={body} onChange={e => setBody(e.target.value)}
-          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); addEntry(); } }}
-          placeholder={k.placeholder}
-          style={{ minHeight: '64px', fontSize: '13px', padding: '8px 10px', margin: 0, marginBottom: '8px', width: '100%' }} />
+        <div style={{ position: 'relative' }}>
+          <textarea ref={composerRef} className="form-textarea" value={body}
+            onChange={e => {
+              const val = e.target.value;
+              setBody(val);
+              const caret = e.target.selectionStart || val.length;
+              const m = val.slice(0, caret).match(/@([\p{L}\w'’.\-]*)$/u);
+              setMentionQuery(m ? m[1] : null);
+            }}
+            onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); addEntry(); } }}
+            placeholder={k.placeholder + '   ·  @ to mention, # to tag'}
+            style={{ minHeight: '64px', fontSize: '13px', padding: '8px 10px', margin: 0, marginBottom: '8px', width: '100%' }} />
+          {mentionQuery !== null && contacts.length > 0 && (() => {
+            const q = mentionQuery.toLowerCase();
+            const matches = contacts.filter(c => c.name && c.name.toLowerCase().includes(q)).slice(0, 6);
+            if (matches.length === 0) return null;
+            return (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '-4px', background: 'var(--bg-card)', border: '1px solid var(--accent)', borderRadius: '8px', zIndex: 30, maxHeight: '200px', overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,0.4)' }}>
+                {matches.map(c => (
+                  <div key={c.id} onClick={() => {
+                    const ta = composerRef.current;
+                    const caret = ta ? (ta.selectionStart || body.length) : body.length;
+                    const before = body.slice(0, caret).replace(/@([\p{L}\w'’.\-]*)$/u, '@' + c.name + ' ');
+                    const after = body.slice(caret);
+                    setBody(before + after);
+                    setMentionIds(prev => prev.includes(c.id) ? prev : [...prev, c.id]);
+                    setMentionQuery(null);
+                    setTimeout(() => { if (ta) { ta.focus(); const pos = before.length; ta.setSelectionRange(pos, pos); } }, 0);
+                  }}
+                    style={{ padding: '7px 10px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '7px', borderBottom: '1px solid var(--border)' }}
+                    onMouseDown={e => e.preventDefault()}>
+                    <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700 }}>{(c.name || '?').slice(0, 1).toUpperCase()}</span>
+                    <span style={{ color: 'var(--text-1)' }}>{c.name}</span>
+                    {c.company && <span style={{ color: 'var(--text-3)', fontSize: '10px' }}>{c.company}</span>}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '8px' }}>
           <input type="datetime-local" className="form-input" value={whenLocal} onChange={e => setWhenLocal(e.target.value)}
             title="When did this happen? (back-date freely)" style={{ flex: '1 1 168px', padding: '6px', fontSize: '12px', margin: 0 }} />
@@ -6146,6 +6229,16 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
               <button key={kk} onClick={() => setFilter(kk)} style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: `1px solid ${filter === kk ? cfg.color : 'var(--border)'}`, background: filter === kk ? cfg.color + '22' : 'transparent', color: filter === kk ? cfg.color : 'var(--text-3)', fontWeight: 600 }}>{cfg.icon} {cfg.label} ({n})</button>
             );
           })}
+        </div>
+      )}
+      {allTags.length > 0 && (
+        <div style={{ display: 'flex', gap: '5px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: '10px', color: 'var(--text-3)', fontWeight: 600 }}>Tags:</span>
+          {allTags.map(tg => (
+            <button key={tg} onClick={() => setTagFilter(tagFilter === tg ? null : tg)}
+              style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: `1px solid ${tagFilter === tg ? 'var(--accent)' : 'var(--border)'}`, background: tagFilter === tg ? 'rgba(197,169,94,0.15)' : 'transparent', color: tagFilter === tg ? 'var(--accent)' : 'var(--text-3)', fontWeight: 600 }}>#{tg}</button>
+          ))}
+          {tagFilter && <button onClick={() => setTagFilter(null)} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>clear</button>}
         </div>
       )}
 
@@ -7169,6 +7262,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             entityId={contact.id}
             contact={contact}
             userId={userId}
+            contacts={contacts}
             onContactPatch={(patch) => {
               Object.assign(contact, patch);
               if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
@@ -12377,7 +12471,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 
         <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
           <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
-          <ActivityTimeline entityType="property" entityId={property.id} userId={userId} />
+          <ActivityTimeline entityType="property" entityId={property.id} userId={userId} contacts={contacts} />
         </div>
 
         {property.notes && (
@@ -12787,7 +12881,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
         {initial?.id && (
           <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
-            <ActivityTimeline entityType="investment" entityId={initial.id} userId={userId} />
+            <ActivityTimeline entityType="investment" entityId={initial.id} userId={userId} contacts={contacts} />
           </div>
         )}
       </div>
