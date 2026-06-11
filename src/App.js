@@ -22675,7 +22675,15 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
                       {a.provider} · {a.is_active ? 'active' : 'inactive'}
                       {a.last_sync_at && <> · synced {new Date(a.last_sync_at).toLocaleString()}</>}
                     </div>
-                    {a.last_sync_error && (
+                    {a.last_sync_error === 'REAUTH_REQUIRED' ? (
+                      <div style={{marginTop:'6px',padding:'8px 10px',background:'rgba(245,158,11,0.12)',border:'1px solid var(--yellow)',borderRadius:'8px'}}>
+                        <div style={{fontSize:'12px',color:'var(--yellow)',fontWeight:600,marginBottom:'6px'}}>⚠ Google ended this connection — reconnect to resume sync.</div>
+                        <button className="btn btn-sm" style={{background:'var(--yellow)',color:'#1a1205',fontWeight:600}} disabled={connecting}
+                          onClick={()=>startConnect((a.purposes||[]).includes('calendar') ? 'calendar' : 'email')}>
+                          {connecting ? 'Opening Google…' : 'Reconnect now'}
+                        </button>
+                      </div>
+                    ) : a.last_sync_error && (
                       <div style={{fontSize:'12px',color:'var(--red)',marginTop:'2px'}}>Last error: {a.last_sync_error.slice(0, 200)}</div>
                     )}
                   </div>
