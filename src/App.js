@@ -22937,6 +22937,7 @@ function WorkingHoursSection({ userId }) {
   const [sched, setSched] = useState(null);
   const [days, setDays] = useState({});
   const [mirror, setMirror] = useState(false);
+  const [buffer, setBuffer] = useState(30);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -22961,7 +22962,7 @@ function WorkingHoursSection({ userId }) {
         const w = h[k] && h[k][0];
         next[k] = w ? { enabled: true, start: w[0], end: w[1] } : { enabled: false, start: 9, end: 17 };
       }
-      setSched(s); setDays(next); setMirror(!!s.mirror_to_google); setLoading(false);
+      setSched(s); setDays(next); setMirror(!!s.mirror_to_google); setBuffer(s.buffer_minutes ?? 30); setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [userId]);
@@ -22973,7 +22974,7 @@ function WorkingHoursSection({ userId }) {
     const hours = {};
     for (const [k] of DAYS) if (days[k]?.enabled) hours[k] = [[Number(days[k].start), Number(days[k].end)]];
     const { error } = await supabase.from('schedules')
-      .update({ hours, mirror_to_google: mirror, updated_at: new Date().toISOString() })
+      .update({ hours, mirror_to_google: mirror, buffer_minutes: Number(buffer), updated_at: new Date().toISOString() })
       .eq('id', sched.id);
     if (error) setMsg('Error: ' + error.message);
     else {
@@ -23016,6 +23017,22 @@ function WorkingHoursSection({ userId }) {
                   ) : <span style={{fontSize:'12px',color:'var(--text-3)'}}>Off</span>}
                 </div>
               ))}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',marginTop:'14px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
+              <div style={{flex:'1 1 220px',minWidth:'200px'}}>
+                <div style={{fontSize:'13px',color:'var(--text-1)',fontWeight:600}}>Buffer around appointments</div>
+                <div style={{fontSize:'12px',color:'var(--text-3)',lineHeight:1.4}}>Free time kept before & after each meeting so tasks aren't booked flush against it.</div>
+              </div>
+              <select className="form-select" style={{width:'auto',padding:'6px 10px'}} value={buffer} onChange={e=>setBuffer(Number(e.target.value))}>
+                <option value={0}>No buffer</option>
+                <option value={5}>5 minutes</option>
+                <option value={10}>10 minutes</option>
+                <option value={15}>15 minutes</option>
+                <option value={20}>20 minutes</option>
+                <option value={30}>30 minutes</option>
+                <option value={45}>45 minutes</option>
+                <option value={60}>1 hour</option>
+              </select>
             </div>
             <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)',marginTop:'14px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
               <input type="checkbox" checked={mirror} onChange={e=>setMirror(e.target.checked)}/>
