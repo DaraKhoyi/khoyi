@@ -13070,6 +13070,18 @@ function startOfMonthGrid(year, month) {
 }
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DOW_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+// Ordinal suffix for a day-of-month number: 1->st, 2->nd, 3->rd, 14->th, 21->st...
+function ordinal(n) {
+  const t = n % 100;
+  if (t >= 11 && t <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
 
 function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts, properties = [] }) {
   const init = initial || {};
@@ -14154,7 +14166,7 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
     <div className="day-view">
       <div className="day-events-col">
         <div className="day-col-header">
-          <span>{isToday ? 'Today' : `${MONTH_NAMES[date.getMonth()].slice(0,3)} ${date.getDate()}`}</span>
+          <span>{isToday ? `Today · ${DOW_FULL[date.getDay()]}` : `${MONTH_NAMES[date.getMonth()].slice(0,3)} ${ordinal(date.getDate())} · ${DOW_FULL[date.getDay()]}`}</span>
           <span style={{fontSize:'10px',color:'var(--text-3)'}}>{nonAllDay.length} event{nonAllDay.length===1?'':'s'}</span>
         </div>
         {allDay.length > 0 && (
