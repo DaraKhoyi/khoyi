@@ -2220,9 +2220,8 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         p_contact_ids: _contact_ids,
       });
       if (rpcErr) {
-        notify("Task saved but contact links failed to update.", 'error');
-        // Do not close the modal — give the user a chance to retry
-        return;
+        notify("Task saved — but contact links didn't update.", 'error');
+        // Task itself saved; don't trap the user with an open modal. They can reopen to retry contacts.
       }
     }
     if (savedTaskId && _email) {
@@ -5469,8 +5468,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         p_contact_ids: _contact_ids,
       });
       if (rpcErr) {
-        notify("Task saved but contact links failed to update.", 'error');
-        return;
+        notify("Task saved — but contact links didn't update.", 'error');
       }
     }
     if (_email) {
