@@ -5822,6 +5822,359 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
 
 // Contact detail modal: shows DISC profile, evidence trail, baseline test entry,
 // and re-analyze. Replaces directly opening the edit form when clicking a contact.
+// ─────────────────────────────────────────────────────────────────────────
+// Unified Activity Timeline — phone calls, meetings, texts, emails & notes in
+// one chronological stream (the way Attio / Affinity / HubSpot do it). Backed
+// by public.contact_interactions (kind/body/occurred_at/direction/duration/
+// pinned). Supports back-dating, pin-to-top, inline edit, type filtering, and
+// "log + schedule follow-up" which spawns a linked task.
+// ─────────────────────────────────────────────────────────────────────────
+const ACTIVITY_KINDS = {
+  note:    { label: 'Note',    icon: '📝', color: '#9499b0', directional: false, duration: false, channel: null,        placeholder: 'Write a note — what happened, what matters, next step…' },
+  call:    { label: 'Call',    icon: '📞', color: '#C5A95E', directional: true,  duration: true,  channel: 'phone',     placeholder: 'What did you discuss? Decisions, commitments, follow-ups…' },
+  meeting: { label: 'Meeting', icon: '🤝', color: '#22c55e', directional: true,  duration: true,  channel: 'in_person', placeholder: 'Meeting recap — who, what was decided, next steps…' },
+  text:    { label: 'Text',    icon: '💬', color: '#38bdf8', directional: true,  duration: false, channel: 'text',      placeholder: 'Summary of the text exchange…' },
+  email:   { label: 'Email',   icon: '✉️', color: '#a78bfa', directional: true,  duration: false, channel: 'email',     placeholder: 'Summary of the email…' },
+};
+const ACTIVITY_ORDER = ['note', 'call', 'meeting', 'text', 'email'];
+
+function nowLocalInput() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+function isoToLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+function ContactActivityTimeline({ contact, userId, onContactPatch }) {
+  const [timeline, setTimeline] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+
+  // Composer
+  const [kind, setKind] = useState('note');
+  const [body, setBody] = useState('');
+  const [whenLocal, setWhenLocal] = useState(nowLocalInput());
+  const [direction, setDirection] = useState('outbound');
+  const [duration, setDuration] = useState('');
+  const [followUpOn, setFollowUpOn] = useState(false);
+  const [followUpWhen, setFollowUpWhen] = useState('');
+  const [saving, setSaving] = useState(false);
+  const composerRef = useRef(null);
+
+  // Inline edit
+  const [editId, setEditId] = useState(null);
+  const [editBody, setEditBody] = useState('');
+  const [editWhen, setEditWhen] = useState('');
+  const [editDir, setEditDir] = useState('outbound');
+  const [editDur, setEditDur] = useState('');
+
+  useEffect(() => {
+    if (!contact?.id) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data } = await supabase.from('contact_interactions')
+        .select('*').eq('contact_id', contact.id)
+        .order('occurred_at', { ascending: false });
+      if (!cancelled) { setTimeline(data || []); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [contact?.id]);
+
+  function relTime(ts) {
+    if (!ts) return '';
+    const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const h = Math.floor(mins / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d}d ago`;
+    if (d < 30) return `${Math.floor(d / 7)}w ago`;
+    if (d < 365) return `${Math.floor(d / 30)}mo ago`;
+    return `${Math.floor(d / 365)}y ago`;
+  }
+  function dayKeyOf(ts) { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
+  function dayLabelOf(ts) {
+    const d = new Date(ts), now = new Date();
+    const k = dayKeyOf(ts);
+    if (k === `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`) return 'Today';
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (k === `${y.getFullYear()}-${y.getMonth()}-${y.getDate()}`) return 'Yesterday';
+    const opts = { weekday: 'short', month: 'short', day: 'numeric' };
+    if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+    return d.toLocaleDateString(undefined, opts);
+  }
+  function timeOf(ts) { return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+
+  async function addEntry() {
+    if (!body.trim() || saving) return;
+    setSaving(true);
+    try {
+      const k = ACTIVITY_KINDS[kind];
+      const occ = whenLocal ? new Date(whenLocal).toISOString() : new Date().toISOString();
+      const row = {
+        user_id: userId, contact_id: contact.id, kind,
+        channel: k.directional ? k.channel : null,
+        direction: k.directional ? direction : null,
+        occurred_at: occ,
+        body: body.trim(),
+        brief: body.trim().slice(0, 140),
+        duration_minutes: (k.duration && duration) ? Number(duration) : null,
+        follow_up_at: (followUpOn && followUpWhen) ? new Date(followUpWhen).toISOString() : null,
+        pinned: false,
+      };
+      const { data, error } = await supabase.from('contact_interactions').insert(row).select().single();
+      if (error) throw error;
+      setTimeline(prev => [data, ...prev]);
+
+      // Bump the contact's last-contact signals for directional entries
+      if (k.directional) {
+        const occT = new Date(occ).getTime();
+        const patch = {};
+        if (direction === 'inbound' && (!contact.last_inbound_at || occT > new Date(contact.last_inbound_at).getTime())) patch.last_inbound_at = occ;
+        if (direction === 'outbound' && (!contact.last_outbound_at || occT > new Date(contact.last_outbound_at).getTime())) patch.last_outbound_at = occ;
+        const newIn = patch.last_inbound_at || contact.last_inbound_at;
+        const newOut = patch.last_outbound_at || contact.last_outbound_at;
+        if (newIn || newOut) {
+          patch.last_communication_channel = k.channel;
+          patch.last_communication_direction = (!newOut || (newIn && new Date(newIn) > new Date(newOut))) ? 'inbound' : 'outbound';
+        }
+        if (!contact.last_contact_at || occT > new Date(contact.last_contact_at).getTime()) patch.last_contact_at = occ;
+        if (Object.keys(patch).length) {
+          await supabase.from('contacts').update(patch).eq('id', contact.id);
+          onContactPatch && onContactPatch(patch);
+        }
+      }
+
+      // Optional: schedule a linked follow-up task
+      if (followUpOn && followUpWhen) {
+        const { data: t } = await supabase.from('tasks').insert({
+          user_id: userId,
+          title: `Follow up: ${contact.name}`,
+          due_date: followUpWhen.slice(0, 10),
+          priority: 'high', priority_system: 'eisenhower', eisenhower_quadrant: 'B', status: 'open',
+        }).select().single();
+        if (t) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [contact.id] }); } catch (_) {} }
+      }
+
+      setBody(''); setDuration(''); setFollowUpOn(false); setFollowUpWhen(''); setWhenLocal(nowLocalInput());
+    } catch (e) {
+      notify("Couldn't log activity: " + (e.message || e), 'error');
+    } finally { setSaving(false); }
+  }
+
+  function startEdit(e) {
+    setEditId(e.id); setEditBody(e.body || e.brief || '');
+    setEditWhen(isoToLocalInput(e.occurred_at));
+    setEditDir(e.direction || 'outbound');
+    setEditDur(e.duration_minutes ? String(e.duration_minutes) : '');
+  }
+  async function saveEdit(e) {
+    if (!editBody.trim()) return;
+    const k = ACTIVITY_KINDS[e.kind] || ACTIVITY_KINDS.note;
+    const patch = {
+      body: editBody.trim(),
+      brief: editBody.trim().slice(0, 140),
+      occurred_at: editWhen ? new Date(editWhen).toISOString() : e.occurred_at,
+      updated_at: new Date().toISOString(),
+    };
+    if (k.directional) patch.direction = editDir;
+    if (k.duration) patch.duration_minutes = editDur ? Number(editDur) : null;
+    const { data } = await supabase.from('contact_interactions').update(patch).eq('id', e.id).select().single();
+    if (data) setTimeline(prev => prev.map(x => x.id === data.id ? data : x).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at)));
+    setEditId(null); setEditBody('');
+  }
+  async function togglePin(e) {
+    const { data } = await supabase.from('contact_interactions').update({ pinned: !e.pinned }).eq('id', e.id).select().single();
+    if (data) setTimeline(prev => prev.map(x => x.id === data.id ? data : x));
+  }
+  async function removeEntry(e) {
+    if (!window.confirm('Delete this entry from the timeline?')) return;
+    await supabase.from('contact_interactions').delete().eq('id', e.id);
+    setTimeline(prev => prev.filter(x => x.id !== e.id));
+  }
+
+  const k = ACTIVITY_KINDS[kind];
+  const presentKinds = ACTIVITY_ORDER.filter(kk => timeline.some(t => (t.kind || 'note') === kk));
+  const filtered = filter === 'all' ? timeline : timeline.filter(t => (t.kind || 'note') === filter);
+  const pinned = filtered.filter(t => t.pinned);
+  const unpinned = filtered.filter(t => !t.pinned);
+
+  // Group unpinned by day (timeline is already desc by occurred_at)
+  const groups = [];
+  let curKey = null;
+  for (const e of unpinned) {
+    const dk = dayKeyOf(e.occurred_at);
+    if (dk !== curKey) { groups.push({ key: dk, label: dayLabelOf(e.occurred_at), items: [] }); curKey = dk; }
+    groups[groups.length - 1].items.push(e);
+  }
+
+  function EntryCard({ e, pinnedRail }) {
+    const kk = ACTIVITY_KINDS[e.kind || 'note'] || ACTIVITY_KINDS.note;
+    const edited = e.updated_at && new Date(e.updated_at).getTime() - new Date(e.occurred_at).getTime() > 60000
+      && new Date(e.updated_at).getTime() - new Date(e.created_at).getTime() > 60000;
+    if (editId === e.id) {
+      return (
+        <div style={{ padding: '10px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', marginBottom: '8px' }}>
+          <textarea className="form-textarea" value={editBody} onChange={ev => setEditBody(ev.target.value)} autoFocus
+            style={{ minHeight: '70px', fontSize: '13px', padding: '8px', margin: 0, marginBottom: '8px', width: '100%' }} />
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+            <input type="datetime-local" className="form-input" value={editWhen} onChange={ev => setEditWhen(ev.target.value)} style={{ flex: '1 1 170px', padding: '6px', fontSize: '12px', margin: 0 }} />
+            {kk.directional && (
+              <select className="form-select" value={editDir} onChange={ev => setEditDir(ev.target.value)} style={{ flex: '1 1 140px', padding: '6px', fontSize: '12px', margin: 0 }}>
+                <option value="outbound">⬆ I reached out</option>
+                <option value="inbound">⬇ They reached out</option>
+              </select>
+            )}
+            {kk.duration && (
+              <input type="number" min="0" className="form-input" placeholder="min" value={editDur} onChange={ev => setEditDur(ev.target.value)} style={{ flex: '0 0 80px', padding: '6px', fontSize: '12px', margin: 0 }} />
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => saveEdit(e)} style={{ fontSize: '11px' }}>Save</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setEditId(null); setEditBody(''); }} style={{ fontSize: '11px' }}>Cancel</button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="activity-entry" style={{ position: 'relative', paddingLeft: '26px', marginBottom: '10px' }}>
+        {/* rail dot */}
+        <div style={{ position: 'absolute', left: '7px', top: '4px', width: '11px', height: '11px', borderRadius: '50%', background: kk.color, border: '2px solid var(--bg-base)', boxShadow: '0 0 0 1px ' + kk.color, zIndex: 1 }} />
+        <div style={{ padding: '9px 11px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: e.body || e.brief ? '5px' : 0 }}>
+            <span style={{ fontSize: '12px' }}>{kk.icon}</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: kk.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{kk.label}</span>
+            {kk.directional && e.direction && (
+              <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{e.direction === 'outbound' ? '⬆ you → them' : '⬇ them → you'}</span>
+            )}
+            {e.duration_minutes ? <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>· {e.duration_minutes}m</span> : null}
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: '10px', color: 'var(--text-3)' }} title={new Date(e.occurred_at).toLocaleString()}>{timeOf(e.occurred_at)} · {relTime(e.occurred_at)}</span>
+            <div className="activity-actions" style={{ display: 'flex', gap: '2px' }}>
+              <button onClick={() => togglePin(e)} title={e.pinned ? 'Unpin' : 'Pin to top'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px', opacity: e.pinned ? 1 : 0.5 }}>📌</button>
+              <button onClick={() => startEdit(e)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✎</button>
+              <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>🗑</button>
+            </div>
+          </div>
+          {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.body || e.brief}</div>}
+          {(edited || e.follow_up_at) && (
+            <div style={{ marginTop: '5px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {edited && <span style={{ fontSize: '10px', color: 'var(--text-3)', fontStyle: 'italic' }}>edited {relTime(e.updated_at)}</span>}
+              {e.follow_up_at && <span style={{ fontSize: '10px', color: 'var(--accent)' }}>⏰ follow-up {new Date(e.follow_up_at).toLocaleDateString()}</span>}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Composer */}
+      <div style={{ padding: '10px', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '5px', marginBottom: '8px', flexWrap: 'wrap' }}>
+          {ACTIVITY_ORDER.map(kk => {
+            const cfg = ACTIVITY_KINDS[kk];
+            const active = kind === kk;
+            return (
+              <button key={kk} onClick={() => setKind(kk)}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+                  border: `1px solid ${active ? cfg.color : 'var(--border)'}`,
+                  background: active ? cfg.color + '22' : 'transparent',
+                  color: active ? cfg.color : 'var(--text-2)' }}>
+                <span>{cfg.icon}</span>{cfg.label}
+              </button>
+            );
+          })}
+        </div>
+        <textarea ref={composerRef} className="form-textarea" value={body} onChange={e => setBody(e.target.value)}
+          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); addEntry(); } }}
+          placeholder={k.placeholder}
+          style={{ minHeight: '64px', fontSize: '13px', padding: '8px 10px', margin: 0, marginBottom: '8px', width: '100%' }} />
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '8px' }}>
+          <input type="datetime-local" className="form-input" value={whenLocal} onChange={e => setWhenLocal(e.target.value)}
+            title="When did this happen? (back-date freely)" style={{ flex: '1 1 168px', padding: '6px', fontSize: '12px', margin: 0 }} />
+          {k.directional && (
+            <select className="form-select" value={direction} onChange={e => setDirection(e.target.value)} style={{ flex: '1 1 150px', padding: '6px', fontSize: '12px', margin: 0 }}>
+              <option value="outbound">⬆ I reached out</option>
+              <option value="inbound">⬇ They reached out</option>
+            </select>
+          )}
+          {k.duration && (
+            <input type="number" min="0" className="form-input" placeholder="min" value={duration} onChange={e => setDuration(e.target.value)}
+              title="Duration in minutes" style={{ flex: '0 0 76px', padding: '6px', fontSize: '12px', margin: 0 }} />
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {!followUpOn ? (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setFollowUpOn(true); const d = new Date(); d.setDate(d.getDate() + 3); setFollowUpWhen(d.toISOString().slice(0, 10)); }} style={{ fontSize: '11px' }}>⏰ + Schedule follow-up</button>
+          ) : (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flex: '1 1 220px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--accent)' }}>⏰ Follow-up task</span>
+              <input type="date" className="form-input" value={followUpWhen} onChange={e => setFollowUpWhen(e.target.value)} style={{ flex: 1, padding: '5px', fontSize: '12px', margin: 0 }} />
+              <button onClick={() => { setFollowUpOn(false); setFollowUpWhen(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
+            </div>
+          )}
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-primary btn-sm" onClick={addEntry} disabled={!body.trim() || saving} style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>
+            {saving ? '↻ Logging…' : `Log ${k.label}`}
+          </button>
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      {presentKinds.length > 1 && (
+        <div style={{ display: 'flex', gap: '5px', marginBottom: '10px', flexWrap: 'wrap' }}>
+          <button onClick={() => setFilter('all')} style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: '1px solid var(--border)', background: filter === 'all' ? 'var(--bg-hover)' : 'transparent', color: filter === 'all' ? 'var(--text-1)' : 'var(--text-3)', fontWeight: 600 }}>All ({timeline.length})</button>
+          {presentKinds.map(kk => {
+            const cfg = ACTIVITY_KINDS[kk];
+            const n = timeline.filter(t => (t.kind || 'note') === kk).length;
+            return (
+              <button key={kk} onClick={() => setFilter(kk)} style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: `1px solid ${filter === kk ? cfg.color : 'var(--border)'}`, background: filter === kk ? cfg.color + '22' : 'transparent', color: filter === kk ? cfg.color : 'var(--text-3)', fontWeight: 600 }}>{cfg.icon} {cfg.label} ({n})</button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Timeline */}
+      {loading ? (
+        <div style={{ fontSize: '12px', color: 'var(--text-3)', padding: '12px 0' }}>Loading timeline…</div>
+      ) : timeline.length === 0 ? (
+        <div style={{ fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic', padding: '14px', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: '8px' }}>
+          No activity logged yet. Capture a call, meeting, or note above — every entry is time-stamped to this contact's timeline.
+        </div>
+      ) : (
+        <>
+          {pinned.length > 0 && (
+            <div style={{ marginBottom: '10px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '6px' }}>📌 Pinned</div>
+              {pinned.map(e => <EntryCard key={e.id} e={e} />)}
+            </div>
+          )}
+          {groups.map(g => (
+            <div key={g.key} style={{ marginBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 8px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>{g.label}</div>
+                <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+              </div>
+              <div style={{ position: 'relative', borderLeft: '2px solid var(--border)', marginLeft: '12px', paddingLeft: '0' }}>
+                {g.items.map(e => <EntryCard key={e.id} e={e} />)}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [], setContacts }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
@@ -5983,15 +6336,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         setLinkedTasks([]);
       }
 
-      // Dated notes
-      const { data: notes } = await supabase.from('contact_notes')
-        .select('*').eq('contact_id', contact.id).order('created_at', { ascending: false });
-      if (!cancelled && notes) setDateNotes(notes);
-
-      // Manual interactions
-      const { data: ints } = await supabase.from('contact_interactions')
-        .select('*').eq('contact_id', contact.id).order('occurred_at', { ascending: false }).limit(20);
-      if (!cancelled && ints) setInteractions(ints);
+      // (Dated notes + manual interactions now load inside ContactActivityTimeline,
+      // which renders the unified activity stream from public.contact_interactions.)
 
       // Pass 3: linked events
       const { data: evs } = await supabase.from('events')
@@ -6782,16 +7128,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         {/* ========== COMMUNICATION PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
-            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>📡 Communication</div>
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowLogInteraction(s => !s)} style={{fontSize:'11px'}}>
-              {showLogInteraction ? '× Cancel' : '+ Log interaction'}
-            </button>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>📡 Communication &amp; Activity</div>
           </div>
-          {!lastIn && !lastOut && interactions.length === 0 && (
-            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
-              No communication recorded yet. Connect email or log a phone/in-person interaction to start tracking.
-            </div>
-          )}
           {(lastIn || lastOut) && (
             <div style={{display:'flex',gap:'12px',flexWrap:'wrap',marginBottom:'8px'}}>
               <div style={{flex:'1 1 200px',padding:'10px',background: lastDir === 'inbound' ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)', border:`1px solid ${lastDir === 'inbound' ? 'var(--yellow)' : 'var(--border)'}`, borderRadius:'6px'}}>
@@ -6820,46 +7158,14 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             </div>
           )}
 
-          {showLogInteraction && (
-            <div style={{padding:'10px',background:'var(--bg-card)',borderRadius:'6px',border:'1px solid var(--border)',marginBottom:'8px'}}>
-              <div style={{display:'flex',gap:'8px',marginBottom:'6px',flexWrap:'wrap'}}>
-                <select className="form-select" value={interactionForm.channel}
-                  onChange={e => setInteractionForm(f => ({ ...f, channel: e.target.value }))}
-                  style={{flex:'1 1 110px',padding:'6px',fontSize:'12px',margin:0}}>
-                  <option value="phone">📞 Phone</option>
-                  <option value="in_person">👤 In person</option>
-                  <option value="text">💬 Text/SMS</option>
-                  <option value="video">📹 Video call</option>
-                  <option value="other">Other</option>
-                </select>
-                <select className="form-select" value={interactionForm.direction}
-                  onChange={e => setInteractionForm(f => ({ ...f, direction: e.target.value }))}
-                  style={{flex:'1 1 110px',padding:'6px',fontSize:'12px',margin:0}}>
-                  <option value="outbound">I contacted them</option>
-                  <option value="inbound">They contacted me</option>
-                </select>
-                <input type="datetime-local" className="form-input" value={interactionForm.occurred_at}
-                  onChange={e => setInteractionForm(f => ({ ...f, occurred_at: e.target.value }))}
-                  style={{flex:'1 1 160px',padding:'6px',fontSize:'12px',margin:0}} />
-              </div>
-              <input className="form-input" placeholder="Brief note (optional)…"
-                value={interactionForm.brief}
-                onChange={e => setInteractionForm(f => ({ ...f, brief: e.target.value }))}
-                style={{fontSize:'12px',padding:'6px 10px',margin:0,marginBottom:'6px'}} />
-              <button className="btn btn-primary btn-sm" onClick={logInteraction} style={{fontSize:'11px'}}>Save interaction</button>
-            </div>
-          )}
-          {interactions.length > 0 && (
-            <div style={{maxHeight:'120px',overflowY:'auto',fontSize:'11px',color:'var(--text-2)'}}>
-              <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginBottom:'4px'}}>Recent manual log</div>
-              {interactions.slice(0, 5).map(i => (
-                <div key={i.id} style={{padding:'4px 0',borderBottom:'1px solid var(--border)'}}>
-                  {i.direction === 'outbound' ? '⬆' : '⬇'} {i.channel} · {formatRelative(i.occurred_at)}
-                  {i.brief && <span style={{color:'var(--text-3)'}}> — {i.brief}</span>}
-                </div>
-              ))}
-            </div>
-          )}
+          <ContactActivityTimeline
+            contact={contact}
+            userId={userId}
+            onContactPatch={(patch) => {
+              Object.assign(contact, patch);
+              if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
+            }}
+          />
         </div>
 
         {/* ========== LINKED TASKS PANEL ========== */}
@@ -7081,63 +7387,6 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               </div>
             );
           })}
-        </div>
-
-        {/* ========== DATE-STAMPED NOTES PANEL ========== */}
-        <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
-          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-            📝 Dated notes ({dateNotes.length})
-          </div>
-          <div style={{display:'flex',gap:'6px',marginBottom:'8px'}}>
-            <input className="form-input" placeholder="Add a note (stamped with today's date)…"
-              value={newNoteBody} onChange={e => setNewNoteBody(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addDatedNote(); } }}
-              style={{flex:1,padding:'6px 10px',fontSize:'12px',margin:0}} />
-            <button className="btn btn-primary btn-sm" onClick={addDatedNote}
-              disabled={savingNote || !newNoteBody.trim()} style={{fontSize:'11px',whiteSpace:'nowrap'}}>
-              {savingNote ? '↻' : '+ Add'}
-            </button>
-          </div>
-          {dateNotes.length === 0 && (
-            <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>
-              No dated notes yet. (The contact's pinned summary above is separate from these.)
-            </div>
-          )}
-          <div style={{maxHeight:'260px',overflowY:'auto'}}>
-            {dateNotes.map(n => (
-              <div key={n.id} style={{padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'6px',fontSize:'12px'}}>
-                {editingNoteId === n.id ? (
-                  <>
-                    <textarea className="form-textarea" value={editingNoteBody}
-                      onChange={e => setEditingNoteBody(e.target.value)}
-                      style={{minHeight:'60px',fontSize:'12px',padding:'6px 8px',margin:0,marginBottom:'6px'}} />
-                    <div style={{display:'flex',gap:'6px'}}>
-                      <button className="btn btn-primary btn-sm" onClick={saveEditedNote} style={{fontSize:'11px'}}>Save</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => { setEditingNoteId(null); setEditingNoteBody(''); }} style={{fontSize:'11px'}}>Cancel</button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'8px',marginBottom:'4px'}}>
-                      <div style={{fontSize:'10px',color:'var(--text-3)',fontWeight:600}}>
-                        {new Date(n.created_at).toLocaleString()}
-                        {n.updated_at && new Date(n.updated_at).getTime() - new Date(n.created_at).getTime() > 1000 && (
-                          <span style={{color:'var(--text-3)',fontWeight:400}}> · edited {formatRelative(n.updated_at)}</span>
-                        )}
-                      </div>
-                      <div style={{display:'flex',gap:'4px'}}>
-                        <button onClick={() => { setEditingNoteId(n.id); setEditingNoteBody(n.body); }}
-                          style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'11px',padding:'0 4px'}}>edit</button>
-                        <button onClick={() => deleteNote(n.id)}
-                          style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'11px',padding:'0 4px'}}>delete</button>
-                      </div>
-                    </div>
-                    <div style={{color:'var(--text-1)',whiteSpace:'pre-wrap',lineHeight:1.5}}>{n.body}</div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
         </div>
 
         <div className="modal-actions">
