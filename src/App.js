@@ -6167,6 +6167,52 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     return () => { cancelled = true; };
   }, [isContact, entityId, contact && contact.email]);
 
+  // Open tasks/reminders linked to this entity (contacts via task_contacts +
+  // tasks.contact_id; properties via tasks.property_id). Surfaces overdue nudges.
+  const [reminders, setReminders] = useState([]);
+  async function loadReminders() {
+    if (!entityId) { setReminders([]); return; }
+    const cols = 'id,title,due_date,status,completed,priority';
+    let rows = [];
+    if (isContact) {
+      const { data: links } = await supabase.from('task_contacts').select('task_id').eq('contact_id', entityId);
+      const ids = (links || []).map(r => r.task_id);
+      if (ids.length) {
+        const { data: t1 } = await supabase.from('tasks').select(cols).in('id', ids).eq('completed', false);
+        rows = t1 || [];
+      }
+      const { data: t2 } = await supabase.from('tasks').select(cols).eq('contact_id', entityId).eq('completed', false);
+      const seen = new Set(rows.map(t => t.id));
+      (t2 || []).forEach(t => { if (!seen.has(t.id)) { rows.push(t); seen.add(t.id); } });
+    } else if (entityType === 'property') {
+      const { data } = await supabase.from('tasks').select(cols).eq('property_id', entityId).eq('completed', false);
+      rows = data || [];
+    }
+    rows = rows.filter(t => t.status !== 'done');
+    setReminders(rows);
+  }
+  useEffect(() => { loadReminders(); /* eslint-disable-next-line */ }, [entityType, entityId, isContact]);
+
+  async function completeReminder(t) {
+    await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString(), status: 'done' }).eq('id', t.id);
+    setReminders(prev => prev.filter(x => x.id !== t.id));
+  }
+  function dueInfo(due) {
+    if (!due) return { label: 'no date', tone: 'muted', sort: Infinity };
+    const d = new Date(due + 'T00:00:00');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diff = Math.round((d - today) / 86400000);
+    if (diff < 0) return { label: `overdue ${-diff}d`, tone: 'overdue', sort: diff };
+    if (diff === 0) return { label: 'due today', tone: 'today', sort: 0 };
+    if (diff === 1) return { label: 'tomorrow', tone: 'soon', sort: 1 };
+    if (diff < 7) return { label: `in ${diff}d`, tone: 'soon', sort: diff };
+    return { label: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), tone: 'future', sort: diff };
+  }
+  const TONE_COLOR = { overdue: 'var(--red)', today: 'var(--yellow)', soon: 'var(--accent)', future: 'var(--text-3)', muted: 'var(--text-3)' };
+  const sortedReminders = reminders.map(t => ({ ...t, _due: dueInfo(t.due_date) })).sort((a, b) => a._due.sort - b._due.sort);
+  const overdueCount = sortedReminders.filter(t => t._due.tone === 'overdue').length;
+  const todayCount = sortedReminders.filter(t => t._due.tone === 'today').length;
+
   // Parse #hashtags from free text → lowercased tag array
   function parseTags(text) {
     const out = new Set();
@@ -6252,13 +6298,17 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
       // Optional: schedule a linked follow-up task
       if (followUpOn && followUpWhen) {
         const followLabel = isContact && contact ? contact.name : (k.label + ' follow-up');
-        const { data: t } = await supabase.from('tasks').insert({
+        const taskRow = {
           user_id: userId,
           title: `Follow up: ${followLabel}`,
           due_date: followUpWhen.slice(0, 10),
           priority: 'high', priority_system: 'eisenhower', eisenhower_quadrant: 'B', status: 'open',
-        }).select().single();
+        };
+        if (isContact) taskRow.contact_id = entityId;
+        if (entityType === 'property') taskRow.property_id = entityId;
+        const { data: t } = await supabase.from('tasks').insert(taskRow).select().single();
         if (t && isContact) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [entityId] }); } catch (_) {} }
+        loadReminders();
       }
 
       setBody(''); setDuration(''); setFollowUpOn(false); setFollowUpWhen(''); setWhenLocal(nowLocalInput());
@@ -6409,6 +6459,28 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
 
   return (
     <div>
+      {/* Open follow-ups / reminders strip */}
+      {sortedReminders.length > 0 && (
+        <div style={{ marginBottom: '12px', padding: '10px 12px', background: overdueCount > 0 ? 'rgba(239,68,68,0.07)' : 'var(--bg-card)', border: `1px solid ${overdueCount > 0 ? 'var(--red)' : 'var(--border)'}`, borderRadius: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-1)' }}>⏰ Open follow-ups</span>
+            {overdueCount > 0 && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--bg-base)', background: 'var(--red)', borderRadius: '999px', padding: '1px 7px' }}>{overdueCount} overdue</span>}
+            {todayCount > 0 && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--bg-base)', background: 'var(--yellow)', borderRadius: '999px', padding: '1px 7px' }}>{todayCount} today</span>}
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{sortedReminders.length} open</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            {sortedReminders.slice(0, 6).map(t => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                <button onClick={() => completeReminder(t)} title="Mark done" style={{ width: '16px', height: '16px', borderRadius: '4px', border: `1.5px solid ${TONE_COLOR[t._due.tone]}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, padding: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</span>
+                <span style={{ fontSize: '10px', fontWeight: 600, color: TONE_COLOR[t._due.tone], whiteSpace: 'nowrap' }}>{t._due.label}</span>
+              </div>
+            ))}
+          </div>
+          {sortedReminders.length > 6 && <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '6px' }}>+ {sortedReminders.length - 6} more open</div>}
+        </div>
+      )}
       {/* Composer */}
       <div style={{ padding: '10px', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
         <div style={{ display: 'flex', gap: '5px', marginBottom: '8px', flexWrap: 'wrap' }}>
