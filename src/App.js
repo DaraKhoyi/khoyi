@@ -10596,6 +10596,14 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
   const [commissionTaxCategoryId, setCommissionTaxCategoryId] = useState(null);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [collapsedStages, setCollapsedStages] = useState({ closed: true, lost: true });
+  const [dragDealId, setDragDealId] = useState(null);
+  const [dragOverStage, setDragOverStage] = useState(null);
+  function handleStageDrop(stage) {
+    const deal = deals.find(d => d.id === dragDealId);
+    setDragDealId(null); setDragOverStage(null);
+    if (!deal || deal.status === stage.id) return;
+    updateDeal(deal, { status: stage.id, status_changed_at: new Date().toISOString() });
+  }
   const [showAddForm, setShowAddForm] = useState(false);
   const [newDealName, setNewDealName] = useState('');
   const [newDealSide, setNewDealSide] = useState('buyer');
@@ -10817,7 +10825,11 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
           const items = byStage[stage.id] || [];
           const isCollapsed = !!collapsedStages[stage.id];
           return (
-            <div key={stage.id} style={{background:'var(--bg-card)',borderRadius:'10px',border:'1px solid var(--border)',borderLeft:`4px solid ${stage.color}`}}>
+            <div key={stage.id}
+              onDragOver={(e) => { if (dragDealId) { e.preventDefault(); setDragOverStage(stage.id); } }}
+              onDragLeave={() => setDragOverStage(s => s === stage.id ? null : s)}
+              onDrop={() => handleStageDrop(stage)}
+              style={{background:'var(--bg-card)',borderRadius:'10px',border:`1px solid ${dragOverStage===stage.id ? stage.color : 'var(--border)'}`,borderLeft:`4px solid ${stage.color}`,boxShadow: dragOverStage===stage.id ? `0 0 0 2px ${stage.color}55` : 'none',transition:'box-shadow 0.12s'}}>
               <button type="button" onClick={() => toggleStage(stage.id)}
                 style={{width:'100%',padding:'10px 14px',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
                 <span style={{display:'flex',alignItems:'center',gap:'10px'}}>
@@ -10827,14 +10839,20 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
                 </span>
                 <span style={{color:'var(--text-3)',fontSize:'11px'}}>{isCollapsed ? '▶' : '▼'}</span>
               </button>
+              {dragDealId && dragOverStage === stage.id && isCollapsed && (
+                <div style={{padding:'6px 14px 10px',fontSize:'11px',color:stage.color}}>Drop to move here</div>
+              )}
               {!isCollapsed && (
                 items.length === 0 ? (
-                  <div style={{padding:'10px 14px 14px',fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>{stage.help}.</div>
+                  <div style={{padding:'10px 14px 14px',fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>{dragDealId ? 'Drop here to move to ' + stage.label : stage.help + '.'}</div>
                 ) : (
                   <div style={{padding:'2px 8px 8px',display:'flex',flexDirection:'column',gap:'4px'}}>
                     {items.map(d => (
                       <DealCard key={d.id} deal={d} stage={stage} contacts={contacts}
                         properties={properties}
+                        onDragStart={() => setDragDealId(d.id)}
+                        onDragEnd={() => { setDragDealId(null); setDragOverStage(null); }}
+                        dragging={dragDealId === d.id}
                         onClick={() => setSelectedDeal(d)}/>
                     ))}
                   </div>
@@ -10863,7 +10881,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
 }
 
 // Pipeline card — name + side + price hint + days-in-stage
-function DealCard({ deal, stage, contacts, properties, onClick }) {
+function DealCard({ deal, stage, contacts, properties, onClick, onDragStart, onDragEnd, dragging }) {
   const client = deal.primary_client_id ? contacts.find(c => c.id === deal.primary_client_id) : null;
   const property = deal.property_id ? properties.find(p => p.id === deal.property_id) : null;
   const displayName = deal.name || client?.name || deal.client_name || '(unnamed deal)';
@@ -10880,7 +10898,10 @@ function DealCard({ deal, stage, contacts, properties, onClick }) {
     : null;
   return (
     <button type="button" onClick={onClick}
-      style={{textAlign:'left',padding:'8px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',cursor:'pointer',color:'var(--text-1)',display:'flex',alignItems:'center',gap:'10px'}}>
+      draggable={!!onDragStart}
+      onDragStart={(e) => { if (onDragStart) { try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', deal.id); } catch (_) {} onDragStart(); } }}
+      onDragEnd={() => onDragEnd && onDragEnd()}
+      style={{textAlign:'left',padding:'8px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',cursor: onDragStart ? 'grab' : 'pointer',color:'var(--text-1)',display:'flex',alignItems:'center',gap:'10px',opacity: dragging ? 0.4 : 1}}>
       <div style={{minWidth:0,flex:1}}>
         <div style={{fontSize:'13px',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayName}</div>
         <div style={{fontSize:'10px',color:'var(--text-3)',display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'2px'}}>
@@ -11309,6 +11330,12 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
             rows={3}
             placeholder="Context, key dates, what to follow up on…"
             style={{...inputStyle, fontFamily:'inherit', resize:'vertical'}}/>
+        </div>
+
+        {/* Activity timeline */}
+        <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
+          <ActivityTimeline entityType="deal" entityId={deal.id} userId={userId} contacts={contacts} />
         </div>
 
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginTop:'16px',paddingTop:'12px',borderTop:'1px solid var(--border)'}}>
