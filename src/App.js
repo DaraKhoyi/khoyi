@@ -16488,40 +16488,42 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
   }
 
   // Progress ring geometry
-  const R = 52, C = 2 * Math.PI * R, ringColor = isPerfect ? 'var(--green)' : 'var(--accent)';
+  const R = 44, C = 2 * Math.PI * R, ringColor = isPerfect ? 'var(--green)' : 'var(--accent)';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       {/* ── Gamified hero ── */}
-      <div className="panel" style={{ padding: '18px', background: isPerfect ? 'linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))' : 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: `1px solid ${isPerfect ? 'rgba(34,197,94,0.4)' : 'var(--border)'}` }}>
-        <div style={{ display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="panel" style={{ padding: '16px', background: isPerfect ? 'linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))' : 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: `1px solid ${isPerfect ? 'rgba(34,197,94,0.4)' : 'var(--border)'}` }}>
+        <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flexWrap: 'nowrap' }}>
           {/* Ring */}
-          <div style={{ position: 'relative', width: '128px', height: '128px', flexShrink: 0 }}>
-            <svg width="128" height="128" style={{ transform: 'rotate(-90deg)' }}>
-              <circle cx="64" cy="64" r={R} fill="none" stroke="var(--bg-base)" strokeWidth="11" />
-              <circle cx="64" cy="64" r={R} fill="none" stroke={ringColor} strokeWidth="11" strokeLinecap="round"
+          <div style={{ position: 'relative', width: '104px', height: '104px', flexShrink: 0 }}>
+            <svg width="104" height="104" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx="52" cy="52" r={R} fill="none" stroke="var(--bg-base)" strokeWidth="10" />
+              <circle cx="52" cy="52" r={R} fill="none" stroke={ringColor} strokeWidth="10" strokeLinecap="round"
                 strokeDasharray={C} strokeDashoffset={C * (1 - pct)} style={{ transition: 'stroke-dashoffset 0.6s ease, stroke 0.3s' }} />
             </svg>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ fontSize: '30px', fontWeight: 800, color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{Math.round(pct * 100)}%</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>{tasksDone}/{tasksTotal} done</div>
+              <div style={{ fontSize: '25px', fontWeight: 800, color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{Math.round(pct * 100)}%</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>{tasksDone}/{tasksTotal} done</div>
             </div>
           </div>
-          {/* Rank + headline */}
-          <div style={{ flex: 1, minWidth: '180px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <span style={{ fontSize: '20px' }}>{rk.cur.icon}</span>
-              <span style={{ fontSize: '16px', fontWeight: 800, color: rk.cur.color }}>{rk.cur.name}</span>
+          {/* Rank + headline — upper-right */}
+          <div style={{ flex: 1, minWidth: 0, alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '18px' }}>{rk.cur.icon}</span>
+              <span style={{ fontSize: '15px', fontWeight: 800, color: rk.cur.color }}>{rk.cur.name}</span>
               <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-base)', borderRadius: '999px', padding: '2px 8px', fontWeight: 700 }}>LVL {rk.level}</span>
             </div>
-            <div style={{ fontSize: '13px', color: 'var(--text-1)', marginBottom: '10px', fontWeight: 600 }}>{headline}</div>
-            {/* XP bar to next rank */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-3)', marginBottom: '3px' }}>
-              <span>{xp.toLocaleString()} XP</span>
-              <span>{rk.next ? `${rk.into}/${rk.toNext} → ${rk.next.name}` : 'Max rank 👑'}</span>
-            </div>
-            <div style={{ height: '7px', background: 'var(--bg-base)', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{ width: `${rk.pctToNext * 100}%`, height: '100%', background: `linear-gradient(90deg, ${rk.cur.color}, var(--accent))`, transition: 'width 0.6s ease' }} />
+            <div style={{ fontSize: '13px', color: 'var(--text-1)', fontWeight: 600, lineHeight: 1.35 }}>{headline}</div>
+            {/* XP bar to next rank — anchored to bottom of the column */}
+            <div style={{ marginTop: 'auto', paddingTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-3)', marginBottom: '3px' }}>
+                <span>{xp.toLocaleString()} XP</span>
+                <span style={{ textAlign: 'right' }}>{rk.next ? `${rk.into}/${rk.toNext} → ${rk.next.name}` : 'Max rank 👑'}</span>
+              </div>
+              <div style={{ height: '7px', background: 'var(--bg-base)', borderRadius: '4px', overflow: 'hidden' }}>
+                <div style={{ width: `${rk.pctToNext * 100}%`, height: '100%', background: `linear-gradient(90deg, ${rk.cur.color}, var(--accent))`, transition: 'width 0.6s ease' }} />
+              </div>
             </div>
           </div>
         </div>
