@@ -24543,7 +24543,7 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
   const [connectingPurpose, setConnectingPurpose] = useState(null);
   const [err, setErr] = useState('');
 
-  async function startConnect(purpose = 'email') {
+  async function startConnect(purpose = 'email', loginHint = '') {
     setConnecting(true);
     setConnectingPurpose(purpose);
     setErr('');
@@ -24551,7 +24551,7 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not signed in.');
       const { data, error } = await supabase.functions.invoke('google-oauth-start', {
-        body: { return_to: window.location.origin + window.location.pathname, purpose },
+        body: { return_to: window.location.origin + window.location.pathname, purpose, login_hint: loginHint },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
@@ -24618,7 +24618,17 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
                     )}
                   </div>
                   {a.is_active && (
-                    <button className="btn btn-ghost btn-sm" onClick={()=>disconnect(a.id)}>Disconnect</button>
+                    <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                      {!(a.purposes||[]).includes('calendar') && (a.scopes||[]).every(s=>!s.includes('calendar')) && (
+                        <button className="btn btn-sm" disabled={connecting}
+                          style={{background:'var(--accent)',color:'#1a1205',fontWeight:600}}
+                          onClick={()=>startConnect('calendar', a.email_address)}
+                          title={`Grant calendar access to ${a.email_address}`}>
+                          {connecting && connectingPurpose === 'calendar' ? 'Opening Google…' : '📅 Add Calendar'}
+                        </button>
+                      )}
+                      <button className="btn btn-ghost btn-sm" onClick={()=>disconnect(a.id)}>Disconnect</button>
+                    </div>
                   )}
                 </div>
               ))}
