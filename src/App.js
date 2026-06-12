@@ -6113,6 +6113,9 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
   // Follow-up drafter
   const [followupFor, setFollowupFor] = useState(null);
 
+  // Synced Gmail messages, merged read-only into a contact's timeline
+  const [emails, setEmails] = useState([]);
+
   useEffect(() => {
     if (!entityId) return;
     let cancelled = false;
@@ -6131,6 +6134,38 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     })();
     return () => { cancelled = true; };
   }, [entityType, entityId, isContact]);
+
+  // Auto-thread real Gmail messages onto a contact's timeline (read-only).
+  useEffect(() => {
+    const email = isContact && contact && contact.email ? contact.email.trim().toLowerCase() : null;
+    if (!email) { setEmails([]); return; }
+    let cancelled = false;
+    (async () => {
+      const cols = 'id,from_address,from_name,subject,snippet,internal_date,direction,is_read,provider_thread_id';
+      const [inb, outb] = await Promise.all([
+        supabase.from('email_messages').select(cols).eq('from_address', email).order('internal_date', { ascending: false }).limit(60),
+        supabase.from('email_messages').select(cols).contains('to_addresses', [{ email }]).order('internal_date', { ascending: false }).limit(60),
+      ]);
+      if (cancelled) return;
+      const seen = new Set();
+      const merged = [...(inb.data || []), ...(outb.data || [])].filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+      const items = merged.filter(m => m.internal_date).map(m => ({
+        id: 'email:' + m.id,
+        _email: true,
+        kind: 'email',
+        direction: m.direction || 'inbound',
+        occurred_at: m.internal_date,
+        subject: m.subject || '(no subject)',
+        body: (m.subject || '(no subject)') + (m.snippet ? ' — ' + m.snippet : ''),
+        brief: m.snippet || m.subject || '',
+        is_read: m.is_read,
+        entity_type: 'contact', entity_id: entityId,
+        mentions: [], tags: [], pinned: false,
+      }));
+      setEmails(items);
+    })();
+    return () => { cancelled = true; };
+  }, [isContact, entityId, contact && contact.email]);
 
   // Parse #hashtags from free text → lowercased tag array
   function parseTags(text) {
@@ -6266,14 +6301,19 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
   }
 
   const k = ACTIVITY_KINDS[kind];
-  const presentKinds = ACTIVITY_ORDER.filter(kk => timeline.some(t => (t.kind || 'note') === kk));
+  // Merge stored entries with read-only synced emails for display
+  const merged = [...timeline, ...emails];
+  const presentKinds = ACTIVITY_ORDER.filter(kk => merged.some(t => (t.kind || 'note') === kk));
   const allTags = Array.from(new Set(timeline.flatMap(t => t.tags || []))).sort();
-  let filtered = filter === 'all' ? timeline : timeline.filter(t => (t.kind || 'note') === filter);
-  if (tagFilter) filtered = filtered.filter(t => (t.tags || []).includes(tagFilter));
-  const pinned = filtered.filter(t => t.pinned);
-  const unpinned = filtered.filter(t => !t.pinned);
+  const passKind = (t) => filter === 'all' || (t.kind || 'note') === filter;
+  const passTag = (t) => !tagFilter || (t.tags || []).includes(tagFilter);
+  // Pinned (stored entries only — emails are never pinned)
+  const pinned = timeline.filter(t => t.pinned && passKind(t) && passTag(t));
+  const unpinned = merged
+    .filter(t => !t.pinned && passKind(t) && passTag(t))
+    .sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
 
-  // Group unpinned by day (timeline is already desc by occurred_at)
+  // Group unpinned by day
   const groups = [];
   let curKey = null;
   for (const e of unpinned) {
@@ -6318,6 +6358,11 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: e.body || e.brief ? '5px' : 0 }}>
             <span style={{ fontSize: '12px' }}>{kk.icon}</span>
             <span style={{ fontSize: '11px', fontWeight: 700, color: kk.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{kk.label}</span>
+            {e._email && (
+              <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0 5px' }} title="Synced from Gmail">
+                📧 Gmail{e.is_read === false ? ' · unread' : ''}
+              </span>
+            )}
             {!(e.entity_type === entityType && e.entity_id === entityId) && (
               <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0 5px' }}
                 title="Logged on another record; shown here because it mentions this contact">
@@ -6332,9 +6377,9 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             <span style={{ fontSize: '10px', color: 'var(--text-3)' }} title={new Date(e.occurred_at).toLocaleString()}>{timeOf(e.occurred_at)} · {relTime(e.occurred_at)}</span>
             <div className="activity-actions" style={{ display: 'flex', gap: '2px' }}>
               <button onClick={() => setFollowupFor(e)} title="Draft a follow-up email or text" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✉️</button>
-              <button onClick={() => togglePin(e)} title={e.pinned ? 'Unpin' : 'Pin to top'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px', opacity: e.pinned ? 1 : 0.5 }}>📌</button>
-              <button onClick={() => startEdit(e)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✎</button>
-              <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>🗑</button>
+              {!e._email && <button onClick={() => togglePin(e)} title={e.pinned ? 'Unpin' : 'Pin to top'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px', opacity: e.pinned ? 1 : 0.5 }}>📌</button>}
+              {!e._email && <button onClick={() => startEdit(e)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✎</button>}
+              {!e._email && <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>🗑</button>}
             </div>
           </div>
           {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.body || e.brief}</div>}
@@ -6479,10 +6524,10 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
       {/* Filter chips */}
       {presentKinds.length > 1 && (
         <div style={{ display: 'flex', gap: '5px', marginBottom: '10px', flexWrap: 'wrap' }}>
-          <button onClick={() => setFilter('all')} style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: '1px solid var(--border)', background: filter === 'all' ? 'var(--bg-hover)' : 'transparent', color: filter === 'all' ? 'var(--text-1)' : 'var(--text-3)', fontWeight: 600 }}>All ({timeline.length})</button>
+          <button onClick={() => setFilter('all')} style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: '1px solid var(--border)', background: filter === 'all' ? 'var(--bg-hover)' : 'transparent', color: filter === 'all' ? 'var(--text-1)' : 'var(--text-3)', fontWeight: 600 }}>All ({merged.length})</button>
           {presentKinds.map(kk => {
             const cfg = ACTIVITY_KINDS[kk];
-            const n = timeline.filter(t => (t.kind || 'note') === kk).length;
+            const n = merged.filter(t => (t.kind || 'note') === kk).length;
             return (
               <button key={kk} onClick={() => setFilter(kk)} style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: `1px solid ${filter === kk ? cfg.color : 'var(--border)'}`, background: filter === kk ? cfg.color + '22' : 'transparent', color: filter === kk ? cfg.color : 'var(--text-3)', fontWeight: 600 }}>{cfg.icon} {cfg.label} ({n})</button>
             );
@@ -6503,7 +6548,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
       {/* Timeline */}
       {loading ? (
         <div style={{ fontSize: '12px', color: 'var(--text-3)', padding: '12px 0' }}>Loading timeline…</div>
-      ) : timeline.length === 0 ? (
+      ) : merged.length === 0 ? (
         <div style={{ fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic', padding: '14px', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: '8px' }}>
           No activity logged yet. Capture a call, meeting, or note above — every entry is time-stamped to this timeline.
         </div>
