@@ -16498,6 +16498,14 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
   const streak = settings?.current_prospecting_streak || 0;
   const best = settings?.best_prospecting_streak || 0;
 
+  // Weekly hours invested vs the hours/week the agent committed in Blueprint
+  const weekStartMonday = (() => { const n = new Date(); const dow = (n.getDay() + 6) % 7; const m = new Date(n); m.setDate(n.getDate() - dow); m.setHours(0, 0, 0, 0); return m; })();
+  const weeklyMin = timeEntries.filter(te => new Date(te.occurred_at) >= weekStartMonday).reduce((s, te) => s + Number(te.minutes || 0), 0) + (activeSystemId ? runningMs / 60000 : 0);
+  const weeklyHours = weeklyMin / 60;
+  const weeklyTarget = Number(settings?.prospecting_hours_per_week) || 0;
+  const weeklyPct = weeklyTarget > 0 ? Math.min(1, weeklyHours / weeklyTarget) : 0;
+  const wR = 17, wC = 2 * Math.PI * wR;
+
   // Earned badges
   const badges = [];
   if (isPerfect) badges.push({ icon: '💯', label: 'Perfect day' });
@@ -16609,6 +16617,21 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
             <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>⛳ Handicap</div>
             <div style={{ fontSize: '20px', fontWeight: 800, color: Number(handicap) <= 8 ? 'var(--green)' : Number(handicap) <= 18 ? 'var(--accent)' : 'var(--text-2)', fontVariantNumeric: 'tabular-nums' }}>{handicap}</div>
             <div style={{ fontSize: '9px', color: 'var(--text-3)' }}>{Math.round(rate30 * 100)}% · 30d</div>
+          </div>
+          <div style={{ flex: '1 1 130px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '10px' }}
+            title="Hours you've tracked this week vs the hours/week you committed in Blueprint.">
+            <div style={{ position: 'relative', width: '44px', height: '44px', flexShrink: 0 }}>
+              <svg width="44" height="44" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="22" cy="22" r={wR} fill="none" stroke="var(--bg-hover)" strokeWidth="5" />
+                <circle cx="22" cy="22" r={wR} fill="none" stroke={weeklyPct >= 1 ? 'var(--green)' : 'var(--accent)'} strokeWidth="5" strokeLinecap="round" strokeDasharray={wC} strokeDashoffset={wC * (1 - weeklyPct)} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+              </svg>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800, color: weeklyPct >= 1 ? 'var(--green)' : 'var(--text-1)' }}>{weeklyTarget > 0 ? `${Math.round(weeklyPct * 100)}` : '—'}</div>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>⏳ Hours/wk</div>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{weeklyHours.toFixed(1)}<span style={{ fontSize: '10px', color: 'var(--text-3)', fontWeight: 600 }}>{weeklyTarget > 0 ? ` / ${weeklyTarget}h` : 'h'}</span></div>
+              <div style={{ fontSize: '9px', color: 'var(--text-3)' }}>{weeklyTarget > 0 ? (weeklyPct >= 1 ? '✓ goal hit' : `${(weeklyTarget - weeklyHours).toFixed(1)}h to go`) : 'set in Blueprint'}</div>
+            </div>
           </div>
           <div style={{ flex: '2 1 160px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '6px' }}>📅 This week</div>
@@ -25897,6 +25920,48 @@ function InstallPwaPrompt() {
 // ─────────────────────────────────────────
 // APP COMPONENT
 // ─────────────────────────────────────────
+// Detects when a newer deploy is live (bundle hash changed) and offers a
+// one-tap refresh — so an installed PWA never silently runs a stale build.
+function UpdateBanner() {
+  const [ready, setReady] = useState(false);
+  const currentHashRef = useRef(null);
+  useEffect(() => {
+    try {
+      const el = document.querySelector('script[src*="/static/js/main."]');
+      if (el) { const m = el.src.match(/main\.([a-f0-9]+)\.js/); if (m) currentHashRef.current = m[1]; }
+    } catch (_) {}
+    let stop = false;
+    async function check() {
+      if (stop || !currentHashRef.current) return;
+      try {
+        const res = await fetch('/index.html?cb=' + Date.now(), { cache: 'no-store' });
+        const txt = await res.text();
+        const m = txt.match(/main\.([a-f0-9]+)\.js/);
+        if (m && m[1] !== currentHashRef.current) setReady(true);
+      } catch (_) {}
+    }
+    const t = setTimeout(check, 8000);
+    const iv = setInterval(check, 180000);
+    const onVis = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop = true; clearTimeout(t); clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
+  }, []);
+  async function refresh() {
+    try {
+      if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.update())); }
+      if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); }
+    } catch (_) {}
+    window.location.reload();
+  }
+  if (!ready) return null;
+  return (
+    <div style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)', zIndex: 5000, background: 'var(--accent)', color: 'var(--bg-base)', borderRadius: '999px', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', fontSize: '13px', fontWeight: 700, maxWidth: '92vw' }}>
+      <span>✨ New version available</span>
+      <button onClick={refresh} style={{ background: 'var(--bg-base)', color: 'var(--accent)', border: 'none', borderRadius: '999px', padding: '6px 14px', fontWeight: 800, fontSize: '12px', cursor: 'pointer' }}>Refresh</button>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -26190,6 +26255,7 @@ export default function App() {
   return (
     <div className="app-shell" style={{flexDirection:'column'}}>
       <InstallPwaPrompt />
+      <UpdateBanner />
       {/* Mobile header */}
       <div className="mobile-header">
         <div className="mobile-header-logo">Prism<span>OS</span></div>
