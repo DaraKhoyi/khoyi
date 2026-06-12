@@ -16340,6 +16340,368 @@ const fmtHours = (mins) => {
 const today_ymd = () => new Date().toISOString().slice(0, 10);
 
 // ─── FinanceView — root component ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// PROSPECTING — top-level tab. The daily money-making engine: gamified
+// "Today" board, the activated lead-gen systems, and the 85-system library.
+// ═══════════════════════════════════════════════════════════════════════
+
+const PROSPECT_RANKS = [
+  { min: 0,    name: 'Prospector',    icon: '🌱', color: '#9ca3af' },
+  { min: 250,  name: 'Connector',     icon: '🤝', color: '#60a5fa' },
+  { min: 750,  name: 'Rainmaker',     icon: '🌧️', color: '#34d399' },
+  { min: 1800, name: 'Closer',        icon: '🎯', color: '#fbbf24' },
+  { min: 4000, name: 'Top Producer',  icon: '🚀', color: '#f59e0b' },
+  { min: 8000, name: 'Rainmaker King',icon: '👑', color: '#C5A95E' },
+];
+function rankForXp(xp) {
+  let cur = PROSPECT_RANKS[0], next = null;
+  for (let i = 0; i < PROSPECT_RANKS.length; i++) {
+    if (xp >= PROSPECT_RANKS[i].min) { cur = PROSPECT_RANKS[i]; next = PROSPECT_RANKS[i + 1] || null; }
+  }
+  const level = PROSPECT_RANKS.indexOf(cur) + 1;
+  const toNext = next ? next.min - cur.min : 0;
+  const into = next ? xp - cur.min : 0;
+  const pctToNext = next ? Math.min(1, into / toNext) : 1;
+  return { cur, next, level, pctToNext, into, toNext };
+}
+function pVibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (_) {} }
+function pConfettiBurst() {
+  try {
+    const layer = document.createElement('div');
+    layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:4000;overflow:hidden';
+    const emojis = ['🎉', '✨', '🔥', '💪', '⭐', '🏆', '📈', '💯'];
+    for (let i = 0; i < 32; i++) {
+      const s = document.createElement('div');
+      s.textContent = emojis[i % emojis.length];
+      const dur = 1.7 + Math.random() * 1.3, delay = Math.random() * 0.35, size = 16 + Math.random() * 20;
+      s.style.cssText = `position:absolute;left:${Math.random() * 100}%;top:-44px;font-size:${size}px;animation:pconfetti ${dur}s ${delay}s ease-in forwards`;
+      layer.appendChild(s);
+    }
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 3400);
+  } catch (_) {}
+}
+
+function ProspectingToday({ userId, settings, setSettings, systems, completions, setCompletions, readOnly, lifetimeDone, setLifetimeDone, onGoSystems, onGoLibrary }) {
+  const today = today_ymd();
+  const wasPerfectRef = useRef(false);
+
+  const todaysTasks = [];
+  systems.forEach(sys => {
+    if (sys.is_overhead) return;
+    (Array.isArray(sys.daily_tasks) ? sys.daily_tasks : []).forEach(t => {
+      const completion = completions.find(c => c.system_id === sys.id && c.task_id === t.id && c.date === today);
+      todaysTasks.push({
+        systemId: sys.id, systemName: sys.name, systemColor: sys.color,
+        taskId: t.id, desc: t.desc, target: t.daily_target || 1,
+        count_done: completion?.count_done || 0, completionId: completion?.id || null,
+      });
+    });
+  });
+  const tasksTotal = todaysTasks.length;
+  const tasksDone = todaysTasks.filter(t => t.count_done >= t.target).length;
+  const pct = tasksTotal ? tasksDone / tasksTotal : 0;
+  const isPerfect = tasksTotal > 0 && tasksDone === tasksTotal;
+
+  // XP & rank (lifetime completed task-instances → XP)
+  const xp = (lifetimeDone || 0) * 10 + tasksDone * 10;
+  const rk = rankForXp(xp);
+
+  // Handicap (golf-style, lower = better) from 30-day completion rate
+  const last30 = completions;
+  const sumDone = last30.reduce((s, c) => s + (c.count_done || 0), 0);
+  const sumTarget = last30.reduce((s, c) => s + (c.target || 0), 0);
+  const rate30 = sumTarget > 0 ? Math.min(1, sumDone / sumTarget) : 0;
+  const handicap = (((1 - rate30) * 36)).toFixed(1);
+
+  // This week day-dots (Mon→Sun): which days had ≥1 completion
+  const weekDots = (() => {
+    const now = new Date(); const dow = (now.getDay() + 6) % 7; // 0=Mon
+    const monday = new Date(now); monday.setDate(now.getDate() - dow); monday.setHours(0, 0, 0, 0);
+    const daysWith = new Set(last30.filter(c => (c.count_done || 0) >= 1).map(c => c.date));
+    return Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date(monday); d.setDate(monday.getDate() + i);
+      const ymd = d.toISOString().slice(0, 10);
+      return { label: ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i], hit: daysWith.has(ymd), isToday: ymd === today, future: d > now };
+    });
+  })();
+
+  const streak = settings?.current_prospecting_streak || 0;
+  const best = settings?.best_prospecting_streak || 0;
+
+  // Earned badges
+  const badges = [];
+  if (isPerfect) badges.push({ icon: '💯', label: 'Perfect day' });
+  if (streak >= 3) badges.push({ icon: '🔥', label: `${streak}-day streak` });
+  if (streak >= 7) badges.push({ icon: '⚡', label: 'On fire' });
+  if (streak >= 30) badges.push({ icon: '🏆', label: 'Unstoppable' });
+  if ((lifetimeDone || 0) >= 100) badges.push({ icon: '🎖️', label: 'Century club' });
+  if (Number(handicap) <= 5 && sumTarget > 0) badges.push({ icon: '⛳', label: 'Scratch prospector' });
+
+  const headline = tasksTotal === 0 ? 'No active systems yet'
+    : isPerfect ? 'Perfect day — you showed up. 🎉'
+    : pct >= 0.75 ? 'So close — finish strong!'
+    : pct >= 0.5 ? "Halfway there. Keep the momentum."
+    : pct > 0 ? "Good start. Stack the next one."
+    : "Let's build today. One call at a time.";
+
+  async function toggleTaskCompletion(task) {
+    if (readOnly) return;
+    const becomingDone = !(task.count_done >= task.target);
+    const newCount = becomingDone ? task.target : 0;
+    pVibrate(becomingDone ? 18 : 8);
+    if (task.completionId) {
+      await supabase.from('prospecting_completions').update({ count_done: newCount, completed_at: new Date().toISOString() }).eq('id', task.completionId);
+      setCompletions(prev => prev.map(c => c.id === task.completionId ? { ...c, count_done: newCount } : c));
+    } else {
+      const { data } = await supabase.from('prospecting_completions').insert({
+        user_id: userId, system_id: task.systemId, task_id: task.taskId, date: today, count_done: newCount, target: task.target,
+      }).select().single();
+      if (data) setCompletions(prev => [data, ...prev]);
+    }
+    if (setLifetimeDone) setLifetimeDone(n => Math.max(0, (n || 0) + (becomingDone ? 1 : -1)));
+    await maybeUpdateStreak();
+  }
+
+  // Celebrate the moment the board flips to 100%
+  useEffect(() => {
+    if (isPerfect && !wasPerfectRef.current) { pConfettiBurst(); pVibrate([0, 40, 40, 40, 40, 120]); }
+    wasPerfectRef.current = isPerfect;
+  }, [isPerfect]);
+
+  async function maybeUpdateStreak() {
+    if (!settings) return;
+    const fresh = await supabase.from('prospecting_completions').select('date,count_done').eq('user_id', userId).gte('count_done', 1).order('date', { ascending: false }).limit(120);
+    const freshDates = new Set((fresh.data || []).map(r => r.date));
+    let s = 0; const cursor = new Date();
+    while (true) {
+      const ymd = cursor.toISOString().slice(0, 10);
+      if (freshDates.has(ymd)) { s++; cursor.setDate(cursor.getDate() - 1); }
+      else if (s === 0 && ymd === today_ymd()) { cursor.setDate(cursor.getDate() - 1); }
+      else break;
+    }
+    const newBest = Math.max(s, settings.best_prospecting_streak || 0);
+    if (s !== settings.current_prospecting_streak || newBest !== settings.best_prospecting_streak) {
+      await supabase.from('finance_settings').update({ current_prospecting_streak: s, best_prospecting_streak: newBest, last_prospecting_date: s > 0 ? today_ymd() : settings.last_prospecting_date }).eq('user_id', userId);
+      setSettings(prev => ({ ...prev, current_prospecting_streak: s, best_prospecting_streak: newBest, last_prospecting_date: s > 0 ? today_ymd() : prev.last_prospecting_date }));
+    }
+  }
+
+  // Progress ring geometry
+  const R = 52, C = 2 * Math.PI * R, ringColor = isPerfect ? 'var(--green)' : 'var(--accent)';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      {/* ── Gamified hero ── */}
+      <div className="panel" style={{ padding: '18px', background: isPerfect ? 'linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))' : 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: `1px solid ${isPerfect ? 'rgba(34,197,94,0.4)' : 'var(--border)'}` }}>
+        <div style={{ display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Ring */}
+          <div style={{ position: 'relative', width: '128px', height: '128px', flexShrink: 0 }}>
+            <svg width="128" height="128" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx="64" cy="64" r={R} fill="none" stroke="var(--bg-base)" strokeWidth="11" />
+              <circle cx="64" cy="64" r={R} fill="none" stroke={ringColor} strokeWidth="11" strokeLinecap="round"
+                strokeDasharray={C} strokeDashoffset={C * (1 - pct)} style={{ transition: 'stroke-dashoffset 0.6s ease, stroke 0.3s' }} />
+            </svg>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ fontSize: '30px', fontWeight: 800, color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{Math.round(pct * 100)}%</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>{tasksDone}/{tasksTotal} done</div>
+            </div>
+          </div>
+          {/* Rank + headline */}
+          <div style={{ flex: 1, minWidth: '180px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '20px' }}>{rk.cur.icon}</span>
+              <span style={{ fontSize: '16px', fontWeight: 800, color: rk.cur.color }}>{rk.cur.name}</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-base)', borderRadius: '999px', padding: '2px 8px', fontWeight: 700 }}>LVL {rk.level}</span>
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-1)', marginBottom: '10px', fontWeight: 600 }}>{headline}</div>
+            {/* XP bar to next rank */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-3)', marginBottom: '3px' }}>
+              <span>{xp.toLocaleString()} XP</span>
+              <span>{rk.next ? `${rk.into}/${rk.toNext} → ${rk.next.name}` : 'Max rank 👑'}</span>
+            </div>
+            <div style={{ height: '7px', background: 'var(--bg-base)', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ width: `${rk.pctToNext * 100}%`, height: '100%', background: `linear-gradient(90deg, ${rk.cur.color}, var(--accent))`, transition: 'width 0.6s ease' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Stat strip: streak · handicap · week */}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 100px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>🔥 Streak</div>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: streak > 0 ? '#ef4444' : 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>{streak}<span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}> day{streak === 1 ? '' : 's'}</span></div>
+            <div style={{ fontSize: '9px', color: 'var(--text-3)' }}>best {best}</div>
+          </div>
+          <div style={{ flex: '1 1 100px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px' }}
+            title="Prospecting handicap — like golf, lower is better. Improves as your 30-day completion rate climbs. 0.0 = scratch (perfect).">
+            <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>⛳ Handicap</div>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: Number(handicap) <= 8 ? 'var(--green)' : Number(handicap) <= 18 ? 'var(--accent)' : 'var(--text-2)', fontVariantNumeric: 'tabular-nums' }}>{handicap}</div>
+            <div style={{ fontSize: '9px', color: 'var(--text-3)' }}>{Math.round(rate30 * 100)}% · 30d</div>
+          </div>
+          <div style={{ flex: '2 1 160px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '6px' }}>📅 This week</div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {weekDots.map((d, i) => (
+                <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ width: '100%', aspectRatio: '1', maxWidth: '26px', margin: '0 auto', borderRadius: '50%',
+                    background: d.hit ? 'var(--green)' : d.future ? 'transparent' : 'var(--bg-hover)',
+                    border: d.isToday ? '2px solid var(--accent)' : d.future ? '1px dashed var(--border)' : '1px solid var(--border)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: d.hit ? '#fff' : 'var(--text-3)', fontSize: '11px', fontWeight: 700 }}>
+                    {d.hit ? '✓' : ''}
+                  </div>
+                  <div style={{ fontSize: '9px', color: d.isToday ? 'var(--accent)' : 'var(--text-3)', marginTop: '3px', fontWeight: d.isToday ? 700 : 400 }}>{d.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Badges */}
+        {badges.length > 0 && (
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '12px' }}>
+            {badges.map((b, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: 'var(--text-1)', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '999px', padding: '3px 9px' }}>{b.icon} {b.label}</span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Task board ── */}
+      <div className="panel" style={{ padding: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Today's prospecting</span>
+          {tasksTotal > 0 && <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>+{tasksTotal * 10} XP up for grabs</span>}
+        </div>
+        {tasksTotal === 0 ? (
+          <div style={{ padding: '20px', background: 'var(--bg-base)', borderRadius: '10px', textAlign: 'center' }}>
+            <div style={{ fontSize: '30px', marginBottom: '8px' }}>🎯</div>
+            <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.5 }}>No active prospecting systems yet. Activate one to get your daily money-making checklist — calls, notes, social, referrals.</p>
+            {!readOnly && <button className="btn btn-primary btn-sm" onClick={onGoLibrary}>📚 Open the System Library →</button>}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {todaysTasks.map(t => {
+              const done = t.count_done >= t.target;
+              return (
+                <button key={`${t.systemId}-${t.taskId}`} onClick={() => toggleTaskCompletion(t)} disabled={readOnly}
+                  style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '11px 12px',
+                    background: done ? 'rgba(34,197,94,0.08)' : 'var(--bg-base)',
+                    border: `1px solid ${done ? 'rgba(34,197,94,0.32)' : 'var(--border)'}`,
+                    borderRadius: '10px', textAlign: 'left', cursor: readOnly ? 'default' : 'pointer', opacity: readOnly ? 0.7 : 1, transition: 'all 0.15s' }}>
+                  <div style={{ width: '24px', height: '24px', borderRadius: '7px', background: done ? 'var(--green)' : 'transparent', border: `2px solid ${done ? 'var(--green)' : 'var(--text-3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: '14px', fontWeight: 800 }}>{done ? '✓' : ''}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: done ? 'line-through' : 'none', fontWeight: 500, lineHeight: 1.35 }}>{t.desc}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-3)', display: 'flex', gap: '6px', alignItems: 'center', marginTop: '3px' }}>
+                      <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '2px', background: t.systemColor }} />
+                      {t.systemName}{t.target > 1 && <span> · target {t.target}</span>}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '10px', color: done ? 'var(--green)' : 'var(--text-3)', fontWeight: 700, flexShrink: 0 }}>+{t.target * 10}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProspectingView({ userId }) {
+  const [sub, setSub] = useState('today');
+  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState(null);
+  const [systems, setSystems] = useState([]);
+  const [completions, setCompletions] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [lifetimeDone, setLifetimeDone] = useState(0);
+  const [activatingTemplate, setActivatingTemplate] = useState(null);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    const last30 = new Date(); last30.setDate(last30.getDate() - 30);
+    const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+    const [s, sys, comp, tmpl, tx, te, life] = await Promise.all([
+      supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_active', true).order('is_overhead', { ascending: false }).order('name'),
+      supabase.from('prospecting_completions').select('*').eq('user_id', userId).gte('date', last30.toISOString().slice(0, 10)).order('date', { ascending: false }),
+      supabase.from('lead_gen_system_templates').select('*').order('system_number'),
+      supabase.from('transactions').select('*').eq('user_id', userId).eq('is_archived', false).gte('date', yearStart).order('date', { ascending: false }).limit(500),
+      supabase.from('time_entries').select('*').eq('user_id', userId).gte('occurred_at', yearStart),
+      supabase.from('prospecting_completions').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('count_done', 1),
+    ]);
+    setSettings(s.data); setSystems(sys.data || []); setCompletions(comp.data || []);
+    setTemplates(tmpl.data || []); setTransactions(tx.data || []); setTimeEntries(te.data || []);
+    setLifetimeDone(life.count || 0);
+    setLoading(false);
+  }, [userId]);
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const userMode = settings?.user_mode || 'agent';
+  const readOnly = userMode === 'partner';
+  const isCoach = userMode === 'coach';
+  const maxSystems = settings?.max_systems_allowed || 5;
+  const activeNonOverhead = systems.filter(s => !s.is_overhead);
+  const activeNames = new Set(activeNonOverhead.map(s => s.name.toLowerCase()));
+  const atCap = activeNonOverhead.length >= maxSystems && !isCoach;
+  const streak = settings?.current_prospecting_streak || 0;
+
+  if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
+
+  const TABS = [
+    { id: 'today', label: 'Today', icon: '⚡' },
+    { id: 'systems', label: 'My Systems', icon: '🎯' },
+    { id: 'library', label: 'Library', icon: '📚' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>🎯 Prospecting</h2>
+          {streak > 0 && <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.35)' }}>🔥 {streak}-day streak</span>}
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{activeNonOverhead.length}/{maxSystems} systems active</span>
+        </div>
+        <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setSub(t.id)}
+              style={{ padding: '8px 16px', border: 'none', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.02em', whiteSpace: 'nowrap', cursor: 'pointer',
+                background: sub === t.id ? 'var(--accent)' : 'var(--bg-hover)', color: sub === t.id ? 'var(--bg-base)' : 'var(--text-2)', transition: 'all 0.15s' }}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {sub === 'today' && (
+        <ProspectingToday userId={userId} settings={settings} setSettings={setSettings}
+          systems={systems} completions={completions} setCompletions={setCompletions}
+          readOnly={readOnly} lifetimeDone={lifetimeDone} setLifetimeDone={setLifetimeDone}
+          onGoSystems={() => setSub('systems')} onGoLibrary={() => setSub('library')} />
+      )}
+      {sub === 'systems' && (
+        <FinanceSystems userId={userId} systems={systems} reload={loadAll}
+          transactions={transactions} completions={completions} timeEntries={timeEntries}
+          templates={templates} settings={settings} readOnly={readOnly} isCoach={isCoach} maxSystems={maxSystems} />
+      )}
+      {sub === 'library' && (
+        <TemplateLibraryModal asPage templates={templates || []} activeNames={activeNames}
+          atCap={atCap} maxSystems={maxSystems} isCoach={isCoach}
+          onClose={() => setSub('systems')} onPick={(t) => setActivatingTemplate(t)} />
+      )}
+      {activatingTemplate && (
+        <TemplateActivateModal userId={userId} template={activatingTemplate}
+          onClose={() => setActivatingTemplate(null)}
+          onActivated={() => { setActivatingTemplate(null); loadAll(); }} />
+      )}
+    </div>
+  );
+}
+
 function FinanceView({ userId }) {
   const [subView, setSubView] = useState('dashboard');
   const [loading, setLoading] = useState(true);
@@ -16479,7 +16841,6 @@ function FinanceView({ userId }) {
             { id: 'dashboard', label: 'Dashboard', icon: '⚡' },
             { id: 'blueprint', label: 'Blueprint', icon: '📐' },
             { id: 'ledger',    label: 'Ledger',    icon: '📒' },
-            { id: 'systems',   label: 'Systems',   icon: '🎯' },
             { id: 'reports',   label: 'Reports',   icon: '📈' },
           ].map(t => (
             <button key={t.id} onClick={() => setSubView(t.id)}
@@ -16520,14 +16881,6 @@ function FinanceView({ userId }) {
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
           recurringTemplates={recurringTemplates} setRecurringTemplates={setRecurringTemplates}
           trackPersonal={trackPersonal} readOnly={readOnly}
-        />
-      )}
-      {subView === 'systems' && (
-        <FinanceSystems
-          userId={userId} systems={systems} reload={loadAll}
-          transactions={transactions} completions={completions} timeEntries={timeEntries}
-          templates={templates}
-          settings={settings} readOnly={readOnly} isCoach={isCoach} maxSystems={maxSystems}
         />
       )}
       {subView === 'reports' && (
@@ -16799,59 +17152,6 @@ function FinanceDashboard({
         <div style={{marginTop:'6px',fontSize:'11px',color:'var(--text-3)'}}>
           {fmtPct(pct, 0)} to goal · pace marker at {fmtPct(expectedPct, 0)} (day {dayOfYear} of 365)
         </div>
-      </div>
-
-      <div className="panel" style={{padding:'14px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'10px'}}>
-          <div>
-            <span style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Today's prospecting</span>
-            <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>
-              {tasksTotal === 0 ? 'No active prospecting tasks yet.'
-                : tasksDone === tasksTotal ? '🎉 All done for today.'
-                : `${tasksDone}/${tasksTotal} complete`}
-            </div>
-          </div>
-          {tasksTotal > 0 && (
-            <div style={{fontSize:'22px',fontWeight:800,color:tasksDone===tasksTotal?'var(--green)':'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>
-              {Math.round((tasksDone / tasksTotal) * 100)}%
-            </div>
-          )}
-        </div>
-        {tasksTotal === 0 ? (
-          <div style={{padding:'16px',background:'var(--bg-base)',borderRadius:'8px',textAlign:'center'}}>
-            <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 10px'}}>Activate a lead-gen system with daily tasks to see your prospecting checklist here.</p>
-            {!readOnly && <button className="btn btn-primary btn-sm" onClick={onGoSystems}>🎯 Add a system</button>}
-          </div>
-        ) : (
-          <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
-            {todaysTasks.map((t) => {
-              const done = t.count_done >= t.target;
-              return (
-                <button key={`${t.systemId}-${t.taskId}`}
-                  onClick={() => toggleTaskCompletion(t)} disabled={readOnly}
-                  style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',
-                    background: done ? 'rgba(34,197,94,0.08)' : 'var(--bg-base)',
-                    border: `1px solid ${done ? 'rgba(34,197,94,0.3)' : 'var(--border)'}`,
-                    borderRadius:'8px',textAlign:'left',cursor:readOnly?'default':'pointer',
-                    opacity:readOnly?0.7:1,transition:'all 0.15s'}}>
-                  <div style={{width:'22px',height:'22px',borderRadius:'6px',
-                    background: done ? 'var(--green)' : 'transparent',
-                    border: `2px solid ${done ? 'var(--green)' : 'var(--text-3)'}`,
-                    display:'flex',alignItems:'center',justifyContent:'center',
-                    flexShrink:0,color:'#fff',fontSize:'13px',fontWeight:800}}>{done ? '✓' : ''}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:'13px',color:done?'var(--text-3)':'var(--text-1)',textDecoration:done?'line-through':'none',fontWeight:500}}>{t.desc}</div>
-                    <div style={{fontSize:'10px',color:'var(--text-3)',display:'flex',gap:'6px',alignItems:'center',marginTop:'2px'}}>
-                      <span style={{display:'inline-block',width:'6px',height:'6px',borderRadius:'2px',background:t.systemColor}}/>
-                      {t.systemName}
-                      {t.target > 1 && <span> · target {t.target}</span>}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:'10px'}}>
@@ -19777,7 +20077,7 @@ function SystemModal({ userId, initial, onClose, onSaved }) {
 }
 
 // ─── TemplateLibraryModal — browse the 85 lead-gen systems ──────────
-function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoach, onClose, onPick }) {
+function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoach, onClose, onPick, asPage = false }) {
   const [search, setSearch] = useState('');
   const [sectionFilter, setSectionFilter] = useState('all');
   const [discFilter, setDiscFilter] = useState('all');  // 'all' | 'D' | 'I' | 'S' | 'C'
@@ -19812,13 +20112,15 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
   }, [filtered]);
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{maxWidth:'720px',maxHeight:'90vh',display:'flex',flexDirection:'column',padding:0}}>
+    <div className={asPage ? '' : 'modal-backdrop'} onClick={asPage ? undefined : (e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={asPage ? 'panel' : 'modal'} style={asPage ? { maxWidth: '100%', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' } : { maxWidth: '720px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
         {/* Header (sticky) */}
         <div style={{padding:'16px 16px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg-card)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
             <h3 style={{margin:0,fontSize:'15px'}}>📚 Lead-Gen System Library</h3>
-            <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
+            {asPage
+              ? <button onClick={onClose} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',fontWeight:700,color:'var(--text-2)',cursor:'pointer',padding:'5px 10px'}}>← My Systems</button>
+              : <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>}
           </div>
           <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px'}}>
             {filtered.length} of {templates.length} systems · {atCap ? `at cap (${maxSystems}) — coach can raise` : isCoach ? 'coach mode: unlimited' : `slots open`}
@@ -25420,6 +25722,7 @@ export default function App() {
 
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
+    { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
@@ -25500,6 +25803,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
+              : view==='prospecting' ? <ProspectingView userId={user.id}/>
               : view==='tasks'       ? <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>

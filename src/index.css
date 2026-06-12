@@ -934,3 +934,8 @@ body {
   50% { opacity: 0.35; transform: scale(0.8); }
   100% { opacity: 1; transform: scale(1); }
 }
+
+@keyframes pconfetti {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(540deg); opacity: 0; }
+}
