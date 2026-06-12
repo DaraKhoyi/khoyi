@@ -9482,66 +9482,69 @@ function MultiValueField({ values, onChange, kind, addLabel }) {
   }
 
   return (
-    <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+    <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
       {arr.map((v, i) => {
         const isCustom = v.label && !standard.includes(v.label);
         return (
-          <div key={i} style={{display:'flex',gap:'4px',alignItems:'stretch'}}>
-            <select
-              value={isCustom ? '__current_custom__' : (v.label || standard[0])}
-              onChange={(e) => handleLabelChange(i, e.target.value === '__current_custom__' ? v.label : e.target.value)}
-              style={{
-                width:'88px',flexShrink:0,
-                background:'var(--bg-base)',color:'var(--text-1)',
-                border:'1px solid var(--border)',borderRadius:'6px',
-                padding:'7px 4px',fontSize:'12px',
-              }}>
-              {isCustom && <option value="__current_custom__">{v.label}</option>}
-              {standard.map(l => <option key={l} value={l}>{l}</option>)}
-              <option value="__custom__">Custom…</option>
-            </select>
+          <div key={i} style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+            <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+              <select
+                value={isCustom ? '__current_custom__' : (v.label || standard[0])}
+                onChange={(e) => handleLabelChange(i, e.target.value === '__current_custom__' ? v.label : e.target.value)}
+                style={{
+                  width:'104px',flexShrink:0,
+                  background:'var(--bg-base)',color:'var(--text-1)',
+                  border:'1px solid var(--border)',borderRadius:'6px',
+                  padding:'7px 4px',fontSize:'12px',
+                }}>
+                {isCustom && <option value="__current_custom__">{v.label}</option>}
+                {standard.map(l => <option key={l} value={l}>{l}</option>)}
+                <option value="__custom__">Custom…</option>
+              </select>
+              <span style={{flex:1}} />
+              {(v.value || '').trim() && (() => {
+                const actBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0, width:'38px', height:'34px', cursor:'pointer', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', borderRadius:'6px', color:'var(--accent)', fontSize:'14px', lineHeight:1, textDecoration:'none' };
+                if (kind === 'email') {
+                  return <a href={`mailto:${v.value.trim()}`} title="Send email" style={actBtn}>✉️</a>;
+                }
+                const tel = (v.value || '').replace(/[^\d+]/g, '');
+                return (
+                  <>
+                    <a href={`tel:${tel}`} title="Call" style={actBtn}>📞</a>
+                    <a href={`sms:${tel}`} title="Text" style={actBtn}>💬</a>
+                  </>
+                );
+              })()}
+              <button type="button" onClick={() => setDefault(i)}
+                title={v.is_default ? 'Default — used for quick actions' : 'Make this the default'}
+                aria-pressed={v.is_default}
+                style={{
+                  flexShrink:0,width:'38px',height:'34px',cursor:'pointer',
+                  background:'var(--bg-base)',
+                  border:`1px solid ${v.is_default ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius:'6px', color: v.is_default ? 'var(--accent)' : 'var(--text-3)',
+                  fontSize:'14px',lineHeight:1,
+                }}>{v.is_default ? '★' : '☆'}</button>
+              <button type="button" onClick={() => remove(i)}
+                title="Remove" aria-label="Remove"
+                style={{
+                  flexShrink:0,width:'34px',height:'34px',cursor:'pointer',
+                  background:'var(--bg-base)',
+                  border:'1px solid var(--border)',borderRadius:'6px',
+                  color:'var(--text-3)',fontSize:'15px',lineHeight:1,
+                }}>×</button>
+            </div>
             <input
               type={kind === 'email' ? 'email' : 'tel'}
               value={v.value || ''}
               onChange={(e) => update(i, { value: e.target.value })}
               placeholder={kind === 'email' ? 'name@example.com' : '(555) 555-5555'}
               style={{
-                flex:1,minWidth:0,
+                width:'100%',boxSizing:'border-box',
                 background:'var(--bg-base)',color:'var(--text-1)',
                 border:'1px solid var(--border)',borderRadius:'6px',
-                padding:'7px 9px',fontSize:'12.5px',outline:'none',
+                padding:'9px 11px',fontSize:'13px',outline:'none',
               }}/>
-            {(v.value || '').trim() && (() => {
-              const actBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0, padding:'4px 9px', cursor:'pointer', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', borderRadius:'6px', color:'var(--accent)', fontSize:'13px', lineHeight:1, textDecoration:'none' };
-              if (kind === 'email') {
-                return <a href={`mailto:${v.value.trim()}`} title="Send email" style={actBtn}>✉️</a>;
-              }
-              const tel = (v.value || '').replace(/[^\d+]/g, '');
-              return (
-                <>
-                  <a href={`tel:${tel}`} title="Call" style={actBtn}>📞</a>
-                  <a href={`sms:${tel}`} title="Text" style={actBtn}>💬</a>
-                </>
-              );
-            })()}
-            <button type="button" onClick={() => setDefault(i)}
-              title={v.is_default ? 'Default — used for quick actions' : 'Make this the default'}
-              aria-pressed={v.is_default}
-              style={{
-                flexShrink:0,padding:'4px 9px',cursor:'pointer',
-                background:'var(--bg-base)',
-                border:`1px solid ${v.is_default ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius:'6px', color: v.is_default ? 'var(--accent)' : 'var(--text-3)',
-                fontSize:'13px',lineHeight:1,
-              }}>{v.is_default ? '★' : '☆'}</button>
-            <button type="button" onClick={() => remove(i)}
-              title="Remove" aria-label="Remove"
-              style={{
-                flexShrink:0,padding:'4px 8px',cursor:'pointer',
-                background:'var(--bg-base)',
-                border:'1px solid var(--border)',borderRadius:'6px',
-                color:'var(--text-3)',fontSize:'14px',lineHeight:1,
-              }}>×</button>
           </div>
         );
       })}
