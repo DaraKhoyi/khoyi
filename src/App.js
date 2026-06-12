@@ -16948,9 +16948,9 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
   }
 
   const Metric = ({ label, value, color }) => (
-    <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: '9px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: '12px', fontWeight: 700, color: color || 'var(--text-1)', fontVariantNumeric: 'tabular-nums', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+    <div style={{ textAlign: 'center', minWidth: 0 }}>
+      <div style={{ fontSize: '8.5px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.02em', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+      <div style={{ fontSize: '13px', fontWeight: 800, color: color || 'var(--text-1)', fontVariantNumeric: 'tabular-nums', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     </div>
   );
 
@@ -16975,16 +16975,16 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
             <div style={{ fontSize: '9px', color: 'var(--text-3)', marginTop: '3px' }}>scale: 0 → 5× ROI</div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '14px' }}>
           {[
             { l: 'Cash spent', v: fmtUSD(totalCash), c: 'var(--red)' },
             { l: 'Time value', v: fmtUSD(totalTime), c: '#f59e0b' },
             { l: 'Invested', v: fmtUSD(totalInvested), c: 'var(--text-1)' },
             { l: 'Income', v: fmtUSD(totalIncome), c: 'var(--green)' },
           ].map((k, i) => (
-            <div key={i} style={{ flex: '1 1 70px', background: 'var(--bg-base)', borderRadius: '8px', padding: '8px 6px', textAlign: 'center' }}>
-              <div style={{ fontSize: '9px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>{k.l}</div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: k.c, fontVariantNumeric: 'tabular-nums', marginTop: '2px' }}>{k.v}</div>
+            <div key={i} style={{ background: 'var(--bg-base)', borderRadius: '10px', padding: '9px 6px', textAlign: 'center', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '8.5px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.02em', fontWeight: 700, lineHeight: 1.25, minHeight: '21px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{k.l}</div>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: k.c, fontVariantNumeric: 'tabular-nums', marginTop: '3px' }}>{k.v}</div>
             </div>
           ))}
         </div>
@@ -17016,20 +17016,21 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
                 <div style={{ height: '5px', background: 'var(--bg-card)', borderRadius: '3px', overflow: 'hidden', marginBottom: '8px' }}>
                   <div style={{ width: `${Math.min(1, (st.roi || 0) / maxRoi) * 100}%`, height: '100%', background: sb.color, transition: 'width 0.5s ease' }} />
                 </div>
-                {/* Metric matrix + trend */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ display: 'flex', gap: '4px', flex: 1, minWidth: 0 }}>
-                    <Metric label="Cash" value={fmtUSD(st.cash)} color="var(--red)" />
-                    <Metric label={`Time (${fmtH(st.minutes)})`} value={fmtUSD(st.timeCost)} color="#f59e0b" />
-                    <Metric label="Invested" value={fmtUSD(st.invested)} />
-                    <Metric label="Income" value={fmtUSD(st.income)} color="var(--green)" />
-                  </div>
-                  {st.invested > 0 && (
-                    <div style={{ flexShrink: 0, paddingLeft: '6px', borderLeft: '1px solid var(--border)' }}>
+                {/* Metric matrix — four even columns, full width so labels never collide */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', alignItems: 'end' }}>
+                  <Metric label="Cash" value={fmtUSD(st.cash)} color="var(--red)" />
+                  <Metric label={`Time (${fmtH(st.minutes)})`} value={fmtUSD(st.timeCost)} color="#f59e0b" />
+                  <Metric label="Invested" value={fmtUSD(st.invested)} />
+                  <Metric label="Income" value={fmtUSD(st.income)} color="var(--green)" />
+                </div>
+                {st.invested > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '9px', paddingTop: '9px', borderTop: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '9px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, flexShrink: 0 }}>8-wk trend</span>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
                       <Sparkline values={roiSeries(r.sys)} color={sb.color} />
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             );
           })}
