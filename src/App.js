@@ -16567,11 +16567,18 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
   // Progress ring geometry
   const R = 44, C = 2 * Math.PI * R, ringColor = isPerfect ? 'var(--green)' : 'var(--accent)';
 
+  // Shared KPI-tile styling so the stat row reads as one clean, aligned system.
+  const tile = { background: 'var(--bg-base)', borderRadius: '12px', padding: '12px', border: '1px solid var(--border)', minWidth: 0 };
+  const tileLabel = { fontSize: '9.5px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const tileNum = { fontSize: '21px', fontWeight: 800, color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1, marginTop: '4px' };
+  const tileUnit = { fontSize: '10px', color: 'var(--text-3)', fontWeight: 600 };
+  const tileSub = { fontSize: '9px', color: 'var(--text-3)', marginTop: '3px' };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       {/* ── Gamified hero ── */}
-      <div className="panel" style={{ padding: '16px', background: isPerfect ? 'linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))' : 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: `1px solid ${isPerfect ? 'rgba(34,197,94,0.4)' : 'var(--border)'}` }}>
-        <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+      <div className="panel" style={{ padding: '18px', background: isPerfect ? 'linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))' : 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: `1px solid ${isPerfect ? 'rgba(34,197,94,0.4)' : 'var(--border)'}` }}>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'nowrap' }}>
           {/* Ring */}
           <div style={{ position: 'relative', width: '104px', height: '104px', flexShrink: 0 }}>
             <svg width="104" height="104" style={{ transform: 'rotate(-90deg)' }}>
@@ -16605,49 +16612,44 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
           </div>
         </div>
 
-        {/* Stat strip: streak · handicap · week */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 100px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px' }}>
-            <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>🔥 Streak</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: streak > 0 ? '#ef4444' : 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>{streak}<span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}> day{streak === 1 ? '' : 's'}</span></div>
-            <div style={{ fontSize: '9px', color: 'var(--text-3)' }}>best {best}</div>
+        {/* KPI tiles — three equal, aligned stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '16px' }}>
+          <div style={tile}>
+            <div style={tileLabel}>🔥 Streak</div>
+            <div style={{ ...tileNum, color: streak > 0 ? '#ef4444' : 'var(--text-3)' }}>{streak}<span style={tileUnit}> day{streak === 1 ? '' : 's'}</span></div>
+            <div style={tileSub}>best {best}</div>
           </div>
-          <div style={{ flex: '1 1 100px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px' }}
-            title="Prospecting handicap — like golf, lower is better. Improves as your 30-day completion rate climbs. 0.0 = scratch (perfect).">
-            <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>⛳ Handicap</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: Number(handicap) <= 8 ? 'var(--green)' : Number(handicap) <= 18 ? 'var(--accent)' : 'var(--text-2)', fontVariantNumeric: 'tabular-nums' }}>{handicap}</div>
-            <div style={{ fontSize: '9px', color: 'var(--text-3)' }}>{Math.round(rate30 * 100)}% · 30d</div>
+          <div style={tile} title="Prospecting handicap — like golf, lower is better. Improves as your 30-day completion rate climbs. 0.0 = scratch (perfect).">
+            <div style={tileLabel}>⛳ Handicap</div>
+            <div style={{ ...tileNum, color: Number(handicap) <= 8 ? 'var(--green)' : Number(handicap) <= 18 ? 'var(--accent)' : 'var(--text-2)' }}>{handicap}</div>
+            <div style={tileSub}>{Math.round(rate30 * 100)}% · 30d</div>
           </div>
-          <div style={{ flex: '1 1 130px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '10px' }}
-            title="Hours you've tracked this week vs the hours/week you committed in Blueprint.">
-            <div style={{ position: 'relative', width: '44px', height: '44px', flexShrink: 0 }}>
-              <svg width="44" height="44" style={{ transform: 'rotate(-90deg)' }}>
-                <circle cx="22" cy="22" r={wR} fill="none" stroke="var(--bg-hover)" strokeWidth="5" />
-                <circle cx="22" cy="22" r={wR} fill="none" stroke={weeklyPct >= 1 ? 'var(--green)' : 'var(--accent)'} strokeWidth="5" strokeLinecap="round" strokeDasharray={wC} strokeDashoffset={wC * (1 - weeklyPct)} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
-              </svg>
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800, color: weeklyPct >= 1 ? 'var(--green)' : 'var(--text-1)' }}>{weeklyTarget > 0 ? `${Math.round(weeklyPct * 100)}` : '—'}</div>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>⏳ Hours/wk</div>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{weeklyHours.toFixed(1)}<span style={{ fontSize: '10px', color: 'var(--text-3)', fontWeight: 600 }}>{weeklyTarget > 0 ? ` / ${weeklyTarget}h` : 'h'}</span></div>
-              <div style={{ fontSize: '9px', color: 'var(--text-3)' }}>{weeklyTarget > 0 ? (weeklyPct >= 1 ? '✓ goal hit' : `${(weeklyTarget - weeklyHours).toFixed(1)}h to go`) : 'set in Blueprint'}</div>
-            </div>
+          <div style={tile} title="Hours you've tracked this week vs the hours/week you committed in Blueprint.">
+            <div style={tileLabel}>⏳ Hours/wk</div>
+            <div style={tileNum}>{weeklyHours.toFixed(1)}<span style={tileUnit}>{weeklyTarget > 0 ? ` / ${weeklyTarget}h` : 'h'}</span></div>
+            {weeklyTarget > 0 ? (
+              <div style={{ height: '4px', background: 'var(--bg-hover)', borderRadius: '3px', overflow: 'hidden', marginTop: '7px' }}>
+                <div style={{ width: `${Math.min(weeklyPct, 1) * 100}%`, height: '100%', background: weeklyPct >= 1 ? 'var(--green)' : 'var(--accent)', transition: 'width 0.6s ease' }} />
+              </div>
+            ) : <div style={tileSub}>set in Blueprint</div>}
           </div>
-          <div style={{ flex: '2 1 160px', background: 'var(--bg-base)', borderRadius: '10px', padding: '10px 12px' }}>
-            <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '6px' }}>📅 This week</div>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {weekDots.map((d, i) => (
-                <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-                  <div style={{ width: '100%', aspectRatio: '1', maxWidth: '26px', margin: '0 auto', borderRadius: '50%',
-                    background: d.hit ? 'var(--green)' : d.future ? 'transparent' : 'var(--bg-hover)',
-                    border: d.isToday ? '2px solid var(--accent)' : d.future ? '1px dashed var(--border)' : '1px solid var(--border)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: d.hit ? '#fff' : 'var(--text-3)', fontSize: '11px', fontWeight: 700 }}>
-                    {d.hit ? '✓' : ''}
-                  </div>
-                  <div style={{ fontSize: '9px', color: d.isToday ? 'var(--accent)' : 'var(--text-3)', marginTop: '3px', fontWeight: d.isToday ? 700 : 400 }}>{d.label}</div>
+        </div>
+
+        {/* This week — full-width tracker so the seven days breathe */}
+        <div style={{ ...tile, marginTop: '8px' }}>
+          <div style={{ ...tileLabel, marginBottom: '9px' }}>📅 This week</div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {weekDots.map((d, i) => (
+              <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ width: '100%', aspectRatio: '1', maxWidth: '30px', margin: '0 auto', borderRadius: '50%',
+                  background: d.hit ? 'var(--green)' : d.future ? 'transparent' : 'var(--bg-hover)',
+                  border: d.isToday ? '2px solid var(--accent)' : d.future ? '1px dashed var(--border)' : '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: d.hit ? '#fff' : 'var(--text-3)', fontSize: '12px', fontWeight: 700 }}>
+                  {d.hit ? '✓' : ''}
                 </div>
-              ))}
-            </div>
+                <div style={{ fontSize: '9px', color: d.isToday ? 'var(--accent)' : 'var(--text-3)', marginTop: '4px', fontWeight: d.isToday ? 700 : 400 }}>{d.label}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -17099,11 +17101,12 @@ function ProspectingView({ userId }) {
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{activeNonOverhead.length}/{maxSystems} systems active</span>
         </div>
-        <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: '2px' }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setSub(t.id)}
-              style={{ padding: '8px 16px', border: 'none', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.02em', whiteSpace: 'nowrap', cursor: 'pointer',
-                background: sub === t.id ? 'var(--accent)' : 'var(--bg-hover)', color: sub === t.id ? 'var(--bg-base)' : 'var(--text-2)', transition: 'all 0.15s' }}>
+              style={{ padding: '8px 15px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap', cursor: 'pointer',
+                border: `1px solid ${sub === t.id ? 'var(--accent)' : 'var(--border)'}`,
+                background: sub === t.id ? 'var(--accent)' : 'var(--bg-card)', color: sub === t.id ? 'var(--bg-base)' : 'var(--text-2)', transition: 'all 0.15s' }}>
               {t.icon} {t.label}
             </button>
           ))}
