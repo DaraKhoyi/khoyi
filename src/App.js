@@ -16385,6 +16385,7 @@ function pConfettiBurst() {
 function ProspectingToday({ userId, settings, setSettings, systems, completions, setCompletions, timeEntries = [], setTimeEntries, readOnly, lifetimeDone, setLifetimeDone, onGoSystems, onGoLibrary, onGoRoi }) {
   const today = today_ymd();
   const wasPerfectRef = useRef(false);
+  const [timeModalSystem, setTimeModalSystem] = useState(null);
   const hourlyRate = Number(settings?.hourly_rate || 0);
 
   // ── Per-system time tracker (single active timer) ──
@@ -16669,7 +16670,11 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
                     <div style={{ flex: 1, minWidth: '120px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-1)' }}>{group.name}</div>
                       <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '1px' }}>
-                        {gDone}/{group.items.length} done · ⏱ {fmtMins(liveMin)}{hourlyRate > 0 && <span> · ${Math.round(timeValue)}</span>}
+                        {gDone}/{group.items.length} done ·{' '}
+                        <button onClick={() => setTimeModalSystem(group)} title="Edit logged time"
+                          style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-2)', cursor: 'pointer', fontSize: '10px', fontWeight: 600, textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: '2px' }}>
+                          ⏱ {fmtMins(liveMin)}{hourlyRate > 0 && ` · $${Math.round(timeValue)}`} ✎
+                        </button>
                       </div>
                     </div>
                     {!readOnly && (
@@ -16713,7 +16718,123 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
           </div>
         )}
       </div>
+
+      {timeModalSystem && (
+        <TimeLogModal system={timeModalSystem} userId={userId}
+          timeEntries={timeEntries} setTimeEntries={setTimeEntries}
+          hourlyRate={hourlyRate} onClose={() => setTimeModalSystem(null)} />
+      )}
     </div>
+  );
+}
+
+// ─── TimeLogModal — view / edit / delete / add today's time for one system ───
+function TimeLogModal({ system, userId, timeEntries, setTimeEntries, hourlyRate, onClose }) {
+  const today = today_ymd();
+  const [addMin, setAddMin] = useState('');
+  const [busy, setBusy] = useState(false);
+  const rows = timeEntries
+    .filter(te => te.lead_gen_system_id === system.id && new Date(te.occurred_at).toISOString().slice(0, 10) === today)
+    .sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
+  const totalMin = rows.reduce((s, r) => s + Number(r.minutes || 0), 0);
+
+  async function addManual() {
+    const m = Math.round(Number(addMin) || 0);
+    if (m < 1) return;
+    setBusy(true);
+    const { data } = await supabase.from('time_entries').insert({
+      user_id: userId, lead_gen_system_id: system.id, minutes: m, occurred_at: new Date().toISOString(), description: '✎ Manual',
+    }).select().single();
+    if (data) setTimeEntries(prev => [data, ...prev]);
+    setAddMin(''); setBusy(false);
+  }
+  async function updateEntry(id, m) {
+    const mins = Math.max(0, Math.round(Number(m) || 0));
+    setTimeEntries(prev => prev.map(e => e.id === id ? { ...e, minutes: mins } : e));
+    await supabase.from('time_entries').update({ minutes: mins }).eq('id', id);
+  }
+  async function deleteEntry(id) {
+    setTimeEntries(prev => prev.filter(e => e.id !== id));
+    await supabase.from('time_entries').delete().eq('id', id);
+  }
+  const fmtClock = (iso) => { const d = new Date(iso); return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); };
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ maxWidth: '460px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: system.color, flexShrink: 0 }} />
+            <h3 style={{ margin: 0, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{system.name}</h3>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
+        </div>
+        <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '14px' }}>
+          Today's time · {Math.floor(totalMin / 60) > 0 ? `${Math.floor(totalMin / 60)}h ` : ''}{totalMin % 60}m{hourlyRate > 0 && ` · ${fmtUSD((totalMin / 60) * hourlyRate)} value`}
+        </div>
+
+        {/* Add manual */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+          <input type="number" inputMode="numeric" placeholder="Minutes" value={addMin} onChange={e => setAddMin(e.target.value)}
+            style={{ flex: 1, padding: '9px 11px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)', fontSize: '13px' }} />
+          <button onClick={addManual} disabled={busy || !addMin}
+            style={{ padding: '9px 16px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: (busy || !addMin) ? 0.5 : 1, whiteSpace: 'nowrap' }}>+ Add time</button>
+        </div>
+
+        {/* Entries */}
+        {rows.length === 0 ? (
+          <p style={{ fontSize: '12px', color: 'var(--text-3)', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>No time logged for this system today. Start a timer or add minutes above.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {rows.map(r => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px', background: 'var(--bg-base)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: '13px', flexShrink: 0 }}>{r.description?.startsWith('⏱') ? '⏱' : '✎'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>{fmtClock(r.occurred_at)} · {r.description?.startsWith('⏱') ? 'Timer' : 'Manual'}</div>
+                </div>
+                <input type="number" inputMode="numeric" defaultValue={r.minutes}
+                  onBlur={e => { const v = Number(e.target.value); if (v !== Number(r.minutes)) updateEntry(r.id, v); }}
+                  style={{ width: '58px', padding: '5px 6px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-1)', fontSize: '12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+                <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>min</span>
+                <button onClick={() => deleteEntry(r.id)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', fontSize: '15px', cursor: 'pointer', flexShrink: 0, padding: '0 2px' }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Sparkline — tiny inline SVG line chart ───
+function Sparkline({ values, color = 'var(--accent)', w = 132, h = 30 }) {
+  if (!values || values.length < 2) return null;
+  const max = Math.max(...values), min = Math.min(...values);
+  const range = (max - min) || 1;
+  const pad = 3;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (w - pad * 2);
+    const y = (h - pad) - ((v - min) / range) * (h - pad * 2);
+    return [x, y];
+  });
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${h} L${pts[0][0].toFixed(1)},${h} Z`;
+  const last = pts[pts.length - 1];
+  const rising = values[values.length - 1] >= values[0];
+  return (
+    <svg width={w} height={h} style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id={`spark-${color.replace(/[^a-z0-9]/gi, '')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#spark-${color.replace(/[^a-z0-9]/gi, '')})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={last[0]} cy={last[1]} r="2.6" fill={color} />
+      <text x={pad} y={h - 1} fontSize="8" fill="var(--text-3)">8wk</text>
+      <text x={w - pad} y={10} fontSize="8" fill={rising ? 'var(--green)' : 'var(--text-3)'} textAnchor="end">{rising ? '▲' : '▼'}</text>
+    </svg>
   );
 }
 
@@ -16752,6 +16873,23 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
     return { g: 'F', c: 'var(--red)' };
   }
   const fmtH = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+
+  // 8-week cumulative true-ROI trend for the sparkline.
+  function roiSeries(sys) {
+    const sysTx = transactions.filter(t => t.lead_gen_system_id === sys.id && t.scope === 'business' && new Date(t.date) >= yearStart);
+    const sysTe = timeEntries.filter(te => te.lead_gen_system_id === sys.id);
+    const out = [];
+    const now = new Date();
+    for (let wk = 7; wk >= 0; wk--) {
+      const cutoff = new Date(now); cutoff.setDate(now.getDate() - wk * 7); cutoff.setHours(23, 59, 59, 999);
+      const cash = Math.abs(sysTx.filter(t => Number(t.amount) < 0 && new Date(t.date) <= cutoff).reduce((s, t) => s + Number(t.amount), 0));
+      const income = sysTx.filter(t => Number(t.amount) > 0 && new Date(t.date) <= cutoff).reduce((s, t) => s + Number(t.amount), 0);
+      const mins = sysTe.filter(te => new Date(te.occurred_at) <= cutoff).reduce((s, te) => s + Number(te.minutes || 0), 0);
+      const invested = cash + (mins / 60) * hourly;
+      out.push(invested > 0 ? income / invested : 0);
+    }
+    return out;
+  }
 
   const rows = systems.filter(s => !s.is_overhead).map(s => ({ sys: s, st: stat(s) }));
   const totalCash = rows.reduce((a, r) => a + r.st.cash, 0);
@@ -16853,12 +16991,19 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
                 <div style={{ height: '5px', background: 'var(--bg-card)', borderRadius: '3px', overflow: 'hidden', marginBottom: '8px' }}>
                   <div style={{ width: `${Math.min(1, (st.roi || 0) / maxRoi) * 100}%`, height: '100%', background: sb.color, transition: 'width 0.5s ease' }} />
                 </div>
-                {/* Metric matrix */}
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <Metric label="Cash" value={fmtUSD(st.cash)} color="var(--red)" />
-                  <Metric label={`Time (${fmtH(st.minutes)})`} value={fmtUSD(st.timeCost)} color="#f59e0b" />
-                  <Metric label="Invested" value={fmtUSD(st.invested)} />
-                  <Metric label="Income" value={fmtUSD(st.income)} color="var(--green)" />
+                {/* Metric matrix + trend */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '4px', flex: 1, minWidth: 0 }}>
+                    <Metric label="Cash" value={fmtUSD(st.cash)} color="var(--red)" />
+                    <Metric label={`Time (${fmtH(st.minutes)})`} value={fmtUSD(st.timeCost)} color="#f59e0b" />
+                    <Metric label="Invested" value={fmtUSD(st.invested)} />
+                    <Metric label="Income" value={fmtUSD(st.income)} color="var(--green)" />
+                  </div>
+                  {st.invested > 0 && (
+                    <div style={{ flexShrink: 0, paddingLeft: '6px', borderLeft: '1px solid var(--border)' }}>
+                      <Sparkline values={roiSeries(r.sys)} color={sb.color} />
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -17533,6 +17678,16 @@ function FinanceBlueprint({
   const leadsNeeded  = Math.ceil(convosNeeded / rates.leadToConvo);
   const weeklyLeads  = Math.ceil(leadsNeeded / 48);
 
+  // Prospecting hourly value: GCI goal ÷ prospecting hours/week ÷ 48 weeks.
+  const prospectHours = Number(settings?.prospecting_hours_per_week) || 0;
+  const prospectHourlyValue = prospectHours > 0 ? gciGoal / (prospectHours * 48) : 0;
+  async function saveProspectHours(v) {
+    if (readOnly) return;
+    const hrs = Math.max(0, Number(v) || 0);
+    const rate = hrs > 0 ? Math.round((gciGoal / (hrs * 48)) * 100) / 100 : 0;
+    await updateSetting({ prospecting_hours_per_week: hrs, hourly_rate: rate });
+    if (window.__notify) window.__notify(hrs > 0 ? `Prospecting hour valued at ${fmtUSD(rate)}/hr` : 'Prospecting hours cleared', 'success');
+  }
   async function updateBudgetLine(id, patch) {
     if (readOnly) return;
     setPersonalBudget(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
@@ -17551,7 +17706,9 @@ function FinanceBlueprint({
   async function saveBlueprint() {
     if (readOnly) return;
     setSaving(true);
-    await updateSetting({ annual_gci_goal: Math.round(gciGoal) });
+    const hrs = Number(settings?.prospecting_hours_per_week) || 0;
+    const rate = hrs > 0 ? Math.round((gciGoal / (hrs * 48)) * 100) / 100 : (Number(settings?.hourly_rate) || 0);
+    await updateSetting({ annual_gci_goal: Math.round(gciGoal), hourly_rate: rate });
     setSaving(false);
     if (window.__notify) window.__notify(`Blueprint saved · GCI goal: ${fmtUSD(gciGoal)}`, 'success');
   }
@@ -17664,10 +17821,22 @@ function FinanceBlueprint({
           <SettingInput label="Commission %" value={Number(settings?.avg_commission_pct) * 100} suffix="%" onSave={v => updateSetting({ avg_commission_pct: v / 100 })} step="0.01" readOnly={readOnly} />
           <SettingInput label="Your split with broker" value={Number(settings?.broker_split_pct) * 100} suffix="%" onSave={v => updateSetting({ broker_split_pct: v / 100 })} step="0.5" readOnly={readOnly} />
           <SettingInput label="Estimated tax %" value={Number(settings?.estimated_tax_pct) * 100} suffix="%" onSave={v => updateSetting({ estimated_tax_pct: v / 100 })} step="1" readOnly={readOnly} />
-          <SettingInput label="Your hourly rate" value={settings?.hourly_rate} prefix="$" suffix="/hr" onSave={v => updateSetting({ hourly_rate: v })} readOnly={readOnly} />
+          <SettingInput label="Prospecting hours / week" value={settings?.prospecting_hours_per_week} suffix="hrs" onSave={saveProspectHours} step="0.5" readOnly={readOnly} />
+        </div>
+        {/* Auto-computed prospecting hourly value */}
+        <div style={{marginTop:'12px',padding:'12px 14px',background:'linear-gradient(135deg, rgba(197,169,94,0.10), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:'10px',color:'var(--accent)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:800}}>Your prospecting hour is worth</div>
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'3px',fontVariantNumeric:'tabular-nums'}}>
+              {fmtUSD(gciGoal)} GCI&nbsp;÷&nbsp;{prospectHours || 0} hrs/wk&nbsp;÷&nbsp;48 wks
+            </div>
+          </div>
+          <div style={{fontSize:'26px',fontWeight:800,color:'var(--accent)',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>
+            {prospectHours > 0 ? `${fmtUSD(prospectHourlyValue)}/hr` : '—'}
+          </div>
         </div>
         <p style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',fontStyle:'italic',lineHeight:1.5}}>
-          Hourly rate drives Time-ROI math in the operations report. Not used for tax accounting.
+          Auto-calculated from your GCI goal and the hours you commit to prospecting each week. This sets your hourly rate, which values your time in the Prospecting ROI matrix and the operations report — so every hour you track shows what it's really worth toward your goal.
         </p>
       </div>
 
