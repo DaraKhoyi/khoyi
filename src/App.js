@@ -5850,6 +5850,175 @@ function isoToLocalInput(iso) {
   return d.toISOString().slice(0, 16);
 }
 
+// Follow-up drafter — reads a timeline entry + contact context, asks Ari to
+// draft an email or text in the user's voice, and sends via Gmail (email) or
+// hands off to the SMS app (text). Logs the sent follow-up back to the timeline.
+function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, userId, onClose, onLogged }) {
+  const candidates = (() => {
+    const list = [];
+    if (defaultContact && defaultContact.id) list.push(defaultContact);
+    (entry.mentions || []).forEach(id => {
+      if (!list.some(c => c.id === id)) { const c = contacts.find(x => x.id === id); if (c) list.push(c); }
+    });
+    return list;
+  })();
+  const [recipientId, setRecipientId] = useState(candidates[0]?.id || '');
+  const recipient = contacts.find(c => c.id === recipientId) || candidates[0] || null;
+  const [channel, setChannel] = useState(recipient?.email ? 'email' : 'text');
+  const [subject, setSubject] = useState('');
+  const [bodyText, setBodyText] = useState('');
+  const [drafting, setDrafting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [instruction, setInstruction] = useState('');
+  const [showInstruction, setShowInstruction] = useState(false);
+
+  async function draft() {
+    setDrafting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-followup-draft', {
+        body: {
+          contactName: recipient?.name || null,
+          company: recipient?.company || null,
+          role: recipient?.role || null,
+          channel,
+          kind: entry.kind || 'note',
+          entryBody: entry.body || entry.brief || '',
+          occurredAt: entry.occurred_at ? new Date(entry.occurred_at).toLocaleString() : null,
+          instruction: instruction || null,
+          recentNotes: (recentNotes || []).slice(0, 6),
+          senderName: 'Dara',
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setSubject(data?.subject || '');
+      setBodyText(data?.body || '');
+    } catch (e) {
+      notify("Couldn't draft follow-up: " + (e.message || e), 'error');
+    } finally { setDrafting(false); }
+  }
+  // Auto-draft on open and whenever channel changes
+  useEffect(() => { if (recipient) draft(); /* eslint-disable-next-line */ }, [channel]);
+
+  async function logSent(via, text) {
+    try {
+      const row = {
+        user_id: userId,
+        entity_type: entry.entity_type, entity_id: entry.entity_id,
+        contact_id: entry.entity_type === 'contact' ? entry.entity_id : (recipient?.id || null),
+        kind: via, channel: via === 'email' ? 'email' : 'text', direction: 'outbound',
+        occurred_at: new Date().toISOString(),
+        body: (via === 'email' && subject ? subject + ' — ' : '') + text,
+        brief: text.slice(0, 140),
+        mentions: recipient ? [recipient.id] : [], tags: ['followup'],
+        pinned: false,
+      };
+      const { data } = await supabase.from('contact_interactions').insert(row).select().single();
+      if (data && onLogged) onLogged(data);
+    } catch (_) {}
+  }
+
+  async function sendEmail() {
+    if (!recipient?.email) { notify('That contact has no email on file.', 'error'); return; }
+    if (!bodyText.trim()) return;
+    setSending(true);
+    try {
+      const { data: accs } = await supabase.from('email_accounts').select('id,email_address').contains('purposes', ['email']).order('created_at').limit(1);
+      const acc = accs && accs[0];
+      if (!acc) { notify('No email account is connected to send from. Connect Gmail in Settings.', 'error'); setSending(false); return; }
+      const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', {
+        body: { account_id: acc.id, to: recipient.email, subject: subject || '(no subject)', body_text: bodyText },
+      });
+      if (se) throw se;
+      if (sr?.error) throw new Error(sr.error);
+      await logSent('email', bodyText);
+      notify('Follow-up sent to ' + recipient.email, 'success');
+      onClose();
+    } catch (e) {
+      notify("Couldn't send: " + (e.message || e), 'error');
+    } finally { setSending(false); }
+  }
+  function sendText() {
+    if (!recipient?.phone) { notify('That contact has no phone on file.', 'error'); return; }
+    const num = (recipient.phone || '').replace(/[^\d+]/g, '');
+    try { navigator.clipboard && navigator.clipboard.writeText(bodyText); } catch (_) {}
+    logSent('text', bodyText);
+    window.location.href = `sms:${num}?body=${encodeURIComponent(bodyText)}`;
+    notify('Opening Messages — text copied to clipboard as backup.', 'success');
+    onClose();
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1200 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px', width: '94%' }}>
+        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>✉️ Draft follow-up</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            {candidates.length > 1 ? (
+              <select className="form-select" value={recipientId} onChange={e => setRecipientId(e.target.value)} style={{ flex: '1 1 200px', padding: '7px', fontSize: '13px', margin: 0 }}>
+                {candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ) : (
+              <div style={{ flex: '1 1 200px', fontSize: '13px', color: 'var(--text-1)', display: 'flex', alignItems: 'center' }}>
+                To: <strong style={{ marginLeft: '5px' }}>{recipient?.name || '—'}</strong>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button onClick={() => setChannel('email')} disabled={!recipient?.email}
+                style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: recipient?.email ? 'pointer' : 'not-allowed',
+                  border: `1px solid ${channel === 'email' ? 'var(--accent)' : 'var(--border)'}`, background: channel === 'email' ? 'rgba(197,169,94,0.12)' : 'transparent', color: !recipient?.email ? 'var(--text-3)' : channel === 'email' ? 'var(--accent)' : 'var(--text-2)' }}>✉️ Email</button>
+              <button onClick={() => setChannel('text')} disabled={!recipient?.phone}
+                style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: recipient?.phone ? 'pointer' : 'not-allowed',
+                  border: `1px solid ${channel === 'text' ? 'var(--accent)' : 'var(--border)'}`, background: channel === 'text' ? 'rgba(197,169,94,0.12)' : 'transparent', color: !recipient?.phone ? 'var(--text-3)' : channel === 'text' ? 'var(--accent)' : 'var(--text-2)' }}>💬 Text</button>
+            </div>
+          </div>
+          {channel === 'email' && recipient?.email && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '-6px', marginBottom: '10px' }}>{recipient.email}</div>}
+          {channel === 'text' && recipient?.phone && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '-6px', marginBottom: '10px' }}>{recipient.phone}</div>}
+
+          {drafting ? (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>✨ Ari is drafting…</div>
+          ) : (
+            <>
+              {channel === 'email' && (
+                <input className="form-input" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} style={{ fontSize: '13px', padding: '8px 10px', margin: 0, marginBottom: '8px', fontWeight: 600 }} />
+              )}
+              <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
+                style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
+              {showInstruction ? (
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                  <input className="form-input" placeholder="e.g. make it warmer, shorter, mention the inspection…" value={instruction} onChange={e => setInstruction(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); draft(); } }} style={{ flex: 1, fontSize: '12px', padding: '7px', margin: 0 }} />
+                  <button className="btn btn-ghost btn-sm" onClick={draft} style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>↻ Redraft</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => draft()} style={{ fontSize: '11px' }}>↻ Regenerate</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowInstruction(true)} style={{ fontSize: '11px' }}>✎ Guide the draft</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          {channel === 'email' ? (
+            <button type="button" className="btn btn-primary" onClick={sendEmail} disabled={sending || drafting || !bodyText.trim()}>
+              {sending ? 'Sending…' : '✉️ Send email'}
+            </button>
+          ) : (
+            <button type="button" className="btn btn-primary" onClick={sendText} disabled={drafting || !bodyText.trim()}>
+              💬 Open in Messages
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivityTimeline({ entityType = 'contact', entityId, contact = null, userId, onContactPatch, contacts = [] }) {
   const isContact = entityType === 'contact';
   const [timeline, setTimeline] = useState([]);
@@ -5940,6 +6109,9 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
   const [editWhen, setEditWhen] = useState('');
   const [editDir, setEditDir] = useState('outbound');
   const [editDur, setEditDur] = useState('');
+
+  // Follow-up drafter
+  const [followupFor, setFollowupFor] = useState(null);
 
   useEffect(() => {
     if (!entityId) return;
@@ -6159,6 +6331,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: '10px', color: 'var(--text-3)' }} title={new Date(e.occurred_at).toLocaleString()}>{timeOf(e.occurred_at)} · {relTime(e.occurred_at)}</span>
             <div className="activity-actions" style={{ display: 'flex', gap: '2px' }}>
+              <button onClick={() => setFollowupFor(e)} title="Draft a follow-up email or text" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✉️</button>
               <button onClick={() => togglePin(e)} title={e.pinned ? 'Unpin' : 'Pin to top'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px', opacity: e.pinned ? 1 : 0.5 }}>📌</button>
               <button onClick={() => startEdit(e)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✎</button>
               <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>🗑</button>
@@ -6354,6 +6527,17 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             </div>
           ))}
         </>
+      )}
+      {followupFor && (
+        <FollowupDraftModal
+          entry={followupFor}
+          contacts={contacts}
+          defaultContact={isContact ? contact : null}
+          recentNotes={timeline.slice(0, 6).map(t => t.body || t.brief).filter(Boolean)}
+          userId={userId}
+          onClose={() => setFollowupFor(null)}
+          onLogged={(row) => setTimeline(prev => [row, ...prev])}
+        />
       )}
     </div>
   );
