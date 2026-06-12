@@ -5444,6 +5444,112 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 // ─────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────
+// Global "Needs Attention" command center — rolls up replies owed, follow-ups
+// due, and contacts overdue for outreach into one daily action queue.
+function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
+  const now = Date.now();
+  const endToday = (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d.getTime(); })();
+  function relAge(ts) {
+    if (!ts) return 'never';
+    const d = Math.floor((now - new Date(ts).getTime()) / 86400000);
+    if (d === 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago';
+    if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago';
+    return Math.floor(d / 365) + 'y ago';
+  }
+  function lastTouch(c) { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; }
+
+  const oweReply = contacts.filter(c => {
+    if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
+    const lin = new Date(c.last_inbound_at).getTime();
+    const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0;
+    return lin > lout;
+  }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
+
+  const dueTasks = tasks.filter(t => !t.completed && t.status !== 'done' && t.due_date && new Date(t.due_date + 'T23:59:59').getTime() <= endToday)
+    .sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+
+  const outreach = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; })
+    .sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
+
+  const total = oweReply.length + dueTasks.length + outreach.length;
+  const contactName = (id) => { const c = contacts.find(x => x.id === id); return c ? c.name : null; };
+
+  async function completeTask(t) {
+    const { data } = await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString(), status: 'done' }).eq('id', t.id).select().single();
+    if (setTasks) setTasks(prev => prev.map(x => x.id === t.id ? (data || { ...x, completed: true }) : x));
+  }
+  function dueLabel(due) {
+    const d = new Date(due + 'T00:00:00'); const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    const diff = Math.round((d - t0) / 86400000);
+    if (diff < 0) return { txt: `overdue ${-diff}d`, col: 'var(--red)' };
+    if (diff === 0) return { txt: 'due today', col: 'var(--yellow)' };
+    return { txt: diff === 1 ? 'tomorrow' : `in ${diff}d`, col: 'var(--accent)' };
+  }
+
+  if (total === 0) {
+    return (
+      <div className="panel" style={{ marginBottom: '16px' }}>
+        <div style={{ padding: '16px 18px', color: 'var(--text-2)', fontSize: '13px' }}>🎯 <strong style={{ color: 'var(--text-1)' }}>Needs Attention</strong> — ✓ You're all caught up. No replies owed, follow-ups due, or overdue outreach.</div>
+      </div>
+    );
+  }
+
+  const Section = ({ icon, title, count, color, children }) => (
+    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-1)' }}>{icon} {title}</span>
+        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--bg-base)', background: color, borderRadius: '999px', padding: '1px 7px' }}>{count}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>{children}</div>
+    </div>
+  );
+
+  return (
+    <div className="panel" style={{ marginBottom: '16px' }}>
+      <div className="panel-header"><h3>🎯 Needs Attention</h3><span className="pill" style={{ background: 'var(--bg-hover)', color: 'var(--text-2)' }}>{total} item{total === 1 ? '' : 's'}</span></div>
+      <div style={{ padding: '14px 16px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+        {oweReply.length > 0 && (
+          <Section icon="↩️" title="Owe a reply" count={oweReply.length} color="var(--yellow)">
+            {oweReply.slice(0, 5).map(c => (
+              <div key={c.id} onClick={() => setView('contacts')} style={{ cursor: 'pointer', fontSize: '12px', display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 6px', borderRadius: '5px', background: 'var(--bg-base)' }}>
+                <span style={{ color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                <span style={{ color: 'var(--yellow)', fontSize: '10px', whiteSpace: 'nowrap' }}>wrote {relAge(c.last_inbound_at)}</span>
+              </div>
+            ))}
+            {oweReply.length > 5 && <div onClick={() => setView('contacts')} style={{ cursor: 'pointer', fontSize: '10px', color: 'var(--text-3)' }}>+ {oweReply.length - 5} more →</div>}
+          </Section>
+        )}
+        {dueTasks.length > 0 && (
+          <Section icon="📅" title="Follow-ups due" count={dueTasks.length} color="var(--red)">
+            {dueTasks.slice(0, 5).map(t => {
+              const dl = dueLabel(t.due_date); const cn = t.contact_id ? contactName(t.contact_id) : null;
+              return (
+                <div key={t.id} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '7px', padding: '4px 6px', borderRadius: '5px', background: 'var(--bg-base)' }}>
+                  <button onClick={() => completeTask(t)} title="Mark done" style={{ width: '15px', height: '15px', borderRadius: '4px', border: `1.5px solid ${dl.col}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, padding: 0 }} />
+                  <span style={{ flex: 1, minWidth: 0, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}{cn ? <span style={{ color: 'var(--text-3)' }}> · {cn}</span> : null}</span>
+                  <span style={{ color: dl.col, fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap' }}>{dl.txt}</span>
+                </div>
+              );
+            })}
+            {dueTasks.length > 5 && <div onClick={() => setView('tasks')} style={{ cursor: 'pointer', fontSize: '10px', color: 'var(--text-3)' }}>+ {dueTasks.length - 5} more →</div>}
+          </Section>
+        )}
+        {outreach.length > 0 && (
+          <Section icon="🕑" title="Overdue for outreach" count={outreach.length} color="var(--accent)">
+            {outreach.slice(0, 5).map(c => (
+              <div key={c.id} onClick={() => setView('contacts')} style={{ cursor: 'pointer', fontSize: '12px', display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 6px', borderRadius: '5px', background: 'var(--bg-base)' }}>
+                <span style={{ color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                <span style={{ color: 'var(--text-3)', fontSize: '10px', whiteSpace: 'nowrap' }}>{c.cadence_days}d · {relAge(lastTouch(c))}</span>
+              </div>
+            ))}
+            {outreach.length > 5 && <div onClick={() => setView('contacts')} style={{ cursor: 'pointer', fontSize: '10px', color: 'var(--text-3)' }}>+ {outreach.length - 5} more →</div>}
+          </Section>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [] }) {
   const [editTask, setEditTask] = useState(null);
 
@@ -5512,6 +5618,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         <div className="stat-card"><div className="stat-label">Done Today</div><div className="stat-value" style={{color:'var(--green)'}}>{tasks.filter(t=>t.completed&&t.updated_at&&new Date(t.updated_at).toDateString()===today.toDateString()).length}</div></div>
         <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{color:overdue.length>0?'var(--red)':'var(--text-1)'}}>{overdue.length}</div></div>
       </div>
+      <NeedsAttention contacts={contacts} tasks={tasks} setTasks={setTasks} setView={setView} />
       <div className="dash-grid">
         <div className="panel">
           <div className="panel-header"><h3>🔥 Top Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
