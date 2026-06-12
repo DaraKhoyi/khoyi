@@ -7612,8 +7612,28 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
 
         {/* ========== COMMUNICATION PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px',gap:'8px',flexWrap:'wrap'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>📡 Communication &amp; Activity</div>
+            <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+              <span style={{fontSize:'10px',color:'var(--text-3)'}}>Keep in touch every</span>
+              <select className="form-select" value={contact.cadence_days || ''}
+                onChange={async (e) => {
+                  const val = e.target.value ? Number(e.target.value) : null;
+                  await supabase.from('contacts').update({ cadence_days: val }).eq('id', contact.id);
+                  contact.cadence_days = val;
+                  if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, cadence_days: val } : c));
+                }}
+                style={{margin:0,padding:'3px 6px',fontSize:'11px',width:'auto'}}>
+                <option value="">Off</option>
+                <option value="7">Weekly</option>
+                <option value="14">2 weeks</option>
+                <option value="30">Monthly</option>
+                <option value="60">2 months</option>
+                <option value="90">Quarterly</option>
+                <option value="180">6 months</option>
+                <option value="365">Yearly</option>
+              </select>
+            </div>
           </div>
           {(lastIn || lastOut) && (
             <div style={{display:'flex',gap:'12px',flexWrap:'wrap',marginBottom:'8px'}}>
@@ -11963,7 +11983,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   const [editContact, setEditContact] = useState(null);
   const [detailContact, setDetailContact] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added'
+  const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added' | 'cadence_due'
+  const [dueOnly, setDueOnly] = useState(false);
   const [search, setSearch] = useState('');
   // Search input collapses into a header icon; open it on demand.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -12117,9 +12138,30 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
     const ts = c.last_contact_at || c.updated_at || c.created_at || null;
     return ts ? new Date(ts).getTime() : 0;
   }
+  function lastTouchTs(c) {
+    const cands = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime());
+    return cands.length ? Math.max(...cands) : null;
+  }
+  function daysSinceTouch(c) { const t = lastTouchTs(c); return t === null ? null : Math.floor((Date.now() - t) / 86400000); }
+  function cadenceDue(c) {
+    const cad = c.cadence_days; if (!cad) return null;
+    const ds = daysSinceTouch(c);
+    return { due: ds === null ? true : ds >= cad, overdueBy: ds === null ? null : ds - cad, daysSince: ds, cadence: cad };
+  }
+  function relDaysShort(days) {
+    if (days === null || days === undefined) return 'never';
+    if (days === 0) return 'today';
+    if (days === 1) return '1d';
+    if (days < 7) return days + 'd';
+    if (days < 30) return Math.floor(days / 7) + 'w';
+    if (days < 365) return Math.floor(days / 30) + 'mo';
+    return Math.floor(days / 365) + 'y';
+  }
+  const dueForOutreachCount = contacts.filter(c => { const s = cadenceDue(c); return s && s.due; }).length;
 
   const filtered = contacts.filter(c => {
     if (typeFilter !== 'all' && c.type !== typeFilter) return false;
+    if (dueOnly) { const s = cadenceDue(c); if (!s || !s.due) return false; }
     if (search.trim()) {
       const q = search.toLowerCase();
       return (c.name||'').toLowerCase().includes(q) ||
@@ -12150,6 +12192,13 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       const ta = new Date(a.created_at || 0).getTime();
       const tb = new Date(b.created_at || 0).getTime();
       return tb - ta;
+    }
+    if (sortBy === 'cadence_due') {
+      const sa = cadenceDue(a), sb = cadenceDue(b);
+      const ra = sa && sa.due ? (sa.overdueBy === null ? 1e9 : sa.overdueBy) : -1e9;
+      const rb = sb && sb.due ? (sb.overdueBy === null ? 1e9 : sb.overdueBy) : -1e9;
+      if (ra !== rb) return rb - ra; // most overdue first
+      return lastContactKey(a) - lastContactKey(b);
     }
     return 0;
   });
@@ -12294,10 +12343,20 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                 <option value="first_name">First name</option>
                 <option value="last_contact_oldest">Last contact (oldest first) — overdue for reach-out</option>
                 <option value="last_contact_newest">Last contact (newest first)</option>
+                <option value="cadence_due">Due for outreach (most overdue)</option>
                 <option value="recently_added">Recently added</option>
               </select>
             </div>
           </div>
+          {dueForOutreachCount > 0 && (
+            <div style={{marginTop:'8px'}}>
+              <button onClick={()=>setDueOnly(v=>!v)}
+                style={{display:'inline-flex',alignItems:'center',gap:'6px',padding:'4px 10px',borderRadius:'999px',fontSize:'11px',fontWeight:600,cursor:'pointer',
+                  border:`1px solid ${dueOnly?'var(--red)':'var(--border)'}`, background: dueOnly?'rgba(239,68,68,0.12)':'transparent', color: dueOnly?'var(--red)':'var(--text-2)'}}>
+                ⚠ Due for outreach ({dueForOutreachCount}){dueOnly?' · showing' : ''}
+              </button>
+            </div>
+          )}
         </div>
         <div className="panel-body">
           {sorted.length === 0
@@ -12312,6 +12371,12 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                         <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
                           {c.name}
                           <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)'}}>{CONTACT_TYPE_LABELS[c.type] || c.type}</span>
+                          {(() => {
+                            const s = cadenceDue(c);
+                            if (s && s.due) return <span className="pill" title={`Reach-out cadence: every ${c.cadence_days}d · last touch ${relDaysShort(s.daysSince)} ago`} style={{fontSize:'10px',padding:'2px 7px',fontWeight:700,background:'var(--red)',color:'#fff'}}>⚠ reach out</span>;
+                            if (c.cadence_days) return <span title={`On a ${c.cadence_days}-day cadence · last touch ${relDaysShort(daysSinceTouch(c))} ago`} style={{fontSize:'10px',color:'var(--text-3)'}}>🕑 {relDaysShort(daysSinceTouch(c))}</span>;
+                            return null;
+                          })()}
                           {p?.primary_letter && (
                             <span title={`DISC ${p.primary_letter}${p.secondary_letter ? '/' + p.secondary_letter : ''} · ${p.confidence_pct || 0}% confidence · ${p.analysis_status || 'ready'}`}
                               className="pill"
