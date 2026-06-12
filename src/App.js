@@ -9511,6 +9511,19 @@ function MultiValueField({ values, onChange, kind, addLabel }) {
                 border:'1px solid var(--border)',borderRadius:'6px',
                 padding:'7px 9px',fontSize:'12.5px',outline:'none',
               }}/>
+            {(v.value || '').trim() && (() => {
+              const actBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0, padding:'4px 9px', cursor:'pointer', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', borderRadius:'6px', color:'var(--accent)', fontSize:'13px', lineHeight:1, textDecoration:'none' };
+              if (kind === 'email') {
+                return <a href={`mailto:${v.value.trim()}`} title="Send email" style={actBtn}>✉️</a>;
+              }
+              const tel = (v.value || '').replace(/[^\d+]/g, '');
+              return (
+                <>
+                  <a href={`tel:${tel}`} title="Call" style={actBtn}>📞</a>
+                  <a href={`sms:${tel}`} title="Text" style={actBtn}>💬</a>
+                </>
+              );
+            })()}
             <button type="button" onClick={() => setDefault(i)}
               title={v.is_default ? 'Default — used for quick actions' : 'Make this the default'}
               aria-pressed={v.is_default}
@@ -12696,7 +12709,18 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                           )}
                         </div>
                         {(c.company || c.role) && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>{[c.role,c.company].filter(Boolean).join(' · ')}</div>}
-                        {(c.email || c.phone) && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>{[c.email,c.phone].filter(Boolean).join(' · ')}</div>}
+                        {(c.email || c.phone) && (() => {
+                          const tel = (c.phone || '').replace(/[^\d+]/g, '');
+                          const chip = { display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px', borderRadius:'999px', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', color:'var(--text-1)', fontSize:'11.5px', textDecoration:'none', lineHeight:1.4 };
+                          const iconBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', width:'34px', height:'30px', borderRadius:'999px', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', color:'var(--accent)', fontSize:'13px', textDecoration:'none' };
+                          return (
+                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}}>
+                              {c.phone && <a href={`tel:${tel}`} onClick={e=>e.stopPropagation()} title="Call" style={chip}><span style={{color:'var(--accent)'}}>📞</span>{c.phone}</a>}
+                              {c.phone && <a href={`sms:${tel}`} onClick={e=>e.stopPropagation()} title="Text" style={iconBtn}>💬</a>}
+                              {c.email && <a href={`mailto:${c.email}`} onClick={e=>e.stopPropagation()} title="Email" style={{...chip, maxWidth:'100%', overflow:'hidden'}}><span style={{color:'var(--accent)'}}>✉️</span><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email}</span></a>}
+                            </div>
+                          );
+                        })()}
                         {(() => {
                           // Subtle communication state line
                           if (!c.last_inbound_at && !c.last_outbound_at) return null;
