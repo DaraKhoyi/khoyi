@@ -16448,15 +16448,30 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
+  // Week bounds (Mon–Sun) — tasks accumulate across the whole week, not per day.
+  const { mondayYmd, sundayYmd } = (() => {
+    const n = new Date(); const dow = (n.getDay() + 6) % 7;
+    const mon = new Date(n); mon.setDate(n.getDate() - dow); mon.setHours(0, 0, 0, 0);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return { mondayYmd: mon.toISOString().slice(0, 10), sundayYmd: sun.toISOString().slice(0, 10) };
+  })();
+
   const todaysTasks = [];
   systems.forEach(sys => {
     if (sys.is_overhead) return;
     (Array.isArray(sys.daily_tasks) ? sys.daily_tasks : []).forEach(t => {
-      const completion = completions.find(c => c.system_id === sys.id && c.task_id === t.id && c.date === today);
+      const todayRow = completions.find(c => c.system_id === sys.id && c.task_id === t.id && c.date === today);
+      const weeklyTarget = Math.max(1, Number(t.weekly_target || t.daily_target || 1));
+      const weeklyCount = completions
+        .filter(c => c.system_id === sys.id && c.task_id === t.id && c.date >= mondayYmd && c.date <= sundayYmd)
+        .reduce((s, c) => s + (c.count_done || 0), 0);
       todaysTasks.push({
         systemId: sys.id, systemName: sys.name, systemColor: sys.color,
-        taskId: t.id, desc: t.desc, target: t.daily_target || 1,
-        count_done: completion?.count_done || 0, completionId: completion?.id || null,
+        taskId: t.id, desc: t.desc,
+        dailyTarget: t.daily_target || 1,
+        weeklyTarget, weeklyCount,
+        todayCount: todayRow?.count_done || 0,
+        completionId: todayRow?.id || null,
       });
     });
   });
@@ -16468,7 +16483,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
     if (items.length) taskGroups.push({ id: sys.id, name: sys.name, color: sys.color, items });
   });
   const tasksTotal = todaysTasks.length;
-  const tasksDone = todaysTasks.filter(t => t.count_done >= t.target).length;
+  const tasksDone = todaysTasks.filter(t => t.weeklyCount >= t.weeklyTarget).length;
   const pct = tasksTotal ? tasksDone / tasksTotal : 0;
   const isPerfect = tasksTotal > 0 && tasksDone === tasksTotal;
 
@@ -16508,7 +16523,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
 
   // Earned badges
   const badges = [];
-  if (isPerfect) badges.push({ icon: '💯', label: 'Perfect day' });
+  if (isPerfect) badges.push({ icon: '💯', label: 'Perfect week' });
   if (streak >= 3) badges.push({ icon: '🔥', label: `${streak}-day streak` });
   if (streak >= 7) badges.push({ icon: '⚡', label: 'On fire' });
   if (streak >= 30) badges.push({ icon: '🏆', label: 'Unstoppable' });
@@ -16522,22 +16537,31 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
     : pct > 0 ? "Good start. Stack the next one."
     : "Let's build today. One call at a time.";
 
-  async function toggleTaskCompletion(task) {
+  async function bumpTask(task, dir) {
     if (readOnly) return;
-    const becomingDone = !(task.count_done >= task.target);
-    const newCount = becomingDone ? task.target : 0;
-    pVibrate(becomingDone ? 18 : 8);
+    const newToday = Math.max(0, task.todayCount + dir);
+    const willComplete = dir > 0 && (task.weeklyCount + 1 >= task.weeklyTarget) && !(task.weeklyCount >= task.weeklyTarget);
+    pVibrate(willComplete ? [0, 30, 30, 60] : dir > 0 ? 16 : 8);
     if (task.completionId) {
-      await supabase.from('prospecting_completions').update({ count_done: newCount, completed_at: new Date().toISOString() }).eq('id', task.completionId);
-      setCompletions(prev => prev.map(c => c.id === task.completionId ? { ...c, count_done: newCount } : c));
-    } else {
+      await supabase.from('prospecting_completions').update({ count_done: newToday, completed_at: new Date().toISOString() }).eq('id', task.completionId);
+      setCompletions(prev => prev.map(c => c.id === task.completionId ? { ...c, count_done: newToday } : c));
+    } else if (dir > 0) {
       const { data } = await supabase.from('prospecting_completions').insert({
-        user_id: userId, system_id: task.systemId, task_id: task.taskId, date: today, count_done: newCount, target: task.target,
+        user_id: userId, system_id: task.systemId, task_id: task.taskId, date: today, count_done: newToday, target: task.dailyTarget,
       }).select().single();
       if (data) setCompletions(prev => [data, ...prev]);
     }
-    if (setLifetimeDone) setLifetimeDone(n => Math.max(0, (n || 0) + (becomingDone ? 1 : -1)));
+    if (setLifetimeDone) setLifetimeDone(n => Math.max(0, (n || 0) + dir));
     await maybeUpdateStreak();
+  }
+
+  // One tap = one rep toward the weekly target. When complete, a tap undoes
+  // today's most recent rep (can't unwind reps logged on earlier days here).
+  function onTaskTap(task) {
+    if (readOnly) return;
+    const done = task.weeklyCount >= task.weeklyTarget;
+    if (!done) bumpTask(task, +1);
+    else if (task.todayCount > 0) bumpTask(task, -1);
   }
 
   // Celebrate the moment the board flips to 100%
@@ -16687,7 +16711,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
               const loggedMin = todayMinsBySystem[group.id] || 0;
               const liveMin = loggedMin + (isRunning ? runningMs / 60000 : 0);
               const timeValue = (liveMin / 60) * hourlyRate;
-              const gDone = group.items.filter(t => t.count_done >= t.target).length;
+              const gDone = group.items.filter(t => t.weeklyCount >= t.weeklyTarget).length;
               return (
                 <div key={group.id} style={{ background: 'var(--bg-base)', borderRadius: '12px', border: `1px solid ${isRunning ? group.color : 'var(--border)'}`, overflow: 'hidden', boxShadow: isRunning ? `0 0 0 1px ${group.color}55` : 'none' }}>
                   {/* System header + timer */}
@@ -16720,19 +16744,35 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
                   {/* Tasks */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px' }}>
                     {group.items.map(t => {
-                      const done = t.count_done >= t.target;
+                      const done = t.weeklyCount >= t.weeklyTarget;
+                      const multi = t.weeklyTarget > 1;
+                      const pctW = Math.min(1, t.weeklyCount / t.weeklyTarget);
                       return (
-                        <button key={`${t.systemId}-${t.taskId}`} onClick={() => toggleTaskCompletion(t)} disabled={readOnly}
-                          style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '10px 11px',
+                        <button key={`${t.systemId}-${t.taskId}`} onClick={() => onTaskTap(t)} disabled={readOnly}
+                          style={{ display: 'flex', alignItems: multi ? 'flex-start' : 'center', gap: '11px', padding: '10px 11px', width: '100%',
                             background: done ? 'rgba(34,197,94,0.08)' : 'var(--bg-card)',
                             border: `1px solid ${done ? 'rgba(34,197,94,0.32)' : 'var(--border)'}`,
                             borderRadius: '9px', textAlign: 'left', cursor: readOnly ? 'default' : 'pointer', opacity: readOnly ? 0.7 : 1, transition: 'all 0.15s' }}>
-                          <div style={{ width: '22px', height: '22px', borderRadius: '6px', background: done ? 'var(--green)' : 'transparent', border: `2px solid ${done ? 'var(--green)' : 'var(--text-3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: '13px', fontWeight: 800 }}>{done ? '✓' : ''}</div>
+                          <div style={{ width: '22px', height: '22px', borderRadius: '6px', marginTop: multi ? '1px' : 0,
+                            background: done ? 'var(--green)' : (multi && t.weeklyCount > 0 ? 'rgba(197,169,94,0.15)' : 'transparent'),
+                            border: `2px solid ${done ? 'var(--green)' : (multi && t.weeklyCount > 0 ? 'var(--accent)' : 'var(--text-3)')}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: done ? '#fff' : 'var(--accent)', fontSize: '12px', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                            {done ? '✓' : (multi && t.weeklyCount > 0 ? t.weeklyCount : '')}
+                          </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: '13px', color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: done ? 'line-through' : 'none', fontWeight: 500, lineHeight: 1.35 }}>{t.desc}</div>
-                            {t.target > 1 && <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>target {t.target}</div>}
+                            {multi && (
+                              <div style={{ marginTop: '7px' }}>
+                                <div style={{ height: '5px', background: 'var(--bg-hover)', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${pctW * 100}%`, height: '100%', background: done ? 'var(--green)' : 'var(--accent)', borderRadius: '3px', transition: 'width 0.45s cubic-bezier(0.4,0,0.2,1)' }} />
+                                </div>
+                                <div style={{ fontSize: '9.5px', color: done ? 'var(--green)' : 'var(--text-3)', marginTop: '4px', fontWeight: 700, letterSpacing: '0.02em' }}>
+                                  {done ? '✓ Done this week' : `${t.weeklyCount} of ${t.weeklyTarget} this week`}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <span style={{ fontSize: '10px', color: done ? 'var(--green)' : 'var(--text-3)', fontWeight: 700, flexShrink: 0 }}>+{t.target * 10}</span>
+                          <span style={{ fontSize: '10px', color: done ? 'var(--green)' : 'var(--text-3)', fontWeight: 700, flexShrink: 0, marginTop: multi ? '1px' : 0 }}>+{t.weeklyTarget * 10}</span>
                         </button>
                       );
                     })}
