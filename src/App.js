@@ -16461,7 +16461,10 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
     if (sys.is_overhead) return;
     (Array.isArray(sys.daily_tasks) ? sys.daily_tasks : []).forEach(t => {
       const todayRow = completions.find(c => c.system_id === sys.id && c.task_id === t.id && c.date === today);
-      const weeklyTarget = Math.max(1, Number(t.weekly_target || t.daily_target || 1));
+      // The "(N×/wk)" in the description is the reliable source of the weekly
+      // target — the stored weekly_target is null and daily_target is inconsistent.
+      const freqMatch = String(t.desc || '').match(/\((\d+)\s*[×x]\s*\/\s*wk\)/i);
+      const weeklyTarget = Math.max(1, freqMatch ? parseInt(freqMatch[1], 10) : (Number(t.weekly_target) || Number(t.daily_target) || 1));
       const weeklyCount = completions
         .filter(c => c.system_id === sys.id && c.task_id === t.id && c.date >= weekStartYmd && c.date <= weekEndYmd)
         .reduce((s, c) => s + (c.count_done || 0), 0);
@@ -16745,7 +16748,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px' }}>
                     {group.items.map(t => {
                       const done = t.weeklyCount >= t.weeklyTarget;
-                      const multi = t.weeklyTarget > 1;
+                      const multi = true; // always show a progress line for consistency
                       const pctW = Math.min(1, t.weeklyCount / t.weeklyTarget);
                       return (
                         <button key={`${t.systemId}-${t.taskId}`} onClick={() => onTaskTap(t)} disabled={readOnly}
