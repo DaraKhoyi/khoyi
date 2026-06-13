@@ -2791,9 +2791,9 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onMoveTask, showR
     <div style={{
       display:'grid',
       gridTemplateColumns:'1fr 1fr',
-      gridTemplateRows:'1fr 1fr',
+      gridTemplateRows:'auto auto',
+      alignItems:'start',
       gap:'8px',
-      minHeight:'320px',
     }}>
       {quads.map(q => (
         <MatrixQuadrant key={q}
@@ -26323,7 +26323,7 @@ export default function App() {
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
               : view==='prospecting' ? <ProspectingView userId={user.id}/>
-              : view==='tasks'       ? <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
+              : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
