@@ -16448,12 +16448,12 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
-  // Week bounds (Mon–Sun) — tasks accumulate across the whole week, not per day.
-  const { mondayYmd, sundayYmd } = (() => {
-    const n = new Date(); const dow = (n.getDay() + 6) % 7;
-    const mon = new Date(n); mon.setDate(n.getDate() - dow); mon.setHours(0, 0, 0, 0);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    return { mondayYmd: mon.toISOString().slice(0, 10), sundayYmd: sun.toISOString().slice(0, 10) };
+  // Week bounds (Sun–Sat) — tasks accumulate across the whole week, not per day.
+  const { weekStartYmd, weekEndYmd } = (() => {
+    const n = new Date(); const dow = n.getDay(); // 0=Sun … 6=Sat
+    const start = new Date(n); start.setDate(n.getDate() - dow); start.setHours(0, 0, 0, 0);
+    const end = new Date(start); end.setDate(start.getDate() + 6);
+    return { weekStartYmd: start.toISOString().slice(0, 10), weekEndYmd: end.toISOString().slice(0, 10) };
   })();
 
   const todaysTasks = [];
@@ -16463,7 +16463,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
       const todayRow = completions.find(c => c.system_id === sys.id && c.task_id === t.id && c.date === today);
       const weeklyTarget = Math.max(1, Number(t.weekly_target || t.daily_target || 1));
       const weeklyCount = completions
-        .filter(c => c.system_id === sys.id && c.task_id === t.id && c.date >= mondayYmd && c.date <= sundayYmd)
+        .filter(c => c.system_id === sys.id && c.task_id === t.id && c.date >= weekStartYmd && c.date <= weekEndYmd)
         .reduce((s, c) => s + (c.count_done || 0), 0);
       todaysTasks.push({
         systemId: sys.id, systemName: sys.name, systemColor: sys.color,
@@ -16500,13 +16500,13 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
 
   // This week day-dots (Mon→Sun): which days had ≥1 completion
   const weekDots = (() => {
-    const now = new Date(); const dow = (now.getDay() + 6) % 7; // 0=Mon
-    const monday = new Date(now); monday.setDate(now.getDate() - dow); monday.setHours(0, 0, 0, 0);
+    const now = new Date(); const dow = now.getDay(); // 0=Sun
+    const start = new Date(now); start.setDate(now.getDate() - dow); start.setHours(0, 0, 0, 0);
     const daysWith = new Set(last30.filter(c => (c.count_done || 0) >= 1).map(c => c.date));
     return Array.from({ length: 7 }).map((_, i) => {
-      const d = new Date(monday); d.setDate(monday.getDate() + i);
+      const d = new Date(start); d.setDate(start.getDate() + i);
       const ymd = d.toISOString().slice(0, 10);
-      return { label: ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i], hit: daysWith.has(ymd), isToday: ymd === today, future: d > now };
+      return { label: ['S', 'M', 'T', 'W', 'T', 'F', 'S'][i], hit: daysWith.has(ymd), isToday: ymd === today, future: d > now };
     });
   })();
 
@@ -16514,8 +16514,8 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
   const best = settings?.best_prospecting_streak || 0;
 
   // Weekly hours invested vs the hours/week the agent committed in Blueprint
-  const weekStartMonday = (() => { const n = new Date(); const dow = (n.getDay() + 6) % 7; const m = new Date(n); m.setDate(n.getDate() - dow); m.setHours(0, 0, 0, 0); return m; })();
-  const weeklyMin = timeEntries.filter(te => new Date(te.occurred_at) >= weekStartMonday).reduce((s, te) => s + Number(te.minutes || 0), 0) + (activeSystemId ? runningMs / 60000 : 0);
+  const weekStartSunday = (() => { const n = new Date(); const dow = n.getDay(); const m = new Date(n); m.setDate(n.getDate() - dow); m.setHours(0, 0, 0, 0); return m; })();
+  const weeklyMin = timeEntries.filter(te => new Date(te.occurred_at) >= weekStartSunday).reduce((s, te) => s + Number(te.minutes || 0), 0) + (activeSystemId ? runningMs / 60000 : 0);
   const weeklyHours = weeklyMin / 60;
   const weeklyTarget = Number(settings?.prospecting_hours_per_week) || 0;
   const weeklyPct = weeklyTarget > 0 ? Math.min(1, weeklyHours / weeklyTarget) : 0;
