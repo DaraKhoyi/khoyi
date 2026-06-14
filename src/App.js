@@ -20826,8 +20826,8 @@ function TemplateActivateModal({ userId, template, onClose, onActivated }) {
 
         <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn btn-primary" onClick={handleActivate} disabled={saving}>
-            {saving ? 'Activating…' : `✓ Activate "${template.name}"`}
+          <button type="button" className="btn btn-primary" onClick={handleActivate} disabled={saving} style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+            {saving ? 'Activating…' : '✓ Activate System'}
           </button>
         </div>
       </div>
