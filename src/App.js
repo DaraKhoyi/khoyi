@@ -16985,7 +16985,7 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
       <div className="panel" style={{ padding: '24px', textAlign: 'center' }}>
         <div style={{ fontSize: '32px', marginBottom: '8px' }}>🏆</div>
         <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: '0 0 12px' }}>No active systems to measure yet. Activate a system, log some time and expenses, and your ROI scoreboard fills in here.</p>
-        <button className="btn btn-primary btn-sm" onClick={onGoSystems}>🎯 Go to My Systems</button>
+        <button className="btn btn-primary btn-sm" onClick={onGoSystems}>🎯 Go to Manage</button>
       </div>
     );
   }
@@ -17091,6 +17091,7 @@ function ProspectingView({ userId }) {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState(null);
   const [systems, setSystems] = useState([]);
+  const [archivedSystems, setArchivedSystems] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -17102,16 +17103,17 @@ function ProspectingView({ userId }) {
     setLoading(true);
     const last30 = new Date(); last30.setDate(last30.getDate() - 30);
     const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
-    const [s, sys, comp, tmpl, tx, te, life] = await Promise.all([
+    const [s, sys, arch, comp, tmpl, tx, te, life] = await Promise.all([
       supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
-      supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_active', true).order('is_overhead', { ascending: false }).order('name'),
+      supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_archived', false).order('is_overhead', { ascending: false }).order('name'),
+      supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_archived', true).order('archived_at', { ascending: false }),
       supabase.from('prospecting_completions').select('*').eq('user_id', userId).gte('date', last30.toISOString().slice(0, 10)).order('date', { ascending: false }),
       supabase.from('lead_gen_system_templates').select('*').order('system_number'),
       supabase.from('transactions').select('*').eq('user_id', userId).eq('is_archived', false).gte('date', yearStart).order('date', { ascending: false }).limit(500),
       supabase.from('time_entries').select('*').eq('user_id', userId).gte('occurred_at', yearStart),
       supabase.from('prospecting_completions').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('count_done', 1),
     ]);
-    setSettings(s.data); setSystems(sys.data || []); setCompletions(comp.data || []);
+    setSettings(s.data); setSystems(sys.data || []); setArchivedSystems(arch.data || []); setCompletions(comp.data || []);
     setTemplates(tmpl.data || []); setTransactions(tx.data || []); setTimeEntries(te.data || []);
     setLifetimeDone(life.count || 0);
     setLoading(false);
@@ -17122,7 +17124,7 @@ function ProspectingView({ userId }) {
   const readOnly = userMode === 'partner';
   const isCoach = userMode === 'coach';
   const maxSystems = settings?.max_systems_allowed || 5;
-  const activeNonOverhead = systems.filter(s => !s.is_overhead);
+  const activeNonOverhead = systems.filter(s => !s.is_overhead && s.is_active);
   const activeNames = new Set(activeNonOverhead.map(s => s.name.toLowerCase()));
   const atCap = activeNonOverhead.length >= maxSystems && !isCoach;
   const streak = settings?.current_prospecting_streak || 0;
@@ -17131,9 +17133,9 @@ function ProspectingView({ userId }) {
 
   const TABS = [
     { id: 'today', label: 'Today', icon: '⚡' },
-    { id: 'systems', label: 'My Systems', icon: '🎯' },
     { id: 'roi', label: 'ROI', icon: '🏆' },
     { id: 'library', label: 'Library', icon: '📚' },
+    { id: 'systems', label: 'Manage', icon: '🎯' },
   ];
 
   return (
@@ -17159,13 +17161,13 @@ function ProspectingView({ userId }) {
 
       {sub === 'today' && (
         <ProspectingToday userId={userId} settings={settings} setSettings={setSettings}
-          systems={systems} completions={completions} setCompletions={setCompletions}
+          systems={systems.filter(s => s.is_active)} completions={completions} setCompletions={setCompletions}
           timeEntries={timeEntries} setTimeEntries={setTimeEntries}
           readOnly={readOnly} lifetimeDone={lifetimeDone} setLifetimeDone={setLifetimeDone}
           onGoSystems={() => setSub('systems')} onGoLibrary={() => setSub('library')} onGoRoi={() => setSub('roi')} />
       )}
       {sub === 'systems' && (
-        <FinanceSystems userId={userId} systems={systems} reload={loadAll}
+        <FinanceSystems userId={userId} systems={systems} archivedSystems={archivedSystems} reload={loadAll}
           transactions={transactions} completions={completions} timeEntries={timeEntries}
           templates={templates} settings={settings} readOnly={readOnly} isCoach={isCoach} maxSystems={maxSystems} />
       )}
@@ -20150,36 +20152,51 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
 }
 
 // ─── FinanceSystems ─────────────────────────────────────────────────
-function FinanceSystems({ userId, systems, reload, transactions, completions, timeEntries, templates, settings, readOnly, isCoach, maxSystems }) {
+function FinanceSystems({ userId, systems, archivedSystems = [], reload, transactions, completions, timeEntries, templates, settings, readOnly, isCoach, maxSystems }) {
   const [showModal, setShowModal] = useState(false);
   const [editSystem, setEditSystem] = useState(null);
   const [showTimeModal, setShowTimeModal] = useState(null);  // system object or null
   const [showLibrary, setShowLibrary] = useState(false);
   const [activatingTemplate, setActivatingTemplate] = useState(null);
-  const activeNonOverhead = systems.filter(s => !s.is_overhead);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const activeNonOverhead = systems.filter(s => !s.is_overhead && s.is_active);
   const atCap = activeNonOverhead.length >= maxSystems && !isCoach;
 
   // Names of currently-active systems so we can mark templates already activated
   const activeNames = new Set(activeNonOverhead.map(s => s.name.toLowerCase()));
 
-  // Soft-deactivate a system from the card-level icon. Same logic as SystemModal's
-  // handleDelete: any transactions still attributed to this system move to
-  // Overhead so the ledger doesn't get orphans, then is_active flips false.
-  async function deactivateSystem(sys) {
+  // Pause / resume — reversible, keeps everything attributed. A paused system
+  // stays in this list (greyed) but its tasks drop off the Today board.
+  async function toggleActive(sys) {
     if (sys.is_overhead) return;
-    if (!window.confirm(`Deactivate "${sys.name}"?\n\nTransactions attributed to it will move to Overhead. You can reactivate from the System Library later by activating the same template again.`)) return;
-    const { data: overhead } = await supabase
-      .from('lead_gen_systems').select('id')
-      .eq('user_id', userId).eq('is_overhead', true).maybeSingle();
-    if (overhead) {
-      await supabase.from('transactions')
-        .update({ lead_gen_system_id: overhead.id })
-        .eq('lead_gen_system_id', sys.id);
-    }
+    const next = !sys.is_active;
     await supabase.from('lead_gen_systems')
-      .update({ is_active: false, deactivated_at: new Date().toISOString() })
+      .update({ is_active: next, deactivated_at: next ? null : new Date().toISOString() })
       .eq('id', sys.id);
-    if (window.__notify) window.__notify(`Deactivated "${sys.name}"`, 'success');
+    if (window.__notify) window.__notify(next ? `Resumed "${sys.name}"` : `Paused "${sys.name}" — its tasks won't show on Today`, 'success');
+    reload();
+  }
+
+  // Archive — soft remove. Moves the system to the Archived section and off
+  // Today, but every logged time entry, expense, and income record stays saved
+  // and keeps counting in the books. Fully restorable. Never a hard delete.
+  async function archiveSystem(sys) {
+    if (sys.is_overhead) return;
+    if (!window.confirm(`Archive "${sys.name}"?\n\nIt moves to the Archived section and stops showing on Today. All logged time, expenses, and income stay saved and keep counting in your books — nothing is deleted. You can restore it anytime.`)) return;
+    await supabase.from('lead_gen_systems')
+      .update({ is_archived: true, is_active: false, archived_at: new Date().toISOString() })
+      .eq('id', sys.id);
+    if (window.__notify) window.__notify(`Archived "${sys.name}" — data retained`, 'success');
+    setOpenMenuId(null);
+    reload();
+  }
+
+  async function restoreSystem(sys) {
+    await supabase.from('lead_gen_systems')
+      .update({ is_archived: false, is_active: true, archived_at: null })
+      .eq('id', sys.id);
+    if (window.__notify) window.__notify(`Restored "${sys.name}"`, 'success');
     reload();
   }
 
@@ -20213,10 +20230,11 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+      {openMenuId && <div onClick={() => setOpenMenuId(null)} style={{position:'fixed',inset:0,zIndex:15}} />}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
         <div>
           <p style={{fontSize:'12px',color:'var(--text-2)',margin:0,lineHeight:1.5}}>
-            Your active lead-generation systems · {activeNonOverhead.length} / {maxSystems}{isCoach && ' (coach: unlimited)'}
+            Manage your lead-generation systems · {activeNonOverhead.length} / {maxSystems} active{isCoach && ' (coach: unlimited)'}
           </p>
         </div>
         {!readOnly && (
@@ -20252,22 +20270,37 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
         const stats = statsForSystem(sys);
         const status = statusFor(stats, sys);
         const dailyTasks = Array.isArray(sys.daily_tasks) ? sys.daily_tasks : [];
+        const paused = !sys.is_overhead && !sys.is_active;
         return (
-          <div key={sys.id} className="panel" style={{padding:'14px'}}>
+          <div key={sys.id} className="panel" style={{padding:'14px', opacity: paused ? 0.62 : 1, transition:'opacity 0.2s'}}>
             <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px',flexWrap:'wrap'}}>
               <span style={{display:'inline-block',width:'12px',height:'12px',borderRadius:'3px',background:sys.color,flexShrink:0}}/>
               <strong style={{color:'var(--text-1)',fontSize:'14px',flex:1,minWidth:0}}>{sys.name}</strong>
               {sys.is_overhead && <span style={{fontSize:'9px',color:'var(--text-3)',padding:'2px 6px',background:'var(--bg-hover)',borderRadius:'3px',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>Default</span>}
-              {status && <span style={{fontSize:'11px',color:status.color,fontWeight:700}}>{status.label}</span>}
+              {paused && <span style={{fontSize:'9px',color:'#f59e0b',padding:'2px 6px',background:'rgba(245,158,11,0.12)',borderRadius:'3px',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>Paused</span>}
+              {status && !paused && <span style={{fontSize:'11px',color:status.color,fontWeight:700}}>{status.label}</span>}
               {!sys.is_overhead && !readOnly && (
                 <>
-                  <button onClick={() => setShowTimeModal(sys)}
-                    style={{background:'var(--bg-hover)',border:'1px solid var(--border)',padding:'4px 10px',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>⏱ Log time</button>
+                  <button onClick={() => toggleActive(sys)} role="switch" aria-checked={sys.is_active}
+                    title={sys.is_active ? 'Active — tap to pause' : 'Paused — tap to resume'}
+                    style={{width:'40px',height:'22px',borderRadius:'999px',border:'none',padding:0,position:'relative',flexShrink:0,cursor:'pointer',background: sys.is_active ? 'var(--green)' : 'var(--bg-hover)',transition:'background 0.2s'}}>
+                    <span style={{position:'absolute',top:'2px',left: sys.is_active ? '20px' : '2px',width:'18px',height:'18px',borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 2px rgba(0,0,0,0.3)'}}/>
+                  </button>
                   <button onClick={() => { setEditSystem(sys); setShowModal(true); }}
                     style={{background:'transparent',border:'1px solid var(--border)',padding:'4px 10px',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>Edit</button>
-                  <button onClick={() => deactivateSystem(sys)}
-                    title="Deactivate system" aria-label={`Deactivate ${sys.name}`}
-                    style={{background:'transparent',border:'1px solid var(--border)',padding:'4px 8px',borderRadius:'6px',color:'var(--red)',cursor:'pointer',fontSize:'14px',lineHeight:1,fontWeight:700}}>⏏</button>
+                  <div style={{position:'relative'}}>
+                    <button onClick={() => setOpenMenuId(openMenuId === sys.id ? null : sys.id)}
+                      aria-label={`More actions for ${sys.name}`}
+                      style={{background:'transparent',border:'1px solid var(--border)',padding:'4px 9px',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'15px',lineHeight:1,fontWeight:700}}>⋯</button>
+                    {openMenuId === sys.id && (
+                      <div style={{position:'absolute',right:0,top:'calc(100% + 4px)',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',boxShadow:'0 6px 24px rgba(0,0,0,0.5)',zIndex:20,minWidth:'170px',overflow:'hidden'}}>
+                        <button onClick={() => { setOpenMenuId(null); setShowTimeModal(sys); }}
+                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',padding:'11px 13px',color:'var(--text-1)',cursor:'pointer',fontSize:'12px',fontWeight:600}}>⏱ Log time manually</button>
+                        <button onClick={() => archiveSystem(sys)}
+                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'11px 13px',color:'var(--text-2)',cursor:'pointer',fontSize:'12px',fontWeight:600}}>🗄 Archive system</button>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -20308,6 +20341,31 @@ function FinanceSystems({ userId, systems, reload, transactions, completions, ti
           </div>
         );
       })}
+
+      {archivedSystems.length > 0 && (
+        <div style={{marginTop:'4px'}}>
+          <button onClick={() => setShowArchived(v => !v)}
+            style={{display:'flex',alignItems:'center',gap:'8px',width:'100%',background:'transparent',border:'none',padding:'8px 2px',color:'var(--text-3)',cursor:'pointer',fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+            <span style={{transform: showArchived ? 'rotate(90deg)' : 'none', transition:'transform 0.15s'}}>▸</span>
+            🗄 Archived ({archivedSystems.length})
+          </button>
+          {showArchived && archivedSystems.map(sys => (
+            <div key={sys.id} className="panel" style={{padding:'12px',marginTop:'8px',opacity:0.78}}>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                <span style={{display:'inline-block',width:'12px',height:'12px',borderRadius:'3px',background:sys.color,flexShrink:0}}/>
+                <strong style={{color:'var(--text-1)',fontSize:'13px',flex:1,minWidth:0}}>{sys.name}</strong>
+                {!readOnly && (
+                  <button onClick={() => restoreSystem(sys)}
+                    style={{background:'transparent',border:'1px solid var(--accent)',padding:'4px 12px',borderRadius:'6px',color:'var(--accent)',cursor:'pointer',fontSize:'11px',fontWeight:700}}>↩ Restore</button>
+                )}
+              </div>
+              <p style={{fontSize:'10px',color:'var(--text-3)',margin:'7px 0 0',lineHeight:1.45}}>
+                Logged time, expenses, and income are retained and still counted in your books. Restore anytime to resume its tasks.
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {showModal && (
         <SystemModal
@@ -20502,10 +20560,8 @@ function SystemModal({ userId, initial, onClose, onSaved }) {
 
   async function handleDelete() {
     if (!initial || initial.is_overhead) return;
-    if (!window.confirm(`Delete "${initial.name}"? Transactions attributed to it will move to Overhead.`)) return;
-    const { data: overhead } = await supabase.from('lead_gen_systems').select('id').eq('user_id', userId).eq('is_overhead', true).maybeSingle();
-    if (overhead) await supabase.from('transactions').update({ lead_gen_system_id: overhead.id }).eq('lead_gen_system_id', initial.id);
-    await supabase.from('lead_gen_systems').update({ is_active: false, deactivated_at: new Date().toISOString() }).eq('id', initial.id);
+    if (!window.confirm(`Archive "${initial.name}"?\n\nIt moves to the Archived section and stops showing on Today. All logged time, expenses, and income stay saved and keep counting — nothing is deleted. You can restore it anytime.`)) return;
+    await supabase.from('lead_gen_systems').update({ is_archived: true, is_active: false, archived_at: new Date().toISOString() }).eq('id', initial.id);
     onSaved();
   }
 
@@ -20517,7 +20573,7 @@ function SystemModal({ userId, initial, onClose, onSaved }) {
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
           <h3 style={{margin:0}}>{initial ? 'Edit system' : 'Activate new system'}</h3>
           {initial && !initial.is_overhead && (
-            <button onClick={handleDelete} title="Delete (deactivate)" style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'18px',padding:'4px 8px'}}>🗑️</button>
+            <button onClick={handleDelete} title="Archive system (keeps all data)" style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'18px',padding:'4px 8px'}}>🗄</button>
           )}
         </div>
         <form onSubmit={handleSubmit}>
@@ -20628,7 +20684,7 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
             <h3 style={{margin:0,fontSize:'15px'}}>📚 Lead-Gen System Library</h3>
             {asPage
-              ? <button onClick={onClose} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',fontWeight:700,color:'var(--text-2)',cursor:'pointer',padding:'5px 10px'}}>← My Systems</button>
+              ? <button onClick={onClose} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',fontWeight:700,color:'var(--text-2)',cursor:'pointer',padding:'5px 10px'}}>← Manage</button>
               : <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>}
           </div>
           <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px'}}>
