@@ -26079,6 +26079,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
+  const [moreOpen, setMoreOpen] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [robots, setRobots] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -26364,6 +26365,14 @@ export default function App() {
   // Default is visible (per Q5=yes): only hide when explicitly set to false.
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
+  // Primary tabs (top to bottom) + collapsible "More" group.
+  const MAIN_ORDER = ['dashboard', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'notes', 'chat'];
+  const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'prism', 'systems', 'settings'];
+  const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
+  const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
+  const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
+  const moreNav = [...MORE_ORDER.map(id => byNavId[id]).filter(Boolean), ...NAV.filter(i => !usedIds.has(i.id))];
+  const viewInMore = moreNav.some(i => i.id === view);
 
   return (
     <div className="app-shell" style={{flexDirection:'column'}}>
@@ -26389,13 +26398,29 @@ export default function App() {
           </div>
           <div className="sidebar-nav">
             <div className="nav-section-label">Workspace</div>
-            {NAV.map(item => (
+            {mainNav.map(item => (
               <div key={item.id} className={`nav-item ${view===item.id?'active':''}`} onClick={()=>navigate(item.id)}>
                 <span className="icon">{item.icon}</span>
                 {item.label}
                 {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
               </div>
             ))}
+            {moreNav.length > 0 && (
+              <>
+                <div className={`nav-item ${viewInMore && !moreOpen ? 'active' : ''}`} onClick={()=>setMoreOpen(o=>!o)}>
+                  <span className="icon">⋯</span>
+                  More
+                  <span style={{marginLeft:'auto',fontSize:'11px',opacity:0.6,transition:'transform 0.2s',transform:(moreOpen||viewInMore)?'rotate(90deg)':'none'}}>▸</span>
+                </div>
+                {(moreOpen || viewInMore) && moreNav.map(item => (
+                  <div key={item.id} className={`nav-item ${view===item.id?'active':''}`} onClick={()=>navigate(item.id)} style={{paddingLeft:'30px',fontSize:'13px'}}>
+                    <span className="icon">{item.icon}</span>
+                    {item.label}
+                    {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
           <div className="sidebar-footer">
             <div className="sidebar-user">
