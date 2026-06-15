@@ -2115,7 +2115,7 @@ function HeaderSearchInput({ value, onChange, placeholder, onClose, autoFocus = 
 // ─────────────────────────────────────────────────────────────────────
 // TASKS VIEW — main component
 // ─────────────────────────────────────────────────────────────────────
-function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts, properties, events = [] }) {
+function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts, properties, events = [], focusTaskId, setFocusTaskId }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const viewMode = (taskViewMode === 'sequence' || taskViewMode === 'matrix') ? taskViewMode : 'sequence';
@@ -2183,6 +2183,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
 
   function openEdit(task) { setEditTask(task); setShowModal(true); }
   function openNew() { setEditTask(null); setShowModal(true); }
+  useEffect(() => { if (focusTaskId && tasks && tasks.length) { const t = tasks.find(x => x.id === focusTaskId); if (t) { openEdit(t); setFocusTaskId && setFocusTaskId(null); } } }, [focusTaskId, tasks]); // eslint-disable-line
 
   async function handleSave(data) {
     const { _contact_ids, _email, ...taskData } = data;
@@ -14352,7 +14353,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
   );
 }
 
-function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts, properties = [], tasks = [], setTasks }) {
+function CalendarView({ events, setEvents, userId, brain, contacts, emailAccounts, properties = [], tasks = [], setTasks, focusEventId, setFocusEventId }) {
   const today = new Date();
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [showModal, setShowModal] = useState(false);
@@ -14479,6 +14480,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   }, [events, cursor]);
 
   // Resolve a (possibly virtual) event to its real master row before editing.
+  useEffect(() => { if (focusEventId && events && events.length) { const ev = events.find(x => x.id === focusEventId); if (ev) { openEditEvent(ev); setFocusEventId && setFocusEventId(null); } } }, [focusEventId, events]); // eslint-disable-line
   function openEditEvent(ev) {
     const realId = ev._masterId || ev.id;
     const master = (events || []).find(e => e.id === realId) || ev;
@@ -25057,6 +25059,10 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [displayName, setDisplayName] = useState(user?.user_metadata?.display_name || user?.user_metadata?.full_name?.split(/\s+/)[0] || '');
   const [savingName, setSavingName] = useState(false);
   const [nameMsg, setNameMsg] = useState('');
+  const [briefEnabled, setBriefEnabled] = useState(false);
+  const [briefHour, setBriefHour] = useState(7);
+  const [briefMsg, setBriefMsg] = useState('');
+  const [savingBrief, setSavingBrief] = useState(false);
   const [prefMsg, setPrefMsg] = useState('');
   const [savingPref, setSavingPref] = useState(false);
 
@@ -25083,6 +25089,14 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
     }
   }, [userSettings]);
 
+  useEffect(() => { (async () => { try { const { data } = await supabase.from('ari_briefing_prefs').select('enabled,send_hour').eq('user_id', userId).maybeSingle(); if (data) { setBriefEnabled(!!data.enabled); setBriefHour(data.send_hour ?? 7); } } catch(e){} })(); }, []); // eslint-disable-line
+  async function saveBrief(nextEnabled, nextHour) {
+    setSavingBrief(true); setBriefMsg('');
+    const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'America/New_York';
+    const { error } = await supabase.from('ari_briefing_prefs').upsert({ user_id: userId, enabled: nextEnabled, send_hour: nextHour, tz, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    setSavingBrief(false);
+    setBriefMsg(error ? ('Error: ' + error.message) : 'Saved.');
+  }
   async function handleNameSave(e) {
     e.preventDefault(); setSavingName(true); setNameMsg('');
     const { error } = await supabase.auth.updateUser({ data: { display_name: displayName.trim() } });
@@ -25179,6 +25193,23 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
                 Sets the default for new tasks. You can still switch systems per-task in the task editor.
                 Eisenhower groups by quadrant (A=urgent+important, B=important, C=urgent, D=neither) and ranks within each.
               </p>
+            </div>
+          </div>
+        </div>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Ari Briefing Delivery</h3></div>
+          <div className="panel-body">
+            {briefMsg&&<div className={briefMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{briefMsg}</div>}
+            <label style={{display:'flex',alignItems:'center',gap:'10px',cursor:'pointer',marginBottom:'14px'}}>
+              <input type="checkbox" checked={briefEnabled} onChange={e=>{ setBriefEnabled(e.target.checked); saveBrief(e.target.checked, briefHour); }}/>
+              <span style={{fontSize:'14px',fontWeight:600}}>Email me my briefing every morning</span>
+            </label>
+            <div className="form-group" style={{opacity:briefEnabled?1:0.5}}>
+              <label className="form-label">Delivery time</label>
+              <select className="form-select" value={briefHour} disabled={!briefEnabled||savingBrief} onChange={e=>{ const h=parseInt(e.target.value,10); setBriefHour(h); saveBrief(briefEnabled,h); }}>
+                {[5,6,7,8,9,10,11].map(h=><option key={h} value={h}>{h}:00 AM</option>)}
+              </select>
+              <p style={{fontSize:'12px',color:'var(--text-2)',marginTop:'8px',lineHeight:1.5}}>Each morning at this time, Ari generates your briefing and emails it to your connected inbox &mdash; your reach-outs, tasks, and calendar in one note. Open the app to send the drafted replies. Uses your current time zone.</p>
             </div>
           </div>
         </div>
@@ -25936,7 +25967,7 @@ function EmailRepliesPanel() {
 // ─────────────────────────────────────────
 // ARI DAILY BRIEFING
 // ─────────────────────────────────────────
-function AriBriefingView({ userId, user, setView }) {
+function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
   const [err, setErr] = useState(null);
@@ -25949,6 +25980,7 @@ function AriBriefingView({ userId, user, setView }) {
   const [replyAll, setReplyAll] = useState({});
   const [rwBusy, setRwBusy] = useState({});
   const [prevMsg, setPrevMsg] = useState({});
+  const [speaking, setSpeaking] = useState(false);
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -26056,6 +26088,28 @@ function AriBriefingView({ userId, user, setView }) {
   const fmtDate = (d) => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{month:'short',day:'numeric'}); };
   const dueView = (d) => { if(!d) return {label:'',color:undefined}; if(d<today) return {label:'Overdue',color:'#ef4444'}; if(d===today) return {label:'Today',color:'var(--accent)'}; return {label:fmtDate(d),color:undefined}; };
   const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  const speakBriefing = () => {
+    try {
+      const synth = window.speechSynthesis;
+      if (!synth) { setErr('Voice playback isn\u2019t supported in this browser.'); return; }
+      if (speaking) { synth.cancel(); setSpeaking(false); return; }
+      const ro = (payload.reachouts||[]).filter(r=>r.status==='pending');
+      const parts = [`${greeting}${firstName?', '+firstName:''}.`];
+      if (briefing?.summary) parts.push(briefing.summary);
+      if (ro.length){ parts.push(`You have ${ro.length} ${ro.length===1?'person':'people'} to reach out to today.`); ro.slice(0,5).forEach((r,i)=>parts.push(`${i+1}. ${r.name}. ${r.reason}.`)); }
+      const nt=(payload.tasks||[]).length, ne=(payload.events||[]).length;
+      parts.push(`You have ${nt} task${nt===1?'':'s'} due and ${ne} event${ne===1?'':'s'} on your calendar.`);
+      parts.push('Let\u2019s make it count.');
+      const u = new SpeechSynthesisUtterance(parts.join(' '));
+      u.rate=1.0; u.pitch=1.0; u.lang='en-US';
+      const vs = synth.getVoices()||[];
+      const v = vs.find(x=>/en[-_]US/i.test(x.lang) && /samantha|female|google us/i.test(x.name)) || vs.find(x=>/^en/i.test(x.lang));
+      if (v) u.voice=v;
+      u.onend=()=>setSpeaking(false); u.onerror=()=>setSpeaking(false);
+      synth.cancel(); setSpeaking(true); synth.speak(u);
+    } catch(e){ setSpeaking(false); }
+  };
+  useEffect(()=>()=>{ try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){} }, []); // stop voice on unmount
   const setEdit = (cid,key,val,r)=> setEdits(s=>({ ...s,[cid]:{ subject:r.subject, message:r.message, ...(s[cid]||{}), [key]:val }}));
 
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Ari is preparing your briefing…</div></div>;
@@ -26072,7 +26126,7 @@ function AriBriefingView({ userId, user, setView }) {
             <h2 style={{margin:'4px 0 2px'}}>{greeting}{firstName?`, ${firstName}`:''}.</h2>
             <div style={{fontSize:'12px',color:'var(--text-3)'}}>{dateStr}</div>
           </div>
-          <button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button>
+          <div style={{display:'flex',gap:'6px',flexShrink:0,flexWrap:'wrap'}}><button className="btn btn-ghost btn-sm" onClick={speakBriefing} title="Listen to your briefing">{speaking?'■ Stop':'🔊 Listen'}</button><button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button></div>
         </div>
         {briefing?.summary && <p style={{marginTop:'10px',fontSize:'14px',lineHeight:1.5,color:'var(--text-1)'}}>{briefing.summary}</p>}
       </div>
@@ -26141,10 +26195,10 @@ function AriBriefingView({ userId, user, setView }) {
         <div className="brief-sec">
           <div className="brief-sec-head">
             <span className="brief-sec-title">Tasks due <span className="brief-pill">{(payload.tasks||[]).length}</span></span>
-            <button className="brief-jump" onClick={()=>setView('tasks')}>Open Tasks <span className="arr">→</span></button>
+            <button className="brief-jump" onClick={()=>setView('tasks')}><span style={{fontSize:'13px'}}>✅</span> Open Tasks <span className="arr">→</span></button>
           </div>
           {(payload.tasks||[]).length ? (payload.tasks||[]).map(t=>{ const dv=dueView(t.due_date); return (
-            <div key={t.id} className="brief-row">
+            <div key={t.id} className="brief-row" style={{cursor:'pointer'}} onClick={()=>{ setFocusTaskId && setFocusTaskId(t.id); setView('tasks'); }}>
               <span className="brief-pcell">{prChip(t)}</span>
               <span className="brief-title">{t.title}</span>
               <span className="brief-when" style={dv.color?{color:dv.color,fontWeight:600}:undefined}>{dv.label}</span>
@@ -26155,10 +26209,10 @@ function AriBriefingView({ userId, user, setView }) {
         <div className="brief-sec">
           <div className="brief-sec-head">
             <span className="brief-sec-title">On the calendar <span className="brief-pill">{(payload.events||[]).length}</span></span>
-            <button className="brief-jump" onClick={()=>setView('calendar')}>Open Calendar <span className="arr">→</span></button>
+            <button className="brief-jump" onClick={()=>setView('calendar')}><span style={{fontSize:'13px'}}>📅</span> Open Calendar <span className="arr">→</span></button>
           </div>
           {(payload.events||[]).length ? (payload.events||[]).map(e=>(
-            <div key={e.id} className="brief-row">
+            <div key={e.id} className="brief-row" style={{cursor:'pointer'}} onClick={()=>{ setFocusEventId && setFocusEventId(e.id); setView('calendar'); }}>
               <span className="brief-title">{e.title}{e.location?<span style={{color:'var(--text-3)',fontWeight:400}}> · {e.location}</span>:null}</span>
               <span className="brief-when">{e.all_day?'All day':fmtTime(e.start_at)}</span>
             </div>
@@ -26354,6 +26408,8 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
+  const [focusTaskId, setFocusTaskId] = useState(null);
+  const [focusEventId, setFocusEventId] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [robots, setRobots] = useState([]);
@@ -26722,9 +26778,9 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
-              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView}/>
+              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId}/>
               : view==='prospecting' ? <ProspectingView userId={user.id}/>
-              : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
+              : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
@@ -26735,7 +26791,7 @@ export default function App() {
               : view==='finance'     ? <FinanceView userId={user.id}/>
               : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events} contacts={contacts}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
-              : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks}/>
+              : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks} focusEventId={focusEventId} setFocusEventId={setFocusEventId}/>
               : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>

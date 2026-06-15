@@ -124,7 +124,10 @@ serve(async (req) => {
     // Authenticate the caller
     const authHeader = req.headers.get("Authorization") || "";
     const tokenStr = authHeader.replace("Bearer ", "");
-    const { data: { user } } = await supabase.auth.getUser(tokenStr);
+    let user = (await supabase.auth.getUser(tokenStr)).data.user;
+    if (!user && tokenStr === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") && body && body.user_id) {
+      user = { id: body.user_id };   // trusted internal call (cron delivery)
+    }
     if (!user) {
       return new Response(JSON.stringify({ error: "Not authenticated" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
