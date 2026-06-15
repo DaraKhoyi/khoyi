@@ -56,44 +56,47 @@ function arrayify(v) {
   return Array.isArray(v) ? v.filter(Boolean) : [v].filter(Boolean);
 }
 
-function buildRfc822({ from, to, cc, bcc, subject, bodyText, bodyHtml, headers }) {
-  // Multipart/alternative when both text and html are present
-  const boundary = `=_prism_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-  const lines = [];
-  lines.push(`From: ${from}`);
-  if (to.length > 0) lines.push(`To: ${to.join(", ")}`);
-  if (cc.length > 0) lines.push(`Cc: ${cc.join(", ")}`);
-  if (bcc.length > 0) lines.push(`Bcc: ${bcc.join(", ")}`);
-  if (subject) lines.push(`Subject: ${subject}`);
-  lines.push(`MIME-Version: 1.0`);
-  if (headers) for (const [k, v] of Object.entries(headers)) lines.push(`${k}: ${v}`);
-
+function buildBodyPart({ bodyText, bodyHtml }) {
+  const b = `=_alt_${Math.random().toString(36).slice(2)}`;
+  const L = [];
   if (bodyText && bodyHtml) {
-    lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
-    lines.push("");
-    lines.push(`--${boundary}`);
-    lines.push(`Content-Type: text/plain; charset="UTF-8"`);
-    lines.push(`Content-Transfer-Encoding: 7bit`);
-    lines.push("");
-    lines.push(bodyText);
-    lines.push(`--${boundary}`);
-    lines.push(`Content-Type: text/html; charset="UTF-8"`);
-    lines.push(`Content-Transfer-Encoding: 7bit`);
-    lines.push("");
-    lines.push(bodyHtml);
-    lines.push(`--${boundary}--`);
+    L.push(`Content-Type: multipart/alternative; boundary="${b}"`, "",
+      `--${b}`, `Content-Type: text/plain; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyText,
+      `--${b}`, `Content-Type: text/html; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyHtml,
+      `--${b}--`);
   } else if (bodyHtml) {
-    lines.push(`Content-Type: text/html; charset="UTF-8"`);
-    lines.push(`Content-Transfer-Encoding: 7bit`);
-    lines.push("");
-    lines.push(bodyHtml);
+    L.push(`Content-Type: text/html; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyHtml);
   } else {
-    lines.push(`Content-Type: text/plain; charset="UTF-8"`);
-    lines.push(`Content-Transfer-Encoding: 7bit`);
-    lines.push("");
-    lines.push(bodyText || "");
+    L.push(`Content-Type: text/plain; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyText || "");
   }
-  return lines.join("\r\n");
+  return L.join("\r\n");
+}
+
+function buildRfc822({ from, to, cc, bcc, subject, bodyText, bodyHtml, headers, attachments }) {
+  const head = [];
+  head.push(`From: ${from}`);
+  if (to.length > 0) head.push(`To: ${to.join(", ")}`);
+  if (cc.length > 0) head.push(`Cc: ${cc.join(", ")}`);
+  if (bcc.length > 0) head.push(`Bcc: ${bcc.join(", ")}`);
+  if (subject) head.push(`Subject: ${subject}`);
+  head.push(`MIME-Version: 1.0`);
+  if (headers) for (const [k, v] of Object.entries(headers)) head.push(`${k}: ${v}`);
+
+  const atts = Array.isArray(attachments) ? attachments.filter((a) => a && a.content_base64) : [];
+  if (atts.length === 0) {
+    return head.join("\r\n") + "\r\n" + buildBodyPart({ bodyText, bodyHtml });
+  }
+  const mixed = `=_mixed_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  const out = [...head];
+  out.push(`Content-Type: multipart/mixed; boundary="${mixed}"`, "", `--${mixed}`, buildBodyPart({ bodyText, bodyHtml }));
+  for (const a of atts) {
+    const fn = String(a.filename || "attachment").replace(/"/g, "");
+    const mime = a.mime_type || "application/octet-stream";
+    const b64 = String(a.content_base64).replace(/\s+/g, "").replace(/.{76}/g, (m) => m + "\r\n");
+    out.push(`--${mixed}`, `Content-Type: ${mime}; name="${fn}"`, `Content-Transfer-Encoding: base64`, `Content-Disposition: attachment; filename="${fn}"`, "", b64);
+  }
+  out.push(`--${mixed}--`);
+  return out.join("\r\n");
 }
 
 function toBase64Url(s) {
@@ -108,7 +111,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { account_id, to, cc, bcc, subject, body_text, body_html, reply_to_message_id, in_reply_to_thread_id, from_address, from_name } = body || {};
+    const { account_id, to, cc, bcc, subject, body_text, body_html, reply_to_message_id, in_reply_to_thread_id, from_address, from_name, attachments } = body || {};
     if (!account_id || !to || !subject) {
       return new Response(
         JSON.stringify({ error: "Missing account_id, to, or subject" }),
@@ -212,6 +215,7 @@ serve(async (req) => {
       bodyText: body_text || null,
       bodyHtml: body_html || null,
       headers: extraHeaders,
+      attachments,
     });
 
     const payload = { raw: toBase64Url(rfc822) };

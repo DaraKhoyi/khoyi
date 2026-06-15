@@ -25052,6 +25052,14 @@ function WorkingHoursSection({ userId }) {
   );
 }
 
+const VAPID_PUBLIC_KEY = 'BF7IbYP2gbqaV5B3-iaX88-r08O9tLutgXxUadjJicDKjl4QU8xxu-Yfdgloej6DeUrtChNcT6gT5HlS4Ze6OJk';
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64); const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
 function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -25063,6 +25071,9 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [briefHour, setBriefHour] = useState(7);
   const [briefMsg, setBriefMsg] = useState('');
   const [savingBrief, setSavingBrief] = useState(false);
+  const [pushOn, setPushOn] = useState(false);
+  const [pushMsg, setPushMsg] = useState('');
+  const [pushBusy, setPushBusy] = useState(false);
   const [prefMsg, setPrefMsg] = useState('');
   const [savingPref, setSavingPref] = useState(false);
 
@@ -25090,6 +25101,28 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   }, [userSettings]);
 
   useEffect(() => { (async () => { try { const { data } = await supabase.from('ari_briefing_prefs').select('enabled,send_hour').eq('user_id', userId).maybeSingle(); if (data) { setBriefEnabled(!!data.enabled); setBriefHour(data.send_hour ?? 7); } } catch(e){} })(); }, []); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (!('serviceWorker' in navigator) || !('PushManager' in window)) return; const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); setPushOn(!!sub && (typeof Notification!=='undefined' && Notification.permission === 'granted')); } catch(e){} })(); }, []); // eslint-disable-line
+  async function enablePush() {
+    setPushBusy(true); setPushMsg('');
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') { setPushMsg('Notifications aren\u2019t supported on this device/browser.'); setPushBusy(false); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setPushMsg('Permission was not granted. On iPhone, add PrismOS to your Home Screen first, then enable.'); setPushBusy(false); return; }
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
+      const j = sub.toJSON();
+      await supabase.from('push_subscriptions').upsert({ user_id: userId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' });
+      setPushOn(true); setPushMsg('Notifications enabled on this device.');
+    } catch (e) { setPushMsg('Could not enable: ' + (e.message || e)); }
+    setPushBusy(false);
+  }
+  async function testPush() {
+    setPushBusy(true); setPushMsg('');
+    const { data, error } = await supabase.functions.invoke('push-send', { body: { title: 'Ari test \u2600\ufe0f', body: 'Push notifications are working.', url: 'https://darasapp.com' } });
+    setPushBusy(false);
+    setPushMsg(error || data?.error ? ('Test failed: ' + (error?.message || data?.error)) : (data?.sent ? `Sent to ${data.sent} device(s) \u2014 check your phone.` : 'No devices subscribed yet on this account.'));
+  }
   async function saveBrief(nextEnabled, nextHour) {
     setSavingBrief(true); setBriefMsg('');
     const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'America/New_York';
@@ -25209,7 +25242,16 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               <select className="form-select" value={briefHour} disabled={!briefEnabled||savingBrief} onChange={e=>{ const h=parseInt(e.target.value,10); setBriefHour(h); saveBrief(briefEnabled,h); }}>
                 {[5,6,7,8,9,10,11].map(h=><option key={h} value={h}>{h}:00 AM</option>)}
               </select>
-              <p style={{fontSize:'12px',color:'var(--text-2)',marginTop:'8px',lineHeight:1.5}}>Each morning at this time, Ari generates your briefing and emails it to your connected inbox &mdash; your reach-outs, tasks, and calendar in one note. Open the app to send the drafted replies. Uses your current time zone.</p>
+              <p style={{fontSize:'12px',color:'var(--text-2)',marginTop:'8px',lineHeight:1.5}}>Each morning at this time, Ari generates your briefing and emails it to your connected inbox &mdash; your reach-outs, tasks, and calendar in one note, with a spoken \u201Cvoicemail\u201D recording attached. Open the app to send the drafted replies. Uses your current time zone.</p>
+            </div>
+            <div style={{borderTop:'1px solid var(--border)',marginTop:'16px',paddingTop:'16px'}}>
+              <div style={{fontSize:'14px',fontWeight:600,marginBottom:'4px'}}>Phone notifications</div>
+              <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 12px',lineHeight:1.5}}>Get a push notification on this device when your briefing is ready. {pushOn ? 'Enabled on this device.' : 'Not enabled on this device yet.'}</p>
+              {pushMsg && <div style={{fontSize:'12px',color:pushMsg.toLowerCase().includes('fail')||pushMsg.toLowerCase().includes('not')||pushMsg.toLowerCase().includes('could')?'var(--red)':'var(--green)',marginBottom:'10px'}}>{pushMsg}</div>}
+              <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+                {!pushOn && <button className="btn btn-primary btn-sm" disabled={pushBusy} onClick={enablePush}>{pushBusy?'\u2026':'Enable notifications'}</button>}
+                {pushOn && <button className="btn btn-ghost btn-sm" disabled={pushBusy} onClick={testPush}>{pushBusy?'\u2026':'Send test notification'}</button>}
+              </div>
             </div>
           </div>
         </div>
