@@ -25160,7 +25160,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
           <div className="panel-body">
             {nameMsg&&<div className={nameMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{nameMsg}</div>}
             <form onSubmit={handleNameSave}>
-              <div className="form-group"><label className="form-label">Display Name</label><input className="form-input" value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="What should we call you?" maxLength={60} /></div>
+              <div className="form-group"><label className="form-label">Greeting Name</label><input className="form-input" value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="e.g., Dara" maxLength={60} /><div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Used to greet you across PrismOS — e.g., “Good morning, Dara.” in your Ari Briefing.</div></div>
               <button className="btn btn-primary" disabled={savingName}>{savingName?'Saving…':'Save Name'}</button>
             </form>
           </div>
@@ -25971,9 +25971,8 @@ function AriBriefingView({ userId, user, setView }) {
   useEffect(()=>{ (async ()=>{
     const { data:a } = await supabase.from('email_accounts').select('id,email_address').contains('purposes',['email']).order('created_at').limit(1);
     setAcct((a&&a[0])||null);
-    const { data:p } = await supabase.from('profiles').select('full_name').eq('id', userId).maybeSingle();
-    const nm = p?.full_name || (user?.email||'').split('@')[0];
-    setFirstName((nm||'').split(' ')[0]);
+    const nm = user?.user_metadata?.display_name?.trim() || user?.user_metadata?.full_name?.trim()?.split(/\s+/)[0] || (user?.email||'').split('@')[0] || 'there';
+    setFirstName(nm);
   })(); }, []);   // eslint-disable-line
 
   const payload = briefing?.payload || {};
@@ -26027,6 +26026,18 @@ function AriBriefingView({ userId, user, setView }) {
 
   const discColor = (d)=> d==='D'?'#ef4444':d==='I'?'var(--accent)':d==='S'?'var(--green)':d==='C'?'#3b82f6':'var(--text-3)';
   const chip = (txt,col)=><span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.03em',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
+  const prChip = (t) => {
+    const q = (t.quadrant||'').toString().toUpperCase();
+    let label, col;
+    if (['A','B','C','D'].includes(q)) {
+      label = q; col = q==='A'?'#ef4444':q==='B'?'#f59e0b':q==='C'?'#3b82f6':'var(--text-3)';
+    } else {
+      const p = (t.priority||'').toString().toLowerCase();
+      label = p==='high'?'HIGH':p==='low'?'LOW':p==='medium'?'MED':'—';
+      col = p==='high'?'#ef4444':p==='medium'?'#f59e0b':p==='low'?'#3b82f6':'var(--text-3)';
+    }
+    return <span style={{display:'inline-block',minWidth:'38px',textAlign:'center',fontSize:'10px',fontWeight:700,color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 5px',letterSpacing:'.02em'}}>{label}</span>;
+  };
   const setEdit = (cid,key,val,r)=> setEdits(s=>({ ...s,[cid]:{ subject:r.subject, message:r.message, ...(s[cid]||{}), [key]:val }}));
 
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Ari is preparing your briefing…</div></div>;
@@ -26093,17 +26104,27 @@ function AriBriefingView({ userId, user, setView }) {
 
       <div className="panel">
         <div className="panel-header"><h3>Today</h3></div>
-        <div style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)',marginBottom:'4px'}}>Tasks due · {(payload.tasks||[]).length}</div>
+
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
+          <span style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)'}}>Tasks due · {(payload.tasks||[]).length}</span>
+          <button className="btn btn-ghost btn-sm" style={{padding:'2px 9px',fontSize:'11px'}} onClick={()=>setView('tasks')}>Tasks ↗</button>
+        </div>
         {(payload.tasks||[]).length ? (payload.tasks||[]).map(t=>(
-          <div key={t.id} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
-            <span>{t.title}</span><span style={{color:'var(--text-3)',fontSize:'11px'}}>{t.due_date}</span>
+          <div key={t.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
+            <span style={{flex:'0 0 44px',display:'flex'}}>{prChip(t)}</span>
+            <span style={{flex:1,minWidth:0}}>{t.title}</span>
+            <span style={{color:'var(--text-3)',fontSize:'11px',flex:'0 0 auto'}}>{t.due_date}</span>
           </div>
         )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>Nothing due.</div>}
-        <div style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)',margin:'12px 0 4px'}}>On the calendar · {(payload.events||[]).length}</div>
+
+        <div style={{borderTop:'1px solid var(--border)',marginTop:'16px',paddingTop:'14px',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
+          <span style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)'}}>On the calendar · {(payload.events||[]).length}</span>
+          <button className="btn btn-ghost btn-sm" style={{padding:'2px 9px',fontSize:'11px'}} onClick={()=>setView('calendar')}>Calendar ↗</button>
+        </div>
         {(payload.events||[]).length ? (payload.events||[]).map(e=>(
-          <div key={e.id} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
-            <span>{e.title}{e.location?<span style={{color:'var(--text-3)'}}> · {e.location}</span>:null}</span>
-            <span style={{color:'var(--text-3)',fontSize:'11px'}}>{e.all_day?'All day':new Date(e.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span>
+          <div key={e.id} style={{display:'flex',justifyContent:'space-between',gap:'10px',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
+            <span style={{minWidth:0}}>{e.title}{e.location?<span style={{color:'var(--text-3)'}}> · {e.location}</span>:null}</span>
+            <span style={{color:'var(--text-3)',fontSize:'11px',flex:'0 0 auto'}}>{e.all_day?'All day':new Date(e.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span>
           </div>
         )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No events today.</div>}
       </div>
