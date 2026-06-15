@@ -26143,10 +26143,69 @@ function EmailRepliesPanel() {
 // ─────────────────────────────────────────
 // ARI DAILY BRIEFING
 // ─────────────────────────────────────────
+function ActionHubModal({ contactId, userId, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState('');
+  useEffect(()=>{ (async()=>{
+    try { const { data, error } = await supabase.functions.invoke('ari-call-prep', { body:{ contact_id:contactId } });
+      if (error || data?.error) throw new Error(error?.message || data?.error);
+      setD(data);
+    } catch(e){ setErr(e.message || String(e)); }
+    setLoading(false);
+  })(); }, [contactId]); // eslint-disable-line
+  const c = d?.contact || {}; const prep = d?.prep || null;
+  const telN = String(c.phone||'').replace(/[^0-9+]/g,'');
+  const discColor=(x)=> x==='D'?'#ef4444':x==='I'?'var(--accent)':x==='S'?'var(--green)':x==='C'?'#3b82f6':'var(--text-3)';
+  const copy=async(t,k)=>{ try{ await navigator.clipboard.writeText(t); setCopied(k); setTimeout(()=>setCopied(''),1200);}catch(e){} };
+  const sectTitle={fontSize:'10px',letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)',fontWeight:700,marginBottom:'3px'};
+  const Section=({title,bodyTxt})=> bodyTxt? <div><div style={sectTitle}>{title}</div><div style={{fontSize:'13px',lineHeight:1.5,color:'var(--text-1)'}}>{bodyTxt}</div></div> : null;
+  const Act=({href,disabled,icon,label})=> <a href={disabled?undefined:href} onClick={e=>{ if(disabled){e.preventDefault();} }} style={{flex:1,textAlign:'center',padding:'10px 6px',borderRadius:'10px',border:'1px solid var(--border)',background:disabled?'var(--bg-base)':'var(--bg-hover)',color:disabled?'var(--text-3)':'var(--text-1)',textDecoration:'none',fontSize:'12px',fontWeight:600,opacity:disabled?.5:1}}><div style={{fontSize:'18px',marginBottom:'2px'}}>{icon}</div>{label}</a>;
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'560px',maxHeight:'90vh',overflowY:'auto',padding:'16px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',marginBottom:'10px'}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:'17px'}}>{c.name||'Contact'}</div>
+            <div style={{fontSize:'12px',color:'var(--text-3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{[c.company,c.email].filter(Boolean).join(' · ')||c.phone||''}</div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div style={{display:'flex',gap:'6px',marginBottom:'12px',flexWrap:'wrap'}}>
+          {d?.disc && <span style={{fontSize:'10px',fontWeight:700,color:discColor(d.disc.letter),border:'1px solid '+discColor(d.disc.letter),borderRadius:'5px',padding:'2px 6px'}}>{d.disc.letter} · {String(d.disc.label).split('—')[0].trim()}</span>}
+          {d?.score && <span style={{fontSize:'10px',fontWeight:700,color:'var(--accent)',border:'1px solid var(--accent-dim)',borderRadius:'5px',padding:'2px 6px'}}>Propensity {d.score.score} · {d.score.tier}</span>}
+        </div>
+        <div style={{display:'flex',gap:'8px',marginBottom:'14px'}}>
+          <Act href={'tel:'+telN} disabled={!telN} icon="📞" label="Call"/>
+          <Act href={'sms:'+telN} disabled={!telN} icon="💬" label="Text"/>
+          <Act href={c.email?('mailto:'+c.email):'#'} disabled={!c.email} icon="✉️" label="Email"/>
+          <button onClick={()=>copy(c.phone||'','ph')} disabled={!c.phone} style={{flex:1,textAlign:'center',padding:'10px 6px',borderRadius:'10px',border:'1px solid var(--border)',background:c.phone?'var(--bg-hover)':'var(--bg-base)',color:c.phone?'var(--text-1)':'var(--text-3)',fontSize:'12px',fontWeight:600,cursor:c.phone?'pointer':'default',opacity:c.phone?1:.5}}><div style={{fontSize:'18px',marginBottom:'2px'}}>⧉</div>{copied==='ph'?'Copied':'Copy #'}</button>
+        </div>
+        {loading ? <div style={{textAlign:'center',padding:'24px 0',color:'var(--text-2)',fontSize:'13px'}}><div className="spinner" style={{margin:'0 auto 10px'}}/>Ari is prepping you…</div>
+         : err ? <div style={{color:'var(--red)',fontSize:'12px'}}>{err}</div>
+         : prep ? (
+          <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+            <Section title="Who" bodyTxt={prep.who}/>
+            <Section title="How to approach" bodyTxt={prep.communicate}/>
+            {prep.opener && <div style={{background:'var(--bg-hover)',border:'1px solid var(--accent-dim)',borderRadius:'10px',padding:'10px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}><span style={{fontSize:'10px',letterSpacing:'.06em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700}}>Opener</span><button onClick={()=>copy(prep.opener,'op')} style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'10px',cursor:'pointer',textTransform:'uppercase'}}>{copied==='op'?'copied':'copy'}</button></div>
+              <div style={{fontSize:'14px',lineHeight:1.5}}>{prep.opener}</div>
+            </div>}
+            {(prep.talking_points||[]).length>0 && <div><div style={sectTitle}>Talking points</div><ul style={{margin:'4px 0 0',paddingLeft:'18px'}}>{prep.talking_points.map((p,i)=><li key={i} style={{fontSize:'13px',lineHeight:1.5,marginBottom:'4px'}}>{p}</li>)}</ul></div>}
+            <Section title="Aim for" bodyTxt={prep.next_step}/>
+            {d?.deal && d.deal!=='No active deal on file.' && <Section title="Live deal" bodyTxt={d.deal}/>}
+          </div>
+        ) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No prep available for this contact.</div>}
+      </div>
+    </div>
+  );
+}
 function OutreachReport({ userId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [leads, setLeads] = useState([]);
+  const [hubId, setHubId] = useState(null);
   useEffect(()=>{ (async()=>{
     try { await supabase.rpc('ari_attribute_outcomes',{ p_user:userId }); } catch(e){}
     try { await supabase.rpc('ari_score_propensity',{ p_user:userId }); } catch(e){}
@@ -26223,7 +26282,7 @@ function OutreachReport({ userId, onBack }) {
       <div className="panel">
         <div className="panel-header"><h3>🔥 Most likely to transact</h3><span className="nav-badge">{leads.length}</span></div>
         {leads.length ? leads.map(l=>(
-          <div key={l.contact_id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+          <div key={l.contact_id} onClick={()=>setHubId(l.contact_id)} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
             <div style={{width:'38px',height:'38px',borderRadius:'9px',background:'var(--bg-hover)',border:'1px solid '+tierColor(l.tier),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{fontWeight:800,fontSize:'14px',color:tierColor(l.tier)}}>{l.score}</span></div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:700,fontSize:'13px'}}>{(l.contacts&&l.contacts.name)||'—'} <span style={{fontSize:'10px',textTransform:'uppercase',color:tierColor(l.tier),marginLeft:'4px'}}>{l.tier}</span></div>
@@ -26233,6 +26292,7 @@ function OutreachReport({ userId, onBack }) {
         )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>Scores build as contacts engage and deals link up. Higher = more likely to transact soon.</div>}
         <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Blends recent engagement, replies, deal links, priority, ownership tenure, and activity. Refreshed nightly; also boosts who Ari surfaces in your briefing.</div>
       </div>
+      {hubId && <ActionHubModal contactId={hubId} userId={userId} onClose={()=>setHubId(null)} />}
       {perContact.length>0 && <div className="panel">
         <div className="panel-header"><h3>By contact</h3></div>
         {perContact.map((c,i)=>(
@@ -26268,6 +26328,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const [score, setScore] = useState(null);
   const [showScore, setShowScore] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [hubId, setHubId] = useState(null);
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -26452,6 +26513,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
 
   return (
     <div className="view">
+      {hubId && <ActionHubModal contactId={hubId} userId={userId} onClose={()=>setHubId(null)} />}
       <div className="panel" style={{background:'linear-gradient(135deg,var(--bg-card),var(--bg-hover))',borderColor:'var(--accent-dim)'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',flexWrap:'wrap'}}>
           <div style={{flex:1,minWidth:'220px'}}>
@@ -26521,6 +26583,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
             <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'6px'}}>
               <span style={{fontWeight:700,fontSize:'14px'}}>{r.name}</span>
               {r.disc && chip(r.disc+' · '+(r.disc_label||'').split('—')[0].trim(), discColor(r.disc))}
+              <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setHubId(r.contact_id)}>📞 Prep &amp; act</button>
             </div>
             <div style={{fontSize:'11px',color:'var(--accent)',marginBottom:'8px'}}>✦ {r.reason} · last touch {r.last_touch}</div>
             {r.source && r.source.text && (
