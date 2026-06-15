@@ -26143,6 +26143,108 @@ function EmailRepliesPanel() {
 // ─────────────────────────────────────────
 // ARI DAILY BRIEFING
 // ─────────────────────────────────────────
+function OutreachReport({ userId, onBack }) {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [leads, setLeads] = useState([]);
+  useEffect(()=>{ (async()=>{
+    try { await supabase.rpc('ari_attribute_outcomes',{ p_user:userId }); } catch(e){}
+    try { await supabase.rpc('ari_score_propensity',{ p_user:userId }); } catch(e){}
+    try {
+      const since = new Date(Date.now()-90*864e5).toISOString();
+      const { data } = await supabase.from('ari_outreach').select('contact_id,contact_name,disc,word_count,has_question,send_hour,replied,meeting_booked,deal_moved,sent_at').eq('user_id',userId).eq('status','sent').gte('sent_at',since).order('sent_at',{ascending:false});
+      setRows(data||[]);
+      const { data: ld } = await supabase.from('contact_scores').select('contact_id,score,tier,factors,contacts(name,company)').eq('user_id',userId).gte('score',25).order('score',{ascending:false}).limit(25);
+      setLeads(ld||[]);
+    } catch(e){}
+    setLoading(false);
+  })(); },[]); // eslint-disable-line
+
+  const pct=(r,s)=> s?Math.round(r/s*100):0;
+  const tot = { sent:rows.length, replied:rows.filter(r=>r.replied).length, meetings:rows.filter(r=>r.meeting_booked).length, deals:rows.filter(r=>r.deal_moved).length };
+  const monday=(d)=>{ const x=new Date(d); const day=(x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x; };
+  const weeks=[]; const now=new Date();
+  for(let i=7;i>=0;i--){ const ws=monday(new Date(now.getTime()-i*7*864e5)); weeks.push({ t:ws.getTime(), label:ws.toLocaleDateString(undefined,{month:'numeric',day:'numeric'}), sent:0, replied:0 }); }
+  rows.forEach(r=>{ const t=monday(new Date(r.sent_at)).getTime(); const w=weeks.find(x=>x.t===t); if(w){ w.sent++; if(r.replied) w.replied++; } });
+  const maxSent = Math.max(1,...weeks.map(w=>w.sent));
+  const grp=(keyFn)=>{ const m={}; rows.forEach(r=>{ const k=keyFn(r); if(k==null) return; const o=m[k]||(m[k]={s:0,r:0}); o.s++; if(r.replied)o.r++; }); return m; };
+  const DISC_LABEL={D:'Driver (D)',I:'Influencer (I)',S:'Steady (S)',C:'Conscientious (C)'};
+  const discM=grp(r=>r.disc||null), lenM=grp(r=>(r.word_count||0)<60?'Short (under 60 words)':'Longer'), qM=grp(r=>r.has_question?'Asks a question':'Statement only'), hourM=grp(r=>(r.send_hour==null)?null:(r.send_hour<12?'Morning':r.send_hour<17?'Midday':'Evening'));
+  const cm={}; rows.forEach(r=>{ const o=cm[r.contact_id]||(cm[r.contact_id]={name:r.contact_name,s:0,r:0,m:0,d:0}); o.s++; if(r.replied)o.r++; if(r.meeting_booked)o.m++; if(r.deal_moved)o.d++; });
+  const perContact=Object.values(cm).sort((a,b)=> b.d-a.d || b.r-a.r || b.s-a.s).slice(0,20);
+  const tierColor=(t)=> t==='hot'?'#ef4444':t==='warm'?'#f59e0b':t==='cool'?'#3b82f6':'var(--text-3)';
+  const Bar=({label,r,s})=>(<div style={{marginBottom:'8px'}}><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'3px'}}><span>{label}</span><span style={{color:'var(--text-3)'}}>{pct(r,s)}% · {s} sent</span></div><div style={{height:'8px',background:'var(--bg-hover)',borderRadius:'4px',overflow:'hidden'}}><div style={{height:'100%',width:pct(r,s)+'%',background:'var(--accent)'}}/></div></div>);
+  const section=(title,m,minS)=>{ const ent=Object.entries(m).filter(([,v])=>v.s>=(minS||1)).sort((a,b)=>(b[1].r/b[1].s)-(a[1].r/a[1].s)); if(!ent.length) return null; return (<div style={{marginBottom:'14px'}}><div style={{fontSize:'12px',fontWeight:700,color:'var(--text-2)',marginBottom:'8px'}}>{title}</div>{ent.map(([k,v])=><Bar key={k} label={DISC_LABEL[k]||k} r={v.r} s={v.s}/>)}</div>); };
+
+  if (loading) return <div className="view"><div className="loading-screen" style={{height:'40vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Crunching your outreach results…</div></div></div>;
+
+  return (
+    <div className="view">
+      <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}}>
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button>
+        <h2 style={{margin:0}}>Outreach → Results</h2>
+      </div>
+      <div className="panel">
+        <div className="panel-header"><h3>Last 90 days</h3></div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
+          {[['Sent',tot.sent],['Reply rate',pct(tot.replied,tot.sent)+'%'],['Meetings',tot.meetings],['Deals moved',tot.deals]].map(([k,v])=>(
+            <div key={k} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px',textAlign:'center'}}>
+              <div style={{fontSize:'20px',fontWeight:800,color:'var(--accent)'}}>{v}</div>
+              <div style={{fontSize:'10px',letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)',marginTop:'2px'}}>{k}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel">
+        <div className="panel-header"><h3>Trend · 8 weeks</h3></div>
+        {tot.sent ? (
+        <div style={{display:'flex',alignItems:'flex-end',gap:'6px',height:'120px',paddingTop:'8px'}}>
+          {weeks.map((w,i)=>(
+            <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'4px'}}>
+              <div style={{flex:1,display:'flex',alignItems:'flex-end',width:'100%'}}>
+                <div title={w.sent+' sent · '+pct(w.replied,w.sent)+'% reply'} style={{width:'100%',height:Math.round(w.sent/maxSent*100)+'%',minHeight:w.sent?'4px':'0',background:'var(--accent)',borderRadius:'4px 4px 0 0',position:'relative'}}>
+                  <div style={{position:'absolute',bottom:0,left:0,right:0,height:pct(w.replied,w.sent)+'%',background:'var(--green)',borderRadius:'0 0 4px 4px',opacity:.85}}/>
+                </div>
+              </div>
+              <div style={{fontSize:'9px',color:'var(--text-3)'}}>{w.label}</div>
+            </div>
+          ))}
+        </div>) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No sends yet — send from your briefing and this fills in.</div>}
+        <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'6px'}}>Bar = messages sent · green = share that earned a reply.</div>
+      </div>
+      {tot.sent>=4 && <div className="panel">
+        <div className="panel-header"><h3>What's converting</h3></div>
+        {section('By behavioral style', discM, 2)}
+        {section('By message length', lenM)}
+        {section('Question vs. statement', qM)}
+        {section('By time of day', hourM, 2)}
+        <div style={{fontSize:'10px',color:'var(--text-3)'}}>Ari uses these patterns as silent guidance when drafting tomorrow's messages.</div>
+      </div>}
+      <div className="panel">
+        <div className="panel-header"><h3>🔥 Most likely to transact</h3><span className="nav-badge">{leads.length}</span></div>
+        {leads.length ? leads.map(l=>(
+          <div key={l.contact_id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+            <div style={{width:'38px',height:'38px',borderRadius:'9px',background:'var(--bg-hover)',border:'1px solid '+tierColor(l.tier),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{fontWeight:800,fontSize:'14px',color:tierColor(l.tier)}}>{l.score}</span></div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:'13px'}}>{(l.contacts&&l.contacts.name)||'—'} <span style={{fontSize:'10px',textTransform:'uppercase',color:tierColor(l.tier),marginLeft:'4px'}}>{l.tier}</span></div>
+              <div style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{Object.keys(l.factors||{}).join(' · ')||'—'}</div>
+            </div>
+          </div>
+        )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>Scores build as contacts engage and deals link up. Higher = more likely to transact soon.</div>}
+        <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Blends recent engagement, replies, deal links, priority, ownership tenure, and activity. Refreshed nightly; also boosts who Ari surfaces in your briefing.</div>
+      </div>
+      {perContact.length>0 && <div className="panel">
+        <div className="panel-header"><h3>By contact</h3></div>
+        {perContact.map((c,i)=>(
+          <div key={i} style={{display:'flex',justifyContent:'space-between',gap:'10px',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'12px'}}>
+            <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{c.name}</span>
+            <span style={{color:'var(--text-3)'}}>{c.s} sent</span><span style={{color:'var(--green)'}}>{c.r} rep</span><span style={{color:'var(--accent)'}}>{c.d} deal</span>
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
 function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
@@ -26165,6 +26267,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const [batchMsg, setBatchMsg] = useState('');
   const [score, setScore] = useState(null);
   const [showScore, setShowScore] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -26343,6 +26446,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
 
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Ari is preparing your briefing…</div></div>;
 
+  if (showReport) return <OutreachReport userId={userId} onBack={()=>setShowReport(false)} />;
   const pending = reachouts.filter(r=>r.status==='pending');
   const handled = reachouts.filter(r=>r.status!=='pending');
 
@@ -26363,7 +26467,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 
       <div className="panel">
-        <div className="panel-header" style={{cursor:'pointer'}} onClick={()=>setShowScore(v=>!v)}><h3>📊 This week</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{showScore?'Hide':'Show'}</span></div>
+        <div className="panel-header"><h3 style={{cursor:'pointer'}} onClick={()=>setShowScore(v=>!v)}>📊 This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowReport(true)}>Full report →</button></div>
         {showScore && (score && score.sent ? (
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
             {[['Sent',score.sent],['Replies',`${score.replied} (${score.replyRate}%)`],['Meetings',score.meetings],['Deals moved',score.deals]].map(([k,v])=>(
