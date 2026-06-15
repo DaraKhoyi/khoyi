@@ -1437,6 +1437,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
             {emailMode && !emailAlreadySent && (
               <div style={{marginTop:'10px'}}>
                 <input className="form-input" type="email" placeholder="their@email.com" value={emailTo} onChange={e=>setEmailTo(e.target.value)} style={{marginBottom:'8px'}}/>
+                <AriRewriteButton text={emailMsg} onRewrite={setEmailMsg} contactName={(contacts.find(c=>c.id===contactIds[0])?.name)||emailTo} />
                 <textarea className="form-textarea" rows={6} value={emailMsg} onChange={e=>setEmailMsg(e.target.value)} placeholder="Message to the assignee (their details / instructions)…"/>
                 <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Your notes above are included. They just reply; Claude reads the reply and flags this task for your review.</div>
               </div>
@@ -5427,7 +5428,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 />
               </div>
               <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" required /></div>
-              <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required /></div>
+              <div className="form-group"><label className="form-label">Message</label><AriRewriteButton text={composeBody} onRewrite={setComposeBody} contactName={composeTo} /><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required /></div>
               {sendMsg && <p style={{fontSize:'13px',color: sendMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',margin:'4px 0'}}>{sendMsg}</p>}
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
@@ -25412,6 +25413,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
             {emailMode && !alreadySent && (
               <div style={{marginTop:'10px'}}>
                 <input className="form-input" type="email" placeholder="their@email.com" value={emailTo} onChange={e=>setEmailTo(e.target.value)} style={{marginBottom:'8px'}}/>
+                <AriRewriteButton text={emailMsg} onRewrite={setEmailMsg} contactName={contactName||emailTo} />
                 <textarea className="form-input" rows={5} value={emailMsg} onChange={e=>setEmailMsg(e.target.value)} placeholder="Message…"/>
                 <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>They just reply to the email; Claude reads the reply and updates this task (you confirm anything that changes status).</div>
               </div>
@@ -26116,6 +26118,31 @@ function AriBriefingView({ userId, user, setView }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// REUSABLE: ✨ Ari rewrite (your draft → your voice, adapted to recipient)
+// ─────────────────────────────────────────
+function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText }) {
+  const [busy, setBusy] = useState(false);
+  const [prev, setPrev] = useState(null);
+  const [err, setErr] = useState(null);
+  const go = async () => {
+    if (!text || !text.trim()) { setErr('Write a draft first.'); return; }
+    setErr(null); setBusy(true);
+    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:text, contact_name:contactName||'the recipient', disc_label:discLabel||'', source_text:sourceText||'' } });
+    setBusy(false);
+    if (error || data?.error || !data?.message) { setErr('Rewrite failed — try again.'); return; }
+    setPrev(text); onRewrite(data.message);
+  };
+  const undo = () => { if (prev==null) return; onRewrite(prev); setPrev(null); };
+  return (
+    <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
+      {err && <span style={{fontSize:'10px',color:'var(--red)',marginRight:'auto'}}>{err}</span>}
+      {prev!=null && <button type="button" className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={undo}>Undo</button>}
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice, adapted to the recipient" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
     </div>
   );
 }
