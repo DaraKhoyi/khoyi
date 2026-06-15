@@ -25944,6 +25944,8 @@ function AriBriefingView({ userId, user, setView }) {
   const [firstName, setFirstName] = useState('');
   const [busy, setBusy] = useState({});
   const [openSrc, setOpenSrc] = useState({});
+  const [rwBusy, setRwBusy] = useState({});
+  const [prevMsg, setPrevMsg] = useState({});
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -26004,6 +26006,22 @@ function AriBriefingView({ userId, user, setView }) {
   const doCopy = async (r) => { try{ await navigator.clipboard.writeText((edits[r.contact_id]?.message)||r.message); }catch(e){} };
   const doDone = async (r) => { await logTouch(r.contact_id,'manual'); await setStatus(r.contact_id,'done'); };
   const doSnooze = async (r) => { await setStatus(r.contact_id,'snoozed'); };
+  const doRewrite = async (r) => {
+    const cur = (edits[r.contact_id]?.message) ?? r.message;
+    if (!cur || !cur.trim()) { setErr('Write a draft first, then let Ari refine it.'); return; }
+    setRwBusy(b=>({ ...b,[r.contact_id]:true }));
+    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:cur, contact_name:r.name, disc_label:r.disc_label||'', source_text:(r.source&&r.source.text)||'' } });
+    setRwBusy(b=>({ ...b,[r.contact_id]:false }));
+    if (error || data?.error || !data?.message) { setErr('Ari rewrite failed: '+(error?.message||data?.error||'no output')); return; }
+    setPrevMsg(p=>({ ...p,[r.contact_id]:cur }));
+    setEdit(r.contact_id,'message',data.message,r);
+  };
+  const undoRewrite = (r) => {
+    const prev = prevMsg[r.contact_id];
+    if (prev==null) return;
+    setEdit(r.contact_id,'message',prev,r);
+    setPrevMsg(p=>{ const n={...p}; delete n[r.contact_id]; return n; });
+  };
 
   const discColor = (d)=> d==='D'?'#ef4444':d==='I'?'var(--accent)':d==='S'?'var(--green)':d==='C'?'#3b82f6':'var(--text-3)';
   const chip = (txt,col)=><span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.03em',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
@@ -26052,6 +26070,13 @@ function AriBriefingView({ userId, user, setView }) {
               </div>
             )}
             {r.email && <input className="form-input" style={{marginBottom:'6px',fontSize:'12px'}} value={(edits[r.contact_id]?.subject)??r.subject} onChange={e=>setEdit(r.contact_id,'subject',e.target.value,r)}/>}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+              <span style={{fontSize:'11px',fontWeight:600,color:'var(--text-2)'}}>Your message</span>
+              <div style={{display:'flex',gap:'6px'}}>
+                {prevMsg[r.contact_id]!=null && <button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={()=>undoRewrite(r)}>Undo</button>}
+                <button className="btn btn-ghost btn-sm" disabled={rwBusy[r.contact_id]} onClick={()=>doRewrite(r)} title="Rewrite in your voice, adapted to their style" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{rwBusy[r.contact_id]?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
+              </div>
+            </div>
             <textarea className="form-input" rows={4} style={{fontSize:'13px',lineHeight:1.5}} value={(edits[r.contact_id]?.message)??r.message} onChange={e=>setEdit(r.contact_id,'message',e.target.value,r)}/>
             <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
               {r.email && <button className="btn btn-primary btn-sm" disabled={busy[r.contact_id]} onClick={()=>doSend(r)}>{busy[r.contact_id]?'…sending':'Send email'}</button>}
