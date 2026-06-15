@@ -26157,6 +26157,14 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const [rwBusy, setRwBusy] = useState({});
   const [prevMsg, setPrevMsg] = useState({});
   const [speaking, setSpeaking] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [approved, setApproved] = useState({});
+  const [skipDecided, setSkipDecided] = useState({});
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchMsg, setBatchMsg] = useState('');
+  const [score, setScore] = useState(null);
+  const [showScore, setShowScore] = useState(false);
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -26177,6 +26185,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     setLoading(false); setRegenerating(false);
   };
   useEffect(()=>{ load(false); }, []);   // eslint-disable-line
+  useEffect(()=>{ loadScore(); }, []);   // eslint-disable-line
   useEffect(()=>{ (async ()=>{
     const { data:a } = await supabase.from('email_accounts').select('id,email_address').contains('purposes',['email']).order('created_at').limit(1);
     setAcct((a&&a[0])||null);
@@ -26202,6 +26211,25 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       await supabase.from('contacts').update({ last_contact_at:new Date().toISOString() }).eq('id', cid);
     } catch(e){}
   };
+  const logOutreach = async (r, sr, statusVal='sent') => {
+    try {
+      const e = edits[r.contact_id]||{};
+      const msg = statusVal==='skipped' ? '' : ((e.message ?? r.message) || '');
+      const subj = statusVal==='skipped' ? (r.subject||'') : ((e.subject ?? r.subject) || '');
+      const now = new Date();
+      const wc = msg.trim() ? msg.trim().split(/\s+/).length : 0;
+      await supabase.from('ari_outreach').insert({ user_id:userId, contact_id:r.contact_id, contact_name:r.name, contact_email:r.email||null, channel:'email', subject:subj, body:msg, reason:r.reason||null, disc:r.disc||null, disc_label:r.disc_label||null, word_count:wc, has_question:/\?/.test(msg), send_hour:now.getHours(), send_dow:now.getDay(), briefing_date:today, provider_thread_id:(sr&&sr.provider_thread_id)||null, status:statusVal, sent_at:now.toISOString() });
+    } catch(e){}
+  };
+  const loadScore = async () => {
+    try {
+      await supabase.rpc('ari_attribute_outcomes', { p_user: userId });
+      const since = new Date(Date.now()-7*864e5).toISOString();
+      const { data } = await supabase.from('ari_outreach').select('replied,meeting_booked,deal_moved,status,sent_at').eq('user_id',userId).eq('status','sent').gte('sent_at',since);
+      const rows = data||[]; const sent=rows.length, replied=rows.filter(x=>x.replied).length, meetings=rows.filter(x=>x.meeting_booked).length, deals=rows.filter(x=>x.deal_moved).length;
+      setScore({ sent, replied, meetings, deals, replyRate: sent?Math.round(replied/sent*100):0 });
+    } catch(e){}
+  };
   const emailOf = (x)=>{ const m=String(x||'').match(/<([^>]+)>/); return (m?m[1]:String(x||'')).trim().toLowerCase(); };
   const selfEmails = [acct?.email_address, user?.email, 'dara@brokerdara.com', 'khoyi1234@gmail.com'].filter(Boolean).map(x=>String(x).toLowerCase());
   const otherRecips = (r)=>{
@@ -26220,7 +26248,9 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     setBusy(b=>({ ...b,[r.contact_id]:false }));
     if (se || sr?.error) { setErr('Send failed: '+(se?.message||sr?.error)); return; }
     await logTouch(r.contact_id,'email');
+    await logOutreach(r, sr, 'sent');
     await setStatus(r.contact_id,'sent');
+    loadScore();
   };
   const doCopy = async (r) => { try{ await navigator.clipboard.writeText((edits[r.contact_id]?.message)||r.message); }catch(e){} };
   const doDone = async (r) => { await logTouch(r.contact_id,'manual'); await setStatus(r.contact_id,'done'); };
@@ -26244,6 +26274,29 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     setPrevMsg(p=>{ const n={...p}; delete n[r.contact_id]; return n; });
   };
 
+  const startReview = () => { setReviewIdx(0); setApproved({}); setSkipDecided({}); setBatchMsg(''); setReviewing(true); };
+  const decide = (r, kind) => { setSkipDecided(x=>({ ...x,[r.contact_id]:kind })); if (kind==='approve') setApproved(a=>({ ...a,[r.contact_id]:true })); setReviewIdx(i=>i+1); };
+  const batchSend = async () => {
+    setBatchBusy(true); setBatchMsg('');
+    const pend = reachouts.filter(r=>r.status==='pending');
+    let sent=0, skipped=0, failed=0; let np=[...reachouts];
+    for (const r of pend) {
+      const decision = skipDecided[r.contact_id];
+      if (decision==='approve') {
+        if (!r.email || !acct) { failed++; continue; }
+        const e = edits[r.contact_id]||{}; const cc = replyAll[r.contact_id] ? otherRecips(r) : [];
+        const { data:sr, error:se } = await supabase.functions.invoke('gmail-send', { body:{ account_id:acct.id, to:r.email, cc: cc.length?cc:undefined, subject:e.subject||r.subject, body_text:e.message||r.message } });
+        if (se || sr?.error) { failed++; continue; }
+        await logTouch(r.contact_id,'email'); await logOutreach(r, sr, 'sent');
+        np = np.map(x=>x.contact_id===r.contact_id ? { ...x, ...(edits[r.contact_id]||{}), status:'sent' } : x); sent++;
+      } else if (decision==='skip') {
+        await logOutreach(r, null, 'skipped');
+        np = np.map(x=>x.contact_id===r.contact_id ? { ...x, status:'snoozed' } : x); skipped++;
+      }
+    }
+    await persist(np); setBatchBusy(false); setReviewing(false);
+    setBatchMsg(`Sent ${sent}${failed?`, ${failed} failed`:``}${skipped?`, ${skipped} skipped`:``}.`); loadScore();
+  };
   const discColor = (d)=> d==='D'?'#ef4444':d==='I'?'var(--accent)':d==='S'?'var(--green)':d==='C'?'#3b82f6':'var(--text-3)';
   const chip = (txt,col)=><span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.03em',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
   const prChip = (t) => {
@@ -26302,7 +26355,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
             <h2 style={{margin:'4px 0 2px'}}>{greeting}{firstName?`, ${firstName}`:''}.</h2>
             <div style={{fontSize:'12px',color:'var(--text-3)'}}>{dateStr}</div>
           </div>
-          <div style={{display:'flex',gap:'6px',flexShrink:0,flexWrap:'wrap'}}><button className="btn btn-ghost btn-sm" onClick={speakBriefing} title="Listen to your briefing">{speaking?'■ Stop':'🔊 Listen'}</button><button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button></div>
+          <div style={{display:'flex',gap:'6px',flexShrink:0,flexWrap:'wrap'}}><button className="btn btn-primary btn-sm" disabled={!pending.length} onClick={startReview}>⚡ Review{pending.length?` ${pending.length}`:''}</button><button className="btn btn-ghost btn-sm" onClick={speakBriefing} title="Listen to your briefing">{speaking?'■ Stop':'🔊 Listen'}</button><button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button></div>
         </div>
         {briefing?.summary && <p style={{marginTop:'10px',fontSize:'14px',lineHeight:1.5,color:'var(--text-1)'}}>{briefing.summary}</p>}
       </div>
@@ -26310,6 +26363,53 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 
       <div className="panel">
+        <div className="panel-header" style={{cursor:'pointer'}} onClick={()=>setShowScore(v=>!v)}><h3>📊 This week</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{showScore?'Hide':'Show'}</span></div>
+        {showScore && (score && score.sent ? (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
+            {[['Sent',score.sent],['Replies',`${score.replied} (${score.replyRate}%)`],['Meetings',score.meetings],['Deals moved',score.deals]].map(([k,v])=>(
+              <div key={k} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px',textAlign:'center'}}>
+                <div style={{fontSize:'18px',fontWeight:800,color:'var(--accent)'}}>{v}</div>
+                <div style={{fontSize:'10px',letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)',marginTop:'2px'}}>{k}</div>
+              </div>
+            ))}
+          </div>
+        ) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No sends yet this week. As you send from Ari, your reply, meeting, and deal outcomes show up here.</div>)}
+        {showScore && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Ari learns from these outcomes \u2014 who replies, and which phrasing and timing convert \u2014 and uses it to rank and draft tomorrow\u2019s briefing.</div>}
+      </div>
+
+      {reviewing && (()=>{ const pend = reachouts.filter(r=>r.status==='pending'); const cur = pend[reviewIdx]; const appdN = Object.values(approved).filter(Boolean).length;
+        return (
+        <div className="panel" style={{borderColor:'var(--accent-dim)'}}>
+          <div className="panel-header"><h3>⚡ Rapid review</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{Math.min(reviewIdx+1,pend.length)} of {pend.length}</span></div>
+          {cur ? (
+            <div>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'4px'}}>
+                <span style={{fontWeight:700,fontSize:'15px'}}>{cur.name}</span>
+                {cur.disc && chip(cur.disc, discColor(cur.disc))}
+              </div>
+              <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'8px'}}>{cur.reason}</div>
+              <textarea className="form-input" style={{width:'100%',minHeight:'120px',fontSize:'14px',lineHeight:1.5,resize:'vertical'}} value={(edits[cur.contact_id]?.message) ?? cur.message ?? ''} onChange={e=>setEdit(cur.contact_id,'message',e.target.value,cur)} />
+              <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
+                <button className="btn btn-ghost" style={{flex:1}} onClick={()=>decide(cur,'skip')}>\u23ed Skip</button>
+                <button className="btn btn-primary" style={{flex:2}} onClick={()=>decide(cur,'approve')}>\u2713 Approve to send</button>
+              </div>
+              <div style={{textAlign:'center',marginTop:'8px'}}><button className="btn btn-ghost btn-sm" onClick={()=>setReviewing(false)}>Exit review</button></div>
+            </div>
+          ) : (
+            <div style={{textAlign:'center',padding:'8px 0'}}>
+              <div style={{fontSize:'15px',fontWeight:700,marginBottom:'4px'}}>Ready to send</div>
+              <div style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'14px'}}>{appdN} approved{(pend.length-appdN)>0?` \u00b7 ${pend.length-appdN} skipped`:''}</div>
+              <div style={{display:'flex',gap:'8px'}}>
+                <button className="btn btn-ghost" style={{flex:1}} disabled={batchBusy} onClick={()=>setReviewing(false)}>Back</button>
+                <button className="btn btn-primary" style={{flex:2}} disabled={batchBusy||!appdN} onClick={batchSend}>{batchBusy?'Sending\u2026':`Send ${appdN} message${appdN===1?'':'s'}`}</button>
+              </div>
+            </div>
+          )}
+        </div>);
+      })()}
+      {batchMsg && <div style={{padding:'8px 12px',margin:'0 0 12px',background:'rgba(34,197,94,.1)',border:'1px solid var(--green)',borderRadius:'8px',color:'var(--green)',fontSize:'12px'}}>{batchMsg}</div>}
+
+      <div className="panel" style={{display:reviewing?'none':undefined}}>
         <div className="panel-header"><h3>Reach out today</h3><span className="nav-badge">{pending.length}</span></div>
         {!reachouts.length && <div style={{fontSize:'13px',color:'var(--text-3)'}}>No outreach flagged today — your relationships are current. Nice.</div>}
         {pending.map(r=>(
