@@ -25931,6 +25931,158 @@ function EmailRepliesPanel() {
 }
 
 // ─────────────────────────────────────────
+// ARI DAILY BRIEFING
+// ─────────────────────────────────────────
+function AriBriefingView({ userId, user, setView }) {
+  const [loading, setLoading] = useState(true);
+  const [briefing, setBriefing] = useState(null);
+  const [err, setErr] = useState(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [acct, setAcct] = useState(null);
+  const [edits, setEdits] = useState({});
+  const [firstName, setFirstName] = useState('');
+  const [busy, setBusy] = useState({});
+
+  const today = new Date().toLocaleDateString('en-CA');
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const dateStr = new Date().toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' });
+
+  const load = async (regenerate=false) => {
+    if (regenerate) setRegenerating(true); else setLoading(true);
+    setErr(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('ari-briefing', { body: { today, regenerate } });
+      if (error || data?.error) throw new Error(error?.message || data?.error);
+      setBriefing(data.briefing);
+      const seed = {};
+      (data.briefing?.payload?.reachouts || []).forEach(r => { seed[r.contact_id] = { subject: r.subject, message: r.message }; });
+      setEdits(seed);
+    } catch(e){ setErr(e.message || String(e)); }
+    setLoading(false); setRegenerating(false);
+  };
+  useEffect(()=>{ load(false); }, []);   // eslint-disable-line
+  useEffect(()=>{ (async ()=>{
+    const { data:a } = await supabase.from('email_accounts').select('id,email_address').contains('purposes',['email']).order('created_at').limit(1);
+    setAcct((a&&a[0])||null);
+    const { data:p } = await supabase.from('profiles').select('full_name').eq('id', userId).maybeSingle();
+    const nm = p?.full_name || (user?.email||'').split('@')[0];
+    setFirstName((nm||'').split(' ')[0]);
+  })(); }, []);   // eslint-disable-line
+
+  const payload = briefing?.payload || {};
+  const reachouts = payload.reachouts || [];
+
+  const persist = async (newReachouts) => {
+    const np = { ...payload, reachouts: newReachouts };
+    setBriefing(b => ({ ...b, payload: np }));
+    await supabase.from('ari_briefings').update({ payload: np, updated_at: new Date().toISOString() }).eq('id', briefing.id);
+  };
+  const setStatus = async (cid, status) => {
+    const np = reachouts.map(r => r.contact_id===cid ? { ...r, ...(edits[cid]||{}), status } : r);
+    await persist(np);
+  };
+  const logTouch = async (cid, channel) => {
+    try {
+      await supabase.from('contact_interactions').insert({ user_id:userId, contact_id:cid, channel, direction:'outbound', kind:'touch', occurred_at:new Date().toISOString(), brief:'Ari Daily Briefing outreach' });
+      await supabase.from('contacts').update({ last_contact_at:new Date().toISOString() }).eq('id', cid);
+    } catch(e){}
+  };
+  const doSend = async (r) => {
+    if (!r.email) { setErr('No email on file for '+r.name); return; }
+    if (!acct) { setErr('Connect a Gmail account in Settings to send.'); return; }
+    setBusy(b=>({ ...b,[r.contact_id]:true }));
+    const e = edits[r.contact_id]||{};
+    const { data:sr, error:se } = await supabase.functions.invoke('gmail-send', { body:{ account_id:acct.id, to:r.email, subject:e.subject||r.subject, body_text:e.message||r.message } });
+    setBusy(b=>({ ...b,[r.contact_id]:false }));
+    if (se || sr?.error) { setErr('Send failed: '+(se?.message||sr?.error)); return; }
+    await logTouch(r.contact_id,'email');
+    await setStatus(r.contact_id,'sent');
+  };
+  const doCopy = async (r) => { try{ await navigator.clipboard.writeText((edits[r.contact_id]?.message)||r.message); }catch(e){} };
+  const doDone = async (r) => { await logTouch(r.contact_id,'manual'); await setStatus(r.contact_id,'done'); };
+  const doSnooze = async (r) => { await setStatus(r.contact_id,'snoozed'); };
+
+  const discColor = (d)=> d==='D'?'#ef4444':d==='I'?'var(--accent)':d==='S'?'var(--green)':d==='C'?'#3b82f6':'var(--text-3)';
+  const chip = (txt,col)=><span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.03em',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
+  const setEdit = (cid,key,val,r)=> setEdits(s=>({ ...s,[cid]:{ subject:r.subject, message:r.message, ...(s[cid]||{}), [key]:val }}));
+
+  if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Ari is preparing your briefing…</div></div>;
+
+  const pending = reachouts.filter(r=>r.status==='pending');
+  const handled = reachouts.filter(r=>r.status!=='pending');
+
+  return (
+    <div className="view">
+      <div className="panel" style={{background:'linear-gradient(135deg,var(--bg-card),var(--bg-hover))',borderColor:'var(--accent-dim)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',flexWrap:'wrap'}}>
+          <div style={{flex:1,minWidth:'220px'}}>
+            <div style={{fontSize:'11px',letterSpacing:'.18em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700}}>✦ Ari Daily Briefing</div>
+            <h2 style={{margin:'4px 0 2px'}}>{greeting}{firstName?`, ${firstName}`:''}.</h2>
+            <div style={{fontSize:'12px',color:'var(--text-3)'}}>{dateStr}</div>
+          </div>
+          <button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button>
+        </div>
+        {briefing?.summary && <p style={{marginTop:'10px',fontSize:'14px',lineHeight:1.5,color:'var(--text-1)'}}>{briefing.summary}</p>}
+      </div>
+
+      {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
+
+      <div className="panel">
+        <div className="panel-header"><h3>Reach out today</h3><span className="nav-badge">{pending.length}</span></div>
+        {!reachouts.length && <div style={{fontSize:'13px',color:'var(--text-3)'}}>No outreach flagged today — your relationships are current. Nice.</div>}
+        {pending.map(r=>(
+          <div key={r.contact_id} style={{border:'1px solid var(--border)',borderRadius:'10px',padding:'12px',marginBottom:'10px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'6px'}}>
+              <span style={{fontWeight:700,fontSize:'14px'}}>{r.name}</span>
+              {r.disc && chip(r.disc+' · '+(r.disc_label||'').split('—')[0].trim(), discColor(r.disc))}
+            </div>
+            <div style={{fontSize:'11px',color:'var(--accent)',marginBottom:'8px'}}>✦ {r.reason} · last touch {r.last_touch}</div>
+            {r.email && <input className="form-input" style={{marginBottom:'6px',fontSize:'12px'}} value={(edits[r.contact_id]?.subject)??r.subject} onChange={e=>setEdit(r.contact_id,'subject',e.target.value,r)}/>}
+            <textarea className="form-input" rows={4} style={{fontSize:'13px',lineHeight:1.5}} value={(edits[r.contact_id]?.message)??r.message} onChange={e=>setEdit(r.contact_id,'message',e.target.value,r)}/>
+            <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
+              {r.email && <button className="btn btn-primary btn-sm" disabled={busy[r.contact_id]} onClick={()=>doSend(r)}>{busy[r.contact_id]?'…sending':'Send email'}</button>}
+              <button className="btn btn-ghost btn-sm" onClick={()=>doCopy(r)}>Copy</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>doDone(r)}>Mark contacted</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>doSnooze(r)}>Snooze</button>
+            </div>
+          </div>
+        ))}
+        {!!handled.length && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'6px'}}>{handled.length} handled today ✓</div>}
+      </div>
+
+      <div className="panel">
+        <div className="panel-header"><h3>Today</h3></div>
+        <div style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)',marginBottom:'4px'}}>Tasks due · {(payload.tasks||[]).length}</div>
+        {(payload.tasks||[]).length ? (payload.tasks||[]).map(t=>(
+          <div key={t.id} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
+            <span>{t.title}</span><span style={{color:'var(--text-3)',fontSize:'11px'}}>{t.due_date}</span>
+          </div>
+        )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>Nothing due.</div>}
+        <div style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)',margin:'12px 0 4px'}}>On the calendar · {(payload.events||[]).length}</div>
+        {(payload.events||[]).length ? (payload.events||[]).map(e=>(
+          <div key={e.id} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
+            <span>{e.title}{e.location?<span style={{color:'var(--text-3)'}}> · {e.location}</span>:null}</span>
+            <span style={{color:'var(--text-3)',fontSize:'11px'}}>{e.all_day?'All day':new Date(e.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span>
+          </div>
+        )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No events today.</div>}
+      </div>
+
+      {!!(payload.deals||[]).length && (
+        <div className="panel">
+          <div className="panel-header"><h3>Deals in motion</h3><span className="nav-badge">{payload.deals.length}</span></div>
+          {payload.deals.map(d=>(
+            <div key={d.id} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
+              <span>{d.client_name||d.address||'Deal'}</span><span style={{color:'var(--text-3)',fontSize:'11px'}}>{d.status}{d.close_date?` · ${d.close_date}`:''}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────
 // ─────────────────────────────────────────
@@ -26340,6 +26492,7 @@ export default function App() {
 
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
+    { id: 'briefing',    icon: '🌅', label: 'Ari Briefing', badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
@@ -26366,7 +26519,7 @@ export default function App() {
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
-  const MAIN_ORDER = ['dashboard', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'notes', 'chat'];
+  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'notes', 'chat'];
   const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
@@ -26446,6 +26599,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
+              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView}/>
               : view==='prospecting' ? <ProspectingView userId={user.id}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
