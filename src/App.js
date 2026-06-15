@@ -9904,7 +9904,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
 function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChanged }) {
   const [suggestions, setSuggestions] = useState(null);
   const [newContactSuggestions, setNewContactSuggestions] = useState(null);
-  const [busy, setBusy] = useState({});  // sender_email -> action label
+  const [busy, setBusy] = useState({});
+  const [openSrc, setOpenSrc] = useState({});  // sender_email -> action label
   const [pickerFor, setPickerFor] = useState(null);  // sender_email when picking different contact
   const [pickerQuery, setPickerQuery] = useState('');
   // For "Add" on a new-contact suggestion
@@ -25942,6 +25943,7 @@ function AriBriefingView({ userId, user, setView }) {
   const [edits, setEdits] = useState({});
   const [firstName, setFirstName] = useState('');
   const [busy, setBusy] = useState({});
+  const [openSrc, setOpenSrc] = useState({});
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -26038,6 +26040,17 @@ function AriBriefingView({ userId, user, setView }) {
               {r.disc && chip(r.disc+' · '+(r.disc_label||'').split('—')[0].trim(), discColor(r.disc))}
             </div>
             <div style={{fontSize:'11px',color:'var(--accent)',marginBottom:'8px'}}>✦ {r.reason} · last touch {r.last_touch}</div>
+            {r.source && r.source.text && (
+              <div style={{marginBottom:'8px',border:'1px solid var(--border)',borderRadius:'8px',background:'var(--bg-base)'}}>
+                <div onClick={()=>setOpenSrc(o=>({...o,[r.contact_id]:!o[r.contact_id]}))} style={{cursor:'pointer',padding:'7px 10px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
+                  <span style={{fontSize:'11px',fontWeight:600,color:'var(--text-2)'}}>↩ {r.source.label}{r.source.subject?`: ${r.source.subject}`:''}</span>
+                  <span style={{fontSize:'11px',color:'var(--accent)'}}>{openSrc[r.contact_id]?'Hide':'Show'}</span>
+                </div>
+                {openSrc[r.contact_id]
+                  ? <div style={{padding:'2px 10px 10px',fontSize:'12px',color:'var(--text-2)',whiteSpace:'pre-wrap',maxHeight:'200px',overflowY:'auto',lineHeight:1.5}}>{r.source.text}</div>
+                  : <div style={{padding:'0 10px 8px',fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.source.text.slice(0,100)}{r.source.text.length>100?'…':''}</div>}
+              </div>
+            )}
             {r.email && <input className="form-input" style={{marginBottom:'6px',fontSize:'12px'}} value={(edits[r.contact_id]?.subject)??r.subject} onChange={e=>setEdit(r.contact_id,'subject',e.target.value,r)}/>}
             <textarea className="form-input" rows={4} style={{fontSize:'13px',lineHeight:1.5}} value={(edits[r.contact_id]?.message)??r.message} onChange={e=>setEdit(r.contact_id,'message',e.target.value,r)}/>
             <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
