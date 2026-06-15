@@ -25071,6 +25071,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [briefHour, setBriefHour] = useState(7);
   const [briefMsg, setBriefMsg] = useState('');
   const [savingBrief, setSavingBrief] = useState(false);
+  const [briefAcct, setBriefAcct] = useState(null);
   const [pushOn, setPushOn] = useState(false);
   const [pushMsg, setPushMsg] = useState('');
   const [pushBusy, setPushBusy] = useState(false);
@@ -25100,7 +25101,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
     }
   }, [userSettings]);
 
-  useEffect(() => { (async () => { try { const { data } = await supabase.from('ari_briefing_prefs').select('enabled,send_hour').eq('user_id', userId).maybeSingle(); if (data) { setBriefEnabled(!!data.enabled); setBriefHour(data.send_hour ?? 7); } } catch(e){} })(); }, []); // eslint-disable-line
+  useEffect(() => { (async () => { try { const { data } = await supabase.from('ari_briefing_prefs').select('enabled,send_hour,delivery_account_id').eq('user_id', userId).maybeSingle(); if (data) { setBriefEnabled(!!data.enabled); setBriefHour(data.send_hour ?? 7); setBriefAcct(data.delivery_account_id ?? null); } } catch(e){} })(); }, []); // eslint-disable-line
   useEffect(() => { (async () => { try { if (!('serviceWorker' in navigator) || !('PushManager' in window)) return; const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub && typeof Notification!=='undefined' && Notification.permission==='granted') { const j=sub.toJSON(); await supabase.from('push_subscriptions').upsert({ user_id: userId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' }); setPushOn(true); } else { setPushOn(false); } } catch(e){} })(); }, []); // eslint-disable-line
   async function enablePush() {
     setPushBusy(true); setPushMsg('');
@@ -25130,10 +25131,11 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
     setPushBusy(false);
     setPushMsg(error || data?.error ? ('Test failed: ' + (error?.message || data?.error)) : (data?.sent ? `Sent to ${data.sent} device(s) \u2014 check your phone.` : 'Tap Enable notifications first, then test.'));
   }
-  async function saveBrief(nextEnabled, nextHour) {
+  async function saveBrief(nextEnabled, nextHour, nextAcct) {
     setSavingBrief(true); setBriefMsg('');
     const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'America/New_York';
-    const { error } = await supabase.from('ari_briefing_prefs').upsert({ user_id: userId, enabled: nextEnabled, send_hour: nextHour, tz, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    const acct = (nextAcct === undefined ? briefAcct : nextAcct) || null;
+    const { error } = await supabase.from('ari_briefing_prefs').upsert({ user_id: userId, enabled: nextEnabled, send_hour: nextHour, tz, delivery_account_id: acct, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
     setSavingBrief(false);
     setBriefMsg(error ? ('Error: ' + error.message) : 'Saved.');
   }
@@ -25244,6 +25246,14 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               <input type="checkbox" checked={briefEnabled} onChange={e=>{ setBriefEnabled(e.target.checked); saveBrief(e.target.checked, briefHour); }}/>
               <span style={{fontSize:'14px',fontWeight:600}}>Email me my briefing every morning</span>
             </label>
+            <div className="form-group" style={{opacity:briefEnabled?1:0.5}}>
+              <label className="form-label">Deliver from / to</label>
+              <select className="form-select" value={briefAcct||''} disabled={!briefEnabled||savingBrief} onChange={e=>{ const v=e.target.value||null; setBriefAcct(v); saveBrief(briefEnabled, briefHour, v); }}>
+                {!briefAcct && <option value="">Default (first email account)</option>}
+                {(emailAccounts||[]).map(a=><option key={a.id} value={a.id}>{a.email_address||a.email}</option>)}
+              </select>
+              <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>The morning briefing (and its voicemail) is emailed from and to this connected account.</div>
+            </div>
             <div className="form-group" style={{opacity:briefEnabled?1:0.5}}>
               <label className="form-label">Delivery time</label>
               <select className="form-select" value={briefHour} disabled={!briefEnabled||savingBrief} onChange={e=>{ const h=parseInt(e.target.value,10); setBriefHour(h); saveBrief(briefEnabled,h); }}>
