@@ -26021,7 +26021,9 @@ function AriBriefingView({ userId, user, setView }) {
     const cur = (edits[r.contact_id]?.message) ?? r.message;
     if (!cur || !cur.trim()) { setErr('Write a draft first, then let Ari refine it.'); return; }
     setRwBusy(b=>({ ...b,[r.contact_id]:true }));
-    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:cur, contact_name:r.name, disc_label:r.disc_label||'', source_text:(r.source&&r.source.text)||'' } });
+    const grp = !!replyAll[r.contact_id];
+    const others = grp ? otherRecips(r) : [];
+    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:cur, contact_name:r.name, disc_label:r.disc_label||'', source_text:(r.source&&r.source.text)||'', audience: grp?'group':'individual', recipients: others } });
     setRwBusy(b=>({ ...b,[r.contact_id]:false }));
     if (error || data?.error || !data?.message) { setErr('Ari rewrite failed: '+(error?.message||data?.error||'no output')); return; }
     setPrevMsg(p=>({ ...p,[r.contact_id]:cur }));
@@ -26038,16 +26040,22 @@ function AriBriefingView({ userId, user, setView }) {
   const chip = (txt,col)=><span style={{fontSize:'10px',fontWeight:700,letterSpacing:'.03em',color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 6px'}}>{txt}</span>;
   const prChip = (t) => {
     const q = (t.quadrant||'').toString().toUpperCase();
-    let label, col;
+    let label, col, bg;
+    const RED='#ef4444', AMB='#f59e0b', BLU='#3b82f6';
+    const tint = (c)=> c===RED?'rgba(239,68,68,.14)':c===AMB?'rgba(245,158,11,.14)':c===BLU?'rgba(59,130,246,.14)':'var(--bg-hover)';
     if (['A','B','C','D'].includes(q)) {
-      label = q; col = q==='A'?'#ef4444':q==='B'?'#f59e0b':q==='C'?'#3b82f6':'var(--text-3)';
+      label = q; col = q==='A'?RED:q==='B'?AMB:q==='C'?BLU:'var(--text-3)';
     } else {
       const p = (t.priority||'').toString().toLowerCase();
       label = p==='high'?'HIGH':p==='low'?'LOW':p==='medium'?'MED':'—';
-      col = p==='high'?'#ef4444':p==='medium'?'#f59e0b':p==='low'?'#3b82f6':'var(--text-3)';
+      col = p==='high'?RED:p==='medium'?AMB:p==='low'?BLU:'var(--text-3)';
     }
-    return <span style={{display:'inline-block',minWidth:'38px',textAlign:'center',fontSize:'10px',fontWeight:700,color:col,border:`1px solid ${col}`,borderRadius:'5px',padding:'1px 5px',letterSpacing:'.02em'}}>{label}</span>;
+    bg = tint(col);
+    return <span className="brief-pchip" style={{color:col, background:bg}}>{label}</span>;
   };
+  const fmtDate = (d) => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{month:'short',day:'numeric'}); };
+  const dueView = (d) => { if(!d) return {label:'',color:undefined}; if(d<today) return {label:'Overdue',color:'#ef4444'}; if(d===today) return {label:'Today',color:'var(--accent)'}; return {label:fmtDate(d),color:undefined}; };
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
   const setEdit = (cid,key,val,r)=> setEdits(s=>({ ...s,[cid]:{ subject:r.subject, message:r.message, ...(s[cid]||{}), [key]:val }}));
 
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Ari is preparing your briefing…</div></div>;
@@ -26130,28 +26138,32 @@ function AriBriefingView({ userId, user, setView }) {
       <div className="panel">
         <div className="panel-header"><h3>Today</h3></div>
 
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
-          <span style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)'}}>Tasks due · {(payload.tasks||[]).length}</span>
-          <button className="btn btn-ghost btn-sm" style={{padding:'2px 9px',fontSize:'11px'}} onClick={()=>setView('tasks')}>Tasks ↗</button>
-        </div>
-        {(payload.tasks||[]).length ? (payload.tasks||[]).map(t=>(
-          <div key={t.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
-            <span style={{flex:'0 0 44px',display:'flex'}}>{prChip(t)}</span>
-            <span style={{flex:1,minWidth:0}}>{t.title}</span>
-            <span style={{color:'var(--text-3)',fontSize:'11px',flex:'0 0 auto'}}>{t.due_date}</span>
+        <div className="brief-sec">
+          <div className="brief-sec-head">
+            <span className="brief-sec-title">Tasks due <span className="brief-pill">{(payload.tasks||[]).length}</span></span>
+            <button className="brief-jump" onClick={()=>setView('tasks')}>Open Tasks <span className="arr">→</span></button>
           </div>
-        )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>Nothing due.</div>}
+          {(payload.tasks||[]).length ? (payload.tasks||[]).map(t=>{ const dv=dueView(t.due_date); return (
+            <div key={t.id} className="brief-row">
+              <span className="brief-pcell">{prChip(t)}</span>
+              <span className="brief-title">{t.title}</span>
+              <span className="brief-when" style={dv.color?{color:dv.color,fontWeight:600}:undefined}>{dv.label}</span>
+            </div>
+          );}) : <div className="brief-empty">Nothing due — you\u2019re clear.</div>}
+        </div>
 
-        <div style={{borderTop:'1px solid var(--border)',marginTop:'16px',paddingTop:'14px',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
-          <span style={{fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'var(--text-2)'}}>On the calendar · {(payload.events||[]).length}</span>
-          <button className="btn btn-ghost btn-sm" style={{padding:'2px 9px',fontSize:'11px'}} onClick={()=>setView('calendar')}>Calendar ↗</button>
-        </div>
-        {(payload.events||[]).length ? (payload.events||[]).map(e=>(
-          <div key={e.id} style={{display:'flex',justifyContent:'space-between',gap:'10px',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
-            <span style={{minWidth:0}}>{e.title}{e.location?<span style={{color:'var(--text-3)'}}> · {e.location}</span>:null}</span>
-            <span style={{color:'var(--text-3)',fontSize:'11px',flex:'0 0 auto'}}>{e.all_day?'All day':new Date(e.start_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span>
+        <div className="brief-sec">
+          <div className="brief-sec-head">
+            <span className="brief-sec-title">On the calendar <span className="brief-pill">{(payload.events||[]).length}</span></span>
+            <button className="brief-jump" onClick={()=>setView('calendar')}>Open Calendar <span className="arr">→</span></button>
           </div>
-        )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No events today.</div>}
+          {(payload.events||[]).length ? (payload.events||[]).map(e=>(
+            <div key={e.id} className="brief-row">
+              <span className="brief-title">{e.title}{e.location?<span style={{color:'var(--text-3)',fontWeight:400}}> · {e.location}</span>:null}</span>
+              <span className="brief-when">{e.all_day?'All day':fmtTime(e.start_at)}</span>
+            </div>
+          )) : <div className="brief-empty">No events today.</div>}
+        </div>
       </div>
 
       {!!(payload.deals||[]).length && (

@@ -940,3 +940,22 @@ body {
   0% { transform: translateY(0) rotate(0deg); opacity: 1; }
   100% { transform: translateY(110vh) rotate(540deg); opacity: 0; }
 }
+
+/* ── Ari Briefing · Today sections ─────────────────────────── */
+.brief-sec { margin-top: 2px; }
+.brief-sec + .brief-sec { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.brief-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.brief-sec-title { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); }
+.brief-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent-glow, rgba(197,169,94,.16)); color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 0; }
+.brief-jump { display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; transition: border-color .15s ease, background .15s ease; white-space: nowrap; }
+.brief-jump:hover { border-color: var(--accent); background: var(--accent-glow, rgba(197,169,94,.12)); }
+.brief-jump .arr { transition: transform .15s ease; font-size: 13px; line-height: 1; }
+.brief-jump:hover .arr { transform: translateX(3px); }
+.brief-row { display: flex; align-items: center; gap: 12px; padding: 9px 8px; margin: 0 -8px; font-size: 13px; border-bottom: 1px solid var(--border); border-radius: 8px; transition: background .12s ease; }
+.brief-row:last-child { border-bottom: none; }
+.brief-row:hover { background: var(--bg-hover); }
+.brief-pcell { flex: 0 0 46px; display: flex; align-items: center; }
+.brief-pchip { display: inline-flex; align-items: center; justify-content: center; height: 20px; min-width: 24px; padding: 0 8px; border-radius: 6px; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+.brief-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-1); }
+.brief-when { flex: 0 0 auto; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.brief-empty { font-size: 12px; color: var(--text-3); padding: 8px 0; }
