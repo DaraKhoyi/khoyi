@@ -25946,6 +25946,7 @@ function AriBriefingView({ userId, user, setView }) {
   const [firstName, setFirstName] = useState('');
   const [busy, setBusy] = useState({});
   const [openSrc, setOpenSrc] = useState({});
+  const [replyAll, setReplyAll] = useState({});
   const [rwBusy, setRwBusy] = useState({});
   const [prevMsg, setPrevMsg] = useState({});
 
@@ -25993,12 +25994,21 @@ function AriBriefingView({ userId, user, setView }) {
       await supabase.from('contacts').update({ last_contact_at:new Date().toISOString() }).eq('id', cid);
     } catch(e){}
   };
+  const emailOf = (x)=>{ const m=String(x||'').match(/<([^>]+)>/); return (m?m[1]:String(x||'')).trim().toLowerCase(); };
+  const selfEmails = [acct?.email_address, user?.email, 'dara@brokerdara.com', 'khoyi1234@gmail.com'].filter(Boolean).map(x=>String(x).toLowerCase());
+  const otherRecips = (r)=>{
+    const all = [ ...((r.source&&r.source.to)||[]), ...((r.source&&r.source.cc)||[]) ];
+    const seen=new Set(); const out=[];
+    for (const a of all){ const e=emailOf(a); if(!e||e===String(r.email||'').toLowerCase()||selfEmails.includes(e)||seen.has(e)) continue; seen.add(e); out.push(a); }
+    return out;
+  };
   const doSend = async (r) => {
     if (!r.email) { setErr('No email on file for '+r.name); return; }
     if (!acct) { setErr('Connect a Gmail account in Settings to send.'); return; }
     setBusy(b=>({ ...b,[r.contact_id]:true }));
     const e = edits[r.contact_id]||{};
-    const { data:sr, error:se } = await supabase.functions.invoke('gmail-send', { body:{ account_id:acct.id, to:r.email, subject:e.subject||r.subject, body_text:e.message||r.message } });
+    const cc = replyAll[r.contact_id] ? otherRecips(r) : [];
+    const { data:sr, error:se } = await supabase.functions.invoke('gmail-send', { body:{ account_id:acct.id, to:r.email, cc: cc.length?cc:undefined, subject:e.subject||r.subject, body_text:e.message||r.message } });
     setBusy(b=>({ ...b,[r.contact_id]:false }));
     if (se || sr?.error) { setErr('Send failed: '+(se?.message||sr?.error)); return; }
     await logTouch(r.contact_id,'email');
@@ -26078,7 +26088,16 @@ function AriBriefingView({ userId, user, setView }) {
                   <span style={{fontSize:'11px',color:'var(--accent)'}}>{openSrc[r.contact_id]?'Hide':'Show'}</span>
                 </div>
                 {openSrc[r.contact_id]
-                  ? <div style={{padding:'2px 10px 10px',fontSize:'12px',color:'var(--text-2)',whiteSpace:'pre-wrap',maxHeight:'200px',overflowY:'auto',lineHeight:1.5}}>{r.source.text}</div>
+                  ? <div style={{padding:'2px 10px 10px'}}>
+                      {(r.source.from || (r.source.to&&r.source.to.length) || (r.source.cc&&r.source.cc.length)) ? (
+                        <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'6px',paddingBottom:'6px',borderBottom:'1px solid var(--border)',lineHeight:1.5,wordBreak:'break-word'}}>
+                          {r.source.from && <div><span style={{color:'var(--text-2)',fontWeight:600}}>From: </span>{r.source.from}</div>}
+                          {r.source.to&&r.source.to.length>0 && <div><span style={{color:'var(--text-2)',fontWeight:600}}>To: </span>{r.source.to.join(', ')}</div>}
+                          {r.source.cc&&r.source.cc.length>0 && <div><span style={{color:'var(--text-2)',fontWeight:600}}>Cc: </span>{r.source.cc.join(', ')}</div>}
+                        </div>
+                      ) : null}
+                      <div style={{fontSize:'12px',color:'var(--text-2)',whiteSpace:'pre-wrap',maxHeight:'200px',overflowY:'auto',lineHeight:1.5}}>{r.source.text}</div>
+                    </div>
                   : <div style={{padding:'0 10px 8px',fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.source.text.slice(0,100)}{r.source.text.length>100?'…':''}</div>}
               </div>
             )}
@@ -26091,8 +26110,14 @@ function AriBriefingView({ userId, user, setView }) {
               </div>
             </div>
             <textarea className="form-input" rows={4} style={{fontSize:'13px',lineHeight:1.5}} value={(edits[r.contact_id]?.message)??r.message} onChange={e=>setEdit(r.contact_id,'message',e.target.value,r)}/>
-            <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
-              {r.email && <button className="btn btn-primary btn-sm" disabled={busy[r.contact_id]} onClick={()=>doSend(r)}>{busy[r.contact_id]?'…sending':'Send email'}</button>}
+            <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap',alignItems:'center'}}>
+              {r.email && otherRecips(r).length>0 && (
+                <label style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',color:'var(--text-2)',cursor:'pointer'}} title={otherRecips(r).join(', ')}>
+                  <input type="checkbox" checked={!!replyAll[r.contact_id]} onChange={ev=>setReplyAll(st=>({ ...st,[r.contact_id]:ev.target.checked }))}/>
+                  Reply all (+{otherRecips(r).length})
+                </label>
+              )}
+              {r.email && <button className="btn btn-primary btn-sm" disabled={busy[r.contact_id]} onClick={()=>doSend(r)}>{busy[r.contact_id]?'…sending':(replyAll[r.contact_id]?'Send to all':'Send email')}</button>}
               <button className="btn btn-ghost btn-sm" onClick={()=>doCopy(r)}>Copy</button>
               <button className="btn btn-ghost btn-sm" onClick={()=>doDone(r)}>Mark contacted</button>
               <button className="btn btn-ghost btn-sm" onClick={()=>doSnooze(r)}>Snooze</button>
