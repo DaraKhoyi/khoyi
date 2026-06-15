@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v3-20260612';
+const VERSION = 'prismos-v4-20260615';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -74,4 +74,31 @@ self.addEventListener('fetch', (event) => {
 
   // Everything else (Supabase, Gmail API, fonts.googleapis.com, etc.) passes
   // straight through to the network so we never serve stale data.
+});
+
+// ── Web Push ───────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
+  const title = data.title || 'Ari Daily Briefing';
+  const options = {
+    body: data.body || 'Your morning briefing is ready.',
+    icon: '/logo192.png',
+    badge: '/logo192.png',
+    tag: 'ari-briefing',
+    renotify: true,
+    data: { url: data.url || '/' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ('focus' in c) { try { c.navigate(url); } catch (e) {} return c.focus(); } }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
+  );
 });
