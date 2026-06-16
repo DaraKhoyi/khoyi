@@ -17269,6 +17269,19 @@ function useDictation(onFinal) {
   return { recording, interim, start, stop, supported };
 }
 
+// Textarea that grows with its content (no inner scroll until maxHeight).
+function AutoGrowTextarea({ value, minHeight = 120, maxHeight = 600, style, ...rest }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    el.style.height = 'auto';
+    const h = Math.min(el.scrollHeight, maxHeight);
+    el.style.height = h + 'px';
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [value, maxHeight]);
+  return <textarea ref={ref} value={value} style={{ ...style, minHeight, resize: 'none', overflow: 'hidden' }} {...rest} />;
+}
+
 function LinkChip({ link, onConfirm, onDismiss }) {
   const meta = JLINK_META[link.entity_type] || { icon: '•', color: 'var(--text-3)' };
   if (link.confirmed) {
@@ -17518,10 +17531,11 @@ function JournalView({ userId }) {
               </span>
             )}
           </div>
-          <textarea ref={taRef} value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)}
+          <AutoGrowTextarea value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); } }}
             placeholder={"What happened? Who did you meet, what did they say, what's next?\n\nTip: name people, properties, projects or deals and they'll auto-link to their records."}
-            style={{ width: '100%', minHeight: '220px', padding: '16px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text-1)', fontSize: '16px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6, fontFamily: 'inherit' }} />
+            minHeight={220} maxHeight={640}
+            style={{ width: '100%', padding: '16px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text-1)', fontSize: '16px', boxSizing: 'border-box', lineHeight: 1.6, fontFamily: 'inherit' }} />
           <div style={{ display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
             {dict.supported && (
               <button onClick={() => dict.recording ? dict.stop() : dict.start()}
@@ -17626,8 +17640,9 @@ function QuickLog({ userId }) {
               <h3 style={{ margin: 0, fontSize: '15px' }}>📓 Quick log</h3>
               <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
             </div>
-            <textarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} rows={6} placeholder="Capture a moment — it'll timestamp and auto-link…"
-              style={{ width: '100%', minHeight: '150px', padding: '13px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '15px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.55 }} />
+            <AutoGrowTextarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} placeholder="Capture a moment — it'll timestamp and auto-link…"
+              minHeight={150} maxHeight={420}
+              style={{ width: '100%', padding: '13px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '15px', boxSizing: 'border-box', lineHeight: 1.55 }} />
             <div style={{ display: 'flex', gap: '8px', marginTop: '10px', alignItems: 'center' }}>
               {dict.supported && <button onClick={() => dict.recording ? dict.stop() : dict.start()} style={{ padding: '9px 14px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>{dict.recording ? '⏹ Recording…' : '🎤 Voice'}</button>}
               <span style={{ flex: 1 }} />
