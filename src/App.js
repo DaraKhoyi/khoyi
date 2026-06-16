@@ -17283,8 +17283,82 @@ function LinkChip({ link, onConfirm, onDismiss }) {
   );
 }
 
+function jPad(n) { return String(n).padStart(2, '0'); }
+function jFmt(dt) { return `${dt.getFullYear()}-${jPad(dt.getMonth() + 1)}-${jPad(dt.getDate())}`; }
+function periodRange(mode, anchorYmd) {
+  const [y, m, d] = anchorYmd.split('-').map(Number); const dt = new Date(y, m - 1, d);
+  if (mode === 'week') {
+    const dow = (dt.getDay() + 6) % 7; const mon = new Date(dt); mon.setDate(dt.getDate() - dow);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return { start: jFmt(mon), end: jFmt(sun), key: `wk_${jFmt(mon)}`, label: `Week of ${mon.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` };
+  }
+  const first = new Date(y, m - 1, 1), last = new Date(y, m, 0);
+  return { start: jFmt(first), end: jFmt(last), key: `${y}-${jPad(m)}`, label: first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
+}
+function JournalStory({ userId, mode }) {
+  const [anchor, setAnchor] = useState(today_ymd());
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const range = periodRange(mode, anchor);
+  const isCurrent = (() => { const r = periodRange(mode, today_ymd()); return r.key === range.key; })();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: row } = await supabase.from('journal_periods').select('*').eq('user_id', userId).eq('period_type', mode).eq('period_key', range.key).maybeSingle();
+    setData(row?.highlights || (row?.summary ? { story: row.summary } : null));
+    setLoading(false);
+  }, [userId, mode, range.key]);
+  useEffect(() => { load(); }, [load]);
+
+  async function generate() {
+    setGenerating(true);
+    try {
+      const { data: res } = await supabase.functions.invoke('journal-period-summary', { body: { period_type: mode, period_key: range.key, start: range.start, end: range.end } });
+      if (res?.summary) setData(res.summary);
+      else if (window.__notify) window.__notify(res?.message || 'No entries this period', 'warn');
+    } catch (e) { if (window.__notify) window.__notify('Story failed', 'error'); }
+    finally { setGenerating(false); }
+  }
+  function shift(dir) { setAnchor(prev => { const [y, m, d] = prev.split('-').map(Number); const dt = new Date(y, m - 1, d); if (mode === 'week') dt.setDate(dt.getDate() + dir * 7); else dt.setMonth(dt.getMonth() + dir); return jFmt(dt); }); }
+
+  const sections = [['relationships', '🤝 Relationships advanced'], ['deals_projects', '📈 Deals & projects moved'], ['wins', '🏆 Wins'], ['patterns', '🔍 Patterns Ari noticed'], ['focus_next', `🎯 Focus next ${mode}`]];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button onClick={() => shift(-1)} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-hover)', color: 'var(--text-2)', cursor: 'pointer' }}>◀</button>
+        <div style={{ flex: 1, textAlign: 'center', fontSize: '14px', fontWeight: 700 }}>{range.label}{isCurrent && <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>● current</span>}</div>
+        <button onClick={() => shift(1)} disabled={isCurrent} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-hover)', color: 'var(--text-2)', cursor: 'pointer', opacity: isCurrent ? 0.4 : 1 }}>▶</button>
+      </div>
+      {loading ? <div className="panel" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-3)' }}>Loading…</div> :
+        !data ? (
+          <div className="panel" style={{ padding: '24px', textAlign: 'center' }}>
+            <div style={{ fontSize: '30px', marginBottom: '8px' }}>{mode === 'week' ? '🗓️' : '📅'}</div>
+            <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: '0 0 14px', lineHeight: 1.5 }}>Weave your {mode} into a story — the arc, who you advanced, what moved, and where to aim next.</p>
+            <button onClick={generate} disabled={generating} className="btn btn-primary btn-sm">{generating ? 'Writing your story…' : `✨ Write my ${mode}'s story`}</button>
+          </div>
+        ) : (
+          <div className="panel" style={{ padding: '16px', background: 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: '1px solid rgba(197,169,94,0.35)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800 }}>📖 The story of your {mode}</span>
+              <button onClick={generate} disabled={generating} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>{generating ? '…' : '↻ regenerate'}</button>
+            </div>
+            {data.story && <p style={{ fontSize: '14px', color: 'var(--text-1)', margin: '0 0 14px', lineHeight: 1.6 }}>{data.story}</p>}
+            {sections.map(([k, lbl]) => (Array.isArray(data[k]) && data[k].length ? (
+              <div key={k} style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: '4px' }}>{lbl}</div>
+                <ul style={{ margin: 0, paddingLeft: '18px' }}>{data[k].map((x, i) => <li key={i} style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.55 }}>{x}</li>)}</ul>
+              </div>
+            ) : null))}
+          </div>
+        )}
+    </div>
+  );
+}
+
 function JournalView({ userId }) {
   const [day, setDay] = useState(today_ymd());
+  const [mode, setMode] = useState('day');
   const [entries, setEntries] = useState([]);
   const [linksByEntry, setLinksByEntry] = useState({});
   const [actionsByEntry, setActionsByEntry] = useState({});
@@ -17391,6 +17465,13 @@ function JournalView({ userId }) {
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
             style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', fontSize: '15px' }}>🔍</button>
         </div>
+        {!searchOpen && (
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
+            {[['day', 'Day'], ['week', 'Week'], ['month', 'Month']].map(([m, lbl]) => (
+              <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '7px 0', borderRadius: '8px', border: 'none', fontSize: '12px', fontWeight: 700, cursor: 'pointer', background: mode === m ? 'var(--accent)' : 'var(--bg-hover)', color: mode === m ? 'var(--bg-base)' : 'var(--text-2)' }}>{lbl}</button>
+            ))}
+          </div>
+        )}
         {searchOpen ? (
           <div className="panel" style={{ padding: '12px' }}>
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -17410,7 +17491,7 @@ function JournalView({ userId }) {
               </div>
             )}
           </div>
-        ) : (
+        ) : mode === 'day' ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
             <button onClick={() => setDay(shiftDay(day, -1))} style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid var(--border)', background: 'var(--bg-hover)', color: 'var(--text-2)', cursor: 'pointer' }}>◀</button>
             <div style={{ textAlign: 'center', flex: 1 }}>
@@ -17419,11 +17500,13 @@ function JournalView({ userId }) {
             </div>
             <button onClick={() => setDay(shiftDay(day, 1))} disabled={isToday} style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid var(--border)', background: 'var(--bg-hover)', color: 'var(--text-2)', cursor: 'pointer', opacity: isToday ? 0.4 : 1 }}>▶</button>
           </div>
-        )}
+        ) : null}
       </div>
 
+      {!searchOpen && mode !== 'day' && <JournalStory userId={userId} mode={mode} />}
+
       {/* Composer (today only) */}
-      {isToday && !searchOpen && (
+      {mode === 'day' && isToday && !searchOpen && (
         <div className="panel" style={{ padding: '12px' }}>
           <textarea ref={taRef} value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)}
             placeholder="What just happened? Who did you talk to? Type or tap the mic…" rows={3}
@@ -17442,7 +17525,7 @@ function JournalView({ userId }) {
       )}
 
       {/* Day summary */}
-      {!searchOpen && (summary ? (
+      {mode === 'day' && !searchOpen && (summary ? (
         <div className="panel" style={{ padding: '14px', background: 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: '1px solid rgba(197,169,94,0.35)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '11px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800 }}>✨ Day recap</span>
@@ -17465,7 +17548,7 @@ function JournalView({ userId }) {
       )))}
 
       {/* Timeline */}
-      {!searchOpen && (loading ? <div className="panel" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-3)' }}>Loading…</div> :
+      {mode === 'day' && !searchOpen && (loading ? <div className="panel" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-3)' }}>Loading…</div> :
         entries.length === 0 ? (
           <div className="panel" style={{ padding: '28px', textAlign: 'center' }}>
             <div style={{ fontSize: '32px', marginBottom: '8px' }}>📓</div>
@@ -25435,6 +25518,7 @@ const ARI_PERMISSION_GROUPS = [
   ]},
   { group: 'Knowledge & reach', items: [
     { key: 'knowledge_search', label: 'Search Brain / Notes / Playbooks', kind: 'read' },
+    { key: 'journal', label: 'Read & append your Journal', kind: 'write' },
     { key: 'web_search', label: 'Web search', kind: 'read' },
     { key: 'memory', label: 'Long-term memory', kind: 'write' },
   ]},

@@ -119,6 +119,8 @@ function buildToolSpecs() {
     { perm: "portfolio_read", def: { name: "read_portfolio", description: "Read deals, properties, investments, or mileage entries.", input_schema: { type: "object", properties: { kind: { type: "string", enum: ["deals", "properties", "investments", "mileage"] }, limit: { type: "integer" } }, required: ["kind"] } } },
     { perm: "knowledge_search", def: { name: "search_knowledge", description: "Search the user's Brain / Notes / Playbooks for relevant saved knowledge.", input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] } } },
     { perm: "memory", def: { name: "remember", description: "Save a durable fact about the user for future conversations.", input_schema: { type: "object", properties: { content: { type: "string" } }, required: ["content"] } } },
+    { perm: "journal", def: { name: "read_journal", description: "Read the user's daily journal entries. Use scope 'today', 'day' (with date), or 'range' (with start+end YYYY-MM-DD). Returns timestamped entries and what each is linked to.", input_schema: { type: "object", properties: { scope: { type: "string", enum: ["today", "day", "range"] }, date: { type: "string", description: "YYYY-MM-DD for scope=day" }, start: { type: "string", description: "YYYY-MM-DD for scope=range" }, end: { type: "string", description: "YYYY-MM-DD for scope=range" }, query: { type: "string", description: "optional keyword filter" } } } } },
+    { perm: "journal", def: { name: "add_journal_entry", description: "Append a timestamped entry to TODAY's journal on the user's behalf. It will be auto-linked to people/projects/deals and may surface action items. Use when the user asks you to log/note something.", input_schema: { type: "object", properties: { content: { type: "string" } }, required: ["content"] } } },
     { perm: "web_search", server: true, def: { type: "web_search_20250305", name: "web_search", max_uses: 5 } }
   ];
 }
@@ -320,6 +322,49 @@ async function execTool(name, input, ctx) {
         if (!input.content) return { error: "Nothing to remember" };
         await supabase.from("ari_memory").insert({ user_id: userId, robot_id: robotId, content: input.content });
         return { saved: true };
+      }
+      case "read_journal": {
+        const t = todayET();
+        let q = supabase.from("journal_entries").select("id,day,occurred_at,content,kind").eq("user_id", userId);
+        const scope = input.scope || "today";
+        if (scope === "today") q = q.eq("day", t);
+        else if (scope === "day") q = q.eq("day", input.date || t);
+        else if (scope === "range") q = q.gte("day", input.start || t).lte("day", input.end || t);
+        if (input.query) q = q.ilike("content", `%${input.query}%`);
+        const { data: es } = await q.order("occurred_at", { ascending: true }).limit(120);
+        const entries = es || [];
+        let linkBy = {};
+        if (entries.length) {
+          const { data: ls } = await supabase.from("journal_links").select("entry_id,entity_type,label").in("entry_id", entries.map((e) => e.id)).eq("dismissed", false).eq("confirmed", true);
+          (ls || []).forEach((l) => { (linkBy[l.entry_id] = linkBy[l.entry_id] || []).push(`${l.entity_type}:${l.label}`); });
+        }
+        return { entries: entries.map((e) => ({ day: e.day, time: e.occurred_at, content: e.content, linked_to: linkBy[e.id] || [] })) };
+      }
+      case "add_journal_entry": {
+        if (!input.content || !input.content.trim()) return { error: "Nothing to log" };
+        const day = todayET();
+        const { data: entry, error } = await supabase.from("journal_entries").insert({ user_id: userId, day, occurred_at: new Date().toISOString(), kind: "text", content: input.content.trim(), source: "ari" }).select().single();
+        if (error || !entry) return { error: "Save failed" };
+        // analyze + link in the same way the app does
+        let links = [], actions = [];
+        try {
+          const ar = await fetch(`${SUPABASE_URL}/functions/v1/journal-analyze`, { method: "POST", headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ entry_id: entry.id }) });
+          const a = await ar.json().catch(() => ({}));
+          if (a && !a.error) {
+            actions = a.action_items || [];
+            for (const l of (a.links || [])) {
+              if (!l.id || !l.type || !l.label) continue;
+              const confirmed = (Number(l.confidence) || 0) >= 0.8;
+              const { data: row } = await supabase.from("journal_links").insert({ user_id: userId, entry_id: entry.id, entity_type: l.type, entity_id: l.id, label: l.label, confidence: l.confidence, confirmed, dismissed: false }).select("id").single();
+              if (confirmed && (l.type === "contact" || l.type === "property" || l.type === "deal")) {
+                const { data: ci } = await supabase.from("contact_interactions").insert({ user_id: userId, entity_type: l.type, entity_id: l.id, contact_id: l.type === "contact" ? l.id : null, kind: "note", channel: "note", body: entry.content, brief: entry.content.slice(0, 90), occurred_at: entry.occurred_at, journal_entry_id: entry.id }).select("id").single();
+                if (ci && row) await supabase.from("journal_links").update({ interaction_id: ci.id }).eq("id", row.id);
+              }
+              links.push({ label: l.label, type: l.type, confirmed });
+            }
+          }
+        } catch (_) {}
+        return { logged: true, time: entry.occurred_at, linked: links, action_items: actions };
       }
       default:
         return { error: "Unknown tool: " + name };
