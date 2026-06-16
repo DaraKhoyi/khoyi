@@ -162,8 +162,8 @@ function AuthScreen() {
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <h1>Prism<span>OS</span></h1>
-          <p>Your personal operating system</p>
+          <div className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></div>
+          <div className="rog-sub"><span className="rog-pb">powered by </span>Prism<span className="rog-os">OS</span></div>
         </div>
         {mode === 'login' && <>
           <h2>Welcome back</h2>
@@ -28503,7 +28503,7 @@ export default function App() {
       <QuickLog userId={user.id} />
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo">Prism<span>OS</span></div>
+        <div className="mobile-header-logo"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span>Prism<span className="rog-os">OS</span></span></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>
@@ -28516,8 +28516,8 @@ export default function App() {
         {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
-            <h1>Prism<span>OS</span></h1>
-            <p>Personal OS</p>
+            <div className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></div>
+            <div className="rog-sub"><span className="rog-pb">powered by </span>Prism<span className="rog-os">OS</span></div>
           </div>
           <div className="sidebar-nav">
             <div className="nav-section-label">Workspace</div>

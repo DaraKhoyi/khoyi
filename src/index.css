@@ -1067,3 +1067,32 @@ body {
 /* ── Mobile header gloss + safe-area awareness ─────────────────────── */
 .mobile-header { background: linear-gradient(180deg, #16171b, #111216); }
 .mobile-header-logo { letter-spacing: -0.4px; }
+
+/* ════════════════════════════════════════════════════════════════════
+   ✦ BRAND WORDMARK — Realty ONE Group Advantage · powered by PrismOS
+   (2026-06-16) Replaces the PrismOS wordmark in the sidebar, mobile
+   header, and login. ONE = gold heaviest; REALTY/GROUP = white, lighter;
+   Advantage = gold, smaller, light. Subline white w/ italic "powered by"
+   and gold OS. Same font (Inter) as the rest of the app.
+   ════════════════════════════════════════════════════════════════════ */
+.rog-wordmark { font-weight: 800; letter-spacing: -0.2px; line-height: 1.04; }
+.rog-wordmark .rog-realty,
+.rog-wordmark .rog-group { color: var(--text-1); font-weight: 600; }
+.rog-wordmark .rog-one   { color: var(--accent); font-weight: 800; }
+.rog-wordmark .rog-adv   { color: var(--accent); font-weight: 400; font-size: 0.78em; letter-spacing: 0; }
+.rog-sub { color: var(--text-1); font-weight: 500; line-height: 1.1; white-space: nowrap; margin-top: 2px; }
+.rog-sub .rog-pb { font-style: italic; color: var(--text-1); }
+.rog-sub .rog-os { color: var(--accent); font-weight: 600; }
+
+/* Mobile header: stack the lockup, vertically centered in the 56px bar */
+.mobile-header-logo { display: flex; flex-direction: column; justify-content: center; line-height: 1; }
+.mobile-header-logo .rog-wordmark { font-size: 16px; }
+.mobile-header-logo .rog-sub { font-size: 9px; margin-top: 1px; }
+
+/* Sidebar lockup */
+.sidebar-logo .rog-wordmark { font-size: 17px; }
+.sidebar-logo .rog-sub { font-size: 10px; }
+
+/* Login lockup (centered via .auth-logo text-align) */
+.auth-logo .rog-wordmark { font-size: 24px; }
+.auth-logo .rog-sub { font-size: 12px; margin-top: 3px; }
