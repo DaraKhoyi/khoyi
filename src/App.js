@@ -38,6 +38,7 @@ const ICON_PATHS = {
   tracker:     (<><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></>),
   systems:     (<><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></>),
   settings:    (<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>),
+  quo:         (<><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -15986,6 +15987,17 @@ async function sysCheckPush() {
   return { status: worst, detail, meta: { accounts } };
 }
 
+async function sysCheckQuo() {
+  // Quo (OpenPhone) API key lives server-side in the quo-status edge function (never in this public bundle).
+  const { data, error } = await supabase.functions.invoke('quo-status');
+  if (error) return { status: 'down', detail: error.message || 'quo-status unreachable' };
+  if (!data || data.ok === false) return { status: 'down', detail: data?.error || 'Quo check failed' };
+  const bits = [];
+  if (typeof data.number_count === 'number') bits.push(`${data.number_count} number${data.number_count !== 1 ? 's' : ''} live`);
+  if (typeof data.latency_ms === 'number') bits.push(`${data.latency_ms}ms`);
+  return { status: 'healthy', detail: bits.length ? bits.join(' · ') : 'Quo API reachable', meta: { numbers: data.numbers } };
+}
+
 const SYSTEMS = [
   { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
   { id: 'supabase',  icon: '⚡', name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
@@ -15994,7 +16006,359 @@ const SYSTEMS = [
   { id: 'push',        icon: '📡', name: 'Live Sync (Push)', category: 'Real-time', description: 'Gmail push notifications → instant sync (watch auto-renews daily)', check: sysCheckPush },
   { id: 'gcal',      icon: '📅', name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
   { id: 'anthropic', icon: '✦',  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: sysCheckAnthropic },
+  { id: 'quo',       icon: '☎️', name: 'Quo (OpenPhone)', category: 'Integration', description: 'Business calling & texting — SMS via API, call logs, recordings & transcripts', check: sysCheckQuo },
 ];
+
+// ─────────────────────────────────────────────────────────────────────────
+// QUO (OpenPhone) — business calling & texting hub.
+// All Quo API traffic goes through the quo-proxy edge function; the API key
+// lives only as a server-side secret and never enters this public bundle.
+// ─────────────────────────────────────────────────────────────────────────
+async function quoCall(path, { method = 'GET', query, body } = {}) {
+  const { data, error } = await supabase.functions.invoke('quo-proxy', { body: { path, method, query, body } });
+  if (error) throw new Error(error.message || 'quo-proxy unreachable');
+  if (!data) throw new Error('No response from Quo');
+  if (data.ok === false && data.error) throw new Error(data.error);
+  if (typeof data.status === 'number' && data.status >= 400) {
+    const d = data.data || {};
+    throw new Error(d.message || d.errors?.[0]?.message || `Quo error ${data.status}`);
+  }
+  return data.data; // { data: [...] } | { data: {...} }
+}
+function quoNormPhone(raw) {
+  if (!raw) return '';
+  const d = String(raw).replace(/[^\d]/g, '');
+  if (raw.toString().trim().startsWith('+')) return '+' + d;
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d[0] === '1') return '+' + d;
+  return d ? '+' + d : '';
+}
+function quoFmtPhone(e164) {
+  if (!e164) return '';
+  const d = String(e164).replace(/[^\d]/g, '');
+  if (d.length === 11 && d[0] === '1') return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return e164;
+}
+function quoLast10(raw) { return String(raw || '').replace(/[^\d]/g, '').slice(-10); }
+function quoFmtWhen(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+function quoFmtDur(sec) {
+  if (!sec && sec !== 0) return '';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m ? `${m}m ${s}s` : `${s}s`;
+}
+
+function QuoCallDetail({ callId }) {
+  const [summary, setSummary] = useState(null);
+  const [transcript, setTranscript] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [s, t] = await Promise.allSettled([
+          quoCall(`/v1/call-summaries/${callId}`),
+          quoCall(`/v1/call-transcripts/${callId}`),
+        ]);
+        if (!alive) return;
+        if (s.status === 'fulfilled') setSummary(s.value?.data || null);
+        if (t.status === 'fulfilled') setTranscript(t.value?.data || null);
+      } catch (e) { if (alive) setErr(String(e.message || e)); }
+      finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [callId]);
+  if (loading) return <div style={{ fontSize: 12, color: 'var(--text-3)', padding: '6px 0' }}>Loading call details…</div>;
+  const sum = summary?.summary;
+  const steps = summary?.nextSteps;
+  const dialogue = transcript?.dialogue;
+  if (!sum && !(steps && steps.length) && !(dialogue && dialogue.length)) {
+    return <div style={{ fontSize: 12, color: 'var(--text-3)', padding: '6px 0' }}>No summary or transcript available (Business/Scale plan feature, or still processing).</div>;
+  }
+  return (
+    <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {sum && (<div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 3 }}>AI SUMMARY</div><div style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.5 }}>{sum}</div></div>)}
+      {Array.isArray(steps) && steps.length > 0 && (<div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 3 }}>NEXT STEPS</div><ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--text-1)' }}>{steps.map((x, i) => <li key={i}>{typeof x === 'string' ? x : x.text || JSON.stringify(x)}</li>)}</ul></div>)}
+      {Array.isArray(dialogue) && dialogue.length > 0 && (
+        <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 3 }}>TRANSCRIPT</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+            {dialogue.map((seg, i) => (
+              <div key={i} style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+                <span style={{ fontWeight: 700, color: 'var(--text-2)' }}>{seg.identifier || seg.speaker || 'Speaker'}: </span>
+                <span style={{ color: 'var(--text-1)' }}>{seg.content || seg.text || ''}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>{err}</div>}
+    </div>
+  );
+}
+
+function QuoView({ contacts = [], userId }) {
+  const [numbers, setNumbers] = useState([]);
+  const [fromId, setFromId] = useState(() => { try { return localStorage.getItem('quo_from_id') || ''; } catch { return ''; } });
+  const [convos, setConvos] = useState([]);
+  const [selected, setSelected] = useState(null);   // { participant, name }
+  const [timeline, setTimeline] = useState([]);
+  const [compose, setCompose] = useState('');
+  const [sending, setSending] = useState(false);
+  const [loadingNums, setLoadingNums] = useState(true);
+  const [loadingConvos, setLoadingConvos] = useState(false);
+  const [loadingThread, setLoadingThread] = useState(false);
+  const [err, setErr] = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const [newTo, setNewTo] = useState('');
+  const [expandedCall, setExpandedCall] = useState(null);
+  const threadRef = useRef(null);
+
+  const fromNumber = numbers.find(n => n.id === fromId) || numbers[0] || null;
+
+  // Resolve a phone number to a known contact name.
+  const phoneToName = React.useMemo(() => {
+    const map = {};
+    for (const c of contacts) {
+      const cands = [c.phone, c.mobile, c.business_phone, c.home_phone].filter(Boolean);
+      for (const p of cands) { const k = quoLast10(p); if (k.length === 10 && !map[k]) map[k] = c.name; }
+    }
+    return map;
+  }, [contacts]);
+  const nameFor = (e164) => phoneToName[quoLast10(e164)] || quoFmtPhone(e164);
+
+  // Load phone numbers once.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await quoCall('/v1/phone-numbers');
+        if (!alive) return;
+        const list = (res?.data || []).map(n => ({ id: n.id, number: n.number || n.phoneNumber || n.formattedNumber, name: n.name }));
+        setNumbers(list);
+        setFromId(prev => (prev && list.some(n => n.id === prev)) ? prev : (list[0]?.id || ''));
+      } catch (e) { if (alive) setErr(String(e.message || e)); }
+      finally { if (alive) setLoadingNums(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Load conversations whenever the sending number changes.
+  const loadConvos = React.useCallback(async () => {
+    if (!fromNumber?.number) return;
+    setLoadingConvos(true); setErr('');
+    try {
+      const res = await quoCall('/v1/conversations', { query: { phoneNumbers: [fromNumber.number], maxResults: 50 } });
+      const list = (res?.data || []).slice().sort((a, b) => new Date(b.lastActivityAt || b.updatedAt || 0) - new Date(a.lastActivityAt || a.updatedAt || 0));
+      setConvos(list);
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setLoadingConvos(false); }
+  }, [fromNumber?.number]);
+  useEffect(() => { if (fromNumber?.id) { try { localStorage.setItem('quo_from_id', fromNumber.id); } catch {} loadConvos(); } }, [fromNumber?.id, loadConvos]);
+
+  // Load a thread (messages + calls merged) for the selected participant.
+  const loadThread = React.useCallback(async (participant) => {
+    if (!fromNumber?.id || !participant) return;
+    setLoadingThread(true);
+    try {
+      const [m, c] = await Promise.allSettled([
+        quoCall('/v1/messages', { query: { phoneNumberId: fromNumber.id, participants: [participant], maxResults: 50 } }),
+        quoCall('/v1/calls', { query: { phoneNumberId: fromNumber.id, participants: [participant], maxResults: 50 } }),
+      ]);
+      const items = [];
+      if (m.status === 'fulfilled') for (const x of (m.value?.data || [])) items.push({ kind: 'text', id: x.id, at: x.createdAt, dir: x.direction, text: x.text, status: x.status });
+      if (c.status === 'fulfilled') for (const x of (c.value?.data || [])) items.push({ kind: 'call', id: x.id, at: x.createdAt, dir: x.direction, status: x.status, duration: x.duration });
+      items.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+      setTimeline(items);
+      setTimeout(() => { if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight; }, 50);
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setLoadingThread(false); }
+  }, [fromNumber?.id]);
+
+  function openConvo(participant, name) {
+    setSelected({ participant, name: name || nameFor(participant) });
+    setExpandedCall(null);
+    loadThread(participant);
+  }
+
+  async function send() {
+    const text = compose.trim();
+    if (!text || !selected?.participant || !fromNumber?.number || sending) return;
+    setSending(true); setErr('');
+    const optimistic = { kind: 'text', id: 'tmp-' + Date.now(), at: new Date().toISOString(), dir: 'outgoing', text, status: 'queued' };
+    setTimeline(t => [...t, optimistic]);
+    setCompose('');
+    setTimeout(() => { if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight; }, 30);
+    try {
+      await quoCall('/v1/messages', { method: 'POST', body: { content: text, from: fromNumber.number, to: [selected.participant] } });
+      await loadThread(selected.participant);
+      loadConvos();
+    } catch (e) {
+      setErr('Send failed: ' + String(e.message || e));
+      setTimeline(t => t.map(x => x.id === optimistic.id ? { ...x, status: 'failed' } : x));
+    } finally { setSending(false); }
+  }
+
+  function startNew() {
+    const e = quoNormPhone(newTo);
+    if (e.length < 11) { setErr('Enter a valid US/Canada number (e.g. 727-555-1234).'); return; }
+    setShowNew(false); setNewTo('');
+    openConvo(e, nameFor(e));
+  }
+
+  function callOut() {
+    if (!selected?.participant) return;
+    window.location.href = 'tel:' + selected.participant;
+  }
+
+  // ── Empty / connect state ────────────────────────────────────────────────
+  if (loadingNums) return <div className="loading-screen" style={{ height: '50vh' }}><div className="spinner" /></div>;
+  if (err && !numbers.length) {
+    return (
+      <div className="view">
+        <h2 style={{ fontSize: '22px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 16 }}><Icon name="quo" size={26} style={{ color: 'var(--accent)', flexShrink: 0 }} />Quo</h2>
+        <div className="panel" style={{ textAlign: 'center', padding: 32 }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>☎️</div>
+          <h3 style={{ marginBottom: 6 }}>Quo isn't reachable yet</h3>
+          <div style={{ color: 'var(--text-2)', fontSize: 14, maxWidth: 460, margin: '0 auto 4px' }}>{err}</div>
+          <div style={{ color: 'var(--text-3)', fontSize: 12.5, maxWidth: 460, margin: '0 auto' }}>
+            If this says authentication or 401, the API key may need to be regenerated in Quo → Settings → API. Check the Systems board for live status.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="view">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <h2 style={{ fontSize: '22px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}><Icon name="quo" size={26} style={{ color: 'var(--accent)', flexShrink: 0 }} />Quo</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Sending as</span>
+          <select value={fromNumber?.id || ''} onChange={e => { setSelected(null); setTimeline([]); setFromId(e.target.value); }}
+            style={{ background: 'var(--bg-card)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontWeight: 600 }}>
+            {numbers.map(n => <option key={n.id} value={n.id}>{n.name ? n.name + ' · ' : ''}{quoFmtPhone(n.number)}</option>)}
+          </select>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New message</button>
+        </div>
+      </div>
+
+      {err && <div className="panel" style={{ borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13, padding: '8px 12px', marginBottom: 10 }}>{err}</div>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px) 1fr', gap: 14, alignItems: 'stretch', minHeight: 'min(70vh, 620px)' }}>
+        {/* Conversations list */}
+        <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>Conversations</span>
+            <button className="btn btn-ghost btn-sm" onClick={loadConvos} title="Refresh">⟳</button>
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {loadingConvos ? <div style={{ padding: 16, color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>
+              : convos.length === 0 ? <div style={{ padding: 16, color: 'var(--text-3)', fontSize: 13 }}>No conversations on this number yet. Tap ＋ New message to start one.</div>
+              : convos.map(cv => {
+                const other = (cv.participants || [])[0] || cv.name || '';
+                const active = selected?.participant && quoLast10(selected.participant) === quoLast10(other);
+                return (
+                  <div key={cv.id} onClick={() => openConvo(quoNormPhone(other), cv.name)} style={{ padding: '11px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)', background: active ? 'var(--accent-glow)' : 'transparent', borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13.5, color: active ? 'var(--accent)' : 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cv.name || nameFor(other)}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', flexShrink: 0 }}>{quoFmtWhen(cv.lastActivityAt || cv.updatedAt)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{quoFmtPhone(other)}</div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+
+        {/* Thread */}
+        <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {!selected ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', gap: 8, padding: 24, textAlign: 'center' }}>
+              <div style={{ fontSize: 38 }}>💬</div>
+              <div style={{ fontSize: 14 }}>Pick a conversation, or start a new one.</div>
+              <div style={{ fontSize: 12.5, maxWidth: 380 }}>Texts send instantly through Quo. Calls open your dialer on this number — the full call history, recordings &amp; transcripts show up right here.</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{selected.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{quoFmtPhone(selected.participant)}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => loadThread(selected.participant)} title="Refresh thread">⟳</button>
+                  <button className="btn btn-primary btn-sm" onClick={callOut} title="Call on this device / Quo app">📞 Call</button>
+                </div>
+              </div>
+
+              <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {loadingThread ? <div style={{ color: 'var(--text-3)', fontSize: 13, margin: 'auto' }}>Loading history…</div>
+                  : timeline.length === 0 ? <div style={{ color: 'var(--text-3)', fontSize: 13, margin: 'auto', textAlign: 'center' }}>No history yet. Say hello 👋</div>
+                  : timeline.map(item => {
+                    const out = item.dir === 'outgoing';
+                    if (item.kind === 'call') {
+                      const open = expandedCall === item.id;
+                      const missed = ['missed', 'no-answer', 'declined'].includes(item.status);
+                      return (
+                        <div key={item.id} style={{ alignSelf: 'center', maxWidth: '92%', width: '100%' }}>
+                          <div onClick={() => setExpandedCall(open ? null : item.id)} style={{ cursor: 'pointer', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-2)', justifyContent: 'center' }}>
+                            <span>{out ? '📤' : '📥'} {missed ? '☎️ Missed call' : `Call · ${out ? 'outgoing' : 'incoming'}`}{item.duration ? ` · ${quoFmtDur(item.duration)}` : ''}</span>
+                            <span style={{ color: 'var(--text-3)' }}>{quoFmtWhen(item.at)}</span>
+                            <span style={{ color: 'var(--accent)', fontSize: 11 }}>{open ? '▲ hide' : '▼ details'}</span>
+                          </div>
+                          {open && <div style={{ padding: '4px 8px' }}><QuoCallDetail callId={item.id} /></div>}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={item.id} style={{ alignSelf: out ? 'flex-end' : 'flex-start', maxWidth: '78%' }}>
+                        <div style={{ background: out ? 'var(--accent)' : 'var(--bg-base)', color: out ? '#000' : 'var(--text-1)', border: out ? 'none' : '1px solid var(--border)', borderRadius: 14, padding: '8px 12px', fontSize: 14, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontWeight: out ? 600 : 400 }}>{item.text}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 2, textAlign: out ? 'right' : 'left' }}>{quoFmtWhen(item.at)}{item.status === 'failed' ? ' · failed' : item.status === 'queued' ? ' · sending…' : ''}</div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', padding: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea value={compose} onChange={e => setCompose(e.target.value)} rows={1}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                  placeholder={`Text ${selected.name}…`}
+                  style={{ flex: 1, resize: 'none', background: 'var(--bg-base)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', maxHeight: 120 }} />
+                <button className="btn btn-primary" disabled={sending || !compose.trim()} onClick={send} style={{ height: 40 }}>{sending ? '…' : 'Send'}</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {showNew && (
+        <div className="modal-backdrop" onClick={() => setShowNew(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header"><h3>New message</h3><button className="btn btn-ghost btn-sm" onClick={() => setShowNew(false)}>✕</button></div>
+            <div style={{ padding: 16 }}>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>To (US / Canada number)</label>
+              <input autoFocus value={newTo} onChange={e => setNewTo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') startNew(); }}
+                placeholder="727-555-1234" style={{ width: '100%', marginTop: 6, background: 'var(--bg-base)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 14 }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                <button className="btn btn-ghost" onClick={() => setShowNew(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={startNew}>Open</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SystemsView() {
   const [results, setResults] = useState({});
@@ -27809,6 +28173,7 @@ export default function App() {
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
+    { id: 'quo',         icon: '☎️', label: 'Quo',         badge: null },
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
     { id: 'deals',       icon: '🤝', label: 'Deals',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
@@ -27832,7 +28197,7 @@ export default function App() {
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
-  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'journal', 'chat'];
+  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'quo', 'contacts', 'mileage', 'finance', 'journal', 'chat'];
   const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
@@ -27917,6 +28282,7 @@ export default function App() {
               : view==='prospecting' ? <ProspectingView userId={user.id}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
+              : view==='quo'         ? <QuoView contacts={contacts} userId={user.id}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
               : view==='deals'       ? <DealsView deals={deals} setDeals={setDeals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
