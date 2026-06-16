@@ -1,28 +1,17 @@
 // contact-research
-// Step 2 of the research flow. Given a confirmed candidate identity, run the
-// full behavioral research prompt and store the result on the profile.
+// Relationship Intelligence engine. Given a contact (and optionally a confirmed
+// candidate identity), researches them across PUBLIC sources via Claude + web
+// search, then writes a rich structured profile + DISC inference + a DISC-aware
+// connection plan to public.profiles.
 //
 // POST body:
-//   {
-//     contact_id: uuid,
-//     candidate: {                  -- the confirmed candidate from contact-identify
-//       name, headline, location, source_url, ...
-//     },
-//     scope: 'personal' | 'business' | 'both',
-//     matched_by: 'email' | 'phone' | 'manual'
-//   }
+//   { contact_id: uuid, candidate?: {...}, scope?: 'personal'|'business'|'both',
+//     matched_by?: 'email'|'phone'|'manual', me?: {name,role,market,interests[]} }
 //
-// Returns:
-//   {
-//     ok: true,
-//     full_report: string,           -- markdown
-//     research_d_score, ...,         -- the structured DISC inference
-//     research_primary, ...
-//     research_confidence,
-//     research_summary               -- short version of the behavioral observations
-//   }
-//
-// Also writes those fields to public.profiles for this contact.
+// Guardrails (also stated to the model): public sources only; relationship-
+// building only (NOT for tenant / employment / credit screening — FCRA); never
+// profile minors; family only where the subject has made it public themselves;
+// flag identity-match uncertainty; cite sources; no speculation.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -33,252 +22,186 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function buildResearchPrompt(candidate, contact, scope) {
+function buildResearchPrompt(candidate, contact, scope, me, disc) {
   const id = candidate || {};
-  const scopeInstruction = scope === "personal"
-    ? "Focus on PERSONAL sources only: Instagram, public Facebook posts, local news, community involvement, hobbies, family-mentioned-by-them, school alumni pages they're publicly involved in. Skip LinkedIn deep-dives unless personal interests are mentioned there. Do NOT include detailed professional information."
-    : scope === "business"
-    ? "Focus on PROFESSIONAL sources only: LinkedIn, company website, professional licenses appropriate to their stated occupation and jurisdiction (state regulatory bodies for real estate, FINRA BrokerCheck for finance, state bar lookups for attorneys, medical board lookups for healthcare, etc.), published writing, podcasts, press, board memberships. Skip personal social media unless they themselves use it for professional content."
-    : "Cover BOTH professional and personal sources, but in section 1 keep professional findings separate from personal findings. Label each finding with its category.";
-
-  const confirmedBlock = [
-    `Confirmed identity:`,
-    `- Name: ${id.name || contact.name}`,
-    id.headline ? `- Title/employer: ${id.headline}` : null,
-    id.location ? `- Location: ${id.location}` : null,
-    id.source_url ? `- Primary verified source: ${id.source_url}` : null,
-    contact.email ? `- Email anchor: ${contact.email}` : null,
-    contact.phone ? `- Phone anchor: ${contact.phone}` : null,
+  const anchors = [
+    `- Name: ${id.name || contact.name || "(unknown)"}`,
+    (id.headline || contact.company || contact.role) ? `- Title / employer: ${id.headline || [contact.role, contact.company].filter(Boolean).join(" at ")}` : null,
+    (id.location || contact.city) ? `- Location: ${id.location || contact.city}` : null,
+    contact.email ? `- Email: ${contact.email}` : null,
+    contact.phone ? `- Phone: ${contact.phone}` : null,
+    (contact.business_address || contact.home_address) ? `- Address: ${contact.business_address || contact.home_address}` : null,
+    id.source_url ? `- Verified source: ${id.source_url}` : null,
+    contact.profession ? `- Profession: ${contact.profession}` : null,
   ].filter(Boolean).join("\n");
 
-  return `I'm meeting with this person soon and want to prepare to meet them as a person, not a target.
+  const scopeLine = scope === "personal"
+    ? "Weight PERSONAL, publicly-shared sources (their own public social posts, community involvement, local press, alumni pages). Keep professional detail light."
+    : scope === "business"
+    ? "Weight PROFESSIONAL sources (LinkedIn, company site, public licenses/registries appropriate to their field, published writing, podcasts, press, boards). Keep personal detail light."
+    : "Cover BOTH professional and personal public sources, kept clearly separated.";
 
-${confirmedBlock}
+  const meBlock = me
+    ? `\nABOUT ME (the person who will build the relationship), so you can surface genuine overlaps:\n- ${me.name || "Dara Khoyi"} — ${me.role || "real estate broker & investor"}, ${me.market || "Tampa Bay / Land O' Lakes, FL"}.${me.interests && me.interests.length ? "\n- Interests: " + me.interests.join(", ") : ""}\nWhen you find a real, evidence-based overlap between us (same school, city, industry, cause, mutual connection, shared interest), capture it under "overlaps_with_me." Do not invent overlaps.`
+    : "";
 
-Scope of this research: ${scope.toUpperCase()}
-${scopeInstruction}
+  const discBlock = (disc && disc.primary)
+    ? `\nEXISTING BEHAVIORAL READ ON FILE: DISC primary ${disc.primary}${disc.secondary ? "/" + disc.secondary : ""} (${disc.confidence || "tentative"}). Tune the connection plan to this read while still forming your own from the evidence.`
+    : "";
 
-Please research them using public web sources. Do not infer anything you cannot point to specific evidence for. Do not include anything from data brokers, leaked databases, or sources that aren't legitimately public. Anchor everything to the confirmed identity above — if a finding cannot be tied to the same person (e.g., same employer, same city, same publicly listed email), exclude it.
+  return `I want to build a genuine, lasting relationship with the person below — professionally and personally. Help me understand them as a person so I can connect authentically, not network generically.
 
-**Structure your response in four sections, in this exact order:**
+SUBJECT ANCHORS (use these to confirm you have the RIGHT person):
+${anchors}
+${meBlock}${discBlock}
 
-## 1. Verified profile
-- Background and education (with sources)
-- Current role, scope, and how they describe their work in their own words
-- Career path — note transitions, length of stays, what they moved toward and away from
-- Community involvement, boards, volunteer work
-- Published writing, podcasts, speaking, media — quote exact phrases where useful
-- Stated interests, causes, or values that appear in multiple places
-- If something is uncertain or you can only find it on one source, label it "single-source" and don't build on it.
+RESEARCH SCOPE: ${scope.toUpperCase()}. ${scopeLine}
 
-## 2. Personal context (for genuine connection, not leverage)
-- Family, hometown, geographic or cultural ties they themselves mention publicly
-- Hobbies, side projects, recurring non-work themes
-- Things they appear to be excited about right now (last 6-12 months)
-- Skip anything that feels invasive to surface in a first meeting — birthdays, family member names, home neighborhood, religious affiliation unless they're publicly involved in it.
+=== HARD RULES ===
+- Use ONLY legitimately public web sources (LinkedIn, public Facebook/Instagram/X, company sites, public registries/licenses appropriate to their field, news, podcasts, talks, published writing). NO data brokers, leaked data, or paywalled personal records.
+- This is for RELATIONSHIP-BUILDING ONLY. It is NOT a background check and must NOT be used for any tenant, employment, lending, insurance, or other eligibility decision (those are FCRA-regulated and this is not FCRA-compliant).
+- Anchor every finding to the SAME person as the anchors above. If you cannot confidently confirm identity, say so and set identity_confidence to "low" — never blend two different people.
+- FAMILY: include family only where the SUBJECT has chosen to make it public themselves (e.g., they post about coaching their kid's team, run the business with their spouse, describe themselves as a "third-generation Tampan"). Never research, name, or profile their children or other relatives as separate subjects. Never include minors' details. Family context is for warmth (knowing they value family), not a dossier.
+- No speculation. Every non-trivial claim gets a source. If you only find something once, label it single-source. If evidence is thin, say so rather than padding.
 
-## 3. Behavioral observations
-This is where you should be specific and cautious. Pull from what they've written or said publicly, not what they look like or where they're from. For each observation, quote or paraphrase the evidence and name the source.
+=== OUTPUT — PART A: a readable narrative (markdown), in this order ===
+## 1. Who they are
+Background & education; current role and how they describe their work in their own words; career path (what they moved toward/away from); expertise; community/boards/volunteer; publications, podcasts, speaking, press (quote a telling phrase where useful); stated interests, values, causes that recur.
 
-- **Communication style**: do they write in short punchy sentences or long thoughtful ones? Use data, stories, declarations, or questions? Address audiences directly or describe situations from a remove?
-- **What they emphasize**: results and outcomes, relationships and people, process and rigor, vision and ideas — which of these surface most often in their public language?
-- **Tempo cues**: do they describe their work in terms of speed and decisiveness, careful deliberation, building trust over time, or precision and accuracy?
-- **Decision-making signals**: do they reference data and analysis, intuition and experience, consensus and team input, or instinct and conviction?
-- **How they describe their team or clients**: as partners, as people they serve, as performers they manage, as a unit they belong to?
+## 2. Personal context (for genuine connection)
+Publicly-shared hobbies, passions, side projects; geographic/cultural/hometown ties they mention; family context they've made public (per the rule above); recurring non-work themes; what they seem excited about in the last 6-12 months.
 
-Then provide a **DISC inference** as a JSON code block, exactly like this:
+## 3. Behavioral read
+Communication style, what they emphasize, tempo and decision-making cues, how they describe their team/clients - each tied to quoted/paraphrased public evidence + source.
 
+## 4. How to build a meaningful connection
+Specific conversation starters tied to real things they care about; topics to lean into and any to approach carefully; concrete ways I can add value to them (professionally or personally); thoughtful follow-up ideas after we meet. Tune to the behavioral read (decisive/analytical -> specifics + clear ask; relational/steady -> personal warmth, let them talk first).
+
+=== OUTPUT — PART B: a single json code block at the very end with this exact schema ===
 \`\`\`json
 {
-  "d_score": 0-100,
-  "i_score": 0-100,
-  "s_score": 0-100,
-  "c_score": 0-100,
-  "primary": "D" | "I" | "S" | "C",
-  "secondary": "D" | "I" | "S" | "C" | null,
-  "confidence": "tentative" | "provisional" | "reasonably_confident",
-  "confidence_explanation": "1-2 sentences explaining why this confidence level",
-  "evidence_count": <integer count of distinct public sources you drew from>,
-  "key_evidence": ["1-sentence evidence #1", "1-sentence evidence #2", "1-sentence evidence #3"]
+  "headline": "one vivid sentence: who this person is and what drives them",
+  "identity_confidence": "high" | "medium" | "low",
+  "background_education": "string or null",
+  "career": "string or null",
+  "expertise": ["..."],
+  "community_media": ["specific item + source"],
+  "interests_values": ["..."],
+  "causes": ["..."],
+  "personal": {
+    "hobbies": ["..."],
+    "family_context": "self-disclosed/public only; null if none; never minors",
+    "geo_cultural_ties": ["..."],
+    "recurring_themes": ["..."],
+    "recent_excitement": ["..."],
+    "comms_preference": "how they appear to prefer to communicate / build relationships, or null"
+  },
+  "disc": {
+    "d_score": 0, "i_score": 0, "s_score": 0, "c_score": 0,
+    "primary": "D|I|S|C", "secondary": "D|I|S|C|null",
+    "confidence": "tentative|provisional|reasonably_confident",
+    "confidence_explanation": "1-2 sentences",
+    "evidence_count": 0,
+    "key_evidence": ["...", "...", "..."]
+  },
+  "connection_plan": {
+    "conversation_starters": ["specific, tied to their world"],
+    "topics_lean_in": ["..."],
+    "topics_avoid": ["only if observable reason; else empty"],
+    "add_value": ["concrete ways I can help them"],
+    "follow_ups": ["thoughtful post-meeting ideas"]
+  },
+  "overlaps_with_me": [{ "type": "school|geography|industry|interest|cause|mutual_connection", "detail": "...", "source": "..." }],
+  "sources": [{ "label": "LinkedIn / Company site / Podcast", "url": "...", "date": "if known" }]
 }
 \`\`\`
-
-The four scores should sum approximately to 200 (DISC is two-axis: D/I high vs S/C, and I/S high vs D/C). Higher = more pronounced.
-
-**Confidence calibration is critical:**
-- "tentative" — fewer than 3 pieces of public evidence, OR pattern is genuinely ambiguous
-- "provisional" — 3-5 pieces, pattern is suggestive but could go other ways
-- "reasonably_confident" — 6+ pieces across diverse sources, consistent pattern
-- **Never claim higher than "reasonably_confident" from web research alone.** Real DISC reads require multiple direct interactions.
-
-If evidence is too thin to say anything responsibly, set all scores to null and explain in confidence_explanation.
-
-## 4. How to meet them well
-- 3-4 conversation starters tied to specific things they've expressed interest in (not generic small talk)
-- Topics to lean into, and any that may not land based on what's observable
-- Tailored to your behavioral read: if more analytical (C) or decisive (D), come with specifics, options, and a clear ask. If more relational (I) or steady (S), open with personal connection and leave room for them to talk first.
-- Two or three specific ways I might be able to add value to them — based on what they say they care about
-- One or two thoughtful follow-up ideas after the meeting
-
-**Principles:**
-- Cite sources for non-trivial claims (URL or platform + post date in parentheses inline)
-- If you find conflicting information, note both and don't pick a winner
-- Don't pad with generic networking advice — everything should be specific to this person
-- Anything you're guessing at, mark as a guess
-- The behavioral observations are calibration tools, not labels. I will form my own read in person.`;
+DISC scores sum to ~200 (two axes). Never claim above "reasonably_confident" from web research alone. If evidence is too thin to read behavior, set DISC scores to null and explain. Keep arrays tight and specific - quality over quantity.`;
 }
 
-function extractDiscJson(reportText) {
-  // Looking for a ```json ... ``` block containing the DISC fields
-  const match = reportText.match(/```json\s*([\s\S]*?)```/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[1].trim());
-    return parsed;
-  } catch (_) { return null; }
+function extractJson(text) {
+  const matches = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
+  for (let i = matches.length - 1; i >= 0; i--) {
+    try { return JSON.parse(matches[i][1].trim()); } catch (_) { /* try previous */ }
+  }
+  return null;
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const J = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   try {
     const body = await req.json();
-    const { contact_id, candidate, scope, matched_by } = body;
+    const { contact_id, candidate, scope = "both", matched_by, me } = body;
+    if (!contact_id) return J({ error: "contact_id is required" }, 400);
 
-    if (!contact_id || !scope) {
-      return new Response(JSON.stringify({ error: "contact_id and scope are required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL"),
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-    );
-
-    // SECURITY: caller identity from JWT; contact must belong to caller
-    const authHeader = req.headers.get("Authorization") || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token || token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const supabase = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token || token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) return J({ error: "Unauthorized" }, 401);
     const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!user) return J({ error: "Unauthorized" }, 401);
 
-    // Pull the contact for anchoring
-    const { data: contact, error: cErr } = await supabase
-      .from("contacts").select("*").eq("id", contact_id).single();
-    if (cErr || !contact) {
-      return new Response(JSON.stringify({ error: "Contact not found" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (contact.user_id !== user.id) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const { data: contact, error: cErr } = await supabase.from("contacts").select("*").eq("id", contact_id).single();
+    if (cErr || !contact) return J({ error: "Contact not found" }, 404);
+    if (contact.user_id !== user.id) return J({ error: "Forbidden" }, 403);
 
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!apiKey) return J({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const prompt = buildResearchPrompt(candidate, contact, scope);
+    const { data: prof } = await supabase.from("profiles").select("*").eq("contact_id", contact_id).maybeSingle();
+    const disc = prof ? { primary: prof.baseline_primary || prof.primary_letter || prof.research_primary, secondary: prof.baseline_secondary || prof.secondary_letter || prof.research_secondary, confidence: prof.confidence || prof.research_confidence } : null;
+
+    const prompt = buildResearchPrompt(candidate, contact, scope, me, disc);
 
     const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: "claude-opus-4-7",
-        max_tokens: 8192,
-        tools: [{
-          type: "web_search_20250305",
-          name: "web_search",
-          max_uses: 12,
-        }],
+        max_tokens: 10000,
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 14 }],
         messages: [{ role: "user", content: prompt }],
       }),
     });
-
     if (!apiResp.ok) {
-      const errText = await apiResp.text();
-      return new Response(JSON.stringify({ error: `Anthropic API error: ${apiResp.status}`, detail: errText.slice(0, 500) }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      const t = await apiResp.text();
+      return J({ error: `Anthropic API error: ${apiResp.status}`, detail: t.slice(0, 500) }, 500);
     }
-
     const apiData = await apiResp.json();
     const fullReport = (apiData.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-
-    // Extract the structured DISC inference
-    const disc = extractDiscJson(fullReport);
-
-    // Strip the JSON block from the report so the markdown is clean
+    const data = extractJson(fullReport) || {};
+    const disc2 = data.disc || {};
     const cleanReport = fullReport.replace(/```json\s*[\s\S]*?```/g, "").trim();
-
-    // Build a short summary: section 3's behavioral observations + the key_evidence list
-    let shortSummary = "";
-    if (disc && disc.key_evidence) {
-      shortSummary = disc.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n");
-    }
-
-    // Upsert the profile with the research data
-    // First check if a profile exists
-    const { data: existingProfile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("contact_id", contact_id)
-      .maybeSingle();
+    const shortSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
 
     const profileUpdate = {
-      contact_id,
-      user_id: contact.user_id,
-      research_d_score: disc?.d_score ?? null,
-      research_i_score: disc?.i_score ?? null,
-      research_s_score: disc?.s_score ?? null,
-      research_c_score: disc?.c_score ?? null,
-      research_primary: disc?.primary ?? null,
-      research_secondary: disc?.secondary ?? null,
-      research_confidence: disc?.confidence ?? null,
+      contact_id, user_id: contact.user_id,
+      research_headline: data.headline ?? null,
+      research_identity_confidence: data.identity_confidence ?? null,
+      research_profile: { background_education: data.background_education ?? null, career: data.career ?? null, expertise: data.expertise ?? [], community_media: data.community_media ?? [], interests_values: data.interests_values ?? [], causes: data.causes ?? [] },
+      research_personal: data.personal ?? null,
+      research_connection_plan: data.connection_plan ?? null,
+      research_overlaps: data.overlaps_with_me ?? [],
+      research_sources: data.sources ?? [],
+      research_d_score: disc2.d_score ?? null,
+      research_i_score: disc2.i_score ?? null,
+      research_s_score: disc2.s_score ?? null,
+      research_c_score: disc2.c_score ?? null,
+      research_primary: disc2.primary ?? null,
+      research_secondary: disc2.secondary ?? null,
+      research_confidence: disc2.confidence ?? null,
       research_taken_at: new Date().toISOString(),
-      research_summary: shortSummary || null,
+      research_summary: shortSummary,
       research_full_report: cleanReport,
       research_scope: scope,
       research_matched_by: matched_by || "manual",
     };
 
-    if (existingProfile) {
-      await supabase.from("profiles").update(profileUpdate).eq("id", existingProfile.id);
-    } else {
-      await supabase.from("profiles").insert(profileUpdate);
-    }
+    const { data: existing } = await supabase.from("profiles").select("id").eq("contact_id", contact_id).maybeSingle();
+    if (existing) await supabase.from("profiles").update(profileUpdate).eq("id", existing.id);
+    else await supabase.from("profiles").insert(profileUpdate);
 
-    return new Response(JSON.stringify({
-      ok: true,
-      full_report: cleanReport,
-      ...disc,
-      search_count: apiData.usage?.server_tool_use?.web_search_requests ?? null,
-      input_tokens: apiData.usage?.input_tokens,
-      output_tokens: apiData.usage?.output_tokens,
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
+    return J({ ok: true, ...data, full_report: cleanReport, search_count: apiData.usage?.server_tool_use?.web_search_requests ?? null });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return J({ error: String(err) }, 500);
   }
 });

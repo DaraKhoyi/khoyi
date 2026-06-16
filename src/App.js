@@ -6994,6 +6994,138 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
   );
 }
 
+function RIChip({ children, tone }) {
+  return <span style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '999px', border: `1px solid ${tone === 'gold' ? 'var(--accent-dim)' : 'var(--border)'}`, background: tone === 'gold' ? 'var(--accent-glow)' : 'var(--bg-card)', color: tone === 'gold' ? 'var(--accent)' : 'var(--text-2)' }}>{children}</span>;
+}
+function RISection({ label, children, hint }) {
+  return (
+    <div style={{ marginTop: '14px' }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: '6px' }}>{label}{hint ? <span style={{ color: 'var(--text-3)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}> · {hint}</span> : null}</div>
+      {children}
+    </div>
+  );
+}
+function RIList({ items, num }) {
+  const arr = (items || []).filter(Boolean);
+  if (!arr.length) return <div style={{ fontSize: '12px', color: 'var(--text-3)' }}>—</div>;
+  return (
+    <ul style={{ margin: 0, paddingLeft: num ? '20px' : '16px', display: 'flex', flexDirection: 'column', gap: '5px', listStyle: num ? 'decimal' : 'disc' }}>
+      {arr.map((x, i) => <li key={i} style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}>{typeof x === 'string' ? x : (x.detail || x.text || '')}</li>)}
+    </ul>
+  );
+}
+function RIChips({ items, tone }) {
+  const arr = (items || []).filter(Boolean);
+  if (!arr.length) return null;
+  return <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{arr.map((x, i) => <RIChip key={i} tone={tone}>{typeof x === 'string' ? x : (x.detail || '')}</RIChip>)}</div>;
+}
+function RelationshipIntel({ profile }) {
+  if (!profile || !profile.research_taken_at) return null;
+  const p = profile.research_profile || {};
+  const per = profile.research_personal || {};
+  const plan = profile.research_connection_plan || {};
+  const overlaps = profile.research_overlaps || [];
+  const sources = profile.research_sources || [];
+  const idc = profile.research_identity_confidence;
+  const idcColor = idc === 'high' ? 'var(--green)' : idc === 'low' ? 'var(--red)' : 'var(--yellow)';
+  const overlapIcon = { school: '🎓', geography: '📍', industry: '🏢', interest: '💡', cause: '❤️', mutual_connection: '🤝' };
+
+  return (
+    <div style={{ marginBottom: '14px', border: '1px solid var(--accent-dim)', borderRadius: '12px', overflow: 'hidden', background: 'linear-gradient(180deg, var(--accent-glow), transparent 120px)' }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px' }}>🧠 Relationship Intelligence</div>
+          {idc && <span style={{ fontSize: '10px', fontWeight: 700, color: idcColor, border: `1px solid ${idcColor}`, borderRadius: '999px', padding: '2px 8px' }}>identity: {idc}</span>}
+        </div>
+        {profile.research_headline && <div style={{ fontSize: '14px', color: 'var(--text-1)', marginTop: '8px', lineHeight: 1.4, fontWeight: 500 }}>{profile.research_headline}</div>}
+        {idc === 'low' && <div style={{ fontSize: '11px', color: 'var(--yellow)', marginTop: '6px' }}>⚠ Identity match is uncertain — verify before relying on these details.</div>}
+      </div>
+
+      <div style={{ padding: '4px 16px 16px' }}>
+        {overlaps.length > 0 && (
+          <RISection label="🔗 You two have in common">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              {overlaps.map((o, i) => <div key={i} style={{ fontSize: '12.5px', color: 'var(--text-1)' }}>{overlapIcon[o.type] || '•'} {o.detail}</div>)}
+            </div>
+          </RISection>
+        )}
+
+        {plan.conversation_starters?.length > 0 && (
+          <RISection label="💬 Conversation starters">
+            <RIList items={plan.conversation_starters} num />
+          </RISection>
+        )}
+
+        {(plan.topics_lean_in?.length > 0 || plan.topics_avoid?.length > 0) && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '14px' }}>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--green)', marginBottom: '6px' }}>Lean into</div>
+              <RIChips items={plan.topics_lean_in} />
+            </div>
+            {plan.topics_avoid?.length > 0 && (
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--yellow)', marginBottom: '6px' }}>Approach with care</div>
+                <RIChips items={plan.topics_avoid} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {plan.add_value?.length > 0 && (
+          <RISection label="🎁 How I can add value">
+            <RIList items={plan.add_value} />
+          </RISection>
+        )}
+
+        {plan.follow_ups?.length > 0 && (
+          <RISection label="↩ Thoughtful follow-ups">
+            <RIList items={plan.follow_ups} />
+          </RISection>
+        )}
+
+        {(per.hobbies?.length > 0 || per.family_context || per.geo_cultural_ties?.length > 0 || per.recurring_themes?.length > 0 || per.recent_excitement?.length > 0) && (
+          <RISection label="🌱 Personal context">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {per.hobbies?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Hobbies & passions: </span><RIChips items={per.hobbies} /></div>}
+              {per.family_context && <div style={{ fontSize: '12.5px', color: 'var(--text-1)' }}><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Family (public): </span>{per.family_context}</div>}
+              {per.geo_cultural_ties?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Ties: </span><RIChips items={per.geo_cultural_ties} /></div>}
+              {per.recent_excitement?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Excited about lately: </span><RIList items={per.recent_excitement} /></div>}
+              {per.recurring_themes?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Recurring themes: </span><RIChips items={per.recurring_themes} /></div>}
+              {per.comms_preference && <div style={{ fontSize: '12px', color: 'var(--text-2)' }}><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Comms style: </span>{per.comms_preference}</div>}
+            </div>
+          </RISection>
+        )}
+
+        {(p.background_education || p.career || p.expertise?.length > 0 || p.community_media?.length > 0 || p.interests_values?.length > 0) && (
+          <RISection label="📋 Professional profile">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {p.background_education && <div style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}><b style={{ color: 'var(--text-2)' }}>Background: </b>{p.background_education}</div>}
+              {p.career && <div style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}><b style={{ color: 'var(--text-2)' }}>Career: </b>{p.career}</div>}
+              {p.expertise?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Expertise: </span><RIChips items={p.expertise} /></div>}
+              {p.interests_values?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Values & interests: </span><RIChips items={p.interests_values} /></div>}
+              {p.community_media?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Community / media: </span><RIList items={p.community_media} /></div>}
+            </div>
+          </RISection>
+        )}
+
+        {sources.length > 0 && (
+          <RISection label="🔎 Sources" hint={`${sources.length} cited`}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {sources.map((s, i) => s.url
+                ? <a key={i} href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: 'var(--accent)', border: '1px solid var(--accent-dim)', borderRadius: '999px', padding: '3px 9px', textDecoration: 'none' }}>{s.label || 'source'}{s.date ? ` · ${s.date}` : ''} ↗</a>
+                : <RIChip key={i}>{s.label || 'source'}</RIChip>)}
+            </div>
+          </RISection>
+        )}
+
+        <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+          For relationship-building only — not a background check, and not for tenant/employment/credit screening.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [], setContacts }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
@@ -7845,6 +7977,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               </div>
             )}
           </div>
+
+          <RelationshipIntel profile={profile} />
 
           {/* Baseline entry */}
           <div style={{marginBottom:'14px'}}>
@@ -27499,7 +27633,7 @@ function GoalEngine({ userId, onBack }) {
     </div>
   );
 }
-function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId }) {
+function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [] }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
   const [err, setErr] = useState(null);
@@ -27783,6 +27917,19 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
               <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setHubId(r.contact_id)}>📞 Prep &amp; act</button>
             </div>
             <div style={{fontSize:'11px',color:'var(--accent)',marginBottom:'8px'}}>✦ {r.reason} · last touch {r.last_touch}</div>
+            {(() => {
+              const pr = profiles.find(p => p.contact_id === r.contact_id);
+              const starter = pr && pr.research_connection_plan && pr.research_connection_plan.conversation_starters && pr.research_connection_plan.conversation_starters[0];
+              const headline = pr && pr.research_headline;
+              if (!starter && !headline) return null;
+              return (
+                <div style={{marginBottom:'8px',padding:'8px 10px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'8px'}}>
+                  <div style={{fontSize:'10px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--accent)',marginBottom:'3px'}}>🧠 Connection cue</div>
+                  {starter ? <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4}}>💬 {starter}</div> : <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4}}>{headline}</div>}
+                </div>
+              );
+            })()}
+
             {r.source && r.source.text && (
               <div style={{marginBottom:'8px',border:'1px solid var(--border)',borderRadius:'8px',background:'var(--bg-base)'}}>
                 <div onClick={()=>setOpenSrc(o=>({...o,[r.contact_id]:!o[r.contact_id]}))} style={{cursor:'pointer',padding:'7px 10px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
@@ -28421,7 +28568,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
-              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId}/>
+              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles}/>
               : view==='prospecting' ? <ProspectingView userId={user.id}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
