@@ -2410,7 +2410,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           gap:'12px', marginBottom:'10px',
         }}>
           <div style={{minWidth:0, flex:1}}>
-            <h2 style={{margin:0}}>Tasks</h2>
+            <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={26} style={{color:'var(--accent)',flexShrink:0}} />Tasks</h2>
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
@@ -4914,7 +4914,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div>
-          <h2>Inbox</h2>
+          <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="inbox" size={26} style={{color:'var(--accent)',flexShrink:0}} />Inbox</h2>
           <p style={{fontSize:'13px'}}>
             <strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>
             {' · '}
@@ -10527,7 +10527,7 @@ function RecruitingView({ contacts, setContacts, userId }) {
   return (
     <div className="page-shell">
       <div className="page-header">
-        <h2 style={{display:'flex',alignItems:'center',gap:'8px'}}>🪪 Recruiting</h2>
+        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="recruiting" size={26} style={{color:'var(--accent)',flexShrink:0}} />Recruiting</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm(true)}>+ Recruit</button>
       </div>
 
@@ -10995,7 +10995,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
   return (
     <div className="page-shell">
       <div className="page-header">
-        <h2 style={{display:'flex',alignItems:'center',gap:'8px'}}>🤝 Deals</h2>
+        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="deals" size={26} style={{color:'var(--accent)',flexShrink:0}} />Deals</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm(true)}>+ Deal</button>
       </div>
 
@@ -11874,7 +11874,7 @@ function MileageView({ mileageEntries, setMileageEntries, deals, contacts, setCo
   return (
     <div className="page-shell">
       <div className="page-header">
-        <h2 style={{display:'flex',alignItems:'center',gap:'8px'}}>🚗 Mileage</h2>
+        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="mileage" size={26} style={{color:'var(--accent)',flexShrink:0}} />Mileage</h2>
         {currentRate && (
           <span style={{padding:'4px 10px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'999px',fontSize:'10.5px',color:'var(--text-2)',fontWeight:600,whiteSpace:'nowrap'}}>
             IRS {currentYear}: ${Number(currentRate.business_rate).toFixed(3)}/mi
@@ -12601,7 +12601,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
-        <div style={{flex:1,minWidth:0}}><h2>Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
+        <div style={{flex:1,minWidth:0}}><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="contacts" size={26} style={{color:'var(--accent)',flexShrink:0}} />Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
           <HeaderSearchIcon
             value={search}
@@ -13554,7 +13554,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
+        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="properties" size={26} style={{color:'var(--accent)',flexShrink:0}} />Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
         <button className="btn-add-circle" onClick={()=>{setEditProp(null);setShowModal(true);}} title="New Property" aria-label="New Property">+</button>
       </div>
 
@@ -13767,7 +13767,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId, cont
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>Investments</h2><p>{investments.length} total · {active.length} active</p></div>
+        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="investments" size={26} style={{color:'var(--accent)',flexShrink:0}} />Investments</h2><p>{investments.length} total · {active.length} active</p></div>
         <button className="btn-add-circle" onClick={()=>{setEditInv(null);setShowModal(true);}} title="New Investment" aria-label="New Investment">+</button>
       </div>
 
@@ -14069,7 +14069,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>🧠 Brain</h2><p>Your operating memory · {brain.length} entries · {totalTags} unique tags</p></div>
+        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="brain" size={26} style={{color:'var(--accent)',flexShrink:0}} />Brain</h2><p>Your operating memory · {brain.length} entries · {totalTags} unique tags</p></div>
         <button className="btn-add-circle" onClick={()=>{setEditEntry(null);setShowModal(true);}} title="New Entry" aria-label="New Entry">+</button>
       </div>
 
@@ -14795,7 +14795,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}>
-          <h2>📅 Calendar</h2>
+          <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="calendar" size={26} style={{color:'var(--accent)',flexShrink:0}} />Calendar</h2>
           <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total{taskBlockCount>0?` · ${taskBlockCount} scheduled task block${taskBlockCount===1?'':'s'}`:''}</p>
         </div>
         <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
@@ -15562,7 +15562,7 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2>📚 Playbooks</h2><p>Your repeatable plays · {playbooks.length} playbooks · {totalRuns} total runs · {last7dRuns} this week</p></div>
+        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="playbooks" size={26} style={{color:'var(--accent)',flexShrink:0}} />Playbooks</h2><p>Your repeatable plays · {playbooks.length} playbooks · {totalRuns} total runs · {last7dRuns} this week</p></div>
       </div>
 
       {flash && (
@@ -16051,7 +16051,7 @@ function SystemsView() {
       {/* ── LEFT: vertical systems menu ── */}
       <div style={{ width: '212px', minWidth: '212px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Systems</h2>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="systems" size={26} style={{color:'var(--accent)',flexShrink:0}} />Systems</h2>
           <button className="btn-add-circle btn-add-circle-sm" onClick={runAll} disabled={checkingAll} title="Re-check all" aria-label="Re-check all">↻</button>
         </div>
 
@@ -16254,7 +16254,7 @@ function NotesView({ notes, setNotes, userId }) {
       <div style={{ width: '260px', minWidth: '260px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap:'8px' }}>
           <div style={{minWidth:0, flex:1}}>
-            <h2 style={{ fontSize: '22px', fontWeight: 700 }}>Notes</h2>
+            <h2 style={{ fontSize: '22px', fontWeight: 700, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="notes" size={26} style={{color:'var(--accent)',flexShrink:0}} />Notes</h2>
             <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>{notes.length} note{notes.length !== 1 ? 's' : ''}</p>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
@@ -17233,7 +17233,7 @@ function ProspectingView({ userId }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>🎯 Prospecting</h2>
+          <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Icon name="prospecting" size={26} style={{color:'var(--accent)',flexShrink:0}} />Prospecting</h2>
           {streak > 0 && <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.35)' }}>🔥 {streak}-day streak</span>}
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{activeNonOverhead.length}/{maxSystems} systems active</span>
@@ -17560,7 +17560,7 @@ function JournalView({ userId }) {
       {/* Header */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0 }}>📓 Journal</h2>
+          <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={26} style={{color:'var(--accent)',flexShrink:0}} />Journal</h2>
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
             style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', fontSize: '15px' }}>🔍</button>
@@ -24648,7 +24648,7 @@ function PrismView({ profiles, setProfiles, voiceCards, setVoiceCards, contacts,
   return (
     <div>
       <div className="page-header">
-        <h2>✦ Prism</h2>
+        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="prism" size={26} style={{color:'var(--accent)',flexShrink:0}} />Prism</h2>
         <p>Behavioral foundation — DISC profiles and the platform voice that everything else builds on.</p>
       </div>
 
@@ -25875,7 +25875,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
 
   return (
     <div>
-      <div className="page-header"><h2>Settings</h2><p>Manage your account</p></div>
+      <div className="page-header"><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="settings" size={26} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div>
       <div style={{maxWidth:'480px'}}>
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Profile</h3></div>
@@ -26395,7 +26395,7 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
     <div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}>
         <div>
-          <h2 style={{margin:0}}>Projects</h2>
+          <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tracker" size={26} style={{color:'var(--accent)',flexShrink:0}} />Projects</h2>
           <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>You are {chip(appRole,'var(--accent)')} {project&&myRole(sel)?<>· on this project: {chip(myRole(sel),'var(--accent)')}</>:null}</div>
         </div>
       </div>
