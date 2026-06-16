@@ -26305,6 +26305,143 @@ function OutreachReport({ userId, onBack }) {
     </div>
   );
 }
+function NorthStarStrip({ userId, onOpen }) {
+  const [closed,setClosed]=useState(0); const [target,setTarget]=useState(0); const [pace,setPace]=useState(0); const [loaded,setLoaded]=useState(false);
+  useEffect(()=>{ (async()=>{ try {
+    const year=new Date().getFullYear();
+    const { data:gg }=await supabase.from('ari_goals').select('gci_target').eq('user_id',userId).eq('year',year).maybeSingle();
+    const t=gg?Number(gg.gci_target)||0:0; setTarget(t);
+    const { data:dl }=await supabase.from('deals').select('gross_commission,sale_price,commission_pct,close_date').eq('user_id',userId);
+    const ystart=new Date(year,0,1), now=new Date(), yend=new Date(year,11,31,23,59,59);
+    const commOf=(d)=>Number(d.gross_commission)||(d.sale_price&&d.commission_pct?d.sale_price*d.commission_pct/100:0);
+    const c=(dl||[]).filter(d=>d.close_date&&new Date(d.close_date)>=ystart&&new Date(d.close_date)<=now).reduce((sm,d)=>sm+commOf(d),0);
+    setClosed(c); setPace(c-(t*((now-ystart)/(yend-ystart))));
+  } catch(e){} setLoaded(true); })(); },[]); // eslint-disable-line
+  if (!loaded) return null;
+  const money=(n)=>'$'+Math.round(n).toLocaleString();
+  const pct= target? Math.min(100,Math.round(closed/target*100)) : 0;
+  return (
+    <div className="panel" style={{cursor:'pointer'}} onClick={onOpen}>
+      {target>0 ? (<>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'6px'}}>
+          <span style={{fontSize:'11px',letterSpacing:'.14em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700}}>🎯 North Star · {new Date().getFullYear()} GCI</span>
+          <span style={{fontSize:'12px',color:'var(--text-3)'}}>Goal →</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'6px'}}>
+          <span style={{fontSize:'18px',fontWeight:800}}>{money(closed)}<span style={{fontSize:'12px',color:'var(--text-3)',fontWeight:400}}> / {money(target)}</span></span>
+          <span style={{fontSize:'12px',fontWeight:700,color: pace>=0?'var(--green)':'var(--yellow)'}}>{pace>=0?'+':''}{money(pace)} vs pace</span>
+        </div>
+        <div style={{height:'8px',background:'var(--bg-hover)',borderRadius:'4px',overflow:'hidden'}}><div style={{height:'100%',width:pct+'%',background:'var(--accent)'}}/></div>
+      </>) : (
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'13px',fontWeight:600}}>🎯 Set your income goal</span><span style={{fontSize:'12px',color:'var(--accent)'}}>Set up →</span></div>
+      )}
+    </div>
+  );
+}
+function GoalEngine({ userId, onBack }) {
+  const [loading,setLoading]=useState(true);
+  const [goal,setGoal]=useState({ gci_target:0, avg_commission:null, close_rate:0.4 });
+  const [deals,setDeals]=useState([]);
+  const [act,setAct]=useState({sent:0,replied:0,meetings:0,weekSent:0});
+  const [editing,setEditing]=useState(false);
+  const [form,setForm]=useState({ gci_target:'', avg_commission:'', close_rate:'' });
+  const [saving,setSaving]=useState(false);
+  const year=new Date().getFullYear();
+  useEffect(()=>{ (async()=>{ try {
+    const { data:g } = await supabase.from('ari_goals').select('*').eq('user_id',userId).eq('year',year).maybeSingle();
+    if (g){ setGoal({ gci_target:Number(g.gci_target)||0, avg_commission:g.avg_commission!=null?Number(g.avg_commission):null, close_rate:Number(g.close_rate)||0.4 });
+      setForm({ gci_target:g.gci_target||'', avg_commission:g.avg_commission??'', close_rate:g.close_rate!=null?Math.round(Number(g.close_rate)*100):'' }); }
+    const { data:dl } = await supabase.from('deals').select('gross_commission,sale_price,list_price,target_price,commission_pct,status,close_date,contract_date').eq('user_id',userId);
+    setDeals(dl||[]);
+    const since90=new Date(Date.now()-90*864e5).toISOString();
+    const { data:ro } = await supabase.from('ari_outreach').select('replied,meeting_booked,sent_at').eq('user_id',userId).eq('status','sent').gte('sent_at',since90);
+    const rows=ro||[]; const weekAgo=Date.now()-7*864e5;
+    setAct({ sent:rows.length, replied:rows.filter(r=>r.replied).length, meetings:rows.filter(r=>r.meeting_booked).length, weekSent:rows.filter(r=>new Date(r.sent_at).getTime()>=weekAgo).length });
+  } catch(e){} setLoading(false); })(); },[]); // eslint-disable-line
+  const money=(n)=>'$'+Math.round(n||0).toLocaleString();
+  const ystart=new Date(year,0,1), now=new Date(), yend=new Date(year,11,31,23,59,59);
+  const commOf=(d)=> Number(d.gross_commission)|| (d.sale_price&&d.commission_pct? d.sale_price*d.commission_pct/100 : (d.list_price&&d.commission_pct? d.list_price*d.commission_pct/100 : (d.target_price&&d.commission_pct? d.target_price*d.commission_pct/100 : 0)));
+  const closedThis = deals.filter(d=>d.close_date && new Date(d.close_date)>=ystart && new Date(d.close_date)<=now);
+  const gciClosed = closedThis.reduce((sm,d)=>sm+commOf(d),0);
+  const isActive=(d)=> !d.close_date && !['lost','dead','cancelled','archived','closed'].includes(String(d.status||'').toLowerCase());
+  const pipeline = deals.filter(isActive);
+  const gciPipeline = pipeline.reduce((sm,d)=>sm+commOf(d),0);
+  const closedAll = deals.filter(d=>d.close_date);
+  const computedAvg = closedAll.length? closedAll.reduce((sm,d)=>sm+commOf(d),0)/closedAll.length : 0;
+  const avgComm = (goal.avg_commission && goal.avg_commission>0)? goal.avg_commission : (computedAvg||9000);
+  const replyRate = act.sent>=20 ? Math.max(0.05, act.replied/act.sent) : 0.2;
+  const meetingRate = act.replied>=10 ? Math.max(0.1, act.meetings/act.replied) : 0.3;
+  const closeRate = Math.max(0.1, goal.close_rate||0.4);
+  const target = goal.gci_target||0;
+  const remainingGci = Math.max(0, target - gciClosed - gciPipeline*0.5);
+  const dealsNeeded = avgComm? Math.ceil(remainingGci/avgComm) : 0;
+  const apptsNeeded = Math.ceil(dealsNeeded/closeRate);
+  const convosNeeded = Math.ceil(apptsNeeded/meetingRate);
+  const reachNeeded = Math.ceil(convosNeeded/replyRate);
+  const weeksLeft = Math.max(1, Math.ceil((yend-now)/(7*864e5)));
+  const perWeek=(n)=>Math.ceil(n/weeksLeft);
+  const yearFrac = (now-ystart)/(yend-ystart);
+  const paceDelta = gciClosed - target*yearFrac;
+  const pctToGoal = target? Math.min(100, Math.round(gciClosed/target*100)) : 0;
+  const saveGoal=async()=>{ setSaving(true);
+    const payload={ user_id:userId, year, gci_target:Number(form.gci_target)||0, avg_commission: form.avg_commission!==''?Number(form.avg_commission):null, close_rate: form.close_rate!==''?(Number(form.close_rate)/100):0.4, updated_at:new Date().toISOString() };
+    try { await supabase.from('ari_goals').upsert(payload,{ onConflict:'user_id,year' }); setGoal({ gci_target:payload.gci_target, avg_commission:payload.avg_commission, close_rate:payload.close_rate }); } catch(e){}
+    setSaving(false); setEditing(false);
+  };
+  const Tile=({label,val,sub,col})=> <div style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px',textAlign:'center'}}><div style={{fontSize:'16px',fontWeight:800,color:col||'var(--accent)'}}>{val}</div><div style={{fontSize:'10px',letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)',marginTop:'2px'}}>{label}</div>{sub&&<div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{sub}</div>}</div>;
+  const Funnel=({label,total,per,icon})=> <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:'18px'}}>{icon}</span><div style={{flex:1}}><div style={{fontWeight:700,fontSize:'14px'}}>{total}</div><div style={{fontSize:'11px',color:'var(--text-3)'}}>{label}</div></div><div style={{textAlign:'right'}}><div style={{fontWeight:700,fontSize:'13px',color:'var(--accent)'}}>{per}/wk</div><div style={{fontSize:'10px',color:'var(--text-3)'}}>to stay on pace</div></div></div>;
+  if (loading) return <div className="view"><div className="loading-screen" style={{height:'40vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Building your wealth engine…</div></div></div>;
+  return (
+    <div className="view">
+      <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}}>
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button>
+        <h2 style={{margin:0}}>Goal · Wealth Engine</h2>
+        <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setEditing(e=>!e)}>{editing?'Close':'Edit'}</button>
+      </div>
+      {editing && <div className="panel">
+        <div className="panel-header"><h3>Your goal &amp; assumptions</h3></div>
+        <div className="form-group"><label className="form-label">{year} GCI goal ($)</label><input className="form-input" type="number" value={form.gci_target} onChange={e=>setForm(f=>({...f,gci_target:e.target.value}))} placeholder="e.g. 500000"/></div>
+        <div className="form-group"><label className="form-label">Avg. commission per deal ($)</label><input className="form-input" type="number" value={form.avg_commission} onChange={e=>setForm(f=>({...f,avg_commission:e.target.value}))} placeholder={computedAvg?('blank = auto '+money(computedAvg)):'blank = auto · e.g. 9000'}/></div>
+        <div className="form-group"><label className="form-label">Appointment → close rate (%)</label><input className="form-input" type="number" value={form.close_rate} onChange={e=>setForm(f=>({...f,close_rate:e.target.value}))} placeholder="e.g. 40"/></div>
+        <button className="btn btn-primary" disabled={saving} onClick={saveGoal}>{saving?'Saving…':'Save goal'}</button>
+      </div>}
+      {target<=0 && !editing && <div className="panel"><div style={{textAlign:'center',padding:'12px'}}><div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>Set your income goal</div><div style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'12px'}}>Tell Ari your GCI target and it works backward to the daily activity that gets you there.</div><button className="btn btn-primary" onClick={()=>setEditing(true)}>Set your goal</button></div></div>}
+      {target>0 && <>
+      <div className="panel">
+        <div className="panel-header"><h3>{year} progress</h3></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'8px'}}>
+          <span style={{fontSize:'24px',fontWeight:800}}>{money(gciClosed)}</span>
+          <span style={{fontSize:'13px',color:'var(--text-3)'}}>of {money(target)} · {pctToGoal}%</span>
+        </div>
+        <div style={{height:'10px',background:'var(--bg-hover)',borderRadius:'5px',overflow:'hidden',marginBottom:'10px'}}><div style={{height:'100%',width:pctToGoal+'%',background:'var(--accent)'}}/></div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}}>
+          <Tile label="Closed" val={money(gciClosed)} sub={closedThis.length+' deals'}/>
+          <Tile label="Pipeline" val={money(gciPipeline)} sub={pipeline.length+' active'}/>
+          <Tile label="vs pace" val={(paceDelta>=0?'+':'')+money(paceDelta)} col={paceDelta>=0?'var(--green)':'var(--yellow)'} sub={paceDelta>=0?'ahead':'behind'}/>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="panel-header"><h3>What it takes</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{weeksLeft} weeks left</span></div>
+        <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'8px'}}>To reach {money(target)} (counting closed + half your pipeline), working backward:</div>
+        <Funnel icon="🏆" label={'deals to close · '+money(avgComm)+' avg'} total={dealsNeeded} per={perWeek(dealsNeeded)}/>
+        <Funnel icon="🤝" label={'appointments · '+Math.round(closeRate*100)+'% close'} total={apptsNeeded} per={perWeek(apptsNeeded)}/>
+        <Funnel icon="💬" label={'conversations · '+Math.round(meetingRate*100)+'% to appt'} total={convosNeeded} per={perWeek(convosNeeded)}/>
+        <Funnel icon="📣" label={'reach-outs · '+Math.round(replyRate*100)+'% reply'} total={reachNeeded} per={perWeek(reachNeeded)}/>
+        <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Reply &amp; appointment rates are learned from your outreach where you have enough data, otherwise sensible defaults. Edit assumptions up top.</div>
+      </div>
+      <div className="panel">
+        <div className="panel-header"><h3>This week</h3></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
+          <span style={{fontSize:'13px'}}>Reach-outs sent</span>
+          <span style={{fontSize:'14px',fontWeight:700}}>{act.weekSent} <span style={{color:'var(--text-3)',fontWeight:400}}>/ {perWeek(reachNeeded)} target</span></span>
+        </div>
+        <div style={{height:'8px',background:'var(--bg-hover)',borderRadius:'4px',overflow:'hidden'}}><div style={{height:'100%',width:Math.min(100, perWeek(reachNeeded)? Math.round(act.weekSent/perWeek(reachNeeded)*100):0)+'%',background: act.weekSent>=perWeek(reachNeeded)?'var(--green)':'var(--accent)'}}/></div>
+        <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'10px',lineHeight:1.5}}>{act.weekSent>=perWeek(reachNeeded)? 'On pace this week — keep it up.' : 'Send '+Math.max(0,perWeek(reachNeeded)-act.weekSent)+' more this week to stay on track. Ari surfaces your highest-propensity contacts first.'}</div>
+      </div>
+      </>}
+    </div>
+  );
+}
 function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
@@ -26329,6 +26466,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const [showScore, setShowScore] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [hubId, setHubId] = useState(null);
+  const [showGoal, setShowGoal] = useState(false);
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -26508,6 +26646,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Ari is preparing your briefing…</div></div>;
 
   if (showReport) return <OutreachReport userId={userId} onBack={()=>setShowReport(false)} />;
+  if (showGoal) return <GoalEngine userId={userId} onBack={()=>setShowGoal(false)} />;
   const pending = reachouts.filter(r=>r.status==='pending');
   const handled = reachouts.filter(r=>r.status!=='pending');
 
@@ -26526,6 +26665,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
         {briefing?.summary && <p style={{marginTop:'10px',fontSize:'14px',lineHeight:1.5,color:'var(--text-1)'}}>{briefing.summary}</p>}
       </div>
 
+      <NorthStarStrip userId={userId} onOpen={()=>setShowGoal(true)} />
       {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 
       <div className="panel">
