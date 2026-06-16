@@ -7,6 +7,51 @@ import './index.css';
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
 if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 
+// ─── ICON SYSTEM ────────────────────────────────────────────────────
+// Crisp monoline (lucide-style) SVG icons used for the primary nav and
+// anywhere a clean, platform-consistent glyph beats an emoji. Stroke uses
+// currentColor so each icon inherits its container's color + transitions
+// (e.g. grey → gold when a nav item goes active). Self-contained: no new
+// dependency. Unknown names fall back to the `fb` emoji so nothing ever
+// renders blank. To migrate more of the app off emoji over time, add the
+// concept here and render <Icon name="…" />.
+const ICON_PATHS = {
+  dashboard:   (<><rect x="3" y="3" width="7" height="9" rx="1.3"/><rect x="14" y="3" width="7" height="5" rx="1.3"/><rect x="14" y="12" width="7" height="9" rx="1.3"/><rect x="3" y="16" width="7" height="5" rx="1.3"/></>),
+  briefing:    (<><path d="M12 2v7"/><path d="m4.9 10.9 1.4 1.4"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.1 10.9-1.4 1.4"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/></>),
+  prospecting: (<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/></>),
+  tasks:       (<><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></>),
+  calendar:    (<><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></>),
+  inbox:       (<><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/></>),
+  contacts:    (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></>),
+  recruiting:  (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></>),
+  deals:       (<><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></>),
+  mileage:     (<><path d="M5 17H3v-5l2-4.5A2 2 0 0 1 6.8 6h10.4a2 2 0 0 1 1.8 1.1L21 12v5h-2"/><path d="M9 17h6"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></>),
+  properties:  (<><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></>),
+  investments: (<><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></>),
+  finance:     (<><path d="M6 20V10"/><path d="M12 20V4"/><path d="M18 20v-6"/><path d="M3 20h18"/></>),
+  brain:       (<><circle cx="12" cy="12" r="2.3"/><circle cx="5.5" cy="6" r="2"/><circle cx="19" cy="8" r="2"/><circle cx="8" cy="19" r="2"/><circle cx="18.5" cy="17.5" r="2"/><path d="m7 7 3.4 3.4"/><path d="M17.3 9.2 14 11.4"/><path d="m9.4 17.4 1.4-3.3"/><path d="m16.9 16 -3-2.4"/></>),
+  playbooks:   (<><path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></>),
+  notes:       (<><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 9h2"/></>),
+  journal:     (<><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M9 7h6"/><path d="M9 11h4"/></>),
+  chat:        (<><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/><path d="M5 3v3"/><path d="M3.5 4.5h3"/><path d="M19 16v3"/><path d="M17.5 17.5h3"/></>),
+  prism:       (<><path d="M12 4 21 19H3z" /><path d="M2 11.5 9 13"/><path d="m15 13 7-2.4"/><path d="m15 14.5 7 1.2"/><path d="M15 11.5 22 8"/></>),
+  tracker:     (<><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></>),
+  systems:     (<><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></>),
+  settings:    (<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>),
+};
+function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
+  const paths = ICON_PATHS[name];
+  if (!paths) return fb != null ? <span style={style}>{fb}</span> : null;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth={stroke} strokeLinecap="round"
+      strokeLinejoin="round" aria-hidden="true"
+      style={{ display: 'block', ...style }}>
+      {paths}
+    </svg>
+  );
+}
+
 // ─── PRISM MIRROR PRINCIPLE ─────────────────────────────────────────
 // Core PrismOS rule for any AI that drafts communication on behalf of the
 // user (email, text, DM, voicemail script, social DM, etc.). Pass this
@@ -27822,7 +27867,7 @@ export default function App() {
             <div className="nav-section-label">Workspace</div>
             {mainNav.map(item => (
               <div key={item.id} className={`nav-item ${view===item.id?'active':''}`} onClick={()=>navigate(item.id)}>
-                <span className="icon">{item.icon}</span>
+                <span className="icon"><Icon name={item.id} size={18} fb={item.icon} /></span>
                 {item.label}
                 {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
               </div>
@@ -27836,7 +27881,7 @@ export default function App() {
                 </div>
                 {(moreOpen || viewInMore) && moreNav.map(item => (
                   <div key={item.id} className={`nav-item ${view===item.id?'active':''}`} onClick={()=>navigate(item.id)} style={{paddingLeft:'30px',fontSize:'13px'}}>
-                    <span className="icon">{item.icon}</span>
+                    <span className="icon"><Icon name={item.id} size={18} fb={item.icon} /></span>
                     {item.label}
                     {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
                   </div>
