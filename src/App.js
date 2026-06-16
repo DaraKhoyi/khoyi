@@ -6170,6 +6170,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
           contactName: recipient?.name || null,
           company: recipient?.company || null,
           role: recipient?.role || null,
+          contact_id: recipient?.id || null,
           channel,
           kind: entry.kind || 'note',
           entryBody: entry.body || entry.brief || '',
