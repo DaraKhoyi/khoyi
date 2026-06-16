@@ -17507,19 +17507,31 @@ function JournalView({ userId }) {
 
       {/* Composer (today only) */}
       {mode === 'day' && isToday && !searchOpen && (
-        <div className="panel" style={{ padding: '12px' }}>
+        <div className="panel" style={{ padding: '16px', border: dict.recording ? '1px solid var(--red)' : '1px solid var(--border)', transition: 'border-color 0.2s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)' }}>New entry</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>· {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+            <span style={{ flex: 1 }} />
+            {dict.recording && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--red)' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--red)', animation: 'pulse 1.2s ease-in-out infinite' }} />listening…
+              </span>
+            )}
+          </div>
           <textarea ref={taRef} value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)}
-            placeholder="What just happened? Who did you talk to? Type or tap the mic…" rows={3}
-            style={{ width: '100%', padding: '10px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.5 }} />
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+            onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); } }}
+            placeholder={"What happened? Who did you meet, what did they say, what's next?\n\nTip: name people, properties, projects or deals and they'll auto-link to their records."}
+            style={{ width: '100%', minHeight: '220px', padding: '16px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text-1)', fontSize: '16px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6, fontFamily: 'inherit' }} />
+          <div style={{ display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
             {dict.supported && (
               <button onClick={() => dict.recording ? dict.stop() : dict.start()}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>
-                {dict.recording ? '⏹ Recording…' : '🎤 Voice'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '12px 18px', borderRadius: '999px', border: `1.5px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '14px', fontWeight: 700 }}>
+                {dict.recording ? '⏹ Stop' : '🎤 Dictate'}
               </button>
             )}
+            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{text.trim() ? `${text.trim().split(/\s+/).length} words` : ''}</span>
             <span style={{ flex: 1 }} />
-            <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '9px 20px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1 }}>{saving ? 'Logging…' : 'Log entry'}</button>
+            <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '12px 28px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '14px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1, boxShadow: (saving || !text.trim()) ? 'none' : '0 2px 10px rgba(197,169,94,0.3)' }}>{saving ? 'Logging…' : 'Log entry'}</button>
           </div>
         </div>
       )}
@@ -17614,8 +17626,8 @@ function QuickLog({ userId }) {
               <h3 style={{ margin: 0, fontSize: '15px' }}>📓 Quick log</h3>
               <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
             </div>
-            <textarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} rows={4} placeholder="Capture a moment — it'll timestamp and auto-link…"
-              style={{ width: '100%', padding: '10px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.5 }} />
+            <textarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} rows={6} placeholder="Capture a moment — it'll timestamp and auto-link…"
+              style={{ width: '100%', minHeight: '150px', padding: '13px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '15px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.55 }} />
             <div style={{ display: 'flex', gap: '8px', marginTop: '10px', alignItems: 'center' }}>
               {dict.supported && <button onClick={() => dict.recording ? dict.stop() : dict.start()} style={{ padding: '9px 14px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>{dict.recording ? '⏹ Recording…' : '🎤 Voice'}</button>}
               <span style={{ flex: 1 }} />
@@ -27718,8 +27730,8 @@ export default function App() {
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
-  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'notes', 'journal', 'chat'];
-  const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'prism', 'systems', 'settings'];
+  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'journal', 'chat'];
+  const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
