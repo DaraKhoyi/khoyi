@@ -14201,6 +14201,51 @@ function ordinal(n) {
   }
 }
 
+// Searchable contact combo-box — type to filter instead of scrolling a long select.
+function ContactSearchSelect({ contacts = [], value, onChange, placeholder = 'Search contacts…' }) {
+  const nameOf = (c) => (c && (c.name || c.full_name || c.email)) || 'Contact';
+  const selected = contacts.find(c => c.id === value);
+  const [query, setQuery] = useState(selected ? nameOf(selected) : '');
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+  useEffect(() => { const s = contacts.find(c => c.id === value); setQuery(s ? nameOf(s) : ''); /* eslint-disable-next-line */ }, [value]);
+  useEffect(() => {
+    function onDoc(e) { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  const q = query.trim().toLowerCase();
+  const showAll = !q || (selected && q === nameOf(selected).toLowerCase());
+  const matches = (showAll ? contacts : contacts.filter(c => `${c.name || ''} ${c.full_name || ''} ${c.email || ''} ${c.company || ''}`.toLowerCase().includes(q))).slice(0, 60);
+  const inputStyle = { width: '100%', padding: '11px 12px', paddingRight: value ? '34px' : '12px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)', fontSize: '14px', boxSizing: 'border-box' };
+  return (
+    <div ref={boxRef} style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }}>
+        <input value={query} placeholder={placeholder} onFocus={() => setOpen(true)} onChange={e => { setQuery(e.target.value); setOpen(true); }} style={inputStyle} />
+        {value ? (
+          <button type="button" onClick={() => { onChange(''); setQuery(''); setOpen(false); }} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+        ) : (
+          <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none', fontSize: '13px' }}>🔍</span>
+        )}
+      </div>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 60, marginTop: '4px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', maxHeight: '260px', overflowY: 'auto', boxShadow: '0 10px 28px rgba(0,0,0,0.5)' }}>
+          <button type="button" onClick={() => { onChange(''); setQuery(''); setOpen(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px' }}>— None —</button>
+          {matches.length === 0 ? (
+            <div style={{ padding: '14px 12px', fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic' }}>No matches for “{query}”</div>
+          ) : matches.map(c => (
+            <button type="button" key={c.id} onClick={() => { onChange(c.id); setQuery(nameOf(c)); setOpen(false); }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 12px', background: c.id === value ? 'var(--bg-hover)' : 'none', border: 'none', color: 'var(--text-1)', cursor: 'pointer', fontSize: '14px' }}>
+              {nameOf(c)}{c.company ? <span style={{ color: 'var(--text-3)' }}> · {c.company}</span> : ''}
+            </button>
+          ))}
+          {!showAll && matches.length === 60 && <div style={{ padding: '8px 12px', fontSize: '10px', color: 'var(--text-3)' }}>Showing first 60 — keep typing to narrow.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts, properties = [] }) {
   const init = initial || {};
   const startInit = init.start_at ? new Date(init.start_at) : (defaultDate ? new Date(defaultDate + 'T09:00:00') : new Date());
@@ -14310,10 +14355,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
           {contacts && contacts.length > 0 && (
             <div className="form-group">
               <label className="form-label">Linked contact</label>
-              <select className="form-select" value={contactId} onChange={e=>setContactId(e.target.value)}>
-                <option value="">— None —</option>
-                {contacts.map(c => <option key={c.id} value={c.id}>{c.name || c.full_name || c.email || 'Contact'}</option>)}
-              </select>
+              <ContactSearchSelect contacts={contacts} value={contactId} onChange={setContactId} />
             </div>
           )}
           {brain && brain.length > 0 && (
