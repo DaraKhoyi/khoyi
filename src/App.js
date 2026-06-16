@@ -17193,6 +17193,358 @@ function ProspectingView({ userId }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// DAILY JOURNAL — a living, timestamped daily log. Typed or voice entries get
+// auto-transcribed, AI-linked to the real people/properties/projects/deals you
+// mention (high-confidence auto, the rest you confirm), surface action items as
+// one-tap tasks, roll up into an end-of-day recap, and are semantically
+// searchable across every day. Confirmed links also appear on each record's card.
+// ═══════════════════════════════════════════════════════════════════════
+const JLINK_META = {
+  contact:  { icon: '👤', color: '#60a5fa' },
+  property: { icon: '🏠', color: '#34d399' },
+  project:  { icon: '📋', color: '#a78bfa' },
+  deal:     { icon: '🤝', color: '#fbbf24' },
+};
+function fmtJDay(ymd) { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); }
+function fmtJTime(iso) { return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+function shiftDay(ymd, delta) { const [y, m, d] = ymd.split('-').map(Number); const dt = new Date(y, m - 1, d); dt.setDate(dt.getDate() + delta); return dt.toISOString().slice(0, 10); }
+
+async function mirrorJournalToTimeline(userId, entry, type, entityId) {
+  try {
+    const { data } = await supabase.from('contact_interactions').insert({
+      user_id: userId, entity_type: type, entity_id: entityId,
+      contact_id: type === 'contact' ? entityId : null,
+      kind: 'note', channel: 'note', body: entry.content, brief: (entry.content || '').slice(0, 90),
+      occurred_at: entry.occurred_at, journal_entry_id: entry.id,
+    }).select('id').single();
+    return data?.id || null;
+  } catch (_) { return null; }
+}
+async function processJournalAnalysis(userId, entry, analysis) {
+  const out = [];
+  for (const l of (analysis.links || [])) {
+    if (!l.id || !l.type || !l.label) continue;
+    const confirmed = (Number(l.confidence) || 0) >= 0.8;
+    const { data: row } = await supabase.from('journal_links').insert({
+      user_id: userId, entry_id: entry.id, entity_type: l.type, entity_id: l.id, label: l.label, confidence: l.confidence, confirmed, dismissed: false,
+    }).select().single();
+    if (!row) continue;
+    if (confirmed && JLINK_META[l.type] && l.type !== 'project') {
+      const iid = await mirrorJournalToTimeline(userId, entry, l.type, l.id);
+      if (iid) { await supabase.from('journal_links').update({ interaction_id: iid }).eq('id', row.id); row.interaction_id = iid; }
+    }
+    out.push(row);
+  }
+  return out;
+}
+async function logJournalEntry(userId, content, kind) {
+  const day = today_ymd();
+  const { data: entry, error } = await supabase.from('journal_entries').insert({ user_id: userId, day, occurred_at: new Date().toISOString(), kind: kind || 'text', content }).select().single();
+  if (error || !entry) throw error || new Error('Save failed');
+  let links = [], actions = [];
+  try {
+    const { data: a } = await supabase.functions.invoke('journal-analyze', { body: { entry_id: entry.id } });
+    if (a && !a.error) { links = await processJournalAnalysis(userId, entry, a); actions = a.action_items || []; }
+  } catch (_) {}
+  try { window.dispatchEvent(new CustomEvent('journal-entry-added', { detail: { day } })); } catch (_) {}
+  return { entry, links, actions };
+}
+
+function useDictation(onFinal) {
+  const [recording, setRecording] = useState(false);
+  const [interim, setInterim] = useState('');
+  const ref = useRef(null);
+  const supported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const start = useCallback(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR(); rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = (ev) => { let f = '', it = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) f += r[0].transcript; else it += r[0].transcript; } if (f) onFinal(f); setInterim(it); };
+    rec.onerror = () => {}; rec.onend = () => { setRecording(false); setInterim(''); };
+    ref.current = rec; try { rec.start(); setRecording(true); } catch (_) {}
+  }, [onFinal]);
+  const stop = useCallback(() => { try { ref.current && ref.current.stop(); } catch (_) {} setRecording(false); setInterim(''); }, []);
+  useEffect(() => () => { try { ref.current && ref.current.abort(); } catch (_) {} }, []);
+  return { recording, interim, start, stop, supported };
+}
+
+function LinkChip({ link, onConfirm, onDismiss }) {
+  const meta = JLINK_META[link.entity_type] || { icon: '•', color: 'var(--text-3)' };
+  if (link.confirmed) {
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: meta.color, background: `${meta.color}1a`, border: `1px solid ${meta.color}55`, borderRadius: '999px', padding: '2px 9px' }}>{meta.icon} {link.label}</span>;
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 600, color: 'var(--text-2)', background: 'var(--bg-hover)', border: '1px dashed var(--border)', borderRadius: '999px', padding: '2px 6px 2px 9px' }}>
+      {meta.icon} {link.label}?
+      <button onClick={onConfirm} title="Confirm link" style={{ border: 'none', background: 'var(--green)', color: '#fff', borderRadius: '50%', width: '17px', height: '17px', cursor: 'pointer', fontSize: '10px', lineHeight: 1 }}>✓</button>
+      <button onClick={onDismiss} title="Dismiss" style={{ border: 'none', background: 'var(--bg-base)', color: 'var(--text-3)', borderRadius: '50%', width: '17px', height: '17px', cursor: 'pointer', fontSize: '10px', lineHeight: 1 }}>✕</button>
+    </span>
+  );
+}
+
+function JournalView({ userId }) {
+  const [day, setDay] = useState(today_ymd());
+  const [entries, setEntries] = useState([]);
+  const [linksByEntry, setLinksByEntry] = useState({});
+  const [actionsByEntry, setActionsByEntry] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const taRef = useRef(null);
+  const dict = useDictation((f) => setText(prev => { const sep = (!prev || /\s$/.test(prev)) ? '' : ' '; return prev + sep + f.trim() + ' '; }));
+  const isToday = day === today_ymd();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: es } = await supabase.from('journal_entries').select('*').eq('user_id', userId).eq('day', day).order('occurred_at', { ascending: false });
+    const list = es || [];
+    setEntries(list);
+    if (list.length) {
+      const ids = list.map(e => e.id);
+      const { data: ls } = await supabase.from('journal_links').select('*').in('entry_id', ids).eq('dismissed', false);
+      const byE = {}; (ls || []).forEach(l => { (byE[l.entry_id] = byE[l.entry_id] || []).push(l); }); setLinksByEntry(byE);
+    } else setLinksByEntry({});
+    const { data: jd } = await supabase.from('journal_days').select('*').eq('user_id', userId).eq('day', day).maybeSingle();
+    setSummary(jd?.highlights || (jd?.summary ? { recap: jd.summary } : null));
+    setLoading(false);
+  }, [userId, day]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const h = (e) => { if (e.detail?.day === day) load(); };
+    window.addEventListener('journal-entry-added', h);
+    return () => window.removeEventListener('journal-entry-added', h);
+  }, [day, load]);
+
+  async function save() {
+    const content = text.trim();
+    if (!content || saving) return;
+    if (dict.recording) dict.stop();
+    setSaving(true);
+    try {
+      const kind = /\s/.test(content) && dict.supported ? 'text' : 'text';
+      const { entry, links, actions } = await logJournalEntry(userId, content, kind);
+      setEntries(prev => [entry, ...prev]);
+      setLinksByEntry(prev => ({ ...prev, [entry.id]: links }));
+      if (actions && actions.length) setActionsByEntry(prev => ({ ...prev, [entry.id]: actions }));
+      setText('');
+      if (window.__notify) window.__notify('Logged', 'success');
+    } catch (e) { if (window.__notify) window.__notify('Save failed: ' + (e.message || e), 'error'); }
+    finally { setSaving(false); }
+  }
+  async function confirmLink(entry, link) {
+    setLinksByEntry(prev => ({ ...prev, [entry.id]: (prev[entry.id] || []).map(l => l.id === link.id ? { ...l, confirmed: true } : l) }));
+    await supabase.from('journal_links').update({ confirmed: true }).eq('id', link.id);
+    if (!link.interaction_id && JLINK_META[link.entity_type] && link.entity_type !== 'project') {
+      const iid = await mirrorJournalToTimeline(userId, entry, link.entity_type, link.entity_id);
+      if (iid) await supabase.from('journal_links').update({ interaction_id: iid }).eq('id', link.id);
+    }
+  }
+  async function dismissLink(entry, link) {
+    setLinksByEntry(prev => ({ ...prev, [entry.id]: (prev[entry.id] || []).filter(l => l.id !== link.id) }));
+    await supabase.from('journal_links').update({ dismissed: true, confirmed: false }).eq('id', link.id);
+    if (link.interaction_id) await supabase.from('contact_interactions').delete().eq('id', link.interaction_id);
+  }
+  async function makeTask(entryId, action, idx) {
+    await supabase.from('tasks').insert({ user_id: userId, title: action.title, due_date: action.due_date || null, priority: 'medium', completed: false, notes: `From journal · ${day}` });
+    setActionsByEntry(prev => ({ ...prev, [entryId]: (prev[entryId] || []).filter((_, i) => i !== idx) }));
+    if (window.__notify) window.__notify('Task created', 'success');
+  }
+  async function deleteEntry(entry) {
+    setEntries(prev => prev.filter(e => e.id !== entry.id));
+    const ls = linksByEntry[entry.id] || [];
+    for (const l of ls) { if (l.interaction_id) await supabase.from('contact_interactions').delete().eq('id', l.interaction_id); }
+    await supabase.from('journal_entries').delete().eq('id', entry.id);
+  }
+  async function summarize() {
+    setSummarizing(true);
+    try {
+      const { data } = await supabase.functions.invoke('journal-daily-summary', { body: { day } });
+      if (data?.summary) setSummary(data.summary);
+      else if (window.__notify) window.__notify(data?.message || 'Nothing to summarize', 'warn');
+    } catch (e) { if (window.__notify) window.__notify('Summary failed', 'error'); }
+    finally { setSummarizing(false); }
+  }
+  async function runSearch() {
+    if (!searchQ.trim()) return;
+    setSearching(true); setSearchResults(null);
+    try {
+      const { data } = await supabase.functions.invoke('journal-search', { body: { query: searchQ, limit: 25 } });
+      setSearchResults(data?.results || []);
+    } catch (e) { setSearchResults([]); }
+    finally { setSearching(false); }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '80px' }}>
+      {/* Header */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0 }}>📓 Journal</h2>
+          <span style={{ flex: 1 }} />
+          <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
+            style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', fontSize: '15px' }}>🔍</button>
+        </div>
+        {searchOpen ? (
+          <div className="panel" style={{ padding: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input value={searchQ} onChange={e => setSearchQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') runSearch(); }} placeholder="Search every day — e.g. 'what did I discuss with the bakery tenant?'"
+                style={{ flex: 1, padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '13px' }} />
+              <button onClick={runSearch} disabled={searching} style={{ padding: '10px 16px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '9px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>{searching ? '…' : 'Go'}</button>
+            </div>
+            {searchResults && (
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {searchResults.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic' }}>No matches.</p> :
+                  searchResults.map(r => (
+                    <button key={r.id} onClick={() => { setDay(r.day); setSearchOpen(false); }} style={{ textAlign: 'left', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', padding: '10px 12px', cursor: 'pointer' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 700, marginBottom: '3px' }}>{fmtJDay(r.day)} · {fmtJTime(r.occurred_at)} · {(r.similarity * 100).toFixed(0)}% match</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-1)', lineHeight: 1.4 }}>{(r.content || '').slice(0, 160)}{(r.content || '').length > 160 ? '…' : ''}</div>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+            <button onClick={() => setDay(shiftDay(day, -1))} style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid var(--border)', background: 'var(--bg-hover)', color: 'var(--text-2)', cursor: 'pointer' }}>◀</button>
+            <div style={{ textAlign: 'center', flex: 1 }}>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-1)' }}>{fmtJDay(day)}</div>
+              {!isToday && <button onClick={() => setDay(today_ymd())} style={{ fontSize: '11px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>→ Jump to today</button>}
+            </div>
+            <button onClick={() => setDay(shiftDay(day, 1))} disabled={isToday} style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid var(--border)', background: 'var(--bg-hover)', color: 'var(--text-2)', cursor: 'pointer', opacity: isToday ? 0.4 : 1 }}>▶</button>
+          </div>
+        )}
+      </div>
+
+      {/* Composer (today only) */}
+      {isToday && !searchOpen && (
+        <div className="panel" style={{ padding: '12px' }}>
+          <textarea ref={taRef} value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)}
+            placeholder="What just happened? Who did you talk to? Type or tap the mic…" rows={3}
+            style={{ width: '100%', padding: '10px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.5 }} />
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+            {dict.supported && (
+              <button onClick={() => dict.recording ? dict.stop() : dict.start()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>
+                {dict.recording ? '⏹ Recording…' : '🎤 Voice'}
+              </button>
+            )}
+            <span style={{ flex: 1 }} />
+            <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '9px 20px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1 }}>{saving ? 'Logging…' : 'Log entry'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Day summary */}
+      {!searchOpen && (summary ? (
+        <div className="panel" style={{ padding: '14px', background: 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: '1px solid rgba(197,169,94,0.35)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800 }}>✨ Day recap</span>
+            <button onClick={summarize} disabled={summarizing} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>{summarizing ? '…' : '↻ regenerate'}</button>
+          </div>
+          {summary.recap && <p style={{ fontSize: '13px', color: 'var(--text-1)', margin: '0 0 10px', lineHeight: 1.5 }}>{summary.recap}</p>}
+          {[['people', '👥 People'], ['moved', '✅ Moved forward'], ['open', '⏳ Open loops'], ['tomorrow', '🎯 Tomorrow']].map(([k, lbl]) => (
+            Array.isArray(summary[k]) && summary[k].length ? (
+              <div key={k} style={{ marginBottom: '8px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: '3px' }}>{lbl}</div>
+                <ul style={{ margin: 0, paddingLeft: '18px' }}>{summary[k].map((x, i) => <li key={i} style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.5 }}>{x}</li>)}</ul>
+              </div>
+            ) : null
+          ))}
+        </div>
+      ) : (entries.length > 0 && (
+        <button onClick={summarize} disabled={summarizing} className="panel" style={{ padding: '12px', textAlign: 'center', cursor: 'pointer', border: '1px dashed var(--border)', color: 'var(--accent)', fontWeight: 700, fontSize: '13px', background: 'var(--bg-card)' }}>
+          {summarizing ? 'Summarizing your day…' : '✨ Summarize my day'}
+        </button>
+      )))}
+
+      {/* Timeline */}
+      {!searchOpen && (loading ? <div className="panel" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-3)' }}>Loading…</div> :
+        entries.length === 0 ? (
+          <div className="panel" style={{ padding: '28px', textAlign: 'center' }}>
+            <div style={{ fontSize: '32px', marginBottom: '8px' }}>📓</div>
+            <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>{isToday ? 'Your day is a blank page. Capture your first moment above — a call, a showing, a thought.' : 'Nothing logged this day.'}</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {entries.map(entry => {
+              const links = linksByEntry[entry.id] || [];
+              const actions = actionsByEntry[entry.id] || [];
+              return (
+                <div key={entry.id} className="panel" style={{ padding: '12px 14px', position: 'relative' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtJTime(entry.occurred_at)}</span>
+                    <span style={{ fontSize: '11px' }}>{entry.kind === 'voice' ? '🎤' : '📝'}</span>
+                    <span style={{ flex: 1 }} />
+                    <button onClick={() => deleteEntry(entry)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', opacity: 0.6 }}>🗑</button>
+                  </div>
+                  <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
+                  {(links.length > 0 || actions.length > 0) && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                      {links.map(l => <LinkChip key={l.id} link={l} onConfirm={() => confirmLink(entry, l)} onDismiss={() => dismissLink(entry, l)} />)}
+                      {actions.map((a, i) => (
+                        <button key={i} onClick={() => makeTask(entry.id, a, i)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--green)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '999px', padding: '3px 10px', cursor: 'pointer' }}>＋ Task: {a.title}{a.due_date ? ` (${a.due_date})` : ''}</button>
+                      ))}
+                    </div>
+                  )}
+                  {!entry.analyzed && links.length === 0 && actions.length === 0 && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '6px', fontStyle: 'italic' }}>linking…</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+    </div>
+  );
+}
+
+// Floating one-tap capture — drops a timestamped entry into today's journal from
+// anywhere in the app, then auto-links it in the background.
+function QuickLog({ userId }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const dict = useDictation((f) => setText(prev => { const sep = (!prev || /\s$/.test(prev)) ? '' : ' '; return prev + sep + f.trim() + ' '; }));
+  async function save() {
+    const c = text.trim(); if (!c || saving) return;
+    if (dict.recording) dict.stop();
+    setSaving(true);
+    try { await logJournalEntry(userId, c, dict.recording ? 'voice' : 'text'); setText(''); setOpen(false); if (window.__notify) window.__notify('Logged to journal', 'success'); }
+    catch (e) { if (window.__notify) window.__notify('Save failed', 'error'); }
+    finally { setSaving(false); }
+  }
+  return (
+    <>
+      <button onClick={() => setOpen(true)} aria-label="Quick log" title="Quick log to journal"
+        style={{ position: 'fixed', right: '16px', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 78px)', zIndex: 900, width: '54px', height: '54px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', boxShadow: '0 6px 20px rgba(0,0,0,0.45)', cursor: 'pointer', fontSize: '24px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>＋</button>
+      {open && (
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <div className="modal" style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '15px' }}>📓 Quick log</h3>
+              <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
+            </div>
+            <textarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} rows={4} placeholder="Capture a moment — it'll timestamp and auto-link…"
+              style={{ width: '100%', padding: '10px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.5 }} />
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', alignItems: 'center' }}>
+              {dict.supported && <button onClick={() => dict.recording ? dict.stop() : dict.start()} style={{ padding: '9px 14px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>{dict.recording ? '⏹ Recording…' : '🎤 Voice'}</button>}
+              <span style={{ flex: 1 }} />
+              <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '9px 20px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1 }}>{saving ? '…' : 'Log'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function FinanceView({ userId }) {
   const [subView, setSubView] = useState('dashboard');
   const [loading, setLoading] = useState(true);
@@ -27269,6 +27621,7 @@ export default function App() {
     { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
     { id: 'playbooks',   icon: '📚', label: 'Playbooks',   badge: brain.filter(b=>b.type==='playbook').length || null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
+    { id: 'journal',     icon: '📓', label: 'Journal',     badge: null },
     { id: 'chat',        icon: '✦',  label: robots[0]?.name || 'Assistant', badge: null },
     { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
     { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
@@ -27281,7 +27634,7 @@ export default function App() {
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
-  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'notes', 'chat'];
+  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'contacts', 'mileage', 'finance', 'notes', 'journal', 'chat'];
   const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
@@ -27293,6 +27646,7 @@ export default function App() {
     <div className="app-shell" style={{flexDirection:'column'}}>
       <InstallPwaPrompt />
       <UpdateBanner />
+      <QuickLog userId={user.id} />
       {/* Mobile header */}
       <div className="mobile-header">
         <div className="mobile-header-logo">Prism<span>OS</span></div>
@@ -27376,6 +27730,7 @@ export default function App() {
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks} focusEventId={focusEventId} setFocusEventId={setFocusEventId}/>
               : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
+              : view==='journal'     ? <JournalView userId={user.id}/>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
