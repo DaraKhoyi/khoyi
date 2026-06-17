@@ -1079,7 +1079,10 @@ body {
 .rog-wordmark .rog-realty,
 .rog-wordmark .rog-group { color: var(--text-1); font-weight: 600; }
 .rog-wordmark .rog-one   { color: var(--accent); font-weight: 800; }
-.rog-wordmark .rog-adv   { color: var(--accent); font-weight: 400; font-size: 0.78em; letter-spacing: 0; }
+.rog-wordmark .rog-adv   { color: var(--accent); font-weight: 400; font-size: 0.78em; letter-spacing: 0; margin-left: -0.14em; }
+/* Rainbow PRISM wordmark — DISC palette (D/I/S/C) + violet as the 5th */
+.prism-mark { letter-spacing: 0.4px; }
+.prism-mark span { font-weight: 800; }
 .rog-sub { color: var(--text-1); font-weight: 500; line-height: 1.1; white-space: nowrap; margin-top: 2px; }
 .rog-sub .rog-pb { font-style: italic; color: var(--text-1); }
 .rog-sub .rog-os { color: var(--accent); font-weight: 600; }
@@ -1096,3 +1099,9 @@ body {
 /* Login lockup (centered via .auth-logo text-align) */
 .auth-logo .rog-wordmark { font-size: 24px; }
 .auth-logo .rog-sub { font-size: 12px; margin-top: 3px; }
+
+/* Quick-create menu item rise animation */
+@keyframes qmRise {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}

@@ -39,6 +39,8 @@ const ICON_PATHS = {
   systems:     (<><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></>),
   settings:    (<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>),
   quo:         (<><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></>),
+  message:     (<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>),
+  mail:        (<><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -50,6 +52,18 @@ function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
       style={{ display: 'block', ...style }}>
       {paths}
     </svg>
+  );
+}
+
+// Rainbow PRISM wordmark — DISC palette (D red, I amber, S green, C blue) + violet 5th
+const PRISM_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6'];
+function PrismMark() {
+  return (
+    <span className="prism-mark">
+      {['P', 'R', 'I', 'S', 'M'].map((ch, i) => (
+        <span key={i} style={{ color: PRISM_COLORS[i] }}>{ch}</span>
+      ))}
+    </span>
   );
 }
 
@@ -163,7 +177,7 @@ function AuthScreen() {
       <div className="auth-card">
         <div className="auth-logo">
           <div className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></div>
-          <div className="rog-sub"><span className="rog-pb">powered by </span>Prism<span className="rog-os">OS</span></div>
+          <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></div>
         </div>
         {mode === 'login' && <>
           <h2>Welcome back</h2>
@@ -16484,6 +16498,17 @@ function QuoView({ contacts = [], userId }) {
   const [openCall, setOpenCall] = useState(null);
   const threadRef = useRef(null);
 
+  // Honor a tab intent set by the quick-create FAB (Text -> messages, Call -> calls)
+  useEffect(() => {
+    try {
+      if (window.__quoTab) {
+        const t = window.__quoTab;
+        window.__quoTab = null;
+        if (t === 'messages' || t === 'calls' || t === 'feed') setTab(t);
+      }
+    } catch (e) {}
+  }, []);
+
   const fromNumber = numbers.find(n => n.id === fromId) || numbers[0] || null;
   const phoneToName = useMemo(() => {
     const m = {};
@@ -18473,29 +18498,71 @@ function JournalView({ userId }) {
 
 // Floating one-tap capture — drops a timestamped entry into today's journal from
 // anywhere in the app, then auto-links it in the background.
-function QuickLog({ userId }) {
-  const [open, setOpen] = useState(false);
+function QuickLog({ userId, onNavigate }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(false);
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const dict = useDictation((f) => setText(prev => { const sep = (!prev || /\s$/.test(prev)) ? '' : ' '; return prev + sep + f.trim() + ' '; }));
+
   async function save() {
     const c = text.trim(); if (!c || saving) return;
     if (dict.recording) dict.stop();
     setSaving(true);
-    try { await logJournalEntry(userId, c, dict.recording ? 'voice' : 'text'); setText(''); setOpen(false); if (window.__notify) window.__notify('Logged to journal', 'success'); }
+    try { await logJournalEntry(userId, c, dict.recording ? 'voice' : 'text'); setText(''); setJournalOpen(false); if (window.__notify) window.__notify('Logged to journal', 'success'); }
     catch (e) { if (window.__notify) window.__notify('Save failed', 'error'); }
     finally { setSaving(false); }
   }
+
+  const go = (view) => { setMenuOpen(false); if (onNavigate) onNavigate(view); };
+  const goQuo = (tab) => { try { window.__quoTab = tab; } catch (e) {} go('quo'); };
+  const openJournal = () => { setMenuOpen(false); setJournalOpen(true); };
+
+  // Listed in the user's order; rendered bottom-up (journal nearest the thumb).
+  const MENU = [
+    { key: 'journal', label: 'Journal entry',  icon: 'journal',   run: openJournal },
+    { key: 'task',    label: 'Task',           icon: 'tasks',     run: () => go('tasks') },
+    { key: 'event',   label: 'Calendar event', icon: 'calendar',  run: () => go('calendar') },
+    { key: 'contact', label: 'Contact',        icon: 'contacts',  run: () => go('contacts') },
+    { key: 'ari',     label: 'Ari request',    icon: 'briefing',  run: () => go('dashboard') },
+    { key: 'text',    label: 'Text',           icon: 'message',   run: () => goQuo('messages') },
+    { key: 'email',   label: 'Email',          icon: 'mail',      run: () => go('inbox') },
+    { key: 'call',    label: 'Call · Quo',     icon: 'quo',       run: () => goQuo('calls') },
+  ];
+
   return (
     <>
-      <button onClick={() => setOpen(true)} aria-label="Quick log" title="Quick log to journal"
-        style={{ position: 'fixed', right: '16px', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 78px)', zIndex: 900, width: '54px', height: '54px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', boxShadow: '0 6px 20px rgba(0,0,0,0.45)', cursor: 'pointer', fontSize: '24px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>＋</button>
-      {open && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+      {/* Floating quick-create menu */}
+      {menuOpen && (
+        <>
+          <div onClick={() => setMenuOpen(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(1px)' }} />
+          <div style={{ position: 'fixed', right: '11px', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 123px)', zIndex: 9001, display: 'flex', flexDirection: 'column-reverse', gap: '12px', alignItems: 'flex-end' }}>
+            {MENU.map((m, i) => (
+              <button key={m.key} onClick={m.run}
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', animation: 'qmRise 0.18s ease both', animationDelay: `${i * 0.03}s` }}>
+                <span style={{ padding: '7px 12px', borderRadius: '999px', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-1)', fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap', boxShadow: '0 4px 14px rgba(0,0,0,0.35)' }}>{m.label}</span>
+                <span style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.4)', flexShrink: 0 }}>
+                  <Icon name={m.icon} size={19} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* FAB — memory icon, 40% smaller, toggles the menu */}
+      <button onClick={() => setMenuOpen(o => !o)} aria-label={menuOpen ? 'Close quick create' : 'Quick create'} title="Quick create"
+        style={{ position: 'fixed', right: '16px', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 78px)', zIndex: 9002, width: '33px', height: '33px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', boxShadow: '0 6px 20px rgba(0,0,0,0.45)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.18s ease', transform: menuOpen ? 'rotate(90deg)' : 'none' }}>
+        {menuOpen ? <span style={{ fontSize: '16px', fontWeight: 700, lineHeight: 1 }}>✕</span> : <Icon name="brain" size={17} />}
+      </button>
+
+      {journalOpen && (
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setJournalOpen(false); }}>
           <div className="modal" style={{ maxWidth: '440px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <h3 style={{ margin: 0, fontSize: '15px' }}>📓 Quick log</h3>
-              <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
+              <button onClick={() => setJournalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
             </div>
             <AutoGrowTextarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} placeholder="Capture a moment — it'll timestamp and auto-link…"
               minHeight={150} maxHeight={420}
@@ -28628,10 +28695,10 @@ export default function App() {
     <div className="app-shell" style={{flexDirection:'column'}}>
       <InstallPwaPrompt />
       <UpdateBanner />
-      <QuickLog userId={user.id} />
+      <QuickLog userId={user.id} onNavigate={navigate} />
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span>Prism<span className="rog-os">OS</span></span></div>
+        <div className="mobile-header-logo"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>
@@ -28645,7 +28712,7 @@ export default function App() {
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
             <div className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></div>
-            <div className="rog-sub"><span className="rog-pb">powered by </span>Prism<span className="rog-os">OS</span></div>
+            <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></div>
           </div>
           <div className="sidebar-nav">
             <div className="nav-section-label">Workspace</div>
