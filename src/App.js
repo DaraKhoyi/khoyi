@@ -3936,19 +3936,21 @@ function EmailHtmlFrame({ html }) {
     // <base target="_blank"> ensures every link opens in a new tab instead of
     // trying to navigate the (sandboxed) iframe itself.
     const wrapped = `<!doctype html><html><head><meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
       <base target="_blank" rel="noopener noreferrer">
       <style>
-        body { margin: 0; padding: 12px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px; line-height: 1.6; color: #e8eaf0; background: #161921; word-wrap: break-word; overflow-wrap: anywhere; }
-        a { color: #c5a95e; word-break: break-all; }
-        a:visited { color: #b09853; }
+        /* Emails are authored for a white canvas — render them that way so the
+           sender's own text colors stay readable (dark-on-dark was the bug). */
+        html, body { margin: 0; padding: 0; background: #ffffff; }
+        body { padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; line-height: 1.6; color: #1a1a1a; background: #ffffff; word-wrap: break-word; overflow-wrap: anywhere; -webkit-text-size-adjust: 100%; }
+        a { color: #1a56db; word-break: break-word; }
+        a:visited { color: #6b3fa0; }
         img { max-width: 100%; height: auto; display: inline-block; }
-        table { max-width: 100% !important; width: auto !important; }
+        table { max-width: 100% !important; }
         td, th { max-width: 100%; word-wrap: break-word; }
-        blockquote { border-left: 3px solid #252a38; padding-left: 12px; color: #9499b0; margin: 8px 0; }
+        blockquote { border-left: 3px solid #d0d5dd; padding-left: 12px; color: #555; margin: 8px 0; }
         pre { white-space: pre-wrap; word-wrap: break-word; }
         * { max-width: 100%; box-sizing: border-box; }
-        /* Override email-defined dark/light backgrounds that look bad in our dark UI */
-        body[bgcolor], body[style*="background"] { background: #161921 !important; color: #e8eaf0 !important; }
       </style></head><body>${html}</body></html>`;
     iframe.srcdoc = wrapped;
     const onLoad = () => {
@@ -3976,7 +3978,7 @@ function EmailHtmlFrame({ html }) {
       // allow-popups + allow-popups-to-escape-sandbox so target="_blank" links open;
       // allow-same-origin so we can read scrollHeight from the iframe document
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      style={{ width: '100%', height: `${height}px`, border: 'none', borderRadius: '6px', background: '#161921' }}
+      style={{ width: '100%', height: `${height}px`, border: 'none', borderRadius: '8px', background: '#ffffff' }}
     />
   );
 }
