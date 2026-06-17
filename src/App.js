@@ -1483,7 +1483,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
             {emailMode && !emailAlreadySent && (
               <div style={{marginTop:'10px'}}>
                 <input className="form-input" type="email" placeholder="their@email.com" value={emailTo} onChange={e=>setEmailTo(e.target.value)} style={{marginBottom:'8px'}}/>
-                <AriRewriteButton text={emailMsg} onRewrite={setEmailMsg} contactName={(contacts.find(c=>c.id===contactIds[0])?.name)||emailTo} />
+                <AriRewriteButton text={emailMsg} onRewrite={setEmailMsg} contactName={(contacts.find(c=>c.id===contactIds[0])?.name)||emailTo} contactId={contactIds[0]} />
                 <textarea className="form-textarea" rows={6} value={emailMsg} onChange={e=>setEmailMsg(e.target.value)} placeholder="Message to the assignee (their details / instructions)…"/>
                 <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Your notes above are included. They just reply; Claude reads the reply and flags this task for your review.</div>
               </div>
@@ -27849,7 +27849,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     setRwBusy(b=>({ ...b,[r.contact_id]:true }));
     const grp = !!replyAll[r.contact_id];
     const others = grp ? otherRecips(r) : [];
-    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:cur, contact_name:r.name, disc_label:r.disc_label||'', source_text:(r.source&&r.source.text)||'', audience: grp?'group':'individual', recipients: others } });
+    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:cur, contact_name:r.name, contact_id:r.contact_id, disc_label:r.disc_label||'', source_text:(r.source&&r.source.text)||'', audience: grp?'group':'individual', recipients: others } });
     setRwBusy(b=>({ ...b,[r.contact_id]:false }));
     if (error || data?.error || !data?.message) { setErr('Ari rewrite failed: '+(error?.message||data?.error||'no output')); return; }
     setPrevMsg(p=>({ ...p,[r.contact_id]:cur }));
@@ -28119,14 +28119,14 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
 // ─────────────────────────────────────────
 // REUSABLE: ✨ Ari rewrite (your draft → your voice, adapted to recipient)
 // ─────────────────────────────────────────
-function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText }) {
+function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText, contactId }) {
   const [busy, setBusy] = useState(false);
   const [prev, setPrev] = useState(null);
   const [err, setErr] = useState(null);
   const go = async () => {
     if (!text || !text.trim()) { setErr('Write a draft first.'); return; }
     setErr(null); setBusy(true);
-    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:text, contact_name:contactName||'the recipient', disc_label:discLabel||'', source_text:sourceText||'' } });
+    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:text, contact_name:contactName||'the recipient', contact_id:contactId, disc_label:discLabel||'', source_text:sourceText||'' } });
     setBusy(false);
     if (error || data?.error || !data?.message) { setErr('Rewrite failed — try again.'); return; }
     setPrev(text); onRewrite(data.message);
