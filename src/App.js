@@ -8294,15 +8294,25 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         )}
 
         {/* ========== REFERRED BY ========== */}
-        {contact.referred_by_contact_id && (() => {
-          const refC = contacts.find(c => c.id === contact.referred_by_contact_id);
-          return (
-            <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
-              <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'6px'}}>↩ Referred by</div>
-              <div style={{fontSize:'12px',color:'var(--accent)',fontWeight:500}}>{refC ? refC.name : '(unknown contact)'}</div>
-            </div>
-          );
-        })()}
+        <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>↩ Referred by</div>
+          <SingleContactPicker
+            value={contact.referred_by_contact_id || null}
+            onChange={async (id) => {
+              const val = id || null;
+              await supabase.from('contacts').update({ referred_by_contact_id: val }).eq('id', contact.id);
+              contact.referred_by_contact_id = val;
+              if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, referred_by_contact_id: val } : c));
+            }}
+            contacts={contacts}
+            setContacts={setContacts}
+            currentContactId={contact.id}
+            userId={userId}
+            placeholder="Who referred them? Search or type to add…"
+            defaultNewContactType="other"
+          />
+          <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>Tracks your referral source — links to the person who sent them your way.</div>
+        </div>
 
         {/* ========== RELATIONSHIPS PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
@@ -28334,7 +28344,7 @@ export default function App() {
       ['tasks',          supabase.from('tasks').select('*').order('created_at', { ascending: false }).limit(500)],
       ['robots',         supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true })],
       ['notes',          supabase.from('notes').select('*').order('updated_at', { ascending: false }).limit(500)],
-      ['contacts',       supabase.from('contacts').select('*').order('created_at', { ascending: false }).limit(1000)],
+      ['contacts',       supabase.from('contacts').select('*').order('created_at', { ascending: false }).limit(10000)],
       ['properties',     supabase.from('properties').select('*').order('created_at', { ascending: false })],
       ['deals',          supabase.from('deals').select('*').order('updated_at', { ascending: false }).limit(500)],
       ['mileageEntries', supabase.from('mileage_entries').select('*').order('date', { ascending: false }).limit(1000)],
