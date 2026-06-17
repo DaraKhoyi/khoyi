@@ -8863,7 +8863,11 @@ function SingleContactPicker({ value, onChange, contacts, setContacts, currentCo
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
-  const selected = value ? contacts.find(c => c.id === value) : null;
+  const [serverResults, setServerResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [extra, setExtra] = useState({}); // id -> full contact fetched from the server (for display beyond the loaded set)
+
+  const selected = value ? (contacts.find(c => c.id === value) || extra[value] || null) : null;
   const refMissing = value && !selected;
 
   // Apply ref_filter (e.g. lender field only shows vendor/partner contacts)
@@ -8878,34 +8882,80 @@ function SingleContactPicker({ value, onChange, contacts, setContacts, currentCo
   }, [contacts, refFilter, currentContactId]);
 
   const q = inputText.trim().toLowerCase();
+  const refKey = refFilter && Array.isArray(refFilter.contact_type_in) ? refFilter.contact_type_in.join(',') : '';
+
+  // Server-side search: query the database as you type so EVERY contact is
+  // findable, even ones not among the rows loaded into memory (future-proof
+  // past the client load cap). Debounced; merged with instant in-memory hits.
+  useEffect(() => {
+    const safeQ = q.replace(/[,()%*\\]/g, ' ').trim();
+    if (!userId || safeQ.length < 2) { setServerResults([]); setSearching(false); return; }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        let query = supabase.from('contacts')
+          .select('*')
+          .eq('user_id', userId)
+          .or(`name.ilike.*${safeQ}*,email.ilike.*${safeQ}*,company.ilike.*${safeQ}*`)
+          .order('name')
+          .limit(12);
+        if (refKey) query = query.in('type', refKey.split(','));
+        const { data } = await query;
+        if (cancelled) return;
+        const rows = data || [];
+        if (rows.length) setExtra(prev => { const next = { ...prev }; rows.forEach(r => { next[r.id] = r; }); return next; });
+        setServerResults(rows);
+      } catch {
+        if (!cancelled) setServerResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [q, userId, refKey]);
+
   const suggestions = useMemo(() => {
     if (!q) return [];
-    return pool
-      .filter(c => {
-        const name = (c.name || '').toLowerCase();
-        const email = (c.email || '').toLowerCase();
-        const company = (c.company || '').toLowerCase();
-        return name.includes(q) || email.includes(q) || company.includes(q);
-      })
-      .sort((a, b) => {
-        const aN = (a.name || '').toLowerCase();
-        const bN = (b.name || '').toLowerCase();
-        const aStart = aN.startsWith(q) ? 0 : 1;
-        const bStart = bN.startsWith(q) ? 0 : 1;
-        if (aStart !== bStart) return aStart - bStart;
-        return aN.localeCompare(bN);
-      })
-      .slice(0, 6);
-  }, [q, pool]);
+    const matchFn = c => {
+      const name = (c.name || '').toLowerCase();
+      const email = (c.email || '').toLowerCase();
+      const company = (c.company || '').toLowerCase();
+      return name.includes(q) || email.includes(q) || company.includes(q);
+    };
+    const sortFn = (a, b) => {
+      const aN = (a.name || '').toLowerCase();
+      const bN = (b.name || '').toLowerCase();
+      const aStart = aN.startsWith(q) ? 0 : 1;
+      const bStart = bN.startsWith(q) ? 0 : 1;
+      if (aStart !== bStart) return aStart - bStart;
+      return aN.localeCompare(bN);
+    };
+    const inMem = pool.filter(matchFn).sort(sortFn);
+    const seen = new Set(inMem.map(c => c.id));
+    if (currentContactId) seen.add(currentContactId);
+    // Server-only hits (not already loaded in memory), respecting the same filters
+    const serverExtra = serverResults.filter(c => {
+      if (seen.has(c.id)) return false;
+      if (refKey && !refKey.split(',').includes(c.type)) return false;
+      return true;
+    });
+    return [...inMem, ...serverExtra].slice(0, 8);
+  }, [q, pool, serverResults, currentContactId, refKey]);
 
   const exactMatch = q && pool.some(c => (c.name || '').toLowerCase() === q);
   const showCreateOption = q.length >= 2 && !exactMatch;
 
   function pick(id) {
+    if (setContacts && !contacts.some(c => c.id === id)) {
+      const full = extra[id] || serverResults.find(c => c.id === id);
+      if (full) setContacts(prev => prev.some(c => c.id === id) ? prev : [...prev, full].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+    }
     onChange(id);
     setInputText('');
     setShowDropdown(false);
     setHighlightIdx(0);
+    setServerResults([]);
   }
   function clearSelection() {
     onChange(null);
@@ -9037,13 +9087,16 @@ function SingleContactPicker({ value, onChange, contacts, setContacts, currentCo
           padding:'7px 9px',fontSize:'12.5px',outline:'none',
         }}/>
 
-      {showDropdown && (suggestions.length > 0 || showCreateOption) && (
+      {showDropdown && (suggestions.length > 0 || showCreateOption || searching) && (
         <div style={{
           position:'absolute',top:'100%',left:0,right:0,marginTop:'3px',
           background:'var(--bg-card)',border:'1px solid var(--border)',
           borderRadius:'8px',boxShadow:'0 10px 24px rgba(0,0,0,0.4)',
           maxHeight:'260px',overflowY:'auto',zIndex:200,
         }}>
+          {searching && suggestions.length === 0 && (
+            <div style={{padding:'9px 11px',fontSize:'11.5px',color:'var(--text-3)',fontStyle:'italic'}}>↻ Searching all contacts…</div>
+          )}
           {suggestions.map((c, idx) => (
             <button key={c.id} type="button"
               onMouseDown={(e) => { e.preventDefault(); pick(c.id); }}
