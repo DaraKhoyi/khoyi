@@ -7860,6 +7860,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 {contact.type}
               </div>
             )}
+            {contact.origin && (
+              <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px'}}>
+                Origin: <span style={{color:'var(--accent)',fontWeight:600}}>{({manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',clickup:'ClickUp import',csv:'CSV import',other:'Other'})[contact.origin] || contact.origin}</span>{contact.origin_detail ? ` — ${contact.origin_detail}` : ''}{contact.created_at ? ` · added ${new Date(contact.created_at).toLocaleDateString()}` : ''}
+              </div>
+            )}
           </div>
 
           {analyzeMsg && (
@@ -9851,6 +9856,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const [role, setRole] = useState(initial?.role || '');
   const [profession, setProfession] = useState(initial?.profession || '');
   const [referredById, setReferredById] = useState(initial?.referred_by_contact_id || '');
+  const [origin, setOrigin] = useState(initial?.origin ?? (initial ? '' : 'manual'));
+  const [originDetail, setOriginDetail] = useState(initial?.origin_detail || '');
   const [priority, setPriority] = useState(initial?.priority || 'normal');
   const [notes, setNotes] = useState(initial?.notes || '');
   // Home address (one only)
@@ -9907,6 +9914,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
       company: company.trim() || null, role: role.trim() || null,
       profession: profession.trim() || null,
       referred_by_contact_id: referredById || null,
+      origin: origin || null,
+      origin_detail: originDetail.trim() || null,
       priority, notes: notes.trim() || null,
       home_address: homeAddress.trim() || null,
       home_city: homeCity.trim() || null,
@@ -9992,6 +10001,31 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
               defaultNewContactType="other"
             />
             <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Links to the person who referred them — powers referral-source tracking.</div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Origin <span style={{color:'var(--text-3)',fontWeight:400}}>· where this lead came from</span></label>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+              <select className="form-input" value={origin} onChange={e=>setOrigin(e.target.value)} style={{flex:'1 1 180px'}}>
+                <option value="">— Unspecified —</option>
+                <option value="manual">Manual entry</option>
+                <option value="referral">Referral</option>
+                <option value="open_house">Open house</option>
+                <option value="prospecting">Cold list / prospecting</option>
+                <option value="website">Website / inbound</option>
+                <option value="sphere">Sphere / past client</option>
+                <option value="event">Event / networking</option>
+                <option value="social">Social media</option>
+                <option value="email">From email</option>
+                <option value="clickup">ClickUp import</option>
+                <option value="csv">CSV import</option>
+                <option value="other">Other</option>
+              </select>
+              {origin && origin !== 'manual' && (
+                <input className="form-input" value={originDetail} onChange={e=>setOriginDetail(e.target.value)} placeholder={origin==='referral' ? 'Who / what source?' : origin==='event' ? 'Which event?' : origin==='social' ? 'Which platform?' : 'Detail (optional)'} style={{flex:'1 1 180px'}} />
+              )}
+            </div>
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>New contacts default to “Manual entry.” Imports are stamped automatically.</div>
           </div>
 
           {/* HOME ADDRESS — collapsed by default; tap header to expand */}
