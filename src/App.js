@@ -8293,6 +8293,17 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
         )}
 
+        {/* ========== REFERRED BY ========== */}
+        {contact.referred_by_contact_id && (() => {
+          const refC = contacts.find(c => c.id === contact.referred_by_contact_id);
+          return (
+            <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
+              <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'6px'}}>↩ Referred by</div>
+              <div style={{fontSize:'12px',color:'var(--accent)',fontWeight:500}}>{refC ? refC.name : '(unknown contact)'}</div>
+            </div>
+          );
+        })()}
+
         {/* ========== RELATIONSHIPS PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
@@ -9756,7 +9767,7 @@ function MultiValueField({ values, onChange, kind, addLabel }) {
   );
 }
 
-function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
+function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId }) {
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
   // phones + emails: arrays of {value, label, is_default}. Initial state seeded
@@ -9776,6 +9787,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
   const [company, setCompany] = useState(initial?.company || '');
   const [role, setRole] = useState(initial?.role || '');
   const [profession, setProfession] = useState(initial?.profession || '');
+  const [referredById, setReferredById] = useState(initial?.referred_by_contact_id || '');
   const [priority, setPriority] = useState(initial?.priority || 'normal');
   const [notes, setNotes] = useState(initial?.notes || '');
   // Home address (one only)
@@ -9831,6 +9843,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
       // derives them from the default entries in the arrays.
       company: company.trim() || null, role: role.trim() || null,
       profession: profession.trim() || null,
+      referred_by_contact_id: referredById || null,
       priority, notes: notes.trim() || null,
       home_address: homeAddress.trim() || null,
       home_city: homeCity.trim() || null,
@@ -9902,6 +9915,21 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails }) {
             <div className="form-group"><label className="form-label">Role / Title</label><input className="form-input" value={role} onChange={e=>setRole(e.target.value)} /></div>
           </div>
           <div className="form-group"><label className="form-label">Profession</label><input className="form-input" value={profession} onChange={e=>setProfession(e.target.value)} placeholder="e.g. Realtor, Attorney, Jeweler, Doctor…" /></div>
+
+          <div className="form-group">
+            <label className="form-label">Referred by</label>
+            <SingleContactPicker
+              value={referredById || null}
+              onChange={(id) => setReferredById(id || '')}
+              contacts={contacts}
+              setContacts={setContacts}
+              currentContactId={initial?.id}
+              userId={userId}
+              placeholder="Who referred this contact? Search or type to add…"
+              defaultNewContactType="other"
+            />
+            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Links to the person who referred them — powers referral-source tracking.</div>
+          </div>
 
           {/* HOME ADDRESS — collapsed by default; tap header to expand */}
           {(() => {
@@ -12968,6 +12996,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
         onDelete={async (c)=>{ if(!window.confirm(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); }}
         onShowDetails={(c)=>{ setShowModal(false); setDetailContact(c); }}
         initial={editContact}
+        contacts={contacts}
+        setContacts={setContacts}
+        userId={userId}
       />}
       {detailContact && (
         <ContactDetailModal
