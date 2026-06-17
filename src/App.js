@@ -18558,19 +18558,18 @@ function QuickLog({ userId, onNavigate }) {
       </button>
 
       {journalOpen && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setJournalOpen(false); }}>
-          <div className="modal" style={{ maxWidth: '440px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ margin: 0, fontSize: '15px' }}>📓 Quick log</h3>
-              <button onClick={() => setJournalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setJournalOpen(false); }} style={{ padding: '12px' }}>
+          <div className="modal" style={{ maxWidth: 'none', width: 'min(760px, 100%)', height: 'min(92vh, 100%)', maxHeight: 'none', padding: '18px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, fontSize: '16px' }}>📓 Quick log</h3>
+              <button onClick={() => setJournalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '22px', color: 'var(--text-3)', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
-            <AutoGrowTextarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} placeholder="Capture a moment — it'll timestamp and auto-link…"
-              minHeight={150} maxHeight={420}
-              style={{ width: '100%', padding: '13px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '9px', color: 'var(--text-1)', fontSize: '15px', boxSizing: 'border-box', lineHeight: 1.55 }} />
-            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', alignItems: 'center' }}>
-              {dict.supported && <button onClick={() => dict.recording ? dict.stop() : dict.start()} style={{ padding: '9px 14px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>{dict.recording ? '⏹ Recording…' : '🎤 Voice'}</button>}
+            <textarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} placeholder="Capture a moment — it'll timestamp and auto-link…"
+              style={{ flex: 1, minHeight: 0, width: '100%', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text-1)', fontSize: '16px', boxSizing: 'border-box', lineHeight: 1.6, resize: 'none', fontFamily: 'inherit' }} />
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexShrink: 0 }}>
+              {dict.supported && <button onClick={() => dict.recording ? dict.stop() : dict.start()} style={{ padding: '10px 16px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>{dict.recording ? '⏹ Recording…' : '🎤 Voice'}</button>}
               <span style={{ flex: 1 }} />
-              <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '9px 20px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1 }}>{saving ? '…' : 'Log'}</button>
+              <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '10px 24px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '14px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1 }}>{saving ? '…' : 'Log'}</button>
             </div>
           </div>
         </div>
