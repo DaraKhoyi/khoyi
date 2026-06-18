@@ -5815,10 +5815,74 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
 // Contact detail modal: shows DISC profile, evidence trail, baseline test entry,
 // and re-analyze. Replaces directly opening the edit form when clicking a contact.
 // Recordings panel inside ContactDetailModal: list, upload, transcribe, view transcript.
+// ─── AUDIO TRANSCODING (browser, ffmpeg.wasm) ──────────────────────────
+// OpenAI Whisper rejects formats like AMR (what Android call-recorders produce)
+// and Storage blocks them too. When an unsupported file is picked we transcode
+// it to a small 16 kHz mono MP3 in the browser before upload — accepted by both
+// Storage and Whisper. Uses the single-thread ffmpeg.wasm core (no COOP/COEP
+// required, so it works on GitHub Pages), lazy-loaded from CDN only on demand.
+const WHISPER_OK_EXT = ['mp3', 'm4a', 'wav', 'webm', 'mp4', 'mpeg', 'mpga', 'ogg', 'oga', 'flac', 'aac'];
+function audioNeedsConversion(file) {
+  const name = (file?.name || '').toLowerCase();
+  const ext = name.includes('.') ? name.split('.').pop() : '';
+  return !WHISPER_OK_EXT.includes(ext); // amr, 3gp, 3gpp, awb, etc.
+}
+let __ffmpegPromise = null;
+function __loadFfmpegScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[data-ff="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.async = true; s.setAttribute('data-ff', src);
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Could not load the audio converter (network).'));
+    document.head.appendChild(s);
+  });
+}
+async function getFfmpeg() {
+  if (__ffmpegPromise) return __ffmpegPromise;
+  __ffmpegPromise = (async () => {
+    await __loadFfmpegScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
+    await __loadFfmpegScript('https://unpkg.com/@ffmpeg/util@0.12.2/dist/umd/util.js');
+    if (!window.FFmpegWASM || !window.FFmpegUtil) throw new Error('Audio converter unavailable.');
+    const { FFmpeg } = window.FFmpegWASM;
+    const { toBlobURL } = window.FFmpegUtil;
+    const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    const ff = new FFmpeg();
+    await ff.load({
+      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    return ff;
+  })().catch((e) => { __ffmpegPromise = null; throw e; });
+  return __ffmpegPromise;
+}
+async function transcodeAudioToMp3(file, onProgress) {
+  const ff = await getFfmpeg();
+  const { fetchFile } = window.FFmpegUtil;
+  const stamp = Date.now();
+  const inName = `in_${stamp}`;
+  const outName = `out_${stamp}.mp3`;
+  const handler = ({ progress }) => { if (onProgress) onProgress(Math.max(0, Math.min(99, Math.round((progress || 0) * 100)))); };
+  ff.on('progress', handler);
+  try {
+    await ff.writeFile(inName, await fetchFile(file));
+    // 16 kHz mono, 32 kbps MP3 — ideal for speech/Whisper, keeps long calls small
+    await ff.exec(['-i', inName, '-vn', '-ar', '16000', '-ac', '1', '-b:a', '32k', outName]);
+    const data = await ff.readFile(outName);
+    const baseName = (file.name || 'recording').replace(/\.[^.]+$/, '') || 'recording';
+    return new File([data], `${baseName}.mp3`, { type: 'audio/mpeg' });
+  } finally {
+    try { ff.off('progress', handler); } catch (_) {}
+    try { await ff.deleteFile(inName); } catch (_) {}
+    try { await ff.deleteFile(outName); } catch (_) {}
+  }
+}
+
 function ContactRecordingsSection({ contact, userId, onTranscribed }) {
   const [recordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -5853,12 +5917,24 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
     setUploading(true);
     setUploadProgress(5);
     try {
+      let fileToUpload = uploadForm.file;
+      if (audioNeedsConversion(fileToUpload)) {
+        setConverting(true);
+        try {
+          fileToUpload = await transcodeAudioToMp3(fileToUpload, (pct) => setUploadProgress(Math.max(5, Math.round(pct * 0.55))));
+        } catch (convErr) {
+          throw new Error(`Couldn't convert "${uploadForm.file.name}". Check your connection and retry, or set your call recorder to save as M4A/MP3/WAV. (${convErr.message})`);
+        } finally {
+          setConverting(false);
+        }
+        setUploadProgress(58);
+      }
       const { data: rec, error: insErr } = await supabase.from('recordings').insert({
         user_id: userId,
         contact_id: contact.id,
         title: uploadForm.title.trim(),
-        mime_type: uploadForm.file.type || 'audio/mpeg',
-        size_bytes: uploadForm.file.size,
+        mime_type: fileToUpload.type || 'audio/mpeg',
+        size_bytes: fileToUpload.size,
         recorded_at: new Date(uploadForm.recordedAt).toISOString(),
         first_speaker: uploadForm.firstSpeaker,
         transcription_status: 'pending',
@@ -5867,10 +5943,10 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
 
       setUploadProgress(15);
 
-      const safeFilename = uploadForm.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const safeFilename = fileToUpload.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = `${userId}/${rec.id}/${safeFilename}`;
-      const { error: upErr } = await supabase.storage.from('recordings').upload(path, uploadForm.file, {
-        contentType: uploadForm.file.type || 'audio/mpeg',
+      const { error: upErr } = await supabase.storage.from('recordings').upload(path, fileToUpload, {
+        contentType: fileToUpload.type || 'audio/mpeg',
         upsert: false,
       });
       if (upErr) {
@@ -5963,7 +6039,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <input
               type="file"
-              accept="audio/*,video/mp4,video/webm"
+              accept="audio/*,.amr,.3gp,.3gpp,.awb,video/mp4,video/webm"
               onChange={e => setUploadForm(f => ({ ...f, file: e.target.files?.[0] || null, title: f.title || (e.target.files?.[0]?.name.replace(/\.[^.]+$/, '') || '') }))}
               style={{ fontSize: '12px', color: 'var(--text-2)' }}
               required
@@ -5994,11 +6070,11 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
               </div>
             </div>
             <div style={{ fontSize: '10px', color: 'var(--text-3)', lineHeight: 1.5 }}>
-              Max 50 MB. Audio kept 90 days then auto-deleted; transcript stays forever. Whisper transcribes; speakers labeled by alternating-gap heuristic (you can edit later).
+              Max 50 MB. Audio kept 90 days then auto-deleted; transcript stays forever. Whisper transcribes; speakers labeled by alternating-gap heuristic (you can edit later). Phone formats like .amr are auto-converted before transcription.
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button type="submit" className="btn btn-primary btn-sm" disabled={uploading}>
-                {uploading ? `Uploading ${uploadProgress}%…` : 'Upload & transcribe'}
+                {converting ? `Converting ${uploadProgress}%…` : uploading ? `Uploading ${uploadProgress}%…` : 'Upload & transcribe'}
               </button>
               {uploadProgress > 0 && (
                 <div style={{ flex: 1, height: '4px', background: 'var(--bg-card)', borderRadius: '2px', overflow: 'hidden' }}>
