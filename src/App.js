@@ -71,6 +71,8 @@ const ICON_PATHS = {
   users:       (<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>),
   file:        (<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>),
   camera:      (<><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>),
+  home:        (<><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>),
+  key:         (<><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -8206,7 +8208,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>
-              ✅ Tasks ({linkedTasks.length})
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="tasks" size={13} /> Tasks ({linkedTasks.length})</span>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddTask(v=>!v)} style={{fontSize:'11px'}}>
               {showAddTask ? '× Cancel' : '+ Add'}
@@ -8257,7 +8259,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>
-              📅 Events ({linkedEvents.length})
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={13} /> Events ({linkedEvents.length})</span>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddEvent(v=>!v)} style={{fontSize:'11px'}}>
               {showAddEvent ? '× Cancel' : '+ Add'}
@@ -11890,19 +11892,19 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
 
         {/* Activity timeline */}
         <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
-          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="signal" size={13} /> Activity</div>
           <ActivityTimeline entityType="deal" entityId={deal.id} userId={userId} contacts={contacts} />
         </div>
 
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginTop:'16px',paddingTop:'12px',borderTop:'1px solid var(--border)'}}>
           <button type="button" onClick={onDelete}
             style={{padding:'7px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--red)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>
-            🗑 Delete deal
+            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="trash" size={14} /> Delete deal</span>
           </button>
           {deal.status !== 'closed' && deal.status !== 'lost' && (
             <button type="button" onClick={() => setShowCloseModal(true)}
               style={{padding:'8px 14px',background:'var(--green)',border:'none',borderRadius:'6px',color:'#fff',cursor:'pointer',fontSize:'12px',fontWeight:700}}>
-              📕 Close deal · log commission
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="deals" size={14} /> Close deal · log commission</span>
             </button>
           )}
         </div>
@@ -12013,7 +12015,7 @@ function CloseDealModal({ deal, onClose, onConfirm }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="button" className="btn btn-primary" onClick={confirm} disabled={confirming}
             style={{background:'var(--green)',color:'#fff'}}>
-            {confirming ? 'Closing…' : '📕 Close & log income'}
+            {confirming ? 'Closing…' : <><Icon name="deals" size={13} /> Close & log income</>}
           </button>
         </div>
       </div>
@@ -12655,7 +12657,7 @@ function MileageDetailModal({ entry, deals, contacts, setContacts, properties, l
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginTop:'16px',paddingTop:'12px',borderTop:'1px solid var(--border)'}}>
           <button type="button" onClick={onDelete}
             style={{padding:'7px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--red)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>
-            🗑 Delete
+            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="trash" size={14} /> Delete</span>
           </button>
           <button type="button" onClick={onClose}
             className="btn btn-primary"
@@ -12951,15 +12953,15 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
         <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
           title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
-          {scanning ? '↻ Scanning…' : '🔗 Scan emails'}
+          {scanning ? '↻ Scanning…' : <><Icon name="link" size={13} /> Scan emails</>}
         </button>
         <button className="btn btn-ghost btn-sm" onClick={runPhoneExtraction} disabled={extractingPhones}
           title="Extract phone numbers from email signatures and auto-fill empty contact.phone fields.">
-          {extractingPhones ? '↻ Extracting…' : '📞 Extract phones'}
+          {extractingPhones ? '↻ Extracting…' : <><Icon name="quo" size={13} /> Extract phones</>}
         </button>
         <button className="btn btn-ghost btn-sm" onClick={runDuplicateScan} disabled={findingDupes}
           title="Find likely duplicate contacts based on email, phone, or name+company. Surfaces for review — never auto-merges.">
-          {findingDupes ? '↻ Scanning…' : '🔍 Find dupes'}
+          {findingDupes ? '↻ Scanning…' : <><Icon name="search" size={13} /> Find dupes</>}
         </button>
       </div>
 
@@ -12977,7 +12979,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       {/* Duplicate banner */}
       {dupeGroups && dupeGroups.length > 0 && (
         <div style={{padding:'10px 14px',marginBottom:'10px',background:'rgba(245,158,11,0.10)',border:'1px solid var(--yellow)',borderRadius:'8px',color:'var(--text-1)',fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
-          <span>⚠️ <strong>{dupeGroups.length}</strong> likely duplicate group{dupeGroups.length === 1 ? '' : 's'} found.</span>
+          <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="alert" size={13} /> <strong>{dupeGroups.length}</strong> likely duplicate group{dupeGroups.length === 1 ? '' : 's'} found.</span>
           <button className="btn btn-ghost btn-sm" onClick={() => setShowDupeReview(true)} style={{color:'var(--yellow)'}}>Review →</button>
         </div>
       )}
@@ -13018,7 +13020,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
             <div style={{flex:'1 1 220px',minWidth:0}}>
               <label style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,display:'block',marginBottom:'4px'}}>Filter by type</label>
               <select className="form-select" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{margin:0}}>
-                <option value="all">👥 All ({contacts.length})</option>
+                <option value="all">All ({contacts.length})</option>
                 {CONTACT_TYPES.map(t => {
                   const count = contacts.filter(c => c.type === t.id).length;
                   if (count === 0) return null;
@@ -13043,14 +13045,14 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
               <button onClick={()=>setDueOnly(v=>!v)}
                 style={{display:'inline-flex',alignItems:'center',gap:'6px',padding:'4px 10px',borderRadius:'999px',fontSize:'11px',fontWeight:600,cursor:'pointer',
                   border:`1px solid ${dueOnly?'var(--red)':'var(--border)'}`, background: dueOnly?'rgba(239,68,68,0.12)':'transparent', color: dueOnly?'var(--red)':'var(--text-2)'}}>
-                ⚠ Due for outreach ({dueForOutreachCount}){dueOnly?' · showing' : ''}
+                <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="alert" size={12} /> Due for outreach ({dueForOutreachCount})</span>{dueOnly?' · showing' : ''}
               </button>
             </div>
           )}
         </div>
         <div className="panel-body">
           {sorted.length === 0
-            ? <div className="empty-state"><div className="empty-icon">👥</div><p>No contacts here.</p></div>
+            ? <div className="empty-state"><div className="empty-icon"><Icon name="users" size={28} /></div><p>No contacts here.</p></div>
             : <div className="task-list">
                 {sorted.map(c => {
                   const p = profileByContact.get(c.id);
@@ -13093,9 +13095,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                           const iconBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', width:'34px', height:'30px', borderRadius:'999px', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', color:'var(--accent)', fontSize:'13px', textDecoration:'none' };
                           return (
                             <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}}>
-                              {c.phone && <a href={`tel:${tel}`} onClick={e=>e.stopPropagation()} title="Call" style={chip}><span style={{color:'var(--accent)'}}>📞</span>{c.phone}</a>}
-                              {c.phone && <a href={`sms:${tel}`} onClick={e=>e.stopPropagation()} title="Text" style={iconBtn}>💬</a>}
-                              {c.email && <a href={`mailto:${c.email}`} onClick={e=>e.stopPropagation()} title="Email" style={{...chip, maxWidth:'100%', overflow:'hidden'}}><span style={{color:'var(--accent)'}}>✉️</span><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email}</span></a>}
+                              {c.phone && <a href={`tel:${tel}`} onClick={e=>e.stopPropagation()} title="Call" style={chip}><Icon name="quo" size={12} style={{color:'var(--accent)'}} />&nbsp;{c.phone}</a>}
+                              {c.phone && <a href={`sms:${tel}`} onClick={e=>e.stopPropagation()} title="Text" style={iconBtn}><Icon name="message" size={13} /></a>}
+                              {c.email && <a href={`mailto:${c.email}`} onClick={e=>e.stopPropagation()} title="Email" style={{...chip, maxWidth:'100%', overflow:'hidden'}}><Icon name="mail" size={12} style={{color:'var(--accent)'}} />&nbsp;<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email}</span></a>}
                             </div>
                           );
                         })()}
@@ -13351,7 +13353,7 @@ function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, 
                   Not duplicates
                 </button>
                 <button className="btn btn-primary btn-sm" onClick={() => mergeGroup(g)} disabled={merging[g.key]}>
-                  {merging[g.key] ? '↻ Merging…' : `⚠ Merge ${g.contacts.length - 1} into selected`}
+                  {merging[g.key] ? '↻ Merging…' : `Merge ${g.contacts.length - 1} into selected`}
                 </button>
               </div>
             </div>
@@ -13530,7 +13532,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 
         <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
-            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>👥 Contacts ({linkedContacts.length})</div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="users" size={13} /> Contacts ({linkedContacts.length})</div>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowContactPicker(v => !v)} style={{fontSize:'11px'}}>
               {showContactPicker ? '× Cancel' : '+ Link'}
             </button>
@@ -13565,7 +13567,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 
         <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
           <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-            ✅ Tasks ({linkedTasks.length})
+            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="tasks" size={13} /> Tasks ({linkedTasks.length})</span>
           </div>
           {linkedTasks.length === 0 ? (
             <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No tasks linked. Link this property when creating or editing a task.</div>
@@ -13581,7 +13583,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 
         <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
           <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-            📅 Events ({linkedEvents.length})
+            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={13} /> Events ({linkedEvents.length})</span>
           </div>
           {linkedEvents.length === 0 ? (
             <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic'}}>No events linked.</div>
@@ -13596,7 +13598,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 
         {linkedInvestments.length > 0 && (
           <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
-            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>💰 Investments ({linkedInvestments.length})</div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="dollar" size={13} /> Investments ({linkedInvestments.length})</div>
             {linkedInvestments.map(inv => (
               <div key={inv.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',gap:'8px',fontSize:'12px'}}>
                 <div style={{color:'var(--text-1)'}}>{inv.label || inv.kind || 'Investment'}</div>
@@ -13608,7 +13610,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 
         {linkedDrawings.length > 0 && (
           <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)'}}>
-            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>✏️ Drawings ({linkedDrawings.length})</div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="edit" size={13} /> Drawings ({linkedDrawings.length})</div>
             {linkedDrawings.map(d => {
               const shapeCount = Array.isArray(d.shapes) ? d.shapes.length : 0;
               return (
@@ -13625,7 +13627,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
         )}
 
         <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
-          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="signal" size={13} /> Activity</div>
           <ActivityTimeline entityType="property" entityId={property.id} userId={userId} contacts={contacts} />
         </div>
 
@@ -13781,7 +13783,7 @@ function PropertyModal({ onClose, onSave, onDelete, initial }) {
         <div className="modal-header">
           <h3>{initial ? 'Edit Property' : 'New Property'}</h3>
           <div className="modal-header-actions">
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -13861,11 +13863,11 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
   const [catFilter, setCatFilter] = useState('all');
 
   const CATS = [
-    { id: 'all', label: 'All', icon: '🏠' },
-    { id: 'listing', label: 'Listings', icon: '🏡' },
-    { id: 'investment', label: 'Investments', icon: '💰' },
-    { id: 'personal', label: 'Personal', icon: '🏘️' },
-    { id: 'rental', label: 'Rentals', icon: '🔑' },
+    { id: 'all', label: 'All', iconName: 'properties' },
+    { id: 'listing', label: 'Listings', iconName: 'tag' },
+    { id: 'investment', label: 'Investments', iconName: 'dollar' },
+    { id: 'personal', label: 'Personal', iconName: 'home' },
+    { id: 'rental', label: 'Rentals', iconName: 'key' },
   ];
 
   const filtered = catFilter === 'all' ? properties : properties.filter(p => p.category === catFilter);
@@ -13893,13 +13895,13 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
           <h3>Properties</h3>
           <div className="filter-chip-row">
             {CATS.map(c => (
-              <button key={c.id} className={`filter-chip ${catFilter===c.id?'active':''}`} onClick={()=>setCatFilter(c.id)}>{c.icon} {c.label}</button>
+              <button key={c.id} className={`filter-chip ${catFilter===c.id?'active':''}`} onClick={()=>setCatFilter(c.id)}><span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name={c.iconName} size={12} /> {c.label}</span></button>
             ))}
           </div>
         </div>
         <div className="panel-body">
           {filtered.length === 0
-            ? <div className="empty-state"><div className="empty-icon">🏠</div><p>No properties here.</p></div>
+            ? <div className="empty-state"><div className="empty-icon"><Icon name="properties" size={28} /></div><p>No properties here.</p></div>
             : <div className="task-list">
                 {filtered.map(p => {
                   const equity = p.current_value && p.loan_balance ? Number(p.current_value) - Number(p.loan_balance) : null;
@@ -13987,7 +13989,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
         <div className="modal-header">
           <h3>{initial ? 'Edit Investment' : 'New Investment'}</h3>
           <div className="modal-header-actions">
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -14035,7 +14037,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
         </form>
         {initial?.id && (
           <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
-            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px'}}>📡 Activity</div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="signal" size={13} /> Activity</div>
             <ActivityTimeline entityType="investment" entityId={initial.id} userId={userId} contacts={contacts} />
           </div>
         )}
@@ -14119,7 +14121,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId, cont
         </div>
         <div className="panel-body">
           {filtered.length === 0
-            ? <div className="empty-state"><div className="empty-icon">💰</div><p>No investments here.</p></div>
+            ? <div className="empty-state"><div className="empty-icon"><Icon name="dollar" size={28} /></div><p>No investments here.</p></div>
             : <div className="task-list">
                 {filtered.map(i => {
                   const linkedProp = properties.find(p => p.id === i.property_id);
@@ -14131,7 +14133,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId, cont
                           <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)',textTransform:'capitalize'}}>{(i.stage||'').replace('_',' ')}</span>
                           <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'11px'}}>{(i.kind||'').replace('_',' ')}</span>
                         </div>
-                        {linkedProp && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>📍 {linkedProp.nickname}</div>}
+                        {linkedProp && <div style={{fontSize:'13px',color:'var(--text-2)',display:'flex',alignItems:'center',gap:'4px',marginTop:'2px'}}><Icon name="pin" size={11} style={{flexShrink:0}} /> {linkedProp.nickname}</div>}
                         {i.amount && <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>${Number(i.amount).toLocaleString()}</div>}
                       </div>
                       <div className="task-meta">
@@ -25898,7 +25900,7 @@ function ContactProfilesPanel({ profiles, contacts, setProfiles, userId }) {
         Behavioral profiles inferred from public data or communications history. Confidence is always shown — these are best guesses, not facts.
       </p>
       {profiles.length === 0
-        ? <div className="empty-state"><div className="empty-icon">👥</div><p>No contact profiles yet. They'll appear here as Prism Read runs against your contacts.</p></div>
+        ? <div className="empty-state"><div className="empty-icon"><Icon name="users" size={28} /></div><p>No contact profiles yet. They'll appear here as Prism Read runs against your contacts.</p></div>
         : <div className="task-list">
             {profiles.map(p => {
               const contact = p.contact_id ? contacts.find(c => c.id === p.contact_id) : null;
