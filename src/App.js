@@ -1385,11 +1385,11 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
-          <div className="modal-header-actions">
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
-            <button className="modal-close" onClick={onClose}>×</button>
           </div>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Task</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required /></div>

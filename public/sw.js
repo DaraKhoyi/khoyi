@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v20-20260618-datepickerfix'
+const VERSION = 'prismos-v21-20260618-trashmove'
 const APP_SHELL = [
   '/',
   '/index.html',
