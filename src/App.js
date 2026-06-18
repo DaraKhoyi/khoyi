@@ -41,6 +41,11 @@ const ICON_PATHS = {
   quo:         (<><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></>),
   message:     (<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>),
   mail:        (<><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>),
+  target:      (<><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>),
+  search:      (<><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></>),
+  sparkles:    (<><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></>),
+  mic:         (<><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></>),
+  signal:      (<><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.4"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.4"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -5882,7 +5887,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
     <div style={{ marginBottom: '14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
         <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
-          🎙 Recordings {recordings.length > 0 && <span style={{ marginLeft: '4px', color: 'var(--text-2)' }}>({recordings.length})</span>}
+          <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="mic" size={14} /> Recordings</span> {recordings.length > 0 && <span style={{ marginLeft: '4px', color: 'var(--text-2)' }}>({recordings.length})</span>}
         </div>
         <button className="btn btn-ghost btn-sm" onClick={() => setUploadForm(f => ({ ...f, open: !f.open }))} style={{ fontSize: '11px' }}>
           {uploadForm.open ? '× Cancel' : '+ Upload audio'}
@@ -7799,7 +7804,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                       borderRadius:'8px', textDecoration:'none', fontSize:'12px', fontWeight:700,
                       display:'flex', alignItems:'center', gap:'5px',
                     }}>
-                    📞 Call
+                    <Icon name="quo" size={13} /> Call
                   </a>
                 )}
                 {contact.phone && (
@@ -7809,7 +7814,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                       border:'1px solid var(--border)', borderRadius:'8px', textDecoration:'none',
                       fontSize:'12px', fontWeight:600, display:'flex', alignItems:'center', gap:'5px',
                     }}>
-                    💬 Text
+                    <Icon name="message" size={13} /> Text
                   </a>
                 )}
                 {contact.email && (
@@ -7819,7 +7824,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                       border:'1px solid var(--border)', borderRadius:'8px', textDecoration:'none',
                       fontSize:'12px', fontWeight:600, display:'flex', alignItems:'center', gap:'5px',
                     }}>
-                    ✉️ Email
+                    <Icon name="mail" size={13} /> Email
                   </a>
                 )}
               </div>
@@ -7834,7 +7839,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                     <a href={`mailto:${e.value}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
                       onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
                       onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-2)';}}>
-                      ✉️ {e.value}
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> {e.value}</span>
                     </a>
                     {e.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
                   </div>
@@ -7851,13 +7856,13 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                     <a href={`tel:${p.value.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
                       onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
                       onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-2)';}}>
-                      📞 {p.value}
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="quo" size={12} /> {p.value}</span>
                     </a>
                     <a href={`sms:${p.value.replace(/[^\d+]/g, '')}`} title="Text"
                       style={{color:'var(--text-3)',textDecoration:'none',fontSize:'14px',padding:'2px 4px'}}
                       onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
                       onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-3)';}}>
-                      💬
+                      <Icon name="message" size={13} />
                     </a>
                     {p.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
                   </div>
@@ -7868,12 +7873,12 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             {/* Fallback when arrays are empty but legacy columns have data */}
             {(!Array.isArray(contact.emails) || contact.emails.length === 0) && contact.email && (
               <div style={{padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
-                <a href={`mailto:${contact.email}`} style={{color:'var(--text-2)',textDecoration:'none'}}>📧 {contact.email}</a>
+                <a href={`mailto:${contact.email}`} style={{color:'var(--text-2)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> {contact.email}</a>
               </div>
             )}
             {(!Array.isArray(contact.phones) || contact.phones.length === 0) && contact.phone && (
               <div style={{padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
-                <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none'}}>📞 {contact.phone}</a>
+                <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="quo" size={12} /> {contact.phone}</a>
               </div>
             )}
 
@@ -7899,13 +7904,13 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           {/* DISC display */}
           <div style={{padding:'14px',background:'var(--bg-base)',borderRadius:'10px',border:'1px solid var(--border)',marginBottom:'14px'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
-              <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>🎯 Behavioral Signal (DISC)</div>
+              <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="target" size={15} /> Behavioral Signal (DISC)</div>
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchModal(true)} style={{fontSize:'11px'}}>
-                  🔍 {hasResearch ? 'View research' : 'Research from web'}
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchModal(true)} style={{fontSize:'11px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                  <Icon name="search" size={13} /> {hasResearch ? 'View research' : 'Research from web'}
                 </button>
-                <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing || resetting} style={{fontSize:'11px'}}>
-                  {analyzing ? '↻ Analyzing…' : '✨ Re-analyze now'}
+                <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing || resetting} style={{fontSize:'11px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                  {analyzing ? '↻ Analyzing…' : <><Icon name="sparkles" size={13} /> Re-analyze now</>}
                 </button>
               </div>
             </div>
@@ -8109,7 +8114,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         {/* ========== COMMUNICATION PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px',gap:'8px',flexWrap:'wrap'}}>
-            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>📡 Communication &amp; Activity</div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="signal" size={15} /> Communication &amp; Activity</div>
             <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
               <span style={{fontSize:'10px',color:'var(--text-3)'}}>Keep in touch every</span>
               <select className="form-select" value={contact.cadence_days || ''}
