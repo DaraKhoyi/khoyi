@@ -5871,8 +5871,15 @@ async function getFfmpeg() {
       `https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/${f}`,
       `https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/${f}`,
     ];
+    const workerURLs = [
+      'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js',
+      'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js',
+    ];
     const ff = new FFmpeg();
     await ff.load({
+      // The class worker MUST be a same-origin blob, or the browser blocks
+      // `new Worker()` from the cross-origin CDN script.
+      classWorkerURL: await __toBlobURLMulti(workerURLs, 'text/javascript', toBlobURL),
       coreURL: await __toBlobURLMulti(cores('ffmpeg-core.js'), 'text/javascript', toBlobURL),
       wasmURL: await __toBlobURLMulti(cores('ffmpeg-core.wasm'), 'application/wasm', toBlobURL),
     });
