@@ -73,6 +73,12 @@ const ICON_PATHS = {
   camera:      (<><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>),
   home:        (<><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>),
   key:         (<><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></>),
+  cake:        (<><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1"/><line x1="2" y1="21" x2="22" y2="21"/><path d="M7 8v3M12 8v3M17 8v3"/><path d="M7 4h.01M12 4h.01M17 4h.01"/></>),
+  heart:       (<><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></>),
+  briefcase:   (<><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></>),
+  cart:        (<><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></>),
+  compass:     (<><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></>),
+  star:        (<><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -8650,18 +8656,18 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
 // of the relevant records, so a "Lender" field surfaces all of the
 // user's contacts that match the optional filter.
 const CUSTOM_FIELDS_GROUP_META = {
-  family:           { label: 'Family',                  icon: '👨‍👩‍👧' },
-  milestones:       { label: 'Birthdays & anniversaries', icon: '🎂' },
-  relationship:     { label: 'Relationship & cadence',  icon: '🤝' },
-  communication:    { label: 'Communication & DISC',    icon: '💬' },
-  real_estate_pros: { label: 'Real-estate pros',        icon: '🤵' },
-  home:             { label: 'Current home',            icon: '🏠' },
-  buyer:            { label: 'Buyer pipeline',          icon: '🛒' },
-  seller:           { label: 'Seller pipeline',         icon: '🏷️' },
-  investor:         { label: 'Investor profile',        icon: '📊' },
-  lifestyle:        { label: 'Lifestyle & interests',   icon: '🎯' },
-  source_context:   { label: 'Source & life context',   icon: '🧭' },
-  custom:           { label: 'My custom fields',        icon: '⭐' },
+  family:           { label: 'Family',                  iconName: 'users' },
+  milestones:       { label: 'Birthdays & anniversaries', iconName: 'cake' },
+  relationship:     { label: 'Relationship & cadence',  iconName: 'heart' },
+  communication:    { label: 'Communication & DISC',    iconName: 'message' },
+  real_estate_pros: { label: 'Real-estate pros',        iconName: 'briefcase' },
+  home:             { label: 'Current home',            iconName: 'home' },
+  buyer:            { label: 'Buyer pipeline',          iconName: 'cart' },
+  seller:           { label: 'Seller pipeline',         iconName: 'tag' },
+  investor:         { label: 'Investor profile',        iconName: 'chart' },
+  lifestyle:        { label: 'Lifestyle & interests',   iconName: 'target' },
+  source_context:   { label: 'Source & life context',   iconName: 'compass' },
+  custom:           { label: 'My custom fields',        iconName: 'star' },
 };
 const CUSTOM_FIELDS_GROUP_ORDER = [
   'communication', 'relationship', 'milestones', 'family',
@@ -9363,7 +9369,7 @@ function CustomFieldsPanel({ userId, contact, contacts = [], setContacts }) {
   return (
     <div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'4px'}}>
       {grouped.map(([groupName, fields]) => {
-        const meta = CUSTOM_FIELDS_GROUP_META[groupName] || { label: groupName, icon: '📁' };
+        const meta = CUSTOM_FIELDS_GROUP_META[groupName] || { label: groupName, iconName: 'folder' };
         const isCollapsed = !!collapsedGroups[groupName];
         const populatedCount = fields.filter(d => hasValue(values[d.id], d.field_type)).length;
         return (
@@ -9375,7 +9381,7 @@ function CustomFieldsPanel({ userId, contact, contacts = [], setContacts }) {
                 alignItems:'center', justifyContent:'space-between', gap:'8px',
               }}>
               <span style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',fontWeight:700}}>
-                <span>{meta.icon}</span>
+                <span style={{display:'inline-flex',alignItems:'center'}}><Icon name={meta.iconName} size={16} /></span>
                 <span>{meta.label}</span>
                 {populatedCount > 0 && <span style={{padding:'1px 6px',background:'rgba(197,169,94,0.18)',color:'var(--accent)',borderRadius:'10px',fontSize:'9px',fontWeight:700}}>{populatedCount}</span>}
               </span>
