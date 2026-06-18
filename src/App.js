@@ -57,6 +57,12 @@ const ICON_PATHS = {
   folder:      (<><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></>),
   link:        (<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>),
   pin:         (<><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></>),
+  edit:        (<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></>),
+  tag:         (<><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></>),
+  alert:       (<><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>),
+  archive:     (<><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></>),
+  forward:     (<><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></>),
+  replyAll:    (<><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H8"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -3819,7 +3825,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
                   color: active ? '#C5A95E' : 'var(--text-2)',
                   border: `1px solid ${active ? '#C5A95E' : 'var(--border)'}`,
                 }}>
-                📬 {a.email_address}
+                <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={13} /> {a.email_address}</span>
               </button>
             );
           })}
@@ -4966,7 +4972,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
           {syncMsg && <span style={{fontSize:'12px',color: syncMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)'}}>{syncMsg}</span>}
           {autoTriageProgress && (
             <span style={{fontSize:'11px',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'4px'}}>
-              ⚙️ Triaging {autoTriageProgress.done}/{autoTriageProgress.total}
+              <Icon name="settings" size={12} /> Triaging {autoTriageProgress.done}/{autoTriageProgress.total}
             </span>
           )}
           <button className="btn btn-ghost btn-sm" onClick={() => runAliasesSync(false)} disabled={syncingAliases} title="Re-sync your Send-mail-as aliases from Gmail">
@@ -4982,7 +4988,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
             open={searchOpen}
             onToggle={() => setSearchOpen(o => !o)}
           />
-          <button className="btn btn-primary" onClick={openCompose}>✏️ Compose</button>
+          <button className="btn btn-primary" onClick={openCompose} style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="edit" size={14} /> Compose</button>
         </div>
       </div>
 
@@ -5031,7 +5037,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                 {['inbox','snoozed','sent'].map(t => (
                   <button key={t} className={`btn btn-sm ${tab===t?'btn-primary':'btn-ghost'}`} onClick={()=>{setTab(t); setSelectedThread(null);}}>
-                    {t === 'inbox' ? 'Inbox' : t === 'snoozed' ? '⏰ Snoozed' : 'Sent'}
+                    {t === 'inbox' ? 'Inbox' : t === 'snoozed' ? <><Icon name="clock" size={12} /> Snoozed</> : 'Sent'}
                     {t==='inbox' && unreadCount>0 && <span className="nav-badge" style={{marginLeft:'6px'}}>{unreadCount}</span>}
                   </button>
                 ))}
@@ -5042,7 +5048,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 ? <div className="loading-screen" style={{minHeight:'200px'}}><div className="spinner"/></div>
                 : filteredThreads.length === 0
                   ? <div className="empty-state">
-                      <div className="empty-icon">{inboxSearch ? '🔍' : '📭'}</div>
+                      <div className="empty-icon">{inboxSearch ? <Icon name="search" size={30} /> : <Icon name="inbox" size={30} />}</div>
                       <p>
                         {inboxSearch
                           ? <>No threads match <strong>"{inboxSearch}"</strong>.</>
@@ -5093,7 +5099,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                                   {thread.message_count > 1 && <span style={{color:'var(--text-3)',fontSize:'12px'}}>({thread.message_count})</span>}
                                   {thread.snoozed_until && new Date(thread.snoozed_until) > new Date() && (
                                     <span style={{fontSize:'10px',color:'var(--accent)',padding:'2px 6px',background:'rgba(197,169,94,0.10)',borderRadius:'4px'}}>
-                                      ⏰ until {new Date(thread.snoozed_until).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
+                                      <Icon name="clock" size={11} /> until {new Date(thread.snoozed_until).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
                                     </span>
                                   )}
                                 </div>
@@ -5141,8 +5147,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
                     {/* Reply — primary action, always visible */}
                     <button className="btn btn-primary btn-sm" onClick={() => openReply(latest, false)}
-                      style={{flexShrink:0,padding:'4px 12px',fontSize:'12px'}}>
-                      ↩ Reply
+                      style={{flexShrink:0,padding:'4px 12px',fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                      <Icon name="reply" size={13} /> Reply
                     </button>
 
                     {/* Archive — only when not already archived */}
@@ -5150,16 +5156,16 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                       <button className="btn btn-ghost btn-sm"
                         onClick={() => modifyThread('archive', { removeFromList: true })}
                         title="Archive"
-                        style={{flexShrink:0,padding:'4px 8px',fontSize:'14px'}}>
-                        📥
+                        style={{flexShrink:0,padding:'4px 8px'}}>
+                        <Icon name="archive" size={15} />
                       </button>
                     )}
 
                     {/* Delete — keep visible since it's a frequent action */}
                     <button className="btn btn-ghost btn-sm" onClick={trashCurrentThread}
                       title="Delete (move to Trash)"
-                      style={{flexShrink:0,padding:'4px 8px',fontSize:'14px',color:'var(--red)'}}>
-                      🗑
+                      style={{flexShrink:0,padding:'4px 8px',color:'var(--red)'}}>
+                      <Icon name="trash" size={15} />
                     </button>
 
                     {/* More menu — everything else (Gmail-style).
@@ -5201,22 +5207,22 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                               On solo-recipient threads this behaves identically to Reply. */}
                           <button
                             onClick={() => { openReply(latest, true); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
-                            ↩↩ Reply all
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            <Icon name="replyAll" size={14} /> Reply all
                           </button>
 
                           {/* Forward */}
                           <button
                             onClick={() => { openForward(latest); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
-                            ↪ Forward
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            <Icon name="forward" size={14} /> Forward
                           </button>
 
                           {/* Add sender to contacts */}
                           <button
                             onClick={() => createContactFromSender(latest)}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
-                            👤 Add sender to contacts
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            <Icon name="contacts" size={14} /> Add sender to contacts
                           </button>
 
                           <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
@@ -5226,7 +5232,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                             <button
                               onClick={() => setShowSnoozePicker(s => !s)}
                               style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
-                              <span>⏰ Snooze</span>
+                              <span style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="clock" size={14} /> Snooze</span>
                               <span style={{color:'var(--text-3)',fontSize:'11px'}}>{showSnoozePicker ? '▾' : '▸'}</span>
                             </button>
                             {showSnoozePicker && (
@@ -5266,8 +5272,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Labels */}
                           <button
                             onClick={() => { setShowLabelPicker(true); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px'}}>
-                            🏷 Apply labels…
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            <Icon name="tag" size={14} /> Apply labels…
                           </button>
 
                           <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
@@ -5275,8 +5281,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Mark as spam (destructive) */}
                           <button
                             onClick={() => { modifyThread('spam', { removeFromList: true }); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'13px'}}>
-                            ⚠ Mark as spam
+                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            <Icon name="alert" size={14} /> Mark as spam
                           </button>
                         </div>
                       </>,
@@ -5304,8 +5310,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 return (
                   <div style={{padding:'10px 16px',background:'var(--bg-base)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
                     <span style={{fontSize:'11px',color:'var(--text-3)'}}>No AI triage yet for this thread.</span>
-                    <button className="btn btn-ghost btn-sm" onClick={() => triageThread(selectedThread.id)} style={{fontSize:'11px'}}>
-                      ⚙️ Triage
+                    <button className="btn btn-ghost btn-sm" onClick={() => triageThread(selectedThread.id)} style={{fontSize:'11px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                      <Icon name="settings" size={12} /> Triage
                     </button>
                   </div>
                 );
@@ -5430,11 +5436,11 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Per-message reply buttons (Gmail-style: at bottom of each message in a thread) */}
                           {isLast && (
                             <div style={{display:'flex',gap:'6px',padding:'0 16px 16px',flexWrap:'wrap'}}>
-                              <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, false)} style={{fontSize:'12px'}}>↩ Reply</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, false)} style={{fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="reply" size={12} /> Reply</button>
                               {canReplyAll && (
-                                <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, true)} style={{fontSize:'12px'}}>↩↩ Reply all</button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => openReply(msg, true)} style={{fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="replyAll" size={12} /> Reply all</button>
                               )}
-                              <button className="btn btn-ghost btn-sm" onClick={() => openForward(msg)} style={{fontSize:'12px'}}>↪ Forward</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => openForward(msg)} style={{fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="forward" size={12} /> Forward</button>
                             </div>
                           )}
                         </div>
@@ -5450,7 +5456,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowLabelPicker(false)} style={{zIndex: 1100}}>
           <div className="modal" style={{maxWidth:'460px',width:'92%'}}>
             <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <h3 style={{margin:0}}>🏷 Apply labels</h3>
+              <h3 style={{margin:0,display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="tag" size={15} /> Apply labels</h3>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowLabelPicker(false)}>✕</button>
             </div>
             <LabelPickerBody
