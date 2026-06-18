@@ -56,6 +56,7 @@ const ICON_PATHS = {
   trash:       (<><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>),
   folder:      (<><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></>),
   link:        (<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>),
+  pin:         (<><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -14654,7 +14655,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
         <div className="modal-header">
           <h3>{initial ? 'Edit Event' : 'New Event'}</h3>
           <div className="modal-header-actions">
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -15118,13 +15119,13 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={()=>setShowFlex(true)}
               title="Flexible hours for this day — block time, start late, day off" aria-label="Flexible hours"
               style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
-              <span style={{fontSize:'15px',display:'inline-block'}}>⏰</span>
+              <Icon name="clock" size={16} />
             </button>
           )}
           <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={refreshSchedule} disabled={scheduling}
             title="Auto-schedule tasks onto the calendar" aria-label="Refresh schedule"
             style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
-            <span className={scheduling?'spinning':''} style={{fontSize:'15px',display:'inline-block'}}>🗓️</span>
+            <span className={scheduling?'spinning':''} style={{display:'inline-flex'}}><Icon name="calendar" size={16} /></span>
           </button>
           {hasCalendarScope ? (
             <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={()=>syncCalendar('both')} disabled={syncing}
@@ -15135,7 +15136,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             <button className="btn btn-ghost btn-sm cal-icon-btn" onClick={connectGoogle}
               style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}
               title="Connect Google Calendar to enable refresh" aria-label="Connect calendar">
-              🔗
+              <Icon name="link" size={16} />
             </button>
           )}
           <button className="btn-add-circle btn-add-circle-sm" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}} title="New Event" aria-label="New Event">+</button>
@@ -15251,7 +15252,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
               .filter(ev => new Date(ev.end_at || ev.start_at) >= new Date(today.getFullYear(),today.getMonth(),today.getDate()))
               .sort((a,b)=>new Date(a.start_at)-new Date(b.start_at))
               .slice(0,10);
-            if (upcoming.length === 0) return <div className="empty-state"><div className="empty-icon">📅</div><p>No upcoming events. Click a day to add one.</p></div>;
+            if (upcoming.length === 0) return <div className="empty-state"><div className="empty-icon"><Icon name="calendar" size={28} /></div><p>No upcoming events. Click a day to add one.</p></div>;
             return <div className="task-list">
               {upcoming.map(ev => {
                 const s = new Date(ev.start_at);
@@ -15265,7 +15266,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
                       {ev.title}
                       {ev.recur_freq && <span title="Repeats" style={{marginLeft:'6px',fontSize:'11px',color:'var(--text-3)'}}>↻</span>}
                       {ev.google_event_id && <span title="Synced with Google" style={{marginLeft:'6px',fontSize:'10px',color:'var(--accent)'}}>●</span>}
-                      {ev.location && <span style={{display:'block',fontSize:'11px',color:'var(--text-3)'}}>📍 {ev.location}</span>}
+                      {ev.location && <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'var(--text-3)'}}><Icon name="pin" size={11} style={{flexShrink:0}} /> {ev.location}</span>}
                     </span>
                     <div className="task-meta">
                       <span className="task-due">{ev.all_day ? 'All day' : `${pad2(s.getHours())}:${pad2(s.getMinutes())}`}</span>
