@@ -18257,7 +18257,7 @@ function JournalStory({ userId, mode }) {
   }
   function shift(dir) { setAnchor(prev => { const [y, m, d] = prev.split('-').map(Number); const dt = new Date(y, m - 1, d); if (mode === 'week') dt.setDate(dt.getDate() + dir * 7); else dt.setMonth(dt.getMonth() + dir); return jFmt(dt); }); }
 
-  const sections = [['relationships', '🤝 Relationships advanced'], ['deals_projects', '📈 Deals & projects moved'], ['wins', '🏆 Wins'], ['patterns', '🔍 Patterns Ari noticed'], ['focus_next', `🎯 Focus next ${mode}`]];
+  const sections = [['relationships', 'users', 'Relationships advanced'], ['deals_projects', 'chart', 'Deals & projects moved'], ['wins', 'deals', 'Wins'], ['patterns', 'search', 'Patterns Ari noticed'], ['focus_next', 'target', `Focus next ${mode}`]];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -18268,20 +18268,20 @@ function JournalStory({ userId, mode }) {
       {loading ? <div className="panel" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-3)' }}>Loading…</div> :
         !data ? (
           <div className="panel" style={{ padding: '24px', textAlign: 'center' }}>
-            <div style={{ fontSize: '30px', marginBottom: '8px' }}>{mode === 'week' ? '🗓️' : '📅'}</div>
+            <div style={{ fontSize: '30px', marginBottom: '8px' }}><Icon name="calendar" size={30} style={{color:'var(--text-3)'}} /></div>
             <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: '0 0 14px', lineHeight: 1.5 }}>Weave your {mode} into a story — the arc, who you advanced, what moved, and where to aim next.</p>
-            <button onClick={generate} disabled={generating} className="btn btn-primary btn-sm">{generating ? 'Writing your story…' : `✨ Write my ${mode}'s story`}</button>
+            <button onClick={generate} disabled={generating} className="btn btn-primary btn-sm">{generating ? 'Writing your story…' : <><Icon name="sparkles" size={13} /> Write my {mode}'s story</>}</button>
           </div>
         ) : (
           <div className="panel" style={{ padding: '16px', background: 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: '1px solid rgba(197,169,94,0.35)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800 }}>📖 The story of your {mode}</span>
+              <span style={{ fontSize: '11px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800, display:'inline-flex', alignItems:'center', gap:'5px' }}><Icon name="notes" size={12} /> The story of your {mode}</span>
               <button onClick={generate} disabled={generating} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>{generating ? '…' : '↻ regenerate'}</button>
             </div>
             {data.story && <p style={{ fontSize: '14px', color: 'var(--text-1)', margin: '0 0 14px', lineHeight: 1.6 }}>{data.story}</p>}
-            {sections.map(([k, lbl]) => (Array.isArray(data[k]) && data[k].length ? (
+            {sections.map(([k, ic, lbl]) => (Array.isArray(data[k]) && data[k].length ? (
               <div key={k} style={{ marginBottom: '10px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: '4px' }}>{lbl}</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: '4px', display:'inline-flex', alignItems:'center', gap:'4px' }}><Icon name={ic} size={11} /> {lbl}</div>
                 <ul style={{ margin: 0, paddingLeft: '18px' }}>{data[k].map((x, i) => <li key={i} style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.55 }}>{x}</li>)}</ul>
               </div>
             ) : null))}
@@ -18398,7 +18398,7 @@ function JournalView({ userId }) {
           <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={26} style={{color:'var(--accent)',flexShrink:0}} />Journal</h2>
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
-            style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', fontSize: '15px' }}>🔍</button>
+            style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="search" size={16} /></button>
         </div>
         {!searchOpen && (
           <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
@@ -18462,7 +18462,7 @@ function JournalView({ userId }) {
             {dict.supported && (
               <button onClick={() => dict.recording ? dict.stop() : dict.start()}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '12px 18px', borderRadius: '999px', border: `1.5px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '14px', fontWeight: 700 }}>
-                {dict.recording ? '⏹ Stop' : '🎤 Dictate'}
+                {dict.recording ? <>⏹ Stop</> : <><Icon name="mic" size={13} /> Dictate</>}
               </button>
             )}
             <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{text.trim() ? `${text.trim().split(/\s+/).length} words` : ''}</span>
@@ -18476,14 +18476,14 @@ function JournalView({ userId }) {
       {mode === 'day' && !searchOpen && (summary ? (
         <div className="panel" style={{ padding: '14px', background: 'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.01))', border: '1px solid rgba(197,169,94,0.35)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800 }}>✨ Day recap</span>
+            <span style={{ fontSize: '11px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800, display:'inline-flex', alignItems:'center', gap:'5px' }}><Icon name="sparkles" size={12} /> Day recap</span>
             <button onClick={summarize} disabled={summarizing} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>{summarizing ? '…' : '↻ regenerate'}</button>
           </div>
           {summary.recap && <p style={{ fontSize: '13px', color: 'var(--text-1)', margin: '0 0 10px', lineHeight: 1.5 }}>{summary.recap}</p>}
-          {[['people', '👥 People'], ['moved', '✅ Moved forward'], ['open', '⏳ Open loops'], ['tomorrow', '🎯 Tomorrow']].map(([k, lbl]) => (
+          {[['people', 'users', 'People'], ['moved', 'tasks', 'Moved forward'], ['open', 'clock', 'Open loops'], ['tomorrow', 'target', 'Tomorrow']].map(([k, ic, lbl]) => (
             Array.isArray(summary[k]) && summary[k].length ? (
               <div key={k} style={{ marginBottom: '8px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: '3px' }}>{lbl}</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: '3px', display:'inline-flex', alignItems:'center', gap:'4px' }}><Icon name={ic} size={11} /> {lbl}</div>
                 <ul style={{ margin: 0, paddingLeft: '18px' }}>{summary[k].map((x, i) => <li key={i} style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.5 }}>{x}</li>)}</ul>
               </div>
             ) : null
@@ -18491,7 +18491,7 @@ function JournalView({ userId }) {
         </div>
       ) : (entries.length > 0 && (
         <button onClick={summarize} disabled={summarizing} className="panel" style={{ padding: '12px', textAlign: 'center', cursor: 'pointer', border: '1px dashed var(--border)', color: 'var(--accent)', fontWeight: 700, fontSize: '13px', background: 'var(--bg-card)' }}>
-          {summarizing ? 'Summarizing your day…' : '✨ Summarize my day'}
+          {summarizing ? 'Summarizing your day…' : <><Icon name="sparkles" size={13} /> Summarize my day</>}
         </button>
       )))}
 
@@ -18499,7 +18499,7 @@ function JournalView({ userId }) {
       {mode === 'day' && !searchOpen && (loading ? <div className="panel" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-3)' }}>Loading…</div> :
         entries.length === 0 ? (
           <div className="panel" style={{ padding: '28px', textAlign: 'center' }}>
-            <div style={{ fontSize: '32px', marginBottom: '8px' }}>📓</div>
+            <div style={{ marginBottom: '8px' }}><Icon name="journal" size={30} style={{color:'var(--text-3)'}} /></div>
             <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>{isToday ? 'Your day is a blank page. Capture your first moment above — a call, a showing, a thought.' : 'Nothing logged this day.'}</p>
           </div>
         ) : (
@@ -18511,7 +18511,7 @@ function JournalView({ userId }) {
                 <div key={entry.id} className="panel" style={{ padding: '12px 14px', position: 'relative' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                     <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtJTime(entry.occurred_at)}</span>
-                    <span style={{ fontSize: '11px' }}>{entry.kind === 'voice' ? '🎤' : '📝'}</span>
+                    <span style={{ display:'inline-flex' }}><Icon name={entry.kind === 'voice' ? 'mic' : 'edit'} size={12} /></span>
                     <span style={{ flex: 1 }} />
                     <button onClick={() => deleteEntry(entry)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', opacity: 0.6 }}>🗑</button>
                   </div>
@@ -18601,13 +18601,13 @@ function QuickLog({ userId, onNavigate }) {
         <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setJournalOpen(false); }} style={{ padding: '12px' }}>
           <div className="modal" style={{ maxWidth: 'none', width: 'min(760px, 100%)', height: 'min(92vh, 100%)', maxHeight: 'none', padding: '18px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexShrink: 0 }}>
-              <h3 style={{ margin: 0, fontSize: '16px' }}>📓 Quick log</h3>
+              <h3 style={{ margin: 0, fontSize: '16px', display:'inline-flex', alignItems:'center', gap:'7px' }}><Icon name="journal" size={16} /> Quick log</h3>
               <button onClick={() => setJournalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '22px', color: 'var(--text-3)', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
             <textarea autoFocus value={text + (dict.interim ? ((text && !/\s$/.test(text)) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)} placeholder="Capture a moment — it'll timestamp and auto-link…"
               style={{ flex: 1, minHeight: 0, width: '100%', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text-1)', fontSize: '16px', boxSizing: 'border-box', lineHeight: 1.6, resize: 'none', fontFamily: 'inherit' }} />
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexShrink: 0 }}>
-              {dict.supported && <button onClick={() => dict.recording ? dict.stop() : dict.start()} style={{ padding: '10px 16px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>{dict.recording ? '⏹ Recording…' : '🎤 Voice'}</button>}
+              {dict.supported && <button onClick={() => dict.recording ? dict.stop() : dict.start()} style={{ padding: '10px 16px', borderRadius: '999px', border: `1px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>{dict.recording ? <>⏹ Recording…</> : <><Icon name="mic" size={13} /> Voice</>}</button>}
               <span style={{ flex: 1 }} />
               <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '10px 24px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '14px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1 }}>{saving ? '…' : 'Log'}</button>
             </div>
@@ -27018,7 +27018,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
         <div className="modal-header">
           <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
           <div className="modal-header-actions">
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete">🗑</button>}
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -27063,7 +27063,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
               <div className="form-group" style={{flex:2}}>
                 <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'space-between'}}>
                   <span>Quadrant</span>
-                  <button type="button" onClick={suggestQuadrant} disabled={!title.trim()||suggesting} className="btn btn-sm btn-ghost" style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{suggesting?'…thinking':'✨ Suggest'}</button>
+                  <button type="button" onClick={suggestQuadrant} disabled={!title.trim()||suggesting} className="btn btn-sm btn-ghost" style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{suggesting?'…thinking':<><Icon name="sparkles" size={11} /> Suggest</>}</button>
                 </label>
                 <select className="form-select" value={quadrant} onChange={e=>setQuadrant(e.target.value)}>
                   {QUADRANTS.map(q=><option key={q.letter} value={q.letter}>{q.label} · {q.short}</option>)}
@@ -27076,7 +27076,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
             <div className="form-group">
               <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',justifyContent:'space-between'}}>
                 <span>Priority</span>
-                <button type="button" onClick={suggestQuadrant} disabled={!title.trim()||suggesting} className="btn btn-sm btn-ghost" style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{suggesting?'…thinking':'✨ Suggest'}</button>
+                <button type="button" onClick={suggestQuadrant} disabled={!title.trim()||suggesting} className="btn btn-sm btn-ghost" style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{suggesting?'…thinking':<><Icon name="sparkles" size={11} /> Suggest</>}</button>
               </label>
               <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
                 <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
@@ -27103,7 +27103,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
             <label className="form-label">Linked contact</label>
             {contactId ? (
               <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                <span style={{flex:1,fontSize:'13px',padding:'7px 9px',background:'var(--bg-hover)',borderRadius:'6px'}}>🔗 {contactName||nameOf(contactId)}</span>
+                <span style={{flex:1,fontSize:'13px',padding:'7px 9px',background:'var(--bg-hover)',borderRadius:'6px',display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="link" size={11} /> {contactName||nameOf(contactId)}</span>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setContactId('');setContactName('');}}>Clear</button>
               </div>
             ) : (
@@ -27243,17 +27243,17 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
           <div style={{flex:1,cursor:editable?'pointer':'default'}} onClick={()=>editable&&setEditing(t)}>
             <div style={{fontSize:'13px',textDecoration:t.status==='done'?'line-through':'none',color:t.status==='done'?'var(--text-3)':(t.status==='rejected'?'var(--red)':'var(--text-1)')}}>{t.title}{t.status==='rejected'?' · rejected':''}</div>
             <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
-              {t.assignee_id ? <span>👤 {nameOf(t.assignee_id)}</span> : (t.assignee_email ? <span>📧 {t.assignee_email}</span> : null)}
+              {t.assignee_id ? <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="contacts" size={11} /> {nameOf(t.assignee_id)}</span> : (t.assignee_email ? <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="mail" size={11} /> {t.assignee_email}</span> : null)}
               {t.contact_id && <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="link" size={11} /> {t.contact_name||'contact'}</span>}
-              {t.due_date && <span style={{color: overdue(t)?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue(t)?' · overdue':''}</span>}
-              {!!reviews.length && <span style={{color:'var(--accent)'}}>💬 {reviews.length} new repl{reviews.length>1?'ies':'y'}</span>}
+              {t.due_date && <span style={{color: overdue(t)?'var(--red)':'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="calendar" size={11} /> {t.due_date}{overdue(t)?' · overdue':''}</span>}
+              {!!reviews.length && <span style={{color:'var(--accent)',display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="message" size={11} /> {reviews.length} new repl{reviews.length>1?'ies':'y'}</span>}
             </div>
           </div>
           {canManage(sel) && <button className="btn btn-ghost btn-sm" onClick={()=>removeTask(t)}>✕</button>}
         </div>
         {latest && canEdit(sel) && (
           <div style={{margin:'0 0 10px 28px',padding:'10px 12px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'8px'}}>
-            <div style={{fontSize:'11px',color:'var(--accent)',fontWeight:600,marginBottom:'3px'}}>✨ Claude read the reply: <strong>{latest.ai_intent}</strong> · {Math.round((latest.ai_confidence||0)*100)}%</div>
+            <div style={{fontSize:'11px',color:'var(--accent)',fontWeight:600,marginBottom:'3px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="sparkles" size={11} /> Claude read the reply: <strong>{latest.ai_intent}</strong> · {Math.round((latest.ai_confidence||0)*100)}%</div>
             {latest.ai_note && <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'4px'}}>{latest.ai_note}</div>}
             {latest.body_excerpt && <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',marginBottom:'8px',whiteSpace:'pre-wrap',maxHeight:'80px',overflowY:'auto'}}>{latest.body_excerpt}</div>}
             <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
