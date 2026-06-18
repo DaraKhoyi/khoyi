@@ -79,6 +79,21 @@ const ICON_PATHS = {
   cart:        (<><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></>),
   compass:     (<><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></>),
   star:        (<><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></>),
+  info:        (<><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>),
+  megaphone:   (<><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></>),
+  bulb:        (<><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></>),
+  code:        (<><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></>),
+  scale:       (<><path d="M12 3v18"/><path d="M5 7h14l-2-3M5 7l2-3"/><path d="m5 7-3 6h6z"/><path d="m19 7-3 6h6z"/><path d="M7 21h10"/></>),
+  gift:        (<><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></>),
+  ban:         (<><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></>),
+  clipboard:   (<><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></>),
+  paperclip:   (<><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></>),
+  lock:        (<><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>),
+  image:       (<><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>),
+  printer:     (<><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></>),
+  car:         (<><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"/><circle cx="6.5" cy="16.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></>),
+  building:    (<><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></>),
+  school:      (<><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -778,7 +793,7 @@ function ChatView({ robots, userId }) {
           title="Take a photo"
           aria-label="Take a photo"
         >
-          📷
+          <Icon name="camera" size={18} />
         </button>
         <button
           type="button"
@@ -789,7 +804,7 @@ function ChatView({ robots, userId }) {
           aria-label="Attach image"
           style={{fontSize:'16px'}}
         >
-          📎
+          <Icon name="paperclip" size={18} />
         </button>
         <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"
           style={{display:'none'}}
@@ -883,7 +898,7 @@ function ChatMessageBubble({
             ) : (
               <>
                 <div className="chat-receipt-card-header">
-                  <span>📋 Receipt detected</span>
+                  <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="clipboard" size={12} /> Receipt detected</span>
                   <span className="chat-receipt-card-confidence">
                     {Math.round((rd.confidence || 0) * 100)}% confident
                   </span>
@@ -1162,7 +1177,7 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
     <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
       <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
         <input type="checkbox" checked={autoSchedule} onChange={e=>setAutoSchedule(e.target.checked)}/>
-        <span>🗓️ Auto-schedule onto my calendar</span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={13} /> Auto-schedule onto my calendar</span>
       </label>
       <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'10px',opacity:autoSchedule?1:0.94}}>
         {!autoSchedule && <div style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.4,fontStyle:'italic'}}>Set the details below, then check the box above to place this on your calendar.</div>}
@@ -1213,17 +1228,17 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
           </div>
           <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
             <input type="checkbox" checked={schedPriority==='asap'} onChange={e=>setSchedPriority(e.target.checked?'asap':'normal')}/>
-            <span>⚡ ASAP — schedule before everything else</span>
+            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="zap" size={13} /> ASAP — schedule before everything else</span>
           </label>
           <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:'var(--text-2)'}}>
             <input type="checkbox" checked={hardDeadline} onChange={e=>setHardDeadline(e.target.checked)} disabled={!dueDate}/>
-            <span>🔒 Hard deadline — work past hours if needed to hit the due date{!dueDate && <em style={{color:'var(--text-3)'}}> (set a due date first)</em>}</span>
+            <span><span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="lock" size={12} /> Hard deadline</span> — work past hours if needed to hit the due date{!dueDate && <em style={{color:'var(--text-3)'}}> (set a due date first)</em>}</span>
           </label>
           {initial?.schedule_state && initial.schedule_state !== 'unscheduled' && (
             <div style={{fontSize:'11.5px',padding:'8px 10px',borderRadius:'6px',background:'var(--bg-card)',border:'1px solid var(--border)',lineHeight:1.5}}>
               {isPinned && !unpinned && (
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap'}}>
-                  <div style={{color:'var(--accent)'}}>📌 Pinned{initial.pin_at?` · ${new Date(initial.pin_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}`:''} — held here; scheduling changes won't move it.</div>
+                  <div style={{color:'var(--accent)'}}><Icon name="pin" size={12} /> Pinned{initial.pin_at?` · ${new Date(initial.pin_at).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})}`:''} — held here; scheduling changes won't move it.</div>
                   <button type="button" onClick={()=>setUnpinned(true)} style={{background:'var(--bg-base)',border:'1px solid var(--accent-dim)',color:'var(--accent)',borderRadius:'6px',padding:'3px 10px',fontSize:'11px',cursor:'pointer',whiteSpace:'nowrap'}}>Unpin</button>
                 </div>
               )}
@@ -1778,7 +1793,7 @@ class ViewErrorBoundary extends React.Component {
         <div style={{padding:'40px 20px',maxWidth:'560px',margin:'40px auto'}}>
           <div className="panel">
             <div className="panel-body" style={{textAlign:'center',padding:'32px 20px'}}>
-              <div style={{fontSize:'40px',marginBottom:'12px'}}>⚠️</div>
+              <div style={{fontSize:'40px',marginBottom:'12px'}}><Icon name="alert" size={34} /></div>
               <h3 style={{margin:'0 0 8px',color:'var(--text-1)'}}>This view ran into an error</h3>
               <p style={{margin:'0 0 16px',color:'var(--text-2)',fontSize:'13px',lineHeight:1.5}}>
                 Use the sidebar to switch to another view — that's not affected.
@@ -1794,7 +1809,7 @@ class ViewErrorBoundary extends React.Component {
               </details>
               <div style={{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}}>
                 <button className="btn btn-ghost btn-sm" onClick={this.copyDetails}>
-                  📋 Copy error details
+                  <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="clipboard" size={13} /> Copy error details</span>
                 </button>
                 <button className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>
                   ↻ Reload page
@@ -3153,12 +3168,12 @@ function DatePickerModal({ initial, onCancel, onPick }) {
 // Pass 4 Batch D: email triage display metadata.
 // One source of truth for icons, colors, and labels used by InboxView.
 const TRIAGE_CATEGORIES = {
-  urgent:            { icon: '🚨', label: 'Urgent',            color: '#ef4444' },
-  requires_response: { icon: '✉️', label: 'Needs reply',       color: '#f59e0b' },
-  fyi:               { icon: 'ℹ️', label: 'FYI',               color: '#6c63ff' },
-  can_wait:          { icon: '⏳', label: 'Can wait',           color: '#9499b0' },
-  promotional:       { icon: '📢', label: 'Promotional',       color: '#9499b0' },
-  spam:              { icon: '🗑️', label: 'Spam',              color: '#555e7a' },
+  urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },
+  requires_response: { icon: <Icon name="mail" size={13} />, label: 'Needs reply',       color: '#f59e0b' },
+  fyi:               { icon: <Icon name="info" size={13} />, label: 'FYI',               color: '#6c63ff' },
+  can_wait:          { icon: <Icon name="clock" size={13} />, label: 'Can wait',           color: '#9499b0' },
+  promotional:       { icon: <Icon name="megaphone" size={13} />, label: 'Promotional',       color: '#9499b0' },
+  spam:              { icon: <Icon name="trash" size={13} />, label: 'Spam',              color: '#555e7a' },
 };
 const TRIAGE_ACTIONS = {
   reply_now:        { label: 'Reply now' },
@@ -3292,7 +3307,7 @@ function SwipeableEmailRow({ onArchive, onDelete, onClick, enabled = true, child
         padding:'0 22px', gap:'8px',
         opacity:0, pointerEvents:'none',
       }}>
-        <span style={{fontSize:'22px'}}>🗑️</span>
+        <span style={{fontSize:'22px'}}><Icon name="trash" size={20} /></span>
         <span style={{fontSize:'12px', color:'#fff', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em'}}>Delete</span>
       </div>
       {/* Archive background (revealed when swiping left) */}
@@ -3304,7 +3319,7 @@ function SwipeableEmailRow({ onArchive, onDelete, onClick, enabled = true, child
         opacity:0, pointerEvents:'none',
       }}>
         <span style={{fontSize:'12px', color:'#fff', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em'}}>Archive</span>
-        <span style={{fontSize:'22px'}}>📥</span>
+        <span style={{fontSize:'22px'}}><Icon name="archive" size={20} /></span>
       </div>
       {/* Foreground — the actual row, slides during drag */}
       <div ref={fgRef} style={{position:'relative', background:'var(--bg-base)', willChange:'transform'}}
@@ -3945,7 +3960,7 @@ function MessageAttachments({ message, account }) {
   return (
     <div style={{ padding: '0 16px 14px' }}>
       <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
-        📎 {atts.length} attachment{atts.length !== 1 ? 's' : ''}
+        <Icon name="paperclip" size={12} /> {atts.length} attachment{atts.length !== 1 ? 's' : ''}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {atts.map(att => (
@@ -6045,11 +6060,11 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
 // "log + schedule follow-up" which spawns a linked task.
 // ─────────────────────────────────────────────────────────────────────────
 const ACTIVITY_KINDS = {
-  note:    { label: 'Note',    icon: '📝', color: '#9499b0', directional: false, duration: false, channel: null,        placeholder: 'Write a note — what happened, what matters, next step…' },
-  call:    { label: 'Call',    icon: '📞', color: '#C5A95E', directional: true,  duration: true,  channel: 'phone',     placeholder: 'What did you discuss? Decisions, commitments, follow-ups…' },
-  meeting: { label: 'Meeting', icon: '🤝', color: '#22c55e', directional: true,  duration: true,  channel: 'in_person', placeholder: 'Meeting recap — who, what was decided, next steps…' },
-  text:    { label: 'Text',    icon: '💬', color: '#38bdf8', directional: true,  duration: false, channel: 'text',      placeholder: 'Summary of the text exchange…' },
-  email:   { label: 'Email',   icon: '✉️', color: '#a78bfa', directional: true,  duration: false, channel: 'email',     placeholder: 'Summary of the email…' },
+  note:    { label: 'Note',    icon: <Icon name="edit" size={13} />, color: '#9499b0', directional: false, duration: false, channel: null,        placeholder: 'Write a note — what happened, what matters, next step…' },
+  call:    { label: 'Call',    icon: <Icon name="quo" size={13} />, color: '#C5A95E', directional: true,  duration: true,  channel: 'phone',     placeholder: 'What did you discuss? Decisions, commitments, follow-ups…' },
+  meeting: { label: 'Meeting', icon: <Icon name="users" size={13} />, color: '#22c55e', directional: true,  duration: true,  channel: 'in_person', placeholder: 'Meeting recap — who, what was decided, next steps…' },
+  text:    { label: 'Text',    icon: <Icon name="message" size={13} />, color: '#38bdf8', directional: true,  duration: false, channel: 'text',      placeholder: 'Summary of the text exchange…' },
+  email:   { label: 'Email',   icon: <Icon name="mail" size={13} />, color: '#a78bfa', directional: true,  duration: false, channel: 'email',     placeholder: 'Summary of the email…' },
 };
 const ACTIVITY_ORDER = ['note', 'call', 'meeting', 'text', 'email'];
 
@@ -6145,7 +6160,7 @@ function TemplatesModal({ userId, templates, setTemplates, onClose, onPick }) {
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1300 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '94%', maxHeight: '92vh', overflowY: 'auto' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>📋 Message templates</h3>
+          <h3 style={{ margin: 0 }} style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="clipboard" size={15} /> Message templates</h3>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px' }}>
@@ -6189,8 +6204,8 @@ function TemplatesModal({ userId, templates, setTemplates, onClose, onPick }) {
                         <div style={{ fontSize: '11px', color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject ? t.subject + ' — ' : ''}{t.body}</div>
                       </div>
                       {onPick && <button className="btn btn-ghost btn-sm" onClick={() => onPick(t)} title="Use this template" style={{ fontSize: '11px' }}>Use</button>}
-                      <button onClick={() => startEdit(t)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '12px' }}>✎</button>
-                      <button onClick={() => remove(t)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '12px' }}>🗑</button>
+                      <button onClick={() => startEdit(t)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '12px' }}><Icon name="edit" size={13} /></button>
+                      <button onClick={() => remove(t)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '12px' }}><Icon name="trash" size={13} /></button>
                     </div>
                   ))}
                 </div>
@@ -6334,7 +6349,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1200 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px', width: '94%' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>✉️ Draft follow-up</h3>
+          <h3 style={{ margin: 0 }} style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="mail" size={15} /> Draft follow-up</h3>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px' }}>
@@ -6361,11 +6376,11 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
           {channel === 'text' && recipient?.phone && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '-6px', marginBottom: '10px' }}>{recipient.phone}</div>}
 
           {drafting ? (
-            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>✨ Ari is drafting…</div>
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}><Icon name="sparkles" size={22} /> Ari is drafting…</div>
           ) : (
             <>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>📋 Template:</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-3)' }}><Icon name="clipboard" size={11} style={{verticalAlign:'-2px'}} /> Template:</span>
                 <select value="" onChange={e => { const t = pickableTemplates.find(x => x.id === e.target.value); if (t) applyTemplate(t); }}
                   className="form-select" style={{ flex: '1 1 160px', margin: 0, fontSize: '12px', padding: '6px' }}>
                   <option value="">{pickableTemplates.length ? 'Start from a template…' : 'No templates for this channel'}</option>
@@ -6387,7 +6402,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
               ) : (
                 <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => draft()} style={{ fontSize: '11px' }}>↻ Regenerate</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setShowInstruction(true)} style={{ fontSize: '11px' }}>✎ Guide the draft</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowInstruction(true)} style={{ fontSize: '11px' }}><Icon name="edit" size={13} /> Guide the draft</button>
                 </div>
               )}
             </>
@@ -6397,11 +6412,11 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           {channel === 'email' ? (
             <button type="button" className="btn btn-primary" onClick={sendEmail} disabled={sending || drafting || !bodyText.trim()}>
-              {sending ? 'Sending…' : '✉️ Send email'}
+              {sending ? 'Sending…' : <><Icon name="mail" size={13} /> Send email</>}
             </button>
           ) : (
             <button type="button" className="btn btn-primary" onClick={sendText} disabled={drafting || !bodyText.trim()}>
-              💬 Open in Messages
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="message" size={13} /> Open in Messages</span>
             </button>
           )}
         </div>
@@ -6805,7 +6820,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             <span style={{ fontSize: '11px', fontWeight: 700, color: kk.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{kk.label}</span>
             {e._email && (
               <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0 5px' }} title="Synced from Gmail">
-                📧 Gmail{e.is_read === false ? ' · unread' : ''}
+                <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="mail" size={11} /> Gmail{e.is_read === false ? ' · unread' : ''}</span>
               </span>
             )}
             {!(e.entity_type === entityType && e.entity_id === entityId) && (
@@ -6821,10 +6836,10 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: '10px', color: 'var(--text-3)' }} title={new Date(e.occurred_at).toLocaleString()}>{timeOf(e.occurred_at)} · {relTime(e.occurred_at)}</span>
             <div className="activity-actions" style={{ display: 'flex', gap: '2px' }}>
-              <button onClick={() => setFollowupFor(e)} title="Draft a follow-up email or text" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✉️</button>
-              {!e._email && <button onClick={() => togglePin(e)} title={e.pinned ? 'Unpin' : 'Pin to top'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px', opacity: e.pinned ? 1 : 0.5 }}>📌</button>}
-              {!e._email && <button onClick={() => startEdit(e)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>✎</button>}
-              {!e._email && <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}>🗑</button>}
+              <button onClick={() => setFollowupFor(e)} title="Draft a follow-up email or text" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}><Icon name="mail" size={14} /></button>
+              {!e._email && <button onClick={() => togglePin(e)} title={e.pinned ? 'Unpin' : 'Pin to top'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px', opacity: e.pinned ? 1 : 0.5 }}><Icon name="pin" size={14} /></button>}
+              {!e._email && <button onClick={() => startEdit(e)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}><Icon name="edit" size={14} /></button>}
+              {!e._email && <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}><Icon name="trash" size={14} /></button>}
             </div>
           </div>
           {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.body || e.brief}</div>}
@@ -6833,7 +6848,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
               {(e.mentions || []).map(id => {
                 const nm = contactName(id);
                 if (!nm) return null;
-                return <span key={'m' + id} style={{ fontSize: '10px', color: 'var(--accent)', background: 'var(--accent-dim, rgba(197,169,94,0.12))', border: '1px solid var(--accent)', borderRadius: '999px', padding: '1px 7px' }}>👤 {nm}</span>;
+                return <span key={'m' + id} style={{ fontSize: '10px', color: 'var(--accent)', background: 'var(--accent-dim, rgba(197,169,94,0.12))', border: '1px solid var(--accent)', borderRadius: '999px', padding: '1px 7px' }}><Icon name="contacts" size={11} /> {nm}</span>;
               })}
               {(e.tags || []).map(tg => (
                 <button key={'t' + tg} onClick={() => setTagFilter(tagFilter === tg ? null : tg)}
@@ -6844,7 +6859,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
           {(edited || e.follow_up_at) && (
             <div style={{ marginTop: '5px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {edited && <span style={{ fontSize: '10px', color: 'var(--text-3)', fontStyle: 'italic' }}>edited {relTime(e.updated_at)}</span>}
-              {e.follow_up_at && <span style={{ fontSize: '10px', color: 'var(--accent)' }}>⏰ follow-up {new Date(e.follow_up_at).toLocaleDateString()}</span>}
+              {e.follow_up_at && <span style={{ fontSize: '10px', color: 'var(--accent)' }}><Icon name="clock" size={10} /> follow-up {new Date(e.follow_up_at).toLocaleDateString()}</span>}
             </div>
           )}
         </div>
@@ -6858,7 +6873,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
       {sortedReminders.length > 0 && (
         <div style={{ marginBottom: '12px', padding: '10px 12px', background: overdueCount > 0 ? 'rgba(239,68,68,0.07)' : 'var(--bg-card)', border: `1px solid ${overdueCount > 0 ? 'var(--red)' : 'var(--border)'}`, borderRadius: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-1)' }}>⏰ Open follow-ups</span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-1)' }}><Icon name="clock" size={12} /> Open follow-ups</span>
             {overdueCount > 0 && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--bg-base)', background: 'var(--red)', borderRadius: '999px', padding: '1px 7px' }}>{overdueCount} overdue</span>}
             {todayCount > 0 && <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--bg-base)', background: 'var(--yellow)', borderRadius: '999px', padding: '1px 7px' }}>{todayCount} today</span>}
             <span style={{ flex: 1 }} />
@@ -6902,7 +6917,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
                 background: recording ? 'rgba(239,68,68,0.12)' : 'transparent',
                 color: recording ? 'var(--red)' : 'var(--text-2)' }}>
               <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: recording ? 'var(--red)' : 'var(--text-3)', animation: recording ? 'pulse 1s infinite' : 'none' }} />
-              {recording ? 'Recording… tap to stop' : '🎤 Dictate'}
+              {recording ? 'Recording… tap to stop' : <><Icon name="mic" size={13} /> Dictate</>}
             </button>
           )}
           {body.trim() && (
@@ -6910,7 +6925,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
               title="Tighten this into a clean note with Ari"
               style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, cursor: cleaning ? 'default' : 'pointer',
                 border: '1px solid var(--accent)', background: 'rgba(197,169,94,0.10)', color: 'var(--accent)', opacity: cleaning ? 0.6 : 1 }}>
-              {cleaning ? '✨ Cleaning…' : '✨ Clean up with Ari'}
+              {cleaning ? <><Icon name="sparkles" size={12} /> Cleaning…</> : <><Icon name="sparkles" size={12} /> Clean up with Ari</>}
             </button>
           )}
         </div>
@@ -6973,10 +6988,10 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           {!followUpOn ? (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setFollowUpOn(true); const d = new Date(); d.setDate(d.getDate() + 3); setFollowUpWhen(d.toISOString().slice(0, 10)); }} style={{ fontSize: '11px' }}>⏰ + Schedule follow-up</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setFollowUpOn(true); const d = new Date(); d.setDate(d.getDate() + 3); setFollowUpWhen(d.toISOString().slice(0, 10)); }} style={{ fontSize: '11px' }}><Icon name="clock" size={13} /> + Schedule follow-up</button>
           ) : (
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flex: '1 1 220px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--accent)' }}>⏰ Follow-up task</span>
+              <span style={{ fontSize: '11px', color: 'var(--accent)' }}><Icon name="clock" size={11} /> Follow-up task</span>
               <input type="date" className="form-input" value={followUpWhen} onChange={e => setFollowUpWhen(e.target.value)} style={{ flex: 1, padding: '5px', fontSize: '12px', margin: 0 }} />
               <button onClick={() => { setFollowUpOn(false); setFollowUpWhen(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px' }}>✕</button>
             </div>
@@ -7023,7 +7038,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
         <>
           {pinned.length > 0 && (
             <div style={{ marginBottom: '10px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '6px' }}>📌 Pinned</div>
+              <div style={{ fontSize: '10px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '6px' }}><Icon name="pin" size={10} /> Pinned</div>
               {pinned.map(e => <EntryCard key={e.id} e={e} />)}
             </div>
           )}
@@ -7089,13 +7104,13 @@ function RelationshipIntel({ profile }) {
   const sources = profile.research_sources || [];
   const idc = profile.research_identity_confidence;
   const idcColor = idc === 'high' ? 'var(--green)' : idc === 'low' ? 'var(--red)' : 'var(--yellow)';
-  const overlapIcon = { school: '🎓', geography: '📍', industry: '🏢', interest: '💡', cause: '❤️', mutual_connection: '🤝' };
+  const overlapIcon = { school: <Icon name="school" size={12} />, geography: <Icon name="pin" size={12} />, industry: <Icon name="building" size={12} />, interest: <Icon name="bulb" size={12} />, cause: <Icon name="heart" size={12} />, mutual_connection: <Icon name="users" size={12} /> };
 
   return (
     <div style={{ marginBottom: '14px', border: '1px solid var(--accent-dim)', borderRadius: '12px', overflow: 'hidden', background: 'linear-gradient(180deg, var(--accent-glow), transparent 120px)' }}>
       <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px' }}>🧠 Relationship Intelligence</div>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px' }}><Icon name="brain" size={14} style={{verticalAlign:'-2px'}} /> Relationship Intelligence</div>
           {idc && <span style={{ fontSize: '10px', fontWeight: 700, color: idcColor, border: `1px solid ${idcColor}`, borderRadius: '999px', padding: '2px 8px' }}>identity: {idc}</span>}
         </div>
         {profile.research_headline && <div style={{ fontSize: '14px', color: 'var(--text-1)', marginTop: '8px', lineHeight: 1.4, fontWeight: 500 }}>{profile.research_headline}</div>}
@@ -7104,7 +7119,7 @@ function RelationshipIntel({ profile }) {
 
       <div style={{ padding: '4px 16px 16px' }}>
         {overlaps.length > 0 && (
-          <RISection label="🔗 You two have in common">
+          <RISection label={<><Icon name="link" size={11} /> You two have in common</>}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
               {overlaps.map((o, i) => <div key={i} style={{ fontSize: '12.5px', color: 'var(--text-1)' }}>{overlapIcon[o.type] || '•'} {o.detail}</div>)}
             </div>
@@ -7112,7 +7127,7 @@ function RelationshipIntel({ profile }) {
         )}
 
         {plan.conversation_starters?.length > 0 && (
-          <RISection label="💬 Conversation starters">
+          <RISection label={<><Icon name="message" size={11} /> Conversation starters</>}>
             <RIList items={plan.conversation_starters} num />
           </RISection>
         )}
@@ -7133,7 +7148,7 @@ function RelationshipIntel({ profile }) {
         )}
 
         {plan.add_value?.length > 0 && (
-          <RISection label="🎁 How I can add value">
+          <RISection label={<><Icon name="gift" size={11} /> How I can add value</>}>
             <RIList items={plan.add_value} />
           </RISection>
         )}
@@ -7145,7 +7160,7 @@ function RelationshipIntel({ profile }) {
         )}
 
         {(per.hobbies?.length > 0 || per.family_context || per.geo_cultural_ties?.length > 0 || per.recurring_themes?.length > 0 || per.recent_excitement?.length > 0) && (
-          <RISection label="🌱 Personal context">
+          <RISection label={<><Icon name="heart" size={11} /> Personal context</>}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {per.hobbies?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Hobbies & passions: </span><RIChips items={per.hobbies} /></div>}
               {per.family_context && <div style={{ fontSize: '12.5px', color: 'var(--text-1)' }}><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Family (public): </span>{per.family_context}</div>}
@@ -7158,7 +7173,7 @@ function RelationshipIntel({ profile }) {
         )}
 
         {(p.background_education || p.career || p.expertise?.length > 0 || p.community_media?.length > 0 || p.interests_values?.length > 0) && (
-          <RISection label="📋 Professional profile">
+          <RISection label={<><Icon name="clipboard" size={11} /> Professional profile</>}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {p.background_education && <div style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}><b style={{ color: 'var(--text-2)' }}>Background: </b>{p.background_education}</div>}
               {p.career && <div style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}><b style={{ color: 'var(--text-2)' }}>Career: </b>{p.career}</div>}
@@ -7170,7 +7185,7 @@ function RelationshipIntel({ profile }) {
         )}
 
         {sources.length > 0 && (
-          <RISection label="🔎 Sources" hint={`${sources.length} cited`}>
+          <RISection label={<><Icon name="search" size={11} /> Sources</>} hint={`${sources.length} cited`}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {sources.map((s, i) => s.url
                 ? <a key={i} href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: 'var(--accent)', border: '1px solid var(--accent-dim)', borderRadius: '999px', padding: '3px 9px', textDecoration: 'none' }}>{s.label || 'source'}{s.date ? ` · ${s.date}` : ''} ↗</a>
@@ -7811,7 +7826,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 }}
                 onMouseEnter={e=>{e.currentTarget.style.background='var(--bg-hover)';e.currentTarget.style.color='var(--text-1)';}}
                 onMouseLeave={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='var(--text-2)';}}>
-                ✏️
+                <Icon name="edit" size={16} />
               </button>
             )}
             <button className="modal-close" onClick={onClose}>×</button>
@@ -8006,7 +8021,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                   }
                   return hint && (
                     <div style={{fontSize:'10px',color:'var(--accent)',marginTop:'6px',padding:'6px 10px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'4px',lineHeight:1.5}}>
-                      💡 {hint}
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="bulb" size={12} /> {hint}</span>
                     </div>
                   );
                 })()}
@@ -8032,7 +8047,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 )}
                 <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
                   <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchReport(true)} style={{fontSize:'11px'}}>
-                    📄 View full report
+                    <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="file" size={13} /> View full report</span>
                   </button>
                   {!hasBaseline && (
                     <button className="btn btn-ghost btn-sm" onClick={useResearchAsBaseline} disabled={savingBase} style={{fontSize:'11px'}}>
@@ -8304,7 +8319,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         {linkedBrain.length > 0 && (
           <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-              🧠 Brain ({linkedBrain.length})
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="brain" size={14} /> Brain ({linkedBrain.length})</span>
             </div>
             {linkedBrain.slice(0, 10).map(b => (
               <div key={b.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
@@ -8322,7 +8337,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         {linkedInvestments.length > 0 && (
           <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-              💼 Investments ({linkedInvestments.length})
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="briefcase" size={14} /> Investments ({linkedInvestments.length})</span>
             </div>
             {linkedInvestments.map(inv => (
               <div key={inv.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
@@ -8344,7 +8359,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         {linkedProperties.length > 0 && (
           <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'8px'}}>
-              🏠 Properties ({linkedProperties.length})
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="properties" size={14} /> Properties ({linkedProperties.length})</span>
             </div>
             {linkedProperties.map(p => (
               <div key={p.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',fontSize:'12px'}}>
@@ -8383,7 +8398,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
             <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)'}}>
-              🔗 Relationships ({relationships.length})
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="link" size={14} /> Relationships ({relationships.length})</span>
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowAddRel(v => !v)} style={{fontSize:'11px'}}>
               {showAddRel ? '× Cancel' : '+ Add'}
@@ -8463,7 +8478,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         <div className="modal-overlay" onClick={(e) => { if (researchStage !== 'identifying' && researchStage !== 'researching') { setShowResearchModal(false); setResearchStage('idle'); }}} style={{zIndex: 1100}}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:'600px',width:'92%'}}>
             <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <h3 style={{margin:0}}>🔍 Research {contact.name}</h3>
+              <h3 style={{margin:0}} style={{margin:0,display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="search" size={15} /> Research {contact.name}</h3>
               <button className="btn btn-ghost btn-sm" disabled={researchStage === 'identifying' || researchStage === 'researching'}
                 onClick={() => { setShowResearchModal(false); setResearchStage('idle'); }}>✕</button>
             </div>
@@ -8557,7 +8572,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontWeight:600,fontSize:'13px'}}>{c.name}</div>
                           {c.headline && <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'2px'}}>{c.headline}</div>}
-                          {c.location && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>📍 {c.location}</div>}
+                          {c.location && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}><Icon name="pin" size={11} /> {c.location}</div>}
                           {c.distinguishing_note && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>{c.distinguishing_note}</div>}
                           {c.source_url && <a href={c.source_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'10px',color:'var(--accent)',marginTop:'4px',display:'inline-block',wordBreak:'break-all'}}>{c.source_url}</a>}
                         </div>
@@ -9841,13 +9856,13 @@ function MultiValueField({ values, onChange, kind, addLabel }) {
               {(v.value || '').trim() && (() => {
                 const actBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0, width:'38px', height:'34px', cursor:'pointer', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', borderRadius:'6px', color:'var(--accent)', fontSize:'14px', lineHeight:1, textDecoration:'none' };
                 if (kind === 'email') {
-                  return <a href={`mailto:${v.value.trim()}`} title="Send email" style={actBtn}>✉️</a>;
+                  return <a href={`mailto:${v.value.trim()}`} title="Send email" style={actBtn}><Icon name="mail" size={14} /></a>;
                 }
                 const tel = (v.value || '').replace(/[^\d+]/g, '');
                 return (
                   <>
-                    <a href={`tel:${tel}`} title="Call" style={actBtn}>📞</a>
-                    <a href={`sms:${tel}`} title="Text" style={actBtn}>💬</a>
+                    <a href={`tel:${tel}`} title="Call" style={actBtn}><Icon name="quo" size={14} /></a>
+                    <a href={`sms:${tel}`} title="Text" style={actBtn}><Icon name="message" size={14} /></a>
                   </>
                 );
               })()}
@@ -10011,7 +10026,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                 More →
               </button>
             )}
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -10098,7 +10113,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                   style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: showHomeAddr ? '10px' : 0,textAlign:'left'}}>
                   <span style={{display:'flex',flexDirection:'column',gap:'3px',flex:1,minWidth:0}}>
                     <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-                      🏠 Home Address
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="home" size={13} /> Home Address</span>
                       {homeOwnership && <span style={{color:'var(--accent)',marginLeft:'6px'}}>· {homeOwnership === 'own' ? 'Own' : 'Rent'}</span>}
                     </span>
                     {!showHomeAddr && (
@@ -10147,7 +10162,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                   style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: showBizAddr ? '10px' : 0,textAlign:'left'}}>
                   <span style={{display:'flex',flexDirection:'column',gap:'3px',flex:1,minWidth:0}}>
                     <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-                      🏢 Business Address
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="building" size={13} /> Business Address</span>
                     </span>
                     {!showBizAddr && (
                       <span style={{fontSize:'13px',color: bizSummary ? 'var(--text-1)' : 'var(--text-3)',fontStyle: bizSummary ? 'normal' : 'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
@@ -10177,7 +10192,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
             <button type="button" onClick={() => setShow1099(v => !v)}
               style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: show1099 ? '10px' : 0}}>
               <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-                📑 1099 / W-9 {is1099Vendor && <span style={{color:'var(--accent)'}}>· flagged</span>}
+                <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="file" size={13} /> 1099 / W-9</span> {is1099Vendor && <span style={{color:'var(--accent)'}}>· flagged</span>}
                 {w9Collected && <span style={{color:'var(--green)'}}> · W-9 ✓</span>}
               </span>
               <span style={{color:'var(--text-3)',fontSize:'12px'}}>{show1099 ? '▼' : '▶'}</span>
@@ -10481,7 +10496,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 
           {suggestions && suggestions.length > 0 && (
             <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,margin:'12px 0 8px 0'}}>
-              🔗 Possible matches to existing contacts ({suggestions.length})
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="link" size={14} /> Possible matches to existing contacts ({suggestions.length})</span>
             </div>
           )}
 
@@ -10492,7 +10507,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
               <div key={`${s.sender.email}|${s.contact.id}`} style={{padding:'12px',marginBottom:'10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',flexWrap:'wrap',marginBottom:'10px'}}>
                   <div style={{flex:'1 1 280px',minWidth:0}}>
-                    <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px'}}>📧 SENDER</div>
+                    <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px',display:'flex',alignItems:'center',gap:'4px'}}><Icon name="mail" size={11} /> SENDER</div>
                     <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{s.sender.name || '(no name)'}</div>
                     <div style={{fontSize:'12px',color:'var(--text-2)',wordBreak:'break-all'}}>{s.sender.email}</div>
                     <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>
@@ -10501,7 +10516,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
                     </div>
                   </div>
                   <div style={{flex:'1 1 200px',minWidth:0}}>
-                    <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px'}}>👤 CONTACT</div>
+                    <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px',display:'flex',alignItems:'center',gap:'4px'}}><Icon name="contacts" size={11} /> CONTACT</div>
                     <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{s.contact.name}</div>
                     <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>
                       {CONTACT_TYPE_LABELS[s.contact.type] || s.contact.type}
@@ -10516,7 +10531,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     <button className="btn btn-primary btn-sm" disabled={isBusy}
                       onClick={() => linkSenderToContact(s.sender.email, s.sender.name, s.contact.id, s.sender.last_seen)}>
-                      {busy[s.sender.email] === 'linking' ? '↻ Linking…' : '🔗 Link'}
+                      {busy[s.sender.email] === 'linking' ? '↻ Linking…' : <><Icon name="link" size={12} /> Link</>}
                     </button>
                     <button className="btn btn-ghost btn-sm" disabled={isBusy}
                       onClick={() => { setPickerFor(s.sender.email); setPickerQuery(''); }}>
@@ -10529,7 +10544,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
                     <button className="btn btn-ghost btn-sm" disabled={isBusy} style={{color:'var(--red)',marginLeft:'auto'}}
                       onClick={() => dismissSuggestion(s.sender.email, s.contact.id, 'block_sender')}
                       title="Mark this sender as not-a-real-person — won't be suggested for any contact again.">
-                      🚫 Block sender
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="ban" size={12} /> Block sender</span>
                     </button>
                   </div>
                 )}
@@ -10563,7 +10578,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
           {newContactSuggestions && newContactSuggestions.length > 0 && (
             <>
               <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,margin:'18px 0 8px 0'}}>
-                ✨ Potential new contacts ({newContactSuggestions.length})
+                <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="sparkles" size={14} /> Potential new contacts ({newContactSuggestions.length})</span>
               </div>
               <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'10px',lineHeight:1.5}}>
                 People who've emailed you 3+ times but aren't in your contacts yet. Spam and automated senders are filtered out, but review each before adding.
@@ -10576,7 +10591,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
                   <div key={`new-${senderEmail}`} style={{padding:'12px',marginBottom:'10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',flexWrap:'wrap',marginBottom:'10px'}}>
                       <div style={{flex:'1 1 280px',minWidth:0}}>
-                        <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px'}}>📧 SENDER</div>
+                        <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'2px',display:'flex',alignItems:'center',gap:'4px'}}><Icon name="mail" size={11} /> SENDER</div>
                         <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{s.sender.name || '(no name)'}</div>
                         <div style={{fontSize:'12px',color:'var(--text-2)',wordBreak:'break-all'}}>{s.sender.email}</div>
                         {s.confidence_signals && s.confidence_signals.length > 0 && (
@@ -10601,7 +10616,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
                         <button className="btn btn-ghost btn-sm" disabled={isBusy}
                           onClick={() => dismissNewContact(senderEmail, 'block_sender')}
                           style={{color:'var(--red)'}}>
-                          🚫 Block sender
+                          <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="ban" size={12} /> Block sender</span>
                         </button>
                       </div>
                     )}
@@ -14199,7 +14214,7 @@ function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType, cont
         <div className="modal-header">
           <h3>{initial ? 'Edit Brain Entry' : 'New Brain Entry'}</h3>
           <div className="modal-header-actions">
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -14234,7 +14249,7 @@ function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType, cont
             <div className="form-group">
               <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',marginTop:'24px'}}>
                 <input type="checkbox" checked={pinned} onChange={e=>setPinned(e.target.checked)} />
-                📌 Pin to top
+                <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="pin" size={13} /> Pin to top</span>
               </label>
             </div>
           </div>
@@ -14293,12 +14308,12 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
   const [semanticMode, setSemanticMode] = useState(false);
 
   const TABS = [
-    { id: 'north-star', label: 'North Star', icon: '🎯' },
-    { id: 'soul',       label: 'Soul',       icon: '🪞' },
-    { id: 'memory',     label: 'Memory',     icon: '📖' },
-    { id: 'playbook',   label: 'Playbooks',  icon: '📚' },
-    { id: 'decision',   label: 'Decisions',  icon: '⚖️' },
-    { id: 'lesson',     label: 'Lessons',    icon: '💡' },
+    { id: 'north-star', label: 'North Star', icon: <Icon name="target" size={13} /> },
+    { id: 'soul',       label: 'Soul',       icon: <Icon name="sparkles" size={13} /> },
+    { id: 'memory',     label: 'Memory',     icon: <Icon name="notes" size={13} /> },
+    { id: 'playbook',   label: 'Playbooks',  icon: <Icon name="library" size={13} /> },
+    { id: 'decision',   label: 'Decisions',  icon: <Icon name="scale" size={13} /> },
+    { id: 'lesson',     label: 'Lessons',    icon: <Icon name="bulb" size={13} /> },
   ];
 
   // STREAK: consecutive days with at least one brain entry
@@ -14445,7 +14460,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
       {/* SEARCH BAR — works across all types */}
       <div style={{marginBottom:'14px',position:'relative'}}>
         <div style={{position:'relative'}}>
-          <span style={{position:'absolute',left:'14px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'14px',pointerEvents:'none'}}>🔍</span>
+          <span style={{position:'absolute',left:'14px',top:'50%',transform:'translateY(-50%)',color:'var(--text-3)',fontSize:'14px',pointerEvents:'none'}}><Icon name="search" size={14} /></span>
           <input
             className="form-input"
             placeholder={semanticMode ? 'Ask anything (semantic) — "decisions about Alex"' : 'Search across all entries — title, content, tags'}
@@ -14489,7 +14504,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
         <div className="panel-body">
           {displayEntries.length === 0
             ? <div className="empty-state">
-                <div className="empty-icon">{inSearchMode ? '🔍' : currentTab?.icon}</div>
+                <div className="empty-icon">{inSearchMode ? <Icon name="search" size={28} /> : currentTab?.icon}</div>
                 <p>{inSearchMode ? `No matches for "${searchQuery}".` : `Nothing in ${currentTab?.label} yet.`}</p>
               </div>
             : <div className="task-list">
@@ -14512,7 +14527,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
                           boxShadow: strength >= 80 ? '0 0 8px var(--accent-glow)' : 'none'
                         }}/>
                         <div style={{flex:1,fontWeight:600,color:'var(--text-1)',lineHeight:1.35}}>
-                          {entry.pinned && <span title="Pinned" style={{marginRight:'6px',color:'var(--accent)'}}>📌</span>}
+                          {entry.pinned && <span title="Pinned" style={{marginRight:'6px',color:'var(--accent)'}}><Icon name="pin" size={12} /></span>}
                           {inSearchMode && <span className="pill" style={{marginRight:'8px',fontSize:'10px',background:'var(--bg-base)',border:'1px solid var(--border)',color:'var(--text-3)'}}>{typeLabel(entry.type)}</span>}
                           {entry.title}
                         </div>
@@ -14521,14 +14536,14 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
                             <span
                               title={`${derivedTaskCount} task${derivedTaskCount === 1 ? '' : 's'} linked${derivedTaskCompleted > 0 ? ` · ${derivedTaskCompleted} done` : ''}`}
                               style={{fontSize:'10px',color:'var(--text-3)',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',padding:'2px 6px',whiteSpace:'nowrap'}}>
-                              ✅ {derivedTaskCompleted > 0 ? `${derivedTaskCompleted}/${derivedTaskCount}` : derivedTaskCount}
+                              <Icon name="tasks" size={12} /> {derivedTaskCompleted > 0 ? `${derivedTaskCompleted}/${derivedTaskCount}` : derivedTaskCount}
                             </span>
                           )}
                           {derivedEventCount > 0 && (
                             <span
                               title={`${derivedEventCount} event${derivedEventCount === 1 ? '' : 's'} linked`}
                               style={{fontSize:'10px',color:'var(--text-3)',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',padding:'2px 6px',whiteSpace:'nowrap'}}>
-                              📅 {derivedEventCount}
+                              <Icon name="calendar" size={12} /> {derivedEventCount}
                             </span>
                           )}
                           {entry.event_date && <span className="task-due">{entry.event_date}</span>}
@@ -14608,7 +14623,7 @@ function ContactSearchSelect({ contacts = [], value, onChange, placeholder = 'Se
         {value ? (
           <button type="button" onClick={() => { onChange(''); setQuery(''); setOpen(false); }} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '16px' }}>✕</button>
         ) : (
-          <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none', fontSize: '13px' }}>🔍</span>
+          <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none', fontSize: '13px' }}><Icon name="search" size={14} /></span>
         )}
       </div>
       {open && (
@@ -15405,7 +15420,7 @@ function FlexibleHoursModal({ date, userId, onClose, onApplied }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{maxWidth:'440px'}}>
         <div className="modal-header">
-          <h3>⏰ Flexible Hours · {niceDate}</h3>
+          <h3 style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="clock" size={15} /> Flexible Hours · {niceDate}</h3>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div style={{padding:'4px 2px'}}>
@@ -15417,7 +15432,7 @@ function FlexibleHoursModal({ date, userId, onClose, onApplied }) {
 
               <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:'8px',marginBottom:'10px',background:'var(--bg-base)'}}>
                 <input type="checkbox" checked={blockDay} onChange={e=>setBlockDay(e.target.checked)}/>
-                <span>🚫 Block the whole day — schedule no tasks</span>
+                <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="ban" size={13} /> Block the whole day — schedule no tasks</span>
               </label>
 
               {!blockDay && (
@@ -15450,7 +15465,7 @@ function FlexibleHoursModal({ date, userId, onClose, onApplied }) {
                         <input type="time" className="form-input" value={b.start} onChange={e=>setBlock(i,{start:e.target.value})} style={{flex:1}}/>
                         <span style={{color:'var(--text-3)'}}>to</span>
                         <input type="time" className="form-input" value={b.end} onChange={e=>setBlock(i,{end:e.target.value})} style={{flex:1}}/>
-                        <button type="button" onClick={()=>removeBlock(i)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'16px'}}>🗑</button>
+                        <button type="button" onClick={()=>removeBlock(i)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'16px'}}><Icon name="trash" size={14} /></button>
                       </div>
                     ))}
                   </div>
@@ -15674,7 +15689,7 @@ function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hour
           onClick={(e)=>{e.stopPropagation(); onToggleComplete?.();}}>{task?.completed?'☑':'☐'}</span>
         <span className="day-event-title" style={{textDecoration:task?.completed?'line-through':'none'}}>{ev.title}</span>
         {pinned && <span className="task-block-pin" onPointerDown={e=>e.stopPropagation()}
-          onClick={(e)=>{e.stopPropagation(); onTogglePin?.(ev);}} title="Unpin">📌</span>}
+          onClick={(e)=>{e.stopPropagation(); onTogglePin?.(ev);}} title="Unpin"><Icon name="pin" size={12} /></span>}
       </div>
       <div className="day-event-time">
         {dragging ? `→ ${liveLabel(dragTop)}` : `${overdue?'⚠ overdue · ':''}${pad2(new Date(ev.start_at).getHours())}:${pad2(new Date(ev.start_at).getMinutes())}${ev.description && ev.description.includes('part') ? ' · '+ev.description.replace('Auto-scheduled · ','') : ''}`}
@@ -15748,7 +15763,7 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
                   title={ev.title}>
                   <div className="day-event-time">{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>
                   <div className="day-event-title">{ev.title}</div>
-                  {ev.location && <div className="day-event-loc">📍 {ev.location}</div>}
+                  {ev.location && <div className="day-event-loc" style={{display:'flex',alignItems:'center',gap:'4px'}}><Icon name="pin" size={11} /> {ev.location}</div>}
                 </div>
               );
             })}
@@ -15917,7 +15932,7 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
 
       {playbooks.length === 0 ? (
         <div className="panel"><div className="panel-body"><div className="empty-state" style={{padding:'40px 20px',textAlign:'center',maxWidth:'520px',margin:'0 auto'}}>
-          <div className="empty-icon">📚</div>
+          <div className="empty-icon"><Icon name="library" size={28} /></div>
           <p style={{fontSize:'15px',color:'var(--text-1)',marginBottom:'8px'}}>No playbooks yet.</p>
           <p style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'16px',lineHeight:1.5}}>
             Playbooks are step-by-step procedures you can trigger to spawn a batch
@@ -15945,7 +15960,7 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
                   <div>
                     <div style={{display:'flex',alignItems:'flex-start',gap:'8px',justifyContent:'space-between'}}>
                       <h3 style={{margin:0, color:'var(--text-1)', fontSize:'16px', fontWeight:700, lineHeight:1.3}}>{cleanTitle}</h3>
-                      {pb.pinned && <span title="Pinned" style={{color:'var(--accent)',fontSize:'12px'}}>📌</span>}
+                      {pb.pinned && <span title="Pinned" style={{color:'var(--accent)',fontSize:'12px'}}><Icon name="pin" size={12} /></span>}
                     </div>
                     <div style={{display:'flex',gap:'10px',marginTop:'6px',fontSize:'11px',color:'var(--text-3)'}}>
                       <span>{steps.length} {steps.length===1?'step':'steps'}</span>
@@ -16006,8 +16021,8 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
                           {s.detail && <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'4px',paddingLeft:'30px',lineHeight:1.4}}>{s.detail}</div>}
                           {(s.owner || s.timing) && (
                             <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',paddingLeft:'30px',display:'flex',gap:'12px'}}>
-                              {s.owner && <span>👤 {s.owner}</span>}
-                              {s.timing && <span>⏱ {s.timing}</span>}
+                              {s.owner && <span><span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="contacts" size={11} /> {s.owner}</span></span>}
+                              {s.timing && <span><span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="clock" size={11} /> {s.timing}</span></span>}
                             </div>
                           )}
                         </div>
@@ -16053,7 +16068,7 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
                                     <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',marginTop: spawnedTasks.length > 0 ? '6px' : '0',marginBottom:'3px'}}>Events ({spawnedEvents.length})</div>
                                     {spawnedEvents.map(ev => (
                                       <div key={ev.id} style={{fontSize:'11px',color:'var(--text-1)',padding:'2px 0'}}>
-                                        📅 {ev.title} {ev.start_at && <span style={{color:'var(--text-3)',fontSize:'10px'}}>· {new Date(ev.start_at).toLocaleDateString()}</span>}
+                                        <Icon name="calendar" size={11} /> {ev.title} {ev.start_at && <span style={{color:'var(--text-3)',fontSize:'10px'}}>· {new Date(ev.start_at).toLocaleDateString()}</span>}
                                       </div>
                                     ))}
                                   </>
@@ -16336,14 +16351,14 @@ async function sysCheckQuo() {
 }
 
 const SYSTEMS = [
-  { id: 'github',    icon: '🐙', name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
-  { id: 'supabase',  icon: '⚡', name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
-  { id: 'gmail_dara',  icon: '📬', name: 'Gmail (dara@brokerdara.com)', category: 'Integration', description: 'Google email account & sync', check: () => sysCheckGmailAccount('dara@brokerdara.com') },
-  { id: 'gmail_khoyi', icon: '📬', name: 'Gmail (khoyi1234@gmail.com)', category: 'Integration', description: 'Google email + calendar account & sync', check: () => sysCheckGmailAccount('khoyi1234@gmail.com') },
-  { id: 'push',        icon: '📡', name: 'Live Sync (Push)', category: 'Real-time', description: 'Gmail push notifications → instant sync (watch auto-renews daily)', check: sysCheckPush },
-  { id: 'gcal',      icon: '📅', name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
-  { id: 'anthropic', icon: '✦',  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: sysCheckAnthropic },
-  { id: 'quo',       icon: '☎️', name: 'Quo (OpenPhone)', category: 'Integration', description: 'Business calling & texting — SMS via API, call logs, recordings & transcripts', check: sysCheckQuo },
+  { id: 'github',    icon: <Icon name="code" size={18} />, name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
+  { id: 'supabase',  icon: <Icon name="zap" size={18} />, name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
+  { id: 'gmail_dara',  icon: <Icon name="mail" size={18} />, name: 'Gmail (dara@brokerdara.com)', category: 'Integration', description: 'Google email account & sync', check: () => sysCheckGmailAccount('dara@brokerdara.com') },
+  { id: 'gmail_khoyi', icon: <Icon name="mail" size={18} />, name: 'Gmail (khoyi1234@gmail.com)', category: 'Integration', description: 'Google email + calendar account & sync', check: () => sysCheckGmailAccount('khoyi1234@gmail.com') },
+  { id: 'push',        icon: <Icon name="signal" size={18} />, name: 'Live Sync (Push)', category: 'Real-time', description: 'Gmail push notifications → instant sync (watch auto-renews daily)', check: sysCheckPush },
+  { id: 'gcal',      icon: <Icon name="calendar" size={18} />, name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
+  { id: 'anthropic', icon: <Icon name="sparkles" size={18} />,  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: sysCheckAnthropic },
+  { id: 'quo',       icon: <Icon name="quo" size={18} />, name: 'Quo (OpenPhone)', category: 'Integration', description: 'Business calling & texting — SMS via API, call logs, recordings & transcripts', check: sysCheckQuo },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -16491,7 +16506,7 @@ function QuoLiveFeed({ userId, contacts = [], max = 40, compact = false }) {
           return (
             <div key={it.id} style={{ borderBottom: '1px solid var(--border)' }}>
               <div onClick={() => setOpenId(open ? null : it.id)} style={{ display: 'flex', gap: 10, padding: '10px 12px', cursor: 'pointer', alignItems: 'center' }}>
-                <span style={{ fontSize: 15 }}>{missed ? '📵' : out ? '📞' : '📲'}</span>
+                <span style={{ fontSize: 15 }}>{missed ? <Icon name="ban" size={15} /> : <Icon name="quo" size={15} />}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{nameFor(it.who)}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{missed ? 'Missed call' : `Call · ${out ? 'outgoing' : 'incoming'}`}{it.dur ? ` · ${quoFmtDur(it.dur)}` : ''}{it.summary ? ' · summary ready' : ''}</div>
@@ -16514,7 +16529,7 @@ function QuoLiveFeed({ userId, contacts = [], max = 40, compact = false }) {
         }
         return (
           <div key={it.id} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
-            <span style={{ fontSize: 15 }}>{out ? '↗️' : '💬'}</span>
+            <span style={{ fontSize: 15 }}>{out ? <Icon name="forward" size={15} /> : <Icon name="message" size={15} />}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{nameFor(it.who)} <span style={{ fontSize: 10.5, color: 'var(--text-3)', fontWeight: 400 }}>{out ? 'sent' : 'received'}</span></div>
               <div style={{ fontSize: 12.5, color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.body}</div>
@@ -16672,7 +16687,7 @@ function QuoView({ contacts = [], userId }) {
 
   if (loadingNums) return <div className="loading-screen" style={{ height: '50vh' }}><div className="spinner" /></div>;
 
-  const TABS = [{ id: 'feed', label: 'Live feed', icon: '⚡' }, { id: 'messages', label: 'Messages', icon: '💬' }, { id: 'calls', label: 'Calls', icon: '📞' }];
+  const TABS = [{ id: 'feed', label: 'Live feed', icon: <Icon name="zap" size={13} /> }, { id: 'messages', label: 'Messages', icon: <Icon name="message" size={13} /> }, { id: 'calls', label: 'Calls', icon: <Icon name="quo" size={13} /> }];
 
   return (
     <div className="view">
@@ -16725,7 +16740,7 @@ function QuoView({ contacts = [], userId }) {
               : <>
                 <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div><div style={{ fontWeight: 700, fontSize: 15 }}>{selected.name}</div><div style={{ fontSize: 12, color: 'var(--text-3)' }}>{quoFmtPhone(selected.participant)}</div></div>
-                  <button className="btn btn-primary btn-sm" onClick={() => { window.location.href = 'tel:' + selected.participant; }}>📞 Call</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => { window.location.href = 'tel:' + selected.participant; }}><Icon name="quo" size={14} /> Call</button>
                 </div>
                 <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {thread.length === 0 ? <div style={{ color: 'var(--text-3)', fontSize: 13, margin: 'auto' }}>No messages yet. Say hello 👋</div>
@@ -16753,7 +16768,7 @@ function QuoView({ contacts = [], userId }) {
               return (
                 <div key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <div onClick={() => setOpenCall(open ? null : c.id)} style={{ display: 'flex', gap: 10, padding: '11px 14px', cursor: 'pointer', alignItems: 'center' }}>
-                    <span style={{ fontSize: 16 }}>{missed ? '📵' : out ? '📞' : '📲'}</span>
+                    <span style={{ fontSize: 16 }}>{missed ? <Icon name="ban" size={15} /> : <Icon name="quo" size={15} />}</span>
                     <div style={{ flex: 1 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{nameFor(c.participant)}</div><div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{missed ? 'Missed' : `${out ? 'Outgoing' : 'Incoming'}`}{c.duration ? ` · ${quoFmtDur(c.duration)}` : ''}{c.summary ? ' · 📝 summary' : ''}{c.transcript ? ' · 📄 transcript' : ''}</div></div>
                     <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{quoFmtWhen(c.op_created_at)}</span>
                     <span style={{ fontSize: 11, color: 'var(--accent)' }}>{open ? '▲' : '▼'}</span>
@@ -16800,7 +16815,7 @@ function QuoFeedRows({ feed, nameFor, openCall, setOpenCall }) {
           return (
             <div key={it.id} style={{ borderBottom: '1px solid var(--border)' }}>
               <div onClick={() => setOpenCall(open ? null : it.id)} style={{ display: 'flex', gap: 10, padding: '11px 14px', cursor: 'pointer', alignItems: 'center' }}>
-                <span style={{ fontSize: 16 }}>{missed ? '📵' : out ? '📞' : '📲'}</span>
+                <span style={{ fontSize: 16 }}>{missed ? <Icon name="ban" size={15} /> : <Icon name="quo" size={15} />}</span>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{nameFor(it.who)}</div><div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{missed ? 'Missed call' : `Call · ${out ? 'outgoing' : 'incoming'}`}{it.dur ? ` · ${quoFmtDur(it.dur)}` : ''}{it.summary ? ' · 📝' : ''}</div></div>
                 <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{quoFmtWhen(it.at)}</span>
               </div>
@@ -16818,7 +16833,7 @@ function QuoFeedRows({ feed, nameFor, openCall, setOpenCall }) {
         }
         return (
           <div key={it.id} style={{ display: 'flex', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
-            <span style={{ fontSize: 16 }}>{out ? '↗️' : '💬'}</span>
+            <span style={{ fontSize: 16 }}>{out ? <Icon name="forward" size={15} /> : <Icon name="message" size={15} />}</span>
             <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{nameFor(it.who)} <span style={{ fontSize: 10.5, color: 'var(--text-3)', fontWeight: 400 }}>{out ? 'sent' : 'received'}</span></div><div style={{ fontSize: 12.5, color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.body}</div></div>
             <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{quoFmtWhen(it.at)}{it.status === 'failed' ? ' · failed' : ''}</span>
           </div>
@@ -17123,7 +17138,7 @@ function NotesView({ notes, setNotes, userId }) {
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {sorted.length === 0 && (
-            <div className="empty-state"><div className="empty-icon">📝</div><p>No notes yet.<br/>Hit + New to start.</p></div>
+            <div className="empty-state"><div className="empty-icon"><Icon name="notes" size={28} /></div><p>No notes yet.<br/>Hit + New to start.</p></div>
           )}
           {sorted.map(note => (
             <div
@@ -17139,7 +17154,7 @@ function NotesView({ notes, setNotes, userId }) {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {note.pinned && <span style={{ color: 'var(--accent)', marginRight: '4px' }}>📌</span>}
+                    {note.pinned && <span style={{ color: 'var(--accent)', marginRight: '4px' }}><Icon name="pin" size={12} /></span>}
                     {note.title || 'Untitled'}
                   </div>
                   <div style={{ fontSize: '11.5px', color: 'var(--text-3)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -17152,12 +17167,12 @@ function NotesView({ notes, setNotes, userId }) {
                     onClick={e => togglePin(note, e)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: note.pinned ? 1 : 0.3, padding: '1px' }}
                     title={note.pinned ? 'Unpin' : 'Pin'}
-                  >📌</button>
+                  ><Icon name="pin" size={14} /></button>
                   <button
                     onClick={e => deleteNote(note, e)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-3)', padding: '1px' }}
                     title="Delete"
-                  >🗑</button>
+                  ><Icon name="trash" size={14} /></button>
                 </div>
               </div>
             </div>
@@ -17169,7 +17184,7 @@ function NotesView({ notes, setNotes, userId }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', minWidth: 0 }}>
         {!selected ? (
           <div className="empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="empty-icon">📝</div>
+            <div className="empty-icon"><Icon name="notes" size={28} /></div>
             <p>Select a note or create a new one</p>
             <button className="btn-add-circle btn-add-circle-lg" style={{ marginTop: '14px' }} onClick={createNote} title="New Note" aria-label="New Note">+</button>
           </div>
@@ -17187,7 +17202,7 @@ function NotesView({ notes, setNotes, userId }) {
                 onBlur={e => e.target.style.borderColor = 'transparent'}
               />
               <span style={{ fontSize: '11px', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-                {saving ? '💾 Saving…' : '✓ Saved'}
+                {saving ? <><Icon name="save" size={12} /> Saving…</> : '✓ Saved'}
               </span>
             </div>
 
@@ -17657,7 +17672,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
                         {gDone}/{group.items.length} done ·{' '}
                         <button onClick={() => setTimeModalSystem(group)} title="Edit logged time"
                           style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-2)', cursor: 'pointer', fontSize: '10px', fontWeight: 600, textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: '2px' }}>
-                          ⏱ {fmtMins(liveMin)}{hourlyRate > 0 && ` · $${Math.round(timeValue)}`} ✎
+                          <Icon name="clock" size={12} /> {fmtMins(liveMin)}{hourlyRate > 0 && ` · $${Math.round(timeValue)}`} ✎
                         </button>
                       </div>
                     </div>
@@ -17788,9 +17803,9 @@ function TimeLogModal({ system, userId, timeEntries, setTimeEntries, hourlyRate,
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {rows.map(r => (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px', background: 'var(--bg-base)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: '13px', flexShrink: 0 }}>{r.description?.startsWith('⏱') ? '⏱' : '✎'}</span>
+                <span style={{ fontSize: '13px', flexShrink: 0 }}>{r.description?.startsWith('<Icon name="clock" size={12} />') ? '⏱' : '<Icon name="edit" size={11} />'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>{fmtClock(r.occurred_at)} · {r.description?.startsWith('⏱') ? 'Timer' : 'Manual'}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>{fmtClock(r.occurred_at)} · {r.description?.startsWith('<Icon name="clock" size={11} />') ? 'Timer' : 'Manual'}</div>
                 </div>
                 <input type="number" inputMode="numeric" defaultValue={r.minutes}
                   onBlur={e => { const v = Number(e.target.value); if (v !== Number(r.minutes)) updateEntry(r.id, v); }}
@@ -18129,10 +18144,10 @@ function ProspectingView({ userId }) {
 // searchable across every day. Confirmed links also appear on each record's card.
 // ═══════════════════════════════════════════════════════════════════════
 const JLINK_META = {
-  contact:  { icon: '👤', color: '#60a5fa' },
-  property: { icon: '🏠', color: '#34d399' },
-  project:  { icon: '📋', color: '#a78bfa' },
-  deal:     { icon: '🤝', color: '#fbbf24' },
+  contact:  { icon: <Icon name="contacts" size={11} />, color: '#60a5fa' },
+  property: { icon: <Icon name="properties" size={11} />, color: '#34d399' },
+  project:  { icon: <Icon name="folder" size={11} />, color: '#a78bfa' },
+  deal:     { icon: <Icon name="deals" size={11} />, color: '#fbbf24' },
 };
 function fmtJDay(ymd) { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); }
 function fmtJTime(iso) { return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
@@ -18519,7 +18534,7 @@ function JournalView({ userId }) {
                     <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtJTime(entry.occurred_at)}</span>
                     <span style={{ display:'inline-flex' }}><Icon name={entry.kind === 'voice' ? 'mic' : 'edit'} size={12} /></span>
                     <span style={{ flex: 1 }} />
-                    <button onClick={() => deleteEntry(entry)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', opacity: 0.6 }}>🗑</button>
+                    <button onClick={() => deleteEntry(entry)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', opacity: 0.6 }}><Icon name="trash" size={14} /></button>
                   </div>
                   <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
                   {(links.length > 0 || actions.length > 0) && (
@@ -22500,7 +22515,7 @@ function BusinessReport({ transactions, taxCategories, systems, recruitingSystem
           {/* Brokerage Ops & Recruiting */}
           {recruitingTotal > 0 && (
             <CostCenterBlock
-              icon="🪪"
+              icon={<Icon name="recruiting" size={16} />}
               title="Brokerage Operations & Recruiting"
               subtitle="Building the agent base — overhead of running the franchise"
               total={recruitingTotal}
@@ -22515,7 +22530,7 @@ function BusinessReport({ transactions, taxCategories, systems, recruitingSystem
           {/* Agent Lead Generation */}
           {leadGenTotal > 0 && (
             <CostCenterBlock
-              icon="📈"
+              icon={<Icon name="chart" size={16} />}
               title="Agent Lead Generation"
               subtitle="Acquiring leads — direct income production"
               total={leadGenTotal}
@@ -22530,7 +22545,7 @@ function BusinessReport({ transactions, taxCategories, systems, recruitingSystem
           {/* Other — no cost-center tag */}
           {otherTotal > 0 && (
             <CostCenterBlock
-              icon="💼"
+              icon={<Icon name="briefcase" size={16} />}
               title="Other Business Expenses"
               subtitle="No cost-center tag — usually office, utilities, professional fees"
               total={otherTotal}
@@ -22595,7 +22610,7 @@ function BusinessReport({ transactions, taxCategories, systems, recruitingSystem
       </div>
       <div style={{marginTop:'14px',padding:'10px',background:'var(--bg-base)',borderRadius:'6px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.5}}>
         <strong style={{color:'var(--text-2)'}}>For your CPA:</strong> Working summary. Final Schedule C will reflect mileage × IRS rate, each category × its <code style={{fontSize:'10px',padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px'}}>deduction_pct</code> (Meals currently 100% per current IRS rules — adjustable per category), and any depreciation. Phase 4 generates the line-by-line preview.
-        {isCoach && <div style={{marginTop:'6px',color:'var(--accent)'}}>🎯 Coach view: full underlying transactions visible in Ledger.</div>}
+        {isCoach && <div style={{marginTop:'6px',color:'var(--accent)'}}><Icon name="target" size={13} style={{verticalAlign:'-2px'}} /> Coach view: full underlying transactions visible in Ledger.</div>}
       </div>
     </div>
   );
@@ -22920,7 +22935,7 @@ function ScheduleCReport({ userId, taxCategories }) {
         <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
           <button onClick={expandAll} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>Expand all</button>
           <button onClick={collapseAll} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>Collapse</button>
-          <button onClick={() => window.print()} style={{padding:'5px 12px',background:'var(--accent)',border:'none',borderRadius:'6px',color:'var(--bg-base)',cursor:'pointer',fontSize:'11px',fontWeight:700}}>🖨 Print / Save PDF</button>
+          <button onClick={() => window.print()} style={{padding:'5px 12px',background:'var(--accent)',border:'none',borderRadius:'6px',color:'var(--bg-base)',cursor:'pointer',fontSize:'11px',fontWeight:700}}><Icon name="printer" size={14} /> Print / Save PDF</button>
         </div>
       </div>
 
@@ -23078,7 +23093,7 @@ function ScheduleCReport({ userId, taxCategories }) {
                       <div style={{padding:'8px 14px 12px'}}>
                         {rl.mileageCount === 0 ? (
                           <div style={{fontSize:'11.5px',color:'var(--text-3)',fontStyle:'italic'}}>
-                            No mileage entries for {taxYear}. Log trips under <strong>🚗 Mileage</strong> to populate this line.
+                            No mileage entries for {taxYear}. Log trips under <strong><span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="car" size={12} /> Mileage</span></strong> to populate this line.
                           </div>
                         ) : (
                           <div style={{fontSize:'11.5px',color:'var(--text-2)',display:'flex',flexDirection:'column',gap:'3px'}}>
@@ -23541,7 +23556,7 @@ function QuarterlyTaxReport({ userId, taxCategories }) {
         </div>
         <button onClick={() => setShowSettings(true)}
           style={{padding:'6px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11.5px',fontWeight:600}}>
-          ⚙ Tax settings · {filingStatusLabel}
+          <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="settings" size={13} /> Tax settings · {filingStatusLabel}</span>
         </button>
       </div>
 
@@ -24975,12 +24990,12 @@ function CashFlowForecast({ userId, settings }) {
             style={{display:'flex',alignItems:'center',gap:'5px',cursor:'pointer',fontSize:'11px',color:'var(--text-2)',padding:'4px 8px',border:'1px solid var(--border)',borderRadius:'6px',background:useConfidenceWeighting?'rgba(197,169,94,0.08)':'transparent'}}>
             <input type="checkbox" checked={useConfidenceWeighting} onChange={e => setUseConfidenceWeighting(e.target.checked)}
               style={{cursor:'pointer',margin:0}}/>
-            <span style={{fontWeight:700,color:useConfidenceWeighting?'var(--accent)':'var(--text-2)'}}>⚖ Confidence-weighted</span>
+            <span style={{fontWeight:700,color:useConfidenceWeighting?'var(--accent)':'var(--text-2)'}}><Icon name="scale" size={14} /> Confidence-weighted</span>
           </label>
         </div>
         <button onClick={() => setShowSettings(s => !s)}
           style={{padding:'5px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>
-          💰 Cash balance{summary.hasBalance ? `: ${fmt(summary.startBalance)}` : ': not set'}
+          <Icon name="dollar" size={13} /> Cash balance{summary.hasBalance ? `: ${fmt(summary.startBalance)}` : ': not set'}
         </button>
       </div>
 
@@ -25120,7 +25135,7 @@ function CashFlowForecast({ userId, settings }) {
         )}
         {!summary.hasBalance && (
           <div style={{marginTop:'8px',padding:'8px 10px',background:'rgba(245,158,11,0.08)',border:'1px solid #f59e0b',borderRadius:'6px',fontSize:'10.5px',color:'var(--text-2)'}}>
-            💡 Set your current cash balance above to see projected end-of-period balance and "cash runs out" warnings.
+            <Icon name="bulb" size={13} style={{verticalAlign:'-2px'}} /> Set your current cash balance above to see projected end-of-period balance and "cash runs out" warnings.
           </div>
         )}
       </div>
@@ -25377,7 +25392,7 @@ function ROIReport({ transactions, timeEntries, deals = [], systems, settings, p
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
       <div className="panel" style={{padding:'16px',background:'linear-gradient(135deg, rgba(197,169,94,0.08) 0%, rgba(197,169,94,0.02) 100%)',border:'1px solid var(--accent)'}}>
-        <h3 style={{margin:'0 0 4px',fontSize:'15px',color:'var(--text-1)'}}>🎯 Operations · Lead-Gen ROI</h3>
+        <h3 style={{margin:'0 0 4px',fontSize:'15px',color:'var(--text-1)'}}><Icon name="target" size={15} style={{verticalAlign:'-2px'}} /> Operations · Lead-Gen ROI</h3>
         <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 14px'}}>
           What's working, what's not. <strong>Includes the cost of your time</strong> (hours × hourly rate) and now <strong>real deal counts + pipeline</strong> from the Deals module. Used for course correction, never for tax filing.
         </p>
@@ -25420,7 +25435,7 @@ function ROIReport({ transactions, timeEntries, deals = [], systems, settings, p
       {/* Per-system ROI cards */}
       {sortedRows.length === 0 ? (
         <div className="panel"><div className="empty-state" style={{padding:'30px',textAlign:'center'}}>
-          <div className="empty-icon">🎯</div>
+          <div className="empty-icon"><Icon name="target" size={28} /></div>
           <p style={{fontSize:'13px',color:'var(--text-2)'}}>Activate a lead-gen system in the Systems tab to populate this report.</p>
         </div></div>
       ) : sortedRows.map(r => (
@@ -25538,13 +25553,13 @@ function PrismView({ profiles, setProfiles, voiceCards, setVoiceCards, contacts,
         <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
           <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
             <button className={`btn btn-sm ${activeTab==='owner'?'btn-primary':'btn-ghost'}`} onClick={()=>setActiveTab('owner')}>
-              👤 Owner Profile
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="contacts" size={14} /> Owner Profile</span>
             </button>
             <button className={`btn btn-sm ${activeTab==='voice'?'btn-primary':'btn-ghost'}`} onClick={()=>setActiveTab('voice')}>
-              🎙️ Voice Card
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="mic" size={14} /> Voice Card</span>
             </button>
             <button className={`btn btn-sm ${activeTab==='contacts'?'btn-primary':'btn-ghost'}`} onClick={()=>setActiveTab('contacts')}>
-              👥 Contact Profiles <span style={{marginLeft:'6px',opacity:0.7}}>({contactProfiles.length})</span>
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="users" size={14} /> Contact Profiles</span> <span style={{marginLeft:'6px',opacity:0.7}}>({contactProfiles.length})</span>
             </button>
             <button className={`btn btn-sm ${activeTab==='validate'?'btn-primary':'btn-ghost'}`} onClick={()=>setActiveTab('validate')}>
               ✓ Validate
@@ -26116,13 +26131,13 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
         background: p === 'calendar' ? 'rgba(197,169,94,0.15)' : 'rgba(34,197,94,0.12)',
         color: p === 'calendar' ? 'var(--accent)' : 'var(--green)',
         border: `1px solid ${p === 'calendar' ? 'var(--accent-dim)' : '#22c55e'}`,
-      }}>{p === 'calendar' ? '📅 calendar' : '📧 email'}</span>
+      }}>{p === 'calendar' ? <><Icon name="calendar" size={12} /> calendar</> : <><Icon name="mail" size={12} /> email</>}</span>
     ));
   }
 
   return (
     <div className="panel" style={{marginBottom:'18px'}}>
-      <div className="panel-header"><h3>🔗 Connected Google Accounts</h3></div>
+      <div className="panel-header"><h3><span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="link" size={15} /> Connected Google Accounts</span></h3></div>
       <div className="panel-body">
         <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
           Connect Google for email (Gmail) and/or calendar. You can connect different accounts for different purposes — for example, a work account for email and a personal account for calendar.
@@ -26133,7 +26148,7 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
             <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'14px'}}>
               {emailAccounts.map(a => (
                 <div key={a.id} style={{padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-                  <span style={{fontSize:'18px'}}>{(a.purposes||[]).includes('calendar') ? '📅' : '📧'}</span>
+                  <span style={{fontSize:'18px'}}>{(a.purposes||[]).includes('calendar') ? <Icon name="calendar" size={16} /> : <Icon name="mail" size={16} />}</span>
                   <div style={{flex:1,minWidth:'160px'}}>
                     <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px',display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
                       {a.email_address}
@@ -26162,7 +26177,7 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
                           style={{background:'var(--accent)',color:'#1a1205',fontWeight:600}}
                           onClick={()=>startConnect('calendar', a.email_address)}
                           title={`Grant calendar access to ${a.email_address}`}>
-                          {connecting && connectingPurpose === 'calendar' ? 'Opening Google…' : '📅 Add Calendar'}
+                          {connecting && connectingPurpose === 'calendar' ? 'Opening Google…' : <><Icon name="calendar" size={13} /> Add Calendar</>}
                         </button>
                       )}
                       <button className="btn btn-ghost btn-sm" onClick={()=>disconnect(a.id)}>Disconnect</button>
@@ -26274,7 +26289,7 @@ function EmailAliasesPanel({ emailAliases, setEmailAliases, emailAccounts, userI
   return (
     <div className="panel" style={{marginBottom:'18px'}}>
       <div className="panel-header" style={{justifyContent:'space-between'}}>
-        <h3>✉️ Sender Addresses</h3>
+        <h3 style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="mail" size={15} /> Sender Addresses</h3>
         <button className="btn btn-ghost btn-sm" onClick={syncAliases} disabled={syncing || !emailAccount}>
           {syncing ? '↻ Syncing…' : '↻ Sync from Gmail'}
         </button>
@@ -26426,7 +26441,7 @@ function WorkingHoursSection({ userId }) {
 
   return (
     <div className="panel" style={{marginBottom:'18px'}}>
-      <div className="panel-header"><h3>🗓️ Working Hours</h3></div>
+      <div className="panel-header"><h3><span style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="calendar" size={15} /> Working Hours</span></h3></div>
       <div className="panel-body">
         {loading ? <p style={{color:'var(--text-3)'}}>Loading…</p> : (
           <>
@@ -26587,7 +26602,7 @@ function AriPermissionsPanel({ userId }) {
                       <div key={it.key} onClick={() => toggle(it.key)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', cursor: 'pointer' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '13px', color: 'var(--text-1)', fontWeight: 500 }}>{it.label}</div>
-                          <div style={{ fontSize: '10px', color: it.kind === 'write' ? 'var(--yellow)' : 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '1px' }}>{it.kind === 'write' ? '✎ Can change data' : '👁 Read-only'}</div>
+                          <div style={{ fontSize: '10px', color: it.kind === 'write' ? 'var(--yellow)' : 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '1px' }}>{it.kind === 'write' ? <><Icon name="edit" size={11} /> Can change data</> : <><Icon name="eye" size={11} /> Read-only</>}</div>
                         </div>
                         <div style={{ width: '42px', height: '24px', borderRadius: '999px', background: on ? 'var(--accent)' : 'var(--bg-hover)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, position: 'relative', flexShrink: 0, transition: 'background 0.15s' }}>
                           <div style={{ position: 'absolute', top: '2px', left: on ? '20px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: on ? 'var(--bg-base)' : 'var(--text-3)', transition: 'left 0.15s' }} />
@@ -26875,7 +26890,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
                 <div>
-                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>🏠 Properties</div>
+                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="properties" size={14} style={{verticalAlign:'-2px'}} /> Properties</div>
                   <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Real estate tracking module</div>
                 </div>
                 <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
@@ -26899,7 +26914,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               </div>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
                 <div>
-                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>💰 Investments</div>
+                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="dollar" size={14} style={{verticalAlign:'-2px'}} /> Investments</div>
                   <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Investment portfolio module</div>
                 </div>
                 <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
@@ -27609,9 +27624,9 @@ function ActionHubModal({ contactId, userId, onClose }) {
           {d?.score && <span style={{fontSize:'10px',fontWeight:700,color:'var(--accent)',border:'1px solid var(--accent-dim)',borderRadius:'5px',padding:'2px 6px'}}>Propensity {d.score.score} · {d.score.tier}</span>}
         </div>
         <div style={{display:'flex',gap:'8px',marginBottom:'14px'}}>
-          <Act href={'tel:'+telN} disabled={!telN} icon="📞" label="Call"/>
-          <Act href={'sms:'+telN} disabled={!telN} icon="💬" label="Text"/>
-          <Act href={c.email?('mailto:'+c.email):'#'} disabled={!c.email} icon="✉️" label="Email"/>
+          <Act href={'tel:'+telN} disabled={!telN} icon={<Icon name="quo" size={18} />} label="Call"/>
+          <Act href={'sms:'+telN} disabled={!telN} icon={<Icon name="message" size={18} />} label="Text"/>
+          <Act href={c.email?('mailto:'+c.email):'#'} disabled={!c.email} icon={<Icon name="mail" size={18} />} label="Email"/>
           <button onClick={()=>copy(c.phone||'','ph')} disabled={!c.phone} style={{flex:1,textAlign:'center',padding:'10px 6px',borderRadius:'10px',border:'1px solid var(--border)',background:c.phone?'var(--bg-hover)':'var(--bg-base)',color:c.phone?'var(--text-1)':'var(--text-3)',fontSize:'12px',fontWeight:600,cursor:c.phone?'pointer':'default',opacity:c.phone?1:.5}}><div style={{fontSize:'18px',marginBottom:'2px'}}>⧉</div>{copied==='ph'?'Copied':'Copy #'}</button>
         </div>
         {loading ? <div style={{textAlign:'center',padding:'24px 0',color:'var(--text-2)',fontSize:'13px'}}><div className="spinner" style={{margin:'0 auto 10px'}}/>Ari is prepping you…</div>
@@ -27712,7 +27727,7 @@ function OutreachReport({ userId, onBack }) {
         <div style={{fontSize:'10px',color:'var(--text-3)'}}>Ari uses these patterns as silent guidance when drafting tomorrow's messages.</div>
       </div>}
       <div className="panel">
-        <div className="panel-header"><h3>🔥 Most likely to transact</h3><span className="nav-badge">{leads.length}</span></div>
+        <div className="panel-header"><h3><span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="flame" size={16} /> Most likely to transact</span></h3><span className="nav-badge">{leads.length}</span></div>
         {leads.length ? leads.map(l=>(
           <div key={l.contact_id} onClick={()=>setHubId(l.contact_id)} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
             <div style={{width:'38px',height:'38px',borderRadius:'9px',background:'var(--bg-hover)',border:'1px solid '+tierColor(l.tier),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{fontWeight:800,fontSize:'14px',color:tierColor(l.tier)}}>{l.score}</span></div>
@@ -27756,7 +27771,7 @@ function NorthStarStrip({ userId, onOpen }) {
     <div className="panel" style={{cursor:'pointer'}} onClick={onOpen}>
       {target>0 ? (<>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'6px'}}>
-          <span style={{fontSize:'11px',letterSpacing:'.14em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700}}>🎯 North Star · {new Date().getFullYear()} GCI</span>
+          <span style={{fontSize:'11px',letterSpacing:'.14em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700}}><Icon name="target" size={11} style={{verticalAlign:'-2px'}} /> North Star · {new Date().getFullYear()} GCI</span>
           <span style={{fontSize:'12px',color:'var(--text-3)'}}>Goal →</span>
         </div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'6px'}}>
@@ -27765,7 +27780,7 @@ function NorthStarStrip({ userId, onOpen }) {
         </div>
         <div style={{height:'8px',background:'var(--bg-hover)',borderRadius:'4px',overflow:'hidden'}}><div style={{height:'100%',width:pct+'%',background:'var(--accent)'}}/></div>
       </>) : (
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'13px',fontWeight:600}}>🎯 Set your income goal</span><span style={{fontSize:'12px',color:'var(--accent)'}}>Set up →</span></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'13px',fontWeight:600}}><Icon name="target" size={13} style={{verticalAlign:'-2px'}} /> Set your income goal</span><span style={{fontSize:'12px',color:'var(--accent)'}}>Set up →</span></div>
       )}
     </div>
   );
@@ -27855,10 +27870,10 @@ function GoalEngine({ userId, onBack }) {
       <div className="panel">
         <div className="panel-header"><h3>What it takes</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{weeksLeft} weeks left</span></div>
         <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'8px'}}>To reach {money(target)} (counting closed + half your pipeline), working backward:</div>
-        <Funnel icon="🏆" label={'deals to close · '+money(avgComm)+' avg'} total={dealsNeeded} per={perWeek(dealsNeeded)}/>
-        <Funnel icon="🤝" label={'appointments · '+Math.round(closeRate*100)+'% close'} total={apptsNeeded} per={perWeek(apptsNeeded)}/>
-        <Funnel icon="💬" label={'conversations · '+Math.round(meetingRate*100)+'% to appt'} total={convosNeeded} per={perWeek(convosNeeded)}/>
-        <Funnel icon="📣" label={'reach-outs · '+Math.round(replyRate*100)+'% reply'} total={reachNeeded} per={perWeek(reachNeeded)}/>
+        <Funnel icon={<Icon name="deals" size={18} />} label={'deals to close · '+money(avgComm)+' avg'} total={dealsNeeded} per={perWeek(dealsNeeded)}/>
+        <Funnel icon={<Icon name="users" size={18} />} label={'appointments · '+Math.round(closeRate*100)+'% close'} total={apptsNeeded} per={perWeek(apptsNeeded)}/>
+        <Funnel icon={<Icon name="message" size={18} />} label={'conversations · '+Math.round(meetingRate*100)+'% to appt'} total={convosNeeded} per={perWeek(convosNeeded)}/>
+        <Funnel icon={<Icon name="megaphone" size={18} />} label={'reach-outs · '+Math.round(replyRate*100)+'% reply'} total={reachNeeded} per={perWeek(reachNeeded)}/>
         <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Reply &amp; appointment rates are learned from your outreach where you have enough data, otherwise sensible defaults. Edit assumptions up top.</div>
       </div>
       <div className="panel">
@@ -28282,7 +28297,7 @@ function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText,
     <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
       {err && <span style={{fontSize:'10px',color:'var(--red)',marginRight:'auto'}}>{err}</span>}
       {prev!=null && <button type="button" className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={undo}>Undo</button>}
-      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice, adapted to the recipient" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice, adapted to the recipient" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'<Icon name="sparkles" size={13} /> Ari is writing…':'✨ Ari rewrite'}</button>
     </div>
   );
 }
@@ -28426,7 +28441,7 @@ function UpdateBanner() {
   if (!ready) return null;
   return (
     <div style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)', zIndex: 5000, background: 'var(--accent)', color: 'var(--bg-base)', borderRadius: '999px', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', fontSize: '13px', fontWeight: 700, maxWidth: '92vw' }}>
-      <span>✨ New version available</span>
+      <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="sparkles" size={13} /> New version available</span>
       <button onClick={refresh} style={{ background: 'var(--bg-base)', color: 'var(--accent)', border: 'none', borderRadius: '999px', padding: '6px 14px', fontWeight: 800, fontSize: '12px', cursor: 'pointer' }}>Refresh</button>
     </div>
   );
