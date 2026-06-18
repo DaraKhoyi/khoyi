@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v18-20260618-amrworker'
+const VERSION = 'prismos-v19-20260618-amrselfhost'
 const APP_SHELL = [
   '/',
   '/index.html',
