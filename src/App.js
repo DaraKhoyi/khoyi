@@ -3131,13 +3131,13 @@ function DatePickerModal({ initial, onCancel, onPick }) {
       <div className="modal" style={{maxWidth:'320px',width:'92%'}}>
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <h3 style={{margin:0,fontSize:'14px'}}>Pick a date</h3>
-          <button className="btn btn-ghost btn-sm" onClick={onCancel}>✕</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>✕</button>
         </div>
         <div style={{padding:'14px 16px'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
-            <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(-1)}>‹</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => shiftMonth(-1)}>‹</button>
             <span style={{fontSize:'13px',fontWeight:700}}>{monthName}</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(1)}>›</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => shiftMonth(1)}>›</button>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',gap:'2px',fontSize:'10px',color:'var(--text-3)',fontWeight:700,textAlign:'center',marginBottom:'4px'}}>
             <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
@@ -3148,7 +3148,7 @@ function DatePickerModal({ initial, onCancel, onPick }) {
               const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(c).padStart(2, '0')}`;
               const isToday = iso === today;
               return (
-                <button key={i} onClick={() => pick(c)}
+                <button type="button" key={i} onClick={() => pick(c)}
                   style={{
                     padding:'8px 0', fontSize:'12px',
                     background: isToday ? 'var(--accent)' : 'var(--bg-base)',
