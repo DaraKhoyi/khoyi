@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v24-20260617-tasks-icons'
+const VERSION = 'prismos-v25-20260617-calendar-icons'
 const APP_SHELL = [
   '/',
   '/index.html',
