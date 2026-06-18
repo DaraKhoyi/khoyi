@@ -5828,61 +5828,40 @@ function audioNeedsConversion(file) {
   return !WHISPER_OK_EXT.includes(ext); // amr, 3gp, 3gpp, awb, etc.
 }
 let __ffmpegPromise = null;
-// Load a script, trying multiple CDNs so one outage/404 can't break conversion.
-function __loadScriptMulti(urls) {
+function __loadScriptOnce(src) {
   return new Promise((resolve, reject) => {
-    const key = urls[0];
-    if (document.querySelector(`script[data-ff="${key}"]`)) return resolve();
-    let i = 0;
-    const tryNext = () => {
-      if (i >= urls.length) return reject(new Error('Could not load the audio converter (network).'));
-      const url = urls[i++];
-      const s = document.createElement('script');
-      s.src = url; s.async = true; s.setAttribute('data-ff', key);
-      s.onload = () => resolve();
-      s.onerror = () => { s.remove(); tryNext(); };
-      document.head.appendChild(s);
-    };
-    tryNext();
+    if (document.querySelector(`script[data-ff="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.async = true; s.setAttribute('data-ff', src);
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Could not load the audio converter.'));
+    document.head.appendChild(s);
   });
-}
-async function __toBlobURLMulti(urls, mime, toBlobURL) {
-  let lastErr;
-  for (const u of urls) {
-    try { return await toBlobURL(u, mime); } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('Could not fetch the converter core.');
 }
 async function getFfmpeg() {
   if (__ffmpegPromise) return __ffmpegPromise;
   __ffmpegPromise = (async () => {
-    await __loadScriptMulti([
-      'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
-      'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
-    ]);
-    await __loadScriptMulti([
-      'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js',
-      'https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js',
-    ]);
+    const origin = window.location.origin;
+    // Self-hosted, same-origin assets under /ffmpeg/. Loading ffmpeg.js from our
+    // own origin makes the FFmpeg class create a CLASSIC, same-origin worker
+    // automatically. (Passing classWorkerURL forces a *module* worker, which
+    // can't importScripts the UMD core → "failed to import ffmpeg-core.js".)
+    // Same-origin also avoids the cross-origin Worker block. Verified working.
+    await __loadScriptOnce(`${origin}/ffmpeg/ffmpeg.js`);
+    await __loadScriptOnce(`${origin}/ffmpeg/util.js`);
     if (!window.FFmpegWASM || !window.FFmpegUtil) throw new Error('Audio converter unavailable.');
     const { FFmpeg } = window.FFmpegWASM;
-    const { toBlobURL } = window.FFmpegUtil;
-    const cores = (f) => [
-      `https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/${f}`,
-      `https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/${f}`,
-    ];
-    const workerURLs = [
-      'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js',
-      'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js',
-    ];
     const ff = new FFmpeg();
-    await ff.load({
-      // The class worker MUST be a same-origin blob, or the browser blocks
-      // `new Worker()` from the cross-origin CDN script.
-      classWorkerURL: await __toBlobURLMulti(workerURLs, 'text/javascript', toBlobURL),
-      coreURL: await __toBlobURLMulti(cores('ffmpeg-core.js'), 'text/javascript', toBlobURL),
-      wasmURL: await __toBlobURLMulti(cores('ffmpeg-core.wasm'), 'application/wasm', toBlobURL),
-    });
+    ff.on('log', () => {}); // registering a log listener stabilizes the worker handshake
+    try {
+      await ff.load({
+        coreURL: `${origin}/ffmpeg/ffmpeg-core.js`,
+        wasmURL: `${origin}/ffmpeg/ffmpeg-core.wasm`,
+      });
+    } catch (e) {
+      __ffmpegPromise = null;
+      throw new Error('converter failed to initialize' + (e && e.message ? ': ' + e.message : (e ? ': ' + String(e) : '')));
+    }
     return ff;
   })().catch((e) => { __ffmpegPromise = null; throw e; });
   return __ffmpegPromise;
@@ -5893,17 +5872,36 @@ async function transcodeAudioToMp3(file, onProgress) {
   const stamp = Date.now();
   const inName = `in_${stamp}`;
   const outName = `out_${stamp}.mp3`;
-  const handler = ({ progress }) => { if (onProgress) onProgress(Math.max(0, Math.min(99, Math.round((progress || 0) * 100)))); };
-  ff.on('progress', handler);
+  const logs = [];
+  const onLog = (e) => { const m = e && e.message; if (m) { logs.push(m); if (logs.length > 40) logs.shift(); } };
+  const onProg = ({ progress }) => { if (onProgress) onProgress(Math.max(0, Math.min(99, Math.round((progress || 0) * 100)))); };
+  const tail = () => logs.slice(-3).join(' | ').slice(0, 240);
+  ff.on('log', onLog);
+  ff.on('progress', onProg);
   try {
-    await ff.writeFile(inName, await fetchFile(file));
+    let bytes;
+    try { bytes = await fetchFile(file); } catch (e) { throw new Error('could not read the file' + (e && e.message ? ': ' + e.message : '')); }
+    if (!bytes || !bytes.length) throw new Error('the file appears to be empty');
+    await ff.writeFile(inName, bytes);
     // 16 kHz mono, 32 kbps MP3 — ideal for speech/Whisper, keeps long calls small
-    await ff.exec(['-i', inName, '-vn', '-ar', '16000', '-ac', '1', '-b:a', '32k', outName]);
-    const data = await ff.readFile(outName);
+    let code;
+    try {
+      code = await ff.exec(['-i', inName, '-vn', '-ar', '16000', '-ac', '1', '-b:a', '32k', outName]);
+    } catch (e) {
+      throw new Error(`converter crashed${e && e.message ? ' (' + e.message + ')' : ''}${tail() ? ' — ' + tail() : ''}`);
+    }
+    if (typeof code === 'number' && code !== 0) {
+      throw new Error(`converter exited ${code}${tail() ? ' — ' + tail() : ''}`);
+    }
+    let data;
+    try { data = await ff.readFile(outName); }
+    catch (e) { throw new Error(`no output produced${tail() ? ' — ' + tail() : ''}`); }
+    if (!data || !data.length) throw new Error(`produced an empty file${tail() ? ' — ' + tail() : ''}`);
     const baseName = (file.name || 'recording').replace(/\.[^.]+$/, '') || 'recording';
     return new File([data], `${baseName}.mp3`, { type: 'audio/mpeg' });
   } finally {
-    try { ff.off('progress', handler); } catch (_) {}
+    try { ff.off('log', onLog); } catch (_) {}
+    try { ff.off('progress', onProg); } catch (_) {}
     try { await ff.deleteFile(inName); } catch (_) {}
     try { await ff.deleteFile(outName); } catch (_) {}
   }
@@ -5954,7 +5952,8 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
         try {
           fileToUpload = await transcodeAudioToMp3(fileToUpload, (pct) => setUploadProgress(Math.max(5, Math.round(pct * 0.55))));
         } catch (convErr) {
-          throw new Error(`Couldn't convert "${uploadForm.file.name}". Check your connection and retry, or set your call recorder to save as M4A/MP3/WAV. (${convErr.message})`);
+          const detail = (convErr && (convErr.message || (convErr.toString && convErr.toString()))) || (typeof convErr === 'string' ? convErr : '') || 'unknown error';
+          throw new Error(`Couldn't convert "${uploadForm.file.name}". Check your connection and retry, or set your call recorder to save as M4A/MP3/WAV. (${detail})`);
         } finally {
           setConverting(false);
         }
