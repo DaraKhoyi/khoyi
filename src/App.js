@@ -49,6 +49,9 @@ const ICON_PATHS = {
   flame:       (<><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></>),
   clock:       (<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>),
   reply:       (<><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></>),
+  zap:         (<><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></>),
+  volume:      (<><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></>),
+  chart:       (<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -28058,11 +28061,11 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       <div className="panel" style={{background:'linear-gradient(135deg,var(--bg-card),var(--bg-hover))',borderColor:'var(--accent-dim)'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',flexWrap:'wrap'}}>
           <div style={{flex:1,minWidth:'220px'}}>
-            <div style={{fontSize:'11px',letterSpacing:'.18em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700}}>✦ Ari Daily Briefing</div>
+            <div style={{fontSize:'11px',letterSpacing:'.18em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700,display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="sparkles" size={12} /> Ari Daily Briefing</div>
             <h2 style={{margin:'4px 0 2px'}}>{greeting}{firstName?`, ${firstName}`:''}.</h2>
             <div style={{fontSize:'12px',color:'var(--text-3)'}}>{dateStr}</div>
           </div>
-          <div style={{display:'flex',gap:'6px',flexShrink:0,flexWrap:'wrap'}}><button className="btn btn-primary btn-sm" disabled={!pending.length} onClick={startReview}>⚡ Review{pending.length?` ${pending.length}`:''}</button><button className="btn btn-ghost btn-sm" onClick={speakBriefing} title="Listen to your briefing">{speaking?'■ Stop':'🔊 Listen'}</button><button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button></div>
+          <div style={{display:'flex',gap:'6px',flexShrink:0,flexWrap:'wrap'}}><button className="btn btn-primary btn-sm" disabled={!pending.length} onClick={startReview}><Icon name="zap" size={13} /> Review{pending.length?` ${pending.length}`:''}</button><button className="btn btn-ghost btn-sm" onClick={speakBriefing} title="Listen to your briefing">{speaking?<>■ Stop</>:<><Icon name="volume" size={13} /> Listen</>}</button><button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button></div>
         </div>
         {briefing?.summary && <p style={{marginTop:'10px',fontSize:'14px',lineHeight:1.5,color:'var(--text-1)'}}>{briefing.summary}</p>}
       </div>
@@ -28071,7 +28074,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 
       <div className="panel">
-        <div className="panel-header"><h3 style={{cursor:'pointer'}} onClick={()=>setShowScore(v=>!v)}>📊 This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowReport(true)}>Full report →</button></div>
+        <div className="panel-header"><h3 style={{cursor:'pointer'}} onClick={()=>setShowScore(v=>!v)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chart" size={15} /> This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowReport(true)}>Full report →</button></div>
         {showScore && (score && score.sent ? (
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
             {[['Sent',score.sent],['Replies',`${score.replied} (${score.replyRate}%)`],['Meetings',score.meetings],['Deals moved',score.deals]].map(([k,v])=>(
@@ -28088,7 +28091,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       {reviewing && (()=>{ const pend = reachouts.filter(r=>r.status==='pending'); const cur = pend[reviewIdx]; const appdN = Object.values(approved).filter(Boolean).length;
         return (
         <div className="panel" style={{borderColor:'var(--accent-dim)'}}>
-          <div className="panel-header"><h3>⚡ Rapid review</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{Math.min(reviewIdx+1,pend.length)} of {pend.length}</span></div>
+          <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="zap" size={15} /> Rapid review</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{Math.min(reviewIdx+1,pend.length)} of {pend.length}</span></div>
           {cur ? (
             <div>
               <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'4px'}}>
@@ -28125,9 +28128,9 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
             <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'6px'}}>
               <span style={{fontWeight:700,fontSize:'14px'}}>{r.name}</span>
               {r.disc && chip(r.disc+' · '+(r.disc_label||'').split('—')[0].trim(), discColor(r.disc))}
-              <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setHubId(r.contact_id)}>📞 Prep &amp; act</button>
+              <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setHubId(r.contact_id)}><Icon name="quo" size={13} /> Prep &amp; act</button>
             </div>
-            <div style={{fontSize:'11px',color:'var(--accent)',marginBottom:'8px'}}>✦ {r.reason} · last touch {r.last_touch}</div>
+            <div style={{fontSize:'11px',color:'var(--accent)',marginBottom:'8px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="sparkles" size={11} /> {r.reason} · last touch {r.last_touch}</div>
             {(() => {
               const pr = profiles.find(p => p.contact_id === r.contact_id);
               const starter = pr && pr.research_connection_plan && pr.research_connection_plan.conversation_starters && pr.research_connection_plan.conversation_starters[0];
@@ -28135,8 +28138,8 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
               if (!starter && !headline) return null;
               return (
                 <div style={{marginBottom:'8px',padding:'8px 10px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'8px'}}>
-                  <div style={{fontSize:'10px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--accent)',marginBottom:'3px'}}>🧠 Connection cue</div>
-                  {starter ? <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4}}>💬 {starter}</div> : <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4}}>{headline}</div>}
+                  <div style={{fontSize:'10px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--accent)',marginBottom:'3px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="brain" size={11} /> Connection cue</div>
+                  {starter ? <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4,display:'flex',alignItems:'flex-start',gap:'5px'}}><Icon name="message" size={13} style={{flexShrink:0,marginTop:'1px'}} /> <span>{starter}</span></div> : <div style={{fontSize:'12px',color:'var(--text-1)',lineHeight:1.4}}>{headline}</div>}
                 </div>
               );
             })()}
@@ -28144,7 +28147,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
             {r.source && r.source.text && (
               <div style={{marginBottom:'8px',border:'1px solid var(--border)',borderRadius:'8px',background:'var(--bg-base)'}}>
                 <div onClick={()=>setOpenSrc(o=>({...o,[r.contact_id]:!o[r.contact_id]}))} style={{cursor:'pointer',padding:'7px 10px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
-                  <span style={{fontSize:'11px',fontWeight:600,color:'var(--text-2)'}}>↩ {r.source.label}{r.source.subject?`: ${r.source.subject}`:''}</span>
+                  <span style={{fontSize:'11px',fontWeight:600,color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="reply" size={12} /> {r.source.label}{r.source.subject?`: ${r.source.subject}`:''}</span>
                   <span style={{fontSize:'11px',color:'var(--accent)'}}>{openSrc[r.contact_id]?'Hide':'Show'}</span>
                 </div>
                 {openSrc[r.contact_id]
@@ -28166,7 +28169,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
               <span style={{fontSize:'11px',fontWeight:600,color:'var(--text-2)'}}>Your message</span>
               <div style={{display:'flex',gap:'6px'}}>
                 {prevMsg[r.contact_id]!=null && <button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={()=>undoRewrite(r)}>Undo</button>}
-                <button className="btn btn-ghost btn-sm" disabled={rwBusy[r.contact_id]} onClick={()=>doRewrite(r)} title="Rewrite in your voice, adapted to their style" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{rwBusy[r.contact_id]?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
+                <button className="btn btn-ghost btn-sm" disabled={rwBusy[r.contact_id]} onClick={()=>doRewrite(r)} title="Rewrite in your voice, adapted to their style" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{rwBusy[r.contact_id]?<><Icon name="sparkles" size={12} /> Ari is writing…</>:<><Icon name="sparkles" size={12} /> Ari rewrite</>}</button>
               </div>
             </div>
             <textarea className="form-input" rows={4} style={{fontSize:'13px',lineHeight:1.5}} value={(edits[r.contact_id]?.message)??r.message} onChange={e=>setEdit(r.contact_id,'message',e.target.value,r)}/>
@@ -28193,7 +28196,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
         <div className="brief-sec">
           <div className="brief-sec-head">
             <span className="brief-sec-title">Tasks due <span className="brief-pill">{(payload.tasks||[]).length}</span></span>
-            <button className="brief-jump" onClick={()=>setView('tasks')}><span style={{fontSize:'13px'}}>✅</span> Open Tasks <span className="arr">→</span></button>
+            <button className="brief-jump" onClick={()=>setView('tasks')}><Icon name="tasks" size={13} /> Open Tasks <span className="arr">→</span></button>
           </div>
           {(payload.tasks||[]).length ? (payload.tasks||[]).map(t=>{ const dv=dueView(t.due_date); return (
             <div key={t.id} className="brief-row" style={{cursor:'pointer'}} onClick={()=>{ setFocusTaskId && setFocusTaskId(t.id); setView('tasks'); }}>
@@ -28207,7 +28210,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
         <div className="brief-sec">
           <div className="brief-sec-head">
             <span className="brief-sec-title">On the calendar <span className="brief-pill">{(payload.events||[]).length}</span></span>
-            <button className="brief-jump" onClick={()=>setView('calendar')}><span style={{fontSize:'13px'}}>📅</span> Open Calendar <span className="arr">→</span></button>
+            <button className="brief-jump" onClick={()=>setView('calendar')}><Icon name="calendar" size={13} /> Open Calendar <span className="arr">→</span></button>
           </div>
           {(payload.events||[]).length ? (payload.events||[]).map(e=>(
             <div key={e.id} className="brief-row" style={{cursor:'pointer'}} onClick={()=>{ setFocusEventId && setFocusEventId(e.id); setView('calendar'); }}>
