@@ -10134,7 +10134,10 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h3>{initial ? 'Edit Contact' : 'New Contact'}</h3>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <h3>{initial ? 'Edit Contact' : 'New Contact'}</h3>
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
+          </div>
           <div className="modal-header-actions">
             {initial && onShowDetails && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => onShowDetails(initial)}
@@ -10142,7 +10145,6 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                 More →
               </button>
             )}
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -13918,11 +13920,11 @@ function PropertyModal({ onClose, onSave, onDelete, initial }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h3>{initial ? 'Edit Property' : 'New Property'}</h3>
-          <div className="modal-header-actions">
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <h3>{initial ? 'Edit Property' : 'New Property'}</h3>
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
-            <button className="modal-close" onClick={onClose}>×</button>
           </div>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Nickname</label><input className="form-input" value={nickname} onChange={e=>setNickname(e.target.value)} placeholder="Wellington, Villa Adriana…" autoFocus required /></div>
@@ -14124,11 +14126,11 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h3>{initial ? 'Edit Investment' : 'New Investment'}</h3>
-          <div className="modal-header-actions">
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <h3>{initial ? 'Edit Investment' : 'New Investment'}</h3>
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
-            <button className="modal-close" onClick={onClose}>×</button>
           </div>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
@@ -14328,11 +14330,11 @@ function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType, cont
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h3>{initial ? 'Edit Brain Entry' : 'New Brain Entry'}</h3>
-          <div className="modal-header-actions">
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <h3>{initial ? 'Edit Brain Entry' : 'New Brain Entry'}</h3>
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
-            <button className="modal-close" onClick={onClose}>×</button>
           </div>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-row">
@@ -14806,11 +14808,11 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h3>{initial ? 'Edit Event' : 'New Event'}</h3>
-          <div className="modal-header-actions">
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <h3>{initial ? 'Edit Event' : 'New Event'}</h3>
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
-            <button className="modal-close" onClick={onClose}>×</button>
           </div>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What's happening?" autoFocus required /></div>
@@ -27153,11 +27155,11 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
-          <div className="modal-header-actions">
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete"><Icon name="trash" size={16} /></button>}
-            <button className="modal-close" onClick={onClose}>×</button>
           </div>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <form onSubmit={submit}>
           <div className="form-group"><label className="form-label">Task</label>
