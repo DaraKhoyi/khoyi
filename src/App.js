@@ -53,6 +53,9 @@ const ICON_PATHS = {
   volume:      (<><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></>),
   chart:       (<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>),
   library:     (<><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></>),
+  trash:       (<><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>),
+  folder:      (<><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></>),
+  link:        (<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -1336,7 +1339,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
         <div className="modal-header">
           <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
           <div className="modal-header-actions">
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete">🗑</button>}
+            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
@@ -1362,7 +1365,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                     style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}
                     title="Ask Claude to suggest the right quadrant"
                   >
-                    {suggesting ? '…thinking' : '✨ Suggest'}
+                    {suggesting ? '…thinking' : <><Icon name="sparkles" size={11} /> Suggest</>}
                   </button>
                 </label>
                 <select className="form-select" value={quadrant} onChange={e=>setQuadrant(e.target.value)}>
@@ -1386,7 +1389,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                   style={{padding:'2px 8px',fontSize:'10px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}
                   title="Ask Claude to suggest"
                 >
-                  {suggesting ? '…thinking' : '✨ Suggest'}
+                  {suggesting ? '…thinking' : <><Icon name="sparkles" size={11} /> Suggest</>}
                 </button>
               </label>
               <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
@@ -1396,7 +1399,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
           )}
           {suggestion && !suggestion.error && (
             <div style={{padding:'8px 12px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'6px',marginBottom:'10px',fontSize:'12px'}}>
-              <div style={{color:'var(--accent)',fontWeight:600,marginBottom:'2px'}}>✨ Claude suggests <strong>{suggestion.quadrant}</strong> · confidence {Math.round((suggestion.confidence||0)*100)}%</div>
+              <div style={{color:'var(--accent)',fontWeight:600,marginBottom:'2px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="sparkles" size={12} /> Claude suggests <strong>{suggestion.quadrant}</strong> · confidence {Math.round((suggestion.confidence||0)*100)}%</div>
               <div style={{color:'var(--text-2)',lineHeight:1.4}}>{suggestion.reasoning}</div>
             </div>
           )}
@@ -1421,7 +1424,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                 <span style={{color: due_date ? 'var(--text-1)' : 'var(--text-3)'}}>
                   {due_date ? new Date(due_date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric', year:'numeric'}) : 'Select a date…'}
                 </span>
-                <span style={{fontSize:'15px'}}>📅</span>
+                <Icon name="calendar" size={14} style={{color:'var(--text-3)'}} />
               </button>
               {showDatePicker && (
                 <DatePickerModal
@@ -1503,7 +1506,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                   setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n\u2022 ${title||'(task)'}\n${due_date?`\u2022 Due: ${due_date}\n`:''}${(notes||'').trim()?`\nDetails:\n${notes.trim()}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
                 }
               }}/>
-              <span>📧 Assign by email — no app account needed</span>
+              <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> Assign by email — no app account needed</span>
             </label>
             {emailAlreadySent && <div style={{fontSize:'11px',color:'var(--green)',marginTop:'6px'}}>✓ Sent to {initial.assignee_email}. Replies are tracked automatically.</div>}
             {emailMode && !emailAlreadySent && (
@@ -1564,7 +1567,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
             if (linked.length === 0) return null;
             return (
               <div className="form-group" style={{padding:'10px',background:'var(--bg-base)',borderRadius:'6px',border:'1px solid var(--border)'}}>
-                <div style={{fontSize:'12px',fontWeight:600,color:'var(--text-2)',marginBottom:'6px'}}>📅 Linked events ({linked.length})</div>
+                <div style={{fontSize:'12px',fontWeight:600,color:'var(--text-2)',marginBottom:'6px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="calendar" size={12} /> Linked events ({linked.length})</div>
                 {linked.slice(0, 5).map(ev => (
                   <div key={ev.id} style={{padding:'4px 8px',fontSize:'11px',color:'var(--text-2)',display:'flex',justifyContent:'space-between',gap:'8px'}}>
                     <span>{ev.title}</span>
@@ -27020,7 +27023,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
           <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
             <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
               <input type="checkbox" checked={emailMode} onChange={e=>enableEmail(e.target.checked)} disabled={alreadySent}/>
-              <span>📧 Assign by email — no app account needed</span>
+              <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> Assign by email — no app account needed</span>
             </label>
             {alreadySent && <div style={{fontSize:'11px',color:'var(--green)',marginTop:'6px'}}>✓ Sent to {initial.assignee_email}. Their replies are tracked automatically.</div>}
             {emailMode && !alreadySent && (
@@ -27065,7 +27068,7 @@ function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, a
           )}
           {suggestion && !suggestion.error && (
             <div style={{padding:'8px 12px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'6px',marginBottom:'10px',fontSize:'12px'}}>
-              <div style={{color:'var(--accent)',fontWeight:600,marginBottom:'2px'}}>✨ Claude suggests <strong>{suggestion.quadrant}</strong> · confidence {Math.round((suggestion.confidence||0)*100)}%</div>
+              <div style={{color:'var(--accent)',fontWeight:600,marginBottom:'2px',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="sparkles" size={12} /> Claude suggests <strong>{suggestion.quadrant}</strong> · confidence {Math.round((suggestion.confidence||0)*100)}%</div>
               <div style={{color:'var(--text-2)',lineHeight:1.4}}>{suggestion.reasoning}</div>
             </div>
           )}
@@ -27224,7 +27227,7 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
             <div style={{fontSize:'13px',textDecoration:t.status==='done'?'line-through':'none',color:t.status==='done'?'var(--text-3)':(t.status==='rejected'?'var(--red)':'var(--text-1)')}}>{t.title}{t.status==='rejected'?' · rejected':''}</div>
             <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
               {t.assignee_id ? <span>👤 {nameOf(t.assignee_id)}</span> : (t.assignee_email ? <span>📧 {t.assignee_email}</span> : null)}
-              {t.contact_id && <span>🔗 {t.contact_name||'contact'}</span>}
+              {t.contact_id && <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="link" size={11} /> {t.contact_name||'contact'}</span>}
               {t.due_date && <span style={{color: overdue(t)?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue(t)?' · overdue':''}</span>}
               {!!reviews.length && <span style={{color:'var(--accent)'}}>💬 {reviews.length} new repl{reviews.length>1?'ies':'y'}</span>}
             </div>
@@ -27468,7 +27471,7 @@ function ProjectTasksPanel({ userId }) {
   return (
     <div className="panel" style={{marginBottom:'16px'}}>
       <div className="panel-header">
-        <h3>🗂️ From your projects</h3>
+        <h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="folder" size={15} /> From your projects</h3>
         <span className="nav-badge">{visible.length} due</span>
       </div>
       {!loaded ? <div style={{fontSize:'12px',color:'var(--text-3)'}}>Loading…</div> :
@@ -27489,9 +27492,9 @@ function ProjectTasksPanel({ userId }) {
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:'13px',color:'var(--text-1)'}}>{t.title}</div>
                 <div style={{display:'flex',gap:'8px',marginTop:'2px',flexWrap:'wrap',fontSize:'11px',color:'var(--text-3)'}}>
-                  <span>📁 {projNames[t.project_id]||'Project'}</span>
-                  {t.contact_id && <span>🔗 {t.contact_name||'contact'}</span>}
-                  <span style={{color:overdue?'var(--red)':'var(--text-3)'}}>📅 {t.due_date}{overdue?' · overdue':''}</span>
+                  <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="folder" size={11} /> {projNames[t.project_id]||'Project'}</span>
+                  {t.contact_id && <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="link" size={11} /> {t.contact_name||'contact'}</span>}
+                  <span style={{color:overdue?'var(--red)':'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="calendar" size={11} /> {t.due_date}{overdue?' · overdue':''}</span>
                 </div>
               </div>
             </div>
