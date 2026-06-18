@@ -5828,29 +5828,53 @@ function audioNeedsConversion(file) {
   return !WHISPER_OK_EXT.includes(ext); // amr, 3gp, 3gpp, awb, etc.
 }
 let __ffmpegPromise = null;
-function __loadFfmpegScript(src) {
+// Load a script, trying multiple CDNs so one outage/404 can't break conversion.
+function __loadScriptMulti(urls) {
   return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[data-ff="${src}"]`)) return resolve();
-    const s = document.createElement('script');
-    s.src = src; s.async = true; s.setAttribute('data-ff', src);
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Could not load the audio converter (network).'));
-    document.head.appendChild(s);
+    const key = urls[0];
+    if (document.querySelector(`script[data-ff="${key}"]`)) return resolve();
+    let i = 0;
+    const tryNext = () => {
+      if (i >= urls.length) return reject(new Error('Could not load the audio converter (network).'));
+      const url = urls[i++];
+      const s = document.createElement('script');
+      s.src = url; s.async = true; s.setAttribute('data-ff', key);
+      s.onload = () => resolve();
+      s.onerror = () => { s.remove(); tryNext(); };
+      document.head.appendChild(s);
+    };
+    tryNext();
   });
+}
+async function __toBlobURLMulti(urls, mime, toBlobURL) {
+  let lastErr;
+  for (const u of urls) {
+    try { return await toBlobURL(u, mime); } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('Could not fetch the converter core.');
 }
 async function getFfmpeg() {
   if (__ffmpegPromise) return __ffmpegPromise;
   __ffmpegPromise = (async () => {
-    await __loadFfmpegScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
-    await __loadFfmpegScript('https://unpkg.com/@ffmpeg/util@0.12.2/dist/umd/util.js');
+    await __loadScriptMulti([
+      'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
+      'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
+    ]);
+    await __loadScriptMulti([
+      'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js',
+      'https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js',
+    ]);
     if (!window.FFmpegWASM || !window.FFmpegUtil) throw new Error('Audio converter unavailable.');
     const { FFmpeg } = window.FFmpegWASM;
     const { toBlobURL } = window.FFmpegUtil;
-    const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    const cores = (f) => [
+      `https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/${f}`,
+      `https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/${f}`,
+    ];
     const ff = new FFmpeg();
     await ff.load({
-      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+      coreURL: await __toBlobURLMulti(cores('ffmpeg-core.js'), 'text/javascript', toBlobURL),
+      wasmURL: await __toBlobURLMulti(cores('ffmpeg-core.wasm'), 'application/wasm', toBlobURL),
     });
     return ff;
   })().catch((e) => { __ffmpegPromise = null; throw e; });
