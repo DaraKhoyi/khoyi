@@ -17,7 +17,38 @@ const MAX_HISTORY_TURNS = 20;
 const MAX_TOOL_ITERS = 6;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 529]);
 
+// Anthropic rejects any message whose content is empty (empty string, empty
+// array, or a tool_result/text block with empty content) with a 400
+// "messages.N: ... must have non-empty content". This normalizes every message
+// so the agentic loop can never produce such a payload.
+function sanitizeMessages(messages) {
+  const PLACEHOLDER = "(no content)";
+  return (messages || []).map((m) => {
+    let content = m && m.content;
+    if (typeof content === "string") {
+      if (!content.trim()) content = PLACEHOLDER;
+    } else if (Array.isArray(content)) {
+      content = content.map((blk) => {
+        if (!blk || typeof blk !== "object") return blk;
+        if (blk.type === "tool_result") {
+          const c = typeof blk.content === "string" ? blk.content : JSON.stringify(blk.content ?? {});
+          return { ...blk, content: c && c.trim() ? c : "{}" };
+        }
+        if (blk.type === "text" && (!blk.text || !blk.text.trim())) {
+          return { ...blk, text: PLACEHOLDER };
+        }
+        return blk;
+      });
+      if (content.length === 0) content = PLACEHOLDER;
+    } else if (content == null) {
+      content = PLACEHOLDER;
+    }
+    return { ...m, content };
+  });
+}
+
 async function callClaude(system, messages, tools, maxAttempts = 3) {
+  messages = sanitizeMessages(messages);
   let lastErr = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let r = null;
@@ -399,7 +430,7 @@ serve(async (req) => {
       if (typeof image_path !== "string" || !image_path.startsWith(`${userId}/`)) return new Response(JSON.stringify({ error: "Invalid image_path" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const cleanHistory = Array.isArray(history) ? history.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-MAX_HISTORY_TURNS).map((m) => ({ role: m.role, content: m.content })) : [];
+    const cleanHistory = Array.isArray(history) ? history.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim().length > 0).slice(-MAX_HISTORY_TURNS).map((m) => ({ role: m.role, content: m.content })) : [];
 
     let currentTurnContent = userMessage;
     let receiptParsePromise = Promise.resolve(null);
@@ -455,7 +486,7 @@ serve(async (req) => {
           const results = [];
           for (const tu of clientToolUses) {
             const out = await execTool(tu.name, tu.input, { supabase, userId, token, robotId: robot_id });
-            results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out) });
+            results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out ?? {}) || "{}" });
           }
           loopMessages = [...loopMessages, { role: "user", content: results }];
           continue;
