@@ -52,6 +52,7 @@ const ICON_PATHS = {
   zap:         (<><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></>),
   volume:      (<><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></>),
   chart:       (<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>),
+  library:     (<><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -17547,7 +17548,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
         {/* KPI tiles — three equal, aligned stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '16px' }}>
           <div style={tile}>
-            <div style={tileLabel}>🔥 Streak</div>
+            <div style={{ ...tileLabel, display:'inline-flex', alignItems:'center', gap:'4px' }}><Icon name="flame" size={11} /> Streak</div>
             <div style={{ ...tileNum, color: streak > 0 ? '#ef4444' : 'var(--text-3)' }}>{streak}<span style={tileUnit}> day{streak === 1 ? '' : 's'}</span></div>
             <div style={tileSub}>best {best}</div>
           </div>
@@ -17557,7 +17558,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
             <div style={tileSub}>{Math.round(rate30 * 100)}% · 30d</div>
           </div>
           <div style={tile} title="Hours you've tracked this week vs the hours/week you committed in Blueprint.">
-            <div style={tileLabel}>⏳ Hours/wk</div>
+            <div style={{ ...tileLabel, display:'inline-flex', alignItems:'center', gap:'4px' }}><Icon name="clock" size={11} /> Hours/wk</div>
             <div style={tileNum}>{weeklyHours.toFixed(1)}<span style={tileUnit}>{weeklyTarget > 0 ? ` / ${weeklyTarget}h` : 'h'}</span></div>
             {weeklyTarget > 0 ? (
               <div style={{ height: '4px', background: 'var(--bg-hover)', borderRadius: '3px', overflow: 'hidden', marginTop: '7px' }}>
@@ -17569,7 +17570,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
 
         {/* This week — full-width tracker so the seven days breathe */}
         <div style={{ ...tile, marginTop: '8px' }}>
-          <div style={{ ...tileLabel, marginBottom: '9px' }}>📅 This week</div>
+          <div style={{ ...tileLabel, marginBottom: '9px', display:'inline-flex', alignItems:'center', gap:'5px' }}><Icon name="calendar" size={12} /> This week</div>
           <div style={{ display: 'flex', gap: '6px' }}>
             {weekDots.map((d, i) => (
               <div key={i} style={{ flex: 1, textAlign: 'center' }}>
@@ -17601,16 +17602,16 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
           <span style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Today's prospecting</span>
           {tasksTotal > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>⏱ {fmtMins(Object.values(todayMinsBySystem).reduce((a, b) => a + b, 0) + (activeSystemId ? runningMs / 60000 : 0))} today</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-3)', display:'inline-flex', alignItems:'center', gap:'4px' }}><Icon name="clock" size={11} /> {fmtMins(Object.values(todayMinsBySystem).reduce((a, b) => a + b, 0) + (activeSystemId ? runningMs / 60000 : 0))} today</span>
               <button onClick={onGoRoi} style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>ROI →</button>
             </div>
           )}
         </div>
         {tasksTotal === 0 ? (
           <div style={{ padding: '20px', background: 'var(--bg-base)', borderRadius: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: '30px', marginBottom: '8px' }}>🎯</div>
+            <div style={{ marginBottom: '8px', display:'flex', justifyContent:'center' }}><Icon name="target" size={30} style={{ color:'var(--text-3)' }} /></div>
             <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.5 }}>No active prospecting systems yet. Activate one to get your daily money-making checklist — calls, notes, social, referrals.</p>
-            {!readOnly && <button className="btn btn-primary btn-sm" onClick={onGoLibrary}>📚 Open the System Library →</button>}
+            {!readOnly && <button className="btn btn-primary btn-sm" onClick={onGoLibrary} style={{ display:'inline-flex', alignItems:'center', gap:'6px' }}><Icon name="library" size={14} /> Open the System Library →</button>}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -17890,7 +17891,7 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
       <div className="panel" style={{ padding: '24px', textAlign: 'center' }}>
         <div style={{ fontSize: '32px', marginBottom: '8px' }}>🏆</div>
         <p style={{ fontSize: '13px', color: 'var(--text-2)', margin: '0 0 12px' }}>No active systems to measure yet. Activate a system, log some time and expenses, and your ROI scoreboard fills in here.</p>
-        <button className="btn btn-primary btn-sm" onClick={onGoSystems}>🎯 Go to Manage</button>
+        <button className="btn btn-primary btn-sm" onClick={onGoSystems} style={{ display:'inline-flex', alignItems:'center', gap:'6px' }}><Icon name="systems" size={14} /> Go to Manage</button>
       </div>
     );
   }
@@ -17937,7 +17938,7 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
           ))}
         </div>
         <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--text-3)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <span>⏱ {fmtH(totalMin)} logged YTD{hourly > 0 ? ` @ ${fmtUSD(hourly)}/hr` : ''}</span>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:'4px' }}><Icon name="clock" size={11} /> {fmtH(totalMin)} logged YTD{hourly > 0 ? ` @ ${fmtUSD(hourly)}/hr` : ''}</span>
           {totalMinToday > 0 && <span style={{ color: 'var(--accent)' }}>· {fmtH(totalMinToday)} today</span>}
           {hourly === 0 && <span style={{ color: 'var(--yellow)' }}>· Set your hourly rate in Finance → Blueprint to value your time</span>}
         </div>
@@ -18037,10 +18038,10 @@ function ProspectingView({ userId }) {
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
 
   const TABS = [
-    { id: 'today', label: 'Today', icon: '⚡' },
-    { id: 'roi', label: 'ROI', icon: '🏆' },
-    { id: 'library', label: 'Library', icon: '📚' },
-    { id: 'systems', label: 'Manage', icon: '🎯' },
+    { id: 'today', label: 'Today', iconName: 'zap' },
+    { id: 'roi', label: 'ROI', iconName: 'chart' },
+    { id: 'library', label: 'Library', iconName: 'library' },
+    { id: 'systems', label: 'Manage', iconName: 'systems' },
   ];
 
   return (
@@ -18058,7 +18059,7 @@ function ProspectingView({ userId }) {
               style={{ padding: '8px 15px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap', cursor: 'pointer',
                 border: `1px solid ${sub === t.id ? 'var(--accent)' : 'var(--border)'}`,
                 background: sub === t.id ? 'var(--accent)' : 'var(--bg-card)', color: sub === t.id ? 'var(--bg-base)' : 'var(--text-2)', transition: 'all 0.15s' }}>
-              {t.icon} {t.label}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icon name={t.iconName} size={13} /> {t.label}</span>
             </button>
           ))}
         </div>
