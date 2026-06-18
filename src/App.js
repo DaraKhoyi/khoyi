@@ -622,10 +622,20 @@ function ChatView({ robots, userId }) {
     clearPendingImage();
     setTimeout(() => inputRef.current?.focus(), 50);
 
-    const history = optimistic.slice(-21, -1).map(m => ({
-      role: m.role, content: m.content,
-      ...(m.image_path ? { image_path: m.image_path } : {}),
-    }));
+    const history = optimistic.slice(-21, -1)
+      .map(m => {
+        const hasText = typeof m.content === 'string' && m.content.trim().length > 0;
+        // Anthropic rejects any message with empty content. Drop truly-empty
+        // turns; give image-only turns a minimal text placeholder so the
+        // content is never empty.
+        if (!hasText && !m.image_path) return null;
+        return {
+          role: m.role,
+          content: hasText ? m.content : '(image)',
+          ...(m.image_path ? { image_path: m.image_path } : {}),
+        };
+      })
+      .filter(Boolean);
 
     try {
       const { data, error } = await supabase.functions.invoke('robot-chat', {
