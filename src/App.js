@@ -46,6 +46,9 @@ const ICON_PATHS = {
   sparkles:    (<><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></>),
   mic:         (<><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></>),
   signal:      (<><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.4"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.4"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></>),
+  flame:       (<><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></>),
+  clock:       (<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>),
+  reply:       (<><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -5564,7 +5567,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
   if (total === 0) {
     return (
       <div className="panel" style={{ marginBottom: '16px' }}>
-        <div style={{ padding: '16px 18px', color: 'var(--text-2)', fontSize: '13px' }}>🎯 <strong style={{ color: 'var(--text-1)' }}>Needs Attention</strong> — ✓ You're all caught up. No replies owed, follow-ups due, or overdue outreach.</div>
+        <div style={{ padding: '16px 18px', color: 'var(--text-2)', fontSize: '13px', display:'inline-flex', alignItems:'center', gap:'6px' }}><Icon name="target" size={14} /> <strong style={{ color: 'var(--text-1)' }}>Needs Attention</strong> — ✓ You're all caught up. No replies owed, follow-ups due, or overdue outreach.</div>
       </div>
     );
   }
@@ -5581,10 +5584,10 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
 
   return (
     <div className="panel" style={{ marginBottom: '16px' }}>
-      <div className="panel-header"><h3>🎯 Needs Attention</h3><span className="pill" style={{ background: 'var(--bg-hover)', color: 'var(--text-2)' }}>{total} item{total === 1 ? '' : 's'}</span></div>
+      <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="target" size={15} /> Needs Attention</h3><span className="pill" style={{ background: 'var(--bg-hover)', color: 'var(--text-2)' }}>{total} item{total === 1 ? '' : 's'}</span></div>
       <div style={{ padding: '14px 16px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
         {oweReply.length > 0 && (
-          <Section icon="↩️" title="Owe a reply" count={oweReply.length} color="var(--yellow)">
+          <Section icon={<Icon name="reply" size={13} />} title="Owe a reply" count={oweReply.length} color="var(--yellow)">
             {oweReply.slice(0, 5).map(c => (
               <div key={c.id} onClick={() => setView('contacts')} style={{ cursor: 'pointer', fontSize: '12px', display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 6px', borderRadius: '5px', background: 'var(--bg-base)' }}>
                 <span style={{ color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
@@ -5595,7 +5598,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
           </Section>
         )}
         {dueTasks.length > 0 && (
-          <Section icon="📅" title="Follow-ups due" count={dueTasks.length} color="var(--red)">
+          <Section icon={<Icon name="calendar" size={13} />} title="Follow-ups due" count={dueTasks.length} color="var(--red)">
             {dueTasks.slice(0, 5).map(t => {
               const dl = dueLabel(t.due_date); const cn = t.contact_id ? contactName(t.contact_id) : null;
               return (
@@ -5610,7 +5613,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
           </Section>
         )}
         {outreach.length > 0 && (
-          <Section icon="🕑" title="Overdue for outreach" count={outreach.length} color="var(--accent)">
+          <Section icon={<Icon name="clock" size={13} />} title="Overdue for outreach" count={outreach.length} color="var(--accent)">
             {outreach.slice(0, 5).map(c => (
               <div key={c.id} onClick={() => setView('contacts')} style={{ cursor: 'pointer', fontSize: '12px', display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 6px', borderRadius: '5px', background: 'var(--bg-base)' }}>
                 <span style={{ color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
@@ -5696,7 +5699,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
       <NeedsAttention contacts={contacts} tasks={tasks} setTasks={setTasks} setView={setView} />
       <div className="dash-grid">
         <div className="panel">
-          <div className="panel-header"><h3>🔥 Top Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
+          <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="flame" size={15} /> Top Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
           <div className="panel-body">
             {topTasks.length===0
               ? <div className="empty-state" style={{padding:'20px 0'}}><p>All clear — no top priority tasks.</p></div>
@@ -5737,7 +5740,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
           <div className="panel" style={{cursor:'pointer',transition:'border-color 0.15s'}} onClick={()=>setView('chat')}
             onMouseEnter={e=>e.currentTarget.style.borderColor='var(--accent)'}
             onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}>
-            <div className="panel-header"><h3>✦ Chat with {robot.name}</h3><span className="pill pill-purple">AI</span></div>
+            <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chat" size={15} /> Chat with {robot.name}</h3><span className="pill pill-purple">AI</span></div>
             <div className="panel-body" style={{textAlign:'center',padding:'28px 20px'}}>
               <div style={{fontSize:'36px',marginBottom:'10px'}}>{robot.avatar_emoji||'🤖'}</div>
               <p style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'4px',fontWeight:600}}>{robot.name}</p>
