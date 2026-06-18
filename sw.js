@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v29-20260617-journal-tracker-icons'
+const VERSION = 'prismos-v30-20260617-customfields-icons'
 const APP_SHELL = [
   '/',
   '/index.html',
