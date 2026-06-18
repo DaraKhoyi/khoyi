@@ -3937,8 +3937,14 @@ function EmailHtmlFrame({ html }) {
     // trying to navigate the (sandboxed) iframe itself.
     const wrapped = `<!doctype html><html><head><meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta name="color-scheme" content="light only">
       <base target="_blank" rel="noopener noreferrer">
       <style>
+        /* Force LIGHT rendering: many emails (e.g. Google Calendar invites) ship
+           a prefers-color-scheme:dark stylesheet that turns text near-white. On a
+           phone in dark mode that produced white-on-white. Pinning light mode keeps
+           those dark-mode overrides from firing so the email shows as authored. */
+        :root, html { color-scheme: light only; }
         /* Emails are authored for a white canvas — render them that way so the
            sender's own text colors stay readable (dark-on-dark was the bug). */
         html, body { margin: 0; padding: 0; background: #ffffff; }
@@ -3978,7 +3984,7 @@ function EmailHtmlFrame({ html }) {
       // allow-popups + allow-popups-to-escape-sandbox so target="_blank" links open;
       // allow-same-origin so we can read scrollHeight from the iframe document
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      style={{ width: '100%', height: `${height}px`, border: 'none', borderRadius: '8px', background: '#ffffff' }}
+      style={{ width: '100%', height: `${height}px`, border: 'none', borderRadius: '8px', background: '#ffffff', colorScheme: 'light' }}
     />
   );
 }
