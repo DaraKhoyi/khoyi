@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v26-20260617-inbox-icons'
+const VERSION = 'prismos-v27-20260617-finance-icons'
 const APP_SHELL = [
   '/',
   '/index.html',

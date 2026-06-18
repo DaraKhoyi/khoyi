@@ -63,6 +63,14 @@ const ICON_PATHS = {
   archive:     (<><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></>),
   forward:     (<><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></>),
   replyAll:    (<><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H8"/></>),
+  eye:         (<><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>),
+  ruler:       (<><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></>),
+  repeat:      (<><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>),
+  save:        (<><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>),
+  dollar:      (<><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>),
+  users:       (<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>),
+  file:        (<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>),
+  camera:      (<><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>),
 };
 function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
   const paths = ICON_PATHS[name];
@@ -18695,12 +18703,12 @@ function FinanceView({ userId }) {
     <div className="view">
       {readOnly && (
         <div style={{padding:'8px 12px',background:'rgba(59,130,246,0.15)',border:'1px solid rgba(59,130,246,0.4)',borderRadius:'8px',marginBottom:'10px',fontSize:'12px',color:'var(--text-1)'}}>
-          👀 <strong>Partner mode</strong> — accountability view, read-only. Switch back in the mode pills above.
+          <Icon name="eye" size={13} style={{verticalAlign:'-2px'}} /> <strong>Partner mode</strong> — accountability view, read-only. Switch back in the mode pills above.
         </div>
       )}
       {isCoach && (
         <div style={{padding:'8px 12px',background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',borderRadius:'8px',marginBottom:'10px',fontSize:'12px',color:'var(--text-1)'}}>
-          🎯 <strong>Coach mode</strong> — system caps lifted, extra detail visible in reports.
+          <Icon name="target" size={13} style={{verticalAlign:'-2px'}} /> <strong>Coach mode</strong> — system caps lifted, extra detail visible in reports.
         </div>
       )}
 
@@ -18708,7 +18716,7 @@ function FinanceView({ userId }) {
         <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}>
           <div>
             <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-              📊 Finance
+              <span style={{display:'inline-flex',alignItems:'center',gap:'8px'}}><Icon name="finance" size={22} /> Finance</span>
               {settings && (
                 <span style={{
                   padding:'3px 10px', borderRadius:'12px',
@@ -18737,24 +18745,24 @@ function FinanceView({ userId }) {
                   background:userMode===m?(m==='coach'?'var(--accent)':m==='partner'?'#3b82f6':'var(--text-1)'):'transparent',
                   color:userMode===m?(m==='partner'?'#fff':'var(--bg-base)'):'var(--text-2)',
                   textTransform:'capitalize'}}>
-                {m === 'agent' ? '👤' : m === 'partner' ? '🤝' : '🎯'} {m}
+                <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name={m === 'agent' ? 'contacts' : m === 'partner' ? 'users' : 'target'} size={12} /> {m}</span>
               </button>
             ))}
           </div>
         </div>
         <div style={{display:'flex',gap:'4px',overflowX:'auto',scrollbarWidth:'none',msOverflowStyle:'none'}}>
           {[
-            { id: 'dashboard', label: 'Dashboard', icon: '⚡' },
-            { id: 'blueprint', label: 'Blueprint', icon: '📐' },
-            { id: 'ledger',    label: 'Ledger',    icon: '📒' },
-            { id: 'reports',   label: 'Reports',   icon: '📈' },
+            { id: 'dashboard', label: 'Dashboard', iconName: 'zap' },
+            { id: 'blueprint', label: 'Blueprint', iconName: 'ruler' },
+            { id: 'ledger',    label: 'Ledger',    iconName: 'notes' },
+            { id: 'reports',   label: 'Reports',   iconName: 'chart' },
           ].map(t => (
             <button key={t.id} onClick={() => setSubView(t.id)}
               style={{padding:'8px 14px',border:'none',borderRadius:'999px',fontSize:'12px',fontWeight:700,letterSpacing:'0.02em',whiteSpace:'nowrap',cursor:'pointer',
                 background: subView === t.id ? 'var(--accent)' : 'var(--bg-hover)',
                 color: subView === t.id ? 'var(--bg-base)' : 'var(--text-2)',
                 transition: 'all 0.15s'}}>
-              {t.icon} {t.label}
+              <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name={t.iconName} size={13} /> {t.label}</span>
             </button>
           ))}
         </div>
@@ -18893,7 +18901,7 @@ function QuarterlyTaxBanner({ userId }) {
         flexWrap:'wrap',
       }}>
         <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
-          <span style={{fontSize:'18px',flexShrink:0}}>💵</span>
+          <Icon name="dollar" size={18} style={{flexShrink:0}} />
           <div style={{minWidth:0}}>
             <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-1)'}}>Set up quarterly tax tracking</div>
             <div style={{fontSize:'10.5px',color:'var(--text-3)',marginTop:'1px'}}>
@@ -19074,7 +19082,7 @@ function FinanceDashboard({
         </div>
         {recent.length === 0 ? (
           <div style={{padding:'20px',textAlign:'center'}}>
-            <div style={{fontSize:'32px',marginBottom:'6px'}}>📒</div>
+            <div style={{marginBottom:'6px'}}><Icon name="notes" size={30} style={{color:'var(--text-3)'}} /></div>
             <p style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'10px'}}>No transactions yet.</p>
             {!readOnly && <button className="btn btn-primary btn-sm" onClick={onGoLedger}>Add your first transaction</button>}
           </div>
@@ -19095,7 +19103,7 @@ function FinanceDashboard({
 
       {!readOnly && (
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-          <button className="btn btn-ghost" onClick={onGoBlueprint}>📐 Open Blueprint</button>
+          <button className="btn btn-ghost" onClick={onGoBlueprint} style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="ruler" size={14} /> Open Blueprint</button>
           <button className="btn btn-ghost" onClick={onGoLedger}>+ Add transaction</button>
         </div>
       )}
@@ -19225,7 +19233,7 @@ function FinanceBlueprint({
 
       {isCoach && (
         <div className="panel" style={{padding:'14px'}}>
-          <h3 style={{margin:'0 0 8px',fontSize:'14px',color:'var(--text-1)'}}>🎯 Coach controls</h3>
+          <h3 style={{margin:'0 0 8px',fontSize:'14px',color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="target" size={14} /> Coach controls</h3>
           <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
             <label style={{fontSize:'12px',color:'var(--text-2)'}}>Max active systems allowed:</label>
             <input type="number" min="1" max="35" step="1" value={maxSystems}
@@ -19245,7 +19253,7 @@ function FinanceBlueprint({
         {!readOnly && (
           <div style={{marginTop:'10px',display:'flex',gap:'12px',flexWrap:'wrap'}}>
             <button className="btn btn-primary btn-sm" onClick={saveBlueprint} disabled={saving}>
-              {saving ? 'Saving…' : '💾 Save as goal'}
+              {saving ? 'Saving…' : <><Icon name="save" size={13} /> Save as goal</>}
             </button>
           </div>
         )}
@@ -19334,11 +19342,11 @@ function FinanceBlueprint({
       <div className="panel" style={{padding:'14px'}}>
         <h3 style={{margin:'0 0 4px',fontSize:'14px',color:'var(--text-1)'}}>Activity waterfall</h3>
         <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 12px'}}>What you actually have to do. Funnel rates are industry benchmarks (Tom Ferry / NAR).</p>
-        <WaterfallRow label="Closed transactions needed" value={txnsNeeded} icon="🏆" tone="gold" />
-        <WaterfallRow label="Signed clients" value={signedNeeded} icon="✍️" sub={`${fmtPct(rates.signedToClose, 0)} signed → close`} />
-        <WaterfallRow label="Appointments" value={apptsNeeded} icon="🤝" sub={`${fmtPct(rates.apptToSigned, 0)} appt → signed`} />
-        <WaterfallRow label="Real conversations" value={convosNeeded} icon="💬" sub={`${fmtPct(rates.convoToAppt, 0)} convo → appt`} />
-        <WaterfallRow label="Total leads" value={leadsNeeded} icon="🎯" sub={`${fmtPct(rates.leadToConvo, 0)} lead → convo`} />
+        <WaterfallRow label="Closed transactions needed" value={txnsNeeded} icon={<Icon name="deals" size={18} />} tone="gold" />
+        <WaterfallRow label="Signed clients" value={signedNeeded} icon={<Icon name="edit" size={18} />} sub={`${fmtPct(rates.signedToClose, 0)} signed → close`} />
+        <WaterfallRow label="Appointments" value={apptsNeeded} icon={<Icon name="users" size={18} />} sub={`${fmtPct(rates.apptToSigned, 0)} appt → signed`} />
+        <WaterfallRow label="Real conversations" value={convosNeeded} icon={<Icon name="message" size={18} />} sub={`${fmtPct(rates.convoToAppt, 0)} convo → appt`} />
+        <WaterfallRow label="Total leads" value={leadsNeeded} icon={<Icon name="target" size={18} />} sub={`${fmtPct(rates.leadToConvo, 0)} lead → convo`} />
         <div style={{marginTop:'14px',padding:'12px',background:'var(--bg-base)',borderRadius:'8px',border:'1px dashed var(--accent)'}}>
           <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Weekly minimum (48 working weeks)</div>
           <div style={{fontSize:'22px',color:'var(--accent)',fontWeight:800,marginTop:'4px',fontVariantNumeric:'tabular-nums'}}>{weeklyLeads} leads per week</div>
@@ -19459,11 +19467,11 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
         <button onClick={() => setLedgerMode('transactions')}
           style={{padding:'6px 14px',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:700,cursor:'pointer',
             background: ledgerMode === 'transactions' ? 'var(--accent)' : 'transparent',
-            color: ledgerMode === 'transactions' ? 'var(--bg-base)' : 'var(--text-2)'}}>📒 Transactions</button>
+            color: ledgerMode === 'transactions' ? 'var(--bg-base)' : 'var(--text-2)',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="notes" size={13} /> Transactions</button>
         <button onClick={() => setLedgerMode('recurring')}
           style={{padding:'6px 14px',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:700,cursor:'pointer',
             background: ledgerMode === 'recurring' ? 'var(--accent)' : 'transparent',
-            color: ledgerMode === 'recurring' ? 'var(--bg-base)' : 'var(--text-2)'}}>🔁 Recurring{(recurringTemplates?.length || 0) > 0 ? ` · ${recurringTemplates.length}` : ''}</button>
+            color: ledgerMode === 'recurring' ? 'var(--bg-base)' : 'var(--text-2)',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="repeat" size={13} /> Recurring{(recurringTemplates?.length || 0) > 0 ? ` · ${recurringTemplates.length}` : ''}</button>
       </div>
 
       {ledgerMode === 'recurring' ? (
@@ -19514,7 +19522,7 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
             <button onClick={() => setShowBulkCategorize(true)}
               title={`Categorize ${uncategorizedCount} uncategorized ${effectiveScope} transactions`}
               style={{padding:'5px 10px',background:'rgba(245,158,11,0.10)',border:'1px solid #f59e0b',borderRadius:'6px',color:'#f59e0b',cursor:'pointer',fontSize:'11px',fontWeight:700,whiteSpace:'nowrap'}}>
-              🏷 Categorize {uncategorizedCount}
+              <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="tag" size={13} /> Categorize {uncategorizedCount}</span>
             </button>
           );
         })()}
@@ -19548,7 +19556,7 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
 
       {filtered.length === 0 ? (
         <div className="panel"><div className="panel-body"><div className="empty-state" style={{padding:'40px 20px',textAlign:'center'}}>
-          <div className="empty-icon">📒</div>
+          <div className="empty-icon"><Icon name="notes" size={28} /></div>
           <p style={{fontSize:'14px',color:'var(--text-1)',marginBottom:'4px'}}>No transactions in this period.</p>
           {!readOnly && <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>+ Add transaction</button>}
         </div></div></div>
@@ -20267,7 +20275,7 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
                 <div style={{display:'flex',flexWrap:'wrap',gap:'5px'}}>
                   {profiles.slice(0, 6).map(p => (
                     <span key={p.id} style={{padding:'3px 8px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'5px',fontSize:'10.5px',color:'var(--text-2)',display:'inline-flex',alignItems:'center',gap:'5px'}}>
-                      💾 {p.name}
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="save" size={12} /> {p.name}</span>
                       {p.use_count > 0 && <span style={{color:'var(--text-3)',fontSize:'9px'}}>·{p.use_count}×</span>}
                     </span>
                   ))}
@@ -20284,7 +20292,7 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
                 transition: 'border-color 0.12s, background 0.12s',
               }}>
               <div style={{fontSize:'32px',marginBottom:'10px',transition:'transform 0.12s',transform: isDragOver ? 'scale(1.1)' : 'scale(1)'}}>
-                {isDragOver ? '📥' : '📄'}
+                {isDragOver ? <Icon name="archive" size={34} /> : <Icon name="file" size={34} />}
               </div>
               <p style={{fontSize:'13px',color:isDragOver?'var(--accent)':'var(--text-1)',marginBottom:'4px',fontWeight:600}}>
                 {isDragOver ? 'Drop to import' : 'Drag a CSV file here, or pick one'}
@@ -20316,7 +20324,7 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
                 <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
                   {appliedProfileId && (
                     <span style={{fontSize:'10px',color:'var(--accent)',padding:'2px 7px',background:'rgba(197,169,94,0.10)',border:'1px solid var(--accent)',borderRadius:'4px',fontWeight:700}}>
-                      💾 {profiles.find(p => p.id === appliedProfileId)?.name || 'profile'}
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="save" size={12} /> {profiles.find(p => p.id === appliedProfileId)?.name || 'profile'}</span>
                     </span>
                   )}
                   <select value={appliedProfileId || ''} onChange={e => {
@@ -20541,7 +20549,7 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
                 {!showSaveProfile ? (
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
                     <span style={{fontSize:'11px',color:'var(--text-2)'}}>
-                      💾 Save this mapping as a bank profile? Next time, just upload — column mapping happens automatically.
+                      Save this mapping as a bank profile? Next time, just upload — column mapping happens automatically.
                     </span>
                     <button onClick={() => { setShowSaveProfile(true); setNewProfileName(defaultAccount || ''); }}
                       style={{padding:'4px 10px',background:'transparent',border:'1px solid var(--accent)',borderRadius:'5px',color:'var(--accent)',cursor:'pointer',fontSize:'10.5px',fontWeight:700,flexShrink:0}}>
@@ -20949,7 +20957,7 @@ function BulkCategorizeModal({ userId, transactions, setTransactions, taxCategor
             <div style={{display:'flex',gap:'6px',marginBottom:'10px',flexWrap:'wrap',alignItems:'center',flexShrink:0}}>
               <button onClick={acceptAllSuggestions}
                 style={{padding:'5px 12px',background:'transparent',border:'1px solid var(--accent)',borderRadius:'5px',color:'var(--accent)',cursor:'pointer',fontWeight:700,fontSize:'11px'}}>
-                ✨ Accept all suggestions
+                <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="sparkles" size={13} /> Accept all suggestions</span>
               </button>
               <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="🔍 Search by payee…"
@@ -20971,7 +20979,7 @@ function BulkCategorizeModal({ userId, transactions, setTransactions, taxCategor
                       <div style={{fontSize:'12px',color:'var(--text-1)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.payee || '(no payee)'}</div>
                       {isAuto && (
                         <div style={{fontSize:'9.5px',color:'var(--accent)',marginTop:'1px'}}>
-                          ✨ matched "{p.matchedFrom}" · {p.confidence}
+                          <Icon name="sparkles" size={11} /> matched "{p.matchedFrom}" · {p.confidence}
                           <button onClick={() => applyToMatching(t.id)} title="Apply to all matching"
                             style={{background:'transparent',border:'none',color:'var(--text-3)',marginLeft:'6px',cursor:'pointer',fontSize:'9.5px',padding:0,textDecoration:'underline'}}>
                             ↪ apply to all
@@ -21079,7 +21087,7 @@ function RecurringList({ userId, recurringTemplates, setRecurringTemplates, taxC
             {r.template_payee || r.template_description || '(untitled)'}
           </div>
           <div style={{fontSize:'10px',color:'var(--text-3)',display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'2px'}}>
-            <span style={{textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,color:'var(--accent)'}}>🔁 {r.frequency}</span>
+            <span style={{textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,color:'var(--accent)',display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="repeat" size={11} /> {r.frequency}</span>
             <span>next: <strong style={{color:isDue?'var(--accent)':'var(--text-2)'}}>{r.next_run_date}</strong></span>
             {cat && <span style={{padding:'1px 5px',borderRadius:'3px',background:`${cat.color}22`,color:cat.color,fontWeight:600}}>{cat.name}</span>}
             {sys && r.template_scope === 'business' && <span style={{padding:'1px 5px',borderRadius:'3px',background:`${sys.color}22`,color:sys.color,fontWeight:600}}>{sys.name}</span>}
@@ -21096,8 +21104,8 @@ function RecurringList({ userId, recurringTemplates, setRecurringTemplates, taxC
               {r.is_active ? '⏸' : '▶️'}
             </button>
             <button onClick={() => deleteTemplate(r)} title="Delete"
-              style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'14px',padding:'4px'}}>
-              🗑️
+              style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:'4px'}}>
+              <Icon name="trash" size={14} />
             </button>
           </div>
         )}
@@ -21118,7 +21126,7 @@ function RecurringList({ userId, recurringTemplates, setRecurringTemplates, taxC
 
       {recurringTemplates.length === 0 ? (
         <div className="panel"><div className="empty-state" style={{padding:'30px 20px',textAlign:'center'}}>
-          <div className="empty-icon">🔁</div>
+          <div className="empty-icon"><Icon name="repeat" size={28} /></div>
           <p style={{fontSize:'13px',color:'var(--text-1)',marginBottom:'4px'}}>No recurring templates yet.</p>
           <p style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'12px',lineHeight:1.5}}>
             Set up monthly MLS dues, software subscriptions, NAR fees, anything that hits on a schedule. The app auto-adds the transaction each period.
@@ -21201,7 +21209,7 @@ function RecurringTemplateModal({ userId, initial, taxCategories, systems, perso
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{maxWidth:'460px',maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
-          <h3 style={{margin:0}}>🔁 {initial ? 'Edit recurring' : 'New recurring template'}</h3>
+          <h3 style={{margin:0,display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="repeat" size={15} /> {initial ? 'Edit recurring' : 'New recurring template'}</h3>
         </div>
         <form onSubmit={handleSubmit}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',marginBottom:'12px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px'}}>
@@ -21429,7 +21437,7 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
       <div className="modal" style={{maxWidth:'460px',maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
           <h3 style={{margin:0}}>{initial ? 'Edit transaction' : 'New transaction'}</h3>
-          {onDelete && <button onClick={onDelete} title="Delete" style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:'18px',padding:'4px 8px'}}>🗑️</button>}
+          {onDelete && <button onClick={onDelete} title="Delete" style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:'4px 8px'}}><Icon name="trash" size={16} /></button>}
         </div>
 
         {/* Receipt capture — only on new transactions */}
@@ -21439,7 +21447,7 @@ function TransactionModal({ userId, initial, taxCategories, systems, personalBud
               <button type="button"
                 onClick={() => fileInputRef.current?.click()}
                 style={{width:'100%',padding:'12px',background:'linear-gradient(135deg, rgba(197,169,94,0.12) 0%, rgba(197,169,94,0.04) 100%)',border:'1px dashed var(--accent)',borderRadius:'10px',color:'var(--accent)',cursor:'pointer',fontSize:'13px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
-                📷 Snap receipt — AI will fill it in
+                <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="camera" size={14} /> Snap receipt — AI will fill it in</span>
               </button>
             )}
             {parsing && (
@@ -21660,7 +21668,7 @@ function FinanceSystems({ userId, systems, archivedSystems = [], reload, transac
           <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
             <button onClick={() => setShowLibrary(true)}
               style={{padding:'7px 12px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',cursor:'pointer',fontSize:'12px',fontWeight:700,whiteSpace:'nowrap'}}>
-              📚 Browse 85 systems
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="library" size={14} /> Browse 85 systems</span>
             </button>
             <button className="btn-add-circle" disabled={atCap}
               onClick={() => { if (atCap) { if (window.__notify) window.__notify(`Max ${maxSystems} systems — ask coach to raise`, 'error'); return; } setEditSystem(null); setShowModal(true); }}
@@ -21673,14 +21681,14 @@ function FinanceSystems({ userId, systems, archivedSystems = [], reload, transac
       {/* Empty state when 0 active non-overhead systems */}
       {activeNonOverhead.length === 0 && !readOnly && (
         <div className="panel" style={{padding:'18px',background:'linear-gradient(135deg, rgba(197,169,94,0.08) 0%, rgba(197,169,94,0.02) 100%)',border:'1px solid var(--accent)',textAlign:'center'}}>
-          <div style={{fontSize:'32px',marginBottom:'8px'}}>🎯</div>
+          <div style={{marginBottom:'8px'}}><Icon name="target" size={30} style={{color:'var(--text-3)'}} /></div>
           <h3 style={{margin:'0 0 6px',fontSize:'14px',color:'var(--text-1)'}}>Pick your lead-gen systems</h3>
           <p style={{fontSize:'12px',color:'var(--text-3)',margin:'0 0 14px',lineHeight:1.5}}>
             Browse 85 proven systems from Buffini, Tom Ferry, Mike Ferry, Krista Mashore, Ricky Carruth, Gary Keller, Jeff Glover, Chris Voss, and more — organized by Digital / Traditional / Niche with DISC fit scores.
           </p>
           <button onClick={() => setShowLibrary(true)}
             style={{padding:'10px 18px',background:'var(--accent)',color:'var(--bg-base)',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:700}}>
-            📚 Open the System Library →
+            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="library" size={14} /> Open the System Library</span> →
           </button>
         </div>
       )}
@@ -21714,9 +21722,9 @@ function FinanceSystems({ userId, systems, archivedSystems = [], reload, transac
                     {openMenuId === sys.id && (
                       <div style={{position:'absolute',right:0,top:'calc(100% + 4px)',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',boxShadow:'0 6px 24px rgba(0,0,0,0.5)',zIndex:20,minWidth:'170px',overflow:'hidden'}}>
                         <button onClick={() => { setOpenMenuId(null); setShowTimeModal(sys); }}
-                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',padding:'11px 13px',color:'var(--text-1)',cursor:'pointer',fontSize:'12px',fontWeight:600}}>⏱ Log time manually</button>
+                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',padding:'11px 13px',color:'var(--text-1)',cursor:'pointer',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'7px'}}><Icon name="clock" size={13} /> Log time manually</button>
                         <button onClick={() => archiveSystem(sys)}
-                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'11px 13px',color:'var(--text-2)',cursor:'pointer',fontSize:'12px',fontWeight:600}}>🗄 Archive system</button>
+                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'11px 13px',color:'var(--text-2)',cursor:'pointer',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'7px'}}><Icon name="archive" size={13} /> Archive system</button>
                       </div>
                     )}
                   </div>
@@ -21766,7 +21774,7 @@ function FinanceSystems({ userId, systems, archivedSystems = [], reload, transac
           <button onClick={() => setShowArchived(v => !v)}
             style={{display:'flex',alignItems:'center',gap:'8px',width:'100%',background:'transparent',border:'none',padding:'8px 2px',color:'var(--text-3)',cursor:'pointer',fontSize:'11px',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
             <span style={{transform: showArchived ? 'rotate(90deg)' : 'none', transition:'transform 0.15s'}}>▸</span>
-            🗄 Archived ({archivedSystems.length})
+            <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="archive" size={13} /> Archived ({archivedSystems.length})</span>
           </button>
           {showArchived && archivedSystems.map(sys => (
             <div key={sys.id} className="panel" style={{padding:'12px',marginTop:'8px',opacity:0.78}}>
@@ -21931,7 +21939,7 @@ function TimeEntryModal({ userId, system, onClose, onSaved }) {
           </div>
           <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : '⏱ Log time'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : <><Icon name="clock" size={13} /> Log time</>}</button>
           </div>
         </form>
       </div>
@@ -21992,7 +22000,7 @@ function SystemModal({ userId, initial, onClose, onSaved }) {
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
           <h3 style={{margin:0}}>{initial ? 'Edit system' : 'Activate new system'}</h3>
           {initial && !initial.is_overhead && (
-            <button onClick={handleDelete} title="Archive system (keeps all data)" style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'18px',padding:'4px 8px'}}>🗄</button>
+            <button onClick={handleDelete} title="Archive system (keeps all data)" style={{background:'none',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'18px',padding:'4px 8px'}}><Icon name="archive" size={16} /></button>
           )}
         </div>
         <form onSubmit={handleSubmit}>
@@ -22101,7 +22109,7 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
         {/* Header (sticky) */}
         <div style={{padding:'16px 16px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg-card)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
-            <h3 style={{margin:0,fontSize:'15px'}}>📚 Lead-Gen System Library</h3>
+            <h3 style={{margin:0,fontSize:'15px',display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="library" size={15} /> Lead-Gen System Library</h3>
             {asPage
               ? <button onClick={onClose} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',fontWeight:700,color:'var(--text-2)',cursor:'pointer',padding:'5px 10px'}}>← Manage</button>
               : <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>}
