@@ -5592,6 +5592,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
   function lastTouch(c) { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; }
 
   const oweReply = contacts.filter(c => {
+    if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false;
     if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
     const lin = new Date(c.last_inbound_at).getTime();
     const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0;
@@ -13260,8 +13261,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                           };
                           if (dir === 'inbound' && lin) {
                             const days = Math.floor((Date.now() - new Date(lin).getTime()) / 86400000);
-                            // Show owe-reply hint only if >= 1 day old
-                            if (days >= 1) {
+                            const snz = c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date();
+                            // Show owe-reply hint only if >= 1 day old and not snoozed
+                            if (days >= 1 && !snz) {
                               return <div style={{fontSize:'11px',color:'var(--yellow)',marginTop:'3px',opacity:0.85}}>⬇ they wrote {rel(lin)} · awaiting reply</div>;
                             }
                             return <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'3px'}}>⬇ they wrote {rel(lin)}</div>;
