@@ -1287,7 +1287,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
   // Linked contacts (many-to-many via task_contacts)
-  const [contactIds, setContactIds] = useState([]);
+  const [contactIds, setContactIds] = useState(initial?._contact_ids || []);
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
   // Email assignment (works for any task)
@@ -28007,7 +28007,7 @@ function GoalEngine({ userId, onBack }) {
     </div>
   );
 }
-function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [] }) {
+function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [], contacts = [], properties = [], events = [], brain = [], defaultSystem = 'eisenhower', tasks = [], setTasks }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
   const [err, setErr] = useState(null);
@@ -28032,6 +28032,13 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const [showReport, setShowReport] = useState(false);
   const [hubId, setHubId] = useState(null);
   const [showGoal, setShowGoal] = useState(false);
+  const [followUpFor, setFollowUpFor] = useState(null); // reach-out we're creating a follow-up task for
+  const [snoozeFor, setSnoozeFor] = useState(null);      // contact_id whose snooze picker is open
+  const [expandMsg, setExpandMsg] = useState({});        // per-contact "show full message" toggle
+  const SNOOZE_OPTS = [
+    { label: '1 day', days: 1 }, { label: '2 days', days: 2 }, { label: '3 days', days: 3 },
+    { label: '1 week', days: 7 }, { label: '2 weeks', days: 14 }, { label: '1 month', days: 30 },
+  ];
 
   const today = new Date().toLocaleDateString('en-CA');
   const hour = new Date().getHours();
@@ -28106,22 +28113,65 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     return out;
   };
   const doSend = async (r) => {
-    if (!r.email) { setErr('No email on file for '+r.name); return; }
-    if (!acct) { setErr('Connect a Gmail account in Settings to send.'); return; }
+    if (!r.email) { setErr('No email on file for '+r.name); return false; }
+    if (!acct) { setErr('Connect a Gmail account in Settings to send.'); return false; }
     setBusy(b=>({ ...b,[r.contact_id]:true }));
     const e = edits[r.contact_id]||{};
     const cc = replyAll[r.contact_id] ? otherRecips(r) : [];
     const { data:sr, error:se } = await supabase.functions.invoke('gmail-send', { body:{ account_id:acct.id, to:r.email, cc: cc.length?cc:undefined, subject:e.subject||r.subject, body_text:e.message||r.message } });
     setBusy(b=>({ ...b,[r.contact_id]:false }));
-    if (se || sr?.error) { setErr('Send failed: '+(se?.message||sr?.error)); return; }
+    if (se || sr?.error) { setErr('Send failed: '+(se?.message||sr?.error)); return false; }
     await logTouch(r.contact_id,'email');
     await logOutreach(r, sr, 'sent');
     await setStatus(r.contact_id,'sent');
     loadScore();
+    return true;
   };
   const doCopy = async (r) => { try{ await navigator.clipboard.writeText((edits[r.contact_id]?.message)||r.message); }catch(e){} };
   const doDone = async (r) => { await logTouch(r.contact_id,'manual'); await setStatus(r.contact_id,'done'); };
-  const doSnooze = async (r) => { await setStatus(r.contact_id,'snoozed'); };
+  // Snooze with a real duration: hide this person from reach-outs until the chosen date.
+  const applySnooze = async (r, until) => {
+    setSnoozeFor(null);
+    try { await supabase.from('contacts').update({ reachout_snooze_until: until.toISOString() }).eq('id', r.contact_id); } catch(e){}
+    const np = reachouts.map(x => x.contact_id===r.contact_id ? { ...x, ...(edits[r.contact_id]||{}), status:'snoozed', snooze_until: until.toISOString() } : x);
+    await persist(np);
+    if (window.__notify) window.__notify(`Snoozed ${r.name} until ${until.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`, 'success');
+  };
+  const doSnooze = async (r, days=3) => { const until=new Date(); until.setHours(9,0,0,0); until.setDate(until.getDate()+days); await applySnooze(r, until); };
+  const doSnoozeUntil = async (r, dateStr) => { if(!dateStr) return; await applySnooze(r, new Date(dateStr+'T09:00:00')); };
+  // Send the email, then open a pre-filled, fully editable follow-up task.
+  const doSendAndFollowUp = async (r) => {
+    const ok = await doSend(r);
+    if (!ok) return;
+    const due = new Date(); due.setDate(due.getDate()+3);
+    const dueStr = due.toLocaleDateString('en-CA');
+    setFollowUpFor({
+      contact_id: r.contact_id,
+      initial: {
+        title: `Follow up: ${r.name}`,
+        due_date: dueStr,
+        notes: `Follow-up on today\u2019s outreach${r.reason?` \u2014 ${r.reason}`:''}.`,
+        priority_system: defaultSystem,
+        _contact_ids: [r.contact_id],
+      },
+    });
+  };
+  const saveFollowUp = async (data) => {
+    const { _contact_ids, _email, ...taskData } = data;
+    try {
+      const insert = { ...taskData, user_id: userId, completed: false };
+      const { data: created, error } = await supabase.from('tasks').insert(insert).select().single();
+      if (error) { setErr("Couldn\u2019t create follow-up task. Try again."); return; }
+      if (created) {
+        if (setTasks) setTasks(prev => [created, ...prev]);
+        if (Array.isArray(_contact_ids) && _contact_ids.length) {
+          try { await supabase.rpc('set_task_contacts', { p_task_id: created.id, p_contact_ids: _contact_ids }); } catch(e){}
+        }
+      }
+      setFollowUpFor(null);
+      if (window.__notify) window.__notify('Follow-up task created.', 'success');
+    } catch(e){ setErr('Could not save follow-up task.'); }
+  };
   const doRewrite = async (r) => {
     const cur = (edits[r.contact_id]?.message) ?? r.message;
     if (!cur || !cur.trim()) { setErr('Write a draft first, then let Ari refine it.'); return; }
@@ -28212,12 +28262,24 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
 
   if (showReport) return <OutreachReport userId={userId} onBack={()=>setShowReport(false)} />;
   if (showGoal) return <GoalEngine userId={userId} onBack={()=>setShowGoal(false)} />;
-  const pending = reachouts.filter(r=>r.status==='pending');
+  const snoozedIds = new Set((contacts||[]).filter(c=>c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()).map(c=>c.id));
+  const pending = reachouts.filter(r=>r.status==='pending' && !snoozedIds.has(r.contact_id));
   const handled = reachouts.filter(r=>r.status!=='pending');
 
   return (
     <div className="view">
       {hubId && <ActionHubModal contactId={hubId} userId={userId} onClose={()=>setHubId(null)} />}
+      {followUpFor && <TaskModal
+        onClose={()=>setFollowUpFor(null)}
+        onSave={saveFollowUp}
+        initial={followUpFor.initial}
+        defaultSystem={defaultSystem}
+        brain={brain}
+        contacts={contacts}
+        properties={properties}
+        events={events}
+        userId={userId}
+      />}
       <div className="panel" style={{background:'linear-gradient(135deg,var(--bg-card),var(--bg-hover))',borderColor:'var(--accent-dim)'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',flexWrap:'wrap'}}>
           <div style={{flex:1,minWidth:'220px'}}>
@@ -28248,7 +28310,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
         {showScore && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Ari learns from these outcomes \u2014 who replies, and which phrasing and timing convert \u2014 and uses it to rank and draft tomorrow\u2019s briefing.</div>}
       </div>
 
-      {reviewing && (()=>{ const pend = reachouts.filter(r=>r.status==='pending'); const cur = pend[reviewIdx]; const appdN = Object.values(approved).filter(Boolean).length;
+      {reviewing && (()=>{ const pend = reachouts.filter(r=>r.status==='pending' && !snoozedIds.has(r.contact_id)); const cur = pend[reviewIdx]; const appdN = Object.values(approved).filter(Boolean).length;
         return (
         <div className="panel" style={{borderColor:'var(--accent-dim)'}}>
           <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="zap" size={15} /> Rapid review</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{Math.min(reviewIdx+1,pend.length)} of {pend.length}</span></div>
@@ -28328,11 +28390,12 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
               <span style={{fontSize:'11px',fontWeight:600,color:'var(--text-2)'}}>Your message</span>
               <div style={{display:'flex',gap:'6px'}}>
+                <button className="btn btn-ghost btn-sm" style={{padding:'2px 9px',fontSize:'11px'}} onClick={()=>setExpandMsg(m=>({...m,[r.contact_id]:!m[r.contact_id]}))}>{expandMsg[r.contact_id]?'Collapse':'Show full'}</button>
                 {prevMsg[r.contact_id]!=null && <button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={()=>undoRewrite(r)}>Undo</button>}
                 <button className="btn btn-ghost btn-sm" disabled={rwBusy[r.contact_id]} onClick={()=>doRewrite(r)} title="Rewrite in your voice, adapted to their style" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{rwBusy[r.contact_id]?<><Icon name="sparkles" size={12} /> Ari is writing…</>:<><Icon name="sparkles" size={12} /> Ari rewrite</>}</button>
               </div>
             </div>
-            <textarea className="form-input" rows={4} style={{fontSize:'13px',lineHeight:1.5}} value={(edits[r.contact_id]?.message)??r.message} onChange={e=>setEdit(r.contact_id,'message',e.target.value,r)}/>
+            <textarea className="form-input" rows={expandMsg[r.contact_id]?18:4} style={{fontSize:'13px',lineHeight:1.5,...(expandMsg[r.contact_id]?{minHeight:'340px',resize:'vertical'}:{})}} value={(edits[r.contact_id]?.message)??r.message} onChange={e=>setEdit(r.contact_id,'message',e.target.value,r)}/>
             <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap',alignItems:'center'}}>
               {r.email && otherRecips(r).length>0 && (
                 <label style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',color:'var(--text-2)',cursor:'pointer'}} title={otherRecips(r).join(', ')}>
@@ -28341,9 +28404,25 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
                 </label>
               )}
               {r.email && <button className="btn btn-primary btn-sm" disabled={busy[r.contact_id]} onClick={()=>doSend(r)}>{busy[r.contact_id]?'…sending':(replyAll[r.contact_id]?'Send to all':'Send email')}</button>}
+              {r.email && <button className="btn btn-ghost btn-sm" disabled={busy[r.contact_id]} onClick={()=>doSendAndFollowUp(r)} title="Send this email, then create a follow-up task you can edit" style={{color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>Send &amp; follow up</button>}
               <button className="btn btn-ghost btn-sm" onClick={()=>doCopy(r)}>Copy</button>
               <button className="btn btn-ghost btn-sm" onClick={()=>doDone(r)}>Mark contacted</button>
-              <button className="btn btn-ghost btn-sm" onClick={()=>doSnooze(r)}>Snooze</button>
+              <div style={{position:'relative',display:'inline-block'}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setSnoozeFor(s=>s===r.contact_id?null:r.contact_id)}>Snooze <span style={{color:'var(--text-3)'}}>{snoozeFor===r.contact_id?'\u25be':'\u25b8'}</span></button>
+                {snoozeFor===r.contact_id && (<>
+                  <div onClick={()=>setSnoozeFor(null)} style={{position:'fixed',inset:0,zIndex:40}}/>
+                  <div style={{position:'absolute',bottom:'calc(100% + 6px)',left:0,zIndex:41,background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px',padding:'6px',minWidth:'170px',boxShadow:'0 10px 30px rgba(0,0,0,.45)'}}>
+                    <div style={{fontSize:'10px',fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',color:'var(--text-3)',padding:'4px 8px 6px'}}>Snooze reach-out for</div>
+                    {SNOOZE_OPTS.map(o=>(
+                      <button key={o.label} className="btn btn-ghost btn-sm" style={{display:'block',width:'100%',textAlign:'left',padding:'7px 8px',fontSize:'12px'}} onClick={()=>doSnooze(r,o.days)}>{o.label}</button>
+                    ))}
+                    <div style={{borderTop:'1px solid var(--border)',marginTop:'4px',paddingTop:'7px',padding:'7px 8px 2px'}}>
+                      <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'4px'}}>Or pick a date</div>
+                      <input type="date" className="form-input" style={{margin:0,fontSize:'12px',padding:'5px 8px',width:'100%'}} min={new Date(Date.now()+864e5).toLocaleDateString('en-CA')} onChange={e=>doSnoozeUntil(r, e.target.value)} />
+                    </div>
+                  </div>
+                </>)}
+              </div>
             </div>
           </div>
         ))}
@@ -28942,7 +29021,7 @@ export default function App() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
-              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles}/>
+              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks}/>
               : view==='prospecting' ? <ProspectingView userId={user.id}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
