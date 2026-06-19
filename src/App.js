@@ -28012,6 +28012,135 @@ function GoalEngine({ userId, onBack }) {
     </div>
   );
 }
+// ─────────────────────────────────────────
+// Call follow-ups — review commitments Ari pulled from recorded Quo calls,
+// then create the tasks (linked to the contact). Renders nothing when empty.
+// ─────────────────────────────────────────
+function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = 'eisenhower' }) {
+  const [calls, setCalls] = useState(null);
+  const [edits, setEdits] = useState({});       // `${callId}:${idx}` -> {title,due_date,priority,owner}
+  const [checked, setChecked] = useState({});   // `${callId}:${idx}` -> bool
+  const [busy, setBusy] = useState({});
+  const [checking, setChecking] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const load = async () => {
+    const { data } = await supabase.from('quo_calls')
+      .select('id,contact_id,proposed_tasks,summary,direction,participant,from_number,to_number,completed_at,op_created_at,recording_url')
+      .eq('review_status', 'pending').order('op_created_at', { ascending: false }).limit(50);
+    const rows = (data || []).filter(c => Array.isArray(c.proposed_tasks) && c.proposed_tasks.length);
+    setCalls(rows);
+    const ck = {};
+    rows.forEach(c => (c.proposed_tasks || []).forEach((t, i) => { ck[`${c.id}:${i}`] = true; }));
+    setChecked(ck);
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  const checkNow = async () => {
+    setChecking(true); setErr(null);
+    try { await supabase.functions.invoke('quo-call-process', { body: {} }); await load(); }
+    catch (e) { setErr('Could not check calls.'); }
+    setChecking(false);
+  };
+
+  const tv = (id, i, key, fb) => { const e = edits[`${id}:${i}`] || {}; return e[key] !== undefined ? e[key] : fb; };
+  const setTv = (id, i, key, val) => setEdits(s => ({ ...s, [`${id}:${i}`]: { ...(s[`${id}:${i}`] || {}), [key]: val } }));
+  const nameOf = (cid) => { const c = contacts.find(x => x.id === cid); return c ? c.name : null; };
+  const phoneOf = (c) => c.participant || c.to_number || c.from_number || '';
+  const quad = (p) => p === 'high' ? 'A' : p === 'low' ? 'C' : 'B';
+  const fmt = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+  const summaryText = (s) => { if (!s) return ''; if (typeof s === 'string') return s; if (Array.isArray(s)) return s.join(' '); if (typeof s === 'object') return s.summary || ''; return String(s); };
+
+  const approve = async (call) => {
+    setBusy(b => ({ ...b, [call.id]: true })); setErr(null);
+    const items = call.proposed_tasks || [];
+    let created = 0;
+    for (let i = 0; i < items.length; i++) {
+      if (!checked[`${call.id}:${i}`]) continue;
+      const owner = tv(call.id, i, 'owner', items[i].owner);
+      const t0 = tv(call.id, i, 'title', items[i].title);
+      const title = owner === 'them' ? `Follow up: ${t0}` : t0;
+      const due = tv(call.id, i, 'due_date', items[i].due_date) || null;
+      const priority = tv(call.id, i, 'priority', items[i].priority) || 'medium';
+      try {
+        const { data: t, error } = await supabase.from('tasks').insert({
+          user_id: userId, title, due_date: due, priority,
+          priority_system: defaultSystem || 'eisenhower', eisenhower_quadrant: quad(priority), completed: false,
+        }).select().single();
+        if (!error && t) {
+          created++;
+          if (setTasks) setTasks(prev => [t, ...prev]);
+          if (call.contact_id) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [call.contact_id] }); } catch (_) {} }
+        }
+      } catch (_) {}
+    }
+    await supabase.from('quo_calls').update({ review_status: 'done' }).eq('id', call.id);
+    setBusy(b => ({ ...b, [call.id]: false }));
+    setCalls(cs => cs.filter(c => c.id !== call.id));
+    if (window.__notify) window.__notify(`Created ${created} task${created === 1 ? '' : 's'} from the call.`, 'success');
+  };
+  const dismiss = async (call) => {
+    await supabase.from('quo_calls').update({ review_status: 'dismissed' }).eq('id', call.id);
+    setCalls(cs => cs.filter(c => c.id !== call.id));
+  };
+
+  if (calls === null || !calls.length) return null; // quiet until there's something to review
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icon name="quo" size={15} /> Call follow-ups</h3>
+        <span className="nav-badge">{calls.length}</span>
+      </div>
+      <div style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '10px' }}>Commitments Ari pulled from your recorded calls. The call is already on the contact&rsquo;s timeline — review and create the tasks.</div>
+      {err && <div style={{ padding: '8px 12px', marginBottom: '10px', background: 'rgba(239,68,68,.1)', border: '1px solid var(--red)', borderRadius: '8px', color: 'var(--red)', fontSize: '12px' }}>{err}</div>}
+      {calls.map(call => {
+        const nm = nameOf(call.contact_id);
+        const items = call.proposed_tasks || [];
+        return (
+          <div key={call.id} style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+              <span style={{ fontWeight: 700, fontSize: '14px' }}>{nm || phoneOf(call) || 'Unknown caller'}</span>
+              {!nm && <span style={{ fontSize: '10px', color: 'var(--yellow)' }}>unmatched — no contact link</span>}
+              <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-3)' }}>{fmt(call.completed_at || call.op_created_at)} · on timeline ✓</span>
+            </div>
+            {summaryText(call.summary) && <div style={{ fontSize: '12px', color: 'var(--text-2)', marginBottom: '10px', lineHeight: 1.5 }}>{summaryText(call.summary)}</div>}
+            {items.map((it, i) => {
+              const k = `${call.id}:${i}`;
+              const owner = tv(call.id, i, 'owner', it.owner);
+              return (
+                <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '8px', borderRadius: '8px', background: 'var(--bg-hover)', marginBottom: '6px' }}>
+                  <input type="checkbox" checked={!!checked[k]} onChange={e => setChecked(s => ({ ...s, [k]: e.target.checked }))} style={{ marginTop: '6px' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', padding: '1px 6px', borderRadius: '5px', color: owner === 'them' ? '#f59e0b' : 'var(--accent)', border: `1px solid ${owner === 'them' ? '#f59e0b' : 'var(--accent-dim)'}` }}>{owner === 'them' ? 'Track (them)' : 'You'}</span>
+                      {it.note && <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{it.note}</span>}
+                    </div>
+                    <input className="form-input" style={{ margin: '0 0 6px', fontSize: '13px', padding: '6px 8px' }} value={tv(call.id, i, 'title', it.title)} onChange={e => setTv(call.id, i, 'title', e.target.value)} />
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <input type="date" className="form-input" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '1 1 130px' }} value={tv(call.id, i, 'due_date', it.due_date) || ''} onChange={e => setTv(call.id, i, 'due_date', e.target.value)} />
+                      <select className="form-select" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '0 0 105px' }} value={tv(call.id, i, 'priority', it.priority)} onChange={e => setTv(call.id, i, 'priority', e.target.value)}>
+                        <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button className="btn btn-primary btn-sm" disabled={busy[call.id]} onClick={() => approve(call)}>{busy[call.id] ? 'Creating…' : 'Create selected tasks'}</button>
+              <button className="btn btn-ghost btn-sm" disabled={busy[call.id]} onClick={() => dismiss(call)}>Dismiss</button>
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ textAlign: 'center', marginTop: '4px' }}>
+        <button className="btn btn-ghost btn-sm" disabled={checking} onClick={checkNow}>{checking ? 'Checking…' : '↻ Check for new calls'}</button>
+      </div>
+    </div>
+  );
+}
+
 function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [], contacts = [], properties = [], events = [], brain = [], defaultSystem = 'eisenhower', tasks = [], setTasks }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
@@ -28350,6 +28479,8 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
         </div>);
       })()}
       {batchMsg && <div style={{padding:'8px 12px',margin:'0 0 12px',background:'rgba(34,197,94,.1)',border:'1px solid var(--green)',borderRadius:'8px',color:'var(--green)',fontSize:'12px'}}>{batchMsg}</div>}
+
+      <CallFollowupsPanel userId={userId} contacts={contacts} setTasks={setTasks} defaultSystem={defaultSystem} />
 
       <div className="panel" style={{display:reviewing?'none':undefined}}>
         <div className="panel-header"><h3>Reach out today</h3><span className="nav-badge">{pending.length}</span></div>
