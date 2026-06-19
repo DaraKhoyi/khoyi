@@ -5601,7 +5601,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
   const dueTasks = tasks.filter(t => !t.completed && t.status !== 'done' && t.due_date && new Date(t.due_date + 'T23:59:59').getTime() <= endToday)
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
 
-  const outreach = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; })
+  const outreach = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; })
     .sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
 
   const total = oweReply.length + dueTasks.length + outreach.length;
@@ -12976,6 +12976,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   function daysSinceTouch(c) { const t = lastTouchTs(c); return t === null ? null : Math.floor((Date.now() - t) / 86400000); }
   function cadenceDue(c) {
     const cad = c.cadence_days; if (!cad) return null;
+    if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date())
+      return { due: false, snoozed: true, snoozeUntil: c.reachout_snooze_until, daysSince: daysSinceTouch(c), overdueBy: null, cadence: cad };
     const ds = daysSinceTouch(c);
     return { due: ds === null ? true : ds >= cad, overdueBy: ds === null ? null : ds - cad, daysSince: ds, cadence: cad };
   }
@@ -13204,6 +13206,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                           <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)'}}>{CONTACT_TYPE_LABELS[c.type] || c.type}</span>
                           {(() => {
                             const s = cadenceDue(c);
+                            if (s && s.snoozed) return <span title={`Reach-out snoozed until ${new Date(s.snoozeUntil).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`} style={{fontSize:'10px',color:'var(--text-3)'}}>💤 snoozed</span>;
                             if (s && s.due) return <span className="pill" title={`Reach-out cadence: every ${c.cadence_days}d · last touch ${relDaysShort(s.daysSince)} ago`} style={{fontSize:'10px',padding:'2px 7px',fontWeight:700,background:'var(--red)',color:'#fff'}}>⚠ reach out</span>;
                             if (c.cadence_days) return <span title={`On a ${c.cadence_days}-day cadence · last touch ${relDaysShort(daysSinceTouch(c))} ago`} style={{fontSize:'10px',color:'var(--text-3)'}}>🕑 {relDaysShort(daysSinceTouch(c))}</span>;
                             return null;
@@ -28140,9 +28143,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const doSnooze = async (r, days=3) => { const until=new Date(); until.setHours(9,0,0,0); until.setDate(until.getDate()+days); await applySnooze(r, until); };
   const doSnoozeUntil = async (r, dateStr) => { if(!dateStr) return; await applySnooze(r, new Date(dateStr+'T09:00:00')); };
   // Send the email, then open a pre-filled, fully editable follow-up task.
-  const doSendAndFollowUp = async (r) => {
-    const ok = await doSend(r);
-    if (!ok) return;
+  const openFollowUpTask = (r) => {
     const due = new Date(); due.setDate(due.getDate()+3);
     const dueStr = due.toLocaleDateString('en-CA');
     setFollowUpFor({
@@ -28150,12 +28151,18 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       initial: {
         title: `Follow up: ${r.name}`,
         due_date: dueStr,
-        notes: `Follow-up on today\u2019s outreach${r.reason?` \u2014 ${r.reason}`:''}.`,
+        notes: `Follow-up on outreach to ${r.name}${r.reason?` \u2014 ${r.reason}`:''}.`,
         priority_system: defaultSystem,
         _contact_ids: [r.contact_id],
       },
     });
   };
+  const doSendAndFollowUp = async (r) => {
+    const ok = await doSend(r);
+    if (!ok) return;
+    openFollowUpTask(r);
+  };
+  const doTaskOnly = (r) => openFollowUpTask(r); // same pre-fill, no email sent
   const saveFollowUp = async (data) => {
     const { _contact_ids, _email, ...taskData } = data;
     try {
@@ -28407,6 +28414,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
               {r.email && <button className="btn btn-ghost btn-sm" disabled={busy[r.contact_id]} onClick={()=>doSendAndFollowUp(r)} title="Send this email, then create a follow-up task you can edit" style={{color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>Send &amp; follow up</button>}
               <button className="btn btn-ghost btn-sm" onClick={()=>doCopy(r)}>Copy</button>
               <button className="btn btn-ghost btn-sm" onClick={()=>doDone(r)}>Mark contacted</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>doTaskOnly(r)} title="Create a follow-up task (pre-filled) without sending the email">Task</button>
               <div style={{position:'relative',display:'inline-block'}}>
                 <button className="btn btn-ghost btn-sm" onClick={()=>setSnoozeFor(s=>s===r.contact_id?null:r.contact_id)}>Snooze <span style={{color:'var(--text-3)'}}>{snoozeFor===r.contact_id?'\u25be':'\u25b8'}</span></button>
                 {snoozeFor===r.contact_id && (<>
