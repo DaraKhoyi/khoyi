@@ -1079,7 +1079,7 @@ body {
 .rog-wordmark .rog-realty,
 .rog-wordmark .rog-group { color: var(--text-1); font-weight: 600; }
 .rog-wordmark .rog-one   { color: var(--accent); font-weight: 800; }
-.rog-wordmark .rog-adv   { color: var(--accent); font-weight: 400; font-size: 0.78em; letter-spacing: 0; margin-left: -0.14em; }
+.rog-wordmark .rog-adv   { color: var(--accent); font-weight: 400; font-size: 0.78em; letter-spacing: 0; margin-left: -0.25em; }
 /* Rainbow PRISM wordmark — DISC palette (D/I/S/C) + violet as the 5th */
 .prism-mark { letter-spacing: 0.4px; }
 .prism-mark span { font-weight: 800; }
