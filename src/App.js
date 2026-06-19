@@ -28867,6 +28867,49 @@ function money(n){ if(n===null||n===undefined||n==='') return '\u2014'; const v=
 function shortDate(d){ if(!d) return '\u2014'; try{ return new Date(d+(d.length<=10?'T00:00:00':'')).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
 function StatusPill({ status }){ const m=STATUS_META[status]||{label:status,color:'var(--text-3)'}; return <span style={{fontSize:'10px',fontWeight:700,padding:'2px 9px',borderRadius:'999px',background:m.color,color:'#fff',whiteSpace:'nowrap'}}>{m.label}</span>; }
 
+/* ---- Phase 3: contingency timeline, waiver auto-resolution, consistency audit ---- */
+const DEADLINE_DEFS = [
+  { kind:'inspection', field:'inspection_deadline', label:'Inspection / due-diligence deadline' },
+  { kind:'financing',  field:'financing_deadline',  label:'Financing contingency deadline' },
+  { kind:'appraisal',  field:'appraisal_deadline',  label:'Appraisal contingency deadline' },
+  { kind:'closing',    field:'closing_date',        label:'Closing date' },
+];
+const WAIVER_TO_KIND = { dd_waiver:'inspection', appraisal_waiver:'appraisal', financing_waiver:'financing' };
+async function createDeadline(fileId, userId, kind, label, due_date, source, addr){
+  let task_id=null, event_id=null;
+  try{ const { data:task } = await supabase.from('tasks').insert({ user_id:userId, title:`${label} \u2014 ${addr||'file'}`, due_date, priority:'high', list:'inbox', notes:'Auto-generated from a buyer file (contract deadline).', completed:false }).select().single(); task_id=task?.id||null; }catch(e){}
+  try{ const s=new Date(`${due_date}T13:00:00.000Z`).toISOString(); const e2=new Date(`${due_date}T13:30:00.000Z`).toISOString(); const { data:ev } = await supabase.from('events').insert({ user_id:userId, title:`${label}: ${addr||''}`.trim(), start_at:s, end_at:e2, all_day:true, category:'deadline', sync_status:'local', task_id }).select().single(); event_id=ev?.id||null; }catch(e){}
+  const { data:dl } = await supabase.from('file_deadlines').insert({ file_id:fileId, user_id:userId, kind, label, due_date, status:'open', source, task_id, event_id }).select().single();
+  return dl||null;
+}
+async function generateDeadlinesFromTerms(fileId, userId, ai, addr){
+  if(!ai) return [];
+  const { data:existing } = await supabase.from('file_deadlines').select('kind,status').eq('file_id',fileId);
+  const have = new Set((existing||[]).filter(d=>d.status!=='cancelled').map(d=>d.kind));
+  const made=[];
+  for(const def of DEADLINE_DEFS){ const v=ai[def.field]; if(v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !have.has(def.kind)){ const dl=await createDeadline(fileId,userId,def.kind,def.label,v,'extracted',addr); if(dl){ made.push(dl); await logFileEvent(fileId,userId,'deadline_created',`${def.label} \u2014 ${v}`); } } }
+  if(Array.isArray(ai.waives)){ for(const w of ai.waives){ if(['inspection','appraisal','financing'].includes(w)) await resolveDeadlineWaiver(fileId,userId,w); } }
+  return made;
+}
+async function resolveDeadlineWaiver(fileId, userId, kind){
+  const { data:dls } = await supabase.from('file_deadlines').select('*').eq('file_id',fileId).eq('kind',kind).eq('status','open');
+  for(const dl of (dls||[])){ await supabase.from('file_deadlines').update({status:'waived',updated_at:new Date().toISOString()}).eq('id',dl.id); if(dl.task_id) await supabase.from('tasks').update({completed:true}).eq('id',dl.task_id); await logFileEvent(fileId,userId,'contingency_waived',`${dl.label} waived`); }
+  return (dls||[]).length;
+}
+// Rule-based cross-document consistency: flags fields that disagree across documents' extracted terms.
+function consistencyFlags(docs){
+  const fields=[['price','Contract price',v=>'$'+Number(v).toLocaleString()],['closing_date','Closing date',v=>v],['address','Property address',v=>v],['buyer','Buyer',v=>v],['seller','Seller',v=>v]];
+  const flags=[];
+  for(const [key,label,fmt] of fields){
+    const seen={};
+    for(const d of docs){ const t=d.extracted_terms||{}; let v=t[key]; if(key==='price'&&v!=null) v=Number(v); if(v===null||v===undefined||v==='') continue; const norm=(key==='address'||key==='buyer'||key==='seller')?String(v).toLowerCase().replace(/[^a-z0-9]/g,''):String(v); if(!seen[norm]) seen[norm]={val:v,docs:[]}; seen[norm].docs.push(DOCTYPE_LABEL[d.doc_type]||d.doc_type); }
+    const vals=Object.values(seen);
+    if(vals.length>1) flags.push({ label, variants: vals.map(x=>({ value: fmt(x.val), docs:[...new Set(x.docs)] })) });
+  }
+  return flags;
+}
+function daysUntil(d){ if(!d) return null; const ms=new Date(d+'T00:00:00').getTime()-Date.now(); return Math.ceil(ms/86400000); }
+
 function FilesView({ files, setFiles, contacts, setContacts, properties, userId, user }){
   const [showNew,setShowNew]=useState(false);
   const [openId,setOpenId]=useState(null);
@@ -28968,6 +29011,10 @@ function FilesView({ files, setFiles, contacts, setContacts, properties, userId,
           if(Object.keys(patch).length){ patch.updated_at=new Date().toISOString(); const { data:uf } = await supabase.from('files').update(patch).eq('id',targetFileId).select().single(); if(uf) setFiles(prev=>prev.map(x=>x.id===uf.id?uf:x)); }
         }
       }
+      // Phase 3: build timeline from a contract's terms; resolve contingencies from waiver docs
+      const addr=(files||[]).find(x=>x.id===targetFileId)?.address || ai.address;
+      if(['farbar_contract','amendment','counteroffer','addendum'].includes(docType)) await generateDeadlinesFromTerms(targetFileId, userId, ai, addr);
+      if(WAIVER_TO_KIND[docType]) await resolveDeadlineWaiver(targetFileId, userId, WAIVER_TO_KIND[docType]);
       await supabase.from('file_intake').update({ status:'filed', filed_document_id:doc.id, suggested_file_id:targetFileId, updated_at:new Date().toISOString() }).eq('id',item.id);
       await logFileEvent(targetFileId, userId, 'doc_filed_from_email', `${DOCTYPE_LABEL[docType]||docType} filed from email${item.email_from?` (${item.email_from})`:''}`, { doc_id:doc.id });
       setIntake(prev=>prev.filter(x=>x.id!==item.id));
@@ -29169,20 +29216,25 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const fileId=file.id;
   const [tab,setTab]=useState('overview');
   const [docs,setDocs]=useState([]); const [parties,setParties]=useState([]); const [items,setItems]=useState([]); const [events,setEvents]=useState([]);
+  const [deadlines,setDeadlines]=useState([]);
   const [loading,setLoading]=useState(true);
   const [ov,setOv]=useState(file);
   useEffect(()=>{ setOv(file); },[file]);
+  const loadDeadlines = async()=>{ const { data } = await supabase.from('file_deadlines').select('*').eq('file_id',fileId).order('due_date',{ascending:true}); setDeadlines(data||[]); };
 
   useEffect(()=>{ let alive=true; (async()=>{
-    const [d,p,i,e]=await Promise.all([
+    const [d,p,i,e,dl]=await Promise.all([
       supabase.from('file_documents').select('*').eq('file_id',fileId).order('created_at',{ascending:false}),
       supabase.from('file_parties').select('*').eq('file_id',fileId).order('created_at',{ascending:true}),
       supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true}),
       supabase.from('file_events').select('*').eq('file_id',fileId).order('created_at',{ascending:false}).limit(100),
+      supabase.from('file_deadlines').select('*').eq('file_id',fileId).order('due_date',{ascending:true}),
     ]);
     if(!alive) return;
-    setDocs(d.data||[]); setParties(p.data||[]); setItems(i.data||[]); setEvents(e.data||[]); setLoading(false);
+    setDocs(d.data||[]); setParties(p.data||[]); setItems(i.data||[]); setEvents(e.data||[]); setDeadlines(dl.data||[]); setLoading(false);
   })(); return ()=>{alive=false;}; },[fileId]);
+
+  const cFlags = consistencyFlags(docs);
 
   const reqItems = items.filter(i=>i.required);
   const reqDone = reqItems.filter(i=>['approved','waived','na'].includes(i.status)).length;
@@ -29247,6 +29299,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
       await logFileEvent(fileId,userId,'doc_uploaded',`${DOCTYPE_LABEL[upType]||upType} uploaded`,{doc_id:row.id});
       const key=DOCTYPE_TO_ITEM[upType]||upType;
       setItems(prev=>prev.map(it=>{ if(it.item_key===key && it.status==='missing'){ supabase.from('file_checklist_items').update({status:'received',satisfied_by:row.id,updated_at:new Date().toISOString()}).eq('id',it.id); return {...it,status:'received',satisfied_by:row.id}; } return it; }));
+      if(WAIVER_TO_KIND[upType]){ await resolveDeadlineWaiver(fileId,userId,WAIVER_TO_KIND[upType]); await loadDeadlines(); }
       setUpFile(null); setUpTitle(''); setShowUpload(false);
     }catch(e){ if(window.__notify) window.__notify('Upload failed: '+(e.message||e),'error'); }
     finally{ setUploading(false); }
@@ -29274,11 +29327,36 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   };
   const delParty = async(pt)=>{ setParties(prev=>prev.filter(x=>x.id!==pt.id)); await supabase.from('file_parties').delete().eq('id',pt.id); };
 
-  const delFile = async()=>{ if(!window.confirm(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
+  const delFile = async()=>{ if(!window.confirm(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; for(const dl of deadlines){ if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); } await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
+
+  // ---------- deadlines / timeline ----------
+  const generateTimeline = async()=>{
+    const contractDoc = docs.find(d=>['farbar_contract','amendment','counteroffer','addendum'].includes(d.doc_type) && d.extracted_terms && Object.keys(d.extracted_terms).length);
+    const ai = contractDoc? contractDoc.extracted_terms : {};
+    const merged = { ...ai, closing_date: ai.closing_date || ov.closing_date || null };
+    const made = await generateDeadlinesFromTerms(fileId, userId, merged, file.address);
+    await loadDeadlines();
+    if(window.__notify) window.__notify(made.length? `${made.length} deadline(s) added to your tasks & calendar.` : 'No new dates found to schedule. Add one manually below.','success');
+  };
+  const addDeadlineManual = async()=>{
+    const label=window.prompt('Deadline label (e.g., Title commitment due):'); if(!label) return;
+    const due=window.prompt('Due date (YYYY-MM-DD):'); if(!due||!/^\d{4}-\d{2}-\d{2}$/.test(due)){ if(window.__notify) window.__notify('Use date format YYYY-MM-DD.','error'); return; }
+    await createDeadline(fileId,userId,'custom',label,due,'manual',file.address);
+    await logFileEvent(fileId,userId,'deadline_created',`${label} \u2014 ${due}`);
+    await loadDeadlines();
+  };
+  const setDeadlineStatus = async(dl,status)=>{
+    setDeadlines(prev=>prev.map(x=>x.id===dl.id?{...x,status}:x));
+    await supabase.from('file_deadlines').update({status,updated_at:new Date().toISOString()}).eq('id',dl.id);
+    if((status==='waived'||status==='met'||status==='cancelled') && dl.task_id) await supabase.from('tasks').update({completed:true}).eq('id',dl.task_id);
+    await logFileEvent(fileId,userId,'deadline_'+status,`${dl.label}: ${status}`);
+  };
+  const delDeadline = async(dl)=>{ if(!window.confirm(`Remove "${dl.label}"? Its task and calendar entry will be removed too.`)) return; setDeadlines(prev=>prev.filter(x=>x.id!==dl.id)); if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); await supabase.from('file_deadlines').delete().eq('id',dl.id); };
 
   const cats = [...new Set(items.map(i=>i.category||'Other'))];
   const setOvF=(k,v)=>setOv(o=>({...o,[k]:v}));
-  const TABS=[['overview','Overview'],['checklist','Checklist'],['docs','Documents'],['parties','Parties'],['activity','Activity']];
+  const DL_STATUS_COLOR={open:'var(--accent)',waived:'var(--yellow)',met:'var(--green)',passed:'var(--red)',cancelled:'var(--text-3)'};
+  const TABS=[['overview','Overview'],['checklist','Checklist'],['timeline','Timeline'],['docs','Documents'],['parties','Parties'],['activity','Activity']];
 
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -29316,6 +29394,17 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
 
         {tab==='overview' && (
           <div style={{display:'grid',gap:'10px'}}>
+            {cFlags.length>0 && (
+              <div style={{background:'rgba(245,158,11,.10)',border:'1px solid var(--yellow)',borderRadius:'8px',padding:'10px 12px'}}>
+                <div style={{fontSize:'12px',fontWeight:700,color:'var(--yellow)',marginBottom:'4px'}}>\u26a0 Consistency check: {cFlags.length} conflict{cFlags.length>1?'s':''} across documents</div>
+                {cFlags.map((f,idx)=>(
+                  <div key={idx} style={{fontSize:'12px',color:'var(--text-2)',marginTop:'4px'}}>
+                    <strong style={{color:'var(--text-1)'}}>{f.label}:</strong> {f.variants.map((v,i)=><span key={i}>{i>0?'  vs  ':''}{v.value} <span style={{color:'var(--text-3)'}}>({v.docs.join(', ')})</span></span>)}
+                  </div>
+                ))}
+              </div>
+            )}
+            {docs.length>1 && cFlags.length===0 && <div style={{fontSize:'12px',color:'var(--green)'}}>\u2713 Consistency check: price, dates, and parties agree across {docs.length} documents.</div>}
             <label className="form-label">Status
               <select className="form-input" value={ov.status} onChange={e=>changeStatus(e.target.value)}>
                 {FILE_STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
@@ -29340,6 +29429,29 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
               <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={delFile}><Icon name="trash" size={13}/> Delete file</button>
               <button className="btn btn-primary" onClick={saveOverview}>Save</button>
             </div>
+          </div>
+        )}
+
+        {tab==='timeline' && (
+          <div style={{display:'grid',gap:'10px'}}>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+              <button className="btn btn-primary btn-sm" onClick={generateTimeline}>Generate deadlines from contract</button>
+              <button className="btn btn-ghost btn-sm" onClick={addDeadlineManual}>+ Add deadline</button>
+            </div>
+            {deadlines.length===0 && <div style={{color:'var(--text-2)',fontSize:'13px'}}>No deadlines yet. Filing an emailed contract auto-builds these; or generate / add them here. Each one creates a high-priority task and a calendar entry.</div>}
+            {deadlines.map(dl=>{ const du=daysUntil(dl.due_date); const past= du!=null && du<0 && dl.status==='open'; return (
+              <div key={dl.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px',background:'var(--bg-hover)',borderRadius:'8px'}}>
+                <div style={{width:'4px',alignSelf:'stretch',minHeight:'34px',borderRadius:'4px',background:past?'var(--red)':(DL_STATUS_COLOR[dl.status]||'var(--accent)')}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13px',fontWeight:600}}>{dl.label}</div>
+                  <div style={{fontSize:'12px',color:past?'var(--red)':'var(--text-2)'}}>{shortDate(dl.due_date)}{dl.status==='open'&&du!=null?` \u00B7 ${du<0?`${-du}d overdue`:du===0?'today':`in ${du}d`}`:''}{dl.status!=='open'?` \u00B7 ${dl.status}`:''}</div>
+                </div>
+                <select className="form-input" value={dl.status} onChange={e=>setDeadlineStatus(dl,e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px',color:DL_STATUS_COLOR[dl.status]}}>
+                  {['open','waived','met','passed','cancelled'].map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+                <button className="btn btn-ghost btn-sm" onClick={()=>delDeadline(dl)} style={{color:'var(--text-3)',padding:'4px 7px'}}><Icon name="trash" size={12}/></button>
+              </div>
+            ); })}
           </div>
         )}
 
