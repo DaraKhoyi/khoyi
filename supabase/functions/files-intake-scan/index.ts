@@ -68,7 +68,9 @@ Read the attached document and the email context, then return ONLY a JSON object
 "effective_date": "YYYY-MM-DD" or null, "closing_date": "YYYY-MM-DD" or null,
 "inspection_deadline": "YYYY-MM-DD" or null, "financing_deadline": "YYYY-MM-DD" or null, "appraisal_deadline": "YYYY-MM-DD" or null,
 "waives": array subset of ["inspection","appraisal","financing"] that THIS document waives,
+"commission_total": number or null, "commission_to_brokerage": number or null,
 "confidence": number 0..1, "summary": one short sentence}
+For closing_disclosure / ALTA settlement statements, also fill commission_total (the total real estate commission) and commission_to_brokerage (the commission paid to the buyer's-side / selling brokerage). Leave them null on other document types.
 If it is not a real-estate transaction document, use doc_type "misc" with low confidence.
 Email context: ${ctx}`;
   const r = await fetch("https://api.anthropic.com/v1/messages", {

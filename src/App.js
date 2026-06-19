@@ -29015,6 +29015,14 @@ function FilesView({ files, setFiles, contacts, setContacts, properties, userId,
       const addr=(files||[]).find(x=>x.id===targetFileId)?.address || ai.address;
       if(['farbar_contract','amendment','counteroffer','addendum'].includes(docType)) await generateDeadlinesFromTerms(targetFileId, userId, ai, addr);
       if(WAIVER_TO_KIND[docType]) await resolveDeadlineWaiver(targetFileId, userId, WAIVER_TO_KIND[docType]);
+      if(docType==='closing_disclosure'){
+        const cdComm = (ai.commission_to_brokerage!=null? ai.commission_to_brokerage : (ai.commission_total!=null? ai.commission_total : null));
+        const patch={ cd_received:true, updated_at:new Date().toISOString() };
+        if(cdComm!=null) patch.commission_cd=cdComm;
+        const { data:uf } = await supabase.from('files').update(patch).eq('id',targetFileId).select().single();
+        if(uf) setFiles(prev=>prev.map(x=>x.id===uf.id?uf:x));
+        await logFileEvent(targetFileId, userId, 'cd_received', `Closing Disclosure received${cdComm!=null?` \u00B7 commission ${money(cdComm)}`:''}`);
+      }
       await supabase.from('file_intake').update({ status:'filed', filed_document_id:doc.id, suggested_file_id:targetFileId, updated_at:new Date().toISOString() }).eq('id',item.id);
       await logFileEvent(targetFileId, userId, 'doc_filed_from_email', `${DOCTYPE_LABEL[docType]||docType} filed from email${item.email_from?` (${item.email_from})`:''}`, { doc_id:doc.id });
       setIntake(prev=>prev.filter(x=>x.id!==item.id));
@@ -29143,6 +29151,53 @@ function IntakeCard({ item, files, busy, onView, onDismiss, onFile, onCreateNew 
         <button className="btn btn-primary btn-sm" disabled={busy||!target} onClick={()=>onFile(target,dtype)}>{busy?'Filing\u2026':'File here'}</button>
         <button className="btn btn-ghost btn-sm" disabled={busy} onClick={onCreateNew} style={{color:'var(--accent)'}}>+ New file from this</button>
         <button className="btn btn-ghost btn-sm" disabled={busy} onClick={onDismiss} style={{color:'var(--text-3)',marginLeft:'auto'}}>Dismiss</button>
+      </div>
+    </div>
+  );
+}
+
+function MissingDocsComposer({ file, ov, missingItems, parties, contacts, userId, onClose, onSent }){
+  const [accounts,setAccounts]=useState([]);
+  const [fromId,setFromId]=useState('');
+  const addr=file.address||'this file';
+  const partyEmail = (()=>{ for(const p of (parties||[])){ const c=(contacts||[]).find(x=>x.id===p.contact_id); if(c?.email) return c.email; } return ''; })();
+  const [to,setTo]=useState(partyEmail);
+  const [subject,setSubject]=useState(`Documents needed \u2014 ${addr}`);
+  const [body,setBody]=useState(`Hi,\n\nWe\u2019re finalizing the file for ${addr} and still need the following to complete it:\n\n${(missingItems||[]).map(i=>`\u2022 ${i.label}`).join('\n')}\n\nPlease send these at your earliest convenience so we can keep the closing on track.\n\nThank you,`);
+  const [sending,setSending]=useState(false);
+  useEffect(()=>{ (async()=>{ const { data } = await supabase.from('email_accounts').select('id,email_address,is_active').eq('user_id',userId); const act=(data||[]).filter(a=>a.is_active!==false); setAccounts(act); if(act[0]) setFromId(act[0].id); })(); },[userId]);
+  const send=async()=>{
+    if(!to.trim()){ if(window.__notify) window.__notify('Add a recipient.','error'); return; }
+    if(!fromId){ if(window.__notify) window.__notify('Connect a Gmail account in Settings to send.','error'); return; }
+    setSending(true);
+    try{
+      const { data, error } = await supabase.functions.invoke('gmail-send', { body:{ account_id:fromId, to:to.trim(), subject, body_text:body } });
+      if(error||data?.error){ if(window.__notify) window.__notify('Send failed: '+(error?.message||data?.error),'error'); return; }
+      if(onSent) onSent();
+      if(window.__notify) window.__notify('Request sent.','success');
+      onClose();
+    }catch(e){ if(window.__notify) window.__notify('Send failed: '+(e.message||e),'error'); }
+    finally{ setSending(false); }
+  };
+  return (
+    <div className="modal-overlay" style={{zIndex:2200}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:'560px',width:'100%',maxHeight:'92vh',overflowY:'auto'}}>
+        <div className="modal-header"><h3 style={{margin:0}}>Request missing documents</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div style={{display:'grid',gap:'10px'}}>
+          <label className="form-label">From
+            <select className="form-input" value={fromId} onChange={e=>setFromId(e.target.value)}>
+              {accounts.length===0 && <option value="">No connected account</option>}
+              {accounts.map(a=><option key={a.id} value={a.id}>{a.email_address}</option>)}
+            </select>
+          </label>
+          <label className="form-label">To<input className="form-input" value={to} onChange={e=>setTo(e.target.value)} placeholder="agent@example.com"/></label>
+          <label className="form-label">Subject<input className="form-input" value={subject} onChange={e=>setSubject(e.target.value)}/></label>
+          <label className="form-label">Message<textarea className="form-input" rows={10} value={body} onChange={e=>setBody(e.target.value)}/></label>
+        </div>
+        <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={send} disabled={sending}>{sending?'Sending\u2026':'Send request'}</button>
+        </div>
       </div>
     </div>
   );
@@ -29327,6 +29382,71 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   };
   const delParty = async(pt)=>{ setParties(prev=>prev.filter(x=>x.id!==pt.id)); await supabase.from('file_parties').delete().eq('id',pt.id); };
 
+  // ---------- Phase 4: extraction, disbursement, missing-doc email ----------
+  const [extracting,setExtracting]=useState({});
+  const extractDoc = async(d)=>{
+    setExtracting(e=>({...e,[d.id]:true}));
+    try{
+      const { data, error } = await supabase.functions.invoke('files-doc-extract', { body:{ document_id:d.id } });
+      if(error||data?.error){ if(window.__notify) window.__notify('Extract failed: '+(error?.message||data?.error),'error'); return; }
+      const ai=data.ai||{};
+      setDocs(prev=>prev.map(x=>x.id===d.id?{...x,extracted_terms:ai}:x));
+      // if it's a CD, capture commission + receipt on the file
+      if(d.doc_type==='closing_disclosure'){
+        const cdComm=(ai.commission_to_brokerage!=null?ai.commission_to_brokerage:(ai.commission_total!=null?ai.commission_total:null));
+        const patch={cd_received:true,updated_at:new Date().toISOString()}; if(cdComm!=null) patch.commission_cd=cdComm;
+        const { data:uf } = await supabase.from('files').update(patch).eq('id',fileId).select().single(); if(uf){ onChange(uf); setOv(uf); }
+        await logFileEvent(fileId,userId,'cd_received',`Closing Disclosure read \u00B7 commission ${cdComm!=null?money(cdComm):'n/a'}`);
+      }
+      // contract terms -> offer to build timeline happens via Timeline tab; here just store
+      if(window.__notify) window.__notify('Figures extracted.','success');
+    }catch(e){ if(window.__notify) window.__notify('Extract failed: '+(e.message||e),'error'); }
+    finally{ setExtracting(e=>({...e,[d.id]:false})); }
+  };
+
+  const expectedComm = ov.commission_gross!=null?Number(ov.commission_gross):null;
+  const cdComm = ov.commission_cd!=null?Number(ov.commission_cd):null;
+  const commVariance = (expectedComm!=null && cdComm!=null)? (cdComm-expectedComm):null;
+  const commReconciled = commVariance!=null && Math.abs(commVariance) < 1;
+  const cdApprovedDoc = items.some(i=>i.item_key==='closing_disclosure'&&['approved','waived'].includes(i.status)) || ov.cd_received;
+  const readyToDisburse = reqItems.length>0 && reqDone===reqItems.length && (ov.cd_received||cdApprovedDoc);
+
+  const markPaid = async()=>{
+    const amtStr=window.prompt('Amount received ($):', cdComm!=null?String(cdComm):(expectedComm!=null?String(expectedComm):'')); if(amtStr===null) return;
+    const amt=Number(amtStr)||null;
+    const method=window.prompt('Method (check / wire / ach):','wire')||null;
+    const when=window.prompt('Date received (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'))||new Date().toLocaleDateString('en-CA');
+    const patch={ status:'paid', paid_amount:amt, paid_method:method, paid_at:new Date(`${when}T12:00:00`).toISOString(), disbursed_at:new Date().toISOString(), updated_at:new Date().toISOString() };
+    const { data:uf } = await supabase.from('files').update(patch).eq('id',fileId).select().single();
+    if(uf){ onChange(uf); setOv(uf); }
+    await logFileEvent(fileId,userId,'paid',`Marked paid \u00B7 ${money(amt)} via ${method||'?'} on ${when}`);
+    if(window.__notify) window.__notify('File marked paid. \uD83C\uDF89','success');
+  };
+
+  const cdaText = ()=>{
+    const lines=[];
+    lines.push('COMMISSION DISBURSEMENT AUTHORIZATION');
+    lines.push('Realty ONE Group Advantage');
+    lines.push('');
+    lines.push(`Property: ${file.address||''}${file.city?`, ${file.city}`:''} ${file.state||''} ${file.zip||''}`.trim());
+    if(ov.buyer_name) lines.push(`Buyer: ${ov.buyer_name}`);
+    if(ov.seller_name) lines.push(`Seller: ${ov.seller_name}`);
+    if(ov.contract_price!=null) lines.push(`Sale price: ${money(ov.contract_price)}`);
+    if(ov.closing_date) lines.push(`Closing date: ${shortDate(ov.closing_date)}`);
+    lines.push('');
+    if(cdComm!=null) lines.push(`Commission per Closing Disclosure: ${money(cdComm)}`);
+    if(expectedComm!=null) lines.push(`Commission expected (file): ${money(expectedComm)}`);
+    if(ov.commission_split!=null) lines.push(`Agent split: ${ov.commission_split}%`);
+    if(ov.commission_net!=null) lines.push(`Net to agent: ${money(ov.commission_net)}`);
+    lines.push('');
+    lines.push('Please disburse the above commission to Realty ONE Group Advantage at closing.');
+    return lines.join('\n');
+  };
+  const copyCDA = ()=>{ try{ navigator.clipboard.writeText(cdaText()); if(window.__notify) window.__notify('CDA copied to clipboard.','success'); }catch(e){ if(window.__notify) window.__notify('Copy failed.','error'); } };
+
+  const [showMissing,setShowMissing]=useState(false);
+  const missingItems = items.filter(i=>i.required && !['approved','waived','na'].includes(i.status));
+
   const delFile = async()=>{ if(!window.confirm(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; for(const dl of deadlines){ if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); } await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
 
   // ---------- deadlines / timeline ----------
@@ -29356,7 +29476,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const cats = [...new Set(items.map(i=>i.category||'Other'))];
   const setOvF=(k,v)=>setOv(o=>({...o,[k]:v}));
   const DL_STATUS_COLOR={open:'var(--accent)',waived:'var(--yellow)',met:'var(--green)',passed:'var(--red)',cancelled:'var(--text-3)'};
-  const TABS=[['overview','Overview'],['checklist','Checklist'],['timeline','Timeline'],['docs','Documents'],['parties','Parties'],['activity','Activity']];
+  const TABS=[['overview','Overview'],['checklist','Checklist'],['timeline','Timeline'],['docs','Documents'],['closing','Closing'],['parties','Parties'],['activity','Activity']];
 
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -29512,6 +29632,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
                     <select className="form-input" value={d.doc_type} onChange={e=>setDocType(d,e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px'}}>{FILE_DOC_TYPES.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select>
                     <button className="btn btn-ghost btn-sm" onClick={()=>viewDoc(d)}><Icon name="eye" size={12}/> View</button>
+                    <button className="btn btn-ghost btn-sm" disabled={!!extracting[d.id]} onClick={()=>extractDoc(d)} title="Use AI to read figures (price, dates, commission) from this document">{extracting[d.id]?'Reading\u2026':'Extract figures'}</button>
                     {isAdmin && <>
                       <button className="btn btn-ghost btn-sm" style={{color:'var(--green)'}} onClick={()=>reviewDoc(d,'approved')}>Approve</button>
                       <button className="btn btn-ghost btn-sm" style={{color:'var(--yellow)'}} onClick={()=>reviewDoc(d,'revision_requested')}>Revise</button>
@@ -29523,6 +29644,38 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {tab==='closing' && (
+          <div style={{display:'grid',gap:'12px'}}>
+            <div className="panel" style={{display:'grid',gap:'6px',background:'var(--bg-hover)'}}>
+              <div style={{fontWeight:700,fontSize:'13px'}}>Disbursement readiness</div>
+              {[['All required documents approved', reqItems.length>0 && reqDone===reqItems.length],['Closing Disclosure received', !!ov.cd_received],['Commission reconciled', commReconciled]].map((row,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px'}}>
+                  <span style={{color: row[1]?'var(--green)':'var(--text-3)',fontWeight:700}}>{row[1]?'\u2713':'\u25cb'}</span>
+                  <span style={{color: row[1]?'var(--text-1)':'var(--text-2)'}}>{row[0]}</span>
+                </div>
+              ))}
+            </div>
+            <div className="panel" style={{display:'grid',gap:'4px'}}>
+              <div style={{fontWeight:700,fontSize:'13px',marginBottom:'4px'}}>Commission reconciliation</div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px'}}><span style={{color:'var(--text-2)'}}>Expected (file)</span><span>{expectedComm!=null?money(expectedComm):'\u2014'}</span></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px'}}><span style={{color:'var(--text-2)'}}>Per Closing Disclosure</span><span>{cdComm!=null?money(cdComm):'\u2014'}</span></div>
+              {commVariance!=null && <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px',fontWeight:700,color: commReconciled?'var(--green)':'var(--red)'}}><span>Variance</span><span>{commVariance>=0?'+':''}{money(commVariance)}</span></div>}
+              {cdComm==null && <div style={{fontSize:'12px',color:'var(--text-3)'}}>File the Closing Disclosure (or use \u201cExtract figures\u201d on it in Documents) to pull the commission.</div>}
+            </div>
+            <div className="panel" style={{display:'grid',gap:'6px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div style={{fontWeight:700,fontSize:'13px'}}>Commission Disbursement Authorization</div><button className="btn btn-ghost btn-sm" onClick={copyCDA}>Copy</button></div>
+              <pre style={{whiteSpace:'pre-wrap',fontSize:'12px',color:'var(--text-2)',margin:0,fontFamily:'inherit'}}>{cdaText()}</pre>
+            </div>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+              {missingItems.length>0 && <button className="btn btn-ghost btn-sm" onClick={()=>setShowMissing(true)}>Request missing docs ({missingItems.length})</button>}
+              {ov.status!=='paid'
+                ? <button className="btn btn-primary btn-sm" disabled={!readyToDisburse} onClick={markPaid} title={readyToDisburse?'':'Complete required docs + Closing Disclosure first'}>Mark paid</button>
+                : <span style={{fontSize:'13px',color:'var(--green)',fontWeight:700,alignSelf:'center'}}>\u2713 Paid {ov.paid_amount!=null?money(ov.paid_amount):''} {ov.paid_method?`via ${ov.paid_method}`:''} {ov.paid_at?`\u00B7 ${shortDate(ov.paid_at.slice(0,10))}`:''}</span>}
+            </div>
+            {!readyToDisburse && ov.status!=='paid' && <div style={{fontSize:'12px',color:'var(--text-3)'}}>\u201cMark paid\u201d unlocks once required docs are approved and the Closing Disclosure is in.</div>}
           </div>
         )}
 
@@ -29561,6 +29714,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
         )}
         </>}
       </div>
+      {showMissing && <MissingDocsComposer file={file} ov={ov} missingItems={missingItems} parties={parties} contacts={contacts} userId={userId} onClose={()=>setShowMissing(false)} onSent={()=>{ logFileEvent(fileId,userId,'missing_docs_requested',`Requested ${missingItems.length} missing document(s)`); }} />}
     </div>
   );
 }
