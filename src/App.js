@@ -28785,6 +28785,535 @@ function UpdateBanner() {
   );
 }
 
+/* ============================================================
+   FILES — Buyer-side transaction file management (Phase 1)
+   FAR/BAR (Florida) checklist. Manual create + upload + review.
+   ============================================================ */
+const FILE_DOC_TYPES = [
+  { value:'farbar_contract',   label:'FAR/BAR Contract (AS IS)',            cat:'Contract' },
+  { value:'as_is_rider',       label:'AS IS / Comprehensive Rider',         cat:'Contract' },
+  { value:'addendum',          label:'Addendum',                            cat:'Contract' },
+  { value:'amendment',         label:'Amendment',                           cat:'Contract' },
+  { value:'counteroffer',      label:'Counteroffer',                        cat:'Contract' },
+  { value:'buyer_brokerage',   label:'Buyer Brokerage Agreement',           cat:'Agency' },
+  { value:'agency_disclosure', label:'Brokerage Relationship Disclosure',   cat:'Agency' },
+  { value:'seller_disclosure', label:'Seller\u2019s Property Disclosure',   cat:'Disclosures' },
+  { value:'lead_paint',        label:'Lead-Based Paint Disclosure',         cat:'Disclosures' },
+  { value:'hoa_condo',         label:'HOA / Condo Docs & Rider',            cat:'Disclosures' },
+  { value:'financing',         label:'Pre-Approval / Proof of Funds',       cat:'Financing' },
+  { value:'loan_estimate',     label:'Loan Estimate',                       cat:'Financing' },
+  { value:'emd_receipt',       label:'Escrow / EMD Receipt',                cat:'Escrow' },
+  { value:'inspection',        label:'Inspection Report',                   cat:'Inspections' },
+  { value:'wdo',               label:'WDO / Termite Report',                cat:'Inspections' },
+  { value:'appraisal',         label:'Appraisal',                           cat:'Inspections' },
+  { value:'dd_waiver',         label:'Inspection Period Waiver',            cat:'Waivers' },
+  { value:'appraisal_waiver',  label:'Appraisal Contingency Waiver',        cat:'Waivers' },
+  { value:'financing_waiver',  label:'Financing Contingency Waiver',        cat:'Waivers' },
+  { value:'title_commitment',  label:'Title Commitment',                    cat:'Closing' },
+  { value:'closing_disclosure',label:'Closing Disclosure / ALTA',           cat:'Closing' },
+  { value:'cda',               label:'Commission Disbursement Authorization',cat:'Closing' },
+  { value:'wire_instructions', label:'Wire Instructions',                   cat:'Closing' },
+  { value:'misc',              label:'Other Document',                      cat:'Other' },
+];
+const DOCTYPE_LABEL = Object.fromEntries(FILE_DOC_TYPES.map(d=>[d.value,d.label]));
+const DOCTYPE_TO_ITEM = {
+  farbar_contract:'farbar_contract', as_is_rider:'as_is_rider',
+  addendum:'addenda', amendment:'addenda', counteroffer:'addenda',
+  buyer_brokerage:'buyer_brokerage', agency_disclosure:'agency_disclosure',
+  seller_disclosure:'seller_disclosure', lead_paint:'lead_paint', hoa_condo:'hoa_condo',
+  financing:'financing', loan_estimate:'financing', emd_receipt:'emd_receipt',
+  inspection:'inspection', wdo:'inspection', appraisal:'inspection',
+  title_commitment:'title_commitment', closing_disclosure:'closing_disclosure', cda:'cda',
+};
+const FILE_STATUSES = [
+  { value:'prospect',       label:'Prospect',        color:'var(--text-3)' },
+  { value:'active',         label:'Active',          color:'#3b82f6' },
+  { value:'under_contract', label:'Under Contract',  color:'var(--accent)' },
+  { value:'pending',        label:'Pending',         color:'#a855f7' },
+  { value:'clear_to_close', label:'Clear to Close',  color:'#14b8a6' },
+  { value:'closed',         label:'Closed',          color:'var(--green)' },
+  { value:'paid',           label:'Paid',            color:'var(--green)' },
+  { value:'cancelled',      label:'Cancelled',       color:'var(--red)' },
+];
+const STATUS_META = Object.fromEntries(FILE_STATUSES.map(s=>[s.value,s]));
+const CHK_STATUS = [
+  { value:'missing',  label:'Missing',  color:'var(--text-3)' },
+  { value:'received', label:'Received', color:'#3b82f6' },
+  { value:'approved', label:'Approved', color:'var(--green)' },
+  { value:'waived',   label:'Waived',   color:'var(--yellow)' },
+  { value:'na',       label:'N/A',      color:'var(--text-3)' },
+];
+const CHK_META = Object.fromEntries(CHK_STATUS.map(s=>[s.value,s]));
+const FARBAR_BUYER_CHECKLIST = [
+  { key:'farbar_contract',   label:'FAR/BAR Contract (AS IS), fully executed', required:true,  cat:'Contract' },
+  { key:'as_is_rider',       label:'AS IS / Comprehensive Rider',              required:false, cat:'Contract' },
+  { key:'addenda',           label:'Addenda / Amendments (as applicable)',     required:false, cat:'Contract' },
+  { key:'buyer_brokerage',   label:'Buyer Brokerage Agreement (signed)',       required:true,  cat:'Agency' },
+  { key:'agency_disclosure', label:'Brokerage Relationship Disclosure',        required:true,  cat:'Agency' },
+  { key:'seller_disclosure', label:'Seller\u2019s Property Disclosure',        required:true,  cat:'Disclosures' },
+  { key:'lead_paint',        label:'Lead-Based Paint Disclosure (pre-1978)',   required:false, cat:'Disclosures' },
+  { key:'hoa_condo',         label:'HOA / Condo docs & rider (if applicable)', required:false, cat:'Disclosures' },
+  { key:'financing',         label:'Pre-Approval or Proof of Funds',           required:true,  cat:'Financing' },
+  { key:'emd_receipt',       label:'Escrow / EMD deposit receipt',             required:true,  cat:'Escrow' },
+  { key:'inspection',        label:'Inspection / WDO report (or waiver)',      required:false, cat:'Inspections' },
+  { key:'title_commitment',  label:'Title commitment',                         required:false, cat:'Closing' },
+  { key:'closing_disclosure',label:'Closing Disclosure / ALTA settlement',     required:true,  cat:'Closing' },
+  { key:'cda',               label:'Commission Disbursement Authorization',    required:true,  cat:'Closing' },
+];
+function logFileEvent(fileId, userId, kind, detail, meta){
+  return supabase.from('file_events').insert({ file_id:fileId, user_id:userId, kind, detail:detail||null, meta:meta||{} }).then(()=>{}).catch(()=>{});
+}
+function money(n){ if(n===null||n===undefined||n==='') return '\u2014'; const v=Number(n); if(isNaN(v)) return '\u2014'; return '$'+v.toLocaleString(undefined,{maximumFractionDigits:0}); }
+function shortDate(d){ if(!d) return '\u2014'; try{ return new Date(d+(d.length<=10?'T00:00:00':'')).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
+function StatusPill({ status }){ const m=STATUS_META[status]||{label:status,color:'var(--text-3)'}; return <span style={{fontSize:'10px',fontWeight:700,padding:'2px 9px',borderRadius:'999px',background:m.color,color:'#fff',whiteSpace:'nowrap'}}>{m.label}</span>; }
+
+function FilesView({ files, setFiles, contacts, setContacts, properties, userId, user }){
+  const [showNew,setShowNew]=useState(false);
+  const [openId,setOpenId]=useState(null);
+  const [statusFilter,setStatusFilter]=useState('all');
+  const [progress,setProgress]=useState({});
+  const isAdmin = ((user?.email)||'').toLowerCase()==='dara@brokerdara.com';
+  const buyerFiles = useMemo(()=> (files||[]).filter(f=>f.side==='buyer'), [files]);
+  const idsKey = buyerFiles.map(f=>f.id).join(',');
+
+  useEffect(()=>{ let alive=true; (async()=>{
+    const ids = idsKey? idsKey.split(',') : [];
+    if(!ids.length){ setProgress({}); return; }
+    const { data } = await supabase.from('file_checklist_items').select('file_id,required,status').in('file_id', ids);
+    if(!alive) return;
+    const map={};
+    (data||[]).forEach(it=>{ if(!it.required) return; const m=map[it.file_id]||{done:0,total:0}; m.total++; if(['approved','waived','na'].includes(it.status)) m.done++; map[it.file_id]=m; });
+    setProgress(map);
+  })(); return ()=>{alive=false;}; },[idsKey]);
+
+  const shown = statusFilter==='all'? buyerFiles : buyerFiles.filter(f=>f.status===statusFilter);
+
+  const createFile = async (vals)=>{
+    const ins = { ...vals, user_id:userId, side:'buyer' };
+    const { data, error } = await supabase.from('files').insert(ins).select().single();
+    if(error){ if(window.__notify) window.__notify('Could not create file: '+error.message,'error'); return; }
+    const items = FARBAR_BUYER_CHECKLIST.map((c,i)=>({ file_id:data.id, user_id:userId, item_key:c.key, label:c.label, category:c.cat, required:c.required, sort:i }));
+    await supabase.from('file_checklist_items').insert(items);
+    await logFileEvent(data.id, userId, 'file_created', `File created for ${data.address||'(no address)'}`);
+    setFiles(prev=>[data, ...prev]);
+    setProgress(p=>({ ...p, [data.id]:{ done:0, total: FARBAR_BUYER_CHECKLIST.filter(c=>c.required).length } }));
+    setShowNew(false); setOpenId(data.id);
+  };
+  const patchFile = (updated)=> setFiles(prev=>prev.map(f=>f.id===updated.id?updated:f));
+  const removeFile = (id)=> { setFiles(prev=>prev.filter(f=>f.id!==id)); setOpenId(null); };
+
+  const openFile = (files||[]).find(f=>f.id===openId) || null;
+
+  return (
+    <div className="view">
+      <div className="panel" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="folder" size={20}/> Files</h2>
+          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Buyer-side transaction files \u00B7 FAR/BAR (Florida)</div>
+        </div>
+        <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ New File</button>
+      </div>
+
+      <div style={{display:'flex',gap:'6px',flexWrap:'wrap',margin:'12px 0'}}>
+        {[{value:'all',label:'All'},...FILE_STATUSES].map(s=>(
+          <button key={s.value} className={'btn btn-sm '+(statusFilter===s.value?'btn-primary':'btn-ghost')} onClick={()=>setStatusFilter(s.value)} style={{fontSize:'12px'}}>
+            {s.label}{s.value!=='all'?` (${buyerFiles.filter(f=>f.status===s.value).length})`:` (${buyerFiles.length})`}
+          </button>
+        ))}
+      </div>
+
+      {shown.length===0 ? (
+        <div className="panel" style={{textAlign:'center',color:'var(--text-2)',padding:'32px'}}>
+          {buyerFiles.length===0 ? 'No files yet. Create your first buyer file to start tracking the contract documents.' : 'No files in this status.'}
+        </div>
+      ) : (
+        <div style={{display:'grid',gap:'10px'}}>
+          {shown.map(f=>{
+            const pr = progress[f.id]; const pct = pr&&pr.total? Math.round(100*pr.done/pr.total):0;
+            return (
+              <div key={f.id} className="panel" onClick={()=>setOpenId(f.id)} style={{cursor:'pointer',display:'flex',flexDirection:'column',gap:'8px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px'}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:'15px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{f.address||'(no address)'}</div>
+                    <div style={{fontSize:'12px',color:'var(--text-2)'}}>{[f.city,f.state,f.zip].filter(Boolean).join(', ')}</div>
+                  </div>
+                  <StatusPill status={f.status}/>
+                </div>
+                <div style={{display:'flex',gap:'16px',flexWrap:'wrap',fontSize:'12px',color:'var(--text-2)'}}>
+                  {f.buyer_name && <span><Icon name="users" size={12} style={{verticalAlign:'-2px'}}/> {f.buyer_name}</span>}
+                  <span><Icon name="dollar" size={12} style={{verticalAlign:'-2px'}}/> {money(f.contract_price)}</span>
+                  <span><Icon name="calendar" size={12} style={{verticalAlign:'-2px'}}/> Close {shortDate(f.closing_date)}</span>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                  <div style={{flex:1,height:'6px',background:'var(--bg-hover)',borderRadius:'999px',overflow:'hidden'}}>
+                    <div style={{width:pct+'%',height:'100%',background: pct===100?'var(--green)':'var(--accent)'}}/>
+                  </div>
+                  <span style={{fontSize:'11px',color:'var(--text-2)',whiteSpace:'nowrap'}}>{pr?`${pr.done}/${pr.total} req`:'\u2014'}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showNew && <FileModal onClose={()=>setShowNew(false)} onSave={createFile} properties={properties} contacts={contacts}/>}
+      {openFile && <FileDetailModal key={openFile.id} file={openFile} onClose={()=>setOpenId(null)} onChange={patchFile} onDelete={removeFile} contacts={contacts} properties={properties} userId={userId} isAdmin={isAdmin} setProgress={setProgress}/>}
+    </div>
+  );
+}
+
+function FileModal({ onClose, onSave, initial, properties, contacts }){
+  const [f,setF]=useState({
+    address:initial?.address||'', city:initial?.city||'', state:initial?.state||'FL', zip:initial?.zip||'',
+    buyer_name:initial?.buyer_name||'', status:initial?.status||'active',
+    contract_price:initial?.contract_price||'', emd:initial?.emd||'',
+    effective_date:initial?.effective_date||'', closing_date:initial?.closing_date||'',
+    commission_gross:initial?.commission_gross||'', property_id:initial?.property_id||'',
+  });
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const [saving,setSaving]=useState(false);
+  const submit=async()=>{
+    if(!f.address.trim()){ if(window.__notify) window.__notify('Add a property address.','error'); return; }
+    setSaving(true);
+    const clean={ ...f };
+    ['contract_price','emd','commission_gross'].forEach(k=>{ clean[k]= clean[k]===''?null:Number(clean[k]); });
+    ['effective_date','closing_date','property_id'].forEach(k=>{ if(clean[k]==='') clean[k]=null; });
+    await onSave(clean); setSaving(false);
+  };
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:'520px',width:'100%',maxHeight:'92vh',overflowY:'auto'}}>
+        <div className="modal-header"><h3 style={{margin:0}}>New Buyer File</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div style={{display:'grid',gap:'10px'}}>
+          <label className="form-label">Property address
+            <input className="form-input" value={f.address} onChange={e=>set('address',e.target.value)} placeholder="123 Main St"/>
+          </label>
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:'8px'}}>
+            <label className="form-label">City<input className="form-input" value={f.city} onChange={e=>set('city',e.target.value)}/></label>
+            <label className="form-label">State<input className="form-input" value={f.state} onChange={e=>set('state',e.target.value)}/></label>
+            <label className="form-label">Zip<input className="form-input" value={f.zip} onChange={e=>set('zip',e.target.value)}/></label>
+          </div>
+          <label className="form-label">Buyer name<input className="form-input" value={f.buyer_name} onChange={e=>set('buyer_name',e.target.value)} placeholder="Buyer(s)"/></label>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+            <label className="form-label">Status
+              <select className="form-input" value={f.status} onChange={e=>set('status',e.target.value)}>
+                {FILE_STATUSES.filter(s=>s.value!=='paid'&&s.value!=='cancelled').map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </label>
+            <label className="form-label">Link property
+              <select className="form-input" value={f.property_id} onChange={e=>set('property_id',e.target.value)}>
+                <option value="">\u2014 none \u2014</option>
+                {(properties||[]).map(p=><option key={p.id} value={p.id}>{p.nickname||p.address||p.id}</option>)}
+              </select>
+            </label>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+            <label className="form-label">Contract price<input className="form-input" type="number" value={f.contract_price} onChange={e=>set('contract_price',e.target.value)}/></label>
+            <label className="form-label">EMD<input className="form-input" type="number" value={f.emd} onChange={e=>set('emd',e.target.value)}/></label>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+            <label className="form-label">Effective date<input className="form-input" type="date" value={f.effective_date} onChange={e=>set('effective_date',e.target.value)}/></label>
+            <label className="form-label">Closing date<input className="form-input" type="date" value={f.closing_date} onChange={e=>set('closing_date',e.target.value)}/></label>
+          </div>
+          <label className="form-label">Commission (gross $)<input className="form-input" type="number" value={f.commission_gross} onChange={e=>set('commission_gross',e.target.value)}/></label>
+        </div>
+        <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'16px'}}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit} disabled={saving}>{saving?'Creating\u2026':'Create File'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properties, userId, isAdmin, setProgress }){
+  const fileId=file.id;
+  const [tab,setTab]=useState('overview');
+  const [docs,setDocs]=useState([]); const [parties,setParties]=useState([]); const [items,setItems]=useState([]); const [events,setEvents]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [ov,setOv]=useState(file);
+  useEffect(()=>{ setOv(file); },[file]);
+
+  useEffect(()=>{ let alive=true; (async()=>{
+    const [d,p,i,e]=await Promise.all([
+      supabase.from('file_documents').select('*').eq('file_id',fileId).order('created_at',{ascending:false}),
+      supabase.from('file_parties').select('*').eq('file_id',fileId).order('created_at',{ascending:true}),
+      supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true}),
+      supabase.from('file_events').select('*').eq('file_id',fileId).order('created_at',{ascending:false}).limit(100),
+    ]);
+    if(!alive) return;
+    setDocs(d.data||[]); setParties(p.data||[]); setItems(i.data||[]); setEvents(e.data||[]); setLoading(false);
+  })(); return ()=>{alive=false;}; },[fileId]);
+
+  const reqItems = items.filter(i=>i.required);
+  const reqDone = reqItems.filter(i=>['approved','waived','na'].includes(i.status)).length;
+  const pct = reqItems.length? Math.round(100*reqDone/reqItems.length):0;
+  const cdApproved = items.some(i=>i.item_key==='closing_disclosure'&&['approved','waived'].includes(i.status));
+  const readyToPay = reqItems.length>0 && reqDone===reqItems.length;
+
+  useEffect(()=>{ if(setProgress) setProgress(p=>({...p,[fileId]:{done:reqDone,total:reqItems.length}})); },[reqDone,reqItems.length]);
+
+  const saveOverview = async()=>{
+    const clean={...ov};
+    ['contract_price','list_price','emd','commission_gross','commission_split','commission_net','paid_amount'].forEach(k=>{ if(clean[k]==='') clean[k]=null; else if(clean[k]!=null) clean[k]=Number(clean[k]); });
+    ['effective_date','closing_date'].forEach(k=>{ if(clean[k]==='') clean[k]=null; });
+    clean.updated_at=new Date().toISOString();
+    const { data, error } = await supabase.from('files').update(clean).eq('id',fileId).select().single();
+    if(error){ if(window.__notify) window.__notify('Save failed: '+error.message,'error'); return; }
+    onChange(data); if(window.__notify) window.__notify('Saved.','success');
+  };
+  const changeStatus = async(s)=>{
+    setOv(o=>({...o,status:s}));
+    const { data } = await supabase.from('files').update({status:s,updated_at:new Date().toISOString()}).eq('id',fileId).select().single();
+    if(data) onChange(data);
+    await logFileEvent(fileId,userId,'status_change',`Status \u2192 ${STATUS_META[s]?.label||s}`);
+    setEvents(ev=>[{id:'t'+Date.now(),kind:'status_change',detail:`Status \u2192 ${STATUS_META[s]?.label||s}`,created_at:new Date().toISOString()},...ev]);
+  };
+
+  // ---------- checklist ----------
+  const setItemStatus = async(it,status)=>{
+    setItems(prev=>prev.map(x=>x.id===it.id?{...x,status}:x));
+    await supabase.from('file_checklist_items').update({status,updated_at:new Date().toISOString()}).eq('id',it.id);
+    await logFileEvent(fileId,userId,'checklist',`${it.label}: ${status}`);
+  };
+  const linkDoc = async(it,docId)=>{
+    setItems(prev=>prev.map(x=>x.id===it.id?{...x,satisfied_by:docId||null,status:(docId&&x.status==='missing')?'received':x.status}:x));
+    await supabase.from('file_checklist_items').update({satisfied_by:docId||null,status:(docId)?'received':'missing',updated_at:new Date().toISOString()}).eq('id',it.id);
+  };
+  const addItem = async()=>{
+    const label=window.prompt('New checklist item:'); if(!label) return;
+    const { data } = await supabase.from('file_checklist_items').insert({file_id:fileId,user_id:userId,label,category:'Other',required:false,sort:999}).select().single();
+    if(data) setItems(prev=>[...prev,data]);
+    await logFileEvent(fileId,userId,'checklist',`Added item: ${label}`);
+  };
+  const delItem = async(it)=>{ if(!window.confirm(`Remove "${it.label}"?`)) return; setItems(prev=>prev.filter(x=>x.id!==it.id)); await supabase.from('file_checklist_items').delete().eq('id',it.id); };
+  const toggleReq = async(it)=>{ const required=!it.required; setItems(prev=>prev.map(x=>x.id===it.id?{...x,required}:x)); await supabase.from('file_checklist_items').update({required}).eq('id',it.id); };
+
+  // ---------- documents ----------
+  const [showUpload,setShowUpload]=useState(false);
+  const [upType,setUpType]=useState('farbar_contract'); const [upTitle,setUpTitle]=useState(''); const [upFile,setUpFile]=useState(null); const [uploading,setUploading]=useState(false);
+  const doUpload = async()=>{
+    if(!upFile){ if(window.__notify) window.__notify('Choose a file.','error'); return; }
+    setUploading(true);
+    try{
+      const { data:row, error } = await supabase.from('file_documents').insert({ file_id:fileId, user_id:userId, doc_type:upType, title:upTitle||DOCTYPE_LABEL[upType], file_name:upFile.name, mime:upFile.type, size_bytes:upFile.size, source:'upload' }).select().single();
+      if(error) throw error;
+      const safe=upFile.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const path=`${userId}/${fileId}/${row.id}-${safe}`;
+      const { error:upErr } = await supabase.storage.from('file-docs').upload(path,upFile,{ contentType:upFile.type||'application/pdf', upsert:false });
+      if(upErr){ await supabase.from('file_documents').delete().eq('id',row.id); throw upErr; }
+      await supabase.from('file_documents').update({storage_path:path}).eq('id',row.id);
+      const saved={...row,storage_path:path};
+      setDocs(prev=>[saved,...prev]);
+      await logFileEvent(fileId,userId,'doc_uploaded',`${DOCTYPE_LABEL[upType]||upType} uploaded`,{doc_id:row.id});
+      const key=DOCTYPE_TO_ITEM[upType]||upType;
+      setItems(prev=>prev.map(it=>{ if(it.item_key===key && it.status==='missing'){ supabase.from('file_checklist_items').update({status:'received',satisfied_by:row.id,updated_at:new Date().toISOString()}).eq('id',it.id); return {...it,status:'received',satisfied_by:row.id}; } return it; }));
+      setUpFile(null); setUpTitle(''); setShowUpload(false);
+    }catch(e){ if(window.__notify) window.__notify('Upload failed: '+(e.message||e),'error'); }
+    finally{ setUploading(false); }
+  };
+  const viewDoc = async(d)=>{ if(!d.storage_path) return; const { data } = await supabase.storage.from('file-docs').createSignedUrl(d.storage_path,3600); if(data?.signedUrl) window.open(data.signedUrl,'_blank'); };
+  const setDocType = async(d,doc_type)=>{ setDocs(prev=>prev.map(x=>x.id===d.id?{...x,doc_type}:x)); await supabase.from('file_documents').update({doc_type}).eq('id',d.id); };
+  const reviewDoc = async(d,status)=>{
+    let note=d.reviewer_note||null;
+    if(status==='revision_requested'||status==='rejected'){ const r=window.prompt('Note (optional):',note||''); if(r!==null) note=r; }
+    setDocs(prev=>prev.map(x=>x.id===d.id?{...x,review_status:status,reviewer_note:note}:x));
+    await supabase.from('file_documents').update({review_status:status,reviewer_note:note}).eq('id',d.id);
+    await logFileEvent(fileId,userId,'doc_review',`${DOCTYPE_LABEL[d.doc_type]||d.doc_type} \u2192 ${status.replace('_',' ')}`,{doc_id:d.id});
+    if(status==='approved'){ const key=DOCTYPE_TO_ITEM[d.doc_type]||d.doc_type; setItems(prev=>prev.map(it=>{ if(it.item_key===key){ supabase.from('file_checklist_items').update({status:'approved',satisfied_by:d.id,updated_at:new Date().toISOString()}).eq('id',it.id); return {...it,status:'approved',satisfied_by:d.id}; } return it; })); }
+  };
+  const delDoc = async(d)=>{ if(!window.confirm('Delete this document?')) return; setDocs(prev=>prev.filter(x=>x.id!==d.id)); if(d.storage_path) await supabase.storage.from('file-docs').remove([d.storage_path]).catch(()=>{}); await supabase.from('file_documents').delete().eq('id',d.id); await logFileEvent(fileId,userId,'doc_deleted',`Deleted ${DOCTYPE_LABEL[d.doc_type]||d.doc_type}`); };
+
+  // ---------- parties ----------
+  const [pRole,setPRole]=useState('lender'); const [pSearch,setPSearch]=useState(''); 
+  const partyMatches = pSearch.trim()? (contacts||[]).filter(c=>(c.name||'').toLowerCase().includes(pSearch.toLowerCase())).slice(0,6):[];
+  const addParty = async(contact)=>{
+    const ins={ file_id:fileId, user_id:userId, role:pRole, contact_id:contact?.id||null, name:contact?.name||pSearch.trim()||null };
+    if(!ins.name){ if(window.__notify) window.__notify('Pick a contact or type a name.','error'); return; }
+    const { data } = await supabase.from('file_parties').insert(ins).select().single();
+    if(data){ setParties(prev=>[...prev,data]); setPSearch(''); await logFileEvent(fileId,userId,'party_added',`${pRole}: ${data.name}`); }
+  };
+  const delParty = async(pt)=>{ setParties(prev=>prev.filter(x=>x.id!==pt.id)); await supabase.from('file_parties').delete().eq('id',pt.id); };
+
+  const delFile = async()=>{ if(!window.confirm(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
+
+  const cats = [...new Set(items.map(i=>i.category||'Other'))];
+  const setOvF=(k,v)=>setOv(o=>({...o,[k]:v}));
+  const TABS=[['overview','Overview'],['checklist','Checklist'],['docs','Documents'],['parties','Parties'],['activity','Activity']];
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:'720px',width:'100%',maxHeight:'94vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <div style={{minWidth:0}}>
+            <h3 style={{margin:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{file.address||'(no address)'}</h3>
+            <div style={{fontSize:'12px',color:'var(--text-2)'}}>{[file.city,file.state,file.zip].filter(Boolean).join(', ')||'Buyer file'}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>\u00d7</button>
+        </div>
+
+        {/* completeness + readiness */}
+        <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}}>
+          <StatusPill status={ov.status}/>
+          <div style={{flex:1,height:'8px',background:'var(--bg-hover)',borderRadius:'999px',overflow:'hidden'}}>
+            <div style={{width:pct+'%',height:'100%',background:pct===100?'var(--green)':'var(--accent)'}}/>
+          </div>
+          <span style={{fontSize:'12px',color:'var(--text-2)',whiteSpace:'nowrap'}}>{reqDone}/{reqItems.length} required</span>
+        </div>
+        {readyToPay
+          ? <div style={{background:'rgba(34,197,94,.12)',border:'1px solid var(--green)',color:'var(--green)',borderRadius:'8px',padding:'8px 12px',fontSize:'13px',fontWeight:600,marginBottom:'10px'}}>\u2713 All required documents are in \u2014 this file is ready to disburse.</div>
+          : <div style={{background:'var(--bg-hover)',borderRadius:'8px',padding:'8px 12px',fontSize:'12px',color:'var(--text-2)',marginBottom:'10px'}}>{reqItems.length-reqDone} required item(s) outstanding{!cdApproved?' \u00B7 Closing Disclosure not yet in':''}.</div>}
+
+        {/* tabs */}
+        <div style={{display:'flex',gap:'4px',overflowX:'auto',borderBottom:'1px solid var(--border)',marginBottom:'12px'}}>
+          {TABS.map(([id,label])=>(
+            <button key={id} onClick={()=>setTab(id)} className="btn btn-sm" style={{background:'none',border:'none',borderBottom:tab===id?'2px solid var(--accent)':'2px solid transparent',borderRadius:0,color:tab===id?'var(--text-1)':'var(--text-2)',fontWeight:tab===id?700:500,whiteSpace:'nowrap'}}>
+              {label}{id==='docs'&&docs.length?` (${docs.length})`:''}
+            </button>
+          ))}
+        </div>
+
+        {loading? <div style={{color:'var(--text-2)',padding:'20px',textAlign:'center'}}>Loading\u2026</div> : <>
+
+        {tab==='overview' && (
+          <div style={{display:'grid',gap:'10px'}}>
+            <label className="form-label">Status
+              <select className="form-input" value={ov.status} onChange={e=>changeStatus(e.target.value)}>
+                {FILE_STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </label>
+            <label className="form-label">Buyer name<input className="form-input" value={ov.buyer_name||''} onChange={e=>setOvF('buyer_name',e.target.value)}/></label>
+            <label className="form-label">Seller name<input className="form-input" value={ov.seller_name||''} onChange={e=>setOvF('seller_name',e.target.value)}/></label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+              <label className="form-label">Contract price<input className="form-input" type="number" value={ov.contract_price??''} onChange={e=>setOvF('contract_price',e.target.value)}/></label>
+              <label className="form-label">EMD<input className="form-input" type="number" value={ov.emd??''} onChange={e=>setOvF('emd',e.target.value)}/></label>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+              <label className="form-label">Effective date<input className="form-input" type="date" value={ov.effective_date||''} onChange={e=>setOvF('effective_date',e.target.value)}/></label>
+              <label className="form-label">Closing date<input className="form-input" type="date" value={ov.closing_date||''} onChange={e=>setOvF('closing_date',e.target.value)}/></label>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+              <label className="form-label">Commission gross<input className="form-input" type="number" value={ov.commission_gross??''} onChange={e=>setOvF('commission_gross',e.target.value)}/></label>
+              <label className="form-label">Commission net<input className="form-input" type="number" value={ov.commission_net??''} onChange={e=>setOvF('commission_net',e.target.value)}/></label>
+            </div>
+            <label className="form-label">Notes<textarea className="form-input" rows={3} value={ov.notes||''} onChange={e=>setOvF('notes',e.target.value)}/></label>
+            <div style={{display:'flex',justifyContent:'space-between',gap:'8px'}}>
+              <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={delFile}><Icon name="trash" size={13}/> Delete file</button>
+              <button className="btn btn-primary" onClick={saveOverview}>Save</button>
+            </div>
+          </div>
+        )}
+
+        {tab==='checklist' && (
+          <div style={{display:'grid',gap:'14px'}}>
+            {cats.map(cat=>(
+              <div key={cat}>
+                <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:'6px'}}>{cat}</div>
+                <div style={{display:'grid',gap:'6px'}}>
+                  {items.filter(i=>(i.category||'Other')===cat).map(it=>(
+                    <div key={it.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',background:'var(--bg-hover)',borderRadius:'8px'}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:'13px',display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
+                          <span>{it.label}</span>
+                          <span onClick={()=>toggleReq(it)} title="Toggle required" style={{cursor:'pointer',fontSize:'9px',fontWeight:700,padding:'1px 6px',borderRadius:'999px',background:it.required?'var(--accent-dim)':'transparent',border:'1px solid '+(it.required?'var(--accent)':'var(--border)'),color:it.required?'var(--accent)':'var(--text-3)'}}>{it.required?'REQUIRED':'optional'}</span>
+                        </div>
+                      </div>
+                      <select className="form-input" value={it.status} onChange={e=>setItemStatus(it,e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px',color:CHK_META[it.status]?.color}}>
+                        {CHK_STATUS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                      <button className="btn btn-ghost btn-sm" title="Remove" onClick={()=>delItem(it)} style={{padding:'4px 7px',color:'var(--text-3)'}}><Icon name="trash" size={12}/></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button className="btn btn-ghost btn-sm" onClick={addItem} style={{justifySelf:'start'}}>+ Add checklist item</button>
+          </div>
+        )}
+
+        {tab==='docs' && (
+          <div style={{display:'grid',gap:'10px'}}>
+            {!showUpload
+              ? <button className="btn btn-primary btn-sm" onClick={()=>setShowUpload(true)} style={{justifySelf:'start'}}><Icon name="paperclip" size={13}/> Upload document</button>
+              : <div className="panel" style={{display:'grid',gap:'8px',background:'var(--bg-hover)'}}>
+                  <label className="form-label">Document type
+                    <select className="form-input" value={upType} onChange={e=>setUpType(e.target.value)}>{FILE_DOC_TYPES.map(d=><option key={d.value} value={d.value}>{d.label}</option>)}</select>
+                  </label>
+                  <label className="form-label">Title (optional)<input className="form-input" value={upTitle} onChange={e=>setUpTitle(e.target.value)} placeholder={DOCTYPE_LABEL[upType]}/></label>
+                  <input type="file" accept=".pdf,image/*,.doc,.docx" onChange={e=>setUpFile(e.target.files?.[0]||null)} style={{fontSize:'13px'}}/>
+                  <div style={{display:'flex',justifyContent:'flex-end',gap:'8px'}}>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>{setShowUpload(false);setUpFile(null);}}>Cancel</button>
+                    <button className="btn btn-primary btn-sm" onClick={doUpload} disabled={uploading}>{uploading?'Uploading\u2026':'Upload'}</button>
+                  </div>
+                </div>}
+            {docs.length===0 && <div style={{color:'var(--text-2)',fontSize:'13px',padding:'8px'}}>No documents yet.</div>}
+            {docs.map(d=>{
+              const rs=d.review_status; const rsColor= rs==='approved'?'var(--green)':rs==='rejected'?'var(--red)':rs==='revision_requested'?'var(--yellow)':'var(--text-3)';
+              return (
+                <div key={d.id} className="panel" style={{display:'grid',gap:'6px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'flex-start'}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:600,fontSize:'13px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.title||DOCTYPE_LABEL[d.doc_type]}</div>
+                      <div style={{fontSize:'11px',color:'var(--text-3)'}}>{d.file_name} \u00B7 {d.size_bytes?Math.round(d.size_bytes/1024)+'KB':''}</div>
+                    </div>
+                    <span style={{fontSize:'10px',fontWeight:700,color:rsColor,whiteSpace:'nowrap'}}>{(rs||'pending').replace('_',' ')}</span>
+                  </div>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
+                    <select className="form-input" value={d.doc_type} onChange={e=>setDocType(d,e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px'}}>{FILE_DOC_TYPES.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>viewDoc(d)}><Icon name="eye" size={12}/> View</button>
+                    {isAdmin && <>
+                      <button className="btn btn-ghost btn-sm" style={{color:'var(--green)'}} onClick={()=>reviewDoc(d,'approved')}>Approve</button>
+                      <button className="btn btn-ghost btn-sm" style={{color:'var(--yellow)'}} onClick={()=>reviewDoc(d,'revision_requested')}>Revise</button>
+                      <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={()=>reviewDoc(d,'rejected')}>Reject</button>
+                    </>}
+                    <button className="btn btn-ghost btn-sm" onClick={()=>delDoc(d)} style={{color:'var(--text-3)'}}><Icon name="trash" size={12}/></button>
+                  </div>
+                  {d.reviewer_note && <div style={{fontSize:'11px',color:'var(--text-2)',fontStyle:'italic'}}>Note: {d.reviewer_note}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab==='parties' && (
+          <div style={{display:'grid',gap:'10px'}}>
+            <div className="panel" style={{display:'grid',gap:'8px',background:'var(--bg-hover)'}}>
+              <div style={{display:'flex',gap:'8px'}}>
+                <select className="form-input" value={pRole} onChange={e=>setPRole(e.target.value)} style={{width:'auto'}}>
+                  {['buyer','seller','co_op_agent','lender','title','inspector','attorney','other'].map(r=><option key={r} value={r}>{r.replace('_',' ')}</option>)}
+                </select>
+                <input className="form-input" value={pSearch} onChange={e=>setPSearch(e.target.value)} placeholder="Search contacts or type a name"/>
+              </div>
+              {partyMatches.length>0 && <div style={{display:'grid',gap:'4px'}}>{partyMatches.map(c=><button key={c.id} className="btn btn-ghost btn-sm" style={{justifyContent:'flex-start',textAlign:'left'}} onClick={()=>addParty(c)}>{c.name}{c.company?` \u00B7 ${c.company}`:''}</button>)}</div>}
+              <button className="btn btn-primary btn-sm" onClick={()=>addParty(null)} style={{justifySelf:'start'}}>+ Add party</button>
+            </div>
+            {parties.length===0 && <div style={{color:'var(--text-2)',fontSize:'13px'}}>No parties added.</div>}
+            {parties.map(pt=>(
+              <div key={pt.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px',background:'var(--bg-hover)',borderRadius:'8px'}}>
+                <div><span style={{fontSize:'10px',fontWeight:700,textTransform:'uppercase',color:'var(--accent)'}}>{(pt.role||'').replace('_',' ')}</span><div style={{fontSize:'13px'}}>{pt.name}</div></div>
+                <button className="btn btn-ghost btn-sm" onClick={()=>delParty(pt)} style={{color:'var(--text-3)'}}><Icon name="trash" size={12}/></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab==='activity' && (
+          <div style={{display:'grid',gap:'6px'}}>
+            {events.length===0 && <div style={{color:'var(--text-2)',fontSize:'13px'}}>No activity yet.</div>}
+            {events.map(ev=>(
+              <div key={ev.id} style={{display:'flex',gap:'10px',fontSize:'12px',padding:'6px 0',borderBottom:'1px solid var(--border)'}}>
+                <span style={{color:'var(--text-3)',whiteSpace:'nowrap'}}>{new Date(ev.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})} {new Date(ev.created_at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</span>
+                <span style={{color:'var(--text-1)'}}>{ev.detail||ev.kind}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        </>}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -28829,6 +29358,7 @@ export default function App() {
   const [contacts, setContacts] = useState([]);
   const [properties, setProperties] = useState([]);
   const [deals, setDeals] = useState([]);
+  const [files, setFiles] = useState([]);
   const [mileageEntries, setMileageEntries] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [brain, setBrain] = useState([]);
@@ -28930,6 +29460,7 @@ export default function App() {
       ['contacts',       supabase.from('contacts').select('*').order('created_at', { ascending: false }).limit(10000)],
       ['properties',     supabase.from('properties').select('*').order('created_at', { ascending: false })],
       ['deals',          supabase.from('deals').select('*').order('updated_at', { ascending: false }).limit(500)],
+      ['files',          supabase.from('files').select('*').order('updated_at', { ascending: false }).limit(500)],
       ['mileageEntries', supabase.from('mileage_entries').select('*').order('date', { ascending: false }).limit(1000)],
       ['investments',    supabase.from('investments').select('*').order('created_at', { ascending: false })],
       ['brain',          supabase.from('brain').select('*').order('created_at', { ascending: false }).limit(500)],
@@ -28971,6 +29502,7 @@ export default function App() {
     take('contacts',      res => setContacts(res.data || []));
     take('properties',    res => setProperties(res.data || []));
     take('deals',         res => setDeals(res.data || []));
+    take('files',         res => setFiles(res.data || []));
     take('mileageEntries',res => setMileageEntries(res.data || []));
     take('investments',   res => setInvestments(res.data || []));
     take('brain',         res => setBrain(res.data || []));
@@ -29092,6 +29624,7 @@ export default function App() {
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
     { id: 'deals',       icon: '🤝', label: 'Deals',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
+    { id: 'files',       icon: '📁', label: 'Files',       badge: files.filter(f=>f.side==='buyer' && !['closed','paid','cancelled'].includes(f.status)).length || null },
     { id: 'mileage',     icon: '🚗', label: 'Mileage',     badge: null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
@@ -29207,6 +29740,7 @@ export default function App() {
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
               : view==='deals'       ? <DealsView deals={deals} setDeals={setDeals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
+              : view==='files'       ? <FilesView files={files} setFiles={setFiles} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id} user={user}/>
               : view==='mileage'     ? <MileageView mileageEntries={mileageEntries} setMileageEntries={setMileageEntries} deals={deals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
