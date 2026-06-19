@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v25-20260619-snooze-owed-replies'
+const VERSION = 'prismos-v26-20260619-wordmark-scale'
 const APP_SHELL = [
   '/',
   '/index.html',

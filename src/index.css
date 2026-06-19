@@ -1089,16 +1089,16 @@ body {
 
 /* Mobile header: stack the lockup, vertically centered in the 56px bar */
 .mobile-header-logo { display: flex; flex-direction: column; justify-content: center; line-height: 1; }
-.mobile-header-logo .rog-wordmark { font-size: 16px; }
-.mobile-header-logo .rog-sub { font-size: 9px; margin-top: 1px; }
+.mobile-header-logo .rog-wordmark { font-size: 19.2px; }
+.mobile-header-logo .rog-sub { font-size: 15.12px; margin-top: 1px; }
 
 /* Sidebar lockup */
-.sidebar-logo .rog-wordmark { font-size: 17px; }
-.sidebar-logo .rog-sub { font-size: 10px; }
+.sidebar-logo .rog-wordmark { font-size: 20.4px; }
+.sidebar-logo .rog-sub { font-size: 16.8px; }
 
 /* Login lockup (centered via .auth-logo text-align) */
-.auth-logo .rog-wordmark { font-size: 24px; }
-.auth-logo .rog-sub { font-size: 12px; margin-top: 3px; }
+.auth-logo .rog-wordmark { font-size: 28.8px; }
+.auth-logo .rog-sub { font-size: 20.16px; margin-top: 3px; }
 
 /* Quick-create menu item rise animation */
 @keyframes qmRise {
