@@ -28789,6 +28789,37 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
+  // Dashboard-only pull-to-refresh: re-syncs data via loadData() without a page
+  // reload, so in-progress work is never lost. Native pull-to-refresh is disabled
+  // app-wide in CSS (overscroll-behavior), which is what used to wipe state.
+  const mainScrollRef = useRef(null);
+  const ptrRef = useRef({ startY: 0, active: false });
+  const [ptrPull, setPtrPull] = useState(0);
+  const [ptrBusy, setPtrBusy] = useState(false);
+  const PTR_THRESHOLD = 64;
+  const onMainTouchStart = (e) => {
+    if (view !== 'dashboard') { ptrRef.current.active = false; return; }
+    const el = mainScrollRef.current;
+    if (el && el.scrollTop <= 0 && !ptrBusy) { ptrRef.current.startY = e.touches[0].clientY; ptrRef.current.active = true; }
+    else ptrRef.current.active = false;
+  };
+  const onMainTouchMove = (e) => {
+    if (!ptrRef.current.active || ptrBusy) return;
+    const el = mainScrollRef.current;
+    if (!el || el.scrollTop > 0) { ptrRef.current.active = false; setPtrPull(0); return; }
+    const dy = e.touches[0].clientY - ptrRef.current.startY;
+    setPtrPull(dy > 0 ? Math.min(dy * 0.5, 80) : 0);
+  };
+  const onMainTouchEnd = async () => {
+    if (!ptrRef.current.active) return;
+    ptrRef.current.active = false;
+    if (ptrPull >= PTR_THRESHOLD && !ptrBusy) {
+      setPtrBusy(true); setPtrPull(40);
+      try { await loadData(); } catch (_) {}
+      setPtrBusy(false);
+    }
+    setPtrPull(0);
+  };
   const [focusTaskId, setFocusTaskId] = useState(null);
   const [focusEventId, setFocusEventId] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -29151,7 +29182,13 @@ export default function App() {
         </nav>
 
         {/* Main */}
-        <main className="main-content">
+        <main className="main-content" ref={mainScrollRef} onTouchStart={onMainTouchStart} onTouchMove={onMainTouchMove} onTouchEnd={onMainTouchEnd}>
+          {(ptrPull > 0 || ptrBusy) && (
+            <div className="ptr-indicator" style={{ height: ptrBusy ? 40 : ptrPull, opacity: ptrBusy ? 1 : Math.min(ptrPull / PTR_THRESHOLD, 1) }}>
+              <span className={'ptr-spinner' + (ptrBusy ? ' spin' : '')} style={!ptrBusy ? { transform: `rotate(${(ptrPull / PTR_THRESHOLD) * 180}deg)` } : undefined} />
+              <span>{ptrBusy ? 'Refreshing\u2026' : (ptrPull >= PTR_THRESHOLD ? 'Release to refresh' : 'Pull to refresh')}</span>
+            </div>
+          )}
           {gmailConnectedFlash && (
             <div style={{padding:'10px 14px',marginBottom:'14px',background:'rgba(34, 197, 94, 0.1)',border:'1px solid var(--green)',borderRadius:'8px',color:'var(--green)',fontSize:'13px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <span>✓ Connected <strong>{gmailConnectedFlash.email}</strong> for <strong>{gmailConnectedFlash.purposeLabel}</strong>. {gmailConnectedFlash.nextStep}</span>

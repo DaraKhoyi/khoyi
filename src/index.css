@@ -1,5 +1,10 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Disable the browser's native pull-to-refresh so dragging down never reloads
+   the app (a reload wipes any unsaved in-progress work). A deliberate, in-app
+   pull-to-refresh on the Dashboard re-syncs data without a reload. */
+html, body { overscroll-behavior-y: contain; }
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background: #000000;
@@ -119,7 +124,24 @@ body {
   overflow-y: auto;
   padding: 32px;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  position: relative;
 }
+
+/* In-app pull-to-refresh indicator (Dashboard) */
+.ptr-indicator {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  color: var(--text-2); font-size: 12px; font-weight: 600;
+  pointer-events: none; overflow: hidden; z-index: 5;
+  transition: opacity 0.15s ease;
+}
+.ptr-spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+}
+.ptr-spinner.spin { animation: ptr-spin 0.7s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
 
 /* ─── MOBILE ─── */
 @media (max-width: 768px) {
