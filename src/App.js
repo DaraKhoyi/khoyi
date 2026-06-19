@@ -28950,7 +28950,7 @@ export default function App() {
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
-  const MAIN_ORDER = ['dashboard', 'briefing', 'prospecting', 'tasks', 'calendar', 'inbox', 'quo', 'contacts', 'mileage', 'finance', 'journal', 'chat'];
+  const MAIN_ORDER = ['dashboard', 'chat', 'briefing', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
   const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
