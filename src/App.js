@@ -29189,7 +29189,7 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
             )}
           </>}
           <div style={{borderTop:'1px solid var(--border)',margin:'6px 0'}}/>
-          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : (canWrite? <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan}/> : <PayPlanReadOnly plan={plan}/>)}
+          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : (canWrite? <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan} onClose={onClose}/> : <PayPlanReadOnly plan={plan}/>)}
         </div>
       </div>
     </div>
@@ -29202,7 +29202,9 @@ function PayPlanReadOnly({ plan }){
 }
 
 const BLANK_PLAN = { name:'Default plan', split_type:'percentage', agent_split_pct:'', cap_amount:'', post_cap_fee:'', transaction_fee:'', buyer_side_fee:'', seller_side_fee:'', royalty_pct:'', royalty_cap:'', tc_fee:'', tc_payee:'', mentor_fee_type:'none', mentor_fee_value:'', profit_share_pct:'', auto_savings_type:'none', auto_savings_value:'', retirement_type:'none', retirement_value:'', retirement_label:'401(k)', custom_fees:[] };
-function PayPlanEditor({ agentId, userId, plan, agents, onSaved }){
+function PlanLabel({children}){ return <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)',marginTop:'4px'}}>{children}</div>; }
+function PlanField({label,value,onChange,ph}){ return <label className="form-label">{label}<input className="form-input" value={value??''} onChange={onChange} placeholder={ph||''}/></label>; }
+function PayPlanEditor({ agentId, userId, plan, agents, onSaved, onClose }){
   const [p,setP]=useState(plan? { ...BLANK_PLAN, ...plan, custom_fees: plan.custom_fees||[] } : { ...BLANK_PLAN });
   const set=(k,v)=>setP(s=>({...s,[k]:v}));
   const [saving,setSaving]=useState(false);
@@ -29226,50 +29228,49 @@ function PayPlanEditor({ agentId, userId, plan, agents, onSaved }){
     else res=await supabase.from('pay_plans').insert(row).select().single();
     setSaving(false);
     if(res.error){ if(window.__notify) window.__notify('Save failed: '+res.error.message,'error'); return; }
-    setP({ ...BLANK_PLAN, ...res.data, custom_fees:res.data.custom_fees||[] }); if(onSaved) onSaved(res.data);
+    if(onSaved) onSaved(res.data);
     if(window.__notify) window.__notify('Pay plan saved.','success');
+    if(onClose) onClose();
   };
-  const L=({children})=> <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)',marginTop:'4px'}}>{children}</div>;
-  const F=({label,k,ph})=> <label className="form-label">{label}<input className="form-input" value={p[k]??''} onChange={e=>set(k,e.target.value)} placeholder={ph||''}/></label>;
   return (
     <div style={{display:'grid',gap:'10px'}}>
       <div style={{fontSize:'13px',fontWeight:700,display:'flex',alignItems:'center',gap:'6px'}}><Icon name="dollar" size={15}/> Pay plan</div>
-      <L>Split</L>
+      <PlanLabel>Split</PlanLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
         <label className="form-label">Split type<select className="form-input" value={p.split_type} onChange={e=>set('split_type',e.target.value)}><option value="percentage">Percentage split</option><option value="cap">Cap (company dollar to a cap)</option><option value="flat">Flat / 100% with fees</option></select></label>
-        <F label="Agent split %" k="agent_split_pct" ph="e.g. 88"/>
-        <F label="Annual cap $" k="cap_amount" ph="e.g. 16000"/>
-        <F label="Post-cap txn fee $" k="post_cap_fee"/>
+        <PlanField label="Agent split %" value={p.agent_split_pct} onChange={e=>set('agent_split_pct',e.target.value)} ph="e.g. 88"/>
+        <PlanField label="Annual cap $" value={p.cap_amount} onChange={e=>set('cap_amount',e.target.value)} ph="e.g. 16000"/>
+        <PlanField label="Post-cap txn fee $" value={p.post_cap_fee} onChange={e=>set('post_cap_fee',e.target.value)}/>
       </div>
-      <L>Transaction fees</L>
+      <PlanLabel>Transaction fees</PlanLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}}>
-        <F label="Per-deal fee $" k="transaction_fee"/>
-        <F label="Buyer-side fee $" k="buyer_side_fee"/>
-        <F label="Seller-side fee $" k="seller_side_fee"/>
+        <PlanField label="Per-deal fee $" value={p.transaction_fee} onChange={e=>set('transaction_fee',e.target.value)}/>
+        <PlanField label="Buyer-side fee $" value={p.buyer_side_fee} onChange={e=>set('buyer_side_fee',e.target.value)}/>
+        <PlanField label="Seller-side fee $" value={p.seller_side_fee} onChange={e=>set('seller_side_fee',e.target.value)}/>
       </div>
-      <L>Franchise / royalty</L>
+      <PlanLabel>Franchise / royalty</PlanLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
-        <F label="Royalty % of GCI" k="royalty_pct" ph="e.g. 5"/>
-        <F label="Royalty annual cap $" k="royalty_cap"/>
+        <PlanField label="Royalty % of GCI" value={p.royalty_pct} onChange={e=>set('royalty_pct',e.target.value)} ph="e.g. 5"/>
+        <PlanField label="Royalty annual cap $" value={p.royalty_cap} onChange={e=>set('royalty_cap',e.target.value)}/>
       </div>
-      <L>People</L>
+      <PlanLabel>People</PlanLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
-        <F label="TC fee $" k="tc_fee"/>
-        <F label="TC payee" k="tc_payee"/>
+        <PlanField label="TC fee $" value={p.tc_fee} onChange={e=>set('tc_fee',e.target.value)}/>
+        <PlanField label="TC payee" value={p.tc_payee} onChange={e=>set('tc_payee',e.target.value)}/>
         <label className="form-label">Mentor fee<select className="form-input" value={p.mentor_fee_type} onChange={e=>set('mentor_fee_type',e.target.value)}><option value="none">None</option><option value="pct">% of GCI</option><option value="flat">Flat $</option></select></label>
-        <F label="Mentor fee value" k="mentor_fee_value"/>
+        <PlanField label="Mentor fee value" value={p.mentor_fee_value} onChange={e=>set('mentor_fee_value',e.target.value)}/>
       </div>
-      <L>Profit share (not shown on CDA)</L>
-      <F label="Profit share % of GCI to upline" k="profit_share_pct"/>
-      <L>Contributions / deductions</L>
+      <PlanLabel>Profit share (not shown on CDA)</PlanLabel>
+      <PlanField label="Profit share % of GCI to upline" value={p.profit_share_pct} onChange={e=>set('profit_share_pct',e.target.value)}/>
+      <PlanLabel>Contributions / deductions</PlanLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
         <label className="form-label">Auto-savings<select className="form-input" value={p.auto_savings_type} onChange={e=>set('auto_savings_type',e.target.value)}><option value="none">None</option><option value="pct">% of net</option><option value="flat">Flat $</option></select></label>
-        <F label="Auto-savings value" k="auto_savings_value"/>
+        <PlanField label="Auto-savings value" value={p.auto_savings_value} onChange={e=>set('auto_savings_value',e.target.value)}/>
         <label className="form-label">Retirement<select className="form-input" value={p.retirement_type} onChange={e=>set('retirement_type',e.target.value)}><option value="none">None</option><option value="pct">% of net</option><option value="flat">Flat $</option></select></label>
-        <F label="Retirement value" k="retirement_value"/>
-        <F label="Retirement label" k="retirement_label"/>
+        <PlanField label="Retirement value" value={p.retirement_value} onChange={e=>set('retirement_value',e.target.value)}/>
+        <PlanField label="Retirement label" value={p.retirement_label} onChange={e=>set('retirement_label',e.target.value)}/>
       </div>
-      <L>Custom fees / line items</L>
+      <PlanLabel>Custom fees / line items</PlanLabel>
       {(p.custom_fees||[]).map((f,i)=>(
         <div key={i} style={{display:'grid',gridTemplateColumns:'1.4fr .8fr .8fr .9fr auto',gap:'6px',alignItems:'center',background:'var(--bg-hover)',padding:'6px',borderRadius:'8px'}}>
           <input className="form-input" placeholder="Label" value={f.label} onChange={e=>setFee(i,'label',e.target.value)} style={{padding:'5px 7px',fontSize:'12px'}}/>
