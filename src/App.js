@@ -28931,6 +28931,49 @@ const AGENT_ROLES = [
 const ROLE_LABEL = Object.fromEntries(AGENT_ROLES.map(r=>[r.value,r.label]));
 
 function num(v){ return v===''||v===null||v===undefined||isNaN(Number(v))?null:Number(v); }
+function pctOf(b,p){ const v=num(p); return v?b*v/100:0; }
+function computeCDA(f, cda, plan){
+  cda=cda||{}; plan=plan||{};
+  const price=num(f.contract_price)||0;
+  const totalRate=num(cda.total_rate);
+  const totalComm=num(cda.total_commission)!=null?num(cda.total_commission):(totalRate!=null?price*totalRate/100:0);
+  const sides=cda.sides||'buyer';
+  let ourGci;
+  if(num(cda.our_gci)!=null) ourGci=num(cda.our_gci);
+  else if(num(cda.our_side_rate)!=null) ourGci=price*num(cda.our_side_rate)/100;
+  else if(sides==='both') ourGci=totalComm;
+  else ourGci=totalComm/2;
+  const coopGci= sides==='both'?0:Math.max(0,totalComm-ourGci);
+  const referral=num(cda.referral_fee)||0;
+  const gciAfterRef=ourGci-referral;
+  let royalty=pctOf(gciAfterRef,plan.royalty_pct); if(num(plan.royalty_cap)!=null) royalty=Math.min(royalty,num(plan.royalty_cap));
+  const gciNet=gciAfterRef-royalty;
+  const split=num(plan.agent_split_pct);
+  let agentGross, companyDollar;
+  if(plan.split_type==='flat'){ agentGross=gciNet; companyDollar=0; }
+  else { agentGross= split!=null? gciNet*split/100 : gciNet; companyDollar=gciNet-agentGross; }
+  const fees=[];
+  if(num(plan.transaction_fee)) fees.push({label:'Transaction fee',amount:num(plan.transaction_fee)});
+  if((sides==='buyer'||sides==='both')&&num(plan.buyer_side_fee)) fees.push({label:'Buyer-side fee',amount:num(plan.buyer_side_fee)});
+  if((sides==='seller'||sides==='both')&&num(plan.seller_side_fee)) fees.push({label:'Seller-side fee',amount:num(plan.seller_side_fee)});
+  if(num(plan.tc_fee)) fees.push({label:`TC fee${plan.tc_payee?` \u2014 ${plan.tc_payee}`:''}`,amount:num(plan.tc_fee)});
+  if(plan.mentor_fee_type==='flat'&&num(plan.mentor_fee_value)) fees.push({label:'Mentor fee',amount:num(plan.mentor_fee_value)});
+  if(plan.mentor_fee_type==='pct'&&num(plan.mentor_fee_value)) fees.push({label:`Mentor fee (${plan.mentor_fee_value}% GCI)`,amount:pctOf(gciNet,plan.mentor_fee_value)});
+  for(const cf of (plan.custom_fees||[])){ const amt= cf.type==='pct'? pctOf(gciNet,cf.amount):(num(cf.amount)||0); if(amt) fees.push({label:cf.label||'Fee',amount:amt,hidden:!cf.disclose}); }
+  const owes=num(cda.agent_owes)||0; if(owes) fees.push({label:cda.agent_owes_note||'Owed to brokerage',amount:owes});
+  const disclosedFees=fees.filter(x=>!x.hidden); const hiddenFees=fees.filter(x=>x.hidden);
+  const totalFees=fees.reduce((s,x)=>s+x.amount,0);
+  const agentNet=agentGross-totalFees;
+  const contrib=[];
+  const sav= plan.auto_savings_type==='pct'? pctOf(agentNet,plan.auto_savings_value):(plan.auto_savings_type==='flat'?num(plan.auto_savings_value)||0:0);
+  if(sav) contrib.push({label:'Auto-savings',amount:sav});
+  const ret= plan.retirement_type==='pct'? pctOf(agentNet,plan.retirement_value):(plan.retirement_type==='flat'?num(plan.retirement_value)||0:0);
+  if(ret) contrib.push({label:plan.retirement_label||'Retirement',amount:ret});
+  const totalContrib=contrib.reduce((s,x)=>s+x.amount,0);
+  const agentCash=agentNet-totalContrib;
+  const profitShare= pctOf(gciNet, plan.profit_share_pct);
+  return { price, totalRate, totalComm, sides, ourGci, coopGci, referral, royalty, gciNet, split, agentGross, companyDollar, fees, disclosedFees, hiddenFees, totalFees, agentNet, contrib, totalContrib, agentCash, profitShare };
+}
 
 function AgentsView({ userId, user }){
   const [agents,setAgents]=useState([]);
@@ -29714,6 +29757,76 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   })(); return ()=>{alive=false;}; },[fileId]);
   const sigByDoc = {}; for(const r of sigReqs){ if(r.document_id && r.status!=='voided' && !sigByDoc[r.document_id]) sigByDoc[r.document_id]=r; }
 
+  // ---- CDA (admin): agent + pay plan + auto-calc ----
+  const [cdaAgents,setCdaAgents]=useState([]);
+  const [cdaPlan,setCdaPlan]=useState(null);
+  const [cda,setCda]=useState(file.cda_data||{});
+  const [cdaAgentId,setCdaAgentId]=useState(file.agent_id||'');
+  const [cdaBusy,setCdaBusy]=useState(false);
+  const setCdaF=(k,v)=>setCda(c=>({...c,[k]:v}));
+  const loadPlan=async(agentId)=>{ if(!agentId){ setCdaPlan(null); return; } const { data } = await supabase.from('pay_plans').select('*').eq('agent_id',agentId).eq('active',true).order('created_at',{ascending:false}).limit(1); setCdaPlan(data&&data[0]?data[0]:null); };
+  useEffect(()=>{ if(!isAdmin) return; (async()=>{ const { data } = await supabase.from('agents').select('*').eq('user_id',userId).eq('active',true).order('name'); setCdaAgents(data||[]); })(); if(file.agent_id) loadPlan(file.agent_id); },[]);
+  const pickAgent=async(id)=>{ setCdaAgentId(id); await supabase.from('files').update({ agent_id:id||null, updated_at:new Date().toISOString() }).eq('id',fileId); await loadPlan(id); };
+  const saveCda=async()=>{ const { data } = await supabase.from('files').update({ cda_data:cda, updated_at:new Date().toISOString() }).eq('id',fileId).select().single(); if(data){ onChange(data); if(window.__notify) window.__notify('CDA inputs saved.','success'); } };
+  const cdaCalc = computeCDA(ov, cda, cdaPlan||{});
+  const agentObj = cdaAgents.find(x=>x.id===cdaAgentId);
+  const uplineObj = agentObj?.upline_id? cdaAgents.find(x=>x.id===agentObj.upline_id):null;
+  const generateCda=async()=>{
+    if(!cdaAgentId){ if(window.__notify) window.__notify('Pick the agent first.','error'); return; }
+    setCdaBusy(true);
+    try{
+      await saveCda();
+      const c=cdaCalc; const M2=(n)=>money(n);
+      const sections=[
+        { heading:'Property & transaction', rows:[
+          { label:'Property', value:[file.address,[file.city,file.state,file.zip].filter(Boolean).join(', ')].filter(Boolean).join(' \u2014 '), bold:true },
+          { label:'Closing date', value: shortDate(ov.closing_date) },
+          { label:'Contract price', value: M2(ov.contract_price) },
+          { label:'Commission rate', value: c.totalRate!=null? c.totalRate+'%':'\u2014' },
+          { label:'Sides represented', value: ({buyer:'Buyer',seller:'Seller',both:'Both (dual)'}[c.sides]||c.sides) },
+        ]},
+        { heading:'Parties', rows:[
+          { label:'Buyer', value: ov.buyer_name||'\u2014' },
+          { label:'Buyer phone / email', value:[cda.buyer_phone,cda.buyer_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+          { label:'Seller', value: ov.seller_name||'\u2014' },
+          { label:'Seller phone / email', value:[cda.seller_phone,cda.seller_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+        ]},
+        { heading:'Cooperating brokerage', rows:[
+          { label:'Co-op brokerage', value: cda.coop_brokerage||'\u2014' },
+          { label:'Co-op agent', value: cda.coop_agent_name||'\u2014' },
+          { label:'Co-op agent phone / email', value:[cda.coop_agent_phone,cda.coop_agent_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+          { label:'Commission to co-op brokerage (GCI)', value: M2(c.coopGci) },
+        ]},
+        { heading:'Title & mortgage', rows:[
+          { label:'Title company', value: cda.title_company||'\u2014' },
+          { label:'Title contact', value:[cda.title_contact,cda.title_phone,cda.title_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+          { label:'Mortgage company', value: cda.lender_company||'\u2014' },
+          { label:'Loan officer', value:[cda.loan_officer,cda.lender_phone,cda.lender_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+        ]},
+        { heading:'Commission math', rows:[
+          { label:'Total commission (all sides)', value: M2(c.totalComm), bold:true },
+          { label:'Less: commission to co-op brokerage', value: c.coopGci?('\u2212 '+M2(c.coopGci)):'\u2014' },
+          ...(c.referral?[{ label:`Less: outbound referral${cda.referral_to?` (${cda.referral_to})`:''}`, value:'\u2212 '+M2(c.referral) }]:[]),
+          ...(c.royalty?[{ label:'Less: franchise/royalty', value:'\u2212 '+M2(c.royalty) }]:[]),
+          { label:'Gross commission income to ROG (GCI)', value: M2(c.gciNet), bold:true },
+        ]},
+      ];
+      const disbursement={ rows:[
+        { label: c.split!=null?`Agent split (${c.split}% of GCI)`:'Agent gross', value: M2(c.agentGross), bold:true },
+        ...c.disclosedFees.map(x=>({ label:x.label, value:'\u2212 '+M2(x.amount), neg:true })),
+        ...c.contrib.map(x=>({ label:`Routed: ${x.label}`, value:'\u2212 '+M2(x.amount), muted:true })),
+      ], net_label:'NET CASH TO AGENT', net_value: M2(c.agentCash) };
+      const note=`Cooperating agent contact is provided for recruiting and coordination. Figures auto-calculated by PrismOS from the agent's active pay plan; verify against the executed Closing Disclosure before disbursement.`;
+      const { data, error } = await supabase.functions.invoke('files-cda-generate', { body:{ file_id:fileId, doc_title:'Commission Disbursement Authorization', agent_name:agentObj?.name||'', sections, disbursement, note, recruiting_email: cda.recruiting_email||null } });
+      if(error||data?.error){ if(window.__notify) window.__notify('CDA failed: '+(error?.message||data?.error),'error'); return; }
+      if(data.document) setDocs(prev=>[data.document,...prev]);
+      const { data:i2 } = await supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true}); if(i2) setItems(i2);
+      if(window.__notify) window.__notify(data.recruiting_sent?'CDA generated \u00B7 copy emailed to recruiting.':'CDA generated.','success');
+      setTab('docs');
+    }catch(e){ if(window.__notify) window.__notify('CDA failed: '+(e.message||e),'error'); }
+    finally{ setCdaBusy(false); }
+  };
+
   const cFlags = consistencyFlags(docs);
 
   const reqItems = items.filter(i=>i.required);
@@ -29940,7 +30053,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const cats = [...new Set(items.map(i=>i.category||'Other'))];
   const setOvF=(k,v)=>setOv(o=>({...o,[k]:v}));
   const DL_STATUS_COLOR={open:'var(--accent)',waived:'var(--yellow)',met:'var(--green)',passed:'var(--red)',cancelled:'var(--text-3)'};
-  const TABS=[['overview','Overview'],['checklist','Checklist'],['timeline','Timeline'],['docs','Documents'],['closing','Closing'],['parties','Parties'],['activity','Activity']];
+  const TABS=[['overview','Overview'],['checklist','Checklist'],['timeline','Timeline'],['docs','Documents'],['closing','Closing'],...(isAdmin?[['cda','CDA']]:[]),['parties','Parties'],['activity','Activity']];
 
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -30180,6 +30293,74 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                 : <span style={{fontSize:'13px',color:'var(--green)',fontWeight:700,alignSelf:'center'}}>\u2713 Paid {ov.paid_amount!=null?money(ov.paid_amount):''} {ov.paid_method?`via ${ov.paid_method}`:''} {ov.paid_at?`\u00B7 ${shortDate(ov.paid_at.slice(0,10))}`:''}</span>}
             </div>
             {!readyToDisburse && ov.status!=='paid' && <div style={{fontSize:'12px',color:'var(--text-3)'}}>\u201cMark paid\u201d unlocks once required docs are approved and the Closing Disclosure is in.</div>}
+          </div>
+        )}
+
+        {tab==='cda' && isAdmin && (
+          <div style={{display:'grid',gap:'12px'}}>
+            <label className="form-label">Agent on this deal
+              <select className="form-input" value={cdaAgentId} onChange={e=>pickAgent(e.target.value)}>
+                <option value="">\u2014 select agent \u2014</option>
+                {cdaAgents.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </label>
+            {cdaAgentId && !cdaPlan && <div style={{fontSize:'12px',color:'var(--yellow)'}}>No active pay plan for this agent yet \u2014 add one in Brokerage. Calculations will be partial.</div>}
+
+            <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>Deal financials</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+              <label className="form-label">Sides represented<select className="form-input" value={cda.sides||'buyer'} onChange={e=>setCdaF('sides',e.target.value)}><option value="buyer">Buyer</option><option value="seller">Seller</option><option value="both">Both (dual)</option></select></label>
+              <label className="form-label">Total commission %<input className="form-input" value={cda.total_rate??''} onChange={e=>setCdaF('total_rate',e.target.value)} placeholder="e.g. 6"/></label>
+              <label className="form-label">Our side GCI $ (optional override)<input className="form-input" value={cda.our_gci??''} onChange={e=>setCdaF('our_gci',e.target.value)} placeholder="auto if blank"/></label>
+              <label className="form-label">Outbound referral $<input className="form-input" value={cda.referral_fee??''} onChange={e=>setCdaF('referral_fee',e.target.value)}/></label>
+              <label className="form-label">Referral to<input className="form-input" value={cda.referral_to??''} onChange={e=>setCdaF('referral_to',e.target.value)}/></label>
+              <label className="form-label">Agent owes brokerage $<input className="form-input" value={cda.agent_owes??''} onChange={e=>setCdaF('agent_owes',e.target.value)}/></label>
+              <label className="form-label">Owed note<input className="form-input" value={cda.agent_owes_note??''} onChange={e=>setCdaF('agent_owes_note',e.target.value)} placeholder="e.g. sign rider"/></label>
+              <label className="form-label">Recruiting email (copy to)<input className="form-input" value={cda.recruiting_email??''} onChange={e=>setCdaF('recruiting_email',e.target.value)}/></label>
+            </div>
+
+            <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>Contacts (for the CDA)</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+              <label className="form-label">Buyer phone<input className="form-input" value={cda.buyer_phone??''} onChange={e=>setCdaF('buyer_phone',e.target.value)}/></label>
+              <label className="form-label">Buyer email<input className="form-input" value={cda.buyer_email??''} onChange={e=>setCdaF('buyer_email',e.target.value)}/></label>
+              <label className="form-label">Seller phone<input className="form-input" value={cda.seller_phone??''} onChange={e=>setCdaF('seller_phone',e.target.value)}/></label>
+              <label className="form-label">Seller email<input className="form-input" value={cda.seller_email??''} onChange={e=>setCdaF('seller_email',e.target.value)}/></label>
+              <label className="form-label">Co-op brokerage<input className="form-input" value={cda.coop_brokerage??''} onChange={e=>setCdaF('coop_brokerage',e.target.value)}/></label>
+              <label className="form-label">Co-op agent<input className="form-input" value={cda.coop_agent_name??''} onChange={e=>setCdaF('coop_agent_name',e.target.value)}/></label>
+              <label className="form-label">Co-op agent phone<input className="form-input" value={cda.coop_agent_phone??''} onChange={e=>setCdaF('coop_agent_phone',e.target.value)}/></label>
+              <label className="form-label">Co-op agent email<input className="form-input" value={cda.coop_agent_email??''} onChange={e=>setCdaF('coop_agent_email',e.target.value)}/></label>
+              <label className="form-label">Title company<input className="form-input" value={cda.title_company??''} onChange={e=>setCdaF('title_company',e.target.value)}/></label>
+              <label className="form-label">Title contact<input className="form-input" value={cda.title_contact??''} onChange={e=>setCdaF('title_contact',e.target.value)}/></label>
+              <label className="form-label">Title phone<input className="form-input" value={cda.title_phone??''} onChange={e=>setCdaF('title_phone',e.target.value)}/></label>
+              <label className="form-label">Title email<input className="form-input" value={cda.title_email??''} onChange={e=>setCdaF('title_email',e.target.value)}/></label>
+              <label className="form-label">Mortgage company<input className="form-input" value={cda.lender_company??''} onChange={e=>setCdaF('lender_company',e.target.value)}/></label>
+              <label className="form-label">Loan officer<input className="form-input" value={cda.loan_officer??''} onChange={e=>setCdaF('loan_officer',e.target.value)}/></label>
+              <label className="form-label">Lender phone<input className="form-input" value={cda.lender_phone??''} onChange={e=>setCdaF('lender_phone',e.target.value)}/></label>
+              <label className="form-label">Lender email<input className="form-input" value={cda.lender_email??''} onChange={e=>setCdaF('lender_email',e.target.value)}/></label>
+            </div>
+
+            <div className="panel" style={{display:'grid',gap:'3px',background:'var(--bg-hover)'}}>
+              <div style={{fontWeight:700,fontSize:'13px',marginBottom:'4px'}}>Live calculation</div>
+              {[['Total commission',money(cdaCalc.totalComm)],['Co-op brokerage GCI',money(cdaCalc.coopGci)],...(cdaCalc.referral?[['Referral out','\u2212 '+money(cdaCalc.referral)]]:[]),...(cdaCalc.royalty?[['Franchise/royalty','\u2212 '+money(cdaCalc.royalty)]]:[]),['ROG GCI',money(cdaCalc.gciNet)],['Agent gross'+(cdaCalc.split!=null?` (${cdaCalc.split}%)`:''),money(cdaCalc.agentGross)]].map((r,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>{r[0]}</span><span style={{fontWeight:i===4||i===5?700:400}}>{r[1]}</span></div>
+              ))}
+              {cdaCalc.disclosedFees.map((x,i)=><div key={'f'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--red)'}}><span>{x.label}</span><span>\u2212 {money(x.amount)}</span></div>)}
+              {cdaCalc.contrib.map((x,i)=><div key={'c'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text-3)'}}><span>Routed: {x.label}</span><span>\u2212 {money(x.amount)}</span></div>)}
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'14px',fontWeight:800,color:'var(--green)',borderTop:'1px solid var(--border)',marginTop:'4px',paddingTop:'4px'}}><span>Net cash to agent</span><span>{money(cdaCalc.agentCash)}</span></div>
+            </div>
+
+            {(cdaCalc.hiddenFees.length>0 || cdaCalc.profitShare>0) && (
+              <div className="panel" style={{display:'grid',gap:'3px',border:'1px dashed var(--text-3)'}}>
+                <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)'}}>Internal only \u2014 not on CDA</div>
+                {cdaCalc.profitShare>0 && <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>Profit share to upline{uplineObj?` (${uplineObj.name})`:''}</span><span>{money(cdaCalc.profitShare)}</span></div>}
+                {cdaCalc.hiddenFees.map((x,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>{x.label} (hidden)</span><span>{money(x.amount)}</span></div>)}
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text-3)'}}><span>Company dollar retained</span><span>{money(cdaCalc.companyDollar)}</span></div>
+              </div>
+            )}
+
+            <div style={{display:'flex',justifyContent:'flex-end',gap:'8px'}}>
+              <button className="btn btn-ghost" onClick={saveCda}>Save inputs</button>
+              <button className="btn btn-primary" onClick={generateCda} disabled={cdaBusy}>{cdaBusy?'Generating\u2026':'Generate CDA'}</button>
+            </div>
           </div>
         )}
 
