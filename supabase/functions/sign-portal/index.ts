@@ -44,6 +44,10 @@ serve(async (req) => {
     }
 
     if (action === "sign") {
+      if (request?.sign_in_order) {
+        const earlier = (allSigners || []).filter((s: any) => (s.sign_order || 1) < (signer.sign_order || 1));
+        if (earlier.some((s: any) => s.status !== "signed")) return new Response(JSON.stringify({ error: "It's not your turn yet \u2014 an earlier signer still needs to sign. We'll email you when it's ready." }), { status: 409, headers: { ...cors, "Content-Type": "application/json" } });
+      }
       if (!consent) return new Response(JSON.stringify({ error: "Consent is required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
       if (!signature_name || !signature_name.trim()) return new Response(JSON.stringify({ error: "Type your name to sign" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
       const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

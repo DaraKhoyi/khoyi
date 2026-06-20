@@ -29280,6 +29280,7 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
   const [signers,setSigners]=useState(seedSigners());
   const [title,setTitle]=useState(doc.title||'Document');
   const [message,setMessage]=useState(`Please review and sign: ${doc.title||'document'} for ${file.address||'our transaction'}.`);
+  const [inOrder,setInOrder]=useState(false);
   const [sending,setSending]=useState(false);
   const [result,setResult]=useState(null); // {links:[{name,url}]}
   const setS=(i,k,v)=>setSigners(prev=>prev.map((s,idx)=>idx===i?{...s,[k]:v}:s));
@@ -29290,7 +29291,7 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
     if(!valid.length){ if(window.__notify) window.__notify('Add at least one signer name.','error'); return; }
     setSending(true);
     try{
-      const { data:req, error } = await supabase.from('signature_requests').insert({ user_id:userId, file_id:file.id, document_id:doc.id, title, message, status:'sent' }).select().single();
+      const { data:req, error } = await supabase.from('signature_requests').insert({ user_id:userId, file_id:file.id, document_id:doc.id, title, message, status:'sent', sign_in_order:inOrder }).select().single();
       if(error) throw error;
       const rows=valid.map((s,i)=>({ request_id:req.id, user_id:userId, file_id:file.id, name:s.name.trim(), email:s.email.trim()||null, role:s.role||null, sign_order:i+1, token:sigToken() }));
       const { data:created, error:e2 } = await supabase.from('signature_signers').insert(rows).select();
@@ -29328,7 +29329,8 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
           <div style={{display:'grid',gap:'10px'}}>
             <label className="form-label">Title<input className="form-input" value={title} onChange={e=>setTitle(e.target.value)}/></label>
             <label className="form-label">Message<textarea className="form-input" rows={2} value={message} onChange={e=>setMessage(e.target.value)}/></label>
-            <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-2)'}}>Signers (in order)</div>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',color:'var(--text-2)',cursor:'pointer'}}><input type="checkbox" checked={inOrder} onChange={e=>setInOrder(e.target.checked)}/> Require signing in order (each signer unlocks the next)</label>
+            <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-2)'}}>Signers{inOrder?' (in order)':''}</div>
             {signers.map((s,i)=>(
               <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:'6px',alignItems:'center'}}>
                 <input className="form-input" placeholder="Name" value={s.name} onChange={e=>setS(i,'name',e.target.value)} style={{padding:'6px 8px',fontSize:'13px'}}/>
@@ -29344,6 +29346,53 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SignatureManageModal({ request, file, userId, onClose, onChanged }){
+  const [signers,setSigners]=useState(request.signers||[]);
+  const [busy,setBusy]=useState(false);
+  const resend=async(s)=>{
+    if(!s.email){ if(window.__notify) window.__notify('No email on file for this signer \u2014 use Copy link.','error'); return; }
+    setBusy(true);
+    try{ const { data:accts } = await supabase.from('email_accounts').select('id,is_active').eq('user_id',userId); const acct=(accts||[]).find(a=>a.is_active!==false); if(!acct){ if(window.__notify) window.__notify('Connect a Gmail account to send.','error'); return; }
+      const url=`https://darasapp.com/sign/${s.token}`;
+      await supabase.functions.invoke('gmail-send',{ body:{ account_id:acct.id, to:s.email, subject:`Reminder: signature needed \u2014 ${request.title||'document'}`, body_text:`A signature is requested.\n\nSign securely here:\n${url}\n\n\u2014 Realty ONE Group Advantage` } });
+      await supabase.from('signature_signers').update({ last_reminder_at:new Date().toISOString() }).eq('id',s.id);
+      if(window.__notify) window.__notify('Reminder sent.','success');
+    }catch(e){ if(window.__notify) window.__notify('Send failed.','error'); } finally{ setBusy(false); }
+  };
+  const voidReq=async()=>{
+    if(!window.confirm('Void this signature request? The links will stop working and the document can be sent again.')) return;
+    setBusy(true);
+    try{ await supabase.from('signature_requests').update({ status:'voided', voided_at:new Date().toISOString() }).eq('id',request.id);
+      await logFileEvent(file.id, userId, 'esign_voided', `Voided signature request: ${request.title||''}`);
+      if(onChanged) onChanged(); onClose();
+    }catch(e){ if(window.__notify) window.__notify('Could not void.','error'); } finally{ setBusy(false); }
+  };
+  return (
+    <div className="modal-overlay" style={{zIndex:2300}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:'520px',width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header"><h3 style={{margin:0}}>Signature request</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div style={{fontSize:'13px',fontWeight:600,marginBottom:'4px'}}>{request.title}</div>
+        <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'12px'}}>{request.sign_in_order?'Signs in order':'Any order'} \u00B7 {request.status}</div>
+        <div style={{display:'grid',gap:'8px'}}>
+          {(signers||[]).map(s=>(
+            <div key={s.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',background:'var(--bg-hover)',borderRadius:'8px'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:'13px',fontWeight:600}}>{s.name} {s.role?<span style={{fontSize:'10px',color:'var(--text-3)'}}>\u00B7 {s.role}</span>:null}</div>
+                <div style={{fontSize:'11px',color: s.status==='signed'?'var(--green)':s.status==='declined'?'var(--red)':'var(--text-2)'}}>{s.status}{s.signed_at?` \u00B7 ${shortDate(s.signed_at.slice(0,10))}`:''}{s.email?` \u00B7 ${s.email}`:''}</div>
+              </div>
+              {s.status!=='signed' && <>
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={()=>resend(s)} style={{padding:'4px 8px'}}>Resend</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>{ try{ navigator.clipboard.writeText(`https://darasapp.com/sign/${s.token}`); if(window.__notify) window.__notify('Link copied.','success'); }catch(_){}}} style={{padding:'4px 8px',color:'var(--text-3)'}}>Copy</button>
+              </>}
+            </div>
+          ))}
+        </div>
+        {request.status!=='completed' && <div style={{display:'flex',justifyContent:'flex-end',marginTop:'14px'}}><button className="btn btn-ghost" disabled={busy} onClick={voidReq} style={{color:'var(--red)'}}>Void request</button></div>}
       </div>
     </div>
   );
@@ -29420,6 +29469,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const [deadlines,setDeadlines]=useState([]);
   const [sigReqs,setSigReqs]=useState([]);
   const [signDoc,setSignDoc]=useState(null);
+  const [manageReq,setManageReq]=useState(null);
   const [loading,setLoading]=useState(true);
   const [ov,setOv]=useState(file);
   useEffect(()=>{ setOv(file); },[file]);
@@ -29840,7 +29890,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                   {(() => { const sr=sigByDoc[d.id]; const executed=d.execution_state==='executed';
                     if(executed) return <div style={{fontSize:'11px',color:'var(--green)',fontWeight:600}}>\u2713 Executed via PrismOS e-Sign</div>;
                     if(sr){ const signed=(sr.signers||[]).filter(s=>s.status==='signed').length; const total=(sr.signers||[]).length; const declined=(sr.signers||[]).some(s=>s.status==='declined');
-                      return <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'11px'}}><span style={{color:declined?'var(--red)':'var(--accent)',fontWeight:600}}>{declined?'Declined':`Out for signature \u2014 ${signed}/${total} signed`}</span><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={async()=>{ const links=(sr.signers||[]).map(s=>`${s.name}: https://darasapp.com/sign/${s.token}`).join('\n'); try{ await navigator.clipboard.writeText(links); if(window.__notify) window.__notify('Signing links copied.','success'); }catch(_){}}}>Copy links</button></div>;
+                      return <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'11px',flexWrap:'wrap'}}><span style={{color:declined?'var(--red)':'var(--accent)',fontWeight:600}}>{declined?'Declined':`Out for signature \u2014 ${signed}/${total} signed`}</span><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={()=>setManageReq(sr)}>Manage</button><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={async()=>{ const links=(sr.signers||[]).map(s=>`${s.name}: https://darasapp.com/sign/${s.token}`).join('\n'); try{ await navigator.clipboard.writeText(links); if(window.__notify) window.__notify('Signing links copied.','success'); }catch(_){}}}>Copy links</button></div>;
                     }
                     return <button className="btn btn-ghost btn-sm" onClick={()=>setSignDoc(d)} style={{color:'var(--accent)',justifySelf:'start',padding:'2px 8px',fontSize:'12px'}}>\u270D Send for signature</button>;
                   })()}
@@ -29920,6 +29970,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
       </div>
       {showMissing && <MissingDocsComposer file={file} ov={ov} missingItems={requestScope||missingItems} parties={parties} contacts={contacts} userId={userId} onClose={()=>{ setShowMissing(false); setRequestScope(null); }} onSent={()=>{ const n=(requestScope||missingItems).length; logFileEvent(fileId,userId,'missing_docs_requested',`Requested ${n} document(s)${requestScope?`: ${requestScope[0].label}`:''}`); }} />}
       {signDoc && <SignatureRequestModal file={file} doc={signDoc} parties={parties} contacts={contacts} userId={userId} onClose={()=>setSignDoc(null)} onCreated={()=>{ loadSigs(); }} />}
+      {manageReq && <SignatureManageModal request={manageReq} file={file} userId={userId} onClose={()=>setManageReq(null)} onChanged={()=>{ loadSigs(); }} />}
     </div>
   );
 }
