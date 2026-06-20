@@ -18,7 +18,7 @@ serve(async (req) => {
     const uid = user.id;
     const db = createClient(SUPABASE_URL, SERVICE);
     const body = await req.json();
-    const { file_id, doc_title, agent_name, sections, disbursement, note, recruiting_email } = body;
+    const { file_id, doc_title, agent_name, sections, disbursement, note, recruiting_email, ledger, agent_id, closed_on } = body;
     if (!file_id) return new Response(JSON.stringify({ error: "file_id required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 
     const pdf = await PDFDocument.create();
@@ -77,6 +77,16 @@ serve(async (req) => {
     const { data: items } = await db.from("file_checklist_items").select("*").eq("file_id", file_id).eq("item_key", "cda");
     for (const it of (items || [])) if (it.status === "missing") await db.from("file_checklist_items").update({ status: "received", satisfied_by: doc?.id, updated_at: new Date().toISOString() }).eq("id", it.id);
     await db.from("file_events").insert({ file_id, user_id: uid, kind: "cda_generated", detail: `CDA generated${agent_name ? " for " + agent_name : ""}`, meta: { doc_id: doc?.id } });
+
+    if (ledger) {
+      try {
+        const { data: f } = await db.from("files").select("user_id").eq("id", file_id).maybeSingle();
+        await db.from("cda_ledger").insert({ user_id: f?.user_id || uid, agent_id: agent_id || null, file_id, document_id: doc?.id || null, closed_on: closed_on || null,
+          price: ledger.price ?? null, total_comm: ledger.totalComm ?? null, coop_gci: ledger.coopGci ?? null, our_gci: ledger.gciNet ?? null,
+          agent_gross: ledger.agentGross ?? null, total_fees: ledger.totalFees ?? null, agent_net: ledger.agentNet ?? null, agent_cash: ledger.agentCash ?? null,
+          company_dollar: ledger.companyDollar ?? null, profit_share: ledger.profitShare ?? null, savings: ledger.savings ?? null, retirement: ledger.retirement ?? null, breakdown: ledger });
+      } catch (_) {}
+    }
 
     let recruiting_sent = false;
     if (recruiting_email) {

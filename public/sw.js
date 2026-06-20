@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v43-20260619-roles-users'
+const VERSION = 'prismos-v44-20260619-owner-ledger-cap'
 const APP_SHELL = [
   '/',
   '/index.html',

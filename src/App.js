@@ -28932,8 +28932,8 @@ const ROLE_LABEL = Object.fromEntries(AGENT_ROLES.map(r=>[r.value,r.label]));
 
 function num(v){ return v===''||v===null||v===undefined||isNaN(Number(v))?null:Number(v); }
 function pctOf(b,p){ const v=num(p); return v?b*v/100:0; }
-function computeCDA(f, cda, plan){
-  cda=cda||{}; plan=plan||{};
+function computeCDA(f, cda, plan, capYtd){
+  cda=cda||{}; plan=plan||{}; capYtd=num(capYtd)||0;
   const price=num(f.contract_price)||0;
   const totalRate=num(cda.total_rate);
   const totalComm=num(cda.total_commission)!=null?num(cda.total_commission):(totalRate!=null?price*totalRate/100:0);
@@ -28949,10 +28949,19 @@ function computeCDA(f, cda, plan){
   let royalty=pctOf(gciAfterRef,plan.royalty_pct); if(num(plan.royalty_cap)!=null) royalty=Math.min(royalty,num(plan.royalty_cap));
   const gciNet=gciAfterRef-royalty;
   const split=num(plan.agent_split_pct);
-  let agentGross, companyDollar;
+  let agentGross, companyDollar, capNote=null;
   if(plan.split_type==='flat'){ agentGross=gciNet; companyDollar=0; }
+  else if(plan.split_type==='cap' && num(plan.cap_amount)!=null){
+    const capRemaining=Math.max(0, num(plan.cap_amount)-capYtd);
+    const normalCo= split!=null? gciNet*(1-split/100): 0;
+    companyDollar=Math.min(normalCo, capRemaining);
+    agentGross=gciNet-companyDollar;
+    if(capRemaining<=0){ capNote='Capped (100%)'; if(num(plan.post_cap_fee)){} }
+    else if(companyDollar<normalCo){ capNote='Cap reached this deal'; }
+  }
   else { agentGross= split!=null? gciNet*split/100 : gciNet; companyDollar=gciNet-agentGross; }
   const fees=[];
+  if(plan.split_type==='cap' && num(plan.cap_amount)!=null && (num(plan.cap_amount)-capYtd)<=0 && num(plan.post_cap_fee)) fees.push({label:'Post-cap transaction fee',amount:num(plan.post_cap_fee)});
   if(num(plan.transaction_fee)) fees.push({label:'Transaction fee',amount:num(plan.transaction_fee)});
   if((sides==='buyer'||sides==='both')&&num(plan.buyer_side_fee)) fees.push({label:'Buyer-side fee',amount:num(plan.buyer_side_fee)});
   if((sides==='seller'||sides==='both')&&num(plan.seller_side_fee)) fees.push({label:'Seller-side fee',amount:num(plan.seller_side_fee)});
@@ -28972,7 +28981,7 @@ function computeCDA(f, cda, plan){
   const totalContrib=contrib.reduce((s,x)=>s+x.amount,0);
   const agentCash=agentNet-totalContrib;
   const profitShare= pctOf(gciNet, plan.profit_share_pct);
-  return { price, totalRate, totalComm, sides, ourGci, coopGci, referral, royalty, gciNet, split, agentGross, companyDollar, fees, disclosedFees, hiddenFees, totalFees, agentNet, contrib, totalContrib, agentCash, profitShare };
+  return { price, totalRate, totalComm, sides, ourGci, coopGci, referral, royalty, gciNet, split, agentGross, companyDollar, capNote, fees, disclosedFees, hiddenFees, totalFees, agentNet, contrib, totalContrib, agentCash, profitShare, savings:sav, retirement:ret };
 }
 
 function AgentsView({ userId, user, appCtx, isAdmin }){
@@ -28981,8 +28990,12 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
   const [openId,setOpenId]=useState(null);
   const [showNew,setShowNew]=useState(false);
   const [nv,setNv]=useState({ name:'', email:'', phone:'', role:'agent', team:'', license_no:'' });
+  const [mode,setMode]=useState('roster');
+  const [ledger,setLedger]=useState(null);
   const load=async()=>{ const { data } = await supabase.from('agents').select('*').order('name',{ascending:true}); setAgents(data||[]); setLoading(false); };
+  const loadLedger=async()=>{ if(ledger) return; const { data } = await supabase.from('cda_ledger').select('*'); setLedger(data||[]); };
   useEffect(()=>{ load(); },[]);
+  useEffect(()=>{ if(mode==='earnings') loadLedger(); },[mode]);
   const addAgent=async()=>{
     if(!nv.name.trim()){ if(window.__notify) window.__notify('Agent name required.','error'); return; }
     const { data, error } = await supabase.from('agents').insert({ user_id:userId, name:nv.name.trim(), email:nv.email.trim()||null, phone:nv.phone.trim()||null, role:nv.role, team:nv.team.trim()||null, license_no:nv.license_no.trim()||null }).select().single();
@@ -28997,8 +29010,40 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
           <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="users" size={20}/> Brokerage</h2>
           <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Agents, roles & pay plans</div>
         </div>
-        {isAdmin && <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>}
+        {isAdmin && mode==='roster' && <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>}
       </div>
+      <div style={{display:'flex',gap:'6px',marginTop:'12px'}}>
+        <button className="btn btn-sm" onClick={()=>setMode('roster')} style={{background:mode==='roster'?'var(--accent)':'transparent',color:mode==='roster'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Roster</button>
+        <button className="btn btn-sm" onClick={()=>setMode('earnings')} style={{background:mode==='earnings'?'var(--accent)':'transparent',color:mode==='earnings'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Earnings (YTD)</button>
+      </div>
+      {mode==='earnings' && (()=>{
+        if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading earnings\u2026</div>;
+        const yr=new Date().getFullYear();
+        const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===yr);
+        const byA={}; for(const r of rows){ const k=r.agent_id||'\u2014'; (byA[k]=byA[k]||{deals:0,gci:0,net:0,co:0,ps:0,sav:0,ret:0}); byA[k].deals++; byA[k].gci+=Number(r.our_gci)||0; byA[k].net+=Number(r.agent_cash)||0; byA[k].co+=Number(r.company_dollar)||0; byA[k].ps+=Number(r.profit_share)||0; byA[k].sav+=Number(r.savings)||0; byA[k].ret+=Number(r.retirement)||0; }
+        const nameOf=(id)=>agents.find(x=>x.id===id)?.name||'Unassigned';
+        const tot=Object.values(byA).reduce((s,v)=>({deals:s.deals+v.deals,gci:s.gci+v.gci,net:s.net+v.net,co:s.co+v.co,ps:s.ps+v.ps}),{deals:0,gci:0,net:0,co:0,ps:0});
+        const keys=Object.keys(byA).sort((a,b)=>byA[b].gci-byA[a].gci);
+        return (
+          <div style={{marginTop:'12px',display:'grid',gap:'10px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
+              {[['Deals',tot.deals],['GCI to ROG',money(tot.gci)],['Company dollar',money(tot.co)],['Profit share owed',money(tot.ps)]].map((c,i)=>(
+                <div key={i} className="panel" style={{padding:'12px'}}><div style={{fontSize:'11px',color:'var(--text-3)'}}>{c[0]}</div><div style={{fontSize:'17px',fontWeight:800}}>{c[1]}</div></div>
+              ))}
+            </div>
+            {keys.length===0 ? <div className="panel" style={{textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No closed CDAs recorded yet this year. Generate a CDA on a file and it'll show here.</div> :
+            <div className="panel" style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
+                <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'6px'}}>Agent</th><th style={{padding:'6px'}}>Deals</th><th style={{padding:'6px',textAlign:'right'}}>GCI</th><th style={{padding:'6px',textAlign:'right'}}>Net cash</th><th style={{padding:'6px',textAlign:'right'}}>Company $</th><th style={{padding:'6px',textAlign:'right'}}>Savings/Ret</th><th style={{padding:'6px',textAlign:'right'}}>Profit share</th></tr></thead>
+                <tbody>
+                  {keys.map(k=>{ const v=byA[k]; return <tr key={k} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'6px',fontWeight:600}}>{nameOf(k)}</td><td style={{padding:'6px'}}>{v.deals}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.gci)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.net)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.co)}</td><td style={{padding:'6px',textAlign:'right',color:'var(--text-3)'}}>{money(v.sav+v.ret)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.ps)}</td></tr>; })}
+                </tbody>
+              </table>
+            </div>}
+          </div>
+        );
+      })()}
+      {mode==='roster' && <>
       {showNew && (
         <div className="panel" style={{display:'grid',gap:'8px',marginTop:'12px'}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
@@ -29022,6 +29067,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
             </div>
           ))}
         </div>}
+      </>}
       {open && <AgentEditor agent={open} agents={agents} userId={userId} isAdmin={isAdmin} onClose={()=>setOpenId(null)} onSaved={(u)=>setAgents(p=>p.map(x=>x.id===u.id?u:x))} onDeleted={(id)=>{ setAgents(p=>p.filter(x=>x.id!==id)); setOpenId(null); }}/>}
     </div>
   );
@@ -29196,12 +29242,12 @@ function PayPlanEditor({ agentId, userId, plan, agents, onSaved }){
   );
 }
 
-function FilesView({ files, setFiles, contacts, setContacts, properties, userId, user }){
+function FilesView({ files, setFiles, contacts, setContacts, properties, userId, user, isAdmin:isAdminProp }){
   const [showNew,setShowNew]=useState(false);
   const [openId,setOpenId]=useState(null);
   const [statusFilter,setStatusFilter]=useState('all');
   const [progress,setProgress]=useState({});
-  const isAdmin = ((user?.email)||'').toLowerCase()==='dara@brokerdara.com';
+  const isAdmin = isAdminProp!==undefined ? isAdminProp : ((user?.email)||'').toLowerCase()==='khoyi1234@gmail.com';
   const buyerFiles = useMemo(()=> (files||[]).filter(f=>f.side==='buyer'), [files]);
   const idsKey = buyerFiles.map(f=>f.id).join(',');
 
@@ -29810,12 +29856,13 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const [cda,setCda]=useState(file.cda_data||{});
   const [cdaAgentId,setCdaAgentId]=useState(file.agent_id||'');
   const [cdaBusy,setCdaBusy]=useState(false);
+  const [cdaCapYtd,setCdaCapYtd]=useState(0);
   const setCdaF=(k,v)=>setCda(c=>({...c,[k]:v}));
-  const loadPlan=async(agentId)=>{ if(!agentId){ setCdaPlan(null); return; } const { data } = await supabase.from('pay_plans').select('*').eq('agent_id',agentId).eq('active',true).order('created_at',{ascending:false}).limit(1); setCdaPlan(data&&data[0]?data[0]:null); };
+  const loadPlan=async(agentId)=>{ if(!agentId){ setCdaPlan(null); setCdaCapYtd(0); return; } const { data } = await supabase.from('pay_plans').select('*').eq('agent_id',agentId).eq('active',true).order('created_at',{ascending:false}).limit(1); setCdaPlan(data&&data[0]?data[0]:null); const yr=new Date().getFullYear(); const { data:led } = await supabase.from('cda_ledger').select('company_dollar,closed_on,created_at').eq('agent_id',agentId); const ytd=(led||[]).filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===yr).reduce((s,r)=>s+(Number(r.company_dollar)||0),0); setCdaCapYtd(ytd); };
   useEffect(()=>{ if(!isAdmin) return; (async()=>{ const { data } = await supabase.from('agents').select('*').eq('user_id',userId).eq('active',true).order('name'); setCdaAgents(data||[]); })(); if(file.agent_id) loadPlan(file.agent_id); },[]);
   const pickAgent=async(id)=>{ setCdaAgentId(id); await supabase.from('files').update({ agent_id:id||null, updated_at:new Date().toISOString() }).eq('id',fileId); await loadPlan(id); };
   const saveCda=async()=>{ const { data } = await supabase.from('files').update({ cda_data:cda, updated_at:new Date().toISOString() }).eq('id',fileId).select().single(); if(data){ onChange(data); if(window.__notify) window.__notify('CDA inputs saved.','success'); } };
-  const cdaCalc = computeCDA(ov, cda, cdaPlan||{});
+  const cdaCalc = computeCDA(ov, cda, cdaPlan||{}, cdaCapYtd);
   const agentObj = cdaAgents.find(x=>x.id===cdaAgentId);
   const uplineObj = agentObj?.upline_id? cdaAgents.find(x=>x.id===agentObj.upline_id):null;
   const generateCda=async()=>{
@@ -29864,7 +29911,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
         ...c.contrib.map(x=>({ label:`Routed: ${x.label}`, value:'\u2212 '+M2(x.amount), muted:true })),
       ], net_label:'NET CASH TO AGENT', net_value: M2(c.agentCash) };
       const note=`Cooperating agent contact is provided for recruiting and coordination. Figures auto-calculated by PrismOS from the agent's active pay plan; verify against the executed Closing Disclosure before disbursement.`;
-      const { data, error } = await supabase.functions.invoke('files-cda-generate', { body:{ file_id:fileId, doc_title:'Commission Disbursement Authorization', agent_name:agentObj?.name||'', sections, disbursement, note, recruiting_email: cda.recruiting_email||null } });
+      const { data, error } = await supabase.functions.invoke('files-cda-generate', { body:{ file_id:fileId, doc_title:'Commission Disbursement Authorization', agent_name:agentObj?.name||'', sections, disbursement, note, recruiting_email: cda.recruiting_email||null, agent_id:cdaAgentId, closed_on: ov.closing_date||null, ledger:{ price:c.price, totalComm:c.totalComm, coopGci:c.coopGci, gciNet:c.gciNet, agentGross:c.agentGross, totalFees:c.totalFees, agentNet:c.agentNet, agentCash:c.agentCash, companyDollar:c.companyDollar, profitShare:c.profitShare, savings:c.savings, retirement:c.retirement } } });
       if(error||data?.error){ if(window.__notify) window.__notify('CDA failed: '+(error?.message||data?.error),'error'); return; }
       if(data.document) setDocs(prev=>[data.document,...prev]);
       const { data:i2 } = await supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true}); if(i2) setItems(i2);
@@ -30393,6 +30440,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
               {cdaCalc.disclosedFees.map((x,i)=><div key={'f'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--red)'}}><span>{x.label}</span><span>\u2212 {money(x.amount)}</span></div>)}
               {cdaCalc.contrib.map((x,i)=><div key={'c'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text-3)'}}><span>Routed: {x.label}</span><span>\u2212 {money(x.amount)}</span></div>)}
               <div style={{display:'flex',justifyContent:'space-between',fontSize:'14px',fontWeight:800,color:'var(--green)',borderTop:'1px solid var(--border)',marginTop:'4px',paddingTop:'4px'}}><span>Net cash to agent</span><span>{money(cdaCalc.agentCash)}</span></div>
+              {cdaPlan?.split_type==='cap' && num(cdaPlan?.cap_amount)!=null && <div style={{fontSize:'11px',color:cdaCalc.capNote?'var(--accent)':'var(--text-3)',marginTop:'4px'}}>Cap: {money(cdaCapYtd)} / {money(num(cdaPlan.cap_amount))} company dollar YTD{cdaCalc.capNote?` \u00B7 ${cdaCalc.capNote}`:''}</div>}
             </div>
 
             {(cdaCalc.hiddenFees.length>0 || cdaCalc.profitShare>0) && (
@@ -30760,7 +30808,7 @@ function AppMain() {
   if (!session) return <AuthScreen />;
 
   const user = session.user;
-  const emailAdmin = ((user?.email)||'').toLowerCase()==='dara@brokerdara.com';
+  const emailAdmin = ((user?.email)||'').toLowerCase()==='khoyi1234@gmail.com';
   const isAdmin = appCtx ? !!appCtx.is_admin : emailAdmin;
   const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
   const openTaskCount = tasks.filter(t=>!t.completed).length;
@@ -30893,7 +30941,7 @@ function AppMain() {
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
               : view==='deals'       ? <DealsView deals={deals} setDeals={setDeals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
-              : view==='files'       ? <FilesView files={files} setFiles={setFiles} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id} user={user}/>
+              : view==='files'       ? <FilesView files={files} setFiles={setFiles} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id} user={user} isAdmin={isAdmin}/>
               : view==='agents' && (isAdmin||isTeamLeader) ? <AgentsView userId={user.id} user={user} appCtx={appCtx} isAdmin={isAdmin}/>
               : view==='mileage'     ? <MileageView mileageEntries={mileageEntries} setMileageEntries={setMileageEntries} deals={deals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
