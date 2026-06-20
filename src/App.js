@@ -29650,6 +29650,23 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const commReconciled = commVariance!=null && Math.abs(commVariance) < 1;
   const cdApprovedDoc = items.some(i=>i.item_key==='closing_disclosure'&&['approved','waived'].includes(i.status)) || ov.cd_received;
   const readyToDisburse = reqItems.length>0 && reqDone===reqItems.length && (ov.cd_received||cdApprovedDoc);
+  const nextBest = (()=>{
+    if(ov.status==='paid') return null;
+    const declined = Object.values(sigByDoc).find(r=>r.status!=='completed' && (r.signers||[]).some(s=>s.status==='declined'));
+    if(declined) return { text:`A signer declined \u201c${declined.title}\u201d. Review and resend.`, cta:'Manage', act:()=>setManageReq(declined), tone:'red' };
+    if(ov.cd_received && commVariance!=null && !commReconciled) return { text:`Commission doesn\u2019t match the Closing Disclosure (${commVariance>=0?'+':''}${money(commVariance)}). Reconcile before disbursing.`, cta:'Review', act:()=>setTab('closing'), tone:'red' };
+    if(readyToDisburse && ov.status!=='paid') return { text:'Everything required is in \u2014 you can disburse and mark this file paid.', cta:'Go to Closing', act:()=>setTab('closing'), tone:'green' };
+    const pendingSig = Object.values(sigByDoc).find(r=>r.status==='sent');
+    if(pendingSig){ const nx=(pendingSig.signers||[]).find(s=>s.status!=='signed'&&s.status!=='declined'); return { text:`Waiting on signature${nx?` from ${nx.name}`:''} for \u201c${pendingSig.title}\u201d.`, cta:'Manage', act:()=>setManageReq(pendingSig), tone:'gold' }; }
+    const ownedMissing = items.find(it=>it.required && itemOrigin(it)==='owned' && it.status==='missing');
+    if(ownedMissing) return { text:`Generate the ${ownedMissing.label}.`, cta:'Generate', act:()=>generateItem(ownedMissing), tone:'gold' };
+    const extMissing = items.find(it=>it.required && itemOrigin(it)==='external' && it.status==='missing');
+    if(extMissing) return { text:`Still need: ${extMissing.label}.`, cta:'Request', act:()=>openRequest(extMissing), tone:'gold' };
+    const toReview = items.find(it=>it.required && it.status==='received');
+    if(toReview) return { text:`${toReview.label} is in \u2014 review and approve it.`, cta:'Review', act:()=>setTab('checklist'), tone:'blue' };
+    if(!ov.cd_received && ov.status!=='closed') return { text:'Waiting on the Closing Disclosure from title.', cta:'Timeline', act:()=>setTab('timeline'), tone:'gold' };
+    return { text:'This file is in good shape \u2014 nothing needs you right now.', cta:null, tone:'green' };
+  })();
 
   const markPaid = async()=>{
     const amtStr=window.prompt('Amount received ($):', cdComm!=null?String(cdComm):(expectedComm!=null?String(expectedComm):'')); if(amtStr===null) return;
@@ -29750,6 +29767,15 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
           </div>
           <button className="modal-close" onClick={onClose}>\u00d7</button>
         </div>
+
+        {/* next best action */}
+        {!loading && nextBest && (()=>{ const tc={red:'var(--red)',green:'var(--green)',gold:'var(--accent)',blue:'#3b82f6'}[nextBest.tone]||'var(--accent)'; return (
+          <div style={{display:'flex',alignItems:'center',gap:'10px',background:'linear-gradient(135deg,var(--bg-card),var(--bg-hover))',border:`1px solid ${tc}`,borderRadius:'10px',padding:'12px 14px',marginBottom:'12px'}}>
+            <div style={{width:'8px',height:'8px',borderRadius:'50%',background:tc,flexShrink:0,boxShadow:`0 0 8px ${tc}`}}/>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:'10px',fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)'}}>Next best action</div><div style={{fontSize:'13px',color:'var(--text-1)'}}>{nextBest.text}</div></div>
+            {nextBest.cta && <button className="btn btn-primary btn-sm" onClick={nextBest.act} style={{whiteSpace:'nowrap'}}>{nextBest.cta}</button>}
+          </div>
+        ); })()}
 
         {/* completeness + readiness */}
         <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}}>
