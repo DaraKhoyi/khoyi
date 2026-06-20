@@ -28921,6 +28921,191 @@ function consistencyFlags(docs){
 }
 function daysUntil(d){ if(!d) return null; const ms=new Date(d+'T00:00:00').getTime()-Date.now(); return Math.ceil(ms/86400000); }
 
+/* ===================== BROKERAGE: AGENTS & PAY PLANS (admin) ===================== */
+const AGENT_ROLES = [
+  { value:'owner', label:'Owner / Broker' },
+  { value:'broker_admin', label:'Broker Admin' },
+  { value:'team_leader', label:'Team Leader' },
+  { value:'agent', label:'Agent' },
+];
+const ROLE_LABEL = Object.fromEntries(AGENT_ROLES.map(r=>[r.value,r.label]));
+
+function num(v){ return v===''||v===null||v===undefined||isNaN(Number(v))?null:Number(v); }
+
+function AgentsView({ userId, user }){
+  const [agents,setAgents]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [openId,setOpenId]=useState(null);
+  const [showNew,setShowNew]=useState(false);
+  const [nv,setNv]=useState({ name:'', email:'', phone:'', role:'agent', team:'', license_no:'' });
+  const load=async()=>{ const { data } = await supabase.from('agents').select('*').eq('user_id',userId).order('name',{ascending:true}); setAgents(data||[]); setLoading(false); };
+  useEffect(()=>{ load(); },[]);
+  const addAgent=async()=>{
+    if(!nv.name.trim()){ if(window.__notify) window.__notify('Agent name required.','error'); return; }
+    const { data, error } = await supabase.from('agents').insert({ user_id:userId, name:nv.name.trim(), email:nv.email.trim()||null, phone:nv.phone.trim()||null, role:nv.role, team:nv.team.trim()||null, license_no:nv.license_no.trim()||null }).select().single();
+    if(error){ if(window.__notify) window.__notify('Could not add: '+error.message,'error'); return; }
+    setAgents(p=>[...p,data].sort((a,b)=>(a.name||'').localeCompare(b.name||''))); setShowNew(false); setNv({ name:'', email:'', phone:'', role:'agent', team:'', license_no:'' }); setOpenId(data.id);
+  };
+  const open = agents.find(a=>a.id===openId)||null;
+  return (
+    <div className="view">
+      <div className="panel" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="users" size={20}/> Brokerage</h2>
+          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Agents, roles & pay plans</div>
+        </div>
+        <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>
+      </div>
+      {showNew && (
+        <div className="panel" style={{display:'grid',gap:'8px',marginTop:'12px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+            <label className="form-label">Name<input className="form-input" value={nv.name} onChange={e=>setNv({...nv,name:e.target.value})}/></label>
+            <label className="form-label">Role<select className="form-input" value={nv.role} onChange={e=>setNv({...nv,role:e.target.value})}>{AGENT_ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
+            <label className="form-label">Email<input className="form-input" value={nv.email} onChange={e=>setNv({...nv,email:e.target.value})}/></label>
+            <label className="form-label">Phone<input className="form-input" value={nv.phone} onChange={e=>setNv({...nv,phone:e.target.value})}/></label>
+            <label className="form-label">Team<input className="form-input" value={nv.team} onChange={e=>setNv({...nv,team:e.target.value})}/></label>
+            <label className="form-label">License #<input className="form-input" value={nv.license_no} onChange={e=>setNv({...nv,license_no:e.target.value})}/></label>
+          </div>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:'8px'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowNew(false)}>Cancel</button><button className="btn btn-primary btn-sm" onClick={addAgent}>Add</button></div>
+        </div>
+      )}
+      {loading? <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading\u2026</div> :
+        agents.length===0 ? <div className="panel" style={{marginTop:'12px',textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No agents yet. Add your first agent to build their pay plan.</div> :
+        <div style={{display:'grid',gap:'8px',marginTop:'12px'}}>
+          {agents.map(a=>(
+            <div key={a.id} className="panel" onClick={()=>setOpenId(a.id)} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div><div style={{fontWeight:700}}>{a.name}{!a.active&&<span style={{fontSize:'10px',color:'var(--text-3)'}}> \u00B7 inactive</span>}</div><div style={{fontSize:'12px',color:'var(--text-2)'}}>{ROLE_LABEL[a.role]}{a.team?` \u00B7 ${a.team}`:''}{a.email?` \u00B7 ${a.email}`:''}</div></div>
+              <Icon name="chevron-right" size={16} fb="\u203A"/>
+            </div>
+          ))}
+        </div>}
+      {open && <AgentEditor agent={open} agents={agents} userId={userId} onClose={()=>setOpenId(null)} onSaved={(u)=>setAgents(p=>p.map(x=>x.id===u.id?u:x))} onDeleted={(id)=>{ setAgents(p=>p.filter(x=>x.id!==id)); setOpenId(null); }}/>}
+    </div>
+  );
+}
+
+function AgentEditor({ agent, agents, userId, onClose, onSaved, onDeleted }){
+  const [a,setA]=useState(agent);
+  const [plan,setPlan]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const others=agents.filter(x=>x.id!==agent.id);
+  useEffect(()=>{ (async()=>{ const { data } = await supabase.from('pay_plans').select('*').eq('agent_id',agent.id).eq('active',true).order('created_at',{ascending:false}).limit(1); setPlan(data&&data[0]?data[0]:null); setLoading(false); })(); },[agent.id]);
+  const setAF=(k,v)=>setA(p=>({...p,[k]:v}));
+  const saveAgent=async()=>{ const { data } = await supabase.from('agents').update({ name:a.name, email:a.email, phone:a.phone, role:a.role, team:a.team, license_no:a.license_no, upline_id:a.upline_id||null, mentor_id:a.mentor_id||null, active:a.active, notes:a.notes, updated_at:new Date().toISOString() }).eq('id',agent.id).select().single(); if(data){ onSaved(data); if(window.__notify) window.__notify('Agent saved.','success'); } };
+  const delAgent=async()=>{ if(!window.confirm(`Remove ${agent.name}? Their pay plan will be removed too.`)) return; await supabase.from('agents').delete().eq('id',agent.id); onDeleted(agent.id); };
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:'640px',width:'100%',maxHeight:'94vh',overflowY:'auto'}}>
+        <div className="modal-header"><h3 style={{margin:0}}>{agent.name}</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div style={{display:'grid',gap:'10px'}}>
+          <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--text-3)'}}>Profile</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+            <label className="form-label">Name<input className="form-input" value={a.name||''} onChange={e=>setAF('name',e.target.value)}/></label>
+            <label className="form-label">Role<select className="form-input" value={a.role} onChange={e=>setAF('role',e.target.value)}>{AGENT_ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
+            <label className="form-label">Email<input className="form-input" value={a.email||''} onChange={e=>setAF('email',e.target.value)}/></label>
+            <label className="form-label">Phone<input className="form-input" value={a.phone||''} onChange={e=>setAF('phone',e.target.value)}/></label>
+            <label className="form-label">Team<input className="form-input" value={a.team||''} onChange={e=>setAF('team',e.target.value)}/></label>
+            <label className="form-label">License #<input className="form-input" value={a.license_no||''} onChange={e=>setAF('license_no',e.target.value)}/></label>
+            <label className="form-label">Upline (profit share)<select className="form-input" value={a.upline_id||''} onChange={e=>setAF('upline_id',e.target.value)}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+            <label className="form-label">Mentor<select className="form-input" value={a.mentor_id||''} onChange={e=>setAF('mentor_id',e.target.value)}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+          </div>
+          <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',flexDirection:'row'}}><input type="checkbox" checked={a.active!==false} onChange={e=>setAF('active',e.target.checked)}/> Active</label>
+          <div style={{display:'flex',justifyContent:'space-between'}}>
+            <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={delAgent}><Icon name="trash" size={13}/> Remove</button>
+            <button className="btn btn-primary btn-sm" onClick={saveAgent}>Save profile</button>
+          </div>
+          <div style={{borderTop:'1px solid var(--border)',margin:'6px 0'}}/>
+          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const BLANK_PLAN = { name:'Default plan', split_type:'percentage', agent_split_pct:'', cap_amount:'', post_cap_fee:'', transaction_fee:'', buyer_side_fee:'', seller_side_fee:'', royalty_pct:'', royalty_cap:'', tc_fee:'', tc_payee:'', mentor_fee_type:'none', mentor_fee_value:'', profit_share_pct:'', auto_savings_type:'none', auto_savings_value:'', retirement_type:'none', retirement_value:'', retirement_label:'401(k)', custom_fees:[] };
+function PayPlanEditor({ agentId, userId, plan, agents, onSaved }){
+  const [p,setP]=useState(plan? { ...BLANK_PLAN, ...plan, custom_fees: plan.custom_fees||[] } : { ...BLANK_PLAN });
+  const set=(k,v)=>setP(s=>({...s,[k]:v}));
+  const [saving,setSaving]=useState(false);
+  const addFee=()=>set('custom_fees',[...(p.custom_fees||[]),{ label:'', type:'flat', basis:'gci', amount:'', side:'agent', disclose:true, payee:'' }]);
+  const setFee=(i,k,v)=>set('custom_fees',(p.custom_fees||[]).map((f,idx)=>idx===i?{...f,[k]:v}:f));
+  const delFee=(i)=>set('custom_fees',(p.custom_fees||[]).filter((_,idx)=>idx!==i));
+  const save=async()=>{
+    setSaving(true);
+    const row={ user_id:userId, agent_id:agentId, name:p.name||'Default plan', split_type:p.split_type,
+      agent_split_pct:num(p.agent_split_pct), cap_amount:num(p.cap_amount), post_cap_fee:num(p.post_cap_fee),
+      transaction_fee:num(p.transaction_fee), buyer_side_fee:num(p.buyer_side_fee), seller_side_fee:num(p.seller_side_fee),
+      royalty_pct:num(p.royalty_pct), royalty_cap:num(p.royalty_cap),
+      tc_fee:num(p.tc_fee), tc_payee:p.tc_payee||null,
+      mentor_fee_type:p.mentor_fee_type, mentor_fee_value:num(p.mentor_fee_value),
+      profit_share_pct:num(p.profit_share_pct),
+      auto_savings_type:p.auto_savings_type, auto_savings_value:num(p.auto_savings_value),
+      retirement_type:p.retirement_type, retirement_value:num(p.retirement_value), retirement_label:p.retirement_label||'401(k)',
+      custom_fees:(p.custom_fees||[]).map(f=>({...f,amount:num(f.amount)})), active:true, updated_at:new Date().toISOString() };
+    let res;
+    if(p.id) res=await supabase.from('pay_plans').update(row).eq('id',p.id).select().single();
+    else res=await supabase.from('pay_plans').insert(row).select().single();
+    setSaving(false);
+    if(res.error){ if(window.__notify) window.__notify('Save failed: '+res.error.message,'error'); return; }
+    setP({ ...BLANK_PLAN, ...res.data, custom_fees:res.data.custom_fees||[] }); if(onSaved) onSaved(res.data);
+    if(window.__notify) window.__notify('Pay plan saved.','success');
+  };
+  const L=({children})=> <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)',marginTop:'4px'}}>{children}</div>;
+  const F=({label,k,ph})=> <label className="form-label">{label}<input className="form-input" value={p[k]??''} onChange={e=>set(k,e.target.value)} placeholder={ph||''}/></label>;
+  return (
+    <div style={{display:'grid',gap:'10px'}}>
+      <div style={{fontSize:'13px',fontWeight:700,display:'flex',alignItems:'center',gap:'6px'}}><Icon name="dollar" size={15}/> Pay plan</div>
+      <L>Split</L>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+        <label className="form-label">Split type<select className="form-input" value={p.split_type} onChange={e=>set('split_type',e.target.value)}><option value="percentage">Percentage split</option><option value="cap">Cap (company dollar to a cap)</option><option value="flat">Flat / 100% with fees</option></select></label>
+        <F label="Agent split %" k="agent_split_pct" ph="e.g. 88"/>
+        <F label="Annual cap $" k="cap_amount" ph="e.g. 16000"/>
+        <F label="Post-cap txn fee $" k="post_cap_fee"/>
+      </div>
+      <L>Transaction fees</L>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}}>
+        <F label="Per-deal fee $" k="transaction_fee"/>
+        <F label="Buyer-side fee $" k="buyer_side_fee"/>
+        <F label="Seller-side fee $" k="seller_side_fee"/>
+      </div>
+      <L>Franchise / royalty</L>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+        <F label="Royalty % of GCI" k="royalty_pct" ph="e.g. 5"/>
+        <F label="Royalty annual cap $" k="royalty_cap"/>
+      </div>
+      <L>People</L>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+        <F label="TC fee $" k="tc_fee"/>
+        <F label="TC payee" k="tc_payee"/>
+        <label className="form-label">Mentor fee<select className="form-input" value={p.mentor_fee_type} onChange={e=>set('mentor_fee_type',e.target.value)}><option value="none">None</option><option value="pct">% of GCI</option><option value="flat">Flat $</option></select></label>
+        <F label="Mentor fee value" k="mentor_fee_value"/>
+      </div>
+      <L>Profit share (not shown on CDA)</L>
+      <F label="Profit share % of GCI to upline" k="profit_share_pct"/>
+      <L>Contributions / deductions</L>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+        <label className="form-label">Auto-savings<select className="form-input" value={p.auto_savings_type} onChange={e=>set('auto_savings_type',e.target.value)}><option value="none">None</option><option value="pct">% of net</option><option value="flat">Flat $</option></select></label>
+        <F label="Auto-savings value" k="auto_savings_value"/>
+        <label className="form-label">Retirement<select className="form-input" value={p.retirement_type} onChange={e=>set('retirement_type',e.target.value)}><option value="none">None</option><option value="pct">% of net</option><option value="flat">Flat $</option></select></label>
+        <F label="Retirement value" k="retirement_value"/>
+        <F label="Retirement label" k="retirement_label"/>
+      </div>
+      <L>Custom fees / line items</L>
+      {(p.custom_fees||[]).map((f,i)=>(
+        <div key={i} style={{display:'grid',gridTemplateColumns:'1.4fr .8fr .8fr .9fr auto',gap:'6px',alignItems:'center',background:'var(--bg-hover)',padding:'6px',borderRadius:'8px'}}>
+          <input className="form-input" placeholder="Label" value={f.label} onChange={e=>setFee(i,'label',e.target.value)} style={{padding:'5px 7px',fontSize:'12px'}}/>
+          <select className="form-input" value={f.type} onChange={e=>setFee(i,'type',e.target.value)} style={{padding:'5px',fontSize:'12px'}}><option value="flat">Flat $</option><option value="pct">%</option></select>
+          <input className="form-input" placeholder="Amt" value={f.amount} onChange={e=>setFee(i,'amount',e.target.value)} style={{padding:'5px 7px',fontSize:'12px'}}/>
+          <select className="form-input" value={f.disclose?'y':'n'} onChange={e=>setFee(i,'disclose',e.target.value==='y')} style={{padding:'5px',fontSize:'12px'}}><option value="y">On CDA</option><option value="n">Hidden</option></select>
+          <button className="btn btn-ghost btn-sm" onClick={()=>delFee(i)} style={{color:'var(--text-3)',padding:'4px 6px'}}><Icon name="trash" size={12}/></button>
+        </div>
+      ))}
+      <button className="btn btn-ghost btn-sm" onClick={addFee} style={{justifySelf:'start'}}>+ Add custom line item</button>
+      <div style={{display:'flex',justifyContent:'flex-end',marginTop:'6px'}}><button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving\u2026':'Save pay plan'}</button></div>
+    </div>
+  );
+}
+
 function FilesView({ files, setFiles, contacts, setContacts, properties, userId, user }){
   const [showNew,setShowNew]=useState(false);
   const [openId,setOpenId]=useState(null);
@@ -30345,6 +30530,7 @@ function AppMain() {
   if (!session) return <AuthScreen />;
 
   const user = session.user;
+  const isAdmin = ((user?.email)||'').toLowerCase()==='dara@brokerdara.com';
   const openTaskCount = tasks.filter(t=>!t.completed).length;
 
   const NAV_ALL = [
@@ -30359,6 +30545,7 @@ function AppMain() {
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
     { id: 'deals',       icon: '🤝', label: 'Deals',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
     { id: 'files',       icon: '📁', label: 'Files',       badge: files.filter(f=>f.side==='buyer' && !['closed','paid','cancelled'].includes(f.status)).length || null },
+    ...(isAdmin ? [{ id: 'agents',      icon: '👥', label: 'Brokerage',   badge: null }] : []),
     { id: 'mileage',     icon: '🚗', label: 'Mileage',     badge: null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
@@ -30475,6 +30662,7 @@ function AppMain() {
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
               : view==='deals'       ? <DealsView deals={deals} setDeals={setDeals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='files'       ? <FilesView files={files} setFiles={setFiles} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id} user={user}/>
+              : view==='agents' && isAdmin ? <AgentsView userId={user.id} user={user}/>
               : view==='mileage'     ? <MileageView mileageEntries={mileageEntries} setMileageEntries={setMileageEntries} deals={deals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
