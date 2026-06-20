@@ -14,7 +14,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const db = createClient(SUPABASE_URL, SERVICE);
-    const { action, token, consent, signature_name, decline_reason } = await req.json();
+    const { action, token, consent, signature_name, signature_type, signature_data, decline_reason } = await req.json();
     if (!token) return new Response(JSON.stringify({ error: "Missing token" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 
     const { data: signer } = await db.from("signature_signers").select("*").eq("token", token).single();
@@ -53,7 +53,7 @@ serve(async (req) => {
       const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
       const ua = req.headers.get("user-agent") || "unknown";
       const now = new Date().toISOString();
-      await db.from("signature_signers").update({ status: "signed", signature_name: signature_name.trim(), signature_type: "typed", consent_at: now, signed_at: now, ip, user_agent: ua }).eq("id", signer.id);
+      await db.from("signature_signers").update({ status: "signed", signature_name: signature_name.trim(), signature_type: signature_type === "drawn" ? "drawn" : "typed", signature_data: signature_data || null, consent_at: now, signed_at: now, ip, user_agent: ua }).eq("id", signer.id);
 
       const { data: refreshed } = await db.from("signature_signers").select("*").eq("request_id", signer.request_id).order("sign_order", { ascending: true });
       const remaining = (refreshed || []).filter((s: any) => s.status !== "signed");
@@ -76,7 +76,10 @@ serve(async (req) => {
         page.drawText(`Document: ${doc.title || request?.title || ""}`, { x: M, y, size: 11, font: bold, color: INK }); y -= 18;
         page.drawText(`Envelope: ${signer.request_id}`, { x: M, y, size: 8.5, font, color: GREY }); y -= 26;
         for (const s of (refreshed || [])) {
-          page.drawText(s.signature_name || s.name || "", { x: M + 6, y, size: 20, font: script, color: INK }); y -= 18;
+          if (s.signature_type === "drawn" && s.signature_data) {
+            try { const b64 = String(s.signature_data).split(",").pop()!; const bin = atob(b64); const arr = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k); const png = await pdf.embedPng(arr); const dims = png.scale(1); const w = Math.min(170, dims.width); const h = w * (dims.height / dims.width); page.drawImage(png, { x: M + 6, y: y - h + 16, width: w, height: Math.min(h, 46) }); y -= Math.min(h, 46) - 2; }
+            catch (_) { page.drawText(s.signature_name || s.name || "", { x: M + 6, y, size: 20, font: script, color: INK }); y -= 18; }
+          } else { page.drawText(s.signature_name || s.name || "", { x: M + 6, y, size: 20, font: script, color: INK }); y -= 18; }
           page.drawLine({ start: { x: M, y: y + 4 }, end: { x: M + 280, y: y + 4 }, thickness: 0.7, color: GREY }); y -= 10;
           page.drawText(`${s.name || ""}${s.role ? " (" + s.role + ")" : ""}`, { x: M, y, size: 9.5, font: bold, color: INK }); y -= 13;
           page.drawText(`Signed (UTC): ${s.signed_at || ""}`, { x: M, y, size: 8.5, font, color: GREY }); y -= 12;

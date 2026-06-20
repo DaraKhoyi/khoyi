@@ -29222,9 +29222,25 @@ function SignPortal({ token }){
   const [name,setName]=useState('');
   const [busy,setBusy]=useState(false);
   const [done,setDone]=useState(null); // 'signed' | 'declined' | 'completed'
+  const [sigMode,setSigMode]=useState('type');
+  const [hasDrawn,setHasDrawn]=useState(false);
+  const canvasRef=useRef(null); const drawingRef=useRef(false); const lastRef=useRef(null);
+  const cpos=(e)=>{ const c=canvasRef.current,r=c.getBoundingClientRect(); const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left, cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top; return {x:cx*(c.width/r.width),y:cy*(c.height/r.height)}; };
+  const cStart=(e)=>{ e.preventDefault(); drawingRef.current=true; lastRef.current=cpos(e); };
+  const cMove=(e)=>{ if(!drawingRef.current) return; e.preventDefault(); const c=canvasRef.current,ctx=c.getContext('2d'),p=cpos(e); ctx.strokeStyle='#111'; ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.beginPath(); ctx.moveTo(lastRef.current.x,lastRef.current.y); ctx.lineTo(p.x,p.y); ctx.stroke(); lastRef.current=p; if(!hasDrawn) setHasDrawn(true); };
+  const cEnd=()=>{ drawingRef.current=false; };
+  const cClear=()=>{ const c=canvasRef.current; if(c) c.getContext('2d').clearRect(0,0,c.width,c.height); setHasDrawn(false); };
   const load=async()=>{ try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body:{ action:'get', token } }); if(error||data?.error){ setState({error:data?.error||error?.message||'Could not load'}); return; } setState({...data,loading:false}); setName(data?.signer?.name||''); }catch(e){ setState({error:String(e)}); } };
   useEffect(()=>{ load(); },[token]);
-  const sign=async()=>{ if(!consent){ alert('Please check the consent box.'); return; } if(!name.trim()){ alert('Type your full name to sign.'); return; } setBusy(true); try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body:{ action:'sign', token, consent:true, signature_name:name.trim() } }); if(error||data?.error){ alert(data?.error||error?.message||'Could not sign'); return; } setDone(data?.completed?'completed':'signed'); }catch(e){ alert(String(e)); } finally{ setBusy(false); } };
+  const sign=async()=>{
+    if(!consent){ alert('Please check the consent box.'); return; }
+    if(!name.trim()){ alert('Type your full legal name.'); return; }
+    const body={ action:'sign', token, consent:true, signature_name:name.trim() };
+    if(sigMode==='draw'){ if(!hasDrawn){ alert('Please draw your signature.'); return; } body.signature_type='drawn'; body.signature_data=canvasRef.current.toDataURL('image/png'); }
+    else body.signature_type='typed';
+    setBusy(true);
+    try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body }); if(error||data?.error){ alert(data?.error||error?.message||'Could not sign'); return; } setDone(data?.completed?'completed':'signed'); }catch(e){ alert(String(e)); } finally{ setBusy(false); }
+  };
   const decline=async()=>{ const reason=window.prompt('Reason for declining (optional):')||''; setBusy(true); try{ await supabase.functions.invoke('sign-portal',{ body:{ action:'decline', token, decline_reason:reason } }); setDone('declined'); }catch(e){} finally{ setBusy(false); } };
 
   const Shell=({children})=>(
@@ -29260,13 +29276,22 @@ function SignPortal({ token }){
             </label>
           </div>
           <div>
-            <label className="form-label" style={{fontSize:'12px',color:'var(--text-2,#9499b0)'}}>Type your full legal name to sign</label>
+            <label className="form-label" style={{fontSize:'12px',color:'var(--text-2,#9499b0)'}}>Your full legal name</label>
             <input className="form-input" value={name} onChange={e=>setName(e.target.value)} placeholder="Full name" style={{background:'#0e0f13'}}/>
-            {name && <div style={{marginTop:'10px',padding:'14px',background:'#fff',borderRadius:'8px',textAlign:'center'}}><span style={{fontFamily:'"Brush Script MT","Segoe Script","Snell Roundhand",cursive',fontSize:'34px',color:'#111'}}>{name}</span></div>}
+            <div style={{display:'flex',gap:'6px',margin:'10px 0 6px'}}>
+              <button className="btn btn-sm" onClick={()=>setSigMode('type')} style={{background:sigMode==='type'?'#C5A95E':'transparent',color:sigMode==='type'?'#111':'var(--text-2,#9499b0)',border:'1px solid #C5A95E',fontWeight:600}}>Type</button>
+              <button className="btn btn-sm" onClick={()=>setSigMode('draw')} style={{background:sigMode==='draw'?'#C5A95E':'transparent',color:sigMode==='draw'?'#111':'var(--text-2,#9499b0)',border:'1px solid #C5A95E',fontWeight:600}}>Draw</button>
+            </div>
+            {sigMode==='type'
+              ? (name && <div style={{padding:'14px',background:'#fff',borderRadius:'8px',textAlign:'center'}}><span style={{fontFamily:'"Brush Script MT","Segoe Script","Snell Roundhand",cursive',fontSize:'34px',color:'#111'}}>{name}</span></div>)
+              : <div>
+                  <canvas ref={canvasRef} width={500} height={150} onPointerDown={cStart} onPointerMove={cMove} onPointerUp={cEnd} onPointerLeave={cEnd} style={{background:'#fff',borderRadius:'8px',width:'100%',height:'150px',touchAction:'none',border:'1px solid #C5A95E'}}/>
+                  <div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span style={{fontSize:'11px',color:'var(--text-3,#555e7a)'}}>Draw your signature above</span><button className="btn btn-ghost btn-sm" onClick={cClear} style={{color:'var(--text-3,#555e7a)',padding:'2px 8px'}}>Clear</button></div>
+                </div>}
           </div>
           <div style={{display:'flex',gap:'10px',justifyContent:'space-between',alignItems:'center'}}>
             <button className="btn btn-ghost btn-sm" onClick={decline} disabled={busy} style={{color:'var(--text-3,#555e7a)'}}>Decline</button>
-            <button className="btn btn-primary" onClick={sign} disabled={busy||!consent||!name.trim()} style={{background:'#C5A95E',borderColor:'#C5A95E',color:'#111',fontWeight:700}}>{busy?'Signing\u2026':'Adopt & Sign'}</button>
+            <button className="btn btn-primary" onClick={sign} disabled={busy||!consent||!name.trim()||(sigMode==='draw'&&!hasDrawn)} style={{background:'#C5A95E',borderColor:'#C5A95E',color:'#111',fontWeight:700}}>{busy?'Signing\u2026':'Adopt & Sign'}</button>
           </div>
         </>}
       </div>
@@ -29470,6 +29495,20 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const [sigReqs,setSigReqs]=useState([]);
   const [signDoc,setSignDoc]=useState(null);
   const [manageReq,setManageReq]=useState(null);
+  const [selfSign,setSelfSign]=useState(null);
+  const signMyself=async(doc)=>{
+    try{
+      const { data:{ user } } = await supabase.auth.getUser();
+      const email=user?.email||null; const nm=(user?.user_metadata?.full_name)||email||'Me';
+      const { data:req, error } = await supabase.from('signature_requests').insert({ user_id:userId, file_id:fileId, document_id:doc.id, title:doc.title||'Document', message:'Self-signature', status:'sent' }).select().single();
+      if(error) throw error;
+      const tok=sigToken();
+      await supabase.from('signature_signers').insert({ request_id:req.id, user_id:userId, file_id:fileId, name:nm, email, role:'broker', sign_order:1, token:tok });
+      await logFileEvent(fileId,userId,'esign_sent',`Self-sign: ${doc.title||''}`,{request_id:req.id});
+      setSelfSign(tok);
+    }catch(e){ if(window.__notify) window.__notify('Could not start signing: '+(e.message||e),'error'); }
+  };
+  const closeSelfSign=async()=>{ setSelfSign(null); await loadSigs(); const { data:d2 }=await supabase.from('file_documents').select('*').eq('file_id',fileId).order('created_at',{ascending:false}); if(d2) setDocs(d2); const { data:i2 }=await supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true}); if(i2) setItems(i2); };
   const [loading,setLoading]=useState(true);
   const [ov,setOv]=useState(file);
   useEffect(()=>{ setOv(file); },[file]);
@@ -29892,7 +29931,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                     if(sr){ const signed=(sr.signers||[]).filter(s=>s.status==='signed').length; const total=(sr.signers||[]).length; const declined=(sr.signers||[]).some(s=>s.status==='declined');
                       return <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'11px',flexWrap:'wrap'}}><span style={{color:declined?'var(--red)':'var(--accent)',fontWeight:600}}>{declined?'Declined':`Out for signature \u2014 ${signed}/${total} signed`}</span><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={()=>setManageReq(sr)}>Manage</button><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={async()=>{ const links=(sr.signers||[]).map(s=>`${s.name}: https://darasapp.com/sign/${s.token}`).join('\n'); try{ await navigator.clipboard.writeText(links); if(window.__notify) window.__notify('Signing links copied.','success'); }catch(_){}}}>Copy links</button></div>;
                     }
-                    return <button className="btn btn-ghost btn-sm" onClick={()=>setSignDoc(d)} style={{color:'var(--accent)',justifySelf:'start',padding:'2px 8px',fontSize:'12px'}}>\u270D Send for signature</button>;
+                    return <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}><button className="btn btn-ghost btn-sm" onClick={()=>setSignDoc(d)} style={{color:'var(--accent)',padding:'2px 8px',fontSize:'12px'}}>\u270D Send for signature</button><button className="btn btn-ghost btn-sm" onClick={()=>signMyself(d)} style={{color:'var(--text-2)',padding:'2px 8px',fontSize:'12px'}}>Sign it yourself</button></div>;
                   })()}
                   {d.reviewer_note && <div style={{fontSize:'11px',color:'var(--text-2)',fontStyle:'italic'}}>Note: {d.reviewer_note}</div>}
                 </div>
@@ -29971,6 +30010,14 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
       {showMissing && <MissingDocsComposer file={file} ov={ov} missingItems={requestScope||missingItems} parties={parties} contacts={contacts} userId={userId} onClose={()=>{ setShowMissing(false); setRequestScope(null); }} onSent={()=>{ const n=(requestScope||missingItems).length; logFileEvent(fileId,userId,'missing_docs_requested',`Requested ${n} document(s)${requestScope?`: ${requestScope[0].label}`:''}`); }} />}
       {signDoc && <SignatureRequestModal file={file} doc={signDoc} parties={parties} contacts={contacts} userId={userId} onClose={()=>setSignDoc(null)} onCreated={()=>{ loadSigs(); }} />}
       {manageReq && <SignatureManageModal request={manageReq} file={file} userId={userId} onClose={()=>setManageReq(null)} onChanged={()=>{ loadSigs(); }} />}
+      {selfSign && (
+        <div className="modal-overlay" style={{zIndex:2400,padding:'12px'}}>
+          <div style={{position:'relative',width:'100%',maxWidth:'660px',maxHeight:'94vh',overflowY:'auto',borderRadius:'12px'}}>
+            <button className="modal-close" style={{position:'absolute',top:10,right:12,zIndex:3,background:'rgba(0,0,0,.4)',borderRadius:'50%'}} onClick={closeSelfSign}>\u00d7</button>
+            <SignPortal token={selfSign}/>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
