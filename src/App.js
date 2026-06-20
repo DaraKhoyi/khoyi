@@ -28975,13 +28975,13 @@ function computeCDA(f, cda, plan){
   return { price, totalRate, totalComm, sides, ourGci, coopGci, referral, royalty, gciNet, split, agentGross, companyDollar, fees, disclosedFees, hiddenFees, totalFees, agentNet, contrib, totalContrib, agentCash, profitShare };
 }
 
-function AgentsView({ userId, user }){
+function AgentsView({ userId, user, appCtx, isAdmin }){
   const [agents,setAgents]=useState([]);
   const [loading,setLoading]=useState(true);
   const [openId,setOpenId]=useState(null);
   const [showNew,setShowNew]=useState(false);
   const [nv,setNv]=useState({ name:'', email:'', phone:'', role:'agent', team:'', license_no:'' });
-  const load=async()=>{ const { data } = await supabase.from('agents').select('*').eq('user_id',userId).order('name',{ascending:true}); setAgents(data||[]); setLoading(false); };
+  const load=async()=>{ const { data } = await supabase.from('agents').select('*').order('name',{ascending:true}); setAgents(data||[]); setLoading(false); };
   useEffect(()=>{ load(); },[]);
   const addAgent=async()=>{
     if(!nv.name.trim()){ if(window.__notify) window.__notify('Agent name required.','error'); return; }
@@ -28997,7 +28997,7 @@ function AgentsView({ userId, user }){
           <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="users" size={20}/> Brokerage</h2>
           <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Agents, roles & pay plans</div>
         </div>
-        <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>
+        {isAdmin && <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>}
       </div>
       {showNew && (
         <div className="panel" style={{display:'grid',gap:'8px',marginTop:'12px'}}>
@@ -29022,12 +29022,12 @@ function AgentsView({ userId, user }){
             </div>
           ))}
         </div>}
-      {open && <AgentEditor agent={open} agents={agents} userId={userId} onClose={()=>setOpenId(null)} onSaved={(u)=>setAgents(p=>p.map(x=>x.id===u.id?u:x))} onDeleted={(id)=>{ setAgents(p=>p.filter(x=>x.id!==id)); setOpenId(null); }}/>}
+      {open && <AgentEditor agent={open} agents={agents} userId={userId} isAdmin={isAdmin} onClose={()=>setOpenId(null)} onSaved={(u)=>setAgents(p=>p.map(x=>x.id===u.id?u:x))} onDeleted={(id)=>{ setAgents(p=>p.filter(x=>x.id!==id)); setOpenId(null); }}/>}
     </div>
   );
 }
 
-function AgentEditor({ agent, agents, userId, onClose, onSaved, onDeleted }){
+function AgentEditor({ agent, agents, userId, isAdmin, onClose, onSaved, onDeleted }){
   const [a,setA]=useState(agent);
   const [plan,setPlan]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -29036,6 +29036,26 @@ function AgentEditor({ agent, agents, userId, onClose, onSaved, onDeleted }){
   const setAF=(k,v)=>setA(p=>({...p,[k]:v}));
   const saveAgent=async()=>{ const { data } = await supabase.from('agents').update({ name:a.name, email:a.email, phone:a.phone, role:a.role, team:a.team, license_no:a.license_no, upline_id:a.upline_id||null, mentor_id:a.mentor_id||null, active:a.active, notes:a.notes, updated_at:new Date().toISOString() }).eq('id',agent.id).select().single(); if(data){ onSaved(data); if(window.__notify) window.__notify('Agent saved.','success'); } };
   const delAgent=async()=>{ if(!window.confirm(`Remove ${agent.name}? Their pay plan will be removed too.`)) return; await supabase.from('agents').delete().eq('id',agent.id); onDeleted(agent.id); };
+  const [loginEmail,setLoginEmail]=useState(a.email||'');
+  const [loginPw,setLoginPw]=useState('');
+  const [loginBusy,setLoginBusy]=useState(false);
+  const createLogin=async()=>{
+    if(!loginEmail.trim()||loginPw.length<8){ if(window.__notify) window.__notify('Enter an email and a password of 8+ characters.','error'); return; }
+    setLoginBusy(true);
+    try{ const { data, error } = await supabase.functions.invoke('admin-create-user',{ body:{ action:'create', agent_id:agent.id, email:loginEmail.trim(), password:loginPw, role:a.role } });
+      if(error||data?.error){ if(window.__notify) window.__notify('Could not create login: '+(error?.message||data?.error),'error'); return; }
+      const u={...a, auth_user_id:data.auth_user_id, email:loginEmail.trim()}; setA(u); onSaved(u); setLoginPw('');
+      if(window.__notify) window.__notify('Login created. Share the credentials securely.','success');
+    }catch(e){ if(window.__notify) window.__notify('Failed: '+(e.message||e),'error'); } finally{ setLoginBusy(false); }
+  };
+  const resetLogin=async()=>{
+    if(loginPw.length<8){ if(window.__notify) window.__notify('Enter a new password of 8+ characters.','error'); return; }
+    setLoginBusy(true);
+    try{ const { data, error } = await supabase.functions.invoke('admin-create-user',{ body:{ action:'reset', agent_id:agent.id, password:loginPw } });
+      if(error||data?.error){ if(window.__notify) window.__notify('Reset failed: '+(error?.message||data?.error),'error'); return; }
+      setLoginPw(''); if(window.__notify) window.__notify('Password reset.','success');
+    }catch(e){ if(window.__notify) window.__notify('Failed.','error'); } finally{ setLoginBusy(false); }
+  };
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:'640px',width:'100%',maxHeight:'94vh',overflowY:'auto'}}>
@@ -29043,26 +29063,53 @@ function AgentEditor({ agent, agents, userId, onClose, onSaved, onDeleted }){
         <div style={{display:'grid',gap:'10px'}}>
           <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--text-3)'}}>Profile</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
-            <label className="form-label">Name<input className="form-input" value={a.name||''} onChange={e=>setAF('name',e.target.value)}/></label>
-            <label className="form-label">Role<select className="form-input" value={a.role} onChange={e=>setAF('role',e.target.value)}>{AGENT_ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
-            <label className="form-label">Email<input className="form-input" value={a.email||''} onChange={e=>setAF('email',e.target.value)}/></label>
-            <label className="form-label">Phone<input className="form-input" value={a.phone||''} onChange={e=>setAF('phone',e.target.value)}/></label>
-            <label className="form-label">Team<input className="form-input" value={a.team||''} onChange={e=>setAF('team',e.target.value)}/></label>
-            <label className="form-label">License #<input className="form-input" value={a.license_no||''} onChange={e=>setAF('license_no',e.target.value)}/></label>
-            <label className="form-label">Upline (profit share)<select className="form-input" value={a.upline_id||''} onChange={e=>setAF('upline_id',e.target.value)}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-            <label className="form-label">Mentor<select className="form-input" value={a.mentor_id||''} onChange={e=>setAF('mentor_id',e.target.value)}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+            <label className="form-label">Name<input className="form-input" value={a.name||''} onChange={e=>setAF('name',e.target.value)} disabled={!isAdmin}/></label>
+            <label className="form-label">Role<select className="form-input" value={a.role} onChange={e=>setAF('role',e.target.value)} disabled={!isAdmin}>{AGENT_ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
+            <label className="form-label">Email<input className="form-input" value={a.email||''} onChange={e=>setAF('email',e.target.value)} disabled={!isAdmin}/></label>
+            <label className="form-label">Phone<input className="form-input" value={a.phone||''} onChange={e=>setAF('phone',e.target.value)} disabled={!isAdmin}/></label>
+            <label className="form-label">Team<input className="form-input" value={a.team||''} onChange={e=>setAF('team',e.target.value)} disabled={!isAdmin}/></label>
+            <label className="form-label">License #<input className="form-input" value={a.license_no||''} onChange={e=>setAF('license_no',e.target.value)} disabled={!isAdmin}/></label>
+            <label className="form-label">Upline (profit share)<select className="form-input" value={a.upline_id||''} onChange={e=>setAF('upline_id',e.target.value)} disabled={!isAdmin}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+            <label className="form-label">Mentor<select className="form-input" value={a.mentor_id||''} onChange={e=>setAF('mentor_id',e.target.value)} disabled={!isAdmin}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
           </div>
-          <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',flexDirection:'row'}}><input type="checkbox" checked={a.active!==false} onChange={e=>setAF('active',e.target.checked)}/> Active</label>
-          <div style={{display:'flex',justifyContent:'space-between'}}>
-            <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={delAgent}><Icon name="trash" size={13}/> Remove</button>
-            <button className="btn btn-primary btn-sm" onClick={saveAgent}>Save profile</button>
-          </div>
+          {isAdmin && <>
+            <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',flexDirection:'row'}}><input type="checkbox" checked={a.active!==false} onChange={e=>setAF('active',e.target.checked)}/> Active</label>
+            <div style={{display:'flex',justifyContent:'space-between'}}>
+              <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={delAgent}><Icon name="trash" size={13}/> Remove</button>
+              <button className="btn btn-primary btn-sm" onClick={saveAgent}>Save profile</button>
+            </div>
+            <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
+            <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>Login & access</div>
+            {a.auth_user_id ? (
+              <div style={{display:'grid',gap:'8px'}}>
+                <div style={{fontSize:'12px',color:'var(--green)'}}>\u2713 Has a login ({a.email}) \u00B7 role: {ROLE_LABEL[a.role]}</div>
+                <div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}>
+                  <label className="form-label" style={{flex:1}}>Reset password<input className="form-input" type="text" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="New password (8+ chars)"/></label>
+                  <button className="btn btn-ghost btn-sm" onClick={resetLogin} disabled={loginBusy}>Reset</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{display:'grid',gap:'8px'}}>
+                <div style={{fontSize:'12px',color:'var(--text-2)'}}>Create an app login for this person. They'll sign in at darasapp.com with {ROLE_LABEL[a.role]} access.</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                  <label className="form-label">Login email<input className="form-input" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)}/></label>
+                  <label className="form-label">Temp password<input className="form-input" type="text" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="8+ characters"/></label>
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={createLogin} disabled={loginBusy} style={{justifySelf:'start'}}>{loginBusy?'Creating\u2026':'Create login'}</button>
+              </div>
+            )}
+          </>}
           <div style={{borderTop:'1px solid var(--border)',margin:'6px 0'}}/>
-          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan}/>}
+          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : (isAdmin? <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan}/> : <PayPlanReadOnly plan={plan}/>)}
         </div>
       </div>
     </div>
   );
+}
+function PayPlanReadOnly({ plan }){
+  if(!plan) return <div style={{color:'var(--text-2)',fontSize:'13px'}}>No pay plan on file.</div>;
+  const rows=[['Split',plan.split_type==='flat'?'100% / flat':(plan.agent_split_pct!=null?plan.agent_split_pct+'%':'\u2014')],['Annual cap',plan.cap_amount!=null?'$'+Number(plan.cap_amount).toLocaleString():'\u2014'],['Transaction fee',plan.transaction_fee!=null?'$'+plan.transaction_fee:'\u2014'],['Royalty',plan.royalty_pct!=null?plan.royalty_pct+'%':'\u2014']];
+  return <div style={{display:'grid',gap:'4px'}}><div style={{fontSize:'13px',fontWeight:700}}>Pay plan</div>{rows.map((r,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>{r[0]}</span><span>{r[1]}</span></div>)}</div>;
 }
 
 const BLANK_PLAN = { name:'Default plan', split_type:'percentage', agent_split_pct:'', cap_amount:'', post_cap_fee:'', transaction_fee:'', buyer_side_fee:'', seller_side_fee:'', royalty_pct:'', royalty_cap:'', tc_fee:'', tc_payee:'', mentor_fee_type:'none', mentor_fee_value:'', profit_share_pct:'', auto_savings_type:'none', auto_savings_value:'', retirement_type:'none', retirement_value:'', retirement_label:'401(k)', custom_fees:[] };
@@ -30416,6 +30463,8 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
 
 function AppMain() {
   const [session, setSession] = useState(null);
+  const [appCtx, setAppCtx] = useState(null);
+  useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
   // Dashboard-only pull-to-refresh: re-syncs data via loadData() without a page
@@ -30711,7 +30760,9 @@ function AppMain() {
   if (!session) return <AuthScreen />;
 
   const user = session.user;
-  const isAdmin = ((user?.email)||'').toLowerCase()==='dara@brokerdara.com';
+  const emailAdmin = ((user?.email)||'').toLowerCase()==='dara@brokerdara.com';
+  const isAdmin = appCtx ? !!appCtx.is_admin : emailAdmin;
+  const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
   const openTaskCount = tasks.filter(t=>!t.completed).length;
 
   const NAV_ALL = [
@@ -30726,7 +30777,7 @@ function AppMain() {
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
     { id: 'deals',       icon: '🤝', label: 'Deals',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
     { id: 'files',       icon: '📁', label: 'Files',       badge: files.filter(f=>f.side==='buyer' && !['closed','paid','cancelled'].includes(f.status)).length || null },
-    ...(isAdmin ? [{ id: 'agents',      icon: '👥', label: 'Brokerage',   badge: null }] : []),
+    ...((isAdmin||isTeamLeader) ? [{ id: 'agents',      icon: '👥', label: 'Brokerage',   badge: null }] : []),
     { id: 'mileage',     icon: '🚗', label: 'Mileage',     badge: null },
     { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
     { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
@@ -30843,7 +30894,7 @@ function AppMain() {
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
               : view==='deals'       ? <DealsView deals={deals} setDeals={setDeals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='files'       ? <FilesView files={files} setFiles={setFiles} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id} user={user}/>
-              : view==='agents' && isAdmin ? <AgentsView userId={user.id} user={user}/>
+              : view==='agents' && (isAdmin||isTeamLeader) ? <AgentsView userId={user.id} user={user} appCtx={appCtx} isAdmin={isAdmin}/>
               : view==='mileage'     ? <MileageView mileageEntries={mileageEntries} setMileageEntries={setMileageEntries} deals={deals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
