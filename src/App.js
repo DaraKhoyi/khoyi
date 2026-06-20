@@ -28985,6 +28985,8 @@ function computeCDA(f, cda, plan, capYtd){
 }
 
 function AgentsView({ userId, user, appCtx, isAdmin }){
+  const role = appCtx?.role; const myTeam = appCtx?.team||''; const ownerId = appCtx?.owner_id || userId; const canWrite = isAdmin || !!appCtx?.is_team_leader;
+  const roleOpts = isAdmin ? AGENT_ROLES : AGENT_ROLES.filter(r=>['agent','team_leader'].includes(r.value));
   const [agents,setAgents]=useState([]);
   const [loading,setLoading]=useState(true);
   const [openId,setOpenId]=useState(null);
@@ -28992,13 +28994,17 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
   const [nv,setNv]=useState({ name:'', email:'', phone:'', role:'agent', team:'', license_no:'' });
   const [mode,setMode]=useState('roster');
   const [ledger,setLedger]=useState(null);
+  const [year,setYear]=useState(new Date().getFullYear());
+  const dl=(fn,csv)=>{ const b=new Blob([csv],{type:'text/csv;charset=utf-8'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=fn; a.click(); URL.revokeObjectURL(u); };
+  const csvRow=(arr)=>arr.map(v=>{ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',');
   const load=async()=>{ const { data } = await supabase.from('agents').select('*').order('name',{ascending:true}); setAgents(data||[]); setLoading(false); };
   const loadLedger=async()=>{ if(ledger) return; const { data } = await supabase.from('cda_ledger').select('*'); setLedger(data||[]); };
   useEffect(()=>{ load(); },[]);
-  useEffect(()=>{ if(mode==='earnings') loadLedger(); },[mode]);
+  useEffect(()=>{ if(mode==='earnings'||mode==='profitshare') loadLedger(); },[mode]);
   const addAgent=async()=>{
     if(!nv.name.trim()){ if(window.__notify) window.__notify('Agent name required.','error'); return; }
-    const { data, error } = await supabase.from('agents').insert({ user_id:userId, name:nv.name.trim(), email:nv.email.trim()||null, phone:nv.phone.trim()||null, role:nv.role, team:nv.team.trim()||null, license_no:nv.license_no.trim()||null }).select().single();
+    const eff={ role: (!isAdmin && !['agent','team_leader'].includes(nv.role))?'agent':nv.role, team: isAdmin? (nv.team.trim()||null) : (myTeam||null) };
+    const { data, error } = await supabase.from('agents').insert({ user_id:ownerId, name:nv.name.trim(), email:nv.email.trim()||null, phone:nv.phone.trim()||null, role:eff.role, team:eff.team, license_no:nv.license_no.trim()||null }).select().single();
     if(error){ if(window.__notify) window.__notify('Could not add: '+error.message,'error'); return; }
     setAgents(p=>[...p,data].sort((a,b)=>(a.name||'').localeCompare(b.name||''))); setShowNew(false); setNv({ name:'', email:'', phone:'', role:'agent', team:'', license_no:'' }); setOpenId(data.id);
   };
@@ -29010,20 +29016,23 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
           <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="users" size={20}/> Brokerage</h2>
           <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Agents, roles & pay plans</div>
         </div>
-        {isAdmin && mode==='roster' && <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>}
+        {canWrite && mode==='roster' && <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>}
       </div>
-      <div style={{display:'flex',gap:'6px',marginTop:'12px'}}>
+      <div style={{display:'flex',gap:'6px',marginTop:'12px',flexWrap:'wrap',alignItems:'center'}}>
         <button className="btn btn-sm" onClick={()=>setMode('roster')} style={{background:mode==='roster'?'var(--accent)':'transparent',color:mode==='roster'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Roster</button>
-        <button className="btn btn-sm" onClick={()=>setMode('earnings')} style={{background:mode==='earnings'?'var(--accent)':'transparent',color:mode==='earnings'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Earnings (YTD)</button>
+        <button className="btn btn-sm" onClick={()=>setMode('earnings')} style={{background:mode==='earnings'?'var(--accent)':'transparent',color:mode==='earnings'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Earnings</button>
+        {isAdmin && <button className="btn btn-sm" onClick={()=>setMode('profitshare')} style={{background:mode==='profitshare'?'var(--accent)':'transparent',color:mode==='profitshare'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Profit share</button>}
+        {(mode==='earnings'||mode==='profitshare') && <select className="form-input" value={year} onChange={e=>setYear(Number(e.target.value))} style={{width:'auto',marginLeft:'auto',padding:'4px 8px'}}>{[0,1,2,3].map(d=>{ const y=new Date().getFullYear()-d; return <option key={y} value={y}>{y}</option>; })}</select>}
       </div>
       {mode==='earnings' && (()=>{
         if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading earnings\u2026</div>;
-        const yr=new Date().getFullYear();
-        const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===yr);
-        const byA={}; for(const r of rows){ const k=r.agent_id||'\u2014'; (byA[k]=byA[k]||{deals:0,gci:0,net:0,co:0,ps:0,sav:0,ret:0}); byA[k].deals++; byA[k].gci+=Number(r.our_gci)||0; byA[k].net+=Number(r.agent_cash)||0; byA[k].co+=Number(r.company_dollar)||0; byA[k].ps+=Number(r.profit_share)||0; byA[k].sav+=Number(r.savings)||0; byA[k].ret+=Number(r.retirement)||0; }
-        const nameOf=(id)=>agents.find(x=>x.id===id)?.name||'Unassigned';
+        const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===year);
+        const byA={}; for(const r of rows){ const k=r.agent_id||'\u2014'; (byA[k]=byA[k]||{deals:0,gci:0,gross:0,net:0,co:0,ps:0,sav:0,ret:0}); byA[k].deals++; byA[k].gci+=Number(r.our_gci)||0; byA[k].gross+=Number(r.agent_gross)||0; byA[k].net+=Number(r.agent_cash)||0; byA[k].co+=Number(r.company_dollar)||0; byA[k].ps+=Number(r.profit_share)||0; byA[k].sav+=Number(r.savings)||0; byA[k].ret+=Number(r.retirement)||0; }
+        const agOf=(id)=>agents.find(x=>x.id===id)||{}; const nameOf=(id)=>agOf(id).name||'Unassigned';
         const tot=Object.values(byA).reduce((s,v)=>({deals:s.deals+v.deals,gci:s.gci+v.gci,net:s.net+v.net,co:s.co+v.co,ps:s.ps+v.ps}),{deals:0,gci:0,net:0,co:0,ps:0});
         const keys=Object.keys(byA).sort((a,b)=>byA[b].gci-byA[a].gci);
+        const export1099=()=>{ const h=['Agent','Email','License','Deals','GCI','Agent gross','Net cash paid','Company dollar','Savings','Retirement','Profit share']; const lines=[csvRow(h),...keys.map(k=>{ const v=byA[k],a=agOf(k); return csvRow([nameOf(k),a.email||'',a.license_no||'',v.deals,v.gci.toFixed(2),v.gross.toFixed(2),v.net.toFixed(2),v.co.toFixed(2),v.sav.toFixed(2),v.ret.toFixed(2),v.ps.toFixed(2)]); })]; dl(`ROG_1099_summary_${year}.csv`,lines.join('\n')); };
+        const exportACH=()=>{ const h=['Payee','Email','Amount','Memo']; const lines=[csvRow(h),...keys.filter(k=>byA[k].net>0).map(k=>{ const v=byA[k],a=agOf(k); return csvRow([nameOf(k),a.email||'',v.net.toFixed(2),`Commission ${year} (${v.deals} deals)`]); })]; dl(`ROG_payments_${year}.csv`,lines.join('\n')); };
         return (
           <div style={{marginTop:'12px',display:'grid',gap:'10px'}}>
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
@@ -29031,7 +29040,8 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
                 <div key={i} className="panel" style={{padding:'12px'}}><div style={{fontSize:'11px',color:'var(--text-3)'}}>{c[0]}</div><div style={{fontSize:'17px',fontWeight:800}}>{c[1]}</div></div>
               ))}
             </div>
-            {keys.length===0 ? <div className="panel" style={{textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No closed CDAs recorded yet this year. Generate a CDA on a file and it'll show here.</div> :
+            {keys.length===0 ? <div className="panel" style={{textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No closed CDAs recorded for {year}. Generate a CDA on a file and it'll show here.</div> : <>
+            {isAdmin && <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}><button className="btn btn-ghost btn-sm" onClick={export1099}><Icon name="dollar" size={13}/> Export 1099 summary (CSV)</button><button className="btn btn-ghost btn-sm" onClick={exportACH}>Export payments / ACH (CSV)</button></div>}
             <div className="panel" style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
                 <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'6px'}}>Agent</th><th style={{padding:'6px'}}>Deals</th><th style={{padding:'6px',textAlign:'right'}}>GCI</th><th style={{padding:'6px',textAlign:'right'}}>Net cash</th><th style={{padding:'6px',textAlign:'right'}}>Company $</th><th style={{padding:'6px',textAlign:'right'}}>Savings/Ret</th><th style={{padding:'6px',textAlign:'right'}}>Profit share</th></tr></thead>
@@ -29039,7 +29049,38 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
                   {keys.map(k=>{ const v=byA[k]; return <tr key={k} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'6px',fontWeight:600}}>{nameOf(k)}</td><td style={{padding:'6px'}}>{v.deals}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.gci)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.net)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.co)}</td><td style={{padding:'6px',textAlign:'right',color:'var(--text-3)'}}>{money(v.sav+v.ret)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.ps)}</td></tr>; })}
                 </tbody>
               </table>
+            </div>
+            {isAdmin && <div style={{fontSize:'11px',color:'var(--text-3)'}}>1099 reporting basis (gross vs. net) should be confirmed with your CPA before filing.</div>}
+            </>}
+          </div>
+        );
+      })()}
+      {mode==='profitshare' && isAdmin && (()=>{
+        if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading\u2026</div>;
+        const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===year && (Number(r.profit_share)||0)>0);
+        const byU={}; for(const r of rows){ const ag=agents.find(x=>x.id===r.agent_id); const up=ag?.upline_id; if(!up) continue; (byU[up]=byU[up]||{owed:0,deals:0,from:new Set()}); byU[up].owed+=Number(r.profit_share)||0; byU[up].deals++; byU[up].from.add(ag?.name||''); }
+        const nameOf=(id)=>agents.find(x=>x.id===id)?.name||'\u2014';
+        const keys=Object.keys(byU).sort((a,b)=>byU[b].owed-byU[a].owed);
+        const totalOwed=keys.reduce((s,k)=>s+byU[k].owed,0);
+        const unassigned=rows.filter(r=>{ const ag=agents.find(x=>x.id===r.agent_id); return !ag?.upline_id; }).reduce((s,r)=>s+(Number(r.profit_share)||0),0);
+        const exportPS=()=>{ const h=['Upline','Email','Contributing deals','Profit share owed']; const lines=[csvRow(h),...keys.map(k=>{ const a=agents.find(x=>x.id===k)||{}; return csvRow([nameOf(k),a.email||'',byU[k].deals,byU[k].owed.toFixed(2)]); })]; dl(`ROG_profit_share_${year}.csv`,lines.join('\n')); };
+        return (
+          <div style={{marginTop:'12px',display:'grid',gap:'10px'}}>
+            <div className="panel" style={{padding:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div><div style={{fontSize:'11px',color:'var(--text-3)'}}>Total profit share owed to uplines \u00B7 {year}</div><div style={{fontSize:'20px',fontWeight:800}}>{money(totalOwed)}</div></div>
+              {keys.length>0 && <button className="btn btn-ghost btn-sm" onClick={exportPS}>Export (CSV)</button>}
+            </div>
+            {keys.length===0 ? <div className="panel" style={{textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No profit share recorded for {year}. Set an agent's upline and a profit-share % in their pay plan.</div> :
+            <div className="panel" style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
+                <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'6px'}}>Upline (paid to)</th><th style={{padding:'6px'}}>Deals</th><th style={{padding:'6px'}}>From</th><th style={{padding:'6px',textAlign:'right'}}>Owed</th></tr></thead>
+                <tbody>
+                  {keys.map(k=><tr key={k} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'6px',fontWeight:600}}>{nameOf(k)}</td><td style={{padding:'6px'}}>{byU[k].deals}</td><td style={{padding:'6px',color:'var(--text-2)'}}>{[...byU[k].from].filter(Boolean).join(', ')}</td><td style={{padding:'6px',textAlign:'right',fontWeight:700}}>{money(byU[k].owed)}</td></tr>)}
+                </tbody>
+              </table>
             </div>}
+            {unassigned>0 && <div style={{fontSize:'11px',color:'var(--yellow)'}}>{money(unassigned)} in profit share was computed on deals whose agent has no upline set \u2014 assign uplines to route it.</div>}
+            <div style={{fontSize:'11px',color:'var(--text-3)'}}>Internal only \u2014 profit share is never shown on the CDA.</div>
           </div>
         );
       })()}
@@ -29048,10 +29089,10 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         <div className="panel" style={{display:'grid',gap:'8px',marginTop:'12px'}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
             <label className="form-label">Name<input className="form-input" value={nv.name} onChange={e=>setNv({...nv,name:e.target.value})}/></label>
-            <label className="form-label">Role<select className="form-input" value={nv.role} onChange={e=>setNv({...nv,role:e.target.value})}>{AGENT_ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
+            <label className="form-label">Role<select className="form-input" value={nv.role} onChange={e=>setNv({...nv,role:e.target.value})}>{roleOpts.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
             <label className="form-label">Email<input className="form-input" value={nv.email} onChange={e=>setNv({...nv,email:e.target.value})}/></label>
             <label className="form-label">Phone<input className="form-input" value={nv.phone} onChange={e=>setNv({...nv,phone:e.target.value})}/></label>
-            <label className="form-label">Team<input className="form-input" value={nv.team} onChange={e=>setNv({...nv,team:e.target.value})}/></label>
+            <label className="form-label">Team<input className="form-input" value={isAdmin? nv.team : myTeam} onChange={e=>setNv({...nv,team:e.target.value})} disabled={!isAdmin}/></label>
             <label className="form-label">License #<input className="form-input" value={nv.license_no} onChange={e=>setNv({...nv,license_no:e.target.value})}/></label>
           </div>
           <div style={{display:'flex',justifyContent:'flex-end',gap:'8px'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowNew(false)}>Cancel</button><button className="btn btn-primary btn-sm" onClick={addAgent}>Add</button></div>
@@ -29068,12 +29109,12 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
           ))}
         </div>}
       </>}
-      {open && <AgentEditor agent={open} agents={agents} userId={userId} isAdmin={isAdmin} onClose={()=>setOpenId(null)} onSaved={(u)=>setAgents(p=>p.map(x=>x.id===u.id?u:x))} onDeleted={(id)=>{ setAgents(p=>p.filter(x=>x.id!==id)); setOpenId(null); }}/>}
+      {open && <AgentEditor agent={open} agents={agents} userId={userId} isAdmin={isAdmin} canWrite={canWrite} roleOpts={roleOpts} myTeam={myTeam} onClose={()=>setOpenId(null)} onSaved={(u)=>setAgents(p=>p.map(x=>x.id===u.id?u:x))} onDeleted={(id)=>{ setAgents(p=>p.filter(x=>x.id!==id)); setOpenId(null); }}/>}
     </div>
   );
 }
 
-function AgentEditor({ agent, agents, userId, isAdmin, onClose, onSaved, onDeleted }){
+function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTeam, onClose, onSaved, onDeleted }){
   const [a,setA]=useState(agent);
   const [plan,setPlan]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -29109,21 +29150,23 @@ function AgentEditor({ agent, agents, userId, isAdmin, onClose, onSaved, onDelet
         <div style={{display:'grid',gap:'10px'}}>
           <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--text-3)'}}>Profile</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
-            <label className="form-label">Name<input className="form-input" value={a.name||''} onChange={e=>setAF('name',e.target.value)} disabled={!isAdmin}/></label>
-            <label className="form-label">Role<select className="form-input" value={a.role} onChange={e=>setAF('role',e.target.value)} disabled={!isAdmin}>{AGENT_ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
-            <label className="form-label">Email<input className="form-input" value={a.email||''} onChange={e=>setAF('email',e.target.value)} disabled={!isAdmin}/></label>
-            <label className="form-label">Phone<input className="form-input" value={a.phone||''} onChange={e=>setAF('phone',e.target.value)} disabled={!isAdmin}/></label>
+            <label className="form-label">Name<input className="form-input" value={a.name||''} onChange={e=>setAF('name',e.target.value)} disabled={!canWrite}/></label>
+            <label className="form-label">Role<select className="form-input" value={a.role} onChange={e=>setAF('role',e.target.value)} disabled={!canWrite}>{(roleOpts||AGENT_ROLES).map(r=><option key={r.value} value={r.value}>{r.label}</option>)}</select></label>
+            <label className="form-label">Email<input className="form-input" value={a.email||''} onChange={e=>setAF('email',e.target.value)} disabled={!canWrite}/></label>
+            <label className="form-label">Phone<input className="form-input" value={a.phone||''} onChange={e=>setAF('phone',e.target.value)} disabled={!canWrite}/></label>
             <label className="form-label">Team<input className="form-input" value={a.team||''} onChange={e=>setAF('team',e.target.value)} disabled={!isAdmin}/></label>
-            <label className="form-label">License #<input className="form-input" value={a.license_no||''} onChange={e=>setAF('license_no',e.target.value)} disabled={!isAdmin}/></label>
+            <label className="form-label">License #<input className="form-input" value={a.license_no||''} onChange={e=>setAF('license_no',e.target.value)} disabled={!canWrite}/></label>
             <label className="form-label">Upline (profit share)<select className="form-input" value={a.upline_id||''} onChange={e=>setAF('upline_id',e.target.value)} disabled={!isAdmin}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-            <label className="form-label">Mentor<select className="form-input" value={a.mentor_id||''} onChange={e=>setAF('mentor_id',e.target.value)} disabled={!isAdmin}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+            <label className="form-label">Mentor<select className="form-input" value={a.mentor_id||''} onChange={e=>setAF('mentor_id',e.target.value)} disabled={!canWrite}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
           </div>
-          {isAdmin && <>
+          {canWrite && <>
             <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',flexDirection:'row'}}><input type="checkbox" checked={a.active!==false} onChange={e=>setAF('active',e.target.checked)}/> Active</label>
             <div style={{display:'flex',justifyContent:'space-between'}}>
-              <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={delAgent}><Icon name="trash" size={13}/> Remove</button>
+              {isAdmin ? <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={delAgent}><Icon name="trash" size={13}/> Remove</button> : <span/>}
               <button className="btn btn-primary btn-sm" onClick={saveAgent}>Save profile</button>
             </div>
+          </>}
+          {isAdmin && <>
             <div style={{borderTop:'1px solid var(--border)',margin:'4px 0'}}/>
             <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>Login & access</div>
             {a.auth_user_id ? (
@@ -29146,7 +29189,7 @@ function AgentEditor({ agent, agents, userId, isAdmin, onClose, onSaved, onDelet
             )}
           </>}
           <div style={{borderTop:'1px solid var(--border)',margin:'6px 0'}}/>
-          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : (isAdmin? <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan}/> : <PayPlanReadOnly plan={plan}/>)}
+          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : (canWrite? <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan}/> : <PayPlanReadOnly plan={plan}/>)}
         </div>
       </div>
     </div>
