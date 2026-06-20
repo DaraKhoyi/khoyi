@@ -28825,6 +28825,17 @@ const DOCTYPE_TO_ITEM = {
   inspection:'inspection', wdo:'inspection', appraisal:'inspection',
   title_commitment:'title_commitment', closing_disclosure:'closing_disclosure', cda:'cda',
 };
+// Which checklist items WE author/generate (owned) vs come from outside (external/capture).
+const OWNED_ITEM_KEYS = new Set(['cda','buyer_rep_cover','compliance_attestation','broker_cover']);
+function itemOrigin(it){ return OWNED_ITEM_KEYS.has(it.item_key) ? 'owned' : 'external'; }
+// Document provenance label/colour — invisible plumbing surfaced as a calm chip.
+function docOriginMeta(d){
+  if(d.source==='generated') return { label:'PrismOS', color:'var(--accent)' };
+  if(d.source==='email')     return { label:'From email', color:'#3b82f6' };
+  return { label:'Uploaded', color:'var(--text-3)' };
+}
+function OriginChip({ d }){ const m=docOriginMeta(d); return <span style={{fontSize:'9px',fontWeight:700,letterSpacing:'.03em',textTransform:'uppercase',padding:'1px 7px',borderRadius:'999px',border:`1px solid ${m.color}`,color:m.color,whiteSpace:'nowrap'}}>{m.label}</span>; }
+function LifecycleChip({ state }){ const m={executed:{l:'Executed',c:'var(--green)'},draft:{l:'Draft',c:'var(--text-3)'},partial:{l:'Partial',c:'var(--yellow)'}}[state]; if(!m) return null; return <span style={{fontSize:'9px',fontWeight:700,padding:'1px 7px',borderRadius:'999px',background:m.c,color:'#fff',whiteSpace:'nowrap'}}>{m.l}</span>; }
 const FILE_STATUSES = [
   { value:'prospect',       label:'Prospect',        color:'var(--text-3)' },
   { value:'active',         label:'Active',          color:'#3b82f6' },
@@ -29445,7 +29456,13 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const copyCDA = ()=>{ try{ navigator.clipboard.writeText(cdaText()); if(window.__notify) window.__notify('CDA copied to clipboard.','success'); }catch(e){ if(window.__notify) window.__notify('Copy failed.','error'); } };
 
   const [showMissing,setShowMissing]=useState(false);
+  const [requestScope,setRequestScope]=useState(null);
   const missingItems = items.filter(i=>i.required && !['approved','waived','na'].includes(i.status));
+  const openRequest=(it)=>{ setRequestScope(it?[it]:null); setShowMissing(true); };
+  const generateItem=(it)=>{
+    if(it.item_key==='cda'){ setTab('closing'); if(window.__notify) window.__notify('Open the CDA in the Closing tab \u2014 it\u2019s generated from this file\u2019s figures.','success'); return; }
+    if(window.__notify) window.__notify('Document Studio (in-app generated documents) is the next build. For now you can upload or mark this manually.','success');
+  };
 
   const delFile = async()=>{ if(!window.confirm(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; for(const dl of deadlines){ if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); } await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
 
@@ -29581,20 +29598,27 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
               <div key={cat}>
                 <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:'6px'}}>{cat}</div>
                 <div style={{display:'grid',gap:'6px'}}>
-                  {items.filter(i=>(i.category||'Other')===cat).map(it=>(
+                  {items.filter(i=>(i.category||'Other')===cat).map(it=>{
+                    const origin=itemOrigin(it); const done=['approved','waived','na'].includes(it.status);
+                    return (
                     <div key={it.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',background:'var(--bg-hover)',borderRadius:'8px'}}>
+                      <span style={{color: done?'var(--green)':it.status==='received'?'#3b82f6':'var(--text-3)',fontWeight:700,fontSize:'15px',width:'16px',textAlign:'center',flexShrink:0}}>{done?'\u2713':it.status==='received'?'\u25d0':'\u25cb'}</span>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:'13px',display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
                           <span>{it.label}</span>
+                          <span title={origin==='owned'?'PrismOS generates this document':'Comes from outside \u2014 capture or request it'} style={{fontSize:'9px',fontWeight:700,letterSpacing:'.03em',textTransform:'uppercase',padding:'1px 6px',borderRadius:'999px',border:'1px solid '+(origin==='owned'?'var(--accent)':'var(--border)'),color:origin==='owned'?'var(--accent)':'var(--text-3)'}}>{origin==='owned'?'We generate':'External'}</span>
                           <span onClick={()=>toggleReq(it)} title="Toggle required" style={{cursor:'pointer',fontSize:'9px',fontWeight:700,padding:'1px 6px',borderRadius:'999px',background:it.required?'var(--accent-dim)':'transparent',border:'1px solid '+(it.required?'var(--accent)':'var(--border)'),color:it.required?'var(--accent)':'var(--text-3)'}}>{it.required?'REQUIRED':'optional'}</span>
                         </div>
                       </div>
+                      {it.status==='missing' && (origin==='owned'
+                        ? <button className="btn btn-primary btn-sm" onClick={()=>generateItem(it)} style={{padding:'4px 12px',whiteSpace:'nowrap'}}>Generate</button>
+                        : <button className="btn btn-primary btn-sm" onClick={()=>openRequest(it)} style={{padding:'4px 12px',whiteSpace:'nowrap'}}>Request</button>)}
                       <select className="form-input" value={it.status} onChange={e=>setItemStatus(it,e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px',color:CHK_META[it.status]?.color}}>
                         {CHK_STATUS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
                       </select>
                       <button className="btn btn-ghost btn-sm" title="Remove" onClick={()=>delItem(it)} style={{padding:'4px 7px',color:'var(--text-3)'}}><Icon name="trash" size={12}/></button>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             ))}
@@ -29626,6 +29650,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                     <div style={{minWidth:0}}>
                       <div style={{fontWeight:600,fontSize:'13px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.title||DOCTYPE_LABEL[d.doc_type]}</div>
                       <div style={{fontSize:'11px',color:'var(--text-3)'}}>{d.file_name} \u00B7 {d.size_bytes?Math.round(d.size_bytes/1024)+'KB':''}</div>
+                      <div style={{display:'flex',gap:'5px',flexWrap:'wrap',marginTop:'4px'}}><OriginChip d={d}/><LifecycleChip state={d.execution_state}/></div>
                     </div>
                     <span style={{fontSize:'10px',fontWeight:700,color:rsColor,whiteSpace:'nowrap'}}>{(rs||'pending').replace('_',' ')}</span>
                   </div>
@@ -29714,7 +29739,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
         )}
         </>}
       </div>
-      {showMissing && <MissingDocsComposer file={file} ov={ov} missingItems={missingItems} parties={parties} contacts={contacts} userId={userId} onClose={()=>setShowMissing(false)} onSent={()=>{ logFileEvent(fileId,userId,'missing_docs_requested',`Requested ${missingItems.length} missing document(s)`); }} />}
+      {showMissing && <MissingDocsComposer file={file} ov={ov} missingItems={requestScope||missingItems} parties={parties} contacts={contacts} userId={userId} onClose={()=>{ setShowMissing(false); setRequestScope(null); }} onSent={()=>{ const n=(requestScope||missingItems).length; logFileEvent(fileId,userId,'missing_docs_requested',`Requested ${n} document(s)${requestScope?`: ${requestScope[0].label}`:''}`); }} />}
     </div>
   );
 }
