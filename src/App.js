@@ -29214,6 +29214,141 @@ function MissingDocsComposer({ file, ov, missingItems, parties, contacts, userId
   );
 }
 
+function sigToken(){ return (crypto.randomUUID?crypto.randomUUID().replace(/-/g,''):Math.random().toString(36).slice(2)) + Math.random().toString(36).slice(2,8); }
+
+function SignPortal({ token }){
+  const [state,setState]=useState({loading:true});
+  const [consent,setConsent]=useState(false);
+  const [name,setName]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [done,setDone]=useState(null); // 'signed' | 'declined' | 'completed'
+  const load=async()=>{ try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body:{ action:'get', token } }); if(error||data?.error){ setState({error:data?.error||error?.message||'Could not load'}); return; } setState({...data,loading:false}); setName(data?.signer?.name||''); }catch(e){ setState({error:String(e)}); } };
+  useEffect(()=>{ load(); },[token]);
+  const sign=async()=>{ if(!consent){ alert('Please check the consent box.'); return; } if(!name.trim()){ alert('Type your full name to sign.'); return; } setBusy(true); try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body:{ action:'sign', token, consent:true, signature_name:name.trim() } }); if(error||data?.error){ alert(data?.error||error?.message||'Could not sign'); return; } setDone(data?.completed?'completed':'signed'); }catch(e){ alert(String(e)); } finally{ setBusy(false); } };
+  const decline=async()=>{ const reason=window.prompt('Reason for declining (optional):')||''; setBusy(true); try{ await supabase.functions.invoke('sign-portal',{ body:{ action:'decline', token, decline_reason:reason } }); setDone('declined'); }catch(e){} finally{ setBusy(false); } };
+
+  const Shell=({children})=>(
+    <div style={{minHeight:'100vh',background:'var(--bg-base,#0d0f14)',color:'var(--text-1,#e8eaf0)',display:'flex',flexDirection:'column',alignItems:'center',padding:'0 16px 40px'}}>
+      <div style={{width:'100%',maxWidth:'620px'}}>
+        <div style={{background:'#0e0f13',borderBottom:'3px solid #C5A95E',padding:'18px 4px 14px',marginBottom:'20px'}}>
+          <div style={{fontWeight:800,letterSpacing:'.02em'}}>REALTY ONE GROUP ADVANTAGE</div>
+          <div style={{fontSize:'11px',color:'#C5A95E'}}>powered by PrismOS \u00B7 secure e-signature</div>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+  if(state.loading) return <Shell><div style={{color:'var(--text-2,#9499b0)'}}>Loading document\u2026</div></Shell>;
+  if(state.error) return <Shell><div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'20px'}}><h3 style={{marginTop:0}}>Link unavailable</h3><p style={{color:'var(--text-2,#9499b0)'}}>{state.error}. This signing link may have expired or already been completed.</p></div></Shell>;
+  if(done==='completed'||done==='signed') return <Shell><div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'24px',textAlign:'center'}}><div style={{fontSize:'40px'}}>\u2705</div><h3>Thank you, {name}!</h3><p style={{color:'var(--text-2,#9499b0)'}}>Your signature has been recorded{done==='completed'?' and the document is now fully executed':''}. A completed copy with the certificate of completion will be sent to the brokerage.</p></div></Shell>;
+  if(done==='declined') return <Shell><div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'24px',textAlign:'center'}}><h3>Declined</h3><p style={{color:'var(--text-2,#9499b0)'}}>You've declined to sign. The brokerage has been notified.</p></div></Shell>;
+  const alreadyDone = state.request?.status==='completed' || state.signer?.status==='signed';
+  return (
+    <Shell>
+      <div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'20px',display:'grid',gap:'14px'}}>
+        <div>
+          <div style={{fontSize:'12px',color:'var(--text-3,#555e7a)',textTransform:'uppercase',letterSpacing:'.05em'}}>Signature requested</div>
+          <h2 style={{margin:'4px 0'}}>{state.document?.title||state.request?.title||'Document'}</h2>
+          {state.request?.message && <p style={{color:'var(--text-2,#9499b0)',marginTop:'4px'}}>{state.request.message}</p>}
+        </div>
+        {state.view_url && <a href={state.view_url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{justifySelf:'start',border:'1px solid #C5A95E',color:'#C5A95E'}}>\uD83D\uDCC4 Review the document</a>}
+        {alreadyDone ? <div style={{color:'var(--green,#22c55e)'}}>This document is already completed. Thank you.</div> : <>
+          <div style={{background:'#0e0f13',borderRadius:'8px',padding:'12px',fontSize:'12px',color:'var(--text-2,#9499b0)',lineHeight:1.5}}>
+            <label style={{display:'flex',gap:'10px',alignItems:'flex-start',cursor:'pointer'}}>
+              <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} style={{marginTop:'2px'}}/>
+              <span>{state.consent_text}</span>
+            </label>
+          </div>
+          <div>
+            <label className="form-label" style={{fontSize:'12px',color:'var(--text-2,#9499b0)'}}>Type your full legal name to sign</label>
+            <input className="form-input" value={name} onChange={e=>setName(e.target.value)} placeholder="Full name" style={{background:'#0e0f13'}}/>
+            {name && <div style={{marginTop:'10px',padding:'14px',background:'#fff',borderRadius:'8px',textAlign:'center'}}><span style={{fontFamily:'"Brush Script MT","Segoe Script","Snell Roundhand",cursive',fontSize:'34px',color:'#111'}}>{name}</span></div>}
+          </div>
+          <div style={{display:'flex',gap:'10px',justifyContent:'space-between',alignItems:'center'}}>
+            <button className="btn btn-ghost btn-sm" onClick={decline} disabled={busy} style={{color:'var(--text-3,#555e7a)'}}>Decline</button>
+            <button className="btn btn-primary" onClick={sign} disabled={busy||!consent||!name.trim()} style={{background:'#C5A95E',borderColor:'#C5A95E',color:'#111',fontWeight:700}}>{busy?'Signing\u2026':'Adopt & Sign'}</button>
+          </div>
+        </>}
+      </div>
+      <div style={{textAlign:'center',fontSize:'11px',color:'var(--text-3,#555e7a)',marginTop:'16px'}}>Secured by PrismOS e-Sign \u00B7 ESIGN Act / Florida UETA compliant</div>
+    </Shell>
+  );
+}
+
+function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, onCreated }){
+  const seedSigners=()=>{ const out=[]; for(const p of (parties||[])){ const c=(contacts||[]).find(x=>x.id===p.contact_id); if(c?.email) out.push({ name:p.name||c.name||'', email:c.email, role:p.role||'' }); } if(file.buyer_name && !out.some(s=>s.role==='buyer')) out.unshift({ name:file.buyer_name, email:'', role:'buyer' }); return out.length?out:[{name:'',email:'',role:''}]; };
+  const [signers,setSigners]=useState(seedSigners());
+  const [title,setTitle]=useState(doc.title||'Document');
+  const [message,setMessage]=useState(`Please review and sign: ${doc.title||'document'} for ${file.address||'our transaction'}.`);
+  const [sending,setSending]=useState(false);
+  const [result,setResult]=useState(null); // {links:[{name,url}]}
+  const setS=(i,k,v)=>setSigners(prev=>prev.map((s,idx)=>idx===i?{...s,[k]:v}:s));
+  const addRow=()=>setSigners(prev=>[...prev,{name:'',email:'',role:''}]);
+  const delRow=(i)=>setSigners(prev=>prev.filter((_,idx)=>idx!==i));
+  const send=async()=>{
+    const valid=signers.filter(s=>s.name.trim());
+    if(!valid.length){ if(window.__notify) window.__notify('Add at least one signer name.','error'); return; }
+    setSending(true);
+    try{
+      const { data:req, error } = await supabase.from('signature_requests').insert({ user_id:userId, file_id:file.id, document_id:doc.id, title, message, status:'sent' }).select().single();
+      if(error) throw error;
+      const rows=valid.map((s,i)=>({ request_id:req.id, user_id:userId, file_id:file.id, name:s.name.trim(), email:s.email.trim()||null, role:s.role||null, sign_order:i+1, token:sigToken() }));
+      const { data:created, error:e2 } = await supabase.from('signature_signers').insert(rows).select();
+      if(e2) throw e2;
+      // try to email links
+      let acct=null; try{ const { data:accts } = await supabase.from('email_accounts').select('id,is_active').eq('user_id',userId); acct=(accts||[]).find(a=>a.is_active!==false)||null; }catch(_){}
+      const links=[];
+      for(const s of (created||[])){
+        const url=`https://darasapp.com/sign/${s.token}`;
+        links.push({ name:s.name, email:s.email, url });
+        if(acct && s.email){ try{ await supabase.functions.invoke('gmail-send',{ body:{ account_id:acct.id, to:s.email, subject:`Signature requested: ${title}`, body_text:`${message}\n\nSign securely here:\n${url}\n\n\u2014 Realty ONE Group Advantage` } }); }catch(_){} }
+      }
+      await logFileEvent(file.id, userId, 'esign_sent', `Sent ${title} for signature to ${valid.map(s=>s.name).join(', ')}`, { request_id:req.id });
+      if(onCreated) onCreated(req, created||[]);
+      setResult({ links, emailed: !!acct });
+    }catch(e){ if(window.__notify) window.__notify('Could not send: '+(e.message||e),'error'); }
+    finally{ setSending(false); }
+  };
+  return (
+    <div className="modal-overlay" style={{zIndex:2300}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:'560px',width:'100%',maxHeight:'92vh',overflowY:'auto'}}>
+        <div className="modal-header"><h3 style={{margin:0}}>Send for signature</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        {result ? (
+          <div style={{display:'grid',gap:'10px'}}>
+            <div style={{color:'var(--green)',fontWeight:600}}>\u2713 Request sent{result.emailed?' \u2014 signing links emailed':''}.</div>
+            <div style={{fontSize:'12px',color:'var(--text-2)'}}>Signing links{result.emailed?' (also emailed)':''} \u2014 tap to copy:</div>
+            {result.links.map((l,i)=>(
+              <button key={i} className="btn btn-ghost btn-sm" style={{justifyContent:'flex-start',textAlign:'left'}} onClick={()=>{ try{ navigator.clipboard.writeText(l.url); if(window.__notify) window.__notify('Link copied.','success'); }catch(_){}}}>
+                <span style={{fontWeight:600}}>{l.name}</span>&nbsp;<span style={{color:'var(--text-3)',fontSize:'11px',wordBreak:'break-all'}}>{l.url}</span>
+              </button>
+            ))}
+            <div style={{display:'flex',justifyContent:'flex-end'}}><button className="btn btn-primary" onClick={onClose}>Done</button></div>
+          </div>
+        ) : (
+          <div style={{display:'grid',gap:'10px'}}>
+            <label className="form-label">Title<input className="form-input" value={title} onChange={e=>setTitle(e.target.value)}/></label>
+            <label className="form-label">Message<textarea className="form-input" rows={2} value={message} onChange={e=>setMessage(e.target.value)}/></label>
+            <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-2)'}}>Signers (in order)</div>
+            {signers.map((s,i)=>(
+              <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:'6px',alignItems:'center'}}>
+                <input className="form-input" placeholder="Name" value={s.name} onChange={e=>setS(i,'name',e.target.value)} style={{padding:'6px 8px',fontSize:'13px'}}/>
+                <input className="form-input" placeholder="Email (to send link)" value={s.email} onChange={e=>setS(i,'email',e.target.value)} style={{padding:'6px 8px',fontSize:'13px'}}/>
+                <button className="btn btn-ghost btn-sm" onClick={()=>delRow(i)} style={{color:'var(--text-3)',padding:'4px 7px'}}><Icon name="trash" size={12}/></button>
+              </div>
+            ))}
+            <button className="btn btn-ghost btn-sm" onClick={addRow} style={{justifySelf:'start'}}>+ Add signer</button>
+            <div style={{fontSize:'11px',color:'var(--text-3)'}}>Signers with an email get a secure link automatically; others you can copy and share. No login required for them.</div>
+            <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'6px'}}>
+              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button className="btn btn-primary" onClick={send} disabled={sending}>{sending?'Sending\u2026':'Send for signature'}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FileModal({ onClose, onSave, initial, properties, contacts }){
   const [f,setF]=useState({
     address:initial?.address||'', city:initial?.city||'', state:initial?.state||'FL', zip:initial?.zip||'',
@@ -29283,22 +29418,27 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const [tab,setTab]=useState('overview');
   const [docs,setDocs]=useState([]); const [parties,setParties]=useState([]); const [items,setItems]=useState([]); const [events,setEvents]=useState([]);
   const [deadlines,setDeadlines]=useState([]);
+  const [sigReqs,setSigReqs]=useState([]);
+  const [signDoc,setSignDoc]=useState(null);
   const [loading,setLoading]=useState(true);
   const [ov,setOv]=useState(file);
   useEffect(()=>{ setOv(file); },[file]);
   const loadDeadlines = async()=>{ const { data } = await supabase.from('file_deadlines').select('*').eq('file_id',fileId).order('due_date',{ascending:true}); setDeadlines(data||[]); };
+  const loadSigs = async()=>{ const { data } = await supabase.from('signature_requests').select('*, signers:signature_signers(*)').eq('file_id',fileId).order('created_at',{ascending:false}); setSigReqs(data||[]); };
 
   useEffect(()=>{ let alive=true; (async()=>{
-    const [d,p,i,e,dl]=await Promise.all([
+    const [d,p,i,e,dl,sg]=await Promise.all([
       supabase.from('file_documents').select('*').eq('file_id',fileId).order('created_at',{ascending:false}),
       supabase.from('file_parties').select('*').eq('file_id',fileId).order('created_at',{ascending:true}),
       supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true}),
       supabase.from('file_events').select('*').eq('file_id',fileId).order('created_at',{ascending:false}).limit(100),
       supabase.from('file_deadlines').select('*').eq('file_id',fileId).order('due_date',{ascending:true}),
+      supabase.from('signature_requests').select('*, signers:signature_signers(*)').eq('file_id',fileId).order('created_at',{ascending:false}),
     ]);
     if(!alive) return;
-    setDocs(d.data||[]); setParties(p.data||[]); setItems(i.data||[]); setEvents(e.data||[]); setDeadlines(dl.data||[]); setLoading(false);
+    setDocs(d.data||[]); setParties(p.data||[]); setItems(i.data||[]); setEvents(e.data||[]); setDeadlines(dl.data||[]); setSigReqs(sg.data||[]); setLoading(false);
   })(); return ()=>{alive=false;}; },[fileId]);
+  const sigByDoc = {}; for(const r of sigReqs){ if(r.document_id && r.status!=='voided' && !sigByDoc[r.document_id]) sigByDoc[r.document_id]=r; }
 
   const cFlags = consistencyFlags(docs);
 
@@ -29697,6 +29837,13 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                     </>}
                     <button className="btn btn-ghost btn-sm" onClick={()=>delDoc(d)} style={{color:'var(--text-3)'}}><Icon name="trash" size={12}/></button>
                   </div>
+                  {(() => { const sr=sigByDoc[d.id]; const executed=d.execution_state==='executed';
+                    if(executed) return <div style={{fontSize:'11px',color:'var(--green)',fontWeight:600}}>\u2713 Executed via PrismOS e-Sign</div>;
+                    if(sr){ const signed=(sr.signers||[]).filter(s=>s.status==='signed').length; const total=(sr.signers||[]).length; const declined=(sr.signers||[]).some(s=>s.status==='declined');
+                      return <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'11px'}}><span style={{color:declined?'var(--red)':'var(--accent)',fontWeight:600}}>{declined?'Declined':`Out for signature \u2014 ${signed}/${total} signed`}</span><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={async()=>{ const links=(sr.signers||[]).map(s=>`${s.name}: https://darasapp.com/sign/${s.token}`).join('\n'); try{ await navigator.clipboard.writeText(links); if(window.__notify) window.__notify('Signing links copied.','success'); }catch(_){}}}>Copy links</button></div>;
+                    }
+                    return <button className="btn btn-ghost btn-sm" onClick={()=>setSignDoc(d)} style={{color:'var(--accent)',justifySelf:'start',padding:'2px 8px',fontSize:'12px'}}>\u270D Send for signature</button>;
+                  })()}
                   {d.reviewer_note && <div style={{fontSize:'11px',color:'var(--text-2)',fontStyle:'italic'}}>Note: {d.reviewer_note}</div>}
                 </div>
               );
@@ -29772,11 +29919,12 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
         </>}
       </div>
       {showMissing && <MissingDocsComposer file={file} ov={ov} missingItems={requestScope||missingItems} parties={parties} contacts={contacts} userId={userId} onClose={()=>{ setShowMissing(false); setRequestScope(null); }} onSent={()=>{ const n=(requestScope||missingItems).length; logFileEvent(fileId,userId,'missing_docs_requested',`Requested ${n} document(s)${requestScope?`: ${requestScope[0].label}`:''}`); }} />}
+      {signDoc && <SignatureRequestModal file={file} doc={signDoc} parties={parties} contacts={contacts} userId={userId} onClose={()=>setSignDoc(null)} onCreated={()=>{ loadSigs(); }} />}
     </div>
   );
 }
 
-export default function App() {
+function AppMain() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
@@ -30235,4 +30383,10 @@ export default function App() {
       )}
     </div>
   );
+}
+
+export default function App() {
+  const m = (typeof window !== 'undefined') && window.location.pathname.match(/^\/sign\/([A-Za-z0-9_-]+)/);
+  if (m) return <SignPortal token={m[1]} />;
+  return <AppMain />;
 }
