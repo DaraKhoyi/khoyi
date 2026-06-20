@@ -29457,12 +29457,28 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
 
   const [showMissing,setShowMissing]=useState(false);
   const [requestScope,setRequestScope]=useState(null);
+  const [generating,setGenerating]=useState(false);
+  const [showStudio,setShowStudio]=useState(false);
+  const ITEM_TO_TEMPLATE={ cda:'cda', buyer_rep_cover:'buyer_rep_cover', compliance_attestation:'compliance_attestation' };
   const missingItems = items.filter(i=>i.required && !['approved','waived','na'].includes(i.status));
   const openRequest=(it)=>{ setRequestScope(it?[it]:null); setShowMissing(true); };
-  const generateItem=(it)=>{
-    if(it.item_key==='cda'){ setTab('closing'); if(window.__notify) window.__notify('Open the CDA in the Closing tab \u2014 it\u2019s generated from this file\u2019s figures.','success'); return; }
-    if(window.__notify) window.__notify('Document Studio (in-app generated documents) is the next build. For now you can upload or mark this manually.','success');
+  const generateDoc=async(template)=>{
+    setGenerating(true);
+    try{
+      const { data, error } = await supabase.functions.invoke('files-doc-generate', { body:{ file_id:fileId, template } });
+      if(error||data?.error){ if(window.__notify) window.__notify('Generate failed: '+(error?.message||data?.error),'error'); return null; }
+      const doc=data.document;
+      if(doc){ setDocs(prev=>[doc,...prev]); }
+      // refresh checklist (template may have satisfied an item)
+      const { data:items2 } = await supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true});
+      if(items2) setItems(items2);
+      setShowStudio(false);
+      if(window.__notify) window.__notify('Document generated.','success');
+      return doc;
+    }catch(e){ if(window.__notify) window.__notify('Generate failed: '+(e.message||e),'error'); return null; }
+    finally{ setGenerating(false); }
   };
+  const generateItem=(it)=>{ const tpl=ITEM_TO_TEMPLATE[it.item_key]; if(tpl){ generateDoc(tpl); setTab('docs'); } else if(window.__notify) window.__notify('No template for this item yet \u2014 upload or mark it manually.','success'); };
 
   const delFile = async()=>{ if(!window.confirm(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; for(const dl of deadlines){ if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); } await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
 
@@ -29628,9 +29644,25 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
 
         {tab==='docs' && (
           <div style={{display:'grid',gap:'10px'}}>
-            {!showUpload
-              ? <button className="btn btn-primary btn-sm" onClick={()=>setShowUpload(true)} style={{justifySelf:'start'}}><Icon name="paperclip" size={13}/> Upload document</button>
-              : <div className="panel" style={{display:'grid',gap:'8px',background:'var(--bg-hover)'}}>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+              {!showUpload && <button className="btn btn-primary btn-sm" onClick={()=>setShowUpload(true)}><Icon name="paperclip" size={13}/> Upload document</button>}
+              {!showStudio && !showUpload && <button className="btn btn-ghost btn-sm" onClick={()=>setShowStudio(true)} style={{color:'var(--accent)'}}><Icon name="sparkles" size={13}/> Create document</button>}
+            </div>
+            {showStudio && (
+              <div className="panel" style={{display:'grid',gap:'8px',background:'linear-gradient(135deg,var(--bg-card),var(--bg-hover))',borderColor:'var(--accent)'}}>
+                <div style={{fontSize:'13px',fontWeight:700,display:'flex',alignItems:'center',gap:'6px'}}><Icon name="sparkles" size={14}/> Document Studio</div>
+                <div style={{fontSize:'12px',color:'var(--text-2)'}}>PrismOS will generate a branded, pre-filled PDF from this file\u2019s data and drop it here.</div>
+                {[['cda','Commission Disbursement Authorization','Pre-filled with price, commission, split & net'],['buyer_rep_cover','Buyer Representation Summary','Engagement cover sheet for the file'],['compliance_attestation','Broker Compliance Attestation','Auto-lists required-doc status for sign-off']].map(([t,label,desc])=>(
+                  <button key={t} className="btn btn-ghost" disabled={generating} onClick={()=>generateDoc(t)} style={{justifyContent:'flex-start',textAlign:'left',display:'grid',gap:'2px',padding:'10px'}}>
+                    <span style={{fontWeight:600,fontSize:'13px'}}>{label}</span>
+                    <span style={{fontSize:'11px',color:'var(--text-3)'}}>{desc}</span>
+                  </button>
+                ))}
+                <div style={{display:'flex',justifyContent:'flex-end'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowStudio(false)} disabled={generating}>{generating?'Generating\u2026':'Close'}</button></div>
+              </div>
+            )}
+            {showUpload && (
+              <div className="panel" style={{display:'grid',gap:'8px',background:'var(--bg-hover)'}}>
                   <label className="form-label">Document type
                     <select className="form-input" value={upType} onChange={e=>setUpType(e.target.value)}>{FILE_DOC_TYPES.map(d=><option key={d.value} value={d.value}>{d.label}</option>)}</select>
                   </label>
@@ -29640,7 +29672,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                     <button className="btn btn-ghost btn-sm" onClick={()=>{setShowUpload(false);setUpFile(null);}}>Cancel</button>
                     <button className="btn btn-primary btn-sm" onClick={doUpload} disabled={uploading}>{uploading?'Uploading\u2026':'Upload'}</button>
                   </div>
-                </div>}
+                </div>)}
             {docs.length===0 && <div style={{color:'var(--text-2)',fontSize:'13px',padding:'8px'}}>No documents yet.</div>}
             {docs.map(d=>{
               const rs=d.review_status; const rsColor= rs==='approved'?'var(--green)':rs==='rejected'?'var(--red)':rs==='revision_requested'?'var(--yellow)':'var(--text-3)';

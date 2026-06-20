@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v35-20260619-files-unified-docs'
+const VERSION = 'prismos-v36-20260619-document-studio'
 const APP_SHELL = [
   '/',
   '/index.html',
