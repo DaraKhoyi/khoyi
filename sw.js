@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v49-20260620-accounting'
+const VERSION = 'prismos-v50-20260620-brokerage-stickynav'
 const APP_SHELL = [
   '/',
   '/index.html',
