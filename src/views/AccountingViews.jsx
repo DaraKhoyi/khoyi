@@ -1434,23 +1434,23 @@ function nextQuarterDueLabel() {
 
 // Schedule C lines offered when creating/editing a custom business category.
 const BIZ_CAT_LINES = [
-  { v: '\u2014', label: '\u2014 (no tax line \u00b7 budget only)' },
-  { v: 'Line 8',   label: 'Line 8 \u00b7 Advertising' },
-  { v: 'Line 9',   label: 'Line 9 \u00b7 Car & truck' },
-  { v: 'Line 10',  label: 'Line 10 \u00b7 Commissions & fees' },
-  { v: 'Line 11',  label: 'Line 11 \u00b7 Contract labor' },
-  { v: 'Line 13',  label: 'Line 13 \u00b7 Depreciation' },
-  { v: 'Line 15',  label: 'Line 15 \u00b7 Insurance' },
-  { v: 'Line 17',  label: 'Line 17 \u00b7 Legal & professional' },
-  { v: 'Line 18',  label: 'Line 18 \u00b7 Office expense' },
-  { v: 'Line 20',  label: 'Line 20 \u00b7 Rent or lease' },
-  { v: 'Line 21',  label: 'Line 21 \u00b7 Repairs & maintenance' },
-  { v: 'Line 22',  label: 'Line 22 \u00b7 Supplies' },
-  { v: 'Line 23',  label: 'Line 23 \u00b7 Taxes & licenses' },
-  { v: 'Line 24a', label: 'Line 24a \u00b7 Travel' },
-  { v: 'Line 24b', label: 'Line 24b \u00b7 Meals' },
-  { v: 'Line 25',  label: 'Line 25 \u00b7 Utilities' },
-  { v: 'Line 27a', label: 'Line 27a \u00b7 Other expenses' },
+  { v: '—', label: '— (no tax line · budget only)' },
+  { v: 'Line 8',   label: 'Line 8 · Advertising' },
+  { v: 'Line 9',   label: 'Line 9 · Car & truck' },
+  { v: 'Line 10',  label: 'Line 10 · Commissions & fees' },
+  { v: 'Line 11',  label: 'Line 11 · Contract labor' },
+  { v: 'Line 13',  label: 'Line 13 · Depreciation' },
+  { v: 'Line 15',  label: 'Line 15 · Insurance' },
+  { v: 'Line 17',  label: 'Line 17 · Legal & professional' },
+  { v: 'Line 18',  label: 'Line 18 · Office expense' },
+  { v: 'Line 20',  label: 'Line 20 · Rent or lease' },
+  { v: 'Line 21',  label: 'Line 21 · Repairs & maintenance' },
+  { v: 'Line 22',  label: 'Line 22 · Supplies' },
+  { v: 'Line 23',  label: 'Line 23 · Taxes & licenses' },
+  { v: 'Line 24a', label: 'Line 24a · Travel' },
+  { v: 'Line 24b', label: 'Line 24b · Meals' },
+  { v: 'Line 25',  label: 'Line 25 · Utilities' },
+  { v: 'Line 27a', label: 'Line 27a · Other expenses' },
 ];
 const bpInput = { padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-1)',fontSize:'13px',width:'100%',boxSizing:'border-box' };
 const bpAddWrap = { marginTop:'10px',padding:'12px',background:'var(--bg-base)',borderRadius:'8px',border:'1px solid var(--accent)',display:'flex',flexDirection:'column',gap:'8px' };
@@ -1494,8 +1494,8 @@ function PersonalBudgetRow({ line, onChangeAmount, onSaveLabel, onDelete, readOn
         onChange={e => { const v = e.target.value === '' ? 0 : Number(e.target.value); onChangeAmount(line.id, usesAnnual ? { annual_amount: v } : { monthly_amount: v }); }}
         style={{width:'88px',padding:'5px 8px',textAlign:'right',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',fontVariantNumeric:'tabular-nums'}}/>
       {!readOnly && (<>
-        <button onClick={() => editing ? commit() : setEditing(true)} title={editing?'Save name':'Rename'} style={bpIconBtn}>{editing?'\u2713':'\u270e'}</button>
-        <button onClick={() => onDelete(line)} title="Delete" style={bpIconBtn}>\u00d7</button>
+        <button onClick={() => editing ? commit() : setEditing(true)} title={editing?'Save name':'Rename'} style={bpIconBtn}>{editing?'✓':'✎'}</button>
+        <button onClick={() => onDelete(line)} title="Delete" style={bpIconBtn}>×</button>
       </>)}
     </div>
   );
@@ -1507,10 +1507,10 @@ function TaxCatRow({ cat, isAdv, advValue, onChangeBudget, onSaveMeta, onDelete,
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(cat.name);
   const [desc, setDesc] = useState(cat.description || '');
-  const [line, setLine] = useState(cat.schedule_c_line || '\u2014');
-  useEffect(() => { setName(cat.name); setDesc(cat.description || ''); setLine(cat.schedule_c_line || '\u2014'); }, [cat]);
+  const [line, setLine] = useState(cat.schedule_c_line || '—');
+  useEffect(() => { setName(cat.name); setDesc(cat.description || ''); setLine(cat.schedule_c_line || '—'); }, [cat]);
   const value = isAdv ? advValue : Number(cat.monthly_budget || 0);
-  const lineShown = (cat.schedule_c_line === '\u2014' || cat.schedule_c_line === '(not Schedule C)') ? '' : cat.schedule_c_line;
+  const lineShown = (cat.schedule_c_line === '—' || cat.schedule_c_line === '(not Schedule C)') ? '' : cat.schedule_c_line;
   async function save() {
     const patch = {};
     const nm = (name || '').trim();
@@ -1529,7 +1529,7 @@ function TaxCatRow({ cat, isAdv, advValue, onChangeBudget, onSaveMeta, onDelete,
           {BIZ_CAT_LINES.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
         </select>
         <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
-          <button className="btn btn-ghost btn-sm" onClick={()=>{ setName(cat.name); setDesc(cat.description||''); setLine(cat.schedule_c_line||'\u2014'); setEditing(false); }}>Cancel</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>{ setName(cat.name); setDesc(cat.description||''); setLine(cat.schedule_c_line||'—'); setEditing(false); }}>Cancel</button>
           <button className="btn btn-primary btn-sm" onClick={save}>Save</button>
         </div>
       </div>
@@ -1550,11 +1550,11 @@ function TaxCatRow({ cat, isAdv, advValue, onChangeBudget, onSaveMeta, onDelete,
       <input type="number" step="1" value={value} disabled={readOnly || locked}
         onChange={e => onChangeBudget(cat.id, Number(e.target.value) || 0)}
         style={{width:'80px',padding:'5px 8px',textAlign:'right',background: locked ? 'var(--bg-hover)' : 'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',color: locked ? 'var(--text-3)' : 'var(--text-1)',fontSize:'13px',fontVariantNumeric:'tabular-nums',cursor: locked ? 'not-allowed' : 'text'}}
-        title={isAdv ? 'Locked \u2014 sum of lead-gen system budgets' : (locked ? 'Structural category \u2014 locked' : '')}/>
+        title={isAdv ? 'Locked — sum of lead-gen system budgets' : (locked ? 'Structural category — locked' : '')}/>
       <span style={{color:'var(--text-3)',fontSize:'11px'}}>/mo</span>
       {!readOnly && !locked && (<>
-        <button onClick={()=>setEditing(true)} title="Edit" style={bpIconBtn}>\u270e</button>
-        <button onClick={()=>onDelete(cat)} title="Delete" style={bpIconBtn}>\u00d7</button>
+        <button onClick={()=>setEditing(true)} title="Edit" style={bpIconBtn}>✎</button>
+        <button onClick={()=>onDelete(cat)} title="Delete" style={bpIconBtn}>×</button>
       </>)}
     </div>
   );
@@ -1643,7 +1643,7 @@ function FinanceBlueprint({
   }
   async function deletePersonalLine(line) {
     if (readOnly) return;
-    if (!await confirmDialog(`Delete "${line.category}" from your personal budget? It is a planning input only \u2014 no recorded transactions are affected.`, { confirmLabel: 'Delete' })) return;
+    if (!await confirmDialog(`Delete "${line.category}" from your personal budget? It is a planning input only — no recorded transactions are affected.`, { confirmLabel: 'Delete' })) return;
     setPersonalBudget(prev => prev.filter(l => l.id !== line.id));
     await supabase.from('personal_budget_lines').update({ is_archived: true }).eq('id', line.id);
     if (window.__notify) window.__notify(`"${line.category}" removed`, 'success');
@@ -1655,12 +1655,12 @@ function FinanceBlueprint({
     if (!name) return;
     const sort = Math.max(0, ...taxCategories.filter(c => (Number(c.sort_order) || 0) < 99999).map(c => Number(c.sort_order) || 0)) + 1;
     const row = { user_id: userId, name, description: (bDraft.description || '').trim() || null,
-      monthly_budget: Number(bDraft.monthly_budget) || 0, schedule_c_line: bDraft.schedule_c_line || '\u2014',
+      monthly_budget: Number(bDraft.monthly_budget) || 0, schedule_c_line: bDraft.schedule_c_line || '—',
       color: '#C5A95E', sort_order: sort, is_archived: false, is_locked: false, is_auto: false, deduction_pct: 1 };
     const { data, error } = await supabase.from('tax_categories').insert(row).select().single();
     if (!error && data) {
       setTaxCategories(prev => [...prev, data].sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)));
-      setBDraft({ name: '', description: '', monthly_budget: '', schedule_c_line: '\u2014' });
+      setBDraft({ name: '', description: '', monthly_budget: '', schedule_c_line: '—' });
       setAddingBiz(false);
       if (window.__notify) window.__notify('Business category added', 'success');
     } else if (window.__notify) window.__notify('Could not add category', 'error');
@@ -1809,7 +1809,7 @@ function FinanceBlueprint({
                 onChange={e => setBDraft(d => ({ ...d, monthly_budget: e.target.value }))} style={{...bpInput, width:'92px'}}/>
             </div>
             <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setAddingBiz(false); setBDraft({ name: '', description: '', monthly_budget: '', schedule_c_line: '\u2014' }); }}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setAddingBiz(false); setBDraft({ name: '', description: '', monthly_budget: '', schedule_c_line: '—' }); }}>Cancel</button>
               <button className="btn btn-primary btn-sm" onClick={addBusinessCat}>Add</button>
             </div>
           </div>
@@ -1822,7 +1822,7 @@ function FinanceBlueprint({
         </div>
       </div>
 
-      {/* TIME VALUE \u2014 non-deductible KPI: prospecting hours committed vs actually logged, each valued at the hourly rate. */}
+      {/* TIME VALUE — non-deductible KPI: prospecting hours committed vs actually logged, each valued at the hourly rate. */}
       {(() => {
         const hourlyRate = Number(settings?.hourly_rate || 0);
         const committedPerWeek = Number(settings?.prospecting_hours_per_week || 0);
@@ -1846,10 +1846,10 @@ function FinanceBlueprint({
             <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',flexWrap:'wrap'}}>
               <Icon name="clock" size={15} style={{color:'var(--accent)'}} />
               <h3 style={{margin:0,fontSize:'14px',color:'var(--text-1)'}}>Time Value</h3>
-              <span style={{fontSize:'9px',color:'var(--accent)',padding:'2px 6px',background:'rgba(197,169,94,0.12)',borderRadius:'3px',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>KPI \u00b7 non-deductible</span>
+              <span style={{fontSize:'9px',color:'var(--accent)',padding:'2px 6px',background:'rgba(197,169,94,0.12)',borderRadius:'3px',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700}}>KPI · non-deductible</span>
             </div>
             <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 14px',lineHeight:1.5}}>
-              The true cost of prospecting isn't only cash \u2014 it's your time. This compares the hours you <strong>committed</strong> to prospecting against the hours you've <strong>actually logged</strong>, each valued at your hourly rate{ready ? <> of <strong style={{color:'var(--accent)'}}>{fmtUSD(hourlyRate)}/hr</strong></> : ''}. It is never a cash expense and never touches your taxes.
+              The true cost of prospecting isn't only cash — it's your time. This compares the hours you <strong>committed</strong> to prospecting against the hours you've <strong>actually logged</strong>, each valued at your hourly rate{ready ? <> of <strong style={{color:'var(--accent)'}}>{fmtUSD(hourlyRate)}/hr</strong></> : ''}. It is never a cash expense and never touches your taxes.
             </p>
             {!ready ? (
               <div style={{padding:'12px',background:'var(--bg-base)',borderRadius:'8px',fontSize:'12px',color:'var(--text-2)',lineHeight:1.5}}>
@@ -1861,7 +1861,7 @@ function FinanceBlueprint({
                   <div style={bpKpiCol}>
                     <div style={bpKpiLabel}>Committed (year-to-date)</div>
                     <div style={{...bpKpiNum, color:'var(--text-1)'}}>{fmtUSD(committedToDateValue)}</div>
-                    <div style={bpKpiSub}>{committedToDateHours.toFixed(1)} hrs \u00b7 {committedPerWeek}/wk pace</div>
+                    <div style={bpKpiSub}>{committedToDateHours.toFixed(1)} hrs · {committedPerWeek}/wk pace</div>
                   </div>
                   <div style={bpKpiCol}>
                     <div style={bpKpiLabel}>Logged (actual)</div>
@@ -1875,18 +1875,18 @@ function FinanceBlueprint({
                   </div>
                   <div style={{marginTop:'6px',fontSize:'11px',fontWeight:600,color: aheadHours >= 0 ? 'var(--green)' : 'var(--yellow)'}}>
                     {aheadHours >= 0
-                      ? `On pace \u2014 ${aheadHours.toFixed(1)} hrs ahead of your commitment (${fmtUSD(Math.abs(aheadHours) * hourlyRate)} of extra time invested)`
+                      ? `On pace — ${aheadHours.toFixed(1)} hrs ahead of your commitment (${fmtUSD(Math.abs(aheadHours) * hourlyRate)} of extra time invested)`
                       : `${Math.abs(aheadHours).toFixed(1)} hrs behind your commitment (${fmtUSD(Math.abs(aheadHours) * hourlyRate)} of time not yet invested)`}
                   </div>
                 </div>
                 <div style={{marginTop:'12px',paddingTop:'10px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text-3)'}}>
                   <span>Full-year commitment</span>
-                  <span style={{fontVariantNumeric:'tabular-nums'}}>{committedAnnualHours.toFixed(0)} hrs \u00b7 {fmtUSD(committedAnnualValue)}</span>
+                  <span style={{fontVariantNumeric:'tabular-nums'}}>{committedAnnualHours.toFixed(0)} hrs · {fmtUSD(committedAnnualValue)}</span>
                 </div>
               </>
             )}
             <p style={{fontSize:'10px',color:'var(--text-3)',margin:'12px 0 0',lineHeight:1.5,fontStyle:'italic',paddingTop:'10px',borderTop:'1px solid var(--border)'}}>
-              \u2020 Non-tax-deductible. This figure is not a cash expense and never appears on your Schedule C or in any tax report. It exists only to reveal the true cost of your prospecting systems \u2014 committed hours \u00d7 hourly rate, compared with hours actually logged \u00d7 hourly rate. Logged hours come from the timers and time entries in Prospecting; your hourly rate is set in Strategy inputs (GCI goal \u00f7 committed hours \u00f7 48 weeks).
+              † Non-tax-deductible. This figure is not a cash expense and never appears on your Schedule C or in any tax report. It exists only to reveal the true cost of your prospecting systems — committed hours × hourly rate, compared with hours actually logged × hourly rate. Logged hours come from the timers and time entries in Prospecting; your hourly rate is set in Strategy inputs (GCI goal ÷ committed hours ÷ 48 weeks).
             </p>
           </div>
         );
