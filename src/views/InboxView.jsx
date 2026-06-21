@@ -2078,21 +2078,21 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                               On solo-recipient threads this behaves identically to Reply. */}
                           <button
                             onClick={() => { openReply(latest, true); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
                             <Icon name="replyAll" size={14} /> Reply all
                           </button>
 
                           {/* Forward */}
                           <button
                             onClick={() => { openForward(latest); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
                             <Icon name="forward" size={14} /> Forward
                           </button>
 
                           {/* Add sender to contacts */}
                           <button
                             onClick={() => createContactFromSender(latest)}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
                             <Icon name="contacts" size={14} /> Add sender to contacts
                           </button>
 
@@ -2143,7 +2143,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Labels */}
                           <button
                             onClick={() => { setShowLabelPicker(true); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
                             <Icon name="tag" size={14} /> Apply labels…
                           </button>
 
@@ -2152,7 +2152,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           {/* Mark as spam (destructive) */}
                           <button
                             onClick={() => { modifyThread('spam', { removeFromList: true }); setShowMoreMenu(false); }}
-                            style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--red)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
                             <Icon name="alert" size={14} /> Mark as spam
                           </button>
                         </div>

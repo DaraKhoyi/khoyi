@@ -4027,9 +4027,9 @@ function FinanceSystems({ userId, systems, archivedSystems = [], reload, transac
                     {openMenuId === sys.id && (
                       <div style={{position:'absolute',right:0,top:'calc(100% + 4px)',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',boxShadow:'0 6px 24px rgba(0,0,0,0.5)',zIndex:20,minWidth:'170px',overflow:'hidden'}}>
                         <button onClick={() => { setOpenMenuId(null); setShowTimeModal(sys); }}
-                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',padding:'11px 13px',color:'var(--text-1)',cursor:'pointer',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'7px'}}><Icon name="clock" size={13} /> Log time manually</button>
+                          style={{width:'100%',textAlign:'left',background:'transparent',border:'none',padding:'11px 13px',color:'var(--text-1)',cursor:'pointer',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'7px'}}><Icon name="clock" size={13} /> Log time manually</button>
                         <button onClick={() => archiveSystem(sys)}
-                          style={{display:'block',width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'11px 13px',color:'var(--text-2)',cursor:'pointer',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'7px'}}><Icon name="archive" size={13} /> Archive system</button>
+                          style={{width:'100%',textAlign:'left',background:'transparent',border:'none',borderTop:'1px solid var(--border)',padding:'11px 13px',color:'var(--text-2)',cursor:'pointer',fontSize:'12px',fontWeight:600,display:'flex',alignItems:'center',gap:'7px'}}><Icon name="archive" size={13} /> Archive system</button>
                       </div>
                     )}
                   </div>

@@ -728,7 +728,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 
       <div className="panel">
-        <div className="panel-header"><h3 style={{cursor:'pointer'}} onClick={()=>setShowScore(v=>!v)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chart" size={15} /> This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowReport(true)}>Full report →</button></div>
+        <div className="panel-header"><h3 onClick={()=>setShowScore(v=>!v)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chart" size={15} /> This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowReport(true)}>Full report →</button></div>
         {showScore && (score && score.sent ? (
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
             {[['Sent',score.sent],['Replies',`${score.replied} (${score.replyRate}%)`],['Meetings',score.meetings],['Deals moved',score.deals]].map(([k,v])=>(

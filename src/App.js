@@ -2710,7 +2710,7 @@ function TemplatesModal({ userId, templates, setTemplates, onClose, onPick }) {
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1300 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '94%', maxHeight: '92vh', overflowY: 'auto' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }} style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="clipboard" size={15} /> Message templates</h3>
+          <h3 style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="clipboard" size={15} /> Message templates</h3>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px' }}>
@@ -2899,7 +2899,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1200 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px', width: '94%' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }} style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="mail" size={15} /> Draft follow-up</h3>
+          <h3 style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="mail" size={15} /> Draft follow-up</h3>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px' }}>
@@ -5028,7 +5028,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         <div className="modal-overlay" onClick={(e) => { if (researchStage !== 'identifying' && researchStage !== 'researching') { setShowResearchModal(false); setResearchStage('idle'); }}} style={{zIndex: 1100}}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:'600px',width:'92%'}}>
             <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <h3 style={{margin:0}} style={{margin:0,display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="search" size={15} /> Research {contact.name}</h3>
+              <h3 style={{margin:0,display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="search" size={15} /> Research {contact.name}</h3>
               <button className="btn btn-ghost btn-sm" disabled={researchStage === 'identifying' || researchStage === 'researching'}
                 onClick={() => { setShowResearchModal(false); setResearchStage('idle'); }}>✕</button>
             </div>
@@ -10984,19 +10984,20 @@ function AppMain() {
                               .eq('has_unread', true).contains('labels', ['INBOX']).is('snoozed_until', null)],
     ];
 
-    const results = await Promise.allSettled(queries.map(([_, q]) => q));
-    const byKey = Object.fromEntries(queries.map(([k], i) => [k, results[i]]));
+    // Two-phase load: Phase 1 (small, first-paint-critical) reveals the UI fast;
+    // Phase 2 (heavy/secondary datasets, incl. up to 10k contacts) streams in after.
+    const PHASE1 = new Set(['tasks','robots','brain','events','profiles','userSettings','unreadEmailCount','emailAccounts']);
+    const q1 = queries.filter(([k]) => PHASE1.has(k));
+    const q2 = queries.filter(([k]) => !PHASE1.has(k));
 
-    // Apply each result — failures noted in console; user sees a single toast if any
-    const failed = [];
-    function take(key, setter) {
-      const r = byKey[key];
-      if (r && r.status === 'fulfilled' && r.value && !r.value.error) {
-        setter(r.value);
-      } else {
-        failed.push(key);
+    const apply = (entries, results) => {
+      const byKey = Object.fromEntries(entries.map(([k], i) => [k, results[i]]));
+      const failed = [];
+      function take(key, setter) {
+        const r = byKey[key];
+        if (r && r.status === 'fulfilled' && r.value && !r.value.error) setter(r.value);
+        else if (key in byKey) failed.push(key);
       }
-    }
     take('tasks',         res => setTasks(res.data || []));
     take('robots',        res => setRobots(res.data || []));
     take('notes',         res => setNotes(res.data || []));
@@ -11016,12 +11017,22 @@ function AppMain() {
     take('emailAliases',  res => setEmailAliases(res.data || []));
     take('userSettings',  res => setUserSettings(res.data || null));
     take('unreadEmailCount', res => setUnreadEmailCount(typeof res.count === 'number' ? res.count : 0));
+      return failed;
+    };
 
-    if (failed.length > 0) {
-      console.warn('loadData: queries failed:', failed);
-      notify(`Couldn't load: ${failed.join(', ')}. Some screens may be stale.`, 'error');
-    }
+    // Phase 1 — await only the essentials, then reveal the app immediately.
+    const r1 = await Promise.allSettled(q1.map(([_, q]) => q));
+    const failed1 = apply(q1, r1);
     setDataLoaded(true);
+
+    // Phase 2 — heavier/secondary datasets load in the background and populate as they arrive.
+    Promise.allSettled(q2.map(([_, q]) => q)).then(r2 => {
+      const failed = [...failed1, ...apply(q2, r2)];
+      if (failed.length > 0) {
+        console.warn('loadData: queries failed:', failed);
+        notify(`Couldn't load: ${failed.join(', ')}. Some screens may be stale.`, 'error');
+      }
+    });
   }, [session]);
 
   useEffect(() => { loadData(); }, [loadData]);
