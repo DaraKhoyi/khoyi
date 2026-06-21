@@ -29006,6 +29006,18 @@ const TEMP_META = { hot:{label:'Hot',color:'#ef4444',icon:'flame'}, warm:{label:
 const ACT_TYPES = [['call','Call'],['text','Text'],['email','Email'],['dm','DM'],['voicemail','Voicemail'],['nurture','Nurture'],['note','Note']];
 const ACT_OUTCOMES = [['connected','Connected'],['no_answer','No answer'],['left_vm','Left voicemail'],['callback','Callback set'],['booked','Booked appt'],['not_interested','Not interested'],['bad_number','Bad number']];
 const APPT_TYPES = [['buyer_consult','Buyer consult'],['listing_consult','Listing consult'],['showing','Showing'],['call','Phone appt'],['signing','Signing']];
+const CADENCES = {
+  speed_to_lead:{ label:'Speed-to-Lead (new)', steps:[
+    {w:0,c:'call',t:'Call immediately'},{w:0,c:'text',t:'Text within 5 min'},{w:1,c:'call',t:'Day 1 call'},
+    {w:2,c:'call',t:'Day 2 call + VM'},{w:4,c:'email',t:'Day 4 value email'},{w:7,c:'call',t:'Day 7 call'},
+    {w:14,c:'text',t:'Day 14 check-in'},{w:30,c:'nurture',t:'Move to long-term nurture'} ]},
+  nurture:{ label:'Long-term nurture', steps:[
+    {w:30,c:'call',t:'Monthly call'},{w:30,c:'email',t:'Monthly email'},{w:30,c:'call',t:'Monthly call'},{w:60,c:'text',t:'Quarterly check-in'} ]},
+  sphere:{ label:'Sphere / past client', steps:[
+    {w:7,c:'call',t:'Welcome call'},{w:30,c:'email',t:'Value email'},{w:90,c:'call',t:'Quarterly call'} ]},
+};
+const cadenceSteps=(k)=> (CADENCES[k]||{}).steps||[];
+const cadenceDue=(k,step)=>{ const x=cadenceSteps(k)[step]; return x? new Date(Date.now()+x.w*86400000).toISOString() : null; };
 
 function leadInitials(n){ return (n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?'; }
 function whenLabel(d){ if(!d) return ''; const dt=new Date(d); const now=new Date(); const days=Math.floor((dt - new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000); if(days<0) return 'Overdue'; if(days===0) return 'Today'; if(days===1) return 'Tomorrow'; if(days<7) return days+'d'; return dt.toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
@@ -29019,7 +29031,7 @@ function LeadsBoard({ userId, ownerId, agents, canWrite, isAdmin, myTeam }){
   const [openId,setOpenId]=useState(null);
   const [acts,setActs]=useState([]);
   const [appts,setAppts]=useState([]);
-  const [f,setF]=useState({ stage:'', agent:'', team:'', temp:'', q:'' });
+  const [f,setF]=useState({ stage:'', agent:'', team:'', temp:'', q:'', due:false });
   const [showNew,setShowNew]=useState(false);
   const [nv,setNv]=useState({ name:'', phone:'', email:'', source:'Prism AI', lead_type:'buyer', temperature:'warm', assigned_agent_id:'', est_value:'' });
   const notify=(m,t)=>{ if(window.__notify) window.__notify(m,t||'success'); };
@@ -29068,6 +29080,8 @@ function LeadsBoard({ userId, ownerId, agents, canWrite, isAdmin, myTeam }){
     if(a.type==='call') upd.call_count=(l.call_count||0)+1;
     if(!l.first_contact_at && (a.outcome==='connected'||a.type!=='note')) upd.first_contact_at=new Date().toISOString();
     if(a.outcome==='connected' && LEAD_PIPELINE.indexOf(l.stage)<LEAD_PIPELINE.indexOf('contacted')) upd.stage='contacted';
+    if(l.cadence_key){ const ns=(l.cadence_step||0)+1; upd.cadence_step=ns; upd.next_action_at=cadenceDue(l.cadence_key,ns); }
+    else { const add=l.temperature==='hot'?1:l.temperature==='cold'?7:3; upd.next_action_at=new Date(Date.now()+add*86400000).toISOString(); }
     await patch(l.id,upd);
     setActs(p=>[data,...p]); notify('Activity logged.');
   };
@@ -29103,8 +29117,10 @@ function LeadsBoard({ userId, ownerId, agents, canWrite, isAdmin, myTeam }){
     if(f.team && l.team!==f.team) return false;
     if(f.temp && l.temperature!==f.temp) return false;
     if(f.q){ const q=f.q.toLowerCase(); if(!((l.name||'').toLowerCase().includes(q)||(l.phone||'').includes(q)||(l.email||'').toLowerCase().includes(q))) return false; }
+    if(f.due){ if(!(l.next_action_at && l.next_action_at.slice(0,10)<=todayStr && !['closed','lost'].includes(l.stage))) return false; }
     return true;
   });
+  if(f.due) fl.sort((a,b)=> new Date(a.next_action_at||0) - new Date(b.next_action_at||0));
   const pipeCounts=LEAD_PIPELINE.map(s=>({ s, n:leads.filter(l=>l.stage===s).length }));
   const maxPipe=Math.max(1,...pipeCounts.map(p=>p.n));
 
@@ -29142,7 +29158,8 @@ function LeadsBoard({ userId, ownerId, agents, canWrite, isAdmin, myTeam }){
         <select className="form-input" value={f.agent} onChange={e=>setF(x=>({...x,agent:e.target.value}))} style={{...inp,width:'auto'}}><option value="">All agents</option>{agents.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
         {teams.length>0 && <select className="form-input" value={f.team} onChange={e=>setF(x=>({...x,team:e.target.value}))} style={{...inp,width:'auto'}}><option value="">All teams</option>{teams.map(t=><option key={t} value={t}>{t}</option>)}</select>}
         <select className="form-input" value={f.temp} onChange={e=>setF(x=>({...x,temp:e.target.value}))} style={{...inp,width:'auto'}}><option value="">Any temp</option><option value="hot">Hot</option><option value="warm">Warm</option><option value="cold">Cold</option></select>
-        {canWrite && <button className="btn btn-primary btn-sm" onClick={()=>setShowNew(true)} style={{marginLeft:'auto'}}>+ New lead</button>}
+        <button className="btn btn-sm" onClick={()=>setF(x=>({...x,due:!x.due}))} style={{marginLeft:'auto',background:f.due?'var(--accent)':'transparent',color:f.due?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Due</button>
+        {canWrite && <button className="btn btn-primary btn-sm" onClick={()=>setShowNew(true)}>+ New lead</button>}
       </div>
 
       {/* table */}
@@ -29236,6 +29253,19 @@ function LeadDetail({ lead, agents, acts, appts, canWrite, onClose, patch, assig
         <div style={{display:'flex',gap:'8px',alignItems:'flex-end',marginTop:'8px'}}>
           <label style={{...lbl,flex:1}}>Next action<input className="form-input" type="datetime-local" value={next} onChange={e=>setNext(e.target.value)} style={inp}/></label>
           {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>patch(lead.id,{next_action_at: next? new Date(next).toISOString():null})}>Set</button>}
+        </div>
+        <div style={{marginTop:'10px',padding:'10px',border:'1px solid var(--border)',borderRadius:'8px',background:'var(--bg-base)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:'8px',flexWrap:'wrap'}}>
+            <label style={{...lbl,flex:'1 1 170px'}}>Nurture cadence
+              <select className="form-input" value={lead.cadence_key||''} disabled={!canWrite} onChange={e=>patch(lead.id,{ cadence_key:e.target.value||null, cadence_step:0, next_action_at: e.target.value? cadenceDue(e.target.value,0): lead.next_action_at })} style={inp}>
+                <option value="">— None</option>{Object.keys(CADENCES).map(k=><option key={k} value={k}>{CADENCES[k].label}</option>)}
+              </select>
+            </label>
+            {lead.cadence_key && canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>{ const ns=(lead.cadence_step||0)+1; patch(lead.id,{cadence_step:ns,next_action_at:cadenceDue(lead.cadence_key,ns)}); }}>Skip step</button>}
+          </div>
+          {lead.cadence_key && (()=>{ const steps=cadenceSteps(lead.cadence_key); const st=lead.cadence_step||0; const sObj=steps[st]; return (
+            <div style={{fontSize:'11.5px',color:'var(--text-2)',marginTop:'6px'}}>{sObj? <>Next: <b style={{color:'var(--accent-2)'}}>{sObj.t}</b> ({sObj.c}) · due {whenLabel(lead.next_action_at)} · step {st+1} of {steps.length}</> : <span style={{color:'var(--green)'}}>Cadence complete ✓</span>}</div>
+          ); })()}
         </div>
         <div style={{display:'flex',gap:'10px',marginTop:'10px',fontSize:'11px',color:'var(--text-3)'}}>
           <span><b style={{color:'var(--text-1)'}}>{lead.call_count||0}</b> calls</span>
