@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v46-20260620-payplan-focus-fix'
+const VERSION = 'prismos-v47-20260620-lead-engine'
 const APP_SHELL = [
   '/',
   '/index.html',
