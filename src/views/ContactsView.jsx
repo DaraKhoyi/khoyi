@@ -806,6 +806,11 @@ async function ContactsView({ contacts, setContacts, userId, profiles, setProfil
   const [search, setSearch] = useState('');
   // Search input collapses into a header icon; open it on demand.
   const [searchOpen, setSearchOpen] = useState(false);
+  // Render only a window of the (potentially thousands-long) contact list so the
+  // page paints and scrolls fast on mobile; "Show more" extends it. The window
+  // resets whenever the filter/search/sort changes so results start from the top.
+  const [visibleCount, setVisibleCount] = useState(60);
+  useEffect(() => { setVisibleCount(60); }, [search, typeFilter, dueOnly, sortBy]);
 
   // Email-to-contact linking state
   const [linkSummary, setLinkSummary] = useState(null);  // { suggestions_count, auto_filled, auto_linked } or null when never scanned
@@ -1181,8 +1186,8 @@ async function ContactsView({ contacts, setContacts, userId, profiles, setProfil
         <div className="panel-body">
           {sorted.length === 0
             ? <div className="empty-state"><div className="empty-icon"><Icon name="users" size={28} /></div><p>No contacts here.</p></div>
-            : <div className="task-list">
-                {sorted.map(c => {
+            : <><div className="task-list">
+                {sorted.slice(0, visibleCount).map(c => {
                   const p = profileByContact.get(c.id);
                   const discColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
                   return (
@@ -1268,6 +1273,13 @@ async function ContactsView({ contacts, setContacts, userId, profiles, setProfil
                   );
                 })}
               </div>
+              {sorted.length > visibleCount && (
+                <button className="btn btn-ghost" style={{width:'100%',marginTop:'10px'}}
+                  onClick={() => setVisibleCount(v => v + 60)}>
+                  Show more — {sorted.length - visibleCount} more contact{sorted.length - visibleCount === 1 ? '' : 's'}
+                </button>
+              )}
+              </>
           }
         </div>
       </div>
