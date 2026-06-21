@@ -1694,7 +1694,8 @@ function ConfirmHost() {
           <button type="button" autoFocus onClick={() => done(true)} style={{ padding:'9px 18px', borderRadius:'9px', border:'none', background: dialog.danger ? '#ef4444' : 'var(--accent, #C5A95E)', color: dialog.danger ? '#fff' : '#0d0f14', fontSize:'14px', fontWeight:600, cursor:'pointer' }}>{dialog.confirmLabel}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
