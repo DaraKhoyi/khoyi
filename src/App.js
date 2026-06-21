@@ -4,27 +4,53 @@ import { supabase } from './dataService';
 import { BUILD_VERSION } from './version';
 import './index.css';
 import { computeCDA } from './lib/cda';
-const FinanceView = React.lazy(() => import('./views/AccountingViews').then(m => ({ default: m.FinanceView })));
-const ProspectingView = React.lazy(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
-const TasksView = React.lazy(() => import('./views/TasksView'));
-const AriBriefingView = React.lazy(() => import('./views/AriBriefingView'));
-const ContactsView = React.lazy(() => import('./views/ContactsView'));
-const PlaybooksView = React.lazy(() => import('./views/PlaybooksView'));
-const CalendarView = React.lazy(() => import('./views/CalendarView'));
-const InboxView = React.lazy(() => import('./views/InboxView'));
-const SystemsView = React.lazy(() => import('./views/SystemsView'));
-const RecruitingView = React.lazy(() => import('./views/RecruitingView'));
-const PropertiesView = React.lazy(() => import('./views/PropertiesView'));
-const InvestmentsView = React.lazy(() => import('./views/InvestmentsView'));
-const MileageView = React.lazy(() => import('./views/MileageView'));
-const JournalView = React.lazy(() => import('./views/JournalView'));
-const QuoView = React.lazy(() => import('./views/QuoView'));
-const DealsView = React.lazy(() => import('./views/DealsView'));
-const BrainView = React.lazy(() => import('./views/BrainView'));
-const TrackerView = React.lazy(() => import('./views/TrackerView'));
-const PrismView = React.lazy(() => import('./views/PrismView'));
 
-const NotesView = React.lazy(() => import('./views/NotesView'));
+// Lazy-load wrapper with stale-deploy recovery: if a view's code chunk fails to
+// load because a new version was deployed while the app was open (the old hashed
+// chunk no longer exists on the server), reload once to pick up the fresh build
+// instead of surfacing a "failed to fetch dynamically imported module" error.
+function lazyWithReload(factory) {
+  return React.lazy(() =>
+    factory().catch((err) => {
+      const msg = String((err && err.message) || err || '');
+      if (/dynamically imported module|Loading chunk|module script failed|Failed to fetch/i.test(msg)) {
+        try {
+          const last = +(sessionStorage.getItem('__chunkReloadAt') || 0);
+          if (Date.now() - last > 10000) {
+            sessionStorage.setItem('__chunkReloadAt', String(Date.now()));
+            window.location.reload();
+            return new Promise(() => {}); // hold render while the page reloads
+          }
+        } catch (_) {
+          window.location.reload();
+          return new Promise(() => {});
+        }
+      }
+      throw err; // already reloaded recently — let the error boundary show it
+    })
+  );
+}
+const FinanceView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.FinanceView })));
+const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
+const TasksView = lazyWithReload(() => import('./views/TasksView'));
+const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
+const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
+const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
+const CalendarView = lazyWithReload(() => import('./views/CalendarView'));
+const InboxView = lazyWithReload(() => import('./views/InboxView'));
+const SystemsView = lazyWithReload(() => import('./views/SystemsView'));
+const RecruitingView = lazyWithReload(() => import('./views/RecruitingView'));
+const PropertiesView = lazyWithReload(() => import('./views/PropertiesView'));
+const InvestmentsView = lazyWithReload(() => import('./views/InvestmentsView'));
+const MileageView = lazyWithReload(() => import('./views/MileageView'));
+const JournalView = lazyWithReload(() => import('./views/JournalView'));
+const QuoView = lazyWithReload(() => import('./views/QuoView'));
+const DealsView = lazyWithReload(() => import('./views/DealsView'));
+const BrainView = lazyWithReload(() => import('./views/BrainView'));
+const TrackerView = lazyWithReload(() => import('./views/TrackerView'));
+const PrismView = lazyWithReload(() => import('./views/PrismView'));
+
+const NotesView = lazyWithReload(() => import('./views/NotesView'));
 
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
 if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
