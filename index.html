@@ -2,30 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!-- viewport-fit=cover lets the dark page extend behind iOS notch/home bar so
-         when installed, the screen has no white edges. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-    <!-- Theme color = address bar tint when in a browser; matches app bg -->
     <meta name="theme-color" content="#0a0b0d" />
     <meta name="description" content="PrismOS — Dara's personal operating system" />
-
-    <!-- PWA manifest — was missing; without this Chrome can't offer 'Install' -->
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-
-    <!-- Android Chrome: enable standalone behavior when launched from home screen -->
+    <link rel="manifest" href="/manifest.json" />
     <meta name="mobile-web-app-capable" content="yes" />
-
-    <!-- iOS Safari: identical mechanism. Without these the URL bar shows even after
-         'Add to Home Screen'. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PrismOS" />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
-
-    <!-- Standard icons -->
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon-32.png" />
-
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <title>PrismOS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -33,15 +20,11 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script type="module" src="/src/index.js"></script>
     <script>
-      // Register the service worker. Chrome won't offer to install this as a real
-      // PWA (no browser chrome) unless a service worker with a fetch handler is
-      // active. Without this, "Add to Home Screen" produces a plain bookmark that
-      // keeps the URL bar visible — which is the bug we're fixing.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
           navigator.serviceWorker.register('/sw.js').catch(function (err) {
-            // eslint-disable-next-line no-console
             console.warn('SW registration failed:', err);
           });
         });
