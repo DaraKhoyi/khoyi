@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { Icon, TaskModal, modal, notify, pad2, ymd } from '../App';
+import { Icon, TaskModal, confirmDialog, modal, notify, pad2, ymd } from '../App';
 
 function startOfMonthGrid(year, month) {
   // month: 0-indexed. Returns the Sunday on/before the 1st.
@@ -402,7 +402,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   }
 
   async function handleDelete(ev) {
-    if (!window.confirm('Delete this event?')) return;
+    if (!await confirmDialog('Delete this event?')) return;
     // If synced to Google, delete there too (fire-and-forget; we'll surface DB errors below)
     if (ev.google_event_id && hasCalendarScope) {
       try {
@@ -567,7 +567,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     }
   }
   async function handleTaskDelete(t) {
-    if (!window.confirm(`Delete "${t.title}"?`)) return;
+    if (!await confirmDialog(`Delete "${t.title}"?`)) return;
     await supabase.from('events').delete().eq('task_id', t.id).eq('event_kind', 'task_block');
     await supabase.from('tasks').delete().eq('id', t.id);
     if (setTasks) setTasks(prev => prev.filter(x => x.id !== t.id));

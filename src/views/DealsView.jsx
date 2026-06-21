@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { ActivityTimeline, Icon, MileageView, RecruitingKpiTile, SingleContactPicker, lbl, modal, money, stageMeta } from '../App';
+import { ActivityTimeline, Icon, MileageView, RecruitingKpiTile, SingleContactPicker, confirmDialog, lbl, modal, money, stageMeta } from '../App';
 
 function cleanDateInput(v) {
   if (!v) return '';
@@ -169,7 +169,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
   }
 
   async function deleteDeal(deal) {
-    if (!window.confirm(`Delete deal "${deal.name || deal.client_name || '(unnamed)'}"? This cannot be undone.`)) return;
+    if (!await confirmDialog(`Delete deal "${deal.name || deal.client_name || '(unnamed)'}"? This cannot be undone.`)) return;
     await supabase.from('deals').delete().eq('id', deal.id);
     setDeals(prev => prev.filter(d => d.id !== deal.id));
     if (selectedDeal?.id === deal.id) setSelectedDeal(null);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { ActivityTimeline, ContactPicker, Icon, modal, notify } from '../App';
+import { ActivityTimeline, ContactPicker, Icon, confirmDialog, modal, notify } from '../App';
 
 function InvestmentModal({ onClose, onSave, onDelete, initial, properties, contacts = [], userId }) {
   const [name, setName] = useState(initial?.name || '');
@@ -101,7 +101,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
 }
 
 
-function InvestmentsView({ investments, setInvestments, properties, userId, contacts = [] }) {
+async function InvestmentsView({ investments, setInvestments, properties, userId, contacts = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editInv, setEditInv] = useState(null);
   const [stageFilter, setStageFilter] = useState('all');
@@ -146,7 +146,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId, cont
   }
 
   async function deleteInv(id) {
-    if (!window.confirm('Delete this investment?')) return;
+    if (!await confirmDialog('Delete this investment?')) return;
     await supabase.from('investments').delete().eq('id', id);
     setInvestments(prev => prev.filter(i => i.id !== id));
   }
@@ -201,7 +201,7 @@ function InvestmentsView({ investments, setInvestments, properties, userId, cont
           }
         </div>
       </div>
-      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} onDelete={async (i)=>{ if(!window.confirm(`Delete investment "${i.name}"?`)) return; await deleteInv(i.id); setShowModal(false); setEditInv(null); }} initial={editInv} properties={properties} contacts={contacts} userId={userId} />}
+      {showModal && <InvestmentModal onClose={()=>{setShowModal(false);setEditInv(null);}} onSave={handleSave} onDelete={async (i)=>{ if(!await confirmDialog(`Delete investment "${i.name}"?`)) return; await deleteInv(i.id); setShowModal(false); setEditInv(null); }} initial={editInv} properties={properties} contacts={contacts} userId={userId} />}
     </div>
   );
 }

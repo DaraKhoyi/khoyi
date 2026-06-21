@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { ActivityTimeline, Icon, PropertyModal, modal } from '../App';
+import { ActivityTimeline, Icon, PropertyModal, confirmDialog, modal } from '../App';
 
 function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, userId }) {
   const [linkedContactIds, setLinkedContactIds] = useState([]);
@@ -101,7 +101,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
   }
 
   async function handleDeleteProperty() {
-    if (!window.confirm(`Delete ${property.nickname || 'this property'}? This removes the property and all its linked notes. Tasks/events stay but lose the link.`)) return;
+    if (!await confirmDialog(`Delete ${property.nickname || 'this property'}? This removes the property and all its linked notes. Tasks/events stay but lose the link.`)) return;
     const { error } = await supabase.from('properties').delete().eq('id', property.id);
     if (error) {
       if (window.__notify) window.__notify('Could not delete: ' + error.message, 'error');
@@ -361,7 +361,7 @@ function DrawingViewerModal({ drawing, onClose }) {
 }
 
 
-function PropertiesView({ properties, setProperties, userId, contacts }) {
+async function PropertiesView({ properties, setProperties, userId, contacts }) {
   const [showModal, setShowModal] = useState(false);
   const [editProp, setEditProp] = useState(null);
   const [detailProp, setDetailProp] = useState(null);
@@ -435,7 +435,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
           }
         </div>
       </div>
-      {showModal && <PropertyModal onClose={()=>{setShowModal(false);setEditProp(null);}} onSave={handleSave} onDelete={async (p)=>{ if(!window.confirm(`Delete property "${p.nickname || p.address || '(unnamed)'}"?`)) return; await supabase.from('properties').delete().eq('id', p.id); setProperties(prev=>prev.filter(x=>x.id!==p.id)); setShowModal(false); setEditProp(null); }} initial={editProp} />}
+      {showModal && <PropertyModal onClose={()=>{setShowModal(false);setEditProp(null);}} onSave={handleSave} onDelete={async (p)=>{ if(!await confirmDialog(`Delete property "${p.nickname || p.address || '(unnamed)'}"?`)) return; await supabase.from('properties').delete().eq('id', p.id); setProperties(prev=>prev.filter(x=>x.id!==p.id)); setShowModal(false); setEditProp(null); }} initial={editProp} />}
       {detailProp && (
         <PropertyDetailModal
           property={detailProp}

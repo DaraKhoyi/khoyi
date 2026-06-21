@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, modal, notify, todayISO } from '../App';
+import { ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, modal, notify, todayISO } from '../App';
 
 const QUADS = ['A', 'B', 'C', 'D'];
 // Sort key for Eisenhower: A1 < A2 < B1 < ... Simple-system tasks sort after
@@ -586,7 +586,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   }, [setTasks]);
 
   return (
-    <DragProvider onDragStart={() => setIsDragging(true)} onDragEnd={() => setIsDragging(false)}>
+    <DragProvider onDragStart={async () => setIsDragging(true)} onDragEnd={() => setIsDragging(false)}>
       <div className="view">
         {/* Header: title + subtitle on left  ·  view-mode icons + add button on right
             The icons replace the old standalone Sequence/Matrix text-button row
@@ -749,7 +749,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           return (
             <button
               onClick={async () => {
-                if (!window.confirm(`Move ${pastDue.length} past-due task${pastDue.length === 1 ? '' : 's'} to today?`)) return;
+                if (!await confirmDialog(`Move ${pastDue.length} past-due task${pastDue.length === 1 ? '' : 's'} to today?`)) return;
                 const ids = pastDue.map(t => t.id);
                 await supabase.from('tasks').update({ due_date: today }).in('id', ids);
                 setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, due_date: today } : t));
@@ -812,7 +812,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           />
         )}
 
-        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} onDelete={async (t)=>{ if(!window.confirm(`Delete "${t.title}"?`)) return; await supabase.from('tasks').delete().eq('id', t.id); setTasks(prev=>prev.filter(x=>x.id!==t.id)); setShowModal(false); setEditTask(null); }} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} properties={properties || []} events={events} userId={userId} />}
+        {showModal && <TaskModal onClose={()=>{setShowModal(false);setEditTask(null);}} onSave={handleSave} onDelete={async (t)=>{ if(!await confirmDialog(`Delete "${t.title}"?`)) return; await supabase.from('tasks').delete().eq('id', t.id); setTasks(prev=>prev.filter(x=>x.id!==t.id)); setShowModal(false); setEditTask(null); }} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts || []} properties={properties || []} events={events} userId={userId} />}
       </div>
     </DragProvider>
   );

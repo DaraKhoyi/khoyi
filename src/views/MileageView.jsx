@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { Icon, RecruitingKpiTile, SingleContactPicker, modal } from '../App';
+import { Icon, RecruitingKpiTile, SingleContactPicker, confirmDialog, modal } from '../App';
 
 const MILEAGE_CATEGORIES = [
   { id: 'business', label: 'Business',  color: 'var(--accent)' },
@@ -148,7 +148,7 @@ function MileageView({ mileageEntries, setMileageEntries, deals, contacts, setCo
   }
 
   async function deleteEntry(entry) {
-    if (!window.confirm(`Delete this ${entry.miles}-mile entry from ${entry.date}?`)) return;
+    if (!await confirmDialog(`Delete this ${entry.miles}-mile entry from ${entry.date}?`)) return;
     await supabase.from('mileage_entries').delete().eq('id', entry.id);
     setMileageEntries(prev => prev.filter(e => e.id !== entry.id));
     if (editingEntry?.id === entry.id) setEditingEntry(null);

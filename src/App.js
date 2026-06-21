@@ -1649,6 +1649,52 @@ if (typeof window !== 'undefined') {
   window.__notify = notify;
 }
 
+function notifyError(message) { notify(message, 'error'); }
+
+// ── Branded confirm dialog (promise-based; replaces native window.confirm) ──
+const __confirmListeners = new Set();
+function confirmDialog(message, opts = {}) {
+  return new Promise(resolve => {
+    const payload = {
+      id: Date.now() + Math.random(),
+      message,
+      confirmLabel: opts.confirmLabel || 'Confirm',
+      cancelLabel: opts.cancelLabel || 'Cancel',
+      danger: opts.danger !== false,
+      resolve,
+    };
+    if (__confirmListeners.size === 0) {
+      // Fail safe: never silently skip a confirmation if no host is mounted.
+      resolve(typeof window !== 'undefined' ? window.confirm(message) : true);
+      return;
+    }
+    __confirmListeners.forEach(fn => { try { fn(payload); } catch (_) {} });
+  });
+}
+if (typeof window !== 'undefined') window.__confirmDialog = confirmDialog;
+
+function ConfirmHost() {
+  const [dialog, setDialog] = useState(null);
+  useEffect(() => {
+    function onConfirm(p) { setDialog(p); }
+    __confirmListeners.add(onConfirm);
+    return () => { __confirmListeners.delete(onConfirm); };
+  }, []);
+  if (!dialog) return null;
+  const done = (val) => { try { dialog.resolve(val); } catch (_) {} setDialog(null); };
+  return createPortal(
+    <div onClick={() => done(false)} style={{ position:'fixed', inset:0, zIndex:100001, background:'rgba(0,0,0,0.62)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'var(--bg-card, #161921)', border:'1px solid var(--border, #252a38)', borderRadius:'14px', maxWidth:'430px', width:'100%', padding:'22px 22px 18px', boxShadow:'0 24px 70px rgba(0,0,0,0.55)' }}>
+        <div style={{ fontSize:'15px', lineHeight:1.5, color:'var(--text-1, #e8eaf0)', whiteSpace:'pre-wrap', marginBottom:'20px' }}>{dialog.message}</div>
+        <div style={{ display:'flex', gap:'10px', justifyContent:'flex-end' }}>
+          <button type="button" onClick={() => done(false)} style={{ padding:'9px 16px', borderRadius:'9px', border:'1px solid var(--border,#252a38)', background:'transparent', color:'var(--text-2,#9499b0)', fontSize:'14px', fontWeight:500, cursor:'pointer' }}>{dialog.cancelLabel}</button>
+          <button type="button" autoFocus onClick={() => done(true)} style={{ padding:'9px 18px', borderRadius:'9px', border:'none', background: dialog.danger ? '#ef4444' : 'var(--accent, #C5A95E)', color: dialog.danger ? '#fff' : '#0d0f14', fontSize:'14px', fontWeight:600, cursor:'pointer' }}>{dialog.confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToastHost() {
   const [toasts, setToasts] = useState([]);
   // Track viewport so toasts re-position on rotate/resize without page reload.
@@ -2405,7 +2451,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
   }
 
   async function deleteRecording(rec) {
-    if (!window.confirm(`Delete "${rec.title}"? This removes the audio AND transcript.`)) return;
+    if (!await confirmDialog(`Delete "${rec.title}"? This removes the audio AND transcript.`)) return;
     if (rec.storage_path) {
       await supabase.storage.from('recordings').remove([rec.storage_path]).catch(() => {});
     }
@@ -3256,7 +3302,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     if (data) setTimeline(prev => prev.map(x => x.id === data.id ? data : x));
   }
   async function removeEntry(e) {
-    if (!window.confirm('Delete this entry from the timeline?')) return;
+    if (!await confirmDialog('Delete this entry from the timeline?')) return;
     await supabase.from('contact_interactions').delete().eq('id', e.id);
     setTimeline(prev => prev.filter(x => x.id !== e.id));
   }
@@ -3958,7 +4004,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
     setEditingNoteId(null); setEditingNoteBody('');
   }
   async function deleteNote(id) {
-    if (!window.confirm('Delete this note?')) return;
+    if (!await confirmDialog('Delete this note?')) return;
     await supabase.from('contact_notes').delete().eq('id', id);
     setDateNotes(prev => prev.filter(n => n.id !== id));
   }
@@ -4051,7 +4097,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
       research: 'Reset research profile? This clears the web-research scores and the full report.',
       all:      'Reset ALL DISC data (observed + baseline + research + evidence)? This cannot be undone.',
     };
-    if (!window.confirm(messages[kind] || 'Reset?')) return;
+    if (!await confirmDialog(messages[kind] || 'Reset?')) return;
     setResetting(true); setAnalyzeMsg(null);
     try {
       const profileUpdates = {};
@@ -4128,7 +4174,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   }
 
   async function removeRelationship(rel) {
-    if (!window.confirm('Remove this relationship?')) return;
+    if (!await confirmDialog('Remove this relationship?')) return;
     const { error } = await supabase.from('contact_relationships').delete().eq('id', rel.id);
     if (error) { notify("Couldn't remove relationship.", 'error'); return; }
     setRelationships(prev => prev.filter(r => r.id !== rel.id));
@@ -5871,7 +5917,7 @@ function CustomFieldsPanel({ userId, contact, contacts = [], setContacts }) {
 
   async function deleteUserField(def) {
     if (def.is_system_locked) return;
-    if (!window.confirm(`Delete the "${def.label}" field? Existing data for this field will be lost across all contacts.`)) return;
+    if (!await confirmDialog(`Delete the "${def.label}" field? Existing data for this field will be lost across all contacts.`)) return;
     // Soft-archive the definition; cascade values via FK.
     await supabase.from('custom_field_definitions').update({ is_archived: true }).eq('id', def.id);
     setDefinitions(prev => prev.filter(d => d.id !== def.id));
@@ -8690,7 +8736,7 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
     setShowModal(false); setEditTx(null);
   }
   async function deleteTx(tx) {
-    if (!window.confirm(`Delete this transaction? (${fmtUSDCents(tx.amount)} to ${tx.payee || 'no payee'})`)) return;
+    if (!await confirmDialog(`Delete this transaction? (${fmtUSDCents(tx.amount)} to ${tx.payee || 'no payee'})`)) return;
     await supabase.from('transactions').update({ is_archived: true }).eq('id', tx.id);
     setTransactions(prev => prev.filter(t => t.id !== tx.id));
     setShowModal(false); setEditTx(null);
@@ -9253,7 +9299,7 @@ function CsvImportModal({ userId, existingTransactions, taxCategories, trackPers
     const batch = recentBatches.find(b => b.id === batchId);
     if (!batch) return;
     const confirmMsg = `Archive all ${batch.activeRowCount} active transactions from "${batch.source || 'this import'}"? They'll disappear from the Ledger but can be restored from Supabase if needed.`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!await confirmDialog(confirmMsg)) return;
     setRevokingBatchId(batchId);
     const { error: err } = await supabase.from('transactions')
       .update({ is_archived: true })
@@ -10300,7 +10346,7 @@ function RecurringList({ userId, recurringTemplates, setRecurringTemplates, taxC
   }
 
   async function deleteTemplate(r) {
-    if (!window.confirm(`Delete recurring template "${r.template_payee || r.template_description || 'untitled'}"? Past transactions stay; only the future schedule is removed.`)) return;
+    if (!await confirmDialog(`Delete recurring template "${r.template_payee || r.template_description || 'untitled'}"? Past transactions stay; only the future schedule is removed.`)) return;
     await supabase.from('recurring_transactions').delete().eq('id', r.id);
     setRecurringTemplates(prev => prev.filter(x => x.id !== r.id));
   }
@@ -10849,7 +10895,7 @@ function FinanceSystems({ userId, systems, archivedSystems = [], reload, transac
   // and keeps counting in the books. Fully restorable. Never a hard delete.
   async function archiveSystem(sys) {
     if (sys.is_overhead) return;
-    if (!window.confirm(`Archive "${sys.name}"?\n\nIt moves to the Archived section and stops showing on Today. All logged time, expenses, and income stay saved and keep counting in your books — nothing is deleted. You can restore it anytime.`)) return;
+    if (!await confirmDialog(`Archive "${sys.name}"?\n\nIt moves to the Archived section and stops showing on Today. All logged time, expenses, and income stay saved and keep counting in your books — nothing is deleted. You can restore it anytime.`)) return;
     await supabase.from('lead_gen_systems')
       .update({ is_archived: true, is_active: false, archived_at: new Date().toISOString() })
       .eq('id', sys.id);
@@ -11226,7 +11272,7 @@ function SystemModal({ userId, initial, onClose, onSaved }) {
 
   async function handleDelete() {
     if (!initial || initial.is_overhead) return;
-    if (!window.confirm(`Archive "${initial.name}"?\n\nIt moves to the Archived section and stops showing on Today. All logged time, expenses, and income stay saved and keep counting — nothing is deleted. You can restore it anytime.`)) return;
+    if (!await confirmDialog(`Archive "${initial.name}"?\n\nIt moves to the Archived section and stops showing on Today. All logged time, expenses, and income stay saved and keep counting — nothing is deleted. You can restore it anytime.`)) return;
     await supabase.from('lead_gen_systems').update({ is_archived: true, is_active: false, archived_at: new Date().toISOString() }).eq('id', initial.id);
     onSaved();
   }
@@ -14773,7 +14819,7 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
   }
 
   async function disconnect(id) {
-    if (!window.confirm('Disconnect this Google account? Synced messages and events will remain in the database, but future sync will stop.')) return;
+    if (!await confirmDialog('Disconnect this Google account? Synced messages and events will remain in the database, but future sync will stop.')) return;
     await supabase.from('email_accounts').update({ is_active: false }).eq('id', id);
     setEmailAccounts(prev => prev.map(a => a.id === id ? { ...a, is_active: false } : a));
   }
@@ -17150,7 +17196,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
   );
 }
 
-function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTeam, onClose, onSaved, onDeleted }){
+async function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTeam, onClose, onSaved, onDeleted }){
   const [a,setA]=useState(agent);
   const [plan,setPlan]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -17158,7 +17204,7 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
   useEffect(()=>{ (async()=>{ const { data } = await supabase.from('pay_plans').select('*').eq('agent_id',agent.id).eq('active',true).order('created_at',{ascending:false}).limit(1); setPlan(data&&data[0]?data[0]:null); setLoading(false); })(); },[agent.id]);
   const setAF=(k,v)=>setA(p=>({...p,[k]:v}));
   const saveAgent=async()=>{ const { data } = await supabase.from('agents').update({ name:a.name, email:a.email, phone:a.phone, role:a.role, team:a.team, license_no:a.license_no, upline_id:a.upline_id||null, mentor_id:a.mentor_id||null, active:a.active, notes:a.notes, updated_at:new Date().toISOString() }).eq('id',agent.id).select().single(); if(data){ onSaved(data); if(window.__notify) window.__notify('Agent saved.','success'); } };
-  const delAgent=async()=>{ if(!window.confirm(`Remove ${agent.name}? Their pay plan will be removed too.`)) return; await supabase.from('agents').delete().eq('id',agent.id); onDeleted(agent.id); };
+  const delAgent=async()=>{ if(!await confirmDialog(`Remove ${agent.name}? Their pay plan will be removed too.`)) return; await supabase.from('agents').delete().eq('id',agent.id); onDeleted(agent.id); };
   const [loginEmail,setLoginEmail]=useState(a.email||'');
   const [loginPw,setLoginPw]=useState('');
   const [loginBusy,setLoginBusy]=useState(false);
@@ -17634,13 +17680,13 @@ function SignPortal({ token }){
   const load=async()=>{ try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body:{ action:'get', token } }); if(error||data?.error){ setState({error:data?.error||error?.message||'Could not load'}); return; } setState({...data,loading:false}); setName(data?.signer?.name||''); }catch(e){ setState({error:String(e)}); } };
   useEffect(()=>{ load(); },[token]);
   const sign=async()=>{
-    if(!consent){ alert('Please check the consent box.'); return; }
-    if(!name.trim()){ alert('Type your full legal name.'); return; }
+    if(!consent){ notifyError('Please check the consent box.'); return; }
+    if(!name.trim()){ notifyError('Type your full legal name.'); return; }
     const body={ action:'sign', token, consent:true, signature_name:name.trim() };
-    if(sigMode==='draw'){ if(!hasDrawn){ alert('Please draw your signature.'); return; } body.signature_type='drawn'; body.signature_data=canvasRef.current.toDataURL('image/png'); }
+    if(sigMode==='draw'){ if(!hasDrawn){ notifyError('Please draw your signature.'); return; } body.signature_type='drawn'; body.signature_data=canvasRef.current.toDataURL('image/png'); }
     else body.signature_type='typed';
     setBusy(true);
-    try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body }); if(error||data?.error){ alert(data?.error||error?.message||'Could not sign'); return; } setDone(data?.completed?'completed':'signed'); }catch(e){ alert(String(e)); } finally{ setBusy(false); }
+    try{ const { data, error } = await supabase.functions.invoke('sign-portal',{ body }); if(error||data?.error){ notifyError(data?.error||error?.message||'Could not sign'); return; } setDone(data?.completed?'completed':'signed'); }catch(e){ notifyError(String(e)); } finally{ setBusy(false); }
   };
   const decline=async()=>{ const reason=window.prompt('Reason for declining (optional):')||''; setBusy(true); try{ await supabase.functions.invoke('sign-portal',{ body:{ action:'decline', token, decline_reason:reason } }); setDone('declined'); }catch(e){} finally{ setBusy(false); } };
 
@@ -17791,7 +17837,7 @@ function SignatureManageModal({ request, file, userId, onClose, onChanged }){
     }catch(e){ if(window.__notify) window.__notify('Send failed.','error'); } finally{ setBusy(false); }
   };
   const voidReq=async()=>{
-    if(!window.confirm('Void this signature request? The links will stop working and the document can be sent again.')) return;
+    if(!await confirmDialog('Void this signature request? The links will stop working and the document can be sent again.')) return;
     setBusy(true);
     try{ await supabase.from('signature_requests').update({ status:'voided', voided_at:new Date().toISOString() }).eq('id',request.id);
       await logFileEvent(file.id, userId, 'esign_voided', `Voided signature request: ${request.title||''}`);
@@ -17888,7 +17934,7 @@ function FileModal({ onClose, onSave, initial, properties, contacts }){
   );
 }
 
-function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properties, userId, isAdmin, setProgress }){
+async function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properties, userId, isAdmin, setProgress }){
   const fileId=file.id;
   const [tab,setTab]=useState('overview');
   const [docs,setDocs]=useState([]); const [parties,setParties]=useState([]); const [items,setItems]=useState([]); const [events,setEvents]=useState([]);
@@ -18044,7 +18090,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     if(data) setItems(prev=>[...prev,data]);
     await logFileEvent(fileId,userId,'checklist',`Added item: ${label}`);
   };
-  const delItem = async(it)=>{ if(!window.confirm(`Remove "${it.label}"?`)) return; setItems(prev=>prev.filter(x=>x.id!==it.id)); await supabase.from('file_checklist_items').delete().eq('id',it.id); };
+  const delItem = async(it)=>{ if(!await confirmDialog(`Remove "${it.label}"?`)) return; setItems(prev=>prev.filter(x=>x.id!==it.id)); await supabase.from('file_checklist_items').delete().eq('id',it.id); };
   const toggleReq = async(it)=>{ const required=!it.required; setItems(prev=>prev.map(x=>x.id===it.id?{...x,required}:x)); await supabase.from('file_checklist_items').update({required}).eq('id',it.id); };
 
   // ---------- documents ----------
@@ -18081,7 +18127,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     await logFileEvent(fileId,userId,'doc_review',`${DOCTYPE_LABEL[d.doc_type]||d.doc_type} \u2192 ${status.replace('_',' ')}`,{doc_id:d.id});
     if(status==='approved'){ const key=DOCTYPE_TO_ITEM[d.doc_type]||d.doc_type; setItems(prev=>prev.map(it=>{ if(it.item_key===key){ supabase.from('file_checklist_items').update({status:'approved',satisfied_by:d.id,updated_at:new Date().toISOString()}).eq('id',it.id); return {...it,status:'approved',satisfied_by:d.id}; } return it; })); }
   };
-  const delDoc = async(d)=>{ if(!window.confirm('Delete this document?')) return; setDocs(prev=>prev.filter(x=>x.id!==d.id)); if(d.storage_path) await supabase.storage.from('file-docs').remove([d.storage_path]).catch(()=>{}); await supabase.from('file_documents').delete().eq('id',d.id); await logFileEvent(fileId,userId,'doc_deleted',`Deleted ${DOCTYPE_LABEL[d.doc_type]||d.doc_type}`); };
+  const delDoc = async(d)=>{ if(!await confirmDialog('Delete this document?')) return; setDocs(prev=>prev.filter(x=>x.id!==d.id)); if(d.storage_path) await supabase.storage.from('file-docs').remove([d.storage_path]).catch(()=>{}); await supabase.from('file_documents').delete().eq('id',d.id); await logFileEvent(fileId,userId,'doc_deleted',`Deleted ${DOCTYPE_LABEL[d.doc_type]||d.doc_type}`); };
 
   // ---------- parties ----------
   const [pRole,setPRole]=useState('lender'); const [pSearch,setPSearch]=useState(''); 
@@ -18198,7 +18244,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   };
   const generateItem=(it)=>{ const tpl=ITEM_TO_TEMPLATE[it.item_key]; if(tpl){ generateDoc(tpl); setTab('docs'); } else if(window.__notify) window.__notify('No template for this item yet \u2014 upload or mark it manually.','success'); };
 
-  const delFile = async()=>{ if(!window.confirm(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; for(const dl of deadlines){ if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); } await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
+  const delFile = async()=>{ if(!await confirmDialog(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; for(const dl of deadlines){ if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); } await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
 
   // ---------- deadlines / timeline ----------
   const generateTimeline = async()=>{
@@ -18222,7 +18268,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     if((status==='waived'||status==='met'||status==='cancelled') && dl.task_id) await supabase.from('tasks').update({completed:true}).eq('id',dl.task_id);
     await logFileEvent(fileId,userId,'deadline_'+status,`${dl.label}: ${status}`);
   };
-  const delDeadline = async(dl)=>{ if(!window.confirm(`Remove "${dl.label}"? Its task and calendar entry will be removed too.`)) return; setDeadlines(prev=>prev.filter(x=>x.id!==dl.id)); if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); await supabase.from('file_deadlines').delete().eq('id',dl.id); };
+  const delDeadline = async(dl)=>{ if(!await confirmDialog(`Remove "${dl.label}"? Its task and calendar entry will be removed too.`)) return; setDeadlines(prev=>prev.filter(x=>x.id!==dl.id)); if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); await supabase.from('file_deadlines').delete().eq('id',dl.id); };
 
   const cats = [...new Set(items.map(i=>i.category||'Other'))];
   const setOvF=(k,v)=>setOv(o=>({...o,[k]:v}));
@@ -18693,7 +18739,7 @@ function AppMain() {
   // by re-pushing the sentinel.)
   useEffect(() => {
     try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
-    const onPop = (e) => {
+    const onPop = async (e) => {
       // If a modal overlay is on screen, close it first instead of asking to exit
       const modal = document.querySelector('.modal-overlay');
       if (modal) {
@@ -18704,7 +18750,7 @@ function AppMain() {
         else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
         return;
       }
-      const ok = window.confirm('Exit Prism? Tap Cancel to stay.');
+      const ok = await confirmDialog('Exit Prism? Tap Cancel to stay.');
       if (!ok) {
         // Restore the sentinel so the next back press triggers this again
         try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
@@ -19045,6 +19091,7 @@ function AppMain() {
         </main>
       </div>
       <ToastHost />
+      <ConfirmHost />
       {/* Pass 2 Batch C: Blocking onboarding modal for new users (and existing
           users on first run after this ships). Only mounts once user_settings
           has been fetched (avoids flashing the modal before we know). */}
@@ -19065,5 +19112,5 @@ export default function App() {
   return <AppMain />;
 }
 
-export { ActivityTimeline, AriRewriteButton, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, RecruitingKpiTile, RecruitingView, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, lbl, modal, money, notify, pad2, pickerInitials, priorityClass, priorityLabel, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
+export { confirmDialog, notifyError,  ActivityTimeline, AriRewriteButton, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, RecruitingKpiTile, RecruitingView, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, lbl, modal, money, notify, pad2, pickerInitials, priorityClass, priorityLabel, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
 

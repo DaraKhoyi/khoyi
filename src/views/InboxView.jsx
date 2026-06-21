@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { AriRewriteButton, HeaderSearchIcon, HeaderSearchInput, Icon, RecruitingView, modal, pickerInitials } from '../App';
+import { AriRewriteButton, HeaderSearchIcon, HeaderSearchInput, Icon, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
 
 const TRIAGE_CATEGORIES = {
   urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },
@@ -790,7 +790,7 @@ function MessageAttachments({ message, account }) {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
-      alert('Could not open attachment: ' + (e?.message || e));
+      notifyError('Could not open attachment: ' + (e?.message || e));
     } finally { setBusy(null); }
   }
 
@@ -1465,7 +1465,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   // Move a thread (and its messages) to Trash via Gmail API
   async function trashCurrentThread() {
     if (!selectedThread) return;
-    if (!window.confirm('Move this conversation to Trash?')) return;
+    if (!await confirmDialog('Move this conversation to Trash?')) return;
     try {
       const { data, error } = await supabase.functions.invoke('gmail-trash', {
         body: { account_id: account.id, thread_id: selectedThread.provider_thread_id },
@@ -1477,7 +1477,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       setSelectedThread(null);
       setSelectedMessages([]);
     } catch (err) {
-      alert('Could not move to Trash: ' + (err.message || err));
+      notifyError('Could not move to Trash: ' + (err.message || err));
     }
   }
 
@@ -1514,7 +1514,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         }
       }
     } catch (err) {
-      if (!silent) alert('Action failed: ' + (err.message || err));
+      if (!silent) notifyError('Action failed: ' + (err.message || err));
     }
   }
 
@@ -1562,7 +1562,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       }
       setShowLabelPicker(false);
     } catch (err) {
-      alert('Label change failed: ' + (err.message || err));
+      notifyError('Label change failed: ' + (err.message || err));
     }
   }
 

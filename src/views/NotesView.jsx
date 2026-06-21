@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../dataService';
-import { Icon, HeaderSearchIcon, HeaderSearchInput, notify } from '../App';
+import { HeaderSearchIcon, HeaderSearchInput, Icon, confirmDialog, notify } from '../App';
 
 function NotesView({ notes, setNotes, userId }) {
   const [selected, setSelected] = useState(null);
@@ -68,7 +68,7 @@ function NotesView({ notes, setNotes, userId }) {
 
   async function deleteNote(note, e) {
     e.stopPropagation();
-    if (!window.confirm(`Delete "${note.title}"?`)) return;
+    if (!await confirmDialog(`Delete "${note.title}"?`)) return;
     const snapshot = note;
     setNotes(prev => prev.filter(n => n.id !== note.id));
     if (selected?.id === note.id) { setSelected(null); setEditTitle(''); setEditBody(''); }

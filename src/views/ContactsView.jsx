@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, SingleContactPicker, cadenceDue, modal, notify } from '../App';
+import { ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
 
 const CONTACT_TYPES = [
   { id: 'attorney',           label: 'Attorney',           icon: '⚖️' },
@@ -796,7 +796,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 }
 
 
-function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
+async function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
   const [detailContact, setDetailContact] = useState(null);
@@ -1043,7 +1043,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   }
 
   async function deleteContact(id) {
-    if (!window.confirm('Delete this contact?')) return;
+    if (!await confirmDialog('Delete this contact?')) return;
     // Snapshot for rollback
     const snapshot = contacts.find(c => c.id === id);
     setContacts(prev => prev.filter(c => c.id !== id));
@@ -1274,7 +1274,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       {showModal && <ContactModal
         onClose={()=>{setShowModal(false);setEditContact(null);}}
         onSave={handleSave}
-        onDelete={async (c)=>{ if(!window.confirm(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); }}
+        onDelete={async (c)=>{ if(!await confirmDialog(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); }}
         onShowDetails={(c)=>{ setShowModal(false); setDetailContact(c); }}
         initial={editContact}
         contacts={contacts}

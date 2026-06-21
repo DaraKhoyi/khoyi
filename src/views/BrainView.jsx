@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { ContactPicker, Icon, modal, notify } from '../App';
+import { ContactPicker, Icon, confirmDialog, modal, notify } from '../App';
 
 function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType, contacts = [] }) {
   const [type, setType] = useState(initial?.type || defaultType || 'memory');
@@ -125,7 +125,7 @@ function computeBrainStreak(brain) {
 }
 
 
-function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts = [] }) {
+async function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [activeTab, setActiveTab] = useState('north-star');
@@ -225,7 +225,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
   }
 
   async function deleteEntry(id) {
-    if (!window.confirm('Delete this entry?')) return;
+    if (!await confirmDialog('Delete this entry?')) return;
     // Snapshot for rollback
     const snapshot = brain.find(x => x.id === id);
     setBrain(prev => prev.filter(x => x.id !== id));
@@ -393,7 +393,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
           }
         </div>
       </div>
-      {showModal && <BrainEntryModal onClose={()=>{setShowModal(false);setEditEntry(null);}} onSave={handleSave} onDelete={async (e)=>{ if(!window.confirm(`Delete "${e.title}"?`)) return; await deleteEntry(e.id); setShowModal(false); setEditEntry(null); }} initial={editEntry} defaultType={activeTab} contacts={contacts} />}
+      {showModal && <BrainEntryModal onClose={()=>{setShowModal(false);setEditEntry(null);}} onSave={handleSave} onDelete={async (e)=>{ if(!await confirmDialog(`Delete "${e.title}"?`)) return; await deleteEntry(e.id); setShowModal(false); setEditEntry(null); }} initial={editEntry} defaultType={activeTab} contacts={contacts} />}
     </div>
   );
 }
