@@ -11302,5 +11302,5 @@ export default function App() {
   return <AppMain />;
 }
 
-export { ActivityTimeline, AriRewriteButton, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, RecruitingKpiTile, RecruitingView, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
+export { ActivityTimeline, AriRewriteButton, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, RecruitingKpiTile, RecruitingView, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
 

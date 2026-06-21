@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, modal, notify, todayISO } from '../App';
+import { ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, emailAssignTask, modal, notify, todayISO } from '../App';
 
 const QUADS = ['A', 'B', 'C', 'D'];
 // Sort key for Eisenhower: A1 < A2 < B1 < ... Simple-system tasks sort after

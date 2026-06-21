@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon, QuoCallDetail, modal, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../App';
+import { Icon, QuoCallDetail, modal, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../App';
 
 function QuoView({ contacts = [], userId }) {
   const [tab, setTab] = useState('feed');               // feed | messages | calls
