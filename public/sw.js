@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-confirmhost-portal-fix-20260621'
+const VERSION = 'prismos-v61-20260621-quo-fix'
 const APP_SHELL = [
   '/',
   '/index.html',
