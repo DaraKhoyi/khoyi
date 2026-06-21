@@ -29454,6 +29454,189 @@ function ConversionDashboard({ userId, agents }){
 // =================== END LEAD ENGINE ===================
 
 
+// ===================== ACCOUNTING (Phase 5) =====================
+function AccountingView({ userId, ownerId, agents, isAdmin }){
+  const [sub,setSub]=useState('overview');
+  const [entries,setEntries]=useState(null);
+  const [payouts,setPayouts]=useState([]);
+  const [year,setYear]=useState(new Date().getFullYear());
+  const [sel,setSel]=useState({});
+  const [payMethod,setPayMethod]=useState('ach');
+  const [stmtAgent,setStmtAgent]=useState('');
+  const [lf,setLf]=useState({ agent:'', type:'', status:'' });
+  const notify=(m,t)=>{ if(window.__notify) window.__notify(m,t||'success'); };
+  const agentName=(id)=>{ const a=agents.find(x=>x.id===id); return a?a.name:'Unassigned'; };
+  const dl=(fn,csv)=>{ const b=new Blob([csv],{type:'text/csv;charset=utf-8'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=fn; a.click(); URL.revokeObjectURL(u); };
+  const csvRow=(arr)=>arr.map(v=>{ const s=String(v??''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }).join(',');
+
+  const load=async()=>{
+    const [{ data:e },{ data:p }] = await Promise.all([
+      supabase.from('ledger_entries').select('*'),
+      supabase.from('payouts').select('*').order('created_at',{ascending:false}),
+    ]);
+    setEntries(e||[]); setPayouts(p||[]);
+  };
+  useEffect(()=>{ load(); },[]);
+
+  if(!entries) return <div className="panel" style={{marginTop:'12px',padding:'24px',textAlign:'center',color:'var(--text-2)'}}>Loading accounting…</div>;
+
+  const yr=String(year);
+  const inYear=(e)=> (e.period? e.period.startsWith(yr) : new Date(e.created_at).getFullYear()===year);
+  const ey=entries.filter(inYear);
+  const sumT=(arr,t,st)=>arr.filter(e=>e.entry_type===t && (!st||e.status===st)).reduce((s,e)=>s+(Number(e.amount)||0),0);
+
+  // ---------- OVERVIEW (P&L + AR/AP) ----------
+  const revenue=sumT(ey,'company_dollar');
+  const ps=sumT(ey,'profit_share_payable');
+  const net=revenue-ps;
+  const owedAgents=sumT(entries,'agent_payout','pending');
+  const paidAgents=sumT(entries,'agent_payout','paid');
+  const escrow=sumT(entries,'savings','pending')+sumT(entries,'retirement','pending');
+  const psOwed=sumT(entries,'profit_share_payable','pending');
+  const months=[...new Set(ey.map(e=>e.period).filter(Boolean))].sort();
+  const monthRow=(m)=>{ const r=ey.filter(e=>e.period===m); const cd=r.filter(e=>e.entry_type==='company_dollar').reduce((s,e)=>s+Number(e.amount||0),0); const p=r.filter(e=>e.entry_type==='profit_share_payable').reduce((s,e)=>s+Number(e.amount||0),0); return { m, cd, p, net:cd-p }; };
+
+  // ---------- PAYABLES ----------
+  const pendingByAgent={};
+  for(const e of entries){ if(e.status!=='pending') continue; const k=e.agent_id||'—'; (pendingByAgent[k]=pendingByAgent[k]||{pay:0,sav:0,ret:0}); if(e.entry_type==='agent_payout') pendingByAgent[k].pay+=Number(e.amount)||0; if(e.entry_type==='savings') pendingByAgent[k].sav+=Number(e.amount)||0; if(e.entry_type==='retirement') pendingByAgent[k].ret+=Number(e.amount)||0; }
+  const payKeys=Object.keys(pendingByAgent).filter(k=>pendingByAgent[k].pay>0).sort((a,b)=>pendingByAgent[b].pay-pendingByAgent[a].pay);
+  const selKeys=payKeys.filter(k=>sel[k]);
+  const selTotal=selKeys.reduce((s,k)=>s+pendingByAgent[k].pay,0);
+
+  const createPayout=async()=>{
+    if(selKeys.length===0){ notify('Select at least one agent.','error'); return; }
+    const per=new Date().toISOString().slice(0,7);
+    for(const k of selKeys){
+      const amt=pendingByAgent[k].pay;
+      const { data:po } = await supabase.from('payouts').insert({ user_id:ownerId, agent_id:k==='—'?null:k, amount:amt, method:payMethod, period:per, status:'approved', memo:`Commission payout ${per}` }).select().single();
+      const ids=entries.filter(e=>e.status==='pending'&&e.entry_type==='agent_payout'&&(e.agent_id||'—')===k).map(e=>e.id);
+      if(ids.length) await supabase.from('ledger_entries').update({ status:'paid', paid_at:new Date().toISOString(), payout_id:po?.id||null }).in('id',ids);
+    }
+    notify(`Created ${selKeys.length} payout(s) totaling ${money(selTotal)}.`); setSel({}); load();
+  };
+  const exportACH=()=>{ const rows=(selKeys.length?selKeys:payKeys); const h=['Payee','Email','Amount','Method','Memo']; const lines=[csvRow(h),...rows.map(k=>{ const a=agents.find(x=>x.id===k)||{}; return csvRow([agentName(k),a.email||'',pendingByAgent[k].pay.toFixed(2),payMethod,`Commission payout`]); })]; dl(`ROG_payables_${new Date().toISOString().slice(0,10)}.csv`,lines.join('\n')); };
+  const setPayoutStatus=async(id,st)=>{ await supabase.from('payouts').update({ status:st, sent_at: st==='sent'?new Date().toISOString():null }).eq('id',id); setPayouts(p=>p.map(x=>x.id===id?{...x,status:st}:x)); };
+
+  // ---------- STATEMENTS ----------
+  const stmt=(()=>{ if(!stmtAgent) return null; const es=entries.filter(e=>e.agent_id===stmtAgent); const earned=es.filter(e=>e.entry_type==='agent_payout').reduce((s,e)=>s+Number(e.amount||0),0); const paid=es.filter(e=>e.entry_type==='agent_payout'&&e.status==='paid').reduce((s,e)=>s+Number(e.amount||0),0); const sav=es.filter(e=>e.entry_type==='savings').reduce((s,e)=>s+Number(e.amount||0),0); const ret=es.filter(e=>e.entry_type==='retirement').reduce((s,e)=>s+Number(e.amount||0),0); const psUp=entries.filter(e=>e.counterparty_agent_id===stmtAgent&&e.entry_type==='profit_share_payable').reduce((s,e)=>s+Number(e.amount||0),0); const cd=es.filter(e=>e.entry_type==='company_dollar').reduce((s,e)=>s+Number(e.amount||0),0); return { es, earned, paid, bal:earned-paid, sav, ret, psUp, cd }; })();
+  const exportStmt=()=>{ if(!stmt) return; const h=['Date','Type','Direction','Amount','Status','Memo']; const lines=[csvRow(h),...stmt.es.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(e=>csvRow([(e.period||e.created_at?.slice(0,10)||''),e.entry_type,e.direction,Number(e.amount||0).toFixed(2),e.status,e.memo||'']))]; dl(`statement_${agentName(stmtAgent).replace(/\s+/g,'_')}.csv`,lines.join('\n')); };
+
+  // ---------- LEDGER ----------
+  const led=entries.filter(e=>(!lf.agent||e.agent_id===lf.agent)&&(!lf.type||e.entry_type===lf.type)&&(!lf.status||e.status===lf.status)).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  const ledTotal=led.reduce((s,e)=>s+(e.direction==='credit'?1:-1)*(Number(e.amount)||0),0);
+
+  const TYPE_LABEL={ company_dollar:'Company $', agent_payout:'Agent payout', profit_share_payable:'Profit share', savings:'Savings', retirement:'Retirement' };
+  const card=(label,val,sub2)=> <div className="panel" style={{padding:'12px'}}><div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'.04em'}}>{label}</div><div style={{fontSize:'18px',fontWeight:800,marginTop:'2px'}}>{val}</div>{sub2&&<div style={{fontSize:'10px',color:'var(--text-3)'}}>{sub2}</div>}</div>;
+  const inp={ padding:'6px 9px', fontSize:'13px', width:'auto' };
+
+  return (
+    <div style={{marginTop:'12px',display:'grid',gap:'12px'}}>
+      <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
+        {[['overview','Overview'],['payables','Payables'],['statements','Statements'],['ledger','Ledger']].map(t=>(
+          <button key={t[0]} className="btn btn-sm" onClick={()=>setSub(t[0])} style={{background:sub===t[0]?'var(--accent)':'transparent',color:sub===t[0]?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>{t[1]}</button>
+        ))}
+        {sub==='overview' && <select className="form-input" value={year} onChange={e=>setYear(Number(e.target.value))} style={{...inp,marginLeft:'auto'}}>{[0,1,2,3].map(d=>{ const y=new Date().getFullYear()-d; return <option key={y} value={y}>{y}</option>; })}</select>}
+      </div>
+
+      {sub==='overview' && <>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}}>
+          {card('Revenue (company $)',money(revenue),`${year}`)}
+          {card('Profit share',money(ps))}
+          {card('Net to brokerage',money(net))}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}}>
+          {card('Owed to agents',money(owedAgents),'pending payout')}
+          {card('Profit share owed',money(psOwed),'pending')}
+          {card('Escrow held',money(escrow),'savings + retirement')}
+        </div>
+        <div className="panel" style={{overflowX:'auto',padding:0}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12.5px'}}>
+            <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'8px 10px'}}>Month</th><th style={{padding:'8px 6px',textAlign:'right'}}>Company $</th><th style={{padding:'8px 6px',textAlign:'right'}}>Profit share</th><th style={{padding:'8px 6px',textAlign:'right'}}>Net</th></tr></thead>
+            <tbody>
+              {months.length===0? <tr><td colSpan={4} style={{padding:'22px',textAlign:'center',color:'var(--text-2)'}}>No posted CDAs for {year}. Generate a CDA on a file and the ledger posts automatically.</td></tr> :
+                months.map(m=>{ const r=monthRow(m); return <tr key={m} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'7px 10px'}}>{m}</td><td style={{padding:'7px 6px',textAlign:'right'}}>{money(r.cd)}</td><td style={{padding:'7px 6px',textAlign:'right'}}>{money(r.p)}</td><td style={{padding:'7px 6px',textAlign:'right',fontWeight:700}}>{money(r.net)}</td></tr>; })}
+            </tbody>
+          </table>
+        </div>
+      </>}
+
+      {sub==='payables' && <>
+        <div className="panel" style={{padding:'12px',display:'flex',gap:'10px',alignItems:'center',flexWrap:'wrap'}}>
+          <div><div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase'}}>Selected</div><div style={{fontSize:'18px',fontWeight:800}}>{money(selTotal)}</div></div>
+          <select className="form-input" value={payMethod} onChange={e=>setPayMethod(e.target.value)} style={inp}><option value="ach">ACH</option><option value="check">Check</option><option value="wire">Wire</option></select>
+          {isAdmin && <button className="btn btn-primary btn-sm" disabled={selKeys.length===0} onClick={createPayout}>Create payout ({selKeys.length})</button>}
+          <button className="btn btn-ghost btn-sm" onClick={exportACH}><Icon name="dollar" size={13} fb="$"/> Export CSV</button>
+        </div>
+        <div className="panel" style={{overflowX:'auto',padding:0}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12.5px'}}>
+            <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'8px 10px'}}><input type="checkbox" checked={selKeys.length===payKeys.length&&payKeys.length>0} onChange={e=>{ const ns={}; if(e.target.checked) payKeys.forEach(k=>ns[k]=true); setSel(ns); }}/></th><th style={{padding:'8px 6px'}}>Agent</th><th style={{padding:'8px 6px',textAlign:'right'}}>Owed</th><th style={{padding:'8px 6px',textAlign:'right'}}>Savings held</th><th style={{padding:'8px 6px',textAlign:'right'}}>Retirement</th></tr></thead>
+            <tbody>
+              {payKeys.length===0? <tr><td colSpan={5} style={{padding:'22px',textAlign:'center',color:'var(--text-2)'}}>Nothing owed. Payables post here when CDAs close.</td></tr> :
+                payKeys.map(k=>(<tr key={k} style={{borderBottom:'1px solid var(--border)'}}>
+                  <td style={{padding:'7px 10px'}}><input type="checkbox" checked={!!sel[k]} onChange={e=>setSel(s=>({...s,[k]:e.target.checked}))}/></td>
+                  <td style={{padding:'7px 6px',fontWeight:600}}>{agentName(k)}</td>
+                  <td style={{padding:'7px 6px',textAlign:'right',fontWeight:700}}>{money(pendingByAgent[k].pay)}</td>
+                  <td style={{padding:'7px 6px',textAlign:'right',color:'var(--text-2)'}}>{money(pendingByAgent[k].sav)}</td>
+                  <td style={{padding:'7px 6px',textAlign:'right',color:'var(--text-2)'}}>{money(pendingByAgent[k].ret)}</td>
+                </tr>))}
+            </tbody>
+          </table>
+        </div>
+        {payouts.length>0 && <div className="panel" style={{padding:'12px'}}>
+          <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>Recent payouts</div>
+          <div style={{display:'grid',gap:'6px'}}>
+            {payouts.slice(0,12).map(p=>(<div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',fontSize:'12.5px',borderBottom:'1px solid var(--border)',paddingBottom:'5px'}}>
+              <span>{agentName(p.agent_id)} · <b>{money(p.amount)}</b> · {p.method?.toUpperCase()} · {p.period}</span>
+              {isAdmin? <select className="form-input" value={p.status} onChange={e=>setPayoutStatus(p.id,e.target.value)} style={{padding:'3px 6px',fontSize:'11px',width:'auto'}}>{['draft','approved','sent','cleared'].map(s=><option key={s} value={s}>{s}</option>)}</select> : <span>{p.status}</span>}
+            </div>))}
+          </div>
+        </div>}
+      </>}
+
+      {sub==='statements' && <>
+        <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+          <select className="form-input" value={stmtAgent} onChange={e=>setStmtAgent(e.target.value)} style={inp}><option value="">Select agent…</option>{agents.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+          {stmt && <button className="btn btn-ghost btn-sm" onClick={exportStmt}>Export CSV</button>}
+        </div>
+        {!stmt? <div className="panel" style={{padding:'24px',textAlign:'center',color:'var(--text-2)'}}>Pick an agent to view their statement.</div> : <>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
+            {card('Earned',money(stmt.earned))}{card('Paid',money(stmt.paid))}{card('Balance owed',money(stmt.bal))}{card('Company $ produced',money(stmt.cd))}
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}}>
+            {card('Savings held',money(stmt.sav))}{card('Retirement held',money(stmt.ret))}{card('Profit share (as upline)',money(stmt.psUp))}
+          </div>
+          <div className="panel" style={{overflowX:'auto',padding:0}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
+              <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'7px 10px'}}>Period</th><th style={{padding:'7px 6px'}}>Type</th><th style={{padding:'7px 6px',textAlign:'right'}}>Amount</th><th style={{padding:'7px 6px'}}>Status</th></tr></thead>
+              <tbody>{stmt.es.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(e=>(<tr key={e.id} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'6px 10px'}}>{e.period||e.created_at?.slice(0,10)}</td><td style={{padding:'6px 6px'}}>{TYPE_LABEL[e.entry_type]||e.entry_type}</td><td style={{padding:'6px 6px',textAlign:'right'}}>{money(e.amount)}</td><td style={{padding:'6px 6px'}}><span style={{fontSize:'10px',padding:'1px 7px',borderRadius:'10px',background:e.status==='paid'?'var(--green)':e.status==='cleared'?'var(--accent)':'var(--bg-hover)',color:e.status==='pending'?'var(--text-2)':'#0a0b0d',fontWeight:700}}>{e.status}</span></td></tr>))}</tbody>
+            </table>
+          </div>
+        </>}
+      </>}
+
+      {sub==='ledger' && <>
+        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+          <select className="form-input" value={lf.agent} onChange={e=>setLf({...lf,agent:e.target.value})} style={inp}><option value="">All agents</option>{agents.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+          <select className="form-input" value={lf.type} onChange={e=>setLf({...lf,type:e.target.value})} style={inp}><option value="">All types</option>{Object.keys(TYPE_LABEL).map(t=><option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select>
+          <select className="form-input" value={lf.status} onChange={e=>setLf({...lf,status:e.target.value})} style={inp}><option value="">Any status</option>{['pending','cleared','paid','void'].map(s=><option key={s} value={s}>{s}</option>)}</select>
+        </div>
+        <div className="panel" style={{overflowX:'auto',padding:0}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
+            <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'7px 10px'}}>Period</th><th style={{padding:'7px 6px'}}>Agent</th><th style={{padding:'7px 6px'}}>Type</th><th style={{padding:'7px 6px'}}>Dir</th><th style={{padding:'7px 6px',textAlign:'right'}}>Amount</th><th style={{padding:'7px 6px'}}>Status</th></tr></thead>
+            <tbody>
+              {led.length===0? <tr><td colSpan={6} style={{padding:'22px',textAlign:'center',color:'var(--text-2)'}}>No ledger entries match.</td></tr> :
+                led.slice(0,300).map(e=>(<tr key={e.id} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'6px 10px'}}>{e.period||e.created_at?.slice(0,10)}</td><td style={{padding:'6px 6px'}}>{agentName(e.agent_id)}</td><td style={{padding:'6px 6px'}}>{TYPE_LABEL[e.entry_type]||e.entry_type}</td><td style={{padding:'6px 6px',color:e.direction==='credit'?'var(--green)':'var(--text-2)'}}>{e.direction==='credit'?'+':'−'}</td><td style={{padding:'6px 6px',textAlign:'right',fontWeight:600}}>{money(e.amount)}</td><td style={{padding:'6px 6px'}}>{e.status}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{fontSize:'12px',color:'var(--text-2)',textAlign:'right'}}>Net (credits − debits): <b style={{color:'var(--text-1)'}}>{money(ledTotal)}</b> · {led.length} entries</div>
+      </>}
+    </div>
+  );
+}
+// =================== END ACCOUNTING ===================
+
+
 function AgentsView({ userId, user, appCtx, isAdmin }){
   const role = appCtx?.role; const myTeam = appCtx?.team||''; const ownerId = appCtx?.owner_id || userId; const canWrite = isAdmin || !!appCtx?.is_team_leader;
   const roleOpts = isAdmin ? AGENT_ROLES : AGENT_ROLES.filter(r=>['agent','team_leader'].includes(r.value));
@@ -29494,10 +29677,12 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         {isAdmin && <button className="btn btn-sm" onClick={()=>setMode('profitshare')} style={{background:mode==='profitshare'?'var(--accent)':'transparent',color:mode==='profitshare'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Profit share</button>}
         <button className="btn btn-sm" onClick={()=>setMode('leads')} style={{background:mode==='leads'?'var(--accent)':'transparent',color:mode==='leads'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Leads</button>
         <button className="btn btn-sm" onClick={()=>setMode('conversion')} style={{background:mode==='conversion'?'var(--accent)':'transparent',color:mode==='conversion'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Conversion</button>
+        {isAdmin && <button className="btn btn-sm" onClick={()=>setMode('accounting')} style={{background:mode==='accounting'?'var(--accent)':'transparent',color:mode==='accounting'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Accounting</button>}
         {(mode==='earnings'||mode==='profitshare') && <select className="form-input" value={year} onChange={e=>setYear(Number(e.target.value))} style={{width:'auto',marginLeft:'auto',padding:'4px 8px'}}>{[0,1,2,3].map(d=>{ const y=new Date().getFullYear()-d; return <option key={y} value={y}>{y}</option>; })}</select>}
       </div>
       {mode==='leads' && <LeadsBoard userId={userId} ownerId={ownerId} agents={agents} canWrite={canWrite} isAdmin={isAdmin} myTeam={myTeam}/>}
       {mode==='conversion' && <ConversionDashboard userId={userId} agents={agents}/>}
+      {mode==='accounting' && <AccountingView userId={userId} ownerId={ownerId} agents={agents} isAdmin={isAdmin}/>}
       {mode==='earnings' && (()=>{
         if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading earnings\u2026</div>;
         const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===year);
