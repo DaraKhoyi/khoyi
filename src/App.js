@@ -29671,7 +29671,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         </div>
         {canWrite && mode==='roster' && <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ Add agent</button>}
       </div>
-      <div style={{display:'flex',gap:'6px',marginTop:'12px',flexWrap:'wrap',alignItems:'center'}}>
+      <div className="brokerage-subnav">
         <button className="btn btn-sm" onClick={()=>setMode('roster')} style={{background:mode==='roster'?'var(--accent)':'transparent',color:mode==='roster'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Roster</button>
         <button className="btn btn-sm" onClick={()=>setMode('earnings')} style={{background:mode==='earnings'?'var(--accent)':'transparent',color:mode==='earnings'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Earnings</button>
         {isAdmin && <button className="btn btn-sm" onClick={()=>setMode('profitshare')} style={{background:mode==='profitshare'?'var(--accent)':'transparent',color:mode==='profitshare'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Profit share</button>}
