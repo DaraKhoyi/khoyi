@@ -28,6 +28,14 @@ export default defineConfig({
       output: {
         entryFileNames: 'static/js/main.[hash].js',
         chunkFileNames: 'static/js/[name].[hash].chunk.js',
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react-dom')) return 'vendor-react-dom';
+            if (id.includes('/react/') || id.includes('/react/jsx') || id.includes('scheduler')) return 'vendor-react';
+            if (id.includes('@supabase') || id.includes('supabase')) return 'vendor-supabase';
+            return 'vendor';
+          }
+        },
         assetFileNames: (info) => {
           const n = info.name || '';
           if (n.endsWith('.css')) return 'static/css/[name].[hash][extname]';
