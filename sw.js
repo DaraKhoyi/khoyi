@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v58-20260620-lazy-accounting'
+const VERSION = 'prismos-v59-20260620-cda-tests'
 const APP_SHELL = [
   '/',
   '/index.html',
