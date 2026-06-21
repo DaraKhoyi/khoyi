@@ -136,6 +136,15 @@ function QuoView({ contacts = [], userId }) {
   }
   function openConvo(p, name) { setSelected({ participant: quoNormPhone(p), name: name || nameFor(p) }); }
   function startNew() { const e = quoNormPhone(newTo); if (e.length < 11) { setErr('Enter a valid US/Canada number.'); return; } setShowNew(false); setNewTo(''); setTab('messages'); openConvo(e, nameFor(e)); }
+  // Place the call THROUGH Quo (not the device's cell line) via Quo's official deep link.
+  // Opens the Quo app and auto-dials, using the active Quo number as caller ID.
+  function quoDial(toRaw) {
+    const to = quoNormPhone(toRaw);
+    if (!to || to.length < 11) { setErr('Enter a valid US / Canada number to call.'); return; }
+    const fromNum = numbers.find(n => n.id === fromId)?.number;
+    window.location.href = `openphone://dial?number=${encodeURIComponent(to)}${fromNum ? `&from=${encodeURIComponent(fromNum)}` : ''}&action=call`;
+  }
+  function startCall() { const e = quoNormPhone(newTo); if (e.length < 11) { setErr('Enter a valid US / Canada number.'); return; } setShowNew(false); setNewTo(''); quoDial(e); }
 
   const callList = useMemo(() => calls.slice().sort((a, b) => new Date(b.op_created_at || 0) - new Date(a.op_created_at || 0)), [calls]);
   const feed = useMemo(() => {
@@ -200,7 +209,7 @@ function QuoView({ contacts = [], userId }) {
               : <>
                 <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div><div style={{ fontWeight: 700, fontSize: 15 }}>{selected.name}</div><div style={{ fontSize: 12, color: 'var(--text-3)' }}>{quoFmtPhone(selected.participant)}</div></div>
-                  <button className="btn btn-primary btn-sm" onClick={() => { window.location.href = 'tel:' + selected.participant; }}><Icon name="quo" size={14} /> Call</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => quoDial(selected.participant)}><Icon name="quo" size={14} /> Call</button>
                 </div>
                 <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {thread.length === 0 ? <div style={{ color: 'var(--text-3)', fontSize: 13, margin: 'auto' }}>No messages yet. Say hello 👋</div>
@@ -251,11 +260,11 @@ function QuoView({ contacts = [], userId }) {
       {showNew && (
         <div className="modal-overlay" onClick={() => setShowNew(false)} style={{ zIndex: 1200 }}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <div className="modal-header"><h3>New message</h3><button className="btn btn-ghost btn-sm" onClick={() => setShowNew(false)}>✕</button></div>
+            <div className="modal-header"><h3>New message or call</h3><button className="btn btn-ghost btn-sm" onClick={() => setShowNew(false)}>✕</button></div>
             <div style={{ padding: 16 }}>
               <label style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>To (US / Canada number)</label>
               <input autoFocus value={newTo} onChange={e => setNewTo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') startNew(); }} placeholder="727-555-1234" style={{ width: '100%', marginTop: 6, background: 'var(--bg-base)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 14 }} />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}><button className="btn btn-ghost" onClick={() => setShowNew(false)}>Cancel</button><button className="btn btn-primary" onClick={startNew}>Open</button></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}><button className="btn btn-ghost" onClick={() => setShowNew(false)}>Cancel</button><button className="btn btn-ghost" onClick={startCall}><Icon name="quo" size={13} /> Call</button><button className="btn btn-primary" onClick={startNew}>Message</button></div>
             </div>
           </div>
         </div>
