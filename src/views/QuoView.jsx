@@ -18,6 +18,16 @@ function QuoView({ contacts = [], userId }) {
   const [newTo, setNewTo] = useState('');
   const [openCall, setOpenCall] = useState(null);
   const threadRef = useRef(null);
+  // On phones the messages view shows ONE pane at a time (list, then thread),
+  // instead of a 2-column split that pushes the thread off-screen.
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 768px)').matches : false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const on = e => setNarrow(e.matches);
+    mq.addEventListener ? mq.addEventListener('change', on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); };
+  }, []);
 
   // Honor a tab intent set by the quick-create FAB (Text -> messages, Call -> calls)
   useEffect(() => {
@@ -188,8 +198,8 @@ function QuoView({ contacts = [], userId }) {
       )}
 
       {tab === 'messages' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px,300px) 1fr', gap: 14, minHeight: 'min(68vh,560px)' }}>
-          <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: narrow ? '1fr' : 'minmax(220px,300px) 1fr', gap: 14, minHeight: 'min(68vh,560px)' }}>
+          <div className="panel" style={{ padding: 0, overflow: 'hidden', display: (narrow && selected) ? 'none' : 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 13 }}>Conversations</div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {convos.length === 0 ? <div style={{ padding: 14, color: 'var(--text-3)', fontSize: 13 }}>No messages yet.</div>
@@ -204,11 +214,11 @@ function QuoView({ contacts = [], userId }) {
                 })}
             </div>
           </div>
-          <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div className="panel" style={{ padding: 0, overflow: 'hidden', display: (narrow && !selected) ? 'none' : 'flex', flexDirection: 'column' }}>
             {!selected ? <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontSize: 14 }}>Pick a conversation, or ＋ New.</div>
               : <>
                 <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div><div style={{ fontWeight: 700, fontSize: 15 }}>{selected.name}</div><div style={{ fontSize: 12, color: 'var(--text-3)' }}>{quoFmtPhone(selected.participant)}</div></div>
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px', minWidth:0 }}>{narrow && <button onClick={() => setSelected(null)} aria-label="Back to conversations" style={{ background:'none', border:'none', color:'var(--accent)', fontSize:'22px', lineHeight:1, cursor:'pointer', padding:'0 4px 0 0', flexShrink:0 }}>‹</button>}<div style={{ minWidth:0 }}><div style={{ fontWeight: 700, fontSize: 15, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{selected.name}</div><div style={{ fontSize: 12, color: 'var(--text-3)' }}>{quoFmtPhone(selected.participant)}</div></div></div>
                   <button className="btn btn-primary btn-sm" onClick={() => quoDial(selected.participant)}><Icon name="quo" size={14} /> Call</button>
                 </div>
                 <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
