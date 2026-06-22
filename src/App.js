@@ -9630,7 +9630,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
   );
 }
 
-async function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTeam, onClose, onSaved, onDeleted }){
+function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTeam, onClose, onSaved, onDeleted }){
   const [a,setA]=useState(agent);
   const [plan,setPlan]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -10368,7 +10368,7 @@ function FileModal({ onClose, onSave, initial, properties, contacts }){
   );
 }
 
-async function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properties, userId, isAdmin, setProgress }){
+function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properties, userId, isAdmin, setProgress }){
   const fileId=file.id;
   const [tab,setTab]=useState('overview');
   const [docs,setDocs]=useState([]); const [parties,setParties]=useState([]); const [items,setItems]=useState([]); const [events,setEvents]=useState([]);

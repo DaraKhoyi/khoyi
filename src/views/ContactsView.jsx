@@ -796,7 +796,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 }
 
 
-async function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
+function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
   const [detailContact, setDetailContact] = useState(null);

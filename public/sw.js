@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v76-20260622-menu-nesting'
+const VERSION = 'prismos-v77-20260622-async-component-fix'
 const APP_SHELL = [
   '/',
   '/index.html',

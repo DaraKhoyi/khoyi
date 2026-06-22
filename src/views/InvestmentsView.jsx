@@ -101,7 +101,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
 }
 
 
-async function InvestmentsView({ investments, setInvestments, properties, userId, contacts = [] }) {
+function InvestmentsView({ investments, setInvestments, properties, userId, contacts = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editInv, setEditInv] = useState(null);
   const [stageFilter, setStageFilter] = useState('all');

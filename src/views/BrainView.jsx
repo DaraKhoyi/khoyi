@@ -125,7 +125,7 @@ function computeBrainStreak(brain) {
 }
 
 
-async function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts = [] }) {
+function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts = [] }) {
   const [showModal, setShowModal] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [activeTab, setActiveTab] = useState('north-star');

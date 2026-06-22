@@ -361,7 +361,7 @@ function DrawingViewerModal({ drawing, onClose }) {
 }
 
 
-async function PropertiesView({ properties, setProperties, userId, contacts }) {
+function PropertiesView({ properties, setProperties, userId, contacts }) {
   const [showModal, setShowModal] = useState(false);
   const [editProp, setEditProp] = useState(null);
   const [detailProp, setDetailProp] = useState(null);
