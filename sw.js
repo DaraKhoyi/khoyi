@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v72-20260622-bulkcat-card'
+const VERSION = 'prismos-v73-20260622-dash-roi'
 const APP_SHELL = [
   '/',
   '/index.html',
