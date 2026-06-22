@@ -2208,11 +2208,11 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
 }
 
 // ─────────────────────────────────────────
-// DASHBOARD — Lead-Gen ROI tiles
+// DASHBOARD — Lead-Gen ROI cards
 // Self-contained: fetches its own finance data and uses the SAME true-ROI math
 // as the Prospecting ROI scoreboard (cash spend + time value vs income), so the
-// numbers always agree. Shows one gold-bordered tile per adopted (active,
-// non-overhead) lead-gen system. Hidden entirely when no systems are adopted.
+// numbers always agree. Renders one full-width, gamified card per adopted
+// (active, non-overhead) lead-gen system. Hidden entirely when none are adopted.
 // ─────────────────────────────────────────
 function DashboardROI({ userId, setView }) {
   const [data, setData] = useState(null);
@@ -2223,7 +2223,7 @@ function DashboardROI({ userId, setView }) {
       const [sysR, txR, teR, setR] = await Promise.all([
         supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_active', true).eq('is_archived', false),
         supabase.from('transactions').select('amount,date,scope,lead_gen_system_id').eq('user_id', userId).eq('is_archived', false).eq('scope', 'business').gte('date', yearStart).not('lead_gen_system_id', 'is', null).limit(2000),
-        supabase.from('time_entries').select('minutes,lead_gen_system_id').eq('user_id', userId).not('lead_gen_system_id', 'is', null).limit(5000),
+        supabase.from('time_entries').select('minutes,lead_gen_system_id,occurred_at').eq('user_id', userId).not('lead_gen_system_id', 'is', null).limit(5000),
         supabase.from('finance_settings').select('hourly_rate').eq('user_id', userId).maybeSingle(),
       ]);
       if (!alive) return;
@@ -2231,6 +2231,7 @@ function DashboardROI({ userId, setView }) {
       const txns = txR.data || [];
       const tes = teR.data || [];
       const hourly = Number(setR.data?.hourly_rate || 0);
+      const now = new Date();
       const grade = (roi) => {
         if (roi === null) return { g: '—', c: 'var(--text-3)' };
         if (roi >= 5) return { g: 'A+', c: 'var(--green)' };
@@ -2244,10 +2245,20 @@ function DashboardROI({ userId, setView }) {
         const sysTx = txns.filter(t => t.lead_gen_system_id === sys.id);
         const cash = Math.abs(sysTx.filter(t => Number(t.amount) < 0).reduce((a, t) => a + Number(t.amount), 0));
         const income = sysTx.filter(t => Number(t.amount) > 0).reduce((a, t) => a + Number(t.amount), 0);
-        const minutes = tes.filter(te => te.lead_gen_system_id === sys.id).reduce((a, te) => a + Number(te.minutes || 0), 0);
+        const sysTe = tes.filter(te => te.lead_gen_system_id === sys.id);
+        const minutes = sysTe.reduce((a, te) => a + Number(te.minutes || 0), 0);
         const invested = cash + (minutes / 60) * hourly;
         const roi = invested > 0 ? income / invested : null;
-        return { sys, cash, income, invested, roi, net: income - invested };
+        const series = [];
+        for (let wk = 7; wk >= 0; wk--) {
+          const cutoff = new Date(now); cutoff.setDate(now.getDate() - wk * 7); cutoff.setHours(23, 59, 59, 999);
+          const c = Math.abs(sysTx.filter(t => Number(t.amount) < 0 && new Date(t.date) <= cutoff).reduce((a, t) => a + Number(t.amount), 0));
+          const inc = sysTx.filter(t => Number(t.amount) > 0 && new Date(t.date) <= cutoff).reduce((a, t) => a + Number(t.amount), 0);
+          const mins = sysTe.filter(te => te.occurred_at && new Date(te.occurred_at) <= cutoff).reduce((a, te) => a + Number(te.minutes || 0), 0);
+          const invv = c + (mins / 60) * hourly;
+          series.push(invv > 0 ? inc / invv : 0);
+        }
+        return { sys, cash, income, minutes, invested, roi, net: income - invested, series };
       }).sort((a, b) => {
         if (a.roi === null && b.roi === null) return b.invested - a.invested;
         if (a.roi === null) return 1; if (b.roi === null) return -1;
@@ -2263,6 +2274,25 @@ function DashboardROI({ userId, setView }) {
 
   if (!data || data.rows.length === 0) return null;
   const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
+  const fmtH = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+  const statusFor = (r) => {
+    if (r.invested === 0) return { label: 'No data yet', color: 'var(--text-3)', icon: '•' };
+    if (r.roi === null || r.income === 0) return { label: 'Awaiting income', color: 'var(--text-3)', icon: '⏳' };
+    if (r.roi >= 3) return { label: 'Strong', color: 'var(--green)', icon: '🔥' };
+    if (r.roi >= 1) return { label: 'Profitable', color: 'var(--accent)', icon: '✓' };
+    return { label: 'Underwater', color: 'var(--red)', icon: '⚠' };
+  };
+  const W = 104, H = 32, PAD = 3;
+  const sparkPts = (series) => {
+    const max = Math.max(...series, 0), n = series.length;
+    return series.map((v, idx) => {
+      const x = PAD + (n > 1 ? idx * (W - 2 * PAD) / (n - 1) : 0);
+      const y = H - PAD - (max > 0 ? (v / max) : 0) * (H - 2 * PAD);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+  };
+  const medals = ['🥇', '🥈', '🥉'];
+
   return (
     <div style={{ marginBottom: '24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -2277,29 +2307,63 @@ function DashboardROI({ userId, setView }) {
           </button>
         )}
       </div>
-      <div className="cards-row" style={{ marginBottom: 0 }}>
-        {data.rows.map(r => {
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {data.rows.map((r, idx) => {
           const g = data.grade(r.roi);
+          const st = statusFor(r);
+          const medal = (r.roi !== null && idx < 3) ? medals[idx] : null;
+          const barPct = r.roi === null ? 0 : Math.min(100, (r.roi / 5) * 100);
+          const pts = sparkPts(r.series).split(' ');
+          const last = pts[pts.length - 1].split(',');
           return (
             <div key={r.sys.id} onClick={() => setView('prospecting')}
-              style={{ background: 'linear-gradient(180deg, var(--accent-glow), var(--bg-card))', border: '1px solid var(--accent)', borderRadius: '12px', padding: '18px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '7px', minWidth: 0, transition: 'box-shadow .12s' }}
-              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(197,169,94,0.18)'; }}
+              style={{ background: 'linear-gradient(135deg, var(--accent-glow), var(--bg-card) 55%)', border: '1px solid var(--accent)', borderRadius: '14px', padding: '16px 18px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '14px', transition: 'box-shadow .12s' }}
+              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(197,169,94,0.20)'; }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', minWidth: 0 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: r.sys.color || 'var(--accent)', flexShrink: 0 }} />
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sys.name}</span>
-                </span>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: g.c, background: 'var(--bg-base)', border: `1px solid ${g.c}`, borderRadius: '6px', padding: '1px 7px', flexShrink: 0 }}>{g.g}</span>
+              {/* Header: rank + name (left), grade (right) */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                  {medal
+                    ? <span style={{ fontSize: '22px', lineHeight: 1, flexShrink: 0 }}>{medal}</span>
+                    : <span style={{ flexShrink: 0, width: '24px', height: '24px', borderRadius: '50%', background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: '10.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{r.roi !== null ? `#${idx + 1}` : '—'}</span>}
+                  <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: r.sys.color || 'var(--accent)', flexShrink: 0 }} />
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-1)', lineHeight: 1.25 }}>{r.sys.name}</span>
+                </div>
+                <span style={{ fontSize: '15px', fontWeight: 800, color: g.c, background: 'var(--bg-base)', border: `1px solid ${g.c}`, borderRadius: '8px', padding: '3px 10px', flexShrink: 0 }}>{g.g}</span>
               </div>
-              <div style={{ fontSize: '26px', fontWeight: 700, lineHeight: 1, color: r.roi === null ? 'var(--text-3)' : 'var(--accent)' }}>
-                {r.roi === null ? '—' : r.roi.toFixed(1) + '×'}
+              {/* Metrics: ROI + status (left), bar (mid), sparkline (right) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap' }}>
+                <div style={{ flexShrink: 0 }}>
+                  <div style={{ fontSize: '34px', fontWeight: 800, lineHeight: 1, color: r.roi === null ? 'var(--text-3)' : 'var(--accent)' }}>{r.roi === null ? '—' : r.roi.toFixed(1) + '×'}</div>
+                  <div style={{ marginTop: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: st.color }}>{st.icon} {st.label}</div>
+                </div>
+                <div style={{ flex: '1 1 150px', minWidth: '140px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '5px' }}><span>Return on investment</span><span>elite · 5×</span></div>
+                  <div style={{ height: '9px', borderRadius: '999px', background: 'var(--bg-base)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+                    <div style={{ width: `${barPct}%`, height: '100%', background: g.c, borderRadius: '999px', transition: 'width .3s' }} />
+                  </div>
+                </div>
+                <div style={{ flexShrink: 0, textAlign: 'center' }}>
+                  <svg width={W} height={H} style={{ display: 'block' }}>
+                    <polyline points={sparkPts(r.series)} fill="none" stroke={g.c} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                    <circle cx={Number(last[0])} cy={Number(last[1])} r="2.6" fill={g.c} />
+                  </svg>
+                  <div style={{ fontSize: '9px', color: 'var(--text-3)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>8-wk trend</div>
+                </div>
               </div>
-              <div style={{ fontSize: '11.5px', fontWeight: 600, color: r.roi === null ? 'var(--text-3)' : (r.net >= 0 ? 'var(--green)' : 'var(--red)') }}>
-                {r.roi === null ? 'Awaiting data' : `${r.net >= 0 ? '+' : ''}${money(r.net)} net`}
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-3)' }}>
-                {money(r.income)} in · {money(r.invested)} invested
+              {/* Stat strip */}
+              <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: '11px' }}>
+                {[
+                  { l: 'Net', v: `${r.net >= 0 ? '+' : ''}${money(r.net)}`, c: r.roi === null ? 'var(--text-3)' : (r.net >= 0 ? 'var(--green)' : 'var(--red)') },
+                  { l: 'Income', v: money(r.income), c: 'var(--text-1)' },
+                  { l: 'Invested', v: money(r.invested), c: 'var(--text-1)' },
+                  { l: 'Time logged', v: fmtH(r.minutes), c: 'var(--text-1)' },
+                ].map(stat => (
+                  <div key={stat.l}>
+                    <div style={{ fontSize: '9px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>{stat.l}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: stat.c, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>{stat.v}</div>
+                  </div>
+                ))}
               </div>
             </div>
           );
