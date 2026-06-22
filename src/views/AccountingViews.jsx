@@ -657,7 +657,7 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
   }
   function statusFor(st) {
     if (st.invested === 0) return { label: 'No data', color: 'var(--text-3)', icon: '❓' };
-    if (st.roi === null || st.income === 0) return { label: 'Awaiting deals', color: 'var(--text-3)', icon: '⏳' };
+    if (st.roi === null || st.income === 0) return { label: 'Awaiting files', color: 'var(--text-3)', icon: '⏳' };
     if (st.roi >= 3) return { label: 'Strong', color: 'var(--green)', icon: '🔥' };
     if (st.roi >= 1) return { label: 'Profitable', color: 'var(--accent)', icon: '✓' };
     return { label: 'Underwater', color: 'var(--red)', icon: '⚠' };
@@ -4302,7 +4302,7 @@ function FinanceSystems({ userId, systems, archivedSystems = [], reload, transac
   function statusFor(stats, sys) {
     if (sys.is_overhead) return null;
     if (stats.totalInvested === 0) return { label: '❓ No data', color: 'var(--text-3)' };
-    if (stats.trueROI === null || stats.incomeAttributed === 0) return { label: '⏳ Awaiting deals', color: 'var(--text-3)' };
+    if (stats.trueROI === null || stats.incomeAttributed === 0) return { label: '⏳ Awaiting files', color: 'var(--text-3)' };
     if (stats.trueROI >= 3) return { label: '🔥 Strong', color: 'var(--green)' };
     if (stats.trueROI >= 1) return { label: '✓ Profitable', color: 'var(--text-1)' };
     return { label: '⚠ Underwater', color: 'var(--red)' };
@@ -7492,7 +7492,7 @@ function CashFlowForecast({ userId, settings }) {
         amount,
         rawAmount,
         probability,
-        payee: d.name || d.client_name || d.address || `Deal ${d.id.slice(0, 8)}`,
+        payee: d.name || d.client_name || d.address || `File ${d.id.slice(0, 8)}`,
         source: 'deal',
         sourceId: d.id,
         sourceStatus: d.status,
@@ -7697,7 +7697,7 @@ function CashFlowForecast({ userId, settings }) {
         <KpiBox label="Projected end balance" value={summary.hasBalance ? fmt(summary.endBalance) : fmt(summary.netChange)}
           sub={summary.hasBalance ? `in ${horizonDays} days` : `net change · ${horizonDays}d`}
           color={summary.hasBalance ? (summary.endBalance >= 0 ? 'var(--green)' : 'var(--red)') : (summary.netChange >= 0 ? 'var(--green)' : 'var(--red)')}/>
-        <KpiBox label="Expected income" value={fmt(summary.totalIn)} sub={`from ${deals.length} open deals + recurring`} color="var(--green)"/>
+        <KpiBox label="Expected income" value={fmt(summary.totalIn)} sub={`from ${deals.length} open files + recurring`} color="var(--green)"/>
         <KpiBox label="Expected outflows" value={fmt(summary.totalOut)} sub={`from recurring transactions`} color="var(--red)"/>
         {summary.hasBalance && summary.firstNegativeDay ? (
           <KpiBox label="⚠ Cash runs out" value={fmtDateShort(summary.firstNegativeDay.date)}
@@ -7864,7 +7864,7 @@ function CashFlowForecast({ userId, settings }) {
       {/* Boundary note */}
       <div style={{padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'11px',color:'var(--text-3)',lineHeight:1.6}}>
         <div style={{fontWeight:700,color:'var(--text-2)',marginBottom:'4px',fontSize:'11.5px'}}>How this projection is built.</div>
-        Recurring transactions are projected forward from their <code style={{padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px',fontSize:'10px'}}>next_run_date</code> by frequency. Open deals contribute expected commission income on their close_date (or contract_date + 30 days if no close set, flagged "est."). With <strong>confidence weighting</strong> on (default), each deal is discounted by typical fall-through rates: closing 90%, under_contract 75%, active 35%, lead 15%. Toggle off to see the raw optimistic case. Projection does NOT include: unplanned expenses, manual one-off items, taxes (see Quarterly Tax tab), or transactions you log directly after this forecast loads.
+        Recurring transactions are projected forward from their <code style={{padding:'1px 4px',background:'var(--bg-hover)',borderRadius:'3px',fontSize:'10px'}}>next_run_date</code> by frequency. Open files contribute expected commission income on their close_date (or contract_date + 30 days if no close set, flagged "est."). With <strong>confidence weighting</strong> on (default), each file is discounted by typical fall-through rates: closing 90%, under_contract 75%, active 35%, lead 15%. Toggle off to see the raw optimistic case. Projection does NOT include: unplanned expenses, manual one-off items, taxes (see Quarterly Tax tab), or transactions you log directly after this forecast loads.
       </div>
     </div>
   );
@@ -8059,7 +8059,7 @@ function ROIReport({ transactions, timeEntries, deals = [], systems, settings, p
       <div className="panel" style={{padding:'16px',background:'linear-gradient(135deg, rgba(197,169,94,0.08) 0%, rgba(197,169,94,0.02) 100%)',border:'1px solid var(--accent)'}}>
         <h3 style={{margin:'0 0 4px',fontSize:'15px',color:'var(--text-1)'}}><Icon name="target" size={15} style={{verticalAlign:'-2px'}} /> Operations · Lead-Gen ROI</h3>
         <p style={{fontSize:'11px',color:'var(--text-3)',margin:'0 0 14px'}}>
-          What's working, what's not. <strong>Includes the cost of your time</strong> (hours × hourly rate) and now <strong>real deal counts + pipeline</strong> from the Deals module. Used for course correction, never for tax filing.
+          What's working, what's not. <strong>Includes the cost of your time</strong> (hours × hourly rate) and now <strong>real file counts + pipeline</strong> from the Files module. Used for course correction, never for tax filing.
         </p>
 
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'10px',marginBottom:'14px'}}>
@@ -8073,8 +8073,8 @@ function ROIReport({ transactions, timeEntries, deals = [], systems, settings, p
 
         {/* NEW — deal counts + pipeline strip */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'10px',marginBottom:'14px',padding:'10px',background:'var(--bg-base)',borderRadius:'8px'}}>
-          <SysStat label="Closed (period)" value={allClosedInPeriod.length} sub={allClosedInPeriod.length === 0 ? 'no deals yet' : `avg ${fmtUSD(avgCommissionPerDeal)}`} />
-          <SysStat label="In pipeline" value={allActiveDeals.length} sub={allActiveDeals.length === 0 ? 'no active deals' : 'leads → closing'} />
+          <SysStat label="Closed (period)" value={allClosedInPeriod.length} sub={allClosedInPeriod.length === 0 ? 'no files yet' : `avg ${fmtUSD(avgCommissionPerDeal)}`} />
+          <SysStat label="In pipeline" value={allActiveDeals.length} sub={allActiveDeals.length === 0 ? 'no active files' : 'leads → closing'} />
           <SysStat label="Pipeline value est." value={fmtUSD(portfolioPipelineEst)} sub="50% split haircut" tone={portfolioPipelineEst > 0 ? 'green' : 'muted'} />
         </div>
 
@@ -8164,8 +8164,8 @@ function ROISystemCard({ row }) {
       {/* NEW — deal economics row */}
       {(closedCount > 0 || activeCount > 0 || cashSpent > 0) && (
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:'8px',marginTop:'8px',padding:'10px',background:'var(--bg-base)',borderRadius:'6px'}}>
-          <SysStat label="Closed deals" value={closedCount} sub={closedCount === 0 ? 'none in period' : 'period'} />
-          <SysStat label="Cost per deal"
+          <SysStat label="Closed files" value={closedCount} sub={closedCount === 0 ? 'none in period' : 'period'} />
+          <SysStat label="Cost per file"
             value={costPerDeal != null ? fmtUSD(costPerDeal) : '—'}
             sub={costPerDeal == null ? (closedCount === 0 ? 'no closes' : 'no cash spend') : `${closedCount} closed`}
             tone={costPerDeal != null && costPerDeal < (incomeAttributed / Math.max(1, closedCount)) * 0.33 ? 'green' : 'normal'} />

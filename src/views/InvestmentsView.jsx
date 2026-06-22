@@ -52,7 +52,7 @@ function InvestmentModal({ onClose, onSave, onDelete, initial, properties, conta
           <div className="form-row">
             <div className="form-group"><label className="form-label">Kind</label>
               <select className="form-select" value={kind} onChange={e=>setKind(e.target.value)}>
-                <option value="deal">Deal</option>
+                <option value="deal">File</option>
                 <option value="pnl">P&L</option>
                 <option value="partner_comm">Partner Comm</option>
               </select>

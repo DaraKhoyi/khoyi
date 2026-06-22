@@ -30,7 +30,7 @@ function computeCDA(f, cda, plan, capYtd){
     companyDollar=Math.min(normalCo, capRemaining);
     agentGross=gciNet-companyDollar;
     if(capRemaining<=0){ capNote='Capped (100%)'; if(num(plan.post_cap_fee)){} }
-    else if(companyDollar<normalCo){ capNote='Cap reached this deal'; }
+    else if(companyDollar<normalCo){ capNote='Cap reached this file'; }
   }
   else { agentGross= split!=null? gciNet*split/100 : gciNet; companyDollar=gciNet-agentGross; }
   const fees=[];

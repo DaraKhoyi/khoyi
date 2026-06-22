@@ -127,7 +127,7 @@ function JournalStory({ userId, mode }) {
   }
   function shift(dir) { setAnchor(prev => { const [y, m, d] = prev.split('-').map(Number); const dt = new Date(y, m - 1, d); if (mode === 'week') dt.setDate(dt.getDate() + dir * 7); else dt.setMonth(dt.getMonth() + dir); return jFmt(dt); }); }
 
-  const sections = [['relationships', 'users', 'Relationships advanced'], ['deals_projects', 'chart', 'Deals & projects moved'], ['wins', 'deals', 'Wins'], ['patterns', 'search', 'Patterns Ari noticed'], ['focus_next', 'target', `Focus next ${mode}`]];
+  const sections = [['relationships', 'users', 'Relationships advanced'], ['deals_projects', 'chart', 'Files & projects moved'], ['wins', 'deals', 'Wins'], ['patterns', 'search', 'Patterns Ari noticed'], ['focus_next', 'target', `Focus next ${mode}`]];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -326,7 +326,7 @@ function JournalView({ userId }) {
           </div>
           <AutoGrowTextarea value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); } }}
-            placeholder={"What happened? Who did you meet, what did they say, what's next?\n\nTip: name people, properties, projects or deals and they'll auto-link to their records."}
+            placeholder={"What happened? Who did you meet, what did they say, what's next?\n\nTip: name people, properties, projects or files and they'll auto-link to their records."}
             minHeight={220} maxHeight={640}
             style={{ width: '100%', padding: '16px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text-1)', fontSize: '16px', boxSizing: 'border-box', lineHeight: 1.6, fontFamily: 'inherit' }} />
           <div style={{ display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>

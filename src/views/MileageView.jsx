@@ -243,7 +243,7 @@ function MileageView({ mileageEntries, setMileageEntries, deals, contacts, setCo
                 </div>
               </div>
               <div>
-                <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'4px',fontWeight:600}}>Link to a deal (optional)</div>
+                <div style={{fontSize:'10px',color:'var(--text-3)',marginBottom:'4px',fontWeight:600}}>Link to a file (optional)</div>
                 <select value={qDealId || ''} onChange={e => setQDealId(e.target.value || null)}
                   style={{...inputStyle, width:'100%'}}>
                   <option value="">— None —</option>
@@ -557,7 +557,7 @@ function MileageDetailModal({ entry, deals, contacts, setContacts, properties, l
 
         <div style={{marginTop:'14px',marginBottom:'8px',fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Attribution (optional)</div>
         <div className="form-group">
-          <label className="form-label">Deal</label>
+          <label className="form-label">File</label>
           <select value={dealId || ''}
             onChange={e => { setDealId(e.target.value || null); commit('deal_id', e.target.value || null); }}
             style={inputStyle}>

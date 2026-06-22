@@ -53,7 +53,7 @@ function ActionHubModal({ contactId, userId, onClose }) {
             </div>}
             {(prep.talking_points||[]).length>0 && <div><div style={sectTitle}>Talking points</div><ul style={{margin:'4px 0 0',paddingLeft:'18px'}}>{prep.talking_points.map((p,i)=><li key={i} style={{fontSize:'13px',lineHeight:1.5,marginBottom:'4px'}}>{p}</li>)}</ul></div>}
             <Section title="Aim for" bodyTxt={prep.next_step}/>
-            {d?.deal && d.deal!=='No active deal on file.' && <Section title="Live deal" bodyTxt={d.deal}/>}
+            {d?.deal && d.deal!=='No active deal on file.' && <Section title="Live file" bodyTxt={d.deal}/>}
           </div>
         ) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No prep available for this contact.</div>}
       </div>
@@ -106,7 +106,7 @@ function OutreachReport({ userId, onBack }) {
       <div className="panel">
         <div className="panel-header"><h3>Last 90 days</h3></div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
-          {[['Sent',tot.sent],['Reply rate',pct(tot.replied,tot.sent)+'%'],['Meetings',tot.meetings],['Deals moved',tot.deals]].map(([k,v])=>(
+          {[['Sent',tot.sent],['Reply rate',pct(tot.replied,tot.sent)+'%'],['Meetings',tot.meetings],['Files moved',tot.deals]].map(([k,v])=>(
             <div key={k} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px',textAlign:'center'}}>
               <div style={{fontSize:'20px',fontWeight:800,color:'var(--accent)'}}>{v}</div>
               <div style={{fontSize:'10px',letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)',marginTop:'2px'}}>{k}</div>
@@ -149,8 +149,8 @@ function OutreachReport({ userId, onBack }) {
               <div style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{Object.keys(l.factors||{}).join(' · ')||'—'}</div>
             </div>
           </div>
-        )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>Scores build as contacts engage and deals link up. Higher = more likely to transact soon.</div>}
-        <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Blends recent engagement, replies, deal links, priority, ownership tenure, and activity. Refreshed nightly; also boosts who Ari surfaces in your briefing.</div>
+        )) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>Scores build as contacts engage and files link up. Higher = more likely to transact soon.</div>}
+        <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Blends recent engagement, replies, file links, priority, ownership tenure, and activity. Refreshed nightly; also boosts who Ari surfaces in your briefing.</div>
       </div>
       {hubId && <ActionHubModal contactId={hubId} userId={userId} onClose={()=>setHubId(null)} />}
       {perContact.length>0 && <div className="panel">
@@ -263,7 +263,7 @@ function GoalEngine({ userId, onBack }) {
       {editing && <div className="panel">
         <div className="panel-header"><h3>Your goal &amp; assumptions</h3></div>
         <div className="form-group"><label className="form-label">{year} GCI goal ($)</label><input className="form-input" type="number" value={form.gci_target} onChange={e=>setForm(f=>({...f,gci_target:e.target.value}))} placeholder="e.g. 500000"/></div>
-        <div className="form-group"><label className="form-label">Avg. commission per deal ($)</label><input className="form-input" type="number" value={form.avg_commission} onChange={e=>setForm(f=>({...f,avg_commission:e.target.value}))} placeholder={computedAvg?('blank = auto '+money(computedAvg)):'blank = auto · e.g. 9000'}/></div>
+        <div className="form-group"><label className="form-label">Avg. commission per file ($)</label><input className="form-input" type="number" value={form.avg_commission} onChange={e=>setForm(f=>({...f,avg_commission:e.target.value}))} placeholder={computedAvg?('blank = auto '+money(computedAvg)):'blank = auto · e.g. 9000'}/></div>
         <div className="form-group"><label className="form-label">Appointment → close rate (%)</label><input className="form-input" type="number" value={form.close_rate} onChange={e=>setForm(f=>({...f,close_rate:e.target.value}))} placeholder="e.g. 40"/></div>
         <button className="btn btn-primary" disabled={saving} onClick={saveGoal}>{saving?'Saving…':'Save goal'}</button>
       </div>}
@@ -285,7 +285,7 @@ function GoalEngine({ userId, onBack }) {
       <div className="panel">
         <div className="panel-header"><h3>What it takes</h3><span style={{fontSize:'12px',color:'var(--text-3)'}}>{weeksLeft} weeks left</span></div>
         <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'8px'}}>To reach {money(target)} (counting closed + half your pipeline), working backward:</div>
-        <Funnel icon={<Icon name="deals" size={18} />} label={'deals to close · '+money(avgComm)+' avg'} total={dealsNeeded} per={perWeek(dealsNeeded)}/>
+        <Funnel icon={<Icon name="deals" size={18} />} label={'files to close · '+money(avgComm)+' avg'} total={dealsNeeded} per={perWeek(dealsNeeded)}/>
         <Funnel icon={<Icon name="users" size={18} />} label={'appointments · '+Math.round(closeRate*100)+'% close'} total={apptsNeeded} per={perWeek(apptsNeeded)}/>
         <Funnel icon={<Icon name="message" size={18} />} label={'conversations · '+Math.round(meetingRate*100)+'% to appt'} total={convosNeeded} per={perWeek(convosNeeded)}/>
         <Funnel icon={<Icon name="megaphone" size={18} />} label={'reach-outs · '+Math.round(replyRate*100)+'% reply'} total={reachNeeded} per={perWeek(reachNeeded)}/>
@@ -731,14 +731,14 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
         <div className="panel-header"><h3 onClick={()=>setShowScore(v=>!v)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chart" size={15} /> This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowReport(true)}>Full report →</button></div>
         {showScore && (score && score.sent ? (
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
-            {[['Sent',score.sent],['Replies',`${score.replied} (${score.replyRate}%)`],['Meetings',score.meetings],['Deals moved',score.deals]].map(([k,v])=>(
+            {[['Sent',score.sent],['Replies',`${score.replied} (${score.replyRate}%)`],['Meetings',score.meetings],['Files moved',score.deals]].map(([k,v])=>(
               <div key={k} style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px',textAlign:'center'}}>
                 <div style={{fontSize:'18px',fontWeight:800,color:'var(--accent)'}}>{v}</div>
                 <div style={{fontSize:'10px',letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)',marginTop:'2px'}}>{k}</div>
               </div>
             ))}
           </div>
-        ) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No sends yet this week. As you send from Ari, your reply, meeting, and deal outcomes show up here.</div>)}
+        ) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No sends yet this week. As you send from Ari, your reply, meeting, and file outcomes show up here.</div>)}
         {showScore && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Ari learns from these outcomes \u2014 who replies, and which phrasing and timing convert \u2014 and uses it to rank and draft tomorrow\u2019s briefing.</div>}
       </div>
 
@@ -897,10 +897,10 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
 
       {!!(payload.deals||[]).length && (
         <div className="panel">
-          <div className="panel-header"><h3>Deals in motion</h3><span className="nav-badge">{payload.deals.length}</span></div>
+          <div className="panel-header"><h3>Files in motion</h3><span className="nav-badge">{payload.deals.length}</span></div>
           {payload.deals.map(d=>(
             <div key={d.id} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
-              <span>{d.client_name||d.address||'Deal'}</span><span style={{color:'var(--text-3)',fontSize:'11px'}}>{d.status}{d.close_date?` · ${d.close_date}`:''}</span>
+              <span>{d.client_name||d.address||'File'}</span><span style={{color:'var(--text-3)',fontSize:'11px'}}>{d.status}{d.close_date?` · ${d.close_date}`:''}</span>
             </div>
           ))}
         </div>

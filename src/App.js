@@ -2670,7 +2670,7 @@ const MERGE_FIELDS = [
   { token: 'email', label: 'Email' },
   { token: 'phone', label: 'Phone' },
   { token: 'property_address', label: 'Property address' },
-  { token: 'deal_name', label: 'Deal name' },
+  { token: 'deal_name', label: 'File name' },
   { token: 'my_name', label: 'Your name' },
   { token: 'today', label: "Today's date" },
 ];
@@ -7481,10 +7481,10 @@ const ARI_PERMISSION_GROUPS = [
     { key: 'email_send', label: 'Draft & send email', kind: 'write' },
     { key: 'recruiting', label: 'Recruiting pipeline (read + update stage)', kind: 'write' },
   ]},
-  { group: 'Money & deals', items: [
+  { group: 'Money & files', items: [
     { key: 'finance_read', label: 'Read finance (GCI, ROI, budgets, transactions)', kind: 'read' },
     { key: 'transactions_write', label: 'Write transactions', kind: 'write' },
-    { key: 'portfolio_read', label: 'Deals, Properties, Investments, Mileage', kind: 'read' },
+    { key: 'portfolio_read', label: 'Files, Properties, Investments, Mileage', kind: 'read' },
   ]},
   { group: 'Knowledge & reach', items: [
     { key: 'knowledge_search', label: 'Search Brain / Notes / Playbooks', kind: 'read' },
@@ -9318,12 +9318,12 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         const agOf=(id)=>agents.find(x=>x.id===id)||{}; const nameOf=(id)=>agOf(id).name||'Unassigned';
         const tot=Object.values(byA).reduce((s,v)=>({deals:s.deals+v.deals,gci:s.gci+v.gci,net:s.net+v.net,co:s.co+v.co,ps:s.ps+v.ps}),{deals:0,gci:0,net:0,co:0,ps:0});
         const keys=Object.keys(byA).sort((a,b)=>byA[b].gci-byA[a].gci);
-        const export1099=()=>{ const h=['Agent','Email','License','Deals','GCI','Agent gross','Net cash paid','Company dollar','Savings','Retirement','Profit share']; const lines=[csvRow(h),...keys.map(k=>{ const v=byA[k],a=agOf(k); return csvRow([nameOf(k),a.email||'',a.license_no||'',v.deals,v.gci.toFixed(2),v.gross.toFixed(2),v.net.toFixed(2),v.co.toFixed(2),v.sav.toFixed(2),v.ret.toFixed(2),v.ps.toFixed(2)]); })]; dl(`ROG_1099_summary_${year}.csv`,lines.join('\n')); };
+        const export1099=()=>{ const h=['Agent','Email','License','Files','GCI','Agent gross','Net cash paid','Company dollar','Savings','Retirement','Profit share']; const lines=[csvRow(h),...keys.map(k=>{ const v=byA[k],a=agOf(k); return csvRow([nameOf(k),a.email||'',a.license_no||'',v.deals,v.gci.toFixed(2),v.gross.toFixed(2),v.net.toFixed(2),v.co.toFixed(2),v.sav.toFixed(2),v.ret.toFixed(2),v.ps.toFixed(2)]); })]; dl(`ROG_1099_summary_${year}.csv`,lines.join('\n')); };
         const exportACH=()=>{ const h=['Payee','Email','Amount','Memo']; const lines=[csvRow(h),...keys.filter(k=>byA[k].net>0).map(k=>{ const v=byA[k],a=agOf(k); return csvRow([nameOf(k),a.email||'',v.net.toFixed(2),`Commission ${year} (${v.deals} deals)`]); })]; dl(`ROG_payments_${year}.csv`,lines.join('\n')); };
         return (
           <div style={{marginTop:'12px',display:'grid',gap:'10px'}}>
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
-              {[['Deals',tot.deals],['GCI to ROG',money(tot.gci)],['Company dollar',money(tot.co)],['Profit share owed',money(tot.ps)]].map((c,i)=>(
+              {[['Files',tot.deals],['GCI to ROG',money(tot.gci)],['Company dollar',money(tot.co)],['Profit share owed',money(tot.ps)]].map((c,i)=>(
                 <div key={i} className="panel" style={{padding:'12px'}}><div style={{fontSize:'11px',color:'var(--text-3)'}}>{c[0]}</div><div style={{fontSize:'17px',fontWeight:800}}>{c[1]}</div></div>
               ))}
             </div>
@@ -9331,7 +9331,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
             {isAdmin && <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}><button className="btn btn-ghost btn-sm" onClick={export1099}><Icon name="dollar" size={13}/> Export 1099 summary (CSV)</button><button className="btn btn-ghost btn-sm" onClick={exportACH}>Export payments / ACH (CSV)</button></div>}
             <div className="panel" style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
-                <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'6px'}}>Agent</th><th style={{padding:'6px'}}>Deals</th><th style={{padding:'6px',textAlign:'right'}}>GCI</th><th style={{padding:'6px',textAlign:'right'}}>Net cash</th><th style={{padding:'6px',textAlign:'right'}}>Company $</th><th style={{padding:'6px',textAlign:'right'}}>Savings/Ret</th><th style={{padding:'6px',textAlign:'right'}}>Profit share</th></tr></thead>
+                <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'6px'}}>Agent</th><th style={{padding:'6px'}}>Files</th><th style={{padding:'6px',textAlign:'right'}}>GCI</th><th style={{padding:'6px',textAlign:'right'}}>Net cash</th><th style={{padding:'6px',textAlign:'right'}}>Company $</th><th style={{padding:'6px',textAlign:'right'}}>Savings/Ret</th><th style={{padding:'6px',textAlign:'right'}}>Profit share</th></tr></thead>
                 <tbody>
                   {keys.map(k=>{ const v=byA[k]; return <tr key={k} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'6px',fontWeight:600}}>{nameOf(k)}</td><td style={{padding:'6px'}}>{v.deals}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.gci)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.net)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.co)}</td><td style={{padding:'6px',textAlign:'right',color:'var(--text-3)'}}>{money(v.sav+v.ret)}</td><td style={{padding:'6px',textAlign:'right'}}>{money(v.ps)}</td></tr>; })}
                 </tbody>
@@ -9350,7 +9350,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         const keys=Object.keys(byU).sort((a,b)=>byU[b].owed-byU[a].owed);
         const totalOwed=keys.reduce((s,k)=>s+byU[k].owed,0);
         const unassigned=rows.filter(r=>{ const ag=agents.find(x=>x.id===r.agent_id); return !ag?.upline_id; }).reduce((s,r)=>s+(Number(r.profit_share)||0),0);
-        const exportPS=()=>{ const h=['Upline','Email','Contributing deals','Profit share owed']; const lines=[csvRow(h),...keys.map(k=>{ const a=agents.find(x=>x.id===k)||{}; return csvRow([nameOf(k),a.email||'',byU[k].deals,byU[k].owed.toFixed(2)]); })]; dl(`ROG_profit_share_${year}.csv`,lines.join('\n')); };
+        const exportPS=()=>{ const h=['Upline','Email','Contributing files','Profit share owed']; const lines=[csvRow(h),...keys.map(k=>{ const a=agents.find(x=>x.id===k)||{}; return csvRow([nameOf(k),a.email||'',byU[k].deals,byU[k].owed.toFixed(2)]); })]; dl(`ROG_profit_share_${year}.csv`,lines.join('\n')); };
         return (
           <div style={{marginTop:'12px',display:'grid',gap:'10px'}}>
             <div className="panel" style={{padding:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -9360,7 +9360,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
             {keys.length===0 ? <div className="panel" style={{textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No profit share recorded for {year}. Set an agent's upline and a profit-share % in their pay plan.</div> :
             <div className="panel" style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
-                <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'6px'}}>Upline (paid to)</th><th style={{padding:'6px'}}>Deals</th><th style={{padding:'6px'}}>From</th><th style={{padding:'6px',textAlign:'right'}}>Owed</th></tr></thead>
+                <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}><th style={{padding:'6px'}}>Upline (paid to)</th><th style={{padding:'6px'}}>Files</th><th style={{padding:'6px'}}>From</th><th style={{padding:'6px',textAlign:'right'}}>Owed</th></tr></thead>
                 <tbody>
                   {keys.map(k=><tr key={k} style={{borderBottom:'1px solid var(--border)'}}><td style={{padding:'6px',fontWeight:600}}>{nameOf(k)}</td><td style={{padding:'6px'}}>{byU[k].deals}</td><td style={{padding:'6px',color:'var(--text-2)'}}>{[...byU[k].from].filter(Boolean).join(', ')}</td><td style={{padding:'6px',textAlign:'right',fontWeight:700}}>{money(byU[k].owed)}</td></tr>)}
                 </tbody>
@@ -9531,7 +9531,7 @@ function PayPlanEditor({ agentId, userId, plan, agents, onSaved, onClose }){
       </div>
       <PlanLabel>Transaction fees</PlanLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}}>
-        <PlanField label="Per-deal fee $" value={p.transaction_fee} onChange={e=>set('transaction_fee',e.target.value)}/>
+        <PlanField label="Per-file fee $" value={p.transaction_fee} onChange={e=>set('transaction_fee',e.target.value)}/>
         <PlanField label="Buyer-side fee $" value={p.buyer_side_fee} onChange={e=>set('buyer_side_fee',e.target.value)}/>
         <PlanField label="Seller-side fee $" value={p.seller_side_fee} onChange={e=>set('seller_side_fee',e.target.value)}/>
       </div>
@@ -10731,7 +10731,7 @@ async function FileDetailModal({ file, onClose, onChange, onDelete, contacts, pr
             </label>
             {cdaAgentId && !cdaPlan && <div style={{fontSize:'12px',color:'var(--yellow)'}}>No active pay plan for this agent yet \u2014 add one in Brokerage. Calculations will be partial.</div>}
 
-            <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>Deal financials</div>
+            <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>File financials</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
               <label className="form-label">Sides represented<select className="form-input" value={cda.sides||'buyer'} onChange={e=>setCdaF('sides',e.target.value)}><option value="buyer">Buyer</option><option value="seller">Seller</option><option value="both">Both (dual)</option></select></label>
               <label className="form-label">Total commission %<input className="form-input" value={cda.total_rate??''} onChange={e=>setCdaF('total_rate',e.target.value)} placeholder="e.g. 6"/></label>
@@ -11165,7 +11165,7 @@ function AppMain() {
     { id: 'quo',         icon: '☎️', label: 'Quo',         badge: null },
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
-    { id: 'deals',       icon: '🤝', label: 'Deals',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
+    { id: 'deals',       icon: '🤝', label: 'Files',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
     { id: 'files',       icon: '📁', label: 'Files',       badge: files.filter(f=>f.side==='buyer' && !['closed','paid','cancelled'].includes(f.status)).length || null },
     ...((isAdmin||isTeamLeader) ? [{ id: 'agents',      icon: '👥', label: 'Brokerage',   badge: null }] : []),
     { id: 'mileage',     icon: '🚗', label: 'Mileage',     badge: null },

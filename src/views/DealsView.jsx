@@ -17,7 +17,7 @@ const DEAL_STAGES = [
   { id: 'under_contract', label: 'Under Contract', color: '#7c5cff', help: 'PSA signed, in inspection / financing period' },
   { id: 'closing',        label: 'Closing',        color: '#f59e0b', help: 'Contingencies cleared, scheduled to close' },
   { id: 'closed',         label: 'Closed',         color: '#22c55e', help: 'Done — commission paid' },
-  { id: 'lost',           label: 'Lost',           color: '#ef4444', help: 'Deal fell through or client went elsewhere' },
+  { id: 'lost',           label: 'Lost',           color: '#ef4444', help: 'File fell through or client went elsewhere' },
 ];
 
 const DEAL_ACTIVE_STAGE_IDS = ['lead','active','under_contract','closing'];
@@ -139,7 +139,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
       .select().single();
     setAdding(false);
     if (error) {
-      if (window.__notify) window.__notify('Could not add deal: ' + error.message, 'error');
+      if (window.__notify) window.__notify('Could not add file: ' + error.message, 'error');
       return;
     }
     setDeals(prev => [data, ...prev]);
@@ -210,30 +210,30 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
       net_commission: net,
       income_transaction_id: tx.id,
     });
-    if (window.__notify) window.__notify(`Deal closed — $${Math.round(net).toLocaleString()} logged as commission income.`, 'success');
+    if (window.__notify) window.__notify(`File closed — $${Math.round(net).toLocaleString()} logged as commission income.`, 'success');
   }
 
   return (
     <div className="page-shell">
       <div className="page-header">
-        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="deals" size={26} style={{color:'var(--accent)',flexShrink:0}} />Deals</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm(true)}>+ Deal</button>
+        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="deals" size={26} style={{color:'var(--accent)',flexShrink:0}} />Files</h2>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm(true)}>+ File</button>
       </div>
 
       {/* KPI strip */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'8px',marginBottom:'14px'}}>
-        <RecruitingKpiTile label="Active pipeline" value={kpis.activeCount} sub={`${deals.length} total deals`}/>
+        <RecruitingKpiTile label="Active pipeline" value={kpis.activeCount} sub={`${deals.length} total files`}/>
         <RecruitingKpiTile label="Closed YTD" value={kpis.closedYTD} sub={kpis.closedMTD > 0 ? `${kpis.closedMTD} this month` : null} color="var(--green)"/>
         <RecruitingKpiTile label="GCI YTD" value={`$${Math.round(kpis.grossYTD).toLocaleString()}`} sub="gross commission"/>
         <RecruitingKpiTile label="Net YTD" value={`$${Math.round(kpis.netYTD).toLocaleString()}`} sub="after splits/fees" color="var(--accent)"/>
-        <RecruitingKpiTile label="Avg net / deal" value={kpis.avgNet !== null ? `$${Math.round(kpis.avgNet).toLocaleString()}` : '—'} sub={kpis.closedYTD === 0 ? 'no closes YTD' : null}/>
+        <RecruitingKpiTile label="Avg net / file" value={kpis.avgNet !== null ? `$${Math.round(kpis.avgNet).toLocaleString()}` : '—'} sub={kpis.closedYTD === 0 ? 'no closes YTD' : null}/>
         <RecruitingKpiTile label="Pipeline GCI" value={kpis.pipelineGross > 0 ? `$${Math.round(kpis.pipelineGross).toLocaleString()}` : '—'} sub="if all close"/>
       </div>
 
       {/* Inline add form */}
       {showAddForm && (
         <div className="panel" style={{padding:'12px',marginBottom:'12px',background:'var(--bg-card)',border:'1px solid var(--accent)'}}>
-          <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'10px',fontWeight:600}}>Add a deal</div>
+          <div style={{fontSize:'12px',color:'var(--text-2)',marginBottom:'10px',fontWeight:600}}>Add a file</div>
           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
             <input className="form-input" placeholder='Deal name (e.g. "Jala — 1234 Main St")'
               value={newDealName} onChange={e=>setNewDealName(e.target.value)} autoFocus/>
@@ -335,7 +335,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
 function DealCard({ deal, stage, contacts, properties, onClick, onDragStart, onDragEnd, dragging }) {
   const client = deal.primary_client_id ? contacts.find(c => c.id === deal.primary_client_id) : null;
   const property = deal.property_id ? properties.find(p => p.id === deal.property_id) : null;
-  const displayName = deal.name || client?.name || deal.client_name || '(unnamed deal)';
+  const displayName = deal.name || client?.name || deal.client_name || '(unnamed file)';
   const sub = property?.address || deal.address || (client && deal.name ? null : (client?.name || deal.client_name));
   const moneyHint = deal.status === 'closed' && deal.net_commission
     ? `Net $${Math.round(deal.net_commission).toLocaleString()}`
@@ -508,10 +508,10 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
       <div className="modal" style={{maxWidth:'520px',maxHeight:'92vh',overflowY:'auto'}}>
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px',gap:'8px'}}>
           <div style={{minWidth:0,flex:1}}>
-            <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'2px'}}>Deal</div>
+            <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'2px'}}>File</div>
             <input type="text" value={name} onChange={e => setName(e.target.value)}
               onBlur={() => commit('name', name.trim() || null)}
-              placeholder="Deal name"
+              placeholder="File name"
               style={{
                 width:'100%', fontSize:'17px', fontWeight:700,
                 background:'transparent',color:'var(--text-1)',
@@ -616,7 +616,7 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
         {/* Lead-gen attribution */}
         <div style={{marginTop:'14px',marginBottom:'8px',fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>Attribution</div>
         <div className="form-group">
-          <label className="form-label">Lead-gen system that generated this deal</label>
+          <label className="form-label">Lead-gen system that generated this file</label>
           <select value={leadGenId || ''}
             onChange={e => { setLeadGenId(e.target.value || null); commit('lead_gen_system_id', e.target.value || null); }}
             style={inputStyle}>
@@ -776,7 +776,7 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
 
         {/* Notes */}
         <div className="form-group" style={{marginTop:'14px'}}>
-          <label className="form-label">Deal notes</label>
+          <label className="form-label">File notes</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)}
             onBlur={() => commit('notes', notes.trim() || null)}
             rows={3}
@@ -793,12 +793,12 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginTop:'16px',paddingTop:'12px',borderTop:'1px solid var(--border)'}}>
           <button type="button" onClick={onDelete}
             style={{padding:'7px 12px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--red)',cursor:'pointer',fontSize:'11px',fontWeight:600}}>
-            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="trash" size={14} /> Delete deal</span>
+            <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="trash" size={14} /> Delete file</span>
           </button>
           {deal.status !== 'closed' && deal.status !== 'lost' && (
             <button type="button" onClick={() => setShowCloseModal(true)}
               style={{padding:'8px 14px',background:'var(--green)',border:'none',borderRadius:'6px',color:'#fff',cursor:'pointer',fontSize:'12px',fontWeight:700}}>
-              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="deals" size={14} /> Close deal · log commission</span>
+              <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="deals" size={14} /> Close file · log commission</span>
             </button>
           )}
         </div>
@@ -856,11 +856,11 @@ function CloseDealModal({ deal, onClose, onConfirm }) {
     <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{zIndex:1300}}>
       <div className="modal" style={{maxWidth:'420px'}}>
         <div className="modal-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
-          <h3 style={{margin:0,fontSize:'14px'}}>Close this deal</h3>
+          <h3 style={{margin:0,fontSize:'14px'}}>Close this file</h3>
           <button onClick={onClose} style={{background:'none',border:'none',fontSize:'18px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
         </div>
         <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,marginBottom:'12px'}}>
-          Confirm the final numbers. On save we'll mark the deal closed and create an income transaction for the net commission, attributed to the deal's lead-gen system.
+          Confirm the final numbers. On save we'll mark the file closed and create an income transaction for the net commission, attributed to the file's lead-gen system.
         </p>
 
         <div className="form-group">
