@@ -10,12 +10,43 @@ const TIER_BANDS = [
 ];
 
 
-function computeTier(ytdGCI, settings) {
+function computeTier(ytdGCI, settings, factor = 1) {
   if (!settings) return TIER_BANDS[0];
-  if (ytdGCI >= settings.tier_mega_min) return TIER_BANDS[3];
-  if (ytdGCI >= settings.tier_top_producer_min) return TIER_BANDS[2];
-  if (ytdGCI >= settings.tier_producer_min) return TIER_BANDS[1];
+  const f = factor > 0 ? factor : 1;
+  if (ytdGCI >= settings.tier_mega_min * f) return TIER_BANDS[3];
+  if (ytdGCI >= settings.tier_top_producer_min * f) return TIER_BANDS[2];
+  if (ytdGCI >= settings.tier_producer_min * f) return TIER_BANDS[1];
   return TIER_BANDS[0];
+}
+
+// First-year pro-rata. When an agent starts mid-year, a Jan-1-based annual goal,
+// pace clock and budget make them look hopelessly behind and over-budget their
+// partial year. With pro-rata on (and an activation date inside the current year),
+// annual targets/budgets/time-commitments and the pace clock are scaled to the
+// slice of the year the agent is actually active. Off by default -> no change.
+function getProrata(settings) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const yearStart = new Date(y, 0, 1);
+  const yearEnd = new Date(y, 11, 31);
+  const daysInYear = Math.round((new Date(y + 1, 0, 1) - yearStart) / 86400000);
+  const enabled = !!(settings && settings.prorate_first_year && settings.activation_date);
+  let activeStart = yearStart;
+  if (enabled) {
+    const a = new Date(settings.activation_date + 'T00:00:00');
+    if (!isNaN(a) && a.getFullYear() === y && a > yearStart) activeStart = a;
+  }
+  const activeDays = Math.round((yearEnd - activeStart) / 86400000) + 1;
+  const factor = enabled ? Math.min(1, activeDays / daysInYear) : 1;
+  const elapsed = Math.floor((now - activeStart) / 86400000) + 1;
+  const activeDaysElapsed = Math.max(1, Math.min(activeDays, elapsed));
+  return {
+    active: enabled && factor < 1,
+    factor, activeStart, activeDays, daysInYear, activeDaysElapsed,
+    weeksActive: activeDays / 7,
+    pct: Math.round(factor * 100),
+    startLabel: activeStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+  };
 }
 
 
@@ -972,7 +1003,7 @@ function FinanceView({ userId }) {
   const ytdIncome  = ytdTx.filter(t => t.scope === 'business' && Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const ytdExpense = ytdTx.filter(t => t.scope === 'business' && Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0);
   const ytdNet = ytdIncome + ytdExpense;
-  const tier = computeTier(ytdIncome, settings);
+  const tier = computeTier(ytdIncome, settings, getProrata(settings).factor);
 
   if (loading) return <div className="loading-screen"><div className="spinner"/></div>;
 
@@ -1262,12 +1293,13 @@ function FinanceDashboard({
   transactions, systems, tier, completions, setCompletions, readOnly,
   onGoLedger, onGoBlueprint, onGoSystems,
 }) {
-  const goal = Number(settings?.annual_gci_goal) || 150000;
+  const pr = getProrata(settings);
+  const fullGoal = Number(settings?.annual_gci_goal) || 150000;
+  const goal = fullGoal * pr.factor;
   const pct = goal > 0 ? Math.min(1, ytdIncome / goal) : 0;
   const now = new Date();
-  const yearStart = new Date(now.getFullYear(), 0, 1);
-  const dayOfYear = Math.floor((now - yearStart) / (1000 * 60 * 60 * 24)) + 1;
-  const expectedPct = dayOfYear / 365;
+  const dayOfYear = pr.activeDaysElapsed;
+  const expectedPct = pr.activeDays > 0 ? dayOfYear / pr.activeDays : 0;
   const expectedYTD = goal * expectedPct;
   const paceDelta = ytdIncome - expectedYTD;
   const paceStatus = paceDelta >= 0
@@ -1341,14 +1373,14 @@ function FinanceDashboard({
         </div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'10px'}}>
           <span style={{fontSize:'26px',fontWeight:800,color:'var(--text-1)'}}>{fmtUSD(ytdIncome)}</span>
-          <span style={{fontSize:'14px',color:'var(--text-3)'}}>of {fmtUSD(goal)}</span>
+          <span style={{fontSize:'14px',color:'var(--text-3)'}}>of {fmtUSD(goal)}{pr.active ? ' · first-yr' : ''}</span>
         </div>
         <div style={{position:'relative',height:'14px',background:'var(--bg-base)',borderRadius:'7px',overflow:'hidden',border:'1px solid var(--border)'}}>
           <div style={{width:`${pct * 100}%`,height:'100%',background:`linear-gradient(90deg, ${tier.color} 0%, var(--accent-2) 100%)`,transition:'width 0.5s ease'}}/>
           <div style={{position:'absolute',top:'-3px',bottom:'-3px',left:`${expectedPct * 100}%`,width:'2px',background:paceStatus.color,opacity:0.7}} title={`Pace: ${fmtUSD(expectedYTD)} by day ${dayOfYear}`}/>
         </div>
         <div style={{marginTop:'6px',fontSize:'11px',color:'var(--text-3)'}}>
-          {fmtPct(pct, 0)} to goal · pace marker at {fmtPct(expectedPct, 0)} (day {dayOfYear} of 365)
+          {fmtPct(pct, 0)} to goal · pace marker at {fmtPct(expectedPct, 0)} (day {dayOfYear} of {pr.active ? pr.activeDays : 365}){pr.active ? ` · first year pro-rated to ${pr.pct}% from ${pr.startLabel}` : ''}
         </div>
       </div>
 
@@ -1584,6 +1616,7 @@ function FinanceBlueprint({
     .filter(c => c.id !== advertisingCat?.id)
     .reduce((s, c) => s + Number(c.monthly_budget || 0), 0);
   const businessAnnual = (systemsMonthlyTotal + nonAdvBusinessMonthly) * 12;
+  const prorata = getProrata(settings);
 
   const grandTotalNeed = personalAnnual + businessAnnual;
   const taxPct = Number(settings?.estimated_tax_pct) || 0.25;
@@ -1737,6 +1770,11 @@ function FinanceBlueprint({
         <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'4px',lineHeight:1.5}}>
           To net <strong>{fmtUSD(grandTotalNeed)}</strong> after {fmtPct(taxPct, 0)} tax · requires <strong>{txnsNeeded} closed deals</strong>
         </div>
+        {prorata.active && (
+          <div style={{fontSize:'11px',color:'var(--accent)',marginTop:'6px',fontWeight:600,lineHeight:1.5}}>
+            First year (pro-rated to {prorata.pct}% from {prorata.startLabel}): target <strong>{fmtUSD(gciGoal * prorata.factor)}</strong> · ~{Math.max(1, Math.round(txnsNeeded * prorata.factor))} closed deals
+          </div>
+        )}
         {!readOnly && (
           <div style={{marginTop:'10px',display:'flex',gap:'12px',flexWrap:'wrap'}}>
             <button className="btn btn-primary btn-sm" onClick={saveBlueprint} disabled={saving}>
@@ -1779,8 +1817,8 @@ function FinanceBlueprint({
           <button className="btn btn-ghost btn-sm" style={{marginTop:'8px'}} onClick={() => setAddingPersonal(true)}>+ Add personal category</button>
         ))}
         <div style={{marginTop:'12px',padding:'10px 12px',background:'var(--bg-base)',borderRadius:'8px',display:'flex',justifyContent:'space-between'}}>
-          <span style={{fontSize:'12px',color:'var(--text-2)',fontWeight:600}}>Personal annual</span>
-          <span style={{fontSize:'14px',color:'var(--text-1)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmtUSD(personalAnnual)}</span>
+          <span style={{fontSize:'12px',color:'var(--text-2)',fontWeight:600}}>Personal annual{prorata.active ? ' · first-yr' : ''}</span>
+          <span style={{fontSize:'14px',color:'var(--text-1)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmtUSD(prorata.active ? personalAnnual * prorata.factor : personalAnnual)}</span>
         </div>
       </div>
 
@@ -1817,8 +1855,8 @@ function FinanceBlueprint({
           <button className="btn btn-ghost btn-sm" style={{marginTop:'8px'}} onClick={() => setAddingBiz(true)}>+ Add business category</button>
         ))}
         <div style={{marginTop:'12px',padding:'10px 12px',background:'var(--bg-base)',borderRadius:'8px',display:'flex',justifyContent:'space-between'}}>
-          <span style={{fontSize:'12px',color:'var(--text-2)',fontWeight:600}}>Business annual</span>
-          <span style={{fontSize:'14px',color:'var(--text-1)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmtUSD(businessAnnual)}</span>
+          <span style={{fontSize:'12px',color:'var(--text-2)',fontWeight:600}}>Business annual{prorata.active ? ' · first-yr' : ''}</span>
+          <span style={{fontSize:'14px',color:'var(--text-1)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmtUSD(prorata.active ? businessAnnual * prorata.factor : businessAnnual)}</span>
         </div>
       </div>
 
@@ -1826,12 +1864,12 @@ function FinanceBlueprint({
       {(() => {
         const hourlyRate = Number(settings?.hourly_rate || 0);
         const committedPerWeek = Number(settings?.prospecting_hours_per_week || 0);
-        const WEEKS = 48;
+        const pr = getProrata(settings);
+        const WEEKS = 48 * pr.factor;
         const committedAnnualHours = committedPerWeek * WEEKS;
         const committedAnnualValue = committedAnnualHours * hourlyRate;
         const now = new Date();
-        const jan1 = new Date(now.getFullYear(), 0, 1);
-        const weeksElapsed = Math.min(WEEKS, Math.max(0, (now - jan1) / (7 * 24 * 3600 * 1000)));
+        const weeksElapsed = Math.min(WEEKS, Math.max(0, (now - pr.activeStart) / (7 * 24 * 3600 * 1000)));
         const committedToDateHours = committedPerWeek * weeksElapsed;
         const committedToDateValue = committedToDateHours * hourlyRate;
         const loggedMinutes = (timeEntries || []).reduce((sum, te) => sum + Number(te.minutes || 0), 0);
@@ -1900,6 +1938,26 @@ function FinanceBlueprint({
           <SettingInput label="Your split with broker" value={Number(settings?.broker_split_pct) * 100} suffix="%" onSave={v => updateSetting({ broker_split_pct: v / 100 })} step="0.5" readOnly={readOnly} />
           <SettingInput label="Estimated tax %" value={Number(settings?.estimated_tax_pct) * 100} suffix="%" onSave={v => updateSetting({ estimated_tax_pct: v / 100 })} step="1" readOnly={readOnly} />
           <SettingInput label="Prospecting hours / week" value={settings?.prospecting_hours_per_week} suffix="hrs" onSave={saveProspectHours} step="0.5" readOnly={readOnly} />
+        </div>
+        {/* First-year pro-rata control */}
+        <div style={{marginTop:'12px',padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px'}}>
+          <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:readOnly?'default':'pointer',fontSize:'13px',color:'var(--text-1)',fontWeight:600}}>
+            <input type="checkbox" checked={!!settings?.prorate_first_year} disabled={readOnly}
+              onChange={e => updateSetting({ prorate_first_year: e.target.checked })} />
+            First year — pro-rate my targets &amp; budgets
+          </label>
+          <p style={{fontSize:'11px',color:'var(--text-3)',margin:'6px 0 8px',lineHeight:1.5}}>
+            If you started part-way through the year, this scales your GCI goal, budgets, pace clock and time commitment to the slice of the year you're actually working — so a mid-year start isn't measured against a full January–December year. Your saved goal stays the full-year figure; only the first-year view is pro-rated.
+          </p>
+          <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+            <span style={{fontSize:'12px',color:'var(--text-2)'}}>Started on</span>
+            <input type="date" className="form-input" style={{maxWidth:'180px'}} value={settings?.activation_date || ''}
+              disabled={readOnly || !settings?.prorate_first_year}
+              onChange={e => updateSetting({ activation_date: e.target.value || null })} />
+            {settings?.prorate_first_year && settings?.activation_date && (
+              <span style={{fontSize:'11px',color:'var(--accent)',fontWeight:700}}>{getProrata(settings).pct}% of {new Date().getFullYear()} active</span>
+            )}
+          </div>
         </div>
         {/* Auto-computed prospecting hourly value */}
         <div style={{marginTop:'12px',padding:'12px 14px',background:'linear-gradient(135deg, rgba(197,169,94,0.10), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}}>
