@@ -11289,8 +11289,8 @@ function AppMain() {
     { label: 'Ari Calendar', view: 'calendar', icon: '📅' },
     { label: 'Ari Contacts', view: 'contacts', icon: '👥' },
     { label: 'Ari Files / Contract Mgmt', view: 'files', icon: '📁' },
-    { label: 'Ari Text & Phone', view: 'quo', icon: '☎️' },
     { label: 'Ari Journal', view: 'journal', icon: '📓' },
+    { label: 'Ari Text & Phone', view: 'quo', icon: '☎️' },
     { label: 'My Business / Finance', view: 'finance', icon: '📊', children: [
       fin('ledger', 'Data Entry'),
       fin('blueprint', 'Blueprint (budget)'),
