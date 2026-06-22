@@ -818,8 +818,9 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
 }
 
 
-function ProspectingView({ userId }) {
+function ProspectingView({ userId, initialSub = null, subNonce = 0 }) {
   const [sub, setSub] = useState('today');
+  useEffect(() => { if (initialSub) setSub(initialSub); }, [initialSub, subNonce]);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState(null);
   const [systems, setSystems] = useState([]);
@@ -929,8 +930,9 @@ function ProspectingView({ userId }) {
 // searchable across every day. Confirmed links also appear on each record's card.
 // ═══════════════════════════════════════════════════════════════════════
 
-function FinanceView({ userId }) {
-  const [subView, setSubView] = useState('dashboard');
+function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
+  const [subView, setSubView] = useState(initialSub || 'dashboard');
+  useEffect(() => { if (initialSub) setSubView(initialSub); }, [initialSub, subNonce]);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState(null);
   const [taxCategories, setTaxCategories] = useState([]);

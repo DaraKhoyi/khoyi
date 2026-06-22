@@ -52,6 +52,56 @@ const PrismView = lazyWithReload(() => import('./views/PrismView'));
 
 const NotesView = lazyWithReload(() => import('./views/NotesView'));
 
+// ── Hierarchical sidebar menu helpers ───────────────────────────────
+function assignMenuKeys(nodes, prefix) {
+  nodes.forEach((n, i) => { n._key = prefix + '-' + i; if (n.children) assignMenuKeys(n.children, n._key); });
+}
+function menuDescendantBuilt(node, builtSet) {
+  if (node.built === false) return false;
+  if (node.children) return node.children.some(c => menuDescendantBuilt(c, builtSet));
+  return node.view ? builtSet.has(node.view) : false;
+}
+function menuContainsView(node, view) {
+  if (!node.children) return node.view === view;
+  return node.children.some(c => menuContainsView(c, view));
+}
+function MenuNode({ node, depth, ctx }) {
+  const { view, navigate, builtSet, byNavId, isOpen, toggle } = ctx;
+  const hasChildren = !!(node.children && node.children.length);
+  const leafView = node.view || null;
+  const built = node.built === false ? false
+    : hasChildren ? menuDescendantBuilt(node, builtSet)
+    : (leafView ? builtSet.has(leafView) : false);
+  const open = hasChildren && (isOpen(node._key) || menuContainsView(node, view));
+  const active = leafView === view && !hasChildren && !node.sub;
+  const clickable = (built && leafView) || hasChildren;
+  const handleClick = () => {
+    if (built && leafView) navigate(leafView, node.sub || null);
+    if (hasChildren) toggle(node._key);
+  };
+  const indent = 14 + depth * 15;
+  return (
+    <>
+      <div className={'nav-item' + (active ? ' active' : '')}
+        onClick={clickable ? handleClick : undefined}
+        title={(built || hasChildren) ? undefined : 'Not built yet'}
+        style={{ paddingLeft: indent + 'px', fontSize: depth === 0 ? '14px' : '12.5px',
+          color: built ? 'var(--text-1)' : 'var(--text-3)',
+          opacity: (built || hasChildren) ? 1 : 0.5,
+          cursor: clickable ? 'pointer' : 'default' }}>
+        {depth === 0
+          ? <span className="icon">{leafView ? <Icon name={leafView} size={18} fb={node.icon || '•'} /> : (node.icon || '•')}</span>
+          : <span style={{ display: 'inline-flex', width: '12px', flexShrink: 0, color: 'var(--text-3)', fontSize: '10px' }}>{hasChildren ? (open ? '▾' : '▸') : '·'}</span>}
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}</span>
+        {!built && !hasChildren && <span style={{ fontSize: '8.5px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>soon</span>}
+        {depth === 0 && leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-badge">{byNavId[leafView].badge}</span> : null}
+        {depth === 0 && hasChildren && <span style={{ marginLeft: '6px', fontSize: '10px', opacity: 0.6, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>}
+      </div>
+      {hasChildren && open && node.children.map((c, i) => <MenuNode key={c._key || i} node={c} depth={depth + 1} ctx={ctx} />)}
+    </>
+  );
+}
+
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
 if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 
@@ -10880,6 +10930,8 @@ function AppMain() {
   const [focusTaskId, setFocusTaskId] = useState(null);
   const [focusEventId, setFocusEventId] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [menuExpanded, setMenuExpanded] = useState(() => new Set());
+  const [deepLink, setDeepLink] = useState({ view: null, sub: null, n: 0 });
   const [tasks, setTasks] = useState([]);
   const [robots, setRobots] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -11144,7 +11196,7 @@ function AppMain() {
     setDataLoaded(false);
   }
 
-  const navigate = (id) => { setView(id); setSidebarOpen(false); };
+  const navigate = (id, sub = null) => { setView(id); if (sub) setDeepLink(d => ({ view: id, sub, n: d.n + 1 })); setSidebarOpen(false); };
 
   if (loading) return <div className="loading-screen"><div className="spinner"/><p>Loading…</p></div>;
   if (!session) return <AuthScreen />;
@@ -11196,6 +11248,94 @@ function AppMain() {
   const moreNav = [...MORE_ORDER.map(id => byNavId[id]).filter(Boolean), ...NAV.filter(i => !usedIds.has(i.id))];
   const viewInMore = moreNav.some(i => i.id === view);
 
+  // Master menu (mirrors the menu plan PDF). White = built & working; greyed "soon" = not built yet.
+  const builtSet = new Set(NAV.map(i => i.id));
+  const canB = isAdmin || isTeamLeader;
+  const fin = (sub, label) => ({ label, view: 'finance', sub });
+  const MENU = [
+    { label: 'Dashboard', view: 'dashboard', icon: '⚡' },
+    { label: 'Ari Prism AI (Claude)', view: 'chat', icon: '✦' },
+    { label: 'Ari Briefing', view: 'briefing', icon: '🌅' },
+    { label: 'Prospecting', view: 'prospecting', icon: '🎯' },
+    { label: 'Tasks', view: 'tasks', icon: '✅' },
+    { label: 'Ari Inbox', view: 'inbox', icon: '📬' },
+    { label: 'Ari Calendar', view: 'calendar', icon: '📅' },
+    { label: 'Ari Contacts', view: 'contacts', icon: '👥' },
+    { label: 'Ari Files / Contract Mgmt', view: 'files', icon: '📁' },
+    { label: 'Ari Text & Phone', view: 'quo', icon: '☎️' },
+    { label: 'Ari Journal', view: 'journal', icon: '📓' },
+    { label: 'My Business / Finance', view: 'finance', icon: '📊', children: [
+      fin('ledger', 'Data Entry'),
+      fin('blueprint', 'Blueprint (budget)'),
+      { label: 'Prospecting', view: 'prospecting' },
+      { label: 'Lead Funnel', built: false },
+      { label: 'Mileage Tracker', view: 'mileage' },
+    ] },
+    { label: 'More', icon: '⋯', children: [
+      { label: 'On Boarding', children: [
+        { label: 'DISC / Grit Test', built: false },
+        { label: 'My Prism Profile', view: 'prism' },
+        { label: 'Voice Card / Memory Text', view: 'prism' },
+        fin('blueprint', 'Blueprint (budget)'),
+        { label: 'Business Questionnaire', built: false },
+        { label: 'Ari Lead Gen. Suggestions', built: false },
+        { label: 'Active Lead Generation Systems', view: 'prospecting', sub: 'systems' },
+      ] },
+      { label: 'My Business / Finance', view: 'finance', children: [
+        fin('ledger', 'Data Entry'),
+        fin('blueprint', 'Blueprint (budget)'),
+        { label: 'Prospecting', view: 'prospecting' },
+        { label: 'Lead Funnel', built: false },
+        { label: 'Mileage Tracker', view: 'mileage' },
+      ] },
+      { label: 'Training', children: [
+        { label: 'Playbooks', view: 'playbooks' },
+        { label: 'DISC Learning', built: false },
+        { label: 'Accountability Partner', built: false },
+        { label: 'Coaching', built: false },
+      ] },
+      { label: 'Projects', children: [
+        { label: 'Deals', view: 'deals' },
+        { label: 'Investments', view: 'investments' },
+        { label: 'Properties', view: 'properties' },
+        { label: 'Projects', view: 'tracker' },
+      ] },
+      { label: 'Systems / Settings', children: [
+        { label: 'My Prism Profile', view: 'prism' },
+        { label: 'Brain', view: 'brain' },
+        { label: 'AI Notes', view: 'notes' },
+        { label: 'Systems', view: 'systems' },
+        { label: 'Settings', view: 'settings' },
+      ] },
+      { label: 'Brokerage or Team View', children: [
+        { label: 'Brokerage Team Dashboard', view: canB ? 'agents' : undefined, built: canB ? undefined : false, children: [
+          { label: 'Add Brokerage or Team Members', built: false },
+          { label: 'Set up Agent profiles', built: false },
+        ] },
+        { label: 'Contract Management', view: canB ? 'files' : undefined, built: canB ? undefined : false },
+        { label: 'Finance', view: canB ? 'finance' : undefined, built: canB ? undefined : false, children: [
+          canB ? fin('ledger', 'Data Entry / Scan') : { label: 'Data Entry / Scan', built: false },
+          canB ? fin('reports', 'Financial Reporting') : { label: 'Financial Reporting', built: false },
+          { label: 'Agent Roster', view: canB ? 'agents' : undefined, built: canB ? undefined : false, children: [
+            { label: 'Commission Plan', built: false },
+            { label: 'GCI Goal', built: false },
+            { label: 'Commission Earned', built: false },
+            { label: 'On track?', built: false },
+            { label: 'DISC', built: false },
+            { label: 'Lead Systems Deployed', built: false },
+            { label: 'Company Leads', built: false },
+            { label: 'Oversight / Accountability', built: false },
+            { label: 'Other', built: false },
+          ] },
+        ] },
+      ] },
+    ] },
+  ];
+  assignMenuKeys(MENU, 'm');
+  const menuCtx = { view, navigate, builtSet, byNavId,
+    isOpen: (k) => menuExpanded.has(k),
+    toggle: (k) => setMenuExpanded(st => { const n = new Set(st); if (n.has(k)) n.delete(k); else n.add(k); return n; }) };
+
   return (
     <div className="app-shell" style={{flexDirection:'column'}}>
       <InstallPwaPrompt />
@@ -11220,30 +11360,8 @@ function AppMain() {
             <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></div>
           </div>
           <div className="sidebar-nav">
-            <div className="nav-section-label">Workspace</div>
-            {mainNav.map(item => (
-              <div key={item.id} className={`nav-item ${view===item.id?'active':''}`} onClick={()=>navigate(item.id)}>
-                <span className="icon"><Icon name={item.id} size={18} fb={item.icon} /></span>
-                {item.label}
-                {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
-              </div>
-            ))}
-            {moreNav.length > 0 && (
-              <>
-                <div className={`nav-item ${viewInMore && !moreOpen ? 'active' : ''}`} onClick={()=>setMoreOpen(o=>!o)}>
-                  <span className="icon">⋯</span>
-                  More
-                  <span style={{marginLeft:'auto',fontSize:'11px',opacity:0.6,transition:'transform 0.2s',transform:(moreOpen||viewInMore)?'rotate(90deg)':'none'}}>▸</span>
-                </div>
-                {(moreOpen || viewInMore) && moreNav.map(item => (
-                  <div key={item.id} className={`nav-item ${view===item.id?'active':''}`} onClick={()=>navigate(item.id)} style={{paddingLeft:'30px',fontSize:'13px'}}>
-                    <span className="icon"><Icon name={item.id} size={18} fb={item.icon} /></span>
-                    {item.label}
-                    {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
-                  </div>
-                ))}
-              </>
-            )}
+            <div className="nav-section-label">Menu</div>
+            {MENU.map((node, i) => <MenuNode key={node._key || i} node={node} depth={0} ctx={menuCtx} />)}
           </div>
           <div className="sidebar-footer">
             <div className="sidebar-user">
@@ -11277,7 +11395,7 @@ function AppMain() {
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks}/>
-              : view==='prospecting' ? <ProspectingView userId={user.id}/>
+              : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='quo'         ? <QuoView contacts={contacts} userId={user.id}/>
@@ -11289,7 +11407,7 @@ function AppMain() {
               : view==='mileage'     ? <MileageView mileageEntries={mileageEntries} setMileageEntries={setMileageEntries} deals={deals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
-              : view==='finance'     ? <FinanceView userId={user.id}/>
+              : view==='finance'     ? <FinanceView userId={user.id} initialSub={deepLink.view==='finance'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events} contacts={contacts}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks} focusEventId={focusEventId} setFocusEventId={setFocusEventId}/>
