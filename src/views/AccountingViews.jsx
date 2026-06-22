@@ -2157,8 +2157,10 @@ function FinanceLedger({ userId, transactions, setTransactions, taxCategories, s
           // filter — backlog is backlog regardless of which month you're viewing)
           const effectiveScope = (!trackPersonal || scopeFilter === 'business') ? 'business' :
                                  scopeFilter === 'personal' ? 'personal' : 'business';
+          const uncatYear = new Date().getFullYear();
           const uncategorizedCount = transactions.filter(t =>
-            t.scope === effectiveScope && !t.tax_category_id && !t.is_archived
+            t.scope === effectiveScope && !t.tax_category_id && !t.is_archived &&
+            t.date && Number(String(t.date).slice(0, 4)) === uncatYear
           ).length;
           if (uncategorizedCount === 0) return null;
           return (
@@ -3419,9 +3421,13 @@ function BulkCategorizeModal({ userId, transactions, setTransactions, taxCategor
   // The uncategorized backlog — only rows in the matching scope (so the
   // Business and Personal flows stay separated and the dropdowns stay
   // relevant) AND missing a tax_category_id.
+  // Only THIS calendar year's backlog — older rows belong to a closed year and
+  // would otherwise clutter the current year's categorize flow.
+  const currentYear = new Date().getFullYear();
   const uncategorized = useMemo(() => transactions.filter(t =>
-    t.scope === scope && !t.tax_category_id && !t.is_archived
-  ).sort((a, b) => (b.date || '').localeCompare(a.date || '')), [transactions, scope]);
+    t.scope === scope && !t.tax_category_id && !t.is_archived &&
+    t.date && Number(String(t.date).slice(0, 4)) === currentYear
+  ).sort((a, b) => (b.date || '').localeCompare(a.date || '')), [transactions, scope, currentYear]);
 
   // The categorized history — used to feed the auto-suggester.
   const suggester = useMemo(() => buildSuggester(
@@ -3575,7 +3581,7 @@ function BulkCategorizeModal({ userId, transactions, setTransactions, taxCategor
           <h3 style={{margin:0,fontSize:'15px'}}>
             Bulk categorize
             <span style={{fontSize:'11px',color:'var(--text-3)',fontWeight:400,marginLeft:'8px'}}>
-              · {scope === 'business' ? 'Business' : 'Personal'} · {totalUncategorized} uncategorized
+              · {scope === 'business' ? 'Business' : 'Personal'} · {currentYear} · {totalUncategorized} uncategorized
             </span>
           </h3>
           <button onClick={onClose} style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
@@ -3622,56 +3628,51 @@ function BulkCategorizeModal({ userId, transactions, setTransactions, taxCategor
                 const isPicked = !!p.categoryId;
                 const isAuto = isPicked && p.confidence && p.confidence !== 'manual' && !p.userTouched;
                 return (
-                  <div key={t.id} style={{display:'grid',gridTemplateColumns:'80px 1fr 90px 1fr 1fr 30px',gap:'8px',padding:'8px 10px',borderBottom:'1px solid var(--border)',alignItems:'center',background: isPicked ? 'rgba(34,197,94,0.03)' : 'transparent'}}>
-                    {/* Date */}
-                    <div style={{fontSize:'10.5px',color:'var(--text-3)',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{t.date}</div>
-                    {/* Payee */}
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:'12px',color:'var(--text-1)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.payee || '(no payee)'}</div>
-                      {isAuto && (
-                        <div style={{fontSize:'9.5px',color:'var(--accent)',marginTop:'1px'}}>
-                          <Icon name="sparkles" size={11} /> matched "{p.matchedFrom}" · {p.confidence}
-                          <button onClick={() => applyToMatching(t.id)} title="Apply to all matching"
-                            style={{background:'transparent',border:'none',color:'var(--text-3)',marginLeft:'6px',cursor:'pointer',fontSize:'9.5px',padding:0,textDecoration:'underline'}}>
-                            ↪ apply to all
-                          </button>
-                        </div>
-                      )}
-                      {p.userTouched && isPicked && (
-                        <div style={{fontSize:'9.5px',color:'var(--text-3)',marginTop:'1px'}}>
-                          <button onClick={() => applyToMatching(t.id)} title="Apply to all matching"
-                            style={{background:'transparent',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'9.5px',padding:0,textDecoration:'underline'}}>
-                            ↪ apply to all matching
-                          </button>
-                        </div>
-                      )}
+                  <div key={t.id} style={{display:'flex',flexDirection:'column',gap:'10px',padding:'12px 14px',borderBottom:'1px solid var(--border)',background: isPicked ? 'rgba(34,197,94,0.05)' : 'transparent'}}>
+                    {/* Top line: payee + date on the left, amount on the right */}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px'}}>
+                      <div style={{minWidth:0,flex:1}}>
+                        <div style={{fontSize:'13px',color:'var(--text-1)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.payee || '(no payee)'}</div>
+                        <div style={{fontSize:'10.5px',color:'var(--text-3)',fontVariantNumeric:'tabular-nums',marginTop:'2px'}}>{t.date}</div>
+                      </div>
+                      <div style={{fontSize:'15px',fontVariantNumeric:'tabular-nums',fontWeight:800,whiteSpace:'nowrap',color: Number(t.amount) < 0 ? 'var(--red)' : 'var(--green)'}}>{fmtUSD(t.amount)}</div>
                     </div>
-                    {/* Amount */}
-                    <div style={{fontSize:'11.5px',fontVariantNumeric:'tabular-nums',fontWeight:700,textAlign:'right',color: Number(t.amount) < 0 ? 'var(--red)' : 'var(--green)'}}>
-                      {fmtUSD(t.amount)}
-                    </div>
-                    {/* Category dropdown */}
-                    <select value={p.categoryId || ''} onChange={e => updatePick(t.id, { categoryId: e.target.value })}
-                      style={{padding:'4px 6px',background:isPicked?'var(--bg-base)':'transparent',border:`1px solid ${isPicked?'var(--green)':'var(--border)'}`,borderRadius:'4px',color:'var(--text-1)',fontSize:'10.5px'}}>
-                      <option value="">— category —</option>
-                      {categoryOpts.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                    {/* System dropdown */}
-                    <select value={p.systemId || ''} onChange={e => updatePick(t.id, { systemId: e.target.value })}
-                      style={{padding:'4px 6px',background:'transparent',border:'1px solid var(--border)',borderRadius:'4px',color:'var(--text-2)',fontSize:'10.5px'}}>
-                      <option value="">— system —</option>
-                      {systems.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}{s.is_overhead ? ' (overhead)' : ''}</option>
-                      ))}
-                    </select>
-                    {/* Clear button */}
-                    {isPicked && (
-                      <button onClick={() => clearRow(t.id)} title="Clear"
-                        style={{background:'transparent',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:'14px',padding:0}}>×</button>
+                    {/* Auto-suggest provenance */}
+                    {isAuto && (
+                      <div style={{fontSize:'10.5px',color:'var(--accent)',display:'inline-flex',alignItems:'center',gap:'5px',flexWrap:'wrap'}}>
+                        <Icon name="sparkles" size={12} /> matched "{p.matchedFrom}" · {p.confidence}
+                      </div>
                     )}
-                    {!isPicked && <div/>}
+                    {/* Category + lead-gen system — full-width, labeled, wrap to stack on phones */}
+                    <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+                      <label style={{flex:'1 1 150px',minWidth:0,display:'flex',flexDirection:'column',gap:'4px'}}>
+                        <span style={{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,color:'var(--text-3)'}}>Category</span>
+                        <select value={p.categoryId || ''} onChange={e => updatePick(t.id, { categoryId: e.target.value })}
+                          style={{width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:`1px solid ${isPicked?'var(--green)':'var(--border)'}`,borderRadius:'7px',color:'var(--text-1)',fontSize:'13px'}}>
+                          <option value="">— choose category —</option>
+                          {categoryOpts.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                        </select>
+                      </label>
+                      <label style={{flex:'1 1 150px',minWidth:0,display:'flex',flexDirection:'column',gap:'4px'}}>
+                        <span style={{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,color:'var(--text-3)'}}>Lead-gen system</span>
+                        <select value={p.systemId || ''} onChange={e => updatePick(t.id, { systemId: e.target.value })}
+                          style={{width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'7px',color:'var(--text-2)',fontSize:'13px'}}>
+                          <option value="">— none —</option>
+                          {systems.map(s => (<option key={s.id} value={s.id}>{s.name}{s.is_overhead ? ' (overhead)' : ''}</option>))}
+                        </select>
+                      </label>
+                    </div>
+                    {/* Footer: apply-to-all + clear, only once a category is chosen */}
+                    {isPicked && (
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
+                        <button onClick={() => applyToMatching(t.id)} title="Apply this category to every row with the same payee"
+                          style={{background:'transparent',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:'11.5px',fontWeight:600,padding:0,display:'inline-flex',alignItems:'center',gap:'4px'}}>
+                          ↪ Apply to all matching
+                        </button>
+                        <button onClick={() => clearRow(t.id)}
+                          style={{background:'transparent',border:'1px solid var(--border)',color:'var(--text-3)',cursor:'pointer',fontSize:'11px',padding:'4px 12px',borderRadius:'6px'}}>Clear</button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

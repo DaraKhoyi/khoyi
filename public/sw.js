@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v71-20260622-quo-messages-mobile'
+const VERSION = 'prismos-v72-20260622-bulkcat-card'
 const APP_SHELL = [
   '/',
   '/index.html',
