@@ -2481,7 +2481,7 @@ function LabelPickerBody({ currentLabels, userLabels, onApply, onRefresh, onCanc
 // ─── RecruitingView ──────────────────────────────────────────────────
 // Brokerage agent-recruiting pipeline. Distinct from agent lead-gen —
 // different math (cost per signed agent, retention, LTV vs cost per
-// closed deal). Recruits are contacts with type='recruit' and a
+// closed file). Recruits are contacts with type='recruit' and a
 // recruiting_stage. Spend is tracked via recruiting_systems (parallel
 // to lead_gen_systems) so the two reports never mix.
 

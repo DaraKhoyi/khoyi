@@ -395,10 +395,10 @@ function RecruitDetailModal({ recruit, systems, onClose, onSave }) {
 }
 
 // ─── DealsView ───────────────────────────────────────────────────────
-// Pipeline view for real-estate deals. Mirrors RecruitingView shape so
-// the two pipeline screens feel like siblings. Each deal moves through
+// Pipeline view for real-estate files. Mirrors RecruitingView shape so
+// the two pipeline screens feel like siblings. Each file moves through
 // six stages: lead → active → under_contract → closing → closed (or
-// → lost from any active stage). Closing a deal auto-creates an income
+// → lost from any active stage). Closing a file auto-creates an income
 // transaction tied to the lead-gen system that generated it, which is
 // what makes lead-gen ROI math actually possible.
 

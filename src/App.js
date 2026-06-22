@@ -65,21 +65,30 @@ function menuContainsView(node, view) {
   if (!node.children) return node.view === view;
   return node.children.some(c => menuContainsView(c, view));
 }
+function AiMark({ size = 13 }) {
+  // Classy gold "smart / AI" sparkle, shown after Ari-powered menu items.
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginLeft: '7px', flexShrink: 0, verticalAlign: '-2px' }}>
+      <path d="M12 1.6c.5 4.9 5.5 9.9 10.4 10.4C17.5 12.5 12.5 17.5 12 22.4 11.5 17.5 6.5 12.5 1.6 12 6.5 11.5 11.5 6.5 12 1.6Z" fill="#c5a95e"/>
+      <path d="M19.2 2.6c.13 1.7 1.1 2.67 2.8 2.8-1.7.13-2.67 1.1-2.8 2.8-.13-1.7-1.1-2.67-2.8-2.8 1.7-.13 2.67-1.1 2.8-2.8Z" fill="#d8bd78"/>
+    </svg>
+  );
+}
 function MenuNode({ node, depth, ctx }) {
-  const { view, navigate, builtSet, byNavId, isOpen, toggle } = ctx;
+  const { view, navigate, builtSet, byNavId, openPath, toggle } = ctx;
   const hasChildren = !!(node.children && node.children.length);
   const leafView = node.view || null;
   const built = node.built === false ? false
     : hasChildren ? menuDescendantBuilt(node, builtSet)
     : (leafView ? builtSet.has(leafView) : false);
-  const open = hasChildren && (isOpen(node._key) || menuContainsView(node, view));
+  const open = hasChildren && openPath[depth] === node._key;
   const active = leafView === view && !hasChildren && !node.sub;
   const clickable = (built && leafView) || hasChildren;
   const handleClick = () => {
     if (built && leafView) navigate(leafView, node.sub || null);
-    if (hasChildren) toggle(node._key);
+    if (hasChildren) toggle(depth, node._key);
   };
-  const indent = 14 + depth * 15;
+  const indent = 14;
   return (
     <>
       <div className={'nav-item' + (active ? ' active' : '')}
@@ -92,13 +101,13 @@ function MenuNode({ node, depth, ctx }) {
         {depth === 0
           ? <span className="icon">{leafView ? <Icon name={leafView} size={18} fb={node.icon || '•'} /> : (node.icon || '•')}</span>
           : <span style={{ display: 'inline-flex', width: '12px', flexShrink: 0, color: 'var(--text-3)', fontSize: '10px' }}>{hasChildren ? (open ? '▾' : '▸') : '·'}</span>}
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}</span>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}{node.ai && built && <AiMark />}</span>
         {!built && !hasChildren && <span style={{ fontSize: '8.5px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>soon</span>}
         {depth === 0 && leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-badge">{byNavId[leafView].badge}</span> : null}
         {depth === 0 && hasChildren && <span style={{ marginLeft: '6px', fontSize: '10px', opacity: 0.6, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>}
       </div>
       {hasChildren && open && (
-        <div style={{ margin: '1px 0 6px', borderLeft: '2px solid var(--accent)', background: 'rgba(197,169,94,0.045)', borderRadius: '0 6px 6px 0' }}>
+        <div style={{ margin: depth === 0 ? '4px 8px 10px' : '4px 6px 8px', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderRadius: '12px', boxShadow: '0 16px 42px -14px rgba(0,0,0,0.75)', overflow: 'hidden', padding: '5px 0' }}>
           {node.children.map((c, i) => <MenuNode key={c._key || i} node={c} depth={depth + 1} ctx={ctx} />)}
         </div>
       )}
@@ -10934,7 +10943,7 @@ function AppMain() {
   const [focusTaskId, setFocusTaskId] = useState(null);
   const [focusEventId, setFocusEventId] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [menuExpanded, setMenuExpanded] = useState(() => new Set());
+  const [openPath, setOpenPath] = useState([]);
   const [deepLink, setDeepLink] = useState({ view: null, sub: null, n: 0 });
   const [tasks, setTasks] = useState([]);
   const [robots, setRobots] = useState([]);
@@ -11281,16 +11290,16 @@ function AppMain() {
   const teamLeaderBranch = { label: 'Team Leader', view: 'agents' };
   const MENU = [
     { label: 'Dashboard', view: 'dashboard', icon: '⚡' },
-    { label: 'Ari Prism AI (Claude)', view: 'chat', icon: '✦' },
-    { label: 'Ari Briefing', view: 'briefing', icon: '🌅' },
+    { label: 'Prism AI (Claude)', view: 'chat', icon: '✦', ai: true },
+    { label: 'Daily Briefing', view: 'briefing', icon: '🌅', ai: true },
     { label: 'Prospecting', view: 'prospecting', icon: '🎯' },
     { label: 'Tasks', view: 'tasks', icon: '✅' },
-    { label: 'Ari Inbox', view: 'inbox', icon: '📬' },
-    { label: 'Ari Calendar', view: 'calendar', icon: '📅' },
-    { label: 'Ari Contacts', view: 'contacts', icon: '👥' },
-    { label: 'Ari Files / Contract Mgmt', view: 'files', icon: '📁' },
-    { label: 'Ari Journal', view: 'journal', icon: '📓' },
-    { label: 'Ari Text & Phone', view: 'quo', icon: '☎️' },
+    { label: 'Inbox', view: 'inbox', icon: '📬', ai: true },
+    { label: 'Calendar', view: 'calendar', icon: '📅', ai: true },
+    { label: 'Contacts', view: 'contacts', icon: '👥', ai: true },
+    { label: 'Files / Contract Mgmt', view: 'files', icon: '📁', ai: true },
+    { label: 'Journal', view: 'journal', icon: '📓', ai: true },
+    { label: 'Text & Phone', view: 'quo', icon: '☎️', ai: true },
     { label: 'My Business / Finance', view: 'finance', icon: '📊', children: [
       fin('ledger', 'Data Entry'),
       fin('blueprint', 'Blueprint (budget)'),
@@ -11305,7 +11314,7 @@ function AppMain() {
         { label: 'Voice Card / Memory Text', view: 'prism' },
         fin('blueprint', 'Blueprint (budget)'),
         { label: 'Business Questionnaire', built: false },
-        { label: 'Ari Lead Gen. Suggestions', built: false },
+        { label: 'Lead Gen. Suggestions', built: false, ai: true },
         { label: 'Active Lead Generation Systems', view: 'prospecting', sub: 'systems' },
       ] },
       { label: 'My Business / Finance', view: 'finance', children: [
@@ -11338,9 +11347,8 @@ function AppMain() {
     ] },
   ];
   assignMenuKeys(MENU, 'm');
-  const menuCtx = { view, navigate, builtSet, byNavId,
-    isOpen: (k) => menuExpanded.has(k),
-    toggle: (k) => setMenuExpanded(st => { const n = new Set(st); if (n.has(k)) n.delete(k); else n.add(k); return n; }) };
+  const menuCtx = { view, navigate, builtSet, byNavId, openPath,
+    toggle: (depth, key) => setOpenPath(prev => prev[depth] === key ? prev.slice(0, depth) : [...prev.slice(0, depth), key]) };
 
   return (
     <div className="app-shell" style={{flexDirection:'column'}}>

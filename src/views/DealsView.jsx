@@ -61,7 +61,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
   const [adding, setAdding] = useState(false);
 
   // Load lead-gen systems (for the attribution dropdown) + look up the
-  // Commission Income tax category once so the close-deal flow has the
+  // Commission Income tax category once so the close-file flow has the
   // FK handy without hitting the DB again.
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +80,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
     return () => { cancelled = true; };
   }, [userId]);
 
-  // Group deals by status
+  // Group files by status
   const byStage = useMemo(() => {
     const g = {};
     DEAL_STAGES.forEach(s => { g[s.id] = []; });
@@ -107,7 +107,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
     const grossYTD = closedThisYear.reduce((s, d) => s + (Number(d.gross_commission) || 0), 0);
     const netYTD = closedThisYear.reduce((s, d) => s + (Number(d.net_commission) || 0), 0);
     const avgNet = closedThisYear.length > 0 ? netYTD / closedThisYear.length : null;
-    // Pipeline value: estimated gross commission across active deals
+    // Pipeline value: estimated gross commission across active files
     const pipelineGross = deals
       .filter(d => DEAL_ACTIVE_STAGE_IDS.includes(d.status))
       .reduce((s, d) => s + (Number(d.gross_commission) || 0), 0);
@@ -175,8 +175,8 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
     if (selectedDeal?.id === deal.id) setSelectedDeal(null);
   }
 
-  // Close-deal flow: marks status='closed', stamps close_date, and
-  // creates a positive-amount income transaction tied to the deal's
+  // Close-file flow: marks status='closed', stamps close_date, and
+  // creates a positive-amount income transaction tied to the file's
   // lead-gen system. This is what unlocks the ROI loop.
   async function closeDeal(deal, finalValues) {
     if (!commissionTaxCategoryId) {
@@ -202,7 +202,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
       if (window.__notify) window.__notify('Could not log commission income: ' + txErr.message, 'error');
       return;
     }
-    // 2. Update the deal
+    // 2. Update the file
     await updateDeal(deal, {
       ...finalValues,
       status: 'closed',
@@ -369,9 +369,9 @@ function DealCard({ deal, stage, contacts, properties, onClick, onDragStart, onD
   );
 }
 
-// Deal detail modal — the main editor. Inline section editors for
-// people / pricing / dates / notes; the close-deal flow is a confirm
-// modal that pre-fills final numbers from the current deal state.
+// File detail modal — the main editor. Inline section editors for
+// people / pricing / dates / notes; the close-file flow is a confirm
+// modal that pre-fills final numbers from the current file state.
 
 function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSystems, userId, onClose, onSave, onDelete, onCloseDeal }) {
   const [name, setName]                       = useState(deal.name || '');
@@ -424,7 +424,7 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
   }
   function commitStage(newStage) {
     if (newStage === 'closed') {
-      // Closed stage goes through the close-deal modal so we capture
+      // Closed stage goes through the close-file modal so we capture
       // final numbers and create the income transaction in one step.
       setShowCloseModal(true);
       return;
@@ -763,7 +763,7 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
           </>
         )}
 
-        {/* Closed deal — link to income transaction */}
+        {/* Closed file — link to income transaction */}
         {deal.status === 'closed' && deal.income_transaction_id && (
           <div style={{
             padding:'10px 12px', marginTop:'4px',
@@ -823,8 +823,8 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
   );
 }
 
-// Close-deal confirm modal — final pass at numbers + close date.
-// Anything the user types here overwrites the deal before logging income.
+// Close-file confirm modal — final pass at numbers + close date.
+// Anything the user types here overwrites the file before logging income.
 
 function CloseDealModal({ deal, onClose, onConfirm }) {
   const [salePrice, setSalePrice]             = useState(deal.sale_price ?? '');
@@ -926,7 +926,7 @@ function CloseDealModal({ deal, onClose, onConfirm }) {
 // otherwise quietly evaporate.
 //
 // V1 scope: quick-log form (date/miles/purpose/round-trip), recent
-// entries grouped by month, detailed edit modal with deal/contact/
+// entries grouped by month, detailed edit modal with file/contact/
 // property/lead-gen attribution. Future: calendar-event suggestions,
 // CSV import, address-based auto-distance via Google Maps.
 

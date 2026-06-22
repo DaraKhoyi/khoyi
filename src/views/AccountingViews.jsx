@@ -924,7 +924,7 @@ function ProspectingView({ userId, initialSub = null, subNonce = 0 }) {
 
 // ═══════════════════════════════════════════════════════════════════════
 // DAILY JOURNAL — a living, timestamped daily log. Typed or voice entries get
-// auto-transcribed, AI-linked to the real people/properties/projects/deals you
+// auto-transcribed, AI-linked to the real people/properties/projects/files you
 // mention (high-confidence auto, the rest you confirm), surface action items as
 // one-tap tasks, roll up into an end-of-day recap, and are semantically
 // searchable across every day. Confirmed links also appear on each record's card.
@@ -7328,7 +7328,7 @@ function BudgetSection({ title, subtitle, rows, rowPrefix, expandedRow, setExpan
 
 // ─── CashFlowForecast ────────────────────────────────────────────────
 // 90-day forward projection. Combines:
-//   - Open pipeline deals (lead/active/under_contract/closing) with their
+//   - Open pipeline files (lead/active/under_contract/closing) with their
 //     expected close dates and expected commission income
 //   - Recurring transactions (recurring_transactions table) projected
 //     forward by frequency from next_run_date
@@ -7340,7 +7340,7 @@ function BudgetSection({ title, subtitle, rows, rowPrefix, expandedRow, setExpan
 //   shows projected BALANCE. Without it, shows projected NET ACTIVITY
 //   (cumulative income - expenses from today).
 
-// Confidence per deal status — used for UI tagging + weighting.
+// Confidence per file status — used for UI tagging + weighting.
 // Hoisted to module scope so useMemo doesn't need it as a dependency.
 
 const DEAL_STATUS_CONFIDENCE = {
@@ -7350,7 +7350,7 @@ const DEAL_STATUS_CONFIDENCE = {
   lead:            'low',      // earliest stage
 };
 
-// Probability factor applied to each deal's expected commission when
+// Probability factor applied to each file's expected commission when
 // confidence weighting is on. These reflect typical real-estate
 // fall-through rates by stage. Conservative on early-stage to avoid the
 // classic optimism trap (every active listing is going to close!).
@@ -7379,7 +7379,7 @@ function CashFlowForecast({ userId, settings }) {
   const [savingBalance, setSavingBalance] = useState(false);
   const [hoveredDay, setHoveredDay] = useState(null);
 
-  // Pull open deals + active recurring templates
+  // Pull open files + active recurring templates
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -7438,7 +7438,7 @@ function CashFlowForecast({ userId, settings }) {
     return out;
   }
 
-  // Estimate when a deal will pay. Use close_date if set; otherwise
+  // Estimate when a file will pay. Use close_date if set; otherwise
   // estimate from contract_date + 30 days (typical real estate close
   // window), else skip (no projectable date).
   function estimateDealClose(deal) {
@@ -7451,7 +7451,7 @@ function CashFlowForecast({ userId, settings }) {
     return null;
   }
 
-  // Compute a deal's expected commission to-agent in priority order
+  // Compute a file's expected commission to-agent in priority order
   function dealExpectedCommission(deal) {
     if (deal.net_commission != null && Number(deal.net_commission) > 0) return Number(deal.net_commission);
     if (deal.gross_commission != null && Number(deal.gross_commission) > 0) return Number(deal.gross_commission);
@@ -7481,7 +7481,7 @@ function CashFlowForecast({ userId, settings }) {
       for (const o of occurrences) events.push(o);
     }
 
-    // Open deals
+    // Open files
     for (const d of deals) {
       const closeDate = estimateDealClose(d);
       if (!closeDate || closeDate > horizonISO) continue;
@@ -7990,10 +7990,10 @@ function PersonalReport({ transactions, personalBudget, period }) {
 function ROIReport({ transactions, timeEntries, deals = [], systems, settings, period, inPeriod }) {
   const hourlyRate = Number(settings?.hourly_rate || 0);
 
-  // Deal-derived stats per system:
-  //   closedDeals   — deals with status='closed' AND close_date in period
-  //   activeDeals   — deals not in a terminal state (closed / lost / referral)
-  //   pipelineEst   — sum of estimated commission for active deals
+  // File-derived stats per system:
+  //   closedDeals   — files with status='closed' AND close_date in period
+  //   activeDeals   — files not in a terminal state (closed / lost / referral)
+  //   pipelineEst   — sum of estimated commission for active files
   //                   (target_price × commission_pct × 0.5 conservative split haircut)
   //                   Pipeline is period-independent — it reflects what's open today,
   //                   not what closed in the reporting window.
@@ -8046,7 +8046,7 @@ function ROIReport({ transactions, timeEntries, deals = [], systems, settings, p
   const totalInvested = totalCashSpent + totalTimeCost;
   const portfolioROI = totalInvested > 0 ? totalIncome / totalInvested : null;
 
-  // Portfolio-level deal stats (across all systems, plus unattributed deals)
+  // Portfolio-level file stats (across all systems, plus unattributed files)
   const allClosedInPeriod = deals.filter(d =>
     d.status === 'closed' && d.close_date && (!inPeriod || inPeriod(d.close_date))
   );
@@ -8073,7 +8073,7 @@ function ROIReport({ transactions, timeEntries, deals = [], systems, settings, p
             tone={portfolioROI >= 3 ? 'green' : portfolioROI >= 1 ? 'normal' : portfolioROI !== null ? 'red' : 'muted'} />
         </div>
 
-        {/* NEW — deal counts + pipeline strip */}
+        {/* NEW — file counts + pipeline strip */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'10px',marginBottom:'14px',padding:'10px',background:'var(--bg-base)',borderRadius:'8px'}}>
           <SysStat label="Closed (period)" value={allClosedInPeriod.length} sub={allClosedInPeriod.length === 0 ? 'no files yet' : `avg ${fmtUSD(avgCommissionPerDeal)}`} />
           <SysStat label="In pipeline" value={allActiveDeals.length} sub={allActiveDeals.length === 0 ? 'no active files' : 'leads → closing'} />
@@ -8163,7 +8163,7 @@ function ROISystemCard({ row }) {
         <SysStat label="Income" value={fmtUSD(incomeAttributed)} tone="green" />
       </div>
 
-      {/* NEW — deal economics row */}
+      {/* NEW — file economics row */}
       {(closedCount > 0 || activeCount > 0 || cashSpent > 0) && (
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:'8px',marginTop:'8px',padding:'10px',background:'var(--bg-base)',borderRadius:'6px'}}>
           <SysStat label="Closed files" value={closedCount} sub={closedCount === 0 ? 'none in period' : 'period'} />
