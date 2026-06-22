@@ -2282,10 +2282,10 @@ function DashboardROI({ userId, setView }) {
           const g = data.grade(r.roi);
           return (
             <div key={r.sys.id} onClick={() => setView('prospecting')}
-              style={{ background: 'linear-gradient(180deg, var(--accent-glow), var(--bg-card))', border: '1px solid var(--accent)', borderRadius: '12px', padding: '18px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '7px', transition: 'box-shadow .12s' }}
+              style={{ background: 'linear-gradient(180deg, var(--accent-glow), var(--bg-card))', border: '1px solid var(--accent)', borderRadius: '12px', padding: '18px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '7px', minWidth: 0, transition: 'box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(197,169,94,0.18)'; }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', minWidth: 0 }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: r.sys.color || 'var(--accent)', flexShrink: 0 }} />
                   <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sys.name}</span>
