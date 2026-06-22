@@ -24,6 +24,10 @@ body {
   --accent-2:   #d8bd78;
   --accent-dim: #5e4d2a;
   --accent-glow:#c5a95e26;
+  /* Recolor native form controls — including the Android date/time picker's
+     selection and AM/PM toggle — from the browser-default blue to gold. */
+  accent-color: #c5a95e;
+  color-scheme: dark;
   --text-1:     #ffffff;
   --text-2:     #a0a0a0;
   --text-3:     #6b6b6b;
@@ -1141,3 +1145,11 @@ body {
 .brokerage-subnav::-webkit-scrollbar { height: 0; display: none; }
 .brokerage-subnav > * { flex: 0 0 auto; }
 .brokerage-subnav .form-input { margin-left: auto; }
+
+/* Belt-and-suspenders: ensure native pickers (time/date/AM-PM), checkboxes,
+   radios and range sliders use the gold accent rather than the default blue. */
+input[type="time"], input[type="date"], input[type="datetime-local"],
+input[type="month"], input[type="week"], input[type="checkbox"],
+input[type="radio"], input[type="range"], select, progress {
+  accent-color: var(--accent);
+}

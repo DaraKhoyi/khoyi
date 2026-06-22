@@ -97,7 +97,11 @@ function MenuNode({ node, depth, ctx }) {
         {depth === 0 && leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-badge">{byNavId[leafView].badge}</span> : null}
         {depth === 0 && hasChildren && <span style={{ marginLeft: '6px', fontSize: '10px', opacity: 0.6, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>}
       </div>
-      {hasChildren && open && node.children.map((c, i) => <MenuNode key={c._key || i} node={c} depth={depth + 1} ctx={ctx} />)}
+      {hasChildren && open && (
+        <div style={{ margin: '1px 0 6px', borderLeft: '2px solid var(--accent)', background: 'rgba(197,169,94,0.045)', borderRadius: '0 6px 6px 0' }}>
+          {node.children.map((c, i) => <MenuNode key={c._key || i} node={c} depth={depth + 1} ctx={ctx} />)}
+        </div>
+      )}
     </>
   );
 }
@@ -11250,8 +11254,31 @@ function AppMain() {
 
   // Master menu (mirrors the menu plan PDF). White = built & working; greyed "soon" = not built yet.
   const builtSet = new Set(NAV.map(i => i.id));
-  const canB = isAdmin || isTeamLeader;
   const fin = (sub, label) => ({ label, view: 'finance', sub });
+  // Brokerage branch: broker admins / owner only. Team leaders get a Team Leader entry instead.
+  const brokerageBranch = { label: 'Brokerage or Team View', children: [
+    { label: 'Brokerage Team Dashboard', view: 'agents', children: [
+      { label: 'Add Brokerage or Team Members', built: false },
+      { label: 'Set up Agent profiles', built: false },
+    ] },
+    { label: 'Contract Management', view: 'files' },
+    { label: 'Finance', view: 'finance', children: [
+      fin('ledger', 'Data Entry / Scan'),
+      fin('reports', 'Financial Reporting'),
+      { label: 'Agent Roster', view: 'agents', children: [
+        { label: 'Commission Plan', built: false },
+        { label: 'GCI Goal', built: false },
+        { label: 'Commission Earned', built: false },
+        { label: 'On track?', built: false },
+        { label: 'DISC', built: false },
+        { label: 'Lead Systems Deployed', built: false },
+        { label: 'Company Leads', built: false },
+        { label: 'Oversight / Accountability', built: false },
+        { label: 'Other', built: false },
+      ] },
+    ] },
+  ] };
+  const teamLeaderBranch = { label: 'Team Leader', view: 'agents' };
   const MENU = [
     { label: 'Dashboard', view: 'dashboard', icon: '⚡' },
     { label: 'Ari Prism AI (Claude)', view: 'chat', icon: '✦' },
@@ -11307,28 +11334,7 @@ function AppMain() {
         { label: 'Systems', view: 'systems' },
         { label: 'Settings', view: 'settings' },
       ] },
-      { label: 'Brokerage or Team View', children: [
-        { label: 'Brokerage Team Dashboard', view: canB ? 'agents' : undefined, built: canB ? undefined : false, children: [
-          { label: 'Add Brokerage or Team Members', built: false },
-          { label: 'Set up Agent profiles', built: false },
-        ] },
-        { label: 'Contract Management', view: canB ? 'files' : undefined, built: canB ? undefined : false },
-        { label: 'Finance', view: canB ? 'finance' : undefined, built: canB ? undefined : false, children: [
-          canB ? fin('ledger', 'Data Entry / Scan') : { label: 'Data Entry / Scan', built: false },
-          canB ? fin('reports', 'Financial Reporting') : { label: 'Financial Reporting', built: false },
-          { label: 'Agent Roster', view: canB ? 'agents' : undefined, built: canB ? undefined : false, children: [
-            { label: 'Commission Plan', built: false },
-            { label: 'GCI Goal', built: false },
-            { label: 'Commission Earned', built: false },
-            { label: 'On track?', built: false },
-            { label: 'DISC', built: false },
-            { label: 'Lead Systems Deployed', built: false },
-            { label: 'Company Leads', built: false },
-            { label: 'Oversight / Accountability', built: false },
-            { label: 'Other', built: false },
-          ] },
-        ] },
-      ] },
+      ...(isAdmin ? [brokerageBranch] : isTeamLeader ? [teamLeaderBranch] : []),
     ] },
   ];
   assignMenuKeys(MENU, 'm');
