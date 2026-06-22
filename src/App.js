@@ -2207,6 +2207,108 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
   );
 }
 
+// ─────────────────────────────────────────
+// DASHBOARD — Lead-Gen ROI tiles
+// Self-contained: fetches its own finance data and uses the SAME true-ROI math
+// as the Prospecting ROI scoreboard (cash spend + time value vs income), so the
+// numbers always agree. Shows one gold-bordered tile per adopted (active,
+// non-overhead) lead-gen system. Hidden entirely when no systems are adopted.
+// ─────────────────────────────────────────
+function DashboardROI({ userId, setView }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+      const [sysR, txR, teR, setR] = await Promise.all([
+        supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_active', true).eq('is_archived', false),
+        supabase.from('transactions').select('amount,date,scope,lead_gen_system_id').eq('user_id', userId).eq('is_archived', false).eq('scope', 'business').gte('date', yearStart).not('lead_gen_system_id', 'is', null).limit(2000),
+        supabase.from('time_entries').select('minutes,lead_gen_system_id').eq('user_id', userId).not('lead_gen_system_id', 'is', null).limit(5000),
+        supabase.from('finance_settings').select('hourly_rate').eq('user_id', userId).maybeSingle(),
+      ]);
+      if (!alive) return;
+      const systems = (sysR.data || []).filter(sy => !sy.is_overhead);
+      const txns = txR.data || [];
+      const tes = teR.data || [];
+      const hourly = Number(setR.data?.hourly_rate || 0);
+      const grade = (roi) => {
+        if (roi === null) return { g: '—', c: 'var(--text-3)' };
+        if (roi >= 5) return { g: 'A+', c: 'var(--green)' };
+        if (roi >= 3) return { g: 'A', c: 'var(--green)' };
+        if (roi >= 2) return { g: 'B', c: '#84cc16' };
+        if (roi >= 1) return { g: 'C', c: 'var(--yellow)' };
+        if (roi >= 0.5) return { g: 'D', c: '#f59e0b' };
+        return { g: 'F', c: 'var(--red)' };
+      };
+      const rows = systems.map(sys => {
+        const sysTx = txns.filter(t => t.lead_gen_system_id === sys.id);
+        const cash = Math.abs(sysTx.filter(t => Number(t.amount) < 0).reduce((a, t) => a + Number(t.amount), 0));
+        const income = sysTx.filter(t => Number(t.amount) > 0).reduce((a, t) => a + Number(t.amount), 0);
+        const minutes = tes.filter(te => te.lead_gen_system_id === sys.id).reduce((a, te) => a + Number(te.minutes || 0), 0);
+        const invested = cash + (minutes / 60) * hourly;
+        const roi = invested > 0 ? income / invested : null;
+        return { sys, cash, income, invested, roi, net: income - invested };
+      }).sort((a, b) => {
+        if (a.roi === null && b.roi === null) return b.invested - a.invested;
+        if (a.roi === null) return 1; if (b.roi === null) return -1;
+        return b.roi - a.roi;
+      });
+      const totalInvested = rows.reduce((a, r) => a + r.invested, 0);
+      const totalIncome = rows.reduce((a, r) => a + r.income, 0);
+      const blended = totalInvested > 0 ? totalIncome / totalInvested : null;
+      setData({ rows, blended, gr: grade(blended), grade });
+    })();
+    return () => { alive = false; };
+  }, [userId]);
+
+  if (!data || data.rows.length === 0) return null;
+  const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
+  return (
+    <div style={{ marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-1)', display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+          <Icon name="target" size={16} style={{ color: 'var(--accent)' }} /> Lead-Gen ROI
+          <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-3)' }}>· this year</span>
+        </h3>
+        {data.blended !== null && (
+          <button onClick={() => setView('prospecting')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'var(--accent-glow)', border: '1px solid var(--accent)', borderRadius: '999px', color: 'var(--accent)', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+            Blended {data.blended.toFixed(1)}× · {data.gr.g} →
+          </button>
+        )}
+      </div>
+      <div className="cards-row" style={{ marginBottom: 0 }}>
+        {data.rows.map(r => {
+          const g = data.grade(r.roi);
+          return (
+            <div key={r.sys.id} onClick={() => setView('prospecting')}
+              style={{ background: 'linear-gradient(180deg, var(--accent-glow), var(--bg-card))', border: '1px solid var(--accent)', borderRadius: '12px', padding: '18px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '7px', transition: 'box-shadow .12s' }}
+              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(197,169,94,0.18)'; }}
+              onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: r.sys.color || 'var(--accent)', flexShrink: 0 }} />
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sys.name}</span>
+                </span>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: g.c, background: 'var(--bg-base)', border: `1px solid ${g.c}`, borderRadius: '6px', padding: '1px 7px', flexShrink: 0 }}>{g.g}</span>
+              </div>
+              <div style={{ fontSize: '26px', fontWeight: 700, lineHeight: 1, color: r.roi === null ? 'var(--text-3)' : 'var(--accent)' }}>
+                {r.roi === null ? '—' : r.roi.toFixed(1) + '×'}
+              </div>
+              <div style={{ fontSize: '11.5px', fontWeight: 600, color: r.roi === null ? 'var(--text-3)' : (r.net >= 0 ? 'var(--green)' : 'var(--red)') }}>
+                {r.roi === null ? 'Awaiting data' : `${r.net >= 0 ? '+' : ''}${money(r.net)} net`}
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-3)' }}>
+                {money(r.income)} in · {money(r.invested)} invested
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [] }) {
   const [editTask, setEditTask] = useState(null);
 
@@ -2275,7 +2377,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         <div className="stat-card"><div className="stat-label">Done Today</div><div className="stat-value" style={{color:'var(--green)'}}>{tasks.filter(t=>t.completed&&t.updated_at&&new Date(t.updated_at).toDateString()===today.toDateString()).length}</div></div>
         <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{color:overdue.length>0?'var(--red)':'var(--text-1)'}}>{overdue.length}</div></div>
       </div>
-      <NeedsAttention contacts={contacts} tasks={tasks} setTasks={setTasks} setView={setView} />
+      {user?.id && <DashboardROI userId={user.id} setView={setView} />}
       <div className="dash-grid">
         <div className="panel">
           <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="flame" size={15} /> Top Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
