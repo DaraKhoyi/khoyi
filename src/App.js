@@ -100,14 +100,14 @@ function MenuNode({ node, depth, ctx }) {
           cursor: clickable ? 'pointer' : 'default' }}>
         {depth === 0
           ? <span className="icon">{leafView ? <Icon name={leafView} size={18} fb={node.icon || '•'} /> : (node.icon || '•')}</span>
-          : <span style={{ display: 'inline-flex', width: '12px', flexShrink: 0, color: 'var(--text-3)', fontSize: '10px' }}>{hasChildren ? (open ? '▾' : '▸') : '·'}</span>}
+          : <span style={{ display: 'inline-flex', justifyContent: 'center', width: hasChildren ? '20px' : '12px', flexShrink: 0, color: hasChildren ? 'var(--accent)' : 'var(--text-3)', fontSize: hasChildren ? '17px' : '10px', lineHeight: 1 }}>{hasChildren ? (open ? '▾' : '▸') : '·'}</span>}
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}{node.ai && built && <AiMark />}</span>
         {!built && !hasChildren && <span style={{ fontSize: '8.5px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>soon</span>}
         {depth === 0 && leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-badge">{byNavId[leafView].badge}</span> : null}
-        {depth === 0 && hasChildren && <span style={{ marginLeft: '6px', fontSize: '10px', opacity: 0.6, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>}
+        {depth === 0 && hasChildren && <span style={{ marginLeft: '6px', fontSize: '17px', lineHeight: 1, color: 'var(--accent)', opacity: 0.9, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>▸</span>}
       </div>
       {hasChildren && open && (
-        <div style={{ margin: depth === 0 ? '4px 8px 10px' : '4px 6px 8px', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderRadius: '12px', boxShadow: '0 16px 42px -14px rgba(0,0,0,0.75)', overflow: 'hidden', padding: '5px 0' }}>
+        <div style={{ margin: depth === 0 ? '4px 10px 10px 34px' : '4px 8px 8px 24px', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderRadius: '12px', boxShadow: '0 16px 42px -14px rgba(0,0,0,0.75)', overflow: 'hidden', padding: '5px 0' }}>
           {node.children.map((c, i) => <MenuNode key={c._key || i} node={c} depth={depth + 1} ctx={ctx} />)}
         </div>
       )}
