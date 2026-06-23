@@ -98,16 +98,16 @@ function MenuNode({ node, depth, ctx }) {
           color: built ? 'var(--text-1)' : 'var(--text-3)',
           opacity: (built || hasChildren) ? 1 : 0.5,
           cursor: clickable ? 'pointer' : 'default' }}>
-        {depth === 0
-          ? <span className="icon">{leafView ? <Icon name={leafView} size={18} fb={node.icon || '•'} /> : (node.icon || '•')}</span>
-          : <span style={{ display: 'inline-flex', justifyContent: 'center', width: hasChildren ? '20px' : '12px', flexShrink: 0, color: hasChildren ? 'var(--accent)' : 'var(--text-3)', fontSize: hasChildren ? '17px' : '10px', lineHeight: 1 }}>{hasChildren ? (open ? '▾' : '▸') : '·'}</span>}
+        <span style={{ display: 'inline-flex', justifyContent: 'center', alignItems: 'center', width: depth === 0 ? '22px' : '20px', flexShrink: 0, color: built ? (active ? 'var(--accent)' : 'var(--text-2)') : 'var(--text-3)' }}>
+          <Icon name={node.icon || leafView} size={depth === 0 ? 18 : 16} fb={'•'} />
+        </span>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}{node.ai && built && <AiMark />}</span>
         {!built && !hasChildren && <span style={{ fontSize: '8.5px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>soon</span>}
         {depth === 0 && leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-badge">{byNavId[leafView].badge}</span> : null}
-        {depth === 0 && hasChildren && <span style={{ marginLeft: '6px', fontSize: '17px', lineHeight: 1, color: 'var(--accent)', opacity: 0.9, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>▸</span>}
+        {hasChildren && <span style={{ marginLeft: '6px', fontSize: depth === 0 ? '17px' : '15px', lineHeight: 1, color: 'var(--accent)', opacity: 0.9, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>▸</span>}
       </div>
       {hasChildren && open && (
-        <div style={{ margin: depth === 0 ? '4px 10px 10px 34px' : '4px 8px 8px 24px', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderRadius: '12px', boxShadow: '0 16px 42px -14px rgba(0,0,0,0.75)', overflow: 'hidden', padding: '5px 0' }}>
+        <div style={{ margin: depth === 0 ? '4px 10px 10px 34px' : '4px 8px 8px 24px', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderLeft: '3px solid var(--accent)', borderRadius: '12px', boxShadow: '0 16px 42px -14px rgba(0,0,0,0.75)', overflow: 'hidden', padding: '5px 0' }}>
           {node.children.map((c, i) => <MenuNode key={c._key || i} node={c} depth={depth + 1} ctx={ctx} />)}
         </div>
       )}
@@ -11430,87 +11430,91 @@ function AppMain() {
   // Master menu (mirrors the menu plan PDF). White = built & working; greyed "soon" = not built yet.
   const builtSet = new Set(NAV.map(i => i.id));
   const fin = (sub, label) => ({ label, view: 'finance', sub });
-  // Brokerage branch: broker admins / owner only. Team leaders get a Team Leader entry instead.
-  const brokerageBranch = { label: 'Brokerage or Team View', children: [
-    { label: 'Brokerage Team Dashboard', view: 'agents', children: [
-      { label: 'Add Brokerage or Team Members', built: false },
-      { label: 'Set up Agent profiles', built: false },
+  // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
+  // Agents see neither. (Mirrors the approved agent-centric menu IA.)
+  const brokerageGroup = { label: 'Brokerage', icon: 'building', children: [
+    { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
+    { label: 'Agent roster', view: 'agents', icon: 'users', children: [
+      { label: '+ Add agent', view: 'agents', icon: 'recruiting' },
+      { label: 'Set up agent profile', view: 'agents', icon: 'clipboard' },
+      { label: 'Commission plan & GCI goal', built: false, icon: 'target' },
+      { label: 'Commission earned \u00b7 on track?', built: false, icon: 'chart' },
+      { label: 'DISC & lead systems deployed', built: false, icon: 'signal' },
+      { label: 'Company leads', built: false, icon: 'gift' },
+      { label: 'Oversight / accountability', built: false, icon: 'eye' },
     ] },
-    { label: 'Contract Management', view: 'files' },
-    { label: 'Finance', view: 'finance', children: [
-      fin('ledger', 'Data Entry / Scan'),
-      fin('reports', 'Financial Reporting'),
-      { label: 'Agent Roster', view: 'agents', children: [
-        { label: 'Commission Plan', built: false },
-        { label: 'GCI Goal', built: false },
-        { label: 'Commission Earned', built: false },
-        { label: 'On track?', built: false },
-        { label: 'DISC', built: false },
-        { label: 'Lead Systems Deployed', built: false },
-        { label: 'Company Leads', built: false },
-        { label: 'Oversight / Accountability', built: false },
-        { label: 'Other', built: false },
-      ] },
+    { label: 'Contract management', view: 'files', icon: 'folder' },
+    { label: 'Brokerage finance', view: 'finance', icon: 'finance' },
+  ] };
+  const teamGroup = { label: 'Team', icon: 'users', children: [
+    { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
+    { label: 'Team roster', view: 'agents', icon: 'users', children: [
+      { label: 'Commission earned \u00b7 on track?', built: false, icon: 'chart' },
+      { label: 'DISC & lead systems deployed', built: false, icon: 'signal' },
+      { label: 'Company leads', built: false, icon: 'gift' },
+      { label: 'Oversight / accountability', built: false, icon: 'eye' },
     ] },
   ] };
-  const teamLeaderBranch = { label: 'Team Leader', view: 'agents' };
   const MENU = [
-    { label: 'Dashboard', view: 'dashboard', icon: '⚡' },
-    { label: 'Prism AI (Claude)', view: 'chat', icon: '✦', ai: true },
-    { label: 'Daily Briefing', view: 'briefing', icon: '🌅', ai: true },
-    { label: 'Prospecting', view: 'prospecting', icon: '🎯' },
-    { label: 'Tasks', view: 'tasks', icon: '✅' },
-    { label: 'Inbox', view: 'inbox', icon: '📬', ai: true },
-    { label: 'Calendar', view: 'calendar', icon: '📅', ai: true },
-    { label: 'Contacts', view: 'contacts', icon: '👥', ai: true },
-    { label: 'Files / Contract Mgmt', view: 'files', icon: '📁', ai: true },
-    { label: 'Journal', view: 'journal', icon: '📓', ai: true },
-    { label: 'Text & Phone', view: 'quo', icon: '☎️', ai: true },
-    { label: 'My Business / Finance', view: 'finance', icon: '📊', children: [
-      fin('ledger', 'Data Entry'),
-      fin('blueprint', 'Blueprint (budget)'),
-      { label: 'Prospecting', view: 'prospecting' },
-      { label: 'Lead Funnel', built: false },
-      { label: 'Mileage Tracker', view: 'mileage' },
+    // Quick access \u2014 the daily drivers
+    { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
+    { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
+    { label: 'Daily Briefing', view: 'briefing', icon: 'briefing', ai: true },
+    // Today
+    { label: 'My day', icon: 'clock', children: [
+      { label: 'Tasks', view: 'tasks', icon: 'tasks' },
+      { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
+      { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
     ] },
-    { label: 'More', icon: '⋯', children: [
-      { label: 'On Boarding', children: [
-        { label: 'DISC / Grit Test', built: false },
-        { label: 'My Prism Profile', view: 'prism' },
-        { label: 'Voice Card / Memory Text', view: 'prism' },
-        fin('blueprint', 'Blueprint (budget)'),
-        { label: 'Business Questionnaire', built: false },
-        { label: 'Lead Gen. Suggestions', built: false, ai: true },
-        { label: 'Active Lead Generation Systems', view: 'prospecting', sub: 'systems' },
-      ] },
-      { label: 'My Business / Finance', view: 'finance', children: [
-        fin('ledger', 'Data Entry'),
-        fin('blueprint', 'Blueprint (budget)'),
-        { label: 'Prospecting', view: 'prospecting' },
-        { label: 'Lead Funnel', built: false },
-        { label: 'Mileage Tracker', view: 'mileage' },
-      ] },
-      { label: 'Training', children: [
-        { label: 'Playbooks', view: 'playbooks' },
-        { label: 'DISC Learning', built: false },
-        { label: 'Accountability Partner', built: false },
-        { label: 'Coaching', built: false },
-      ] },
-      { label: 'Projects', children: [
-        { label: 'Deals', view: 'deals' },
-        { label: 'Investments', view: 'investments' },
-        { label: 'Properties', view: 'properties' },
-        { label: 'Projects', view: 'tracker' },
-      ] },
-      { label: 'Systems / Settings', children: [
-        { label: 'My Prism Profile', view: 'prism' },
-        { label: 'Brain', view: 'brain' },
-        { label: 'AI Notes', view: 'notes' },
-        { label: 'Systems', view: 'systems' },
-        { label: 'Settings', view: 'settings' },
-      ] },
-      ...(isAdmin ? [brokerageBranch] : isTeamLeader ? [teamLeaderBranch] : []),
+    // My business
+    { label: 'Clients & outreach', icon: 'users', children: [
+      { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
+      { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
+      { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
+      { label: 'Recruiting', view: 'recruiting', icon: 'recruiting' },
     ] },
+    { label: 'Grow my pipeline', icon: 'target', children: [
+      { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
+      { label: 'Lead-gen systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
+      { label: 'Lead funnel', built: false, icon: 'chart' },
+      { label: 'Lead-gen suggestions', built: false, ai: true, icon: 'bulb' },
+    ] },
+    { label: 'Deals & transactions', icon: 'briefcase', children: [
+      { label: 'Pipeline', view: 'deals', icon: 'deals' },
+      { label: 'Contract management', view: 'files', icon: 'folder', ai: true },
+      { label: 'Properties', view: 'properties', icon: 'properties' },
+      { label: 'Projects', view: 'tracker', icon: 'tracker' },
+      { label: 'Investments', view: 'investments', icon: 'investments' },
+    ] },
+    { label: 'Money', icon: 'dollar', children: [
+      { label: 'Finance dashboard', view: 'finance', icon: 'finance' },
+      { label: 'Data entry / scan', view: 'finance', sub: 'ledger', icon: 'camera' },
+      { label: 'Blueprint (budget)', view: 'finance', sub: 'blueprint', icon: 'compass' },
+      { label: 'Financial reporting', view: 'finance', sub: 'reports', icon: 'chart' },
+      { label: 'Mileage', view: 'mileage', icon: 'car' },
+    ] },
+    { label: 'Knowledge & training', icon: 'library', children: [
+      { label: 'Brain', view: 'brain', icon: 'brain', ai: true },
+      { label: 'Playbooks', view: 'playbooks', icon: 'playbooks' },
+      { label: 'AI notes', view: 'notes', icon: 'notes', ai: true },
+      { label: 'Training', icon: 'school', children: [
+        { label: 'DISC learning', built: false, icon: 'bulb' },
+        { label: 'Coaching', built: false, icon: 'megaphone' },
+        { label: 'Accountability partner', built: false, icon: 'users' },
+      ] },
+    ] },
+    // Role-gated tab (admin -> Brokerage, team leader -> Team, agent -> neither)
+    ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
+    // Setup & settings \u2014 mostly one-time
+    { label: 'Get started', icon: 'star', ai: true, children: [
+      { label: 'DISC / Grit test', built: false, icon: 'bulb' },
+      { label: 'My Prism profile', view: 'prism', icon: 'prism' },
+      { label: 'Voice card / memory', view: 'prism', icon: 'mic' },
+      { label: 'Business questionnaire', built: false, icon: 'clipboard' },
+      { label: 'Blueprint (budget)', view: 'finance', sub: 'blueprint', icon: 'compass' },
+    ] },
+    { label: 'Systems', view: 'systems', icon: 'systems' },
+    { label: 'Settings', view: 'settings', icon: 'settings' },
   ];
   assignMenuKeys(MENU, 'm');
   const menuCtx = { view, navigate, builtSet, byNavId, openPath,
