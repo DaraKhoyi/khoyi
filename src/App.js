@@ -11457,11 +11457,11 @@ function AppMain() {
   ] };
   const MENU = [
     // Quick access \u2014 the daily drivers
-    { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
-    { label: 'Daily Briefing', view: 'briefing', icon: 'briefing', ai: true },
+    { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
     // Today
     { label: 'My day', icon: 'clock', children: [
+      { label: 'Daily Briefing', view: 'briefing', icon: 'briefing', ai: true },
       { label: 'Tasks', view: 'tasks', icon: 'tasks' },
       { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
       { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
