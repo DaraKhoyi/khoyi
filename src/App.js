@@ -1341,6 +1341,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   const [rank, setRank] = useState(initial?.eisenhower_rank ?? 1);
   const [due_date, setDueDate] = useState(initial?.due_date || '');
   const [notes, setNotes] = useState(initial?.notes || '');
+  const [completed, setCompleted] = useState(!!initial?.completed);
   const [brainEntryId, setBrainEntryId] = useState(initial?.brain_entry_id || '');
   const [propertyId, setPropertyId] = useState(initial?.property_id || '');
   const [recurring, setRecurring] = useState(
@@ -1423,6 +1424,8 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
       title: title.trim(),
       due_date: due_date || null,
       notes: notes.trim(),
+      completed,
+      completed_at: completed ? (initial?.completed_at || new Date().toISOString()) : null,
       priority_system: system,
       brain_entry_id: brainEntryId || null,
       property_id: propertyId || null,
@@ -1450,7 +1453,16 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
             <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
             {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
           </div>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+            {initial && (
+              <button type="button" onClick={()=>setCompleted(c=>!c)} aria-pressed={completed} title={completed?'Mark as not complete':'Mark complete'}
+                style={{display:'inline-flex',alignItems:'center',gap:'6px',padding:'8px 12px',minHeight:'38px',borderRadius:'999px',cursor:'pointer',fontSize:'12.5px',fontWeight:600,whiteSpace:'nowrap',border:`1px solid ${completed?'var(--green)':'var(--border-strong)'}`,background:completed?'rgba(34,197,94,0.15)':'transparent',color:completed?'var(--green)':'var(--text-2)'}}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/>{completed && <polyline points="8 12 11 15 16 9" />}</svg>
+                {completed?'Completed':'Mark complete'}
+              </button>
+            )}
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Task</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required /></div>

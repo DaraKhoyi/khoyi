@@ -434,7 +434,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
     } else {
       const peers = tasks.filter(t => !t.completed && t.eisenhower_quadrant === taskData.eisenhower_quadrant);
       const maxRank = peers.reduce((m, t) => Math.max(m, t.eisenhower_rank || 0), 0);
-      const insert = { ...taskData, eisenhower_rank: taskData.eisenhower_rank || (maxRank + 1), user_id: userId, completed: false };
+      const insert = { ...taskData, eisenhower_rank: taskData.eisenhower_rank || (maxRank + 1), user_id: userId, completed: !!taskData.completed };
       const { data: created, error } = await supabase.from('tasks').insert(insert).select().single();
       if (error) {
         notify("Couldn't create task. Try again.", 'error');

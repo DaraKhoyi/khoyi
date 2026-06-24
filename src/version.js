@@ -1,3 +1,3 @@
 // Cache bust: forces a new bundle hash so browsers re-download after deploys.
 // Bump this whenever you need to force-refresh clients.
-export const BUILD_VERSION = '2026-06-23-systems-glyph-fix';
+export const BUILD_VERSION = '2026-06-24-task-complete-toggle';
