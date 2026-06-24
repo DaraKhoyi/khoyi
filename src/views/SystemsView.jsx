@@ -162,7 +162,7 @@ function SystemsView({ contacts = [], userId }) {
         </div>
         <span className={`pill ${meta.pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.dot, display: 'inline-block' }} />
-          {r.running ? 'Checking\u2026' : meta.label}
+          {r.running ? 'Checking…' : meta.label}
         </span>
       </div>
 
@@ -192,7 +192,7 @@ function SystemsView({ contacts = [], userId }) {
       {item.id === 'quo' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Live activity</div>
-          <div className="panel" style={{ padding: 0, overflow: 'hidden', margin: 0, maxHeight: 360, overflowY: 'auto' }}>
+          <div className="panel" style={{ padding: 0, overflow: 'hidden', margin: 0, maxHeight: inline ? 'none' : 360, overflowY: inline ? 'visible' : 'auto' }}>
             <QuoLiveFeed userId={userId} contacts={contacts} max={15} compact />
           </div>
         </div>
@@ -216,7 +216,7 @@ function SystemsView({ contacts = [], userId }) {
       <div style={{ width: isNarrow ? '100%' : '212px', minWidth: isNarrow ? 0 : '212px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
           <h2 style={{ fontSize: '22px', fontWeight: 700, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="systems" size={26} style={{color:'var(--accent)',flexShrink:0}} />Systems</h2>
-          <button className="btn-add-circle btn-add-circle-sm" onClick={runAll} disabled={checkingAll} title="Re-check all" aria-label="Re-check all">\u21bb</button>
+          <button className="btn-add-circle btn-add-circle-sm" onClick={runAll} disabled={checkingAll} title="Re-check all" aria-label="Re-check all">↻</button>
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -233,7 +233,7 @@ function SystemsView({ contacts = [], userId }) {
           )}
         </div>
 
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: isNarrow ? 'visible' : 'hidden', display: 'flex', flexDirection: 'column' }}>
           {SYSTEMS.map((item, idx) => {
             const ir = results[item.id] || {};
             const im = SYS_STATUS[ir.status || 'unknown'] || SYS_STATUS.unknown;
@@ -255,10 +255,10 @@ function SystemsView({ contacts = [], userId }) {
                     <div style={{ fontSize: '13px', fontWeight: active ? 700 : 600, color: active ? GOLD : 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: im.dot, flexShrink: 0, boxShadow: ir.running ? `0 0 0 3px ${im.dot}33` : 'none' }} />
-                      <span style={{ fontSize: '11px', color: im.dot }}>{ir.running ? 'Checking\u2026' : im.label}</span>
+                      <span style={{ fontSize: '11px', color: im.dot }}>{ir.running ? 'Checking…' : im.label}</span>
                     </div>
                   </div>
-                  {isNarrow && <span style={{ marginLeft: '6px', color: 'var(--accent)', fontSize: '15px', lineHeight: 1, transform: active ? 'rotate(90deg)' : 'none', transition: 'transform .2s', flexShrink: 0 }}>\u25b8</span>}
+                  {isNarrow && <span style={{ marginLeft: '6px', color: 'var(--accent)', fontSize: '15px', lineHeight: 1, transform: active ? 'rotate(90deg)' : 'none', transition: 'transform .2s', flexShrink: 0 }}>▸</span>}
                 </div>
                 {isNarrow && active && renderDetail(item, true)}
               </React.Fragment>
