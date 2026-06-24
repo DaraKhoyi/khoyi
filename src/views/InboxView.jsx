@@ -988,6 +988,9 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     window.addEventListener('resize', onR);
     return () => window.removeEventListener('resize', onR);
   }, []);
+  // Full-width reader toggle (wide screens only): hide the list and let the
+  // reader fill the window. Ignored on singlePane, which is already full width.
+  const [readerExpanded, setReaderExpanded] = useState(false);
   const readingPaneRef = useRef(null);
 
   // More menu — rendered in a portal to escape the toolbar's overflow clipping
@@ -1933,11 +1936,11 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       )}
 
       <div style={{
-        display: singlePane ? 'block' : 'grid',
+        display: (singlePane || (readerExpanded && selectedThread)) ? 'block' : 'grid',
         gridTemplateColumns: selectedThread ? 'minmax(320px, 360px) minmax(0, 1fr)' : '1fr',
         gap: '18px'
       }}>
-        <div style={{display: singlePane && selectedThread ? 'none' : 'block'}}>
+        <div style={{display: ((singlePane || readerExpanded) && selectedThread) ? 'none' : 'block'}}>
           <div className="panel">
             <div className="panel-header">
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -2041,17 +2044,31 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
               {/* Prev / next navigation through the visible list */}
               <div style={{display:'flex',alignItems:'center',gap:'2px',flexShrink:0}}>
                 <button className="btn btn-ghost btn-sm" onClick={()=>goAdjacent(-1)} disabled={!hasNewer}
-                  title="Newer (\u2191 or k)" aria-label="Newer email"
-                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasNewer?1:0.35,cursor:hasNewer?'pointer':'default'}}>\u2039</button>
+                  title="Newer (↑ or k)" aria-label="Newer email"
+                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasNewer?1:0.35,cursor:hasNewer?'pointer':'default'}}>‹</button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>goAdjacent(1)} disabled={!hasOlder}
-                  title="Older (\u2193 or j)" aria-label="Older email"
-                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasOlder?1:0.35,cursor:hasOlder?'pointer':'default'}}>\u203a</button>
+                  title="Older (↓ or j)" aria-label="Older email"
+                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasOlder?1:0.35,cursor:hasOlder?'pointer':'default'}}>›</button>
                 {selIndex >= 0 && (
                   <span style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',marginLeft:'3px'}}>
                     {selIndex+1} of {filteredThreads.length}
                   </span>
                 )}
               </div>
+
+              {/* Expand / collapse the reader to full width (wide screens only) */}
+              {!singlePane && (
+                <button className="btn btn-ghost btn-sm" onClick={()=>setReaderExpanded(v=>!v)}
+                  title={readerExpanded ? 'Show inbox list' : 'Expand to full width'} aria-label="Toggle full-width reader"
+                  style={{flexShrink:0,padding:'4px 8px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                  {readerExpanded ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="10" y1="14" x2="3" y2="21"/></svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                  )}
+                  <span style={{fontSize:'12px'}}>{readerExpanded ? 'Show list' : 'Expand'}</span>
+                </button>
+              )}
 
               {selectedMessages.length > 0 && (() => {
                 const latest = selectedMessages[selectedMessages.length - 1];
