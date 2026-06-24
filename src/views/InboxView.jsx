@@ -977,6 +977,17 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  // Single-pane reading: below ~1200px (incl. a windowed laptop) opening a
+  // thread replaces the list with a FULL-WIDTH reader so HTML emails aren't
+  // crammed into a sliver. Above that, a roomy two-pane layout.
+  const [singlePane, setSinglePane] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 1200 : false
+  );
+  useEffect(() => {
+    function onR() { setSinglePane(window.innerWidth < 1200); }
+    window.addEventListener('resize', onR);
+    return () => window.removeEventListener('resize', onR);
+  }, []);
   const readingPaneRef = useRef(null);
 
   // More menu — rendered in a portal to escape the toolbar's overflow clipping
@@ -1826,6 +1837,30 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     });
   }, [threads, inboxSearch]);
 
+  // ---- Reader navigation (prev/next through the visible list) ----
+  const selIndex = selectedThread ? filteredThreads.findIndex(t => t.id === selectedThread.id) : -1;
+  const hasNewer = selIndex > 0;                                  // up the list = newer
+  const hasOlder = selIndex >= 0 && selIndex < filteredThreads.length - 1; // down = older
+  function goAdjacent(delta) {
+    if (selIndex === -1) return;
+    const nx = filteredThreads[selIndex + delta];
+    if (nx) openThread(nx);
+  }
+  useEffect(() => {
+    if (!selectedThread) return;
+    function onNavKey(e) {
+      if (showCompose) return;
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); goAdjacent(1); }
+      else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); goAdjacent(-1); }
+      else if (e.key === 'Escape') { setSelectedThread(null); }
+    }
+    window.addEventListener('keydown', onNavKey);
+    return () => window.removeEventListener('keydown', onNavKey);
+  }, [selectedThread, filteredThreads, showCompose, selIndex]); // eslint-disable-line
+
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
@@ -1898,11 +1933,11 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       )}
 
       <div style={{
-        display: isMobileWidth ? 'block' : 'grid',
-        gridTemplateColumns: selectedThread ? '1fr 1.4fr' : '1fr',
+        display: singlePane ? 'block' : 'grid',
+        gridTemplateColumns: selectedThread ? 'minmax(320px, 360px) minmax(0, 1fr)' : '1fr',
         gap: '18px'
       }}>
-        <div style={{display: isMobileWidth && selectedThread ? 'none' : 'block'}}>
+        <div style={{display: singlePane && selectedThread ? 'none' : 'block'}}>
           <div className="panel">
             <div className="panel-header">
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -1999,9 +2034,24 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
               overflow:'hidden'
             }}>
               <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)} style={{flexShrink:0,padding:'4px 10px',fontSize:'12px'}}
-                title={isMobileWidth ? 'Back to inbox' : 'Close'}>
-                ← {isMobileWidth ? 'Inbox' : 'Close'}
+                title={singlePane ? 'Back to inbox' : 'Close'}>
+                ← {singlePane ? 'Inbox' : 'Close'}
               </button>
+
+              {/* Prev / next navigation through the visible list */}
+              <div style={{display:'flex',alignItems:'center',gap:'2px',flexShrink:0}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>goAdjacent(-1)} disabled={!hasNewer}
+                  title="Newer (\u2191 or k)" aria-label="Newer email"
+                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasNewer?1:0.35,cursor:hasNewer?'pointer':'default'}}>\u2039</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>goAdjacent(1)} disabled={!hasOlder}
+                  title="Older (\u2193 or j)" aria-label="Older email"
+                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasOlder?1:0.35,cursor:hasOlder?'pointer':'default'}}>\u203a</button>
+                {selIndex >= 0 && (
+                  <span style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',marginLeft:'3px'}}>
+                    {selIndex+1} of {filteredThreads.length}
+                  </span>
+                )}
+              </div>
 
               {selectedMessages.length > 0 && (() => {
                 const latest = selectedMessages[selectedMessages.length - 1];
