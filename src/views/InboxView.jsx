@@ -1521,7 +1521,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     // Offer undo for a few seconds
     clearUndoTimer();
     setUndoState({ kind, thread: victim });
-    undoTimer.current = setTimeout(() => { setUndoState(null); undoTimer.current = null; }, 8000);
+    undoTimer.current = setTimeout(() => { setUndoState(null); undoTimer.current = null; }, 10000);
   }
 
   async function undoLast() {
@@ -1935,6 +1935,34 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   return (
     <div>
+      {/* Floating Undo snackbar — rendered above everything so it's never
+          clipped by the toolbar or scrolled out of view. Appears after a
+          delete/archive and lets you take it back while you keep reading. */}
+      {undoState && createPortal(
+        <div style={{
+          position:'fixed', left:'50%', transform:'translateX(-50%)',
+          bottom:'calc(env(safe-area-inset-bottom, 0px) + 24px)', zIndex:10000,
+          display:'flex', alignItems:'center', gap:'14px',
+          background:'var(--bg-card)', border:'1px solid var(--accent)',
+          borderRadius:'12px', padding:'10px 12px 10px 16px',
+          boxShadow:'0 10px 30px rgba(0,0,0,0.5)', maxWidth:'min(92vw, 460px)',
+          animation:'qmRise 0.18s ease both'
+        }}>
+          <span style={{fontSize:'13px',color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {undoState.kind === 'trash' ? 'Moved to Trash' : 'Archived'}
+            {undoState.thread?.subject ? ` · ${undoState.thread.subject.slice(0,34)}${undoState.thread.subject.length>34?'…':''}` : ''}
+          </span>
+          <button onClick={undoLast}
+            style={{flexShrink:0,padding:'7px 16px',display:'inline-flex',alignItems:'center',gap:'6px',
+              border:'none',color:'var(--bg-base)',background:'var(--accent)',
+              borderRadius:'999px',fontSize:'13px',fontWeight:800,cursor:'pointer'}}>
+            <Icon name="reply" size={14} /> Undo
+          </button>
+          <button onClick={() => { clearUndoTimer(); setUndoState(null); }} aria-label="Dismiss"
+            style={{flexShrink:0,background:'none',border:'none',color:'var(--text-3)',fontSize:'18px',lineHeight:1,cursor:'pointer',padding:'2px 4px'}}>×</button>
+        </div>,
+        document.body
+      )}
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div>
           <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="inbox" size={26} style={{color:'var(--accent)',flexShrink:0}} />Inbox</h2>
@@ -2299,27 +2327,6 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 );
               })()}
             </div>
-
-            {/* Undo strip — appears directly under the action bar after a
-                delete/archive, so you can keep deleting and still take one back. */}
-            {undoState && (
-              <div style={{
-                display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',
-                padding:'8px 16px',background:'rgba(197,169,94,0.10)',borderBottom:'1px solid var(--accent)',
-                animation:'qmRise 0.16s ease both'
-              }}>
-                <span style={{fontSize:'12px',color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                  {undoState.kind === 'trash' ? 'Moved to Trash' : 'Archived'}
-                  {undoState.thread?.subject ? ` · ${undoState.thread.subject.slice(0,42)}${undoState.thread.subject.length>42?'…':''}` : ''}
-                </span>
-                <button className="btn btn-sm" onClick={undoLast}
-                  style={{flexShrink:0,padding:'5px 14px',display:'inline-flex',alignItems:'center',gap:'6px',
-                    border:'1px solid var(--accent)',color:'var(--accent)',background:'var(--bg-card)',
-                    borderRadius:'999px',fontSize:'12px',fontWeight:800,cursor:'pointer'}}>
-                  <Icon name="reply" size={13} /> Undo
-                </button>
-              </div>
-            )}
 
             {/* Subject line */}
             <div style={{padding:'14px 16px 6px',borderBottom:'1px solid var(--border)'}}>
