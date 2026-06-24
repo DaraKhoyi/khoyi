@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon, lbl, today_ymd, useDictation, ymd } from '../App';
+import { logJournalEntry, mirrorJournalToTimeline } from '../lib/journalLog';
 
 const JLINK_META = {
   contact:  { icon: <Icon name="contacts" size={11} />, color: '#60a5fa' },
@@ -15,46 +16,6 @@ function fmtJTime(iso) { return new Date(iso).toLocaleTimeString('en-US', { hour
 
 function shiftDay(ymd, delta) { const [y, m, d] = ymd.split('-').map(Number); const dt = new Date(y, m - 1, d); dt.setDate(dt.getDate() + delta); return dt.toISOString().slice(0, 10); }
 
-async function mirrorJournalToTimeline(userId, entry, type, entityId) {
-  try {
-    const { data } = await supabase.from('contact_interactions').insert({
-      user_id: userId, entity_type: type, entity_id: entityId,
-      contact_id: type === 'contact' ? entityId : null,
-      kind: 'note', channel: 'note', body: entry.content, brief: (entry.content || '').slice(0, 90),
-      occurred_at: entry.occurred_at, journal_entry_id: entry.id,
-    }).select('id').single();
-    return data?.id || null;
-  } catch (_) { return null; }
-}
-async function processJournalAnalysis(userId, entry, analysis) {
-  const out = [];
-  for (const l of (analysis.links || [])) {
-    if (!l.id || !l.type || !l.label) continue;
-    const confirmed = (Number(l.confidence) || 0) >= 0.8;
-    const { data: row } = await supabase.from('journal_links').insert({
-      user_id: userId, entry_id: entry.id, entity_type: l.type, entity_id: l.id, label: l.label, confidence: l.confidence, confirmed, dismissed: false,
-    }).select().single();
-    if (!row) continue;
-    if (confirmed && JLINK_META[l.type] && l.type !== 'project') {
-      const iid = await mirrorJournalToTimeline(userId, entry, l.type, l.id);
-      if (iid) { await supabase.from('journal_links').update({ interaction_id: iid }).eq('id', row.id); row.interaction_id = iid; }
-    }
-    out.push(row);
-  }
-  return out;
-}
-async function logJournalEntry(userId, content, kind) {
-  const day = today_ymd();
-  const { data: entry, error } = await supabase.from('journal_entries').insert({ user_id: userId, day, occurred_at: new Date().toISOString(), kind: kind || 'text', content }).select().single();
-  if (error || !entry) throw error || new Error('Save failed');
-  let links = [], actions = [];
-  try {
-    const { data: a } = await supabase.functions.invoke('journal-analyze', { body: { entry_id: entry.id } });
-    if (a && !a.error) { links = await processJournalAnalysis(userId, entry, a); actions = a.action_items || []; }
-  } catch (_) {}
-  try { window.dispatchEvent(new CustomEvent('journal-entry-added', { detail: { day } })); } catch (_) {}
-  return { entry, links, actions };
-}
 
 
 function AutoGrowTextarea({ value, minHeight = 120, maxHeight = 600, style, ...rest }) {
@@ -215,7 +176,7 @@ function JournalView({ userId }) {
       if (actions && actions.length) setActionsByEntry(prev => ({ ...prev, [entry.id]: actions }));
       setText('');
       if (window.__notify) window.__notify('Logged', 'success');
-    } catch (e) { if (window.__notify) window.__notify('Save failed: ' + (e.message || e), 'error'); }
+    } catch (e) { if (window.__notify) window.__notify(e.message || 'Save failed — please try again.', 'error'); }
     finally { setSaving(false); }
   }
   async function confirmLink(entry, link) {

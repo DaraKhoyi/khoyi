@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './dataService';
+import { logJournalEntry } from './lib/journalLog';
 import { BUILD_VERSION } from './version';
 import './index.css';
 import { computeCDA } from './lib/cda';
@@ -7223,7 +7224,7 @@ function QuickLog({ userId, onNavigate }) {
     if (dict.recording) dict.stop();
     setSaving(true);
     try { await logJournalEntry(userId, c, dict.recording ? 'voice' : 'text'); setText(''); setJournalOpen(false); if (window.__notify) window.__notify('Logged to journal', 'success'); }
-    catch (e) { if (window.__notify) window.__notify('Save failed', 'error'); }
+    catch (e) { if (window.__notify) window.__notify(e.message || 'Save failed — please try again. Your text is still here.', 'error'); }
     finally { setSaving(false); }
   }
 
