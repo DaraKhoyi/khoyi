@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v84-20260624-inbox-responsive'
+const VERSION = 'prismos-v85-20260624-inbox-expand'
 const APP_SHELL = [
   '/',
   '/index.html',
