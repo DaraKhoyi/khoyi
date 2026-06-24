@@ -936,6 +936,16 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [undoState, setUndoState] = useState(null); // { kind:'trash'|'archive', thread }
   const undoTimer = useRef(null);
   useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
+  // Email → Task: create a task from the open email (AI-summarized title,
+  // email body as notes, optional due date, linked to the sender's contact).
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [taskBusy, setTaskBusy] = useState(false);   // AI summarizing the title
+  const [taskSaving, setTaskSaving] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskNotes, setTaskNotes] = useState('');
+  const [taskDue, setTaskDue] = useState('');
+  const [taskContact, setTaskContact] = useState(null);
+  const [taskSrc, setTaskSrc] = useState({});
 
   // Client-side search across visible threads — collapses into a header icon.
   // Matches subject, snippet, sender name, and sender address (lowercased).
@@ -1546,6 +1556,67 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     }
   }
 
+  // Open the "new task from email" sheet, prefilled from a message, then ask
+  // Claude for a crisp action-oriented title in the background.
+  function openCreateTask(msg) {
+    if (!msg) return;
+    const subject = msg.subject || selectedThread?.subject || '';
+    let body = msg.body_text || '';
+    if (!body && msg.body_html) {
+      body = msg.body_html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+        .replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    }
+    if (!body) body = msg.snippet || '';
+    const from = (msg.from_address || '').trim();
+    const match = contacts.find(c => c.email && from && c.email.toLowerCase() === from.toLowerCase()) || null;
+    setTaskTitle(subject || 'Follow up on email');
+    setTaskNotes(body);
+    setTaskDue('');
+    setTaskContact(match);
+    setTaskSrc({
+      thread_id: msg.provider_thread_id || selectedThread?.provider_thread_id || null,
+      message_id: msg.provider_message_id || null,
+      from, from_name: msg.from_name || '', subject,
+    });
+    setTaskOpen(true);
+    setTaskBusy(true);
+    supabase.functions.invoke('email-to-task', { body: { subject, from_name: msg.from_name || '', body } })
+      .then(({ data }) => { if (data && data.title) setTaskTitle(data.title); })
+      .catch(() => {})
+      .finally(() => setTaskBusy(false));
+  }
+
+  async function saveEmailTask() {
+    const title = taskTitle.trim();
+    if (!title || taskSaving) return;
+    setTaskSaving(true);
+    try {
+      const row = {
+        user_id: userId, title,
+        notes: taskNotes.trim() || null,
+        due_date: taskDue || null,
+        priority: 'medium', list: 'inbox', status: 'todo',
+        priority_system: 'eisenhower', eisenhower_quadrant: 'B', eisenhower_rank: 1,
+        contact_id: taskContact?.id || null,
+        email_thread_id: taskSrc.thread_id || null,
+        email_message_id: taskSrc.message_id || null,
+        source_url: taskSrc.thread_id ? `https://mail.google.com/mail/u/0/#all/${taskSrc.thread_id}` : null,
+      };
+      const { data, error } = await supabase.from('tasks').insert(row).select().single();
+      if (error) throw error;
+      if (taskContact?.id && data?.id) {
+        await supabase.from('task_contacts').insert({ task_id: data.id, contact_id: taskContact.id, user_id: userId });
+      }
+      if (window.__notify) window.__notify(`Task created${taskContact ? ` · linked to ${taskContact.name}` : ''}`, 'success');
+      setTaskOpen(false);
+    } catch (e) {
+      if (window.__notify) window.__notify('Could not create task: ' + (e.message || e), 'error');
+    } finally {
+      setTaskSaving(false);
+    }
+  }
+
   async function trashCurrentThread() {
     if (!selectedThread) return;
     if (!await confirmDialog('Move this conversation to Trash?')) return;
@@ -1963,6 +2034,125 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         </div>,
         document.body
       )}
+
+      {/* New task from email — AI-summarized title, email body as notes,
+          optional due date, linked to the sender's contact. */}
+      {taskOpen && createPortal(
+        <div onClick={(e) => { if (e.target === e.currentTarget && !taskSaving) setTaskOpen(false); }}
+          style={{position:'fixed',inset:0,zIndex:10001,background:'rgba(0,0,0,0.55)',backdropFilter:'blur(2px)',
+            display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'5vh 14px 14px',overflowY:'auto'}}>
+          <div style={{width:'min(560px,100%)',background:'var(--bg-card)',border:'1px solid var(--border)',
+            borderRadius:'16px',boxShadow:'0 24px 60px rgba(0,0,0,0.6)',overflow:'hidden',
+            animation:'qmRise 0.18s ease both'}}>
+            {/* header */}
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',
+              padding:'16px 18px',borderBottom:'1px solid var(--border)',
+              background:'linear-gradient(180deg, rgba(197,169,94,0.10), transparent)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
+                <span style={{width:'34px',height:'34px',borderRadius:'10px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+                  background:'rgba(197,169,94,0.14)',border:'1px solid var(--accent)',color:'var(--accent)'}}>
+                  <Icon name="tasks" size={18} />
+                </span>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:'15px',fontWeight:800,color:'var(--text-1)'}}>New task from email</div>
+                  <div style={{fontSize:'11px',color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {taskSrc.subject || '(no subject)'}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => !taskSaving && setTaskOpen(false)} aria-label="Close"
+                style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'24px',lineHeight:1,cursor:'pointer',padding:'0 2px'}}>×</button>
+            </div>
+
+            {/* body */}
+            <div style={{padding:'16px 18px',display:'flex',flexDirection:'column',gap:'16px',maxHeight:'68vh',overflowY:'auto'}}>
+              {/* title */}
+              <div>
+                <label style={{display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:'11px',fontWeight:700,letterSpacing:'0.04em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:'6px'}}>
+                  <span>Task title</span>
+                  {taskBusy && <span style={{display:'inline-flex',alignItems:'center',gap:'5px',color:'var(--accent)',textTransform:'none',letterSpacing:0,fontWeight:600}}><Icon name="sparkles" size={11} /> summarizing…</span>}
+                </label>
+                <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} autoFocus
+                  placeholder="What needs to get done?"
+                  style={{width:'100%',boxSizing:'border-box',padding:'12px 14px',fontSize:'16px',fontWeight:600,
+                    background:'var(--bg-base)',border:'1px solid var(--border-strong, var(--border))',borderRadius:'10px',color:'var(--text-1)'}} />
+              </div>
+
+              {/* linked contact */}
+              <div>
+                <label style={{display:'block',fontSize:'11px',fontWeight:700,letterSpacing:'0.04em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:'6px'}}>Linked contact</label>
+                {taskContact ? (
+                  <span style={{display:'inline-flex',alignItems:'center',gap:'7px',padding:'7px 12px',borderRadius:'999px',
+                    background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',color:'var(--text-1)',fontSize:'13px'}}>
+                    <Icon name="contacts" size={13} style={{color:'var(--accent)'}} />
+                    {taskContact.name}
+                    <button onClick={() => setTaskContact(null)} title="Unlink"
+                      style={{background:'none',border:'none',color:'var(--text-2)',cursor:'pointer',fontSize:'15px',lineHeight:1,padding:'0 0 0 2px'}}>×</button>
+                  </span>
+                ) : (
+                  <div style={{fontSize:'12px',color:'var(--text-3)'}}>
+                    Sender {taskSrc.from ? <span style={{color:'var(--text-2)'}}>{taskSrc.from}</span> : ''} isn’t a saved contact — the task will be created unlinked.
+                  </div>
+                )}
+              </div>
+
+              {/* due date */}
+              <div>
+                <label style={{display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:'11px',fontWeight:700,letterSpacing:'0.04em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:'8px'}}>
+                  <span>Due date</span>
+                  {taskDue && <button onClick={() => setTaskDue('')} style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'10px',cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.03em'}}>× Clear</button>}
+                </label>
+                <div style={{display:'flex',flexWrap:'wrap',gap:'7px',marginBottom:'9px'}}>
+                  {(() => {
+                    const iso = (d) => d.toISOString().slice(0,10);
+                    const off = (n) => { const d = new Date(); d.setDate(d.getDate()+n); return iso(d); };
+                    const dow = (t) => { const d = new Date(); const diff = ((t - d.getDay()) + 7) % 7 || 7; d.setDate(d.getDate()+diff); return iso(d); };
+                    const chips = [
+                      ['Today', off(0)], ['Tomorrow', off(1)], ['This weekend', dow(6)], ['Next week', dow(1)],
+                    ];
+                    return chips.map(([lbl, val]) => {
+                      const active = taskDue === val;
+                      return (
+                        <button key={lbl} onClick={() => setTaskDue(val)}
+                          style={{padding:'7px 12px',borderRadius:'999px',fontSize:'12px',fontWeight:600,cursor:'pointer',
+                            border:`1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                            background: active ? 'rgba(197,169,94,0.14)' : 'transparent',
+                            color: active ? 'var(--accent)' : 'var(--text-2)'}}>{lbl}</button>
+                      );
+                    });
+                  })()}
+                </div>
+                <input type="date" value={taskDue} onChange={e => setTaskDue(e.target.value)}
+                  style={{width:'100%',boxSizing:'border-box',padding:'10px 12px',fontSize:'14px',
+                    background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text-1)',colorScheme:'dark'}} />
+              </div>
+
+              {/* notes (email contents) */}
+              <div>
+                <label style={{display:'block',fontSize:'11px',fontWeight:700,letterSpacing:'0.04em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:'6px'}}>
+                  Description <span style={{textTransform:'none',letterSpacing:0,fontWeight:400,color:'var(--text-3)'}}>· email contents (editable)</span>
+                </label>
+                <textarea value={taskNotes} onChange={e => setTaskNotes(e.target.value)} rows={7}
+                  style={{width:'100%',boxSizing:'border-box',padding:'12px 14px',fontSize:'13px',lineHeight:1.5,
+                    background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text-1)',
+                    resize:'vertical',fontFamily:'inherit'}} />
+              </div>
+            </div>
+
+            {/* footer */}
+            <div style={{display:'flex',justifyContent:'flex-end',gap:'10px',padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
+              <button onClick={() => !taskSaving && setTaskOpen(false)} className="btn btn-ghost">Cancel</button>
+              <button onClick={saveEmailTask} disabled={taskSaving || !taskTitle.trim()}
+                style={{padding:'10px 22px',background:'var(--accent)',color:'var(--bg-base)',border:'none',borderRadius:'999px',
+                  fontWeight:800,fontSize:'14px',cursor:'pointer',opacity:(taskSaving||!taskTitle.trim())?0.55:1,
+                  display:'inline-flex',alignItems:'center',gap:'7px'}}>
+                <Icon name="tasks" size={14} /> {taskSaving ? 'Creating…' : 'Create task'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div>
           <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="inbox" size={26} style={{color:'var(--accent)',flexShrink:0}} />Inbox</h2>
@@ -2186,6 +2376,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                       <Icon name="reply" size={13} /> Reply
                     </button>
 
+                    {/* Add to tasks — turns this email into a task */}
+                    <button className="btn btn-ghost btn-sm" onClick={() => openCreateTask(latest)}
+                      title="Add to tasks" aria-label="Add to tasks"
+                      style={{flexShrink:0,padding:'4px 8px'}}>
+                      <Icon name="tasks" size={15} />
+                    </button>
+
                     {/* Archive — only when not already archived */}
                     {tab !== 'sent' && (
                       <button className="btn btn-ghost btn-sm"
@@ -2244,6 +2441,13 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                             onClick={() => { openReply(latest, true); setShowMoreMenu(false); }}
                             style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
                             <Icon name="replyAll" size={14} /> Reply all
+                          </button>
+
+                          {/* Add to task */}
+                          <button
+                            onClick={() => { openCreateTask(latest); setShowMoreMenu(false); }}
+                            style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            <Icon name="tasks" size={14} /> Add to task
                           </button>
 
                           {/* Forward */}

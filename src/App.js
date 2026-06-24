@@ -1448,13 +1448,17 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-            <h3>{initial ? 'Edit Task' : 'New Task'}</h3>
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
+      <div className="modal" style={{maxWidth:'640px',width:'min(640px,100%)',padding:0,maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',padding:'16px 20px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg, rgba(197,169,94,0.10), transparent)',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px',minWidth:0}}>
+            <span style={{width:'36px',height:'36px',borderRadius:'10px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(197,169,94,0.14)',border:'1px solid var(--accent)',color:'var(--accent)'}}><Icon name="tasks" size={18} /></span>
+            <div style={{minWidth:0}}>
+              <h3 style={{margin:0,fontSize:'17px',fontWeight:800,color:'var(--text-1)'}}>{initial ? 'Edit Task' : 'New Task'}</h3>
+              {completed && <div style={{fontSize:'11px',color:'var(--green)',fontWeight:700}}>✓ Completed</div>}
+            </div>
+            {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete" style={{marginLeft:'2px',background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:'6px',borderRadius:'8px',display:'inline-flex'}}><Icon name="trash" size={16} /></button>}
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'10px',flexShrink:0}}>
             {initial && (
               <button type="button" onClick={()=>setCompleted(c=>!c)} aria-pressed={completed} title={completed?'Mark as not complete':'Mark complete'}
                 style={{display:'inline-flex',alignItems:'center',gap:'6px',padding:'8px 12px',minHeight:'38px',borderRadius:'999px',cursor:'pointer',fontSize:'12.5px',fontWeight:600,whiteSpace:'nowrap',border:`1px solid ${completed?'var(--green)':'var(--border-strong)'}`,background:completed?'rgba(34,197,94,0.15)':'transparent',color:completed?'var(--green)':'var(--text-2)'}}>
@@ -1462,11 +1466,13 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                 {completed?'Completed':'Mark complete'}
               </button>
             )}
-            <button className="modal-close" onClick={onClose}>×</button>
+            <button type="button" onClick={onClose} aria-label="Close" style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'26px',lineHeight:1,cursor:'pointer',padding:'0 2px'}}>×</button>
           </div>
         </div>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} style={{display:'flex',flexDirection:'column',minHeight:0,flex:1,overflow:'hidden'}}>
+          <div style={{overflowY:'auto',padding:'18px 20px',flex:1}}>
           <div className="form-group"><label className="form-label">Task</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required /></div>
+          <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase',color:'var(--text-3)',margin:'4px 0 12px',paddingTop:'16px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'7px'}}><Icon name="target" size={12} style={{color:'var(--accent)'}} />Priority &amp; focus</div>
           <div className="form-group">
             <label className="form-label">Priority System</label>
             <div style={{display:'flex',gap:'6px'}}>
@@ -1530,6 +1536,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
               Suggest failed: {suggestion.error}
             </div>
           )}
+          <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase',color:'var(--text-3)',margin:'4px 0 12px',paddingTop:'16px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'7px'}}><Icon name="calendar" size={12} style={{color:'var(--accent)'}} />Schedule</div>
           <div className="form-row">
             <div className="form-group" style={{flex:1}}>
               <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -1613,11 +1620,13 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
               </select>
             </div>
           )}
+          <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase',color:'var(--text-3)',margin:'4px 0 12px',paddingTop:'16px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'7px'}}><Icon name="notes" size={12} style={{color:'var(--accent)'}} />Notes &amp; context</div>
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional details…" /></div>
 
           {/* ── Auto-schedule (shared component) ── */}
           <AutoScheduleFields initial={initial} dueDate={due_date} onChange={setSchedFields} />
 
+          <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase',color:'var(--text-3)',margin:'4px 0 12px',paddingTop:'16px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'7px'}}><Icon name="mail" size={12} style={{color:'var(--accent)'}} />Delegate</div>
           <div className="form-group" style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px',background:'var(--bg-base)'}}>
             <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}}>
               <input type="checkbox" checked={emailMode} disabled={emailAlreadySent} onChange={e=>{
@@ -1641,6 +1650,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
             )}
           </div>
 
+          <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase',color:'var(--text-3)',margin:'4px 0 12px',paddingTop:'16px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'7px'}}><Icon name="contacts" size={12} style={{color:'var(--accent)'}} />Connections</div>
           <div className="form-group">
             <label className="form-label">Linked contacts {linkedContacts.length > 0 && <span style={{color:'var(--text-3)',fontWeight:400}}>({linkedContacts.length})</span>}</label>
             <div style={{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'6px',minHeight:'4px'}}>
@@ -1700,9 +1710,10 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
               </div>
             );
           })()}
-          <div className="modal-actions">
+          </div>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:'10px',padding:'14px 20px',borderTop:'1px solid var(--border)',background:'var(--bg-base)',flexShrink:0}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Save Task</button>
+            <button type="submit" className="btn btn-primary" style={{padding:'10px 24px',fontWeight:800}}>Save Task</button>
           </div>
         </form>
       </div>
