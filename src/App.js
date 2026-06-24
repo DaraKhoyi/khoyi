@@ -8550,6 +8550,180 @@ function EmailRepliesPanel() {
 }
 
 // ─────────────────────────────────────────
+// CALL FOLLOW-UPS TO REVIEW (Quo call → task inbox)
+// quo-call-process extracts commitments from each recorded call and stages
+// them on quo_calls.proposed_tasks (review_status='pending'). Here the user
+// edits/approves them into real tasks (linked to the matched contact) or
+// dismisses them. Renders nothing when there's nothing to review.
+// ─────────────────────────────────────────
+function CallFollowupsPanel({ userId, contacts = [], setTasks }) {
+  const [rows, setRows] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [working, setWorking] = useState({});
+
+  const nameForCall = (c) => {
+    if (c.contact_id) { const m = contacts.find(x => x.id === c.contact_id); if (m) return m.name; }
+    return c.participant || c.from_number || c.to_number || 'Unknown caller';
+  };
+  const sumText = (s) => {
+    if (!s) return '';
+    if (Array.isArray(s)) return s.filter(Boolean).join(' · ');
+    if (typeof s === 'string') return s;
+    if (typeof s === 'object') return s.summary || s.text || '';
+    return String(s);
+  };
+
+  const load = async () => {
+    try {
+      const { data } = await supabase.from('quo_calls')
+        .select('id,contact_id,participant,from_number,to_number,direction,op_created_at,completed_at,duration,summary,proposed_tasks')
+        .eq('user_id', userId).eq('review_status', 'pending')
+        .order('op_created_at', { ascending: false });
+      const mapped = (data || []).map(c => ({
+        ...c,
+        items: (Array.isArray(c.proposed_tasks) ? c.proposed_tasks : [])
+          .map((it, i) => ({ ...it, _i: i }))
+          .filter(it => (it.status || 'pending') === 'pending'),
+      })).filter(c => c.items.length > 0);
+      setRows(mapped);
+    } catch (e) { /* keep panel hidden on error */ }
+    setLoaded(true);
+  };
+  useEffect(() => { if (userId) load(); }, [userId]);   // eslint-disable-line
+
+  const fullArrayFor = (call, editedItems) => {
+    const base = Array.isArray(call.proposed_tasks) ? call.proposed_tasks.map(x => ({ ...x })) : [];
+    for (const ed of editedItems) {
+      if (ed._i != null && base[ed._i]) {
+        base[ed._i] = { ...base[ed._i], title: ed.title, due_date: ed.due_date || null, priority: ed.priority, status: ed.status || base[ed._i].status || 'pending' };
+      }
+    }
+    return base;
+  };
+  const persist = async (callId, fullItems) => {
+    const remaining = fullItems.filter(it => (it.status || 'pending') === 'pending').length;
+    await supabase.from('quo_calls').update({
+      proposed_tasks: fullItems,
+      review_status: remaining ? 'pending' : 'done',
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
+  };
+  const setItem = (callId, idx, patch) => {
+    setRows(rs => rs.map(c => c.id !== callId ? c : { ...c, items: c.items.map((it, i) => i === idx ? { ...it, ...patch } : it) }));
+  };
+
+  const approve = async (call, idx) => {
+    const it = call.items[idx];
+    const key = call.id + ':' + it._i;
+    if (working[key]) return;
+    if (!(it.title || '').trim()) return;
+    setWorking(w => ({ ...w, [key]: true }));
+    try {
+      const contact = call.contact_id ? contacts.find(x => x.id === call.contact_id) : null;
+      const qmap = { high: 'A', medium: 'B', low: 'C' };
+      const occurred = call.completed_at || call.op_created_at;
+      const whenStr = occurred ? new Date(occurred).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+      const ctxLine = `From ${String(call.direction || '').includes('out') ? 'a call you made' : 'a call'}${contact ? ` with ${contact.name}` : ''}${whenStr ? ` on ${whenStr}` : ''}.`;
+      const notes = [it.note || '', ctxLine].filter(Boolean).join('\n\n');
+      const row = {
+        user_id: userId, title: it.title.trim(), notes,
+        due_date: it.due_date || null,
+        priority: it.priority || 'medium', list: 'inbox', status: 'todo',
+        priority_system: 'eisenhower', eisenhower_quadrant: qmap[it.priority] || 'B', eisenhower_rank: 1,
+        contact_id: call.contact_id || null,
+        waiting_on: it.owner === 'them' ? (contact ? contact.name : 'the other party') : null,
+      };
+      const { data, error } = await supabase.from('tasks').insert(row).select().single();
+      if (error) throw error;
+      if (call.contact_id && data?.id) {
+        await supabase.from('task_contacts').insert({ task_id: data.id, contact_id: call.contact_id, user_id: userId });
+      }
+      const full = fullArrayFor(call, call.items.map((x, i) => i === idx ? { ...x, status: 'approved' } : x));
+      await persist(call.id, full);
+      if (setTasks && data) setTasks(prev => [data, ...prev]);
+      if (window.__notify) window.__notify('Task created' + (contact ? ' · ' + contact.name : ''), 'success');
+      setRows(rs => rs.map(c => c.id !== call.id ? c : { ...c, proposed_tasks: full, items: c.items.filter((_, i) => i !== idx) }).filter(c => c.items.length > 0));
+    } catch (e) {
+      if (window.__notify) window.__notify('Could not create task: ' + (e.message || e), 'error');
+    } finally {
+      setWorking(w => { const n = { ...w }; delete n[key]; return n; });
+    }
+  };
+
+  const dismiss = async (call, idx) => {
+    const full = fullArrayFor(call, call.items.map((x, i) => i === idx ? { ...x, status: 'dismissed' } : x));
+    await persist(call.id, full);
+    setRows(rs => rs.map(c => c.id !== call.id ? c : { ...c, proposed_tasks: full, items: c.items.filter((_, i) => i !== idx) }).filter(c => c.items.length > 0));
+  };
+
+  const recheck = async () => {
+    if (busy) return; setBusy(true);
+    try { await supabase.functions.invoke('quo-call-process', { body: {} }); } catch (e) {}
+    await load(); setBusy(false);
+  };
+
+  if (loaded && rows.length === 0) return null;
+  const total = rows.reduce((n, c) => n + c.items.length, 0);
+  return (
+    <div className="panel" style={{ marginBottom: '16px' }}>
+      <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Icon name="quo" size={15} style={{ color: 'var(--accent)' }} />
+          <h3 style={{ margin: 0 }}>Call follow-ups to review</h3>
+          {total > 0 && <span className="nav-badge">{total}</span>}
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={recheck} disabled={busy} title="Scan recent calls for new follow-ups">{busy ? 'Checking…' : 'Check calls'}</button>
+      </div>
+      {rows.map(call => (
+        <div key={call.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700 }}>{nameForCall(call)}</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
+              {String(call.direction || '').includes('out') ? 'Outgoing call' : 'Incoming call'}
+              {call.duration ? ` · ${Math.max(1, Math.round(call.duration / 60))}m` : ''}
+              {call.op_created_at ? ` · ${new Date(call.op_created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
+            </span>
+          </div>
+          {sumText(call.summary) && <div style={{ fontSize: '11.5px', color: 'var(--text-2)', fontStyle: 'italic', marginBottom: '8px', whiteSpace: 'pre-wrap' }}>{sumText(call.summary)}</div>}
+          {call.items.map((it, idx) => {
+            const key = call.id + ':' + it._i;
+            const wk = !!working[key];
+            return (
+              <div key={idx} style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px', marginBottom: '8px' }}>
+                <div style={{ marginBottom: '6px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '2px 8px', borderRadius: '999px',
+                    background: it.owner === 'them' ? 'rgba(245,158,11,0.15)' : 'rgba(197,169,94,0.14)',
+                    color: it.owner === 'them' ? 'var(--yellow)' : 'var(--accent)',
+                    border: `1px solid ${it.owner === 'them' ? 'var(--yellow)' : 'var(--accent)'}` }}>
+                    {it.owner === 'them' ? 'Waiting on them' : 'My task'}
+                  </span>
+                </div>
+                <input value={it.title} onChange={e => setItem(call.id, idx, { title: e.target.value })}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', fontSize: '13.5px', fontWeight: 600, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)', marginBottom: '6px' }} />
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: it.note ? '6px' : '8px' }}>
+                  <input type="date" value={it.due_date || ''} onChange={e => setItem(call.id, idx, { due_date: e.target.value })}
+                    style={{ padding: '6px 8px', fontSize: '12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)', colorScheme: 'dark' }} />
+                  <select value={it.priority || 'medium'} onChange={e => setItem(call.id, idx, { priority: e.target.value })}
+                    style={{ padding: '6px 8px', fontSize: '12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)' }}>
+                    <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                  </select>
+                </div>
+                {it.note && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '8px' }}>{it.note}</div>}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button className="btn btn-primary btn-sm" disabled={wk || !((it.title || '').trim())} onClick={() => approve(call, idx)}>{wk ? 'Adding…' : '+ Add task'}</button>
+                  <button className="btn btn-ghost btn-sm" disabled={wk} onClick={() => dismiss(call, idx)}>Dismiss</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
 // ARI DAILY BRIEFING
 // ─────────────────────────────────────────
 function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText, contactId }) {
@@ -11604,7 +11778,7 @@ function AppMain() {
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks}/>
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
-              : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
+              : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='quo'         ? <QuoView contacts={contacts} userId={user.id}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles}/>
@@ -11654,5 +11828,5 @@ export default function App() {
   return <AppMain />;
 }
 
-export { ActivityTimeline, AriRewriteButton, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, RecruitingKpiTile, RecruitingView, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
+export { ActivityTimeline, AriRewriteButton, CallFollowupsPanel, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, RecruitingKpiTile, RecruitingView, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon, QuoCallDetail, modal, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../App';
+import { Icon, QuoCallDetail, CallFollowupsPanel, modal, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../App';
 
 function QuoView({ contacts = [], userId }) {
   const [tab, setTab] = useState('feed');               // feed | messages | calls
@@ -181,6 +181,8 @@ function QuoView({ contacts = [], userId }) {
           <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>
         </div>
       </div>
+
+      <CallFollowupsPanel userId={userId} contacts={contacts} />
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
         {TABS.map(t => <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}>{t.icon} {t.label}</button>)}
