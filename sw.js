@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v87-20260624-inbox-undo-advance'
+const VERSION = 'prismos-v88-20260624-undo-snackbar'
 const APP_SHELL = [
   '/',
   '/index.html',
