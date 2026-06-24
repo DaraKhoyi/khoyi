@@ -122,6 +122,13 @@ function SystemsView({ contacts = [], userId }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { runAll(); }, []);
   useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 15000); return () => clearInterval(t); }, []);
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const on = (e) => setIsNarrow(e.matches);
+    if (mq.addEventListener) mq.addEventListener('change', on); else mq.addListener(on);
+    return () => { if (mq.removeEventListener) mq.removeEventListener('change', on); else mq.removeListener(on); };
+  }, []);
 
   function ago(ts) {
     if (!ts) return 'never';
@@ -133,26 +140,85 @@ function SystemsView({ contacts = [], userId }) {
     return `${Math.floor(m / 60)}h ago`;
   }
 
-  const sys = SYSTEMS.find(s => s.id === selected) || SYSTEMS[0];
-  const r = results[sys.id] || {};
-  const st = r.status || 'unknown';
-  const meta = SYS_STATUS[st] || SYS_STATUS.unknown;
+  const sysForDesktop = SYSTEMS.find(s => s.id === selected) || SYSTEMS[0];
   const GOLD = '#C5A95E';
 
   const tally = SYSTEMS.reduce((a, s) => { const k = results[s.id]?.status || 'unknown'; a[k] = (a[k] || 0) + 1; return a; }, {});
   const online = tally.healthy || 0, offline = tally.down || 0, degraded = tally.degraded || 0;
 
-  return (
-    <div style={{ display: 'flex', gap: '18px', height: 'calc(100dvh - 64px)' }}>
+  // One detail renderer, used in the desktop right column AND inline (mobile accordion).
+  const renderDetail = (item, inline = false) => {
+    const r = results[item.id] || {};
+    const st = r.status || 'unknown';
+    const meta = SYS_STATUS[st] || SYS_STATUS.unknown;
+    const inner = (<>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+          <span style={{ fontSize: '22px' }}>{item.icon}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: '17px', color: 'var(--text-1)' }}>{item.name}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{item.category}</div>
+          </div>
+        </div>
+        <span className={`pill ${meta.pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.dot, display: 'inline-block' }} />
+          {r.running ? 'Checking\u2026' : meta.label}
+        </span>
+      </div>
 
-      {/* ── LEFT: vertical systems menu ── */}
-      <div style={{ width: '212px', minWidth: '212px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ fontSize: '13px', color: 'var(--text-2)' }}>{item.description}</div>
+
+      {r.detail && (
+        <div style={{ fontSize: '13px', fontWeight: 500, color: st === 'down' ? 'var(--red)' : st === 'degraded' ? 'var(--yellow)' : st === 'healthy' ? 'var(--green)' : 'var(--text-2)' }}>
+          {r.detail}
+        </div>
+      )}
+
+      {r.meta?.accounts?.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Accounts</div>
+          {r.meta.accounts.map((a, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '12px', padding: '8px 10px', background: 'var(--bg-card)', borderRadius: '8px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0 }} />
+                <span style={{ color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email}</span>
+              </span>
+              <span style={{ color: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0, fontWeight: 500 }}>{a.issue}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {item.id === 'quo' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Live activity</div>
+          <div className="panel" style={{ padding: 0, overflow: 'hidden', margin: 0, maxHeight: 360, overflowY: 'auto' }}>
+            <QuoLiveFeed userId={userId} contacts={contacts} max={15} compact />
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '2px' }}>
+        <span style={{ fontSize: '12px', color: 'var(--text-3)' }}>{r.checkedAt ? `Checked ${ago(r.checkedAt)}` : 'Not checked yet'}</span>
+        <button className="btn btn-ghost btn-sm" onClick={() => runCheck(item)} disabled={r.running}>Re-check</button>
+      </div>
+    </>);
+    if (inline) {
+      return <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '14px', background: 'rgba(197,169,94,0.05)', borderTop: `2px solid ${GOLD}` }}>{inner}</div>;
+    }
+    return <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>{inner}</div>;
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: isNarrow ? 'column' : 'row', gap: isNarrow ? '12px' : '18px', height: isNarrow ? 'auto' : 'calc(100dvh - 64px)' }}>
+
+      {/* ── Systems list: left rail on desktop, full-width on mobile ── */}
+      <div style={{ width: isNarrow ? '100%' : '212px', minWidth: isNarrow ? 0 : '212px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
           <h2 style={{ fontSize: '22px', fontWeight: 700, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="systems" size={26} style={{color:'var(--accent)',flexShrink:0}} />Systems</h2>
-          <button className="btn-add-circle btn-add-circle-sm" onClick={runAll} disabled={checkingAll} title="Re-check all" aria-label="Re-check all">↻</button>
+          <button className="btn-add-circle btn-add-circle-sm" onClick={runAll} disabled={checkingAll} title="Re-check all" aria-label="Re-check all">\u21bb</button>
         </div>
 
-        {/* online / offline nub */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           <span className="pill pill-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)' }} />{online} online
@@ -167,96 +233,48 @@ function SystemsView({ contacts = [], userId }) {
           )}
         </div>
 
-        {/* the bar */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {SYSTEMS.map((item, idx) => {
             const ir = results[item.id] || {};
             const im = SYS_STATUS[ir.status || 'unknown'] || SYS_STATUS.unknown;
             const active = item.id === selected;
             return (
-              <div
-                key={item.id}
-                onClick={() => setSelected(item.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '11px 12px', cursor: 'pointer',
-                  borderBottom: idx < SYSTEMS.length - 1 ? '1px solid var(--border)' : 'none',
-                  borderLeft: `3px solid ${active ? GOLD : 'transparent'}`,
-                  background: active ? 'rgba(197,169,94,0.12)' : 'transparent',
-                }}
-              >
-                <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: '13px', fontWeight: active ? 700 : 600, color: active ? GOLD : 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: im.dot, flexShrink: 0, boxShadow: ir.running ? `0 0 0 3px ${im.dot}33` : 'none' }} />
-                    <span style={{ fontSize: '11px', color: im.dot }}>{ir.running ? 'Checking…' : im.label}</span>
+              <React.Fragment key={item.id}>
+                <div
+                  onClick={() => setSelected(prev => (isNarrow && prev === item.id) ? null : item.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '11px 12px', cursor: 'pointer',
+                    borderBottom: idx < SYSTEMS.length - 1 ? '1px solid var(--border)' : 'none',
+                    borderLeft: `3px solid ${active ? GOLD : 'transparent'}`,
+                    background: active ? 'rgba(197,169,94,0.12)' : 'transparent',
+                  }}
+                >
+                  <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: '13px', fontWeight: active ? 700 : 600, color: active ? GOLD : 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: im.dot, flexShrink: 0, boxShadow: ir.running ? `0 0 0 3px ${im.dot}33` : 'none' }} />
+                      <span style={{ fontSize: '11px', color: im.dot }}>{ir.running ? 'Checking\u2026' : im.label}</span>
+                    </div>
                   </div>
+                  {isNarrow && <span style={{ marginLeft: '6px', color: 'var(--accent)', fontSize: '15px', lineHeight: 1, transform: active ? 'rotate(90deg)' : 'none', transition: 'transform .2s', flexShrink: 0 }}>\u25b8</span>}
                 </div>
-              </div>
+                {isNarrow && active && renderDetail(item, true)}
+              </React.Fragment>
             );
           })}
         </div>
       </div>
 
-      {/* ── RIGHT: selected system detail ── */}
-      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-        <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-              <span style={{ fontSize: '22px' }}>{sys.icon}</span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: '17px', color: 'var(--text-1)' }}>{sys.name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{sys.category}</div>
-              </div>
-            </div>
-            <span className={`pill ${meta.pill}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.dot, display: 'inline-block' }} />
-              {r.running ? 'Checking…' : meta.label}
-            </span>
-          </div>
-
-          <div style={{ fontSize: '13px', color: 'var(--text-2)' }}>{sys.description}</div>
-
-          {r.detail && (
-            <div style={{ fontSize: '13px', fontWeight: 500, color: st === 'down' ? 'var(--red)' : st === 'degraded' ? 'var(--yellow)' : st === 'healthy' ? 'var(--green)' : 'var(--text-2)' }}>
-              {r.detail}
-            </div>
-          )}
-
-          {r.meta?.accounts?.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Accounts</div>
-              {r.meta.accounts.map((a, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '12px', padding: '8px 10px', background: 'var(--bg-hover)', borderRadius: '8px' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0 }} />
-                    <span style={{ color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email}</span>
-                  </span>
-                  <span style={{ color: (SYS_STATUS[a.st] || SYS_STATUS.unknown).dot, flexShrink: 0, fontWeight: 500 }}>{a.issue}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {sys.id === 'quo' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Live activity</div>
-              <div className="panel" style={{ padding: 0, overflow: 'hidden', margin: 0, maxHeight: 360, overflowY: 'auto' }}>
-                <QuoLiveFeed userId={userId} contacts={contacts} max={15} compact />
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '2px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-3)' }}>{r.checkedAt ? `Checked ${ago(r.checkedAt)}` : 'Not checked yet'}</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => runCheck(sys)} disabled={r.running}>Re-check</button>
-          </div>
+      {/* ── Detail: right column on desktop only (mobile shows it inline above) ── */}
+      {!isNarrow && (
+        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+          {renderDetail(sysForDesktop, false)}
         </div>
-      </div>
+      )}
     </div>
   );
 }
-
 
 export default SystemsView;
