@@ -931,6 +931,11 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [tab, setTab] = useState('inbox');
   const [selectedThread, setSelectedThread] = useState(null);
   const [selectedMessages, setSelectedMessages] = useState([]);
+  // Rapid delete/archive: after acting we advance to the next email and show a
+  // brief Undo affordance instead of bouncing back to the list.
+  const [undoState, setUndoState] = useState(null); // { kind:'trash'|'archive', thread }
+  const undoTimer = useRef(null);
+  useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
 
   // Client-side search across visible threads — collapses into a header icon.
   // Matches subject, snippet, sender name, and sender address (lowercased).
@@ -1477,6 +1482,70 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   }
 
   // Move a thread (and its messages) to Trash via Gmail API
+  function clearUndoTimer() { if (undoTimer.current) { clearTimeout(undoTimer.current); undoTimer.current = null; } }
+
+  // Delete (trash) or archive the open email, then immediately show the next one
+  // and surface an Undo button — so you can blow through your inbox without
+  // bouncing back to the list each time. Optimistic: the UI advances first, the
+  // backend call follows, and we roll back if it fails.
+  async function actAndAdvance(kind) {
+    const victim = selectedThread;
+    if (!victim) return;
+    const list = filteredThreads;
+    const idx = list.findIndex(t => t.id === victim.id);
+    const nextThread = (idx >= 0 ? (list[idx + 1] || list[idx - 1]) : null) || null;
+    // Advance immediately
+    setThreads(prev => prev.filter(t => t.id !== victim.id));
+    if (nextThread) { openThread(nextThread); }
+    else { setSelectedThread(null); setSelectedMessages([]); }
+    // Backend
+    try {
+      if (kind === 'trash') {
+        const { data, error } = await supabase.functions.invoke('gmail-trash', {
+          body: { account_id: account.id, thread_id: victim.provider_thread_id },
+        });
+        if (error) throw error; if (data?.error) throw new Error(data.error);
+      } else {
+        const { data, error } = await supabase.functions.invoke('gmail-modify', {
+          body: { account_id: account.id, thread_id: victim.provider_thread_id, action: 'archive' },
+        });
+        if (error) throw error; if (data?.error) throw new Error(data.error);
+      }
+    } catch (err) {
+      // Roll back: put it back and reselect it
+      setThreads(prev => [victim, ...prev.filter(t => t.id !== victim.id)]);
+      openThread(victim);
+      notifyError((kind === 'trash' ? 'Could not move to Trash: ' : 'Could not archive: ') + (err.message || err));
+      return;
+    }
+    // Offer undo for a few seconds
+    clearUndoTimer();
+    setUndoState({ kind, thread: victim });
+    undoTimer.current = setTimeout(() => { setUndoState(null); undoTimer.current = null; }, 8000);
+  }
+
+  async function undoLast() {
+    const u = undoState;
+    if (!u) return;
+    clearUndoTimer();
+    setUndoState(null);
+    const v = u.thread;
+    try {
+      const body = u.kind === 'trash'
+        ? { account_id: account.id, thread_id: v.provider_thread_id, add: ['INBOX'], remove: ['TRASH'] }
+        : { account_id: account.id, thread_id: v.provider_thread_id, add: ['INBOX'] };
+      const { data, error } = await supabase.functions.invoke('gmail-modify', { body });
+      if (error) throw error; if (data?.error) throw new Error(data.error);
+      const { data: updated } = await supabase.from('email_threads').select('*').eq('id', v.id).single();
+      const restored = updated || v;
+      setThreads(prev => [restored, ...prev.filter(t => t.id !== restored.id)]);
+      openThread(restored);
+      if (window.__notify) window.__notify(u.kind === 'trash' ? 'Restored to Inbox' : 'Archive undone', 'success');
+    } catch (err) {
+      notifyError('Undo failed: ' + (err.message || err) + ' — you can still recover it from Trash/All Mail.');
+    }
+  }
+
   async function trashCurrentThread() {
     if (!selectedThread) return;
     if (!await confirmDialog('Move this conversation to Trash?')) return;
@@ -2092,16 +2161,16 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                     {/* Archive — only when not already archived */}
                     {tab !== 'sent' && (
                       <button className="btn btn-ghost btn-sm"
-                        onClick={() => modifyThread('archive', { removeFromList: true })}
-                        title="Archive"
+                        onClick={() => actAndAdvance('archive')}
+                        title="Archive — keeps reading the next email"
                         style={{flexShrink:0,padding:'4px 8px'}}>
                         <Icon name="archive" size={15} />
                       </button>
                     )}
 
-                    {/* Delete — keep visible since it's a frequent action */}
-                    <button className="btn btn-ghost btn-sm" onClick={trashCurrentThread}
-                      title="Delete (move to Trash)"
+                    {/* Delete — moves to Trash, advances to next, no confirm */}
+                    <button className="btn btn-ghost btn-sm" onClick={() => actAndAdvance('trash')}
+                      title="Delete (move to Trash) — keeps reading the next email"
                       style={{flexShrink:0,padding:'4px 8px',color:'var(--red)'}}>
                       <Icon name="trash" size={15} />
                     </button>
@@ -2230,6 +2299,27 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 );
               })()}
             </div>
+
+            {/* Undo strip — appears directly under the action bar after a
+                delete/archive, so you can keep deleting and still take one back. */}
+            {undoState && (
+              <div style={{
+                display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',
+                padding:'8px 16px',background:'rgba(197,169,94,0.10)',borderBottom:'1px solid var(--accent)',
+                animation:'qmRise 0.16s ease both'
+              }}>
+                <span style={{fontSize:'12px',color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {undoState.kind === 'trash' ? 'Moved to Trash' : 'Archived'}
+                  {undoState.thread?.subject ? ` · ${undoState.thread.subject.slice(0,42)}${undoState.thread.subject.length>42?'…':''}` : ''}
+                </span>
+                <button className="btn btn-sm" onClick={undoLast}
+                  style={{flexShrink:0,padding:'5px 14px',display:'inline-flex',alignItems:'center',gap:'6px',
+                    border:'1px solid var(--accent)',color:'var(--accent)',background:'var(--bg-card)',
+                    borderRadius:'999px',fontSize:'12px',fontWeight:800,cursor:'pointer'}}>
+                  <Icon name="reply" size={13} /> Undo
+                </button>
+              </div>
+            )}
 
             {/* Subject line */}
             <div style={{padding:'14px 16px 6px',borderBottom:'1px solid var(--border)'}}>
