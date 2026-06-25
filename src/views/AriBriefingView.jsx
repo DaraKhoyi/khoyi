@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { Icon, TaskModal, money } from '../App';
+import { Icon, QuoTextModal, TaskModal, money } from '../App';
 
 function ActionHubModal({ contactId, userId, onClose }) {
   const [loading, setLoading] = useState(true);
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState('');
+  const [showText, setShowText] = useState(false);
   useEffect(()=>{ (async()=>{
     try { const { data, error } = await supabase.functions.invoke('ari-call-prep', { body:{ contact_id:contactId } });
       if (error || data?.error) throw new Error(error?.message || data?.error);
@@ -37,10 +38,11 @@ function ActionHubModal({ contactId, userId, onClose }) {
         </div>
         <div style={{display:'flex',gap:'8px',marginBottom:'14px'}}>
           <Act href={'tel:'+telN} disabled={!telN} icon={<Icon name="quo" size={18} />} label="Call"/>
-          <Act href={'sms:'+telN} disabled={!telN} icon={<Icon name="message" size={18} />} label="Text"/>
+          <button onClick={()=>{ if(telN) setShowText(true); }} disabled={!telN} style={{flex:1,textAlign:'center',padding:'10px 6px',borderRadius:'10px',border:'1px solid var(--border)',background:!telN?'var(--bg-base)':'var(--bg-hover)',color:!telN?'var(--text-3)':'var(--text-1)',fontSize:'12px',fontWeight:600,cursor:telN?'pointer':'default',opacity:!telN?.5:1}}><div style={{fontSize:'18px',marginBottom:'2px'}}><Icon name="message" size={18} /></div>Text</button>
           <Act href={c.email?('mailto:'+c.email):'#'} disabled={!c.email} icon={<Icon name="mail" size={18} />} label="Email"/>
           <button onClick={()=>copy(c.phone||'','ph')} disabled={!c.phone} style={{flex:1,textAlign:'center',padding:'10px 6px',borderRadius:'10px',border:'1px solid var(--border)',background:c.phone?'var(--bg-hover)':'var(--bg-base)',color:c.phone?'var(--text-1)':'var(--text-3)',fontSize:'12px',fontWeight:600,cursor:c.phone?'pointer':'default',opacity:c.phone?1:.5}}><div style={{fontSize:'18px',marginBottom:'2px'}}>⧉</div>{copied==='ph'?'Copied':'Copy #'}</button>
         </div>
+        {showText && <QuoTextModal contact={{ id: contactId, name: c.name, phone: c.phone }} userId={userId} defaultText={prep?.opener || ''} onClose={()=>setShowText(false)} />}
         {loading ? <div style={{textAlign:'center',padding:'24px 0',color:'var(--text-2)',fontSize:'13px'}}><div className="spinner" style={{margin:'0 auto 10px'}}/>Ari is prepping you…</div>
          : err ? <div style={{color:'var(--red)',fontSize:'12px'}}>{err}</div>
          : prep ? (

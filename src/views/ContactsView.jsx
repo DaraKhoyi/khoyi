@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
+import { ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
 
 const CONTACT_TYPES = [
   { id: 'attorney',           label: 'Attorney',           icon: '⚖️' },
@@ -797,6 +797,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 
 
 function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
+  const [textTo, setTextTo] = useState(null); // { contact, phone } for the Quo text composer
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
   const [detailContact, setDetailContact] = useState(null);
@@ -1230,7 +1231,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                           return (
                             <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}}>
                               {c.phone && <a href={`tel:${tel}`} onClick={e=>e.stopPropagation()} title="Call" style={chip}><Icon name="quo" size={12} style={{color:'var(--accent)'}} />&nbsp;{c.phone}</a>}
-                              {c.phone && <a href={`sms:${tel}`} onClick={e=>e.stopPropagation()} title="Text" style={iconBtn}><Icon name="message" size={13} /></a>}
+                              {c.phone && <button onClick={e=>{e.stopPropagation(); setTextTo({ contact: c, phone: c.phone });}} title="Text via Quo" style={{...iconBtn, cursor:'pointer'}}><Icon name="message" size={13} /></button>}
                               {c.email && <a href={`mailto:${c.email}`} onClick={e=>e.stopPropagation()} title="Email" style={{...chip, maxWidth:'100%', overflow:'hidden'}}><Icon name="mail" size={12} style={{color:'var(--accent)'}} />&nbsp;<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email}</span></a>}
                             </div>
                           );
@@ -1283,6 +1284,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           }
         </div>
       </div>
+      {textTo && <QuoTextModal contact={textTo.contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
       {showModal && <ContactModal
         onClose={()=>{setShowModal(false);setEditContact(null);}}
         onSave={handleSave}
