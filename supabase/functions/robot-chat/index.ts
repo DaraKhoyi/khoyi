@@ -128,6 +128,24 @@ async function parseReceiptInternal(receiptPath, jwt) {
   } catch (_e) { return null; }
 }
 
+// Fire-and-forget after creating a contact: identify the person from public
+// data and, only if we get a confident single match, research them and run a
+// DISC read. Safe by default — ambiguous identity means no research (the user
+// can run a manual Prism Read and pick the right person).
+async function autoReadContact(contactId, jwt, matchedBy) {
+  const hdr = { "Authorization": `Bearer ${jwt}`, "Content-Type": "application/json" };
+  try {
+    const ir = await fetch(`${SUPABASE_URL}/functions/v1/contact-identify`, { method: "POST", headers: hdr, body: JSON.stringify({ contact_id: contactId }) });
+    const idd = ir.ok ? await ir.json() : null;
+    const cands = (idd && idd.candidates) || [];
+    if (idd && idd.confidence === "locked" && cands.length === 1) {
+      await fetch(`${SUPABASE_URL}/functions/v1/contact-research`, { method: "POST", headers: hdr, body: JSON.stringify({ contact_id: contactId, candidate: cands[0], scope: "both", matched_by: matchedBy || "manual" }) });
+    }
+    // Run the DISC read regardless; it folds in the research prior when present.
+    await fetch(`${SUPABASE_URL}/functions/v1/disc-analyze`, { method: "POST", headers: hdr, body: JSON.stringify({ contact_id: contactId, force: true }) });
+  } catch (_e) { /* background best-effort */ }
+}
+
 // ───────────────────────── TOOLS ─────────────────────────
 // Each spec: { perm, confirm, server, def }. Only tools whose `perm` is enabled
 // in robot.permissions are exposed to the model. `confirm:true` write tools
@@ -333,7 +351,14 @@ async function execTool(name, input, ctx) {
         if (input.phone) post.phone = input.phone;
         if (input.email) post.email = input.email;
         if (Object.keys(post).length) await supabase.from("contacts").update(post).eq("id", data.id);
-        return { created: { id: data.id, name: data.name, company: input.company || null, role: input.role || null, phone: input.phone || null, email: input.email || null }, note: "Contact saved — open the Contacts tab to view or enrich it." };
+        // Kick off a background Prism read (identify → research → DISC) so a brand
+        // new contact gets a behavioral read without blocking this reply.
+        const matchedBy = input.email ? "email" : (input.phone ? "phone" : "manual");
+        try {
+          if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(autoReadContact(data.id, token, matchedBy));
+          else autoReadContact(data.id, token, matchedBy);
+        } catch (_e) { /* ignore */ }
+        return { created: { id: data.id, name: data.name, company: input.company || null, role: input.role || null, phone: input.phone || null, email: input.email || null }, note: "Contact saved. I'm running a Prism read in the background to infer their DISC style — check the contact in a minute (it completes only if I can confidently identify them online; otherwise run a manual Prism Read and pick the right person)." };
       }
       case "read_inbox": {
         let q = supabase.from("email_messages").select("from_name,from_address,subject,snippet,is_read,internal_date,thread_id,direction").eq("user_id", userId);

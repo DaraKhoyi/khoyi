@@ -919,6 +919,18 @@ function ChatView({ robots, userId }) {
         </div>
       )}
 
+      {/* Quick actions */}
+      {!pendingImageFile && (
+        <div style={{ display: 'flex', gap: 8, padding: '0 12px 8px', flexWrap: 'wrap' }}>
+          <button type="button" disabled={sending}
+            onClick={() => { setInput('Create a new contact from this business card.'); setTimeout(() => cameraInputRef.current?.click(), 0); }}
+            title="Snap a business card and I'll save the contact"
+            style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 700, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="camera" size={13} /> New contact
+          </button>
+        </div>
+      )}
+
       {/* Input bar */}
       <div className="chat-input-bar">
         <button
