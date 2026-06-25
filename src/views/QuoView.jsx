@@ -98,6 +98,8 @@ function QuoView({ contacts = [], userId }) {
   const [selected, setSelected] = useState(null);       // {participant, name}
   const [compose, setCompose] = useState('');
   const [sending, setSending] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftNote, setDraftNote] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [newTo, setNewTo] = useState('');
   const [openCall, setOpenCall] = useState(null);
@@ -133,6 +135,14 @@ function QuoView({ contacts = [], userId }) {
     return m;
   }, [contacts]);
   const nameFor = (e) => phoneToName[quoLast10(e)] || quoFmtPhone(e);
+  // Full contact object by phone (for DISC-adapted AI drafting in a thread)
+  const phoneToContact = useMemo(() => {
+    const m = {};
+    for (const c of contacts) for (const p of [c.phone, c.mobile, c.business_phone, c.home_phone].filter(Boolean)) {
+      const k = quoLast10(p); if (k.length === 10 && !m[k]) m[k] = c;
+    }
+    return m;
+  }, [contacts]);
 
   // load stored messages + calls
   const loadData = React.useCallback(async () => {
@@ -217,7 +227,7 @@ function QuoView({ contacts = [], userId }) {
   async function send() {
     const text = compose.trim();
     if (!text || !selected?.participant || !fromNumber?.number || sending) return;
-    setSending(true); setErr('');
+    setSending(true); setErr(''); setDraftNote('');
     const tmp = { id: 'tmp-' + Date.now(), op_id: 'tmp-' + Date.now(), direction: 'outgoing', from_number: fromNumber.number, to_number: selected.participant, body: text, op_created_at: new Date().toISOString(), status: 'queued' };
     setMsgs(m => [tmp, ...m]); setCompose('');
     try {
@@ -228,7 +238,40 @@ function QuoView({ contacts = [], userId }) {
       setMsgs(m => m.map(x => x.id === tmp.id ? { ...x, status: 'failed' } : x));
     } finally { setSending(false); }
   }
-  function openConvo(p, name) { setSelected({ participant: quoNormPhone(p), name: name || nameFor(p) }); }
+  function openConvo(p, name) { setSelected({ participant: quoNormPhone(p), name: name || nameFor(p) }); setDraftNote(''); }
+  // Have the AI write a text adapted to this contact's DISC behavioral style,
+  // shaped by the recent thread, and drop it into the composer for a quick
+  // review before sending it out through Quo.
+  async function aiDraft() {
+    if (!selected || drafting) return;
+    setDrafting(true); setErr(''); setDraftNote('');
+    try {
+      const contact = phoneToContact[quoLast10(selected.participant)] || null;
+      const recent = thread.slice(-6).reverse().map(m => `${m.direction === 'incoming' ? 'Them' : 'You'}: ${m.body}`);
+      const lastIn = [...thread].reverse().find(m => m.direction === 'incoming');
+      const { data, error } = await supabase.functions.invoke('ai-followup-draft', {
+        body: {
+          contactName: contact?.name || selected.name || null,
+          company: contact?.company || null,
+          role: contact?.role || null,
+          contact_id: contact?.id || null,
+          channel: 'text',
+          kind: 'text conversation',
+          entryBody: lastIn?.body || recent[0] || '',
+          recentNotes: recent,
+          senderName: 'Dara',
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setCompose(data?.body || '');
+      setDraftNote(data?.intel_used
+        ? `\u2726 Adapted to ${contact?.name ? contact.name + '\u2019s' : 'their'} behavioral style \u2014 review, then Send`
+        : '\u2726 Drafted \u2014 no DISC profile yet, so neutral tone. Review, then Send');
+    } catch (e) {
+      setErr('AI draft failed: ' + String(e.message || e));
+    } finally { setDrafting(false); }
+  }
   function startNew() { const e = quoNormPhone(newTo); if (e.length < 11) { setErr('Enter a valid US/Canada number.'); return; } setShowNew(false); setNewTo(''); setTab('messages'); openConvo(e, nameFor(e)); }
   // Place the call THROUGH Quo (not the device's cell line) via Quo's official deep link.
   // Opens the Quo app and auto-dials, using the active Quo number as caller ID.
@@ -317,9 +360,19 @@ function QuoView({ contacts = [], userId }) {
                       </div>
                     ); })}
                 </div>
-                <div style={{ borderTop: '1px solid var(--border)', padding: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                  <textarea value={compose} onChange={e => setCompose(e.target.value)} rows={1} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder={`Text ${selected.name}…`} style={{ flex: 1, resize: 'none', background: 'var(--bg-base)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', maxHeight: 120 }} />
-                  <button className="btn btn-primary" disabled={sending || !compose.trim()} onClick={send} style={{ height: 40 }}>{sending ? '…' : 'Send'}</button>
+                <div style={{ borderTop: '1px solid var(--border)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={aiDraft} disabled={drafting}
+                      title="Let AI write a message adapted to this contact's behavioral style"
+                      style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: 999, padding: '6px 13px', fontSize: 12.5, fontWeight: 700, cursor: drafting ? 'default' : 'pointer', opacity: drafting ? 0.6 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {drafting ? 'Drafting…' : '✦ AI draft'}
+                    </button>
+                    {draftNote && <span style={{ fontSize: 11.5, color: 'var(--accent)', lineHeight: 1.3 }}>{draftNote}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                    <textarea value={compose} onChange={e => { setCompose(e.target.value); if (draftNote) setDraftNote(''); }} rows={1} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder={`Text ${selected.name}…`} style={{ flex: 1, resize: 'none', background: 'var(--bg-base)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', maxHeight: 120 }} />
+                    <button className="btn btn-primary" disabled={sending || !compose.trim()} onClick={send} style={{ height: 40 }}>{sending ? '…' : 'Send'}</button>
+                  </div>
                 </div>
               </>}
           </div>
