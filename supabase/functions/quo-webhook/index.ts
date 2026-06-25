@@ -9,6 +9,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Normalize phone numbers to last-10-digits for matching against contacts.
+const _digits = (s: any) => String(s || "").replace(/[^0-9]/g, "");
+const _last10 = (s: any) => { const d = _digits(s); return d.length >= 10 ? d.slice(-10) : d; };
+
 serve(async (req) => {
   const url = new URL(req.url);
   const token = url.searchParams.get("token");
@@ -78,12 +82,20 @@ serve(async (req) => {
       }
     } else if (type.startsWith("call.")) {
       const parts = Array.isArray(o.participants) ? o.participants : [];
+      const isOut = String(o.direction || "").toLowerCase().includes("out");
+      // The external party: OpenPhone orders participants as [caller, callee].
+      // Outgoing → owner is first, external is last; Incoming → external is first.
+      const external = (parts.length >= 2 ? (isOut ? parts[parts.length - 1] : parts[0]) : parts[0]) || null;
+      const fromNum = o.from || (isOut ? (parts[0] || null) : external);
+      const toNum = (typeof o.to === "string" ? o.to : (Array.isArray(o.to) ? o.to[0] : null)) || (isOut ? external : (parts[parts.length - 1] || null));
       const row: Record<string, unknown> = {
         user_id: owner,
         op_id: o.id,
         phone_number_id: o.phoneNumberId || null,
         direction: o.direction || null,
-        participant: parts[0] || null,
+        participant: external,
+        from_number: fromNum,
+        to_number: toNum,
         status: o.status || null,
         duration: typeof o.duration === "number" ? o.duration : null,
         answered_at: o.answeredAt || null,
@@ -94,6 +106,14 @@ serve(async (req) => {
       // call.recording.completed carries recording media
       const media = o.media || o.recording || o.recordingUrl;
       if (media) row.recording_url = typeof media === "string" ? media : (media.url || media.media || null);
+      // Link to a contact by phone (last 10 digits) so EVERY call attaches to the
+      // right person — even plain calls with no recording/transcript.
+      const key10 = _last10(external);
+      if (key10) {
+        const { data: cs } = await supabase.from("contacts").select("id,phone").eq("user_id", owner).not("phone", "is", null);
+        const match = (cs || []).find((c: any) => _last10(c.phone) === key10);
+        if (match) row.contact_id = match.id;
+      }
       row.updated_at = new Date().toISOString();
       await supabase.from("quo_calls").upsert(row, { onConflict: "op_id" });
     }

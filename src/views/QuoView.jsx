@@ -2,6 +2,90 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../dataService';
 import { Icon, QuoCallDetail, CallFollowupsPanel, modal, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../App';
 
+// At-a-glance health of the Quo (OpenPhone) integration: live API connection,
+// active number, webhooks, texting, and calls — with a clear fix path when call
+// recording isn't on yet (which is what unlocks transcripts + AI follow-ups).
+function QuoStatusPanel({ msgs = [], calls = [], activeNumber }) {
+  const [api, setApi] = useState({ loading: true });
+  const [hooks, setHooks] = useState(null);
+  const [showSteps, setShowSteps] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    supabase.functions.invoke('quo-status', { body: {} })
+      .then(({ data }) => { if (alive) setApi({ loading: false, ...(data || { ok: false, error: 'No response' }) }); })
+      .catch(e => { if (alive) setApi({ loading: false, ok: false, error: String(e.message || e) }); });
+    supabase.from('quo_settings').select('webhooks_registered').maybeSingle()
+      .then(({ data }) => { if (alive) setHooks(!!data?.webhooks_registered); });
+    return () => { alive = false; };
+  }, []);
+
+  const GREEN = '#22c55e', AMBER = '#f59e0b', RED = '#ef4444', MUTE = 'var(--text-3)';
+  const texts = msgs.length;
+  const lastText = msgs.reduce((mx, m) => { const t = m.op_created_at || m.created_at; return (t && (!mx || new Date(t) > new Date(mx))) ? t : mx; }, null);
+  const callsN = calls.length;
+  const recN = calls.filter(c => c.recording_url).length;
+  const trN = calls.filter(c => c.transcript).length;
+  const recordingOn = recN > 0;
+  const connColor = api.loading ? MUTE : (api.ok ? GREEN : RED);
+  const overall = api.loading ? MUTE : (!api.ok ? RED : (!recordingOn ? AMBER : GREEN));
+
+  const Dot = ({ c }) => <span style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0, marginTop: 5, boxShadow: c === MUTE ? 'none' : `0 0 7px ${c}80` }} />;
+  const Row = ({ label, value, color, sub }) => (
+    <div style={{ display: 'flex', gap: 11, padding: '9px 0', borderTop: '1px solid var(--border)' }}>
+      <Dot c={color} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{label}</span>
+          <span style={{ fontSize: 12, color, fontWeight: 700, whiteSpace: 'nowrap' }}>{value}</span>
+        </div>
+        {sub && <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{sub}</div>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="panel" style={{ padding: '12px 14px', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 2 }}>
+        <Dot c={overall} />
+        <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-1)' }}>Quo integration</span>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{api.loading ? 'checking…' : (api.ok ? `live${api.latency_ms ? ` · ${api.latency_ms}ms` : ''}` : 'offline')}</span>
+      </div>
+      <Row label="Connection" color={connColor}
+        value={api.loading ? '…' : (api.ok ? 'Connected' : 'Error')}
+        sub={api.ok ? `OpenPhone reachable${api.number_count ? ` · ${api.number_count} number${api.number_count > 1 ? 's' : ''}` : ''}` : (api.loading ? 'Checking OpenPhone…' : (api.error || 'Could not reach OpenPhone'))} />
+      <Row label="Active number" color={activeNumber ? GREEN : AMBER} value={activeNumber ? quoFmtPhone(activeNumber) : '—'} />
+      <Row label="Webhooks" color={hooks ? GREEN : (hooks === null ? MUTE : AMBER)}
+        value={hooks ? 'Live' : (hooks === null ? '…' : 'Not armed')}
+        sub={hooks ? 'Texts & calls stream in automatically' : 'Tap ⟳ Sync to arm live updates'} />
+      <Row label="Texting" color={texts ? GREEN : AMBER}
+        value={texts ? 'Working' : 'No messages'}
+        sub={texts ? `${texts} message${texts > 1 ? 's' : ''}${lastText ? ` · last ${quoFmtWhen(lastText)}` : ''}` : 'Send or receive a text to start'} />
+      <Row label="Calls" color={recordingOn ? GREEN : AMBER}
+        value={recordingOn ? 'Working' : (callsN ? 'Recording off' : 'No calls')}
+        sub={callsN ? `${callsN} logged · ${recN} recorded · ${trN} transcribed` : 'No calls logged yet'} />
+      {!recordingOn && (
+        <div style={{ marginTop: 10, padding: '10px 12px', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--text-1)', fontWeight: 700 }}>⚠ Turn on call recording to unlock transcripts &amp; AI follow-ups</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 3 }}>Calls are logging, but OpenPhone isn’t sending recordings yet — so there’s nothing to transcribe into tasks.</div>
+          <button type="button" onClick={() => setShowSteps(s => !s)} style={{ marginTop: 7, background: 'transparent', border: 'none', color: AMBER, fontSize: 12, fontWeight: 800, cursor: 'pointer', padding: 0 }}>
+            {showSteps ? 'Hide steps' : 'Show me how →'}
+          </button>
+          {showSteps && (
+            <ol style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.7 }}>
+              <li>Confirm your OpenPhone <strong>Business plan</strong> (recording + AI live there).</li>
+              <li>OpenPhone → Settings → Phone numbers → your number → <strong>Auto-record calls: ON</strong> (inbound + outbound).</li>
+              <li>Turn on <strong>AI call summaries / transcripts</strong> if shown separately.</li>
+              <li>Set a <strong>recording announcement</strong> — Florida is two-party consent.</li>
+              <li>Place calls <strong>through the OpenPhone app</strong>, then make one test call.</li>
+            </ol>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function QuoView({ contacts = [], userId }) {
   const [tab, setTab] = useState('feed');               // feed | messages | calls
   const [numbers, setNumbers] = useState([]);
@@ -182,6 +266,7 @@ function QuoView({ contacts = [], userId }) {
         </div>
       </div>
 
+      <QuoStatusPanel msgs={msgs} calls={calls} activeNumber={fromNumber?.number} />
       <CallFollowupsPanel userId={userId} contacts={contacts} />
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
