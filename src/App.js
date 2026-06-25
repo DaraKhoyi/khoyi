@@ -552,7 +552,8 @@ function ChatView({ robots, userId }) {
   // Receipt category lookup for CTA card display
   const [taxCatMap, setTaxCatMap] = useState({});
   const [systemMap, setSystemMap] = useState({});
-  const [taxCats, setTaxCats] = useState([]);        // full list for the category dropdown
+  const [taxCats, setTaxCats] = useState([]);        // business categories (tax_categories)
+  const [personalCats, setPersonalCats] = useState([]); // personal categories (personal_budget_lines)
   const [leadSystems, setLeadSystems] = useState([]); // full list for the lead-gen dropdown
   // CTA card state — tracks which messages have had their receipt pushed
   const [receiptPushed, setReceiptPushed] = useState({});  // messageKey -> { ok, txId, error }
@@ -599,37 +600,57 @@ function ChatView({ robots, userId }) {
       });
   }, [robotId, userId]);
 
-  // Load tax categories + lead-gen systems for receipt CTA labels + dropdowns
+  // Load business + personal categories and lead-gen systems for the receipt card
   useEffect(() => {
     if (!userId) return;
     Promise.all([
       supabase.from('tax_categories').select('id, name, is_meals_partial, sort_order').eq('user_id', userId),
       supabase.from('lead_gen_systems').select('id, name, is_archived').eq('user_id', userId),
-    ]).then(([tc, ls]) => {
-      const cats = (tc.data || []).slice().sort((a, b) => ((a.sort_order ?? 999) - (b.sort_order ?? 999)) || a.name.localeCompare(b.name));
+      supabase.from('personal_budget_lines').select('id, category, sort_order, is_archived').eq('user_id', userId),
+    ]).then(([tc, ls, pb]) => {
+      const cats = (tc.data || []).map(c => ({ id: c.id, name: c.name, is_meals_partial: c.is_meals_partial, sort_order: c.sort_order }))
+        .sort((a, b) => ((a.sort_order ?? 999) - (b.sort_order ?? 999)) || a.name.localeCompare(b.name));
       setTaxCats(cats);
-      const tcMap = {}; cats.forEach(c => { tcMap[c.id] = c.name; }); setTaxCatMap(tcMap);
+      const tcMap = {}; cats.forEach(c => { tcMap[c.id] = c.name; });
+      const pcats = (pb.data || []).filter(p => !p.is_archived).map(p => ({ id: p.id, name: p.category, is_meals_partial: false, sort_order: p.sort_order }))
+        .sort((a, b) => ((a.sort_order ?? 999) - (b.sort_order ?? 999)) || a.name.localeCompare(b.name));
+      setPersonalCats(pcats);
+      pcats.forEach(p => { tcMap[p.id] = p.name; });  // so the pushed-summary label resolves for either scope
+      setTaxCatMap(tcMap);
       const sys = (ls.data || []).filter(s => !s.is_archived).sort((a, b) => a.name.localeCompare(b.name));
       setLeadSystems(sys);
       const sMap = {}; sys.forEach(s => { sMap[s.id] = s.name; }); setSystemMap(sMap);
     });
   }, [userId]);
 
-  // Add a brand-new expense category on the fly (used by the receipt card's
-  // "+ Add new category" option). Re-uses an existing one if the name matches.
-  const addCategory = useCallback(async (name) => {
+  // Add a new category on the fly to the correct list (business → tax_categories,
+  // personal → personal_budget_lines). Re-uses an existing one if the name matches.
+  const addCategory = useCallback(async (name, sc) => {
     const nm = (name || '').trim();
     if (!nm) return null;
+    if (sc === 'personal') {
+      const existing = personalCats.find(c => c.name.toLowerCase() === nm.toLowerCase());
+      if (existing) return existing;
+      const { data, error } = await supabase.from('personal_budget_lines')
+        .insert({ user_id: userId, category: nm, monthly_amount: 0, sort_order: 999 })
+        .select('id, category').single();
+      if (error) { if (window.__notify) window.__notify('Could not add category: ' + error.message, 'error'); return null; }
+      const obj = { id: data.id, name: data.category, is_meals_partial: false };
+      setPersonalCats(prev => [...prev, obj]);
+      setTaxCatMap(prev => ({ ...prev, [obj.id]: obj.name }));
+      return obj;
+    }
     const existing = taxCats.find(c => c.name.toLowerCase() === nm.toLowerCase());
     if (existing) return existing;
     const { data, error } = await supabase.from('tax_categories')
       .insert({ user_id: userId, name: nm, schedule_c_line: '27a' })
-      .select('id, name, is_meals_partial, sort_order').single();
+      .select('id, name, is_meals_partial').single();
     if (error) { if (window.__notify) window.__notify('Could not add category: ' + error.message, 'error'); return null; }
-    setTaxCats(prev => [...prev, data]);
-    setTaxCatMap(prev => ({ ...prev, [data.id]: data.name }));
-    return data;
-  }, [taxCats, userId]);
+    const obj = { id: data.id, name: data.name, is_meals_partial: data.is_meals_partial };
+    setTaxCats(prev => [...prev, obj]);
+    setTaxCatMap(prev => ({ ...prev, [obj.id]: obj.name }));
+    return obj;
+  }, [taxCats, personalCats, userId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -771,16 +792,17 @@ function ChatView({ robots, userId }) {
       const signedAmount = -amount;
       const catId = override?.tax_category_id !== undefined ? override.tax_category_id : (receiptData.tax_category_id || null);
       const leadId = override?.lead_gen_system_id !== undefined ? override.lead_gen_system_id : (receiptData.lead_gen_system_id || null);
+      const perId = override?.personal_budget_line_id !== undefined ? override.personal_budget_line_id : (receiptData.personal_budget_line_id || null);
       const payload = {
         user_id: userId,
         date: receiptData.date || new Date().toISOString().slice(0, 10),
         amount: signedAmount,
         scope,
-        tax_category_id: catId || null,
-        lead_gen_system_id: leadId || null,
+        tax_category_id: scope === 'business' ? (catId || null) : null,
+        lead_gen_system_id: scope === 'business' ? (leadId || null) : null,
         meals_who: override?.meals_who || null,
         meals_why: override?.meals_why || null,
-        personal_budget_line_id: null,
+        personal_budget_line_id: scope === 'personal' ? (perId || null) : null,
         payee: receiptData.vendor || null,
         description: receiptData.description_guess || null,
         account: null,
@@ -864,6 +886,7 @@ function ChatView({ robots, userId }) {
               taxCatMap={taxCatMap}
               systemMap={systemMap}
               taxCats={taxCats}
+              personalCats={personalCats}
               leadSystems={leadSystems}
               addCategory={addCategory}
               receiptPushed={receiptPushed[i]}
@@ -959,12 +982,13 @@ function ChatView({ robots, userId }) {
 // Split out so we can lazily resolve signed URLs without re-rendering all bubbles.
 function ChatMessageBubble({
   message, messageKey, getSignedUrl, signedUrls, onZoom,
-  taxCatMap, systemMap, taxCats = [], leadSystems = [], addCategory,
+  taxCatMap, systemMap, taxCats = [], personalCats = [], leadSystems = [], addCategory,
   receiptPushed, receiptSaving, onPushReceipt,
 }) {
   const [imgUrl, setImgUrl] = useState(null);
   const [scope, setScope] = useState(message.receipt_data?.scope || 'business');
-  const [catId, setCatId] = useState(message.receipt_data?.tax_category_id || '');
+  const [bizCatId, setBizCatId] = useState(message.receipt_data?.tax_category_id || '');
+  const [perCatId, setPerCatId] = useState(message.receipt_data?.personal_budget_line_id || '');
   const [leadId, setLeadId] = useState(message.receipt_data?.lead_gen_system_id || '');
   const [mealsWho, setMealsWho] = useState('');
   const [mealsWhy, setMealsWhy] = useState('');
@@ -985,8 +1009,11 @@ function ChatMessageBubble({
   const rd = message.receipt_data;
   const taxName = rd?.tax_category_id ? taxCatMap[rd.tax_category_id] : null;
   const sysName = rd?.lead_gen_system_id ? systemMap[rd.lead_gen_system_id] : null;
-  const selCat = taxCats.find(c => c.id === catId) || null;
-  const isMeals = !!(selCat && (selCat.is_meals_partial || /meal|entertain/i.test(selCat.name)));
+  const cats = scope === 'business' ? taxCats : personalCats;
+  const catId = scope === 'business' ? bizCatId : perCatId;
+  const setCatId = (v) => (scope === 'business' ? setBizCatId(v) : setPerCatId(v));
+  const selCat = cats.find(c => c.id === catId) || null;
+  const isMeals = scope === 'business' && !!(selCat && (selCat.is_meals_partial || /meal|entertain/i.test(selCat.name)));
   const ctrlStyle = { width:'100%', boxSizing:'border-box', padding:'6px 8px', background:'var(--bg-base)', border:'1px solid var(--border)', borderRadius:'6px', color:'var(--text-1)', fontSize:'12px' };
 
   return (
@@ -1036,11 +1063,11 @@ function ChatMessageBubble({
                   <div style={{fontSize:'13px',color:'var(--text-2)'}}>{rd.date || '—'}</div>
                   <label>Scope</label>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',background:'var(--bg-hover)',padding:'2px',borderRadius:'6px'}}>
-                    <button type="button" onClick={() => setScope('business')}
+                    <button type="button" onClick={() => { setScope('business'); setAddingCat(false); }}
                       style={{padding:'5px',border:'none',borderRadius:'4px',fontWeight:600,fontSize:'11px',cursor:'pointer',
                         background:scope==='business'?'var(--accent)':'transparent',
                         color:scope==='business'?'var(--bg-base)':'var(--text-2)'}}>Business</button>
-                    <button type="button" onClick={() => setScope('personal')}
+                    <button type="button" onClick={() => { setScope('personal'); setAddingCat(false); }}
                       style={{padding:'5px',border:'none',borderRadius:'4px',fontWeight:600,fontSize:'11px',cursor:'pointer',
                         background:scope==='personal'?'var(--accent)':'transparent',
                         color:scope==='personal'?'var(--bg-base)':'var(--text-2)'}}>Personal</button>
@@ -1051,8 +1078,8 @@ function ChatMessageBubble({
                       onChange={e => { const v = e.target.value; if (v === '__add__') { setAddingCat(true); } else { setCatId(v); setAddingCat(false); } }}
                       style={ctrlStyle}>
                       <option value="">— Select —</option>
-                      {taxCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      <option value="__add__">+ Add new category…</option>
+                      {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      <option value="__add__">+ Add new {scope} category…</option>
                     </select>
                   </div>
                   {addingCat && (
@@ -1060,7 +1087,7 @@ function ChatMessageBubble({
                       <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="New category name" autoFocus
                         style={{...ctrlStyle,flex:1}} />
                       <button type="button" disabled={savingCat || !newCatName.trim()}
-                        onClick={async () => { setSavingCat(true); const c = await addCategory(newCatName); setSavingCat(false); if (c) { setCatId(c.id); setNewCatName(''); setAddingCat(false); } }}
+                        onClick={async () => { setSavingCat(true); const c = await addCategory(newCatName, scope); setSavingCat(false); if (c) { setCatId(c.id); setNewCatName(''); setAddingCat(false); } }}
                         style={{padding:'6px 12px',background:'var(--accent)',color:'var(--bg-base)',border:'none',borderRadius:'6px',fontWeight:700,fontSize:'12px',cursor:'pointer',opacity:(savingCat||!newCatName.trim())?0.5:1}}>
                         {savingCat ? '…' : 'Add'}
                       </button>
@@ -1074,6 +1101,7 @@ function ChatMessageBubble({
                     <label>Why</label>
                     <div><input value={mealsWhy} onChange={e => setMealsWhy(e.target.value)} placeholder="Business purpose" style={ctrlStyle} /></div>
                   </>)}
+                  {scope === 'business' && (<>
                   <label>Lead gen</label>
                   <div>
                     <select value={leadId} onChange={e => setLeadId(e.target.value)} style={ctrlStyle}>
@@ -1081,12 +1109,13 @@ function ChatMessageBubble({
                       {leadSystems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
+                  </>)}
                 </div>
                 <div className="chat-receipt-card-actions">
                   <button
                     type="button"
                     className="chat-receipt-save"
-                    onClick={() => onPushReceipt({ scope, tax_category_id: catId || null, lead_gen_system_id: leadId || null, meals_who: isMeals ? (mealsWho || null) : null, meals_why: isMeals ? (mealsWhy || null) : null })}
+                    onClick={() => onPushReceipt({ scope, tax_category_id: scope === 'business' ? (catId || null) : null, personal_budget_line_id: scope === 'personal' ? (catId || null) : null, lead_gen_system_id: scope === 'business' ? (leadId || null) : null, meals_who: isMeals ? (mealsWho || null) : null, meals_why: isMeals ? (mealsWhy || null) : null })}
                     disabled={receiptSaving}
                   >
                     {receiptSaving ? 'Saving…' : 'Push to accounting →'}
