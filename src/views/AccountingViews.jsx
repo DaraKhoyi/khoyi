@@ -1015,21 +1015,9 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
   }
 
   // One cohesive segmented-control language for both the mode switch and the
-  // sub-tabs: a bordered track holding pill segments; the active segment is a
-  // single gold pill with dark text. Same radius, weight, and motion everywhere.
-  const segTrack = {
-    display: 'flex', gap: '4px', padding: '4px',
-    background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '14px',
-  };
-  const seg = (active) => ({
-    border: 'none', cursor: 'pointer', borderRadius: '10px',
-    fontSize: '12px', fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap',
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-    transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
-    background: active ? 'var(--accent)' : 'transparent',
-    color: active ? 'var(--bg-base)' : 'var(--text-2)',
-    boxShadow: active ? '0 1px 6px rgba(197,169,94,0.35)' : 'none',
-  });
+  // Mode switch + sub-tabs share one segmented-control language (see .seg-track
+  // / .seg-btn in index.css): a recessed track with a gold-gradient active pill,
+  // hover lift, and press feedback — so both controls read as a matched set.
 
   return (
     <div className="view">
@@ -1044,52 +1032,49 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
         </div>
       )}
 
-      <div className="view-header" style={{display:'flex',flexDirection:'column',gap:'10px',marginBottom:'12px'}}>
-        <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}>
-          <div>
-            <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-              <span style={{display:'inline-flex',alignItems:'center',gap:'8px'}}><Icon name="finance" size={22} /> Finance</span>
-              {settings && (
-                <span style={{
-                  padding:'3px 10px', borderRadius:'12px',
-                  fontSize:'10px', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase',
-                  background:`${tier.color}22`, color:tier.color, border:`1px solid ${tier.color}66`,
-                }}>{tier.label}</span>
-              )}
-              {settings?.current_prospecting_streak > 0 && (
-                <span title={`Best ever: ${settings.best_prospecting_streak}`}
-                  style={{padding:'3px 10px',borderRadius:'12px',fontSize:'11px',fontWeight:700,background:'rgba(239,68,68,0.12)',color:'#ef4444',border:'1px solid rgba(239,68,68,0.35)'}}>🔥 {settings.current_prospecting_streak}-day streak</span>
-              )}
-            </h2>
-            <span style={{fontSize:'12px',color:'var(--text-3)'}}>
-              YTD: <strong style={{color:ytdNet>=0?'var(--green)':'var(--red)'}}>{fmtUSD(ytdNet)}</strong> net
-              {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(ytdIncome)} in</span>
-              {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(-ytdExpense)} out</span>
-            </span>
-          </div>
-
-          {/* Mode switch — same segmented-control language as the sub-tabs below */}
-          <div style={segTrack}>
-            {['agent','partner','coach'].map(m => (
-              <button key={m} onClick={() => changeUserMode(m)}
-                title={m === 'agent' ? 'Your full workspace' : m === 'partner' ? 'Read-only accountability view' : 'Coach: unlocks system limits + extra reports'}
-                style={{...seg(userMode===m), padding:'7px 13px', textTransform:'capitalize'}}>
-                <Icon name={m === 'agent' ? 'contacts' : m === 'partner' ? 'users' : 'target'} size={12} /> {m}
-              </button>
-            ))}
-          </div>
+      <div className="view-header" style={{display:'flex',flexDirection:'column',gap:'12px',marginBottom:'14px'}}>
+        <div>
+          <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
+            <span style={{display:'inline-flex',alignItems:'center',gap:'9px'}}><Icon name="finance" size={22} /> Finance</span>
+            {settings && (
+              <span className="fin-badge" style={{background:`${tier.color}1f`, color:tier.color, border:`1px solid ${tier.color}59`}}>{tier.label}</span>
+            )}
+            {settings?.current_prospecting_streak > 0 && (
+              <span className="fin-badge" title={`Best ever: ${settings.best_prospecting_streak}`}
+                style={{background:'rgba(239,68,68,0.13)', color:'#f06b6b', border:'1px solid rgba(239,68,68,0.4)', textTransform:'none', letterSpacing:'0.02em'}}>🔥 {settings.current_prospecting_streak}-day streak</span>
+            )}
+          </h2>
+          <span style={{fontSize:'12px',color:'var(--text-3)',display:'inline-block',marginTop:'5px'}}>
+            YTD: <strong style={{color:ytdNet>=0?'var(--green)':'var(--red)'}}>{fmtUSD(ytdNet)}</strong> net
+            {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(ytdIncome)} in</span>
+            {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(-ytdExpense)} out</span>
+          </span>
         </div>
-        <div style={{...segTrack, width:'100%'}}>
+
+        {/* Mode switch — full-width segmented control */}
+        <div className="seg-track" role="tablist" aria-label="Finance mode">
+          {['agent','partner','coach'].map(m => (
+            <button key={m} type="button" onClick={() => changeUserMode(m)}
+              className={`seg-btn${userMode===m?' active':''}`}
+              aria-selected={userMode===m}
+              title={m === 'agent' ? 'Your full workspace' : m === 'partner' ? 'Read-only accountability view' : 'Coach: unlocks system limits + extra reports'}>
+              <span style={{textTransform:'capitalize'}}>{m}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Sub-tabs — same segmented language, equal segments (no clipping) */}
+        <div className="seg-track" role="tablist" aria-label="Finance section">
           {[
-            { id: 'dashboard', label: 'Dashboard', iconName: 'zap' },
-            { id: 'blueprint', label: 'Blueprint', iconName: 'ruler' },
-            { id: 'ledger',    label: 'Ledger',    iconName: 'notes' },
-            { id: 'reports',   label: 'Reports',   iconName: 'chart' },
+            { id: 'dashboard', label: 'Dashboard' },
+            { id: 'blueprint', label: 'Blueprint' },
+            { id: 'ledger',    label: 'Ledger' },
+            { id: 'reports',   label: 'Reports' },
           ].map(t => (
-            <button key={t.id} onClick={() => setSubView(t.id)}
-              style={{...seg(subView===t.id), flex:'1 1 0', minWidth:0, padding:'9px 8px'}}>
-              <Icon name={t.iconName} size={14} />
-              <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{t.label}</span>
+            <button key={t.id} type="button" onClick={() => setSubView(t.id)}
+              className={`seg-btn${subView===t.id?' active':''}`}
+              aria-selected={subView===t.id}>
+              <span>{t.label}</span>
             </button>
           ))}
         </div>
