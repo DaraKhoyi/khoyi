@@ -141,6 +141,21 @@ function buildToolSpecs() {
     { perm: "prospecting_control", def: { name: "prospecting", description: "Control prospecting: start_timer/stop_timer for a lead-gen system, or complete_task. Live actions, no confirm needed.", input_schema: { type: "object", properties: { action: { type: "string", enum: ["start_timer", "stop_timer", "complete_task"] }, system: { type: "string", description: "system name" }, task: { type: "string", description: "task description to match" } }, required: ["action"] } } },
     { perm: "contacts_read", def: { name: "find_contacts", description: "Search the user's contacts by name, company, or email.", input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } } } } },
     { perm: "contacts_write", confirm: true, def: { name: "update_contact", description: "Update a contact. Requires confirm:true.", input_schema: { type: "object", properties: { contact_id: { type: "string" }, name: { type: "string", description: "used to find the contact if no id" }, notes: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, priority: { type: "string" }, status: { type: "string" }, cadence_days: { type: "integer" }, confirm: { type: "boolean" } } } } },
+    { perm: "contacts_write", confirm: true, def: { name: "create_contact", description: "Create a NEW contact. Use this when the user shares a business card photo, a screenshot, or typed details and wants the person saved. Read every field you can from the image/text and pass them in. Requires confirm:true.", input_schema: { type: "object", properties: {
+      name: { type: "string", description: "Full name (required)" },
+      company: { type: "string" },
+      role: { type: "string", description: "job title or role" },
+      email: { type: "string" },
+      phone: { type: "string" },
+      type: { type: "string", description: "contact type, e.g. lead, vendor, agent, partner, client, recruit; default 'lead'" },
+      business_address: { type: "string", description: "street address" },
+      business_city: { type: "string" },
+      business_state: { type: "string" },
+      business_zip: { type: "string" },
+      website: { type: "string" },
+      notes: { type: "string", description: "anything else worth keeping, e.g. where you met" },
+      confirm: { type: "boolean" }
+    }, required: ["name"] } } },
     { perm: "inbox_read", def: { name: "read_inbox", description: "Read recent inbox email (subjects, senders, snippets). Optional query to search.", input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } } } } },
     { perm: "inbox_read", def: { name: "read_thread", description: "Read the messages in one email thread by thread_id.", input_schema: { type: "object", properties: { thread_id: { type: "string" } }, required: ["thread_id"] } } },
     { perm: "email_send", confirm: true, def: { name: "send_email", description: "Send an email from the user's connected account. Requires confirm:true.", input_schema: { type: "object", properties: { to: { type: "string" }, subject: { type: "string" }, body: { type: "string" }, confirm: { type: "boolean" } }, required: ["to", "subject", "body"] } } },
@@ -277,6 +292,48 @@ async function execTool(name, input, ctx) {
         if (input.confirm !== true) return { needs_confirmation: true, action_preview: `Update ${c.name}: ${Object.entries(upd).map(([k, v]) => `${k}=${v}`).join(", ")}` };
         await supabase.from("contacts").update(upd).eq("id", c.id);
         return { updated: { id: c.id, name: c.name, ...upd } };
+      }
+      case "create_contact": {
+        const name = (input.name || "").trim();
+        if (!name) return { error: "A name is required to create a contact." };
+        const type = (input.type || "lead").trim();
+        const noteParts = [];
+        if (input.notes) noteParts.push(input.notes);
+        if (input.website) noteParts.push(`Website: ${input.website}`);
+        const notes = noteParts.join("\n") || null;
+        if (input.confirm !== true) {
+          const head = [name, input.role, input.company ? "@ " + input.company : null].filter(Boolean).join(" ");
+          const contactBits = [input.phone, input.email].filter(Boolean).join(", ");
+          return { needs_confirmation: true, action_preview: `Create contact: ${head}${contactBits ? " — " + contactBits : ""}` };
+        }
+        // Soft duplicate guard: same name already on file with a matching phone or email
+        if (input.phone || input.email) {
+          const { data: dupes } = await supabase.from("contacts").select("id,name,phone,email").eq("user_id", userId).ilike("name", name).limit(5);
+          const d10 = (s) => String(s || "").replace(/[^0-9]/g, "").slice(-10);
+          const hit = (dupes || []).find((c) => (input.email && c.email && c.email.toLowerCase() === String(input.email).toLowerCase()) || (input.phone && d10(c.phone) && d10(c.phone) === d10(input.phone)));
+          if (hit) return { error: `A contact named ${hit.name} with that ${input.email && hit.email ? "email" : "phone"} already exists. Use update_contact instead, or change the details if this is a different person.` };
+        }
+        // Insert WITHOUT phone/email — the BEFORE INSERT trigger syncs the jsonb
+        // arrays and blanks the scalar phone, so set those in a second step.
+        const row = {
+          user_id: userId, name, type,
+          company: input.company || null,
+          role: input.role || null,
+          business_address: input.business_address || null,
+          business_city: input.business_city || null,
+          business_state: input.business_state || null,
+          business_zip: input.business_zip || null,
+          notes,
+          origin: "manual",
+          origin_detail: "Added via Ari",
+        };
+        const { data, error } = await supabase.from("contacts").insert(row).select("id,name").single();
+        if (error) throw error;
+        const post = {};
+        if (input.phone) post.phone = input.phone;
+        if (input.email) post.email = input.email;
+        if (Object.keys(post).length) await supabase.from("contacts").update(post).eq("id", data.id);
+        return { created: { id: data.id, name: data.name, company: input.company || null, role: input.role || null, phone: input.phone || null, email: input.email || null }, note: "Contact saved — open the Contacts tab to view or enrich it." };
       }
       case "read_inbox": {
         let q = supabase.from("email_messages").select("from_name,from_address,subject,snippet,is_read,internal_date,thread_id,direction").eq("user_id", userId);
@@ -468,6 +525,9 @@ serve(async (req) => {
     if (tools.length) {
       capLines.push("You have live tools to act inside PrismOS on the user's behalf — all scoped to this user only. Use them to fetch real data and take actions rather than guessing.");
       capLines.push("CONFIRMATIONS: If a tool returns needs_confirmation, the action did NOT happen. Tell the user in plain language exactly what you'll do and ask them to confirm; only re-call that tool with confirm:true after they explicitly agree.");
+    }
+    if (tools.some((t) => t.name === "create_contact")) {
+      capLines.push("When the user sends a photo of a business card (or typed contact details) and wants the person saved, read every field you can from the image — name, title, company, phone, email, address, website — and use create_contact. Confirm the details with the user first, then create it.");
     }
     const system = `${baseSystem}\n\nToday is ${todayET()} (user timezone America/New_York).\n\nCapabilities: ${capLines.join(" ")}${memoryBlock}`;
 
