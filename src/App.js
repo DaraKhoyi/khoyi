@@ -552,6 +552,8 @@ function ChatView({ robots, userId }) {
   // Receipt category lookup for CTA card display
   const [taxCatMap, setTaxCatMap] = useState({});
   const [systemMap, setSystemMap] = useState({});
+  const [taxCats, setTaxCats] = useState([]);        // full list for the category dropdown
+  const [leadSystems, setLeadSystems] = useState([]); // full list for the lead-gen dropdown
   // CTA card state — tracks which messages have had their receipt pushed
   const [receiptPushed, setReceiptPushed] = useState({});  // messageKey -> { ok, txId, error }
   const [receiptSaving, setReceiptSaving] = useState({});  // messageKey -> bool
@@ -597,21 +599,37 @@ function ChatView({ robots, userId }) {
       });
   }, [robotId, userId]);
 
-  // Load tax categories + lead-gen systems for receipt CTA labels
+  // Load tax categories + lead-gen systems for receipt CTA labels + dropdowns
   useEffect(() => {
     if (!userId) return;
     Promise.all([
-      supabase.from('tax_categories').select('id, name').eq('user_id', userId),
-      supabase.from('lead_gen_systems').select('id, name').eq('user_id', userId),
+      supabase.from('tax_categories').select('id, name, is_meals_partial, sort_order').eq('user_id', userId),
+      supabase.from('lead_gen_systems').select('id, name, is_archived').eq('user_id', userId),
     ]).then(([tc, ls]) => {
-      const tcMap = {};
-      (tc.data || []).forEach(c => { tcMap[c.id] = c.name; });
-      setTaxCatMap(tcMap);
-      const sMap = {};
-      (ls.data || []).forEach(s => { sMap[s.id] = s.name; });
-      setSystemMap(sMap);
+      const cats = (tc.data || []).slice().sort((a, b) => ((a.sort_order ?? 999) - (b.sort_order ?? 999)) || a.name.localeCompare(b.name));
+      setTaxCats(cats);
+      const tcMap = {}; cats.forEach(c => { tcMap[c.id] = c.name; }); setTaxCatMap(tcMap);
+      const sys = (ls.data || []).filter(s => !s.is_archived).sort((a, b) => a.name.localeCompare(b.name));
+      setLeadSystems(sys);
+      const sMap = {}; sys.forEach(s => { sMap[s.id] = s.name; }); setSystemMap(sMap);
     });
   }, [userId]);
+
+  // Add a brand-new expense category on the fly (used by the receipt card's
+  // "+ Add new category" option). Re-uses an existing one if the name matches.
+  const addCategory = useCallback(async (name) => {
+    const nm = (name || '').trim();
+    if (!nm) return null;
+    const existing = taxCats.find(c => c.name.toLowerCase() === nm.toLowerCase());
+    if (existing) return existing;
+    const { data, error } = await supabase.from('tax_categories')
+      .insert({ user_id: userId, name: nm, schedule_c_line: '27a' })
+      .select('id, name, is_meals_partial, sort_order').single();
+    if (error) { if (window.__notify) window.__notify('Could not add category: ' + error.message, 'error'); return null; }
+    setTaxCats(prev => [...prev, data]);
+    setTaxCatMap(prev => ({ ...prev, [data.id]: data.name }));
+    return data;
+  }, [taxCats, userId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -751,13 +769,17 @@ function ChatView({ robots, userId }) {
       if (!amount) throw new Error('Missing amount on receipt');
       // Expense = negative; receipts default to expense unless explicitly income
       const signedAmount = -amount;
+      const catId = override?.tax_category_id !== undefined ? override.tax_category_id : (receiptData.tax_category_id || null);
+      const leadId = override?.lead_gen_system_id !== undefined ? override.lead_gen_system_id : (receiptData.lead_gen_system_id || null);
       const payload = {
         user_id: userId,
         date: receiptData.date || new Date().toISOString().slice(0, 10),
         amount: signedAmount,
         scope,
-        tax_category_id: scope === 'business' ? (receiptData.tax_category_id || null) : null,
-        lead_gen_system_id: scope === 'business' ? (receiptData.lead_gen_system_id || null) : null,
+        tax_category_id: catId || null,
+        lead_gen_system_id: leadId || null,
+        meals_who: override?.meals_who || null,
+        meals_why: override?.meals_why || null,
         personal_budget_line_id: null,
         payee: receiptData.vendor || null,
         description: receiptData.description_guess || null,
@@ -841,6 +863,9 @@ function ChatView({ robots, userId }) {
               onZoom={setViewerUrl}
               taxCatMap={taxCatMap}
               systemMap={systemMap}
+              taxCats={taxCats}
+              leadSystems={leadSystems}
+              addCategory={addCategory}
               receiptPushed={receiptPushed[i]}
               receiptSaving={!!receiptSaving[i]}
               onPushReceipt={(override) => pushReceiptToAccounting(i, m.receipt_data, override)}
@@ -934,10 +959,18 @@ function ChatView({ robots, userId }) {
 // Split out so we can lazily resolve signed URLs without re-rendering all bubbles.
 function ChatMessageBubble({
   message, messageKey, getSignedUrl, signedUrls, onZoom,
-  taxCatMap, systemMap, receiptPushed, receiptSaving, onPushReceipt,
+  taxCatMap, systemMap, taxCats = [], leadSystems = [], addCategory,
+  receiptPushed, receiptSaving, onPushReceipt,
 }) {
   const [imgUrl, setImgUrl] = useState(null);
   const [scope, setScope] = useState(message.receipt_data?.scope || 'business');
+  const [catId, setCatId] = useState(message.receipt_data?.tax_category_id || '');
+  const [leadId, setLeadId] = useState(message.receipt_data?.lead_gen_system_id || '');
+  const [mealsWho, setMealsWho] = useState('');
+  const [mealsWhy, setMealsWhy] = useState('');
+  const [addingCat, setAddingCat] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [savingCat, setSavingCat] = useState(false);
 
   useEffect(() => {
     if (!message.image_path) return;
@@ -952,6 +985,9 @@ function ChatMessageBubble({
   const rd = message.receipt_data;
   const taxName = rd?.tax_category_id ? taxCatMap[rd.tax_category_id] : null;
   const sysName = rd?.lead_gen_system_id ? systemMap[rd.lead_gen_system_id] : null;
+  const selCat = taxCats.find(c => c.id === catId) || null;
+  const isMeals = !!(selCat && (selCat.is_meals_partial || /meal|entertain/i.test(selCat.name)));
+  const ctrlStyle = { width:'100%', boxSizing:'border-box', padding:'6px 8px', background:'var(--bg-base)', border:'1px solid var(--border)', borderRadius:'6px', color:'var(--text-1)', fontSize:'12px' };
 
   return (
     <div className={`chat-bubble-wrap ${message.role}`}>
@@ -1009,20 +1045,48 @@ function ChatMessageBubble({
                         background:scope==='personal'?'var(--accent)':'transparent',
                         color:scope==='personal'?'var(--bg-base)':'var(--text-2)'}}>Personal</button>
                   </div>
-                  {scope === 'business' && taxName && (<>
-                    <label>Category</label>
-                    <div style={{fontSize:'12px',color:'var(--text-2)'}}>{taxName}</div>
+                  <label>Category</label>
+                  <div>
+                    <select value={addingCat ? '__add__' : catId}
+                      onChange={e => { const v = e.target.value; if (v === '__add__') { setAddingCat(true); } else { setCatId(v); setAddingCat(false); } }}
+                      style={ctrlStyle}>
+                      <option value="">— Select —</option>
+                      {taxCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      <option value="__add__">+ Add new category…</option>
+                    </select>
+                  </div>
+                  {addingCat && (
+                    <div style={{gridColumn:'1 / -1',display:'flex',gap:'6px',marginTop:'2px'}}>
+                      <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="New category name" autoFocus
+                        style={{...ctrlStyle,flex:1}} />
+                      <button type="button" disabled={savingCat || !newCatName.trim()}
+                        onClick={async () => { setSavingCat(true); const c = await addCategory(newCatName); setSavingCat(false); if (c) { setCatId(c.id); setNewCatName(''); setAddingCat(false); } }}
+                        style={{padding:'6px 12px',background:'var(--accent)',color:'var(--bg-base)',border:'none',borderRadius:'6px',fontWeight:700,fontSize:'12px',cursor:'pointer',opacity:(savingCat||!newCatName.trim())?0.5:1}}>
+                        {savingCat ? '…' : 'Add'}
+                      </button>
+                      <button type="button" onClick={() => { setAddingCat(false); setNewCatName(''); }}
+                        style={{padding:'6px 10px',background:'transparent',color:'var(--text-3)',border:'1px solid var(--border)',borderRadius:'6px',fontSize:'12px',cursor:'pointer'}}>×</button>
+                    </div>
+                  )}
+                  {isMeals && (<>
+                    <label>Who</label>
+                    <div><input value={mealsWho} onChange={e => setMealsWho(e.target.value)} placeholder="Who you met with" style={ctrlStyle} /></div>
+                    <label>Why</label>
+                    <div><input value={mealsWhy} onChange={e => setMealsWhy(e.target.value)} placeholder="Business purpose" style={ctrlStyle} /></div>
                   </>)}
-                  {scope === 'business' && sysName && (<>
-                    <label>System</label>
-                    <div style={{fontSize:'12px',color:'var(--text-2)'}}>{sysName}</div>
-                  </>)}
+                  <label>Lead gen</label>
+                  <div>
+                    <select value={leadId} onChange={e => setLeadId(e.target.value)} style={ctrlStyle}>
+                      <option value="">None</option>
+                      {leadSystems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="chat-receipt-card-actions">
                   <button
                     type="button"
                     className="chat-receipt-save"
-                    onClick={() => onPushReceipt({ scope })}
+                    onClick={() => onPushReceipt({ scope, tax_category_id: catId || null, lead_gen_system_id: leadId || null, meals_who: isMeals ? (mealsWho || null) : null, meals_why: isMeals ? (mealsWhy || null) : null })}
                     disabled={receiptSaving}
                   >
                     {receiptSaving ? 'Saving…' : 'Push to accounting →'}
