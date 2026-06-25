@@ -1071,6 +1071,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [composeBody, setComposeBody] = useState('');
   const [composeFrom, setComposeFrom] = useState('');  // resolved sender address
   const [composeReplyMeta, setComposeReplyMeta] = useState(null);  // { message_id, thread_id } when replying
+  const [replyCtx, setReplyCtx] = useState(null);   // original email context for the AI reply drafter
+  const [aiDrafting, setAiDrafting] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendMsg, setSendMsg] = useState('');
   const [syncingAliases, setSyncingAliases] = useState(false);
@@ -1881,6 +1883,12 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     setComposeBody(`\n\nOn ${when}, ${msg.from_name || msg.from_address} wrote:\n${quoted}`);
     setComposeFrom(chooseReplyFrom(msg));
     setComposeReplyMeta({ message_id: msg.provider_message_id, thread_id: msg.provider_thread_id });
+    setReplyCtx({
+      subject: msg.subject || '',
+      body: (msg.body_text || msg.snippet || '').slice(0, 8000),
+      from_name: msg.from_name || msg.from_address || '',
+      to_email: (toList[0] || ''),
+    });
     setSendMsg('');
     setShowCompose(true);
   }
@@ -1915,6 +1923,41 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       setSendMsg('Error: ' + (err.message || err));
     } finally {
       setSending(false);
+    }
+  }
+
+  // Draft a reply with Claude, adapted to the recipient's DISC style, and drop
+  // it in above the quoted original. Best-effort: works with or without a DISC profile.
+  async function aiReplyDraft() {
+    if (aiDrafting) return;
+    const firstEmail = (composeTo.split(',')[0] || '').trim();
+    const prof = profileForEmail(firstEmail);
+    const contact = contacts.find(c => c.email && firstEmail && c.email.toLowerCase() === firstEmail.toLowerCase());
+    setAiDrafting(true);
+    setSendMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('email-reply-draft', {
+        body: {
+          original_subject: replyCtx?.subject || composeSubject || '',
+          original_body: (replyCtx?.body || '').slice(0, 6000),
+          from_name: replyCtx?.from_name || contact?.name || firstEmail,
+          recipient_name: contact?.name || replyCtx?.from_name || firstEmail,
+          disc_primary: prof?.primary_letter || null,
+          disc_secondary: prof?.secondary_letter || null,
+          disc_rationale: prof?.rationale || prof?.research_summary || '',
+          sender_name: 'Dara',
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const draft = (data?.draft || '').trim();
+      if (!draft) throw new Error('No draft returned');
+      // Place the draft at the top, keep the quoted original below it.
+      setComposeBody(draft + '\n' + (composeBody || ''));
+    } catch (e) {
+      setSendMsg('AI draft failed: ' + (e.message || e));
+    } finally {
+      setAiDrafting(false);
     }
   }
 
@@ -2315,39 +2358,43 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         {selectedThread && (
           <div className="panel" ref={readingPaneRef} style={{display:'flex',flexDirection:'column'}}>
             {/* Sticky action bar at the top */}
+            {/* Action bar — two rows: context/nav on top, actions below.
+                Wrapping (not clipping) keeps every button reachable on a phone. */}
             <div style={{
               position:'sticky', top:0, zIndex:5,
               background:'var(--bg-card)',
               borderBottom:'1px solid var(--border)',
-              padding:'10px 14px',
-              display:'flex',alignItems:'center',gap:'6px',flexWrap:'nowrap',
-              overflow:'hidden'
+              padding:'8px 12px',
+              display:'flex', flexDirection:'column', gap:'8px'
             }}>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setSelectedThread(null)} style={{flexShrink:0,padding:'4px 10px',fontSize:'12px'}}
-                title={singlePane ? 'Back to inbox' : 'Close'}>
-                ← {singlePane ? 'Inbox' : 'Close'}
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                {/* Row 1 — where am I + navigation */}
+              <button className="btn btn-ghost" onClick={()=>setSelectedThread(null)}
+                title={singlePane ? 'Back to inbox' : 'Close'}
+                style={{flexShrink:0,padding:'8px 12px',fontSize:'13px',minHeight:'38px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                <span style={{fontSize:'17px',lineHeight:1}}>‹</span> {singlePane ? 'Inbox' : 'Close'}
               </button>
 
               {/* Prev / next navigation through the visible list */}
-              <div style={{display:'flex',alignItems:'center',gap:'2px',flexShrink:0}}>
-                <button className="btn btn-ghost btn-sm" onClick={()=>goAdjacent(-1)} disabled={!hasNewer}
+              <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
+                <button className="btn btn-ghost" onClick={()=>goAdjacent(-1)} disabled={!hasNewer}
                   title="Newer (↑ or k)" aria-label="Newer email"
-                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasNewer?1:0.35,cursor:hasNewer?'pointer':'default'}}>‹</button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>goAdjacent(1)} disabled={!hasOlder}
+                  style={{width:'36px',height:'36px',padding:0,fontSize:'20px',lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center',opacity:hasNewer?1:0.3,cursor:hasNewer?'pointer':'default'}}>‹</button>
+                <button className="btn btn-ghost" onClick={()=>goAdjacent(1)} disabled={!hasOlder}
                   title="Older (↓ or j)" aria-label="Older email"
-                  style={{padding:'4px 8px',fontSize:'15px',lineHeight:1,opacity:hasOlder?1:0.35,cursor:hasOlder?'pointer':'default'}}>›</button>
+                  style={{width:'36px',height:'36px',padding:0,fontSize:'20px',lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center',opacity:hasOlder?1:0.3,cursor:hasOlder?'pointer':'default'}}>›</button>
                 {selIndex >= 0 && (
-                  <span style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',marginLeft:'3px'}}>
-                    {selIndex+1} of {filteredThreads.length}
+                  <span style={{fontSize:'12px',fontWeight:600,color:'var(--text-2)',whiteSpace:'nowrap',marginLeft:'4px',padding:'5px 11px',borderRadius:'999px',background:'var(--bg-base)',border:'1px solid var(--border)'}}>
+                    {selIndex+1} <span style={{color:'var(--text-3)',fontWeight:400}}>of</span> {filteredThreads.length}
                   </span>
                 )}
               </div>
 
               {/* Expand / collapse the reader to full width (wide screens only) */}
               {!singlePane && (
-                <button className="btn btn-ghost btn-sm" onClick={()=>setReaderExpanded(v=>!v)}
+                <button className="btn btn-ghost" onClick={()=>setReaderExpanded(v=>!v)}
                   title={readerExpanded ? 'Show inbox list' : 'Expand to full width'} aria-label="Toggle full-width reader"
-                  style={{flexShrink:0,padding:'4px 8px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                  style={{flexShrink:0,marginLeft:'auto',padding:'8px 10px',minHeight:'36px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
                   {readerExpanded ? (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="10" y1="14" x2="3" y2="21"/></svg>
                   ) : (
@@ -2357,54 +2404,63 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 </button>
               )}
 
+              </div>
+
+              {/* Row 2 — actions (wrap instead of clip; big tap targets) */}
               {selectedMessages.length > 0 && (() => {
                 const latest = selectedMessages[selectedMessages.length - 1];
-                // Per-message canReplyAll is computed where reply buttons render below.
                 return (
-                  <>
-                    {/* Star — leftmost icon action, single emoji */}
-                    <button className="btn btn-ghost btn-sm"
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                    {/* Star */}
+                    <button className="btn btn-ghost"
                       onClick={() => modifyThread(isStarred ? 'unstar' : 'star')}
-                      title={isStarred ? 'Unstar' : 'Star'}
-                      style={{flexShrink:0,padding:'4px 8px',fontSize:'16px',color: isStarred ? '#f59e0b' : 'var(--text-2)'}}>
+                      title={isStarred ? 'Unstar' : 'Star'} aria-label="Star"
+                      style={{flexShrink:0,width:'40px',height:'40px',padding:0,fontSize:'20px',display:'inline-flex',alignItems:'center',justifyContent:'center',color: isStarred ? '#f59e0b' : 'var(--text-2)'}}>
                       {isStarred ? '★' : '☆'}
                     </button>
 
-                    {/* Reply — primary action, always visible */}
-                    <button className="btn btn-primary btn-sm" onClick={() => openReply(latest, false)}
-                      style={{flexShrink:0,padding:'4px 12px',fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
-                      <Icon name="reply" size={13} /> Reply
+                    {/* Reply — primary action, grows to fill the row */}
+                    <button className="btn btn-primary" onClick={() => openReply(latest, false)}
+                      style={{flex:'1 1 auto',minWidth:'104px',minHeight:'40px',padding:'9px 14px',fontSize:'13px',fontWeight:700,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+                      <Icon name="reply" size={15} /> Reply
+                    </button>
+
+                    {/* Reply all */}
+                    <button className="btn btn-ghost" onClick={() => openReply(latest, true)}
+                      title="Reply all"
+                      style={{flexShrink:0,minHeight:'40px',padding:'9px 12px',fontSize:'13px',fontWeight:600,display:'inline-flex',alignItems:'center',gap:'6px'}}>
+                      <Icon name="replyAll" size={15} /> <span style={{whiteSpace:'nowrap'}}>Reply all</span>
                     </button>
 
                     {/* Add to tasks — turns this email into a task */}
-                    <button className="btn btn-ghost btn-sm" onClick={() => openCreateTask(latest)}
+                    <button className="btn btn-ghost" onClick={() => openCreateTask(latest)}
                       title="Add to tasks" aria-label="Add to tasks"
-                      style={{flexShrink:0,padding:'4px 8px'}}>
-                      <Icon name="tasks" size={15} />
+                      style={{flexShrink:0,minHeight:'40px',padding:'9px 12px',fontSize:'13px',fontWeight:600,display:'inline-flex',alignItems:'center',gap:'6px'}}>
+                      <Icon name="tasks" size={15} /> Task
                     </button>
 
                     {/* Archive — only when not already archived */}
                     {tab !== 'sent' && (
-                      <button className="btn btn-ghost btn-sm"
+                      <button className="btn btn-ghost"
                         onClick={() => actAndAdvance('archive')}
                         title="Archive — keeps reading the next email"
-                        style={{flexShrink:0,padding:'4px 8px'}}>
-                        <Icon name="archive" size={15} />
+                        style={{flexShrink:0,minHeight:'40px',padding:'9px 12px',fontSize:'13px',fontWeight:600,display:'inline-flex',alignItems:'center',gap:'6px'}}>
+                        <Icon name="archive" size={15} /> Archive
                       </button>
                     )}
 
                     {/* Delete — moves to Trash, advances to next, no confirm */}
-                    <button className="btn btn-ghost btn-sm" onClick={() => actAndAdvance('trash')}
+                    <button className="btn btn-ghost" onClick={() => actAndAdvance('trash')}
                       title="Delete (move to Trash) — keeps reading the next email"
-                      style={{flexShrink:0,padding:'4px 8px',color:'var(--red)'}}>
-                      <Icon name="trash" size={15} />
+                      style={{flexShrink:0,minHeight:'40px',padding:'9px 12px',fontSize:'13px',fontWeight:600,color:'var(--red)',display:'inline-flex',alignItems:'center',gap:'6px'}}>
+                      <Icon name="trash" size={15} /> Delete
                     </button>
 
                     {/* More menu — everything else (Gmail-style).
                         Rendered in a portal so it can't be clipped by the toolbar's
                         overflow:hidden (which is needed to prevent button overflow). */}
                     <div style={{position:'relative',marginLeft:'auto',flexShrink:0}}>
-                      <button ref={moreButtonRef} className="btn btn-ghost btn-sm"
+                      <button ref={moreButtonRef} className="btn btn-ghost"
                         onClick={(e) => {
                           // Measure button position so the portal-rendered dropdown
                           // anchors below+right of it
@@ -2416,8 +2472,8 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                           setShowMoreMenu(m => !m);
                           setShowSnoozePicker(false);
                         }}
-                        title="More actions"
-                        style={{padding:'4px 10px',fontSize:'16px',lineHeight:1}}>
+                        title="More actions" aria-label="More actions"
+                        style={{minHeight:'40px',padding:'9px 12px',fontSize:'18px',lineHeight:1}}>
                         ⋮
                       </button>
                     </div>
@@ -2527,7 +2583,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                       </>,
                       document.body
                     )}
-                  </>
+                  </div>
                 );
               })()}
             </div>
@@ -2758,7 +2814,27 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 />
               </div>
               <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" required /></div>
-              <div className="form-group"><label className="form-label">Message</label><AriRewriteButton text={composeBody} onRewrite={setComposeBody} contactName={composeTo} /><textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required /></div>
+              <div className="form-group">
+                <label className="form-label">Message</label>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'6px'}}>
+                  {composeReplyMeta && (
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={aiDrafting} onClick={aiReplyDraft}
+                      title="Draft a reply adapted to the recipient's DISC communication style"
+                      style={{color:'var(--accent)',border:'1px solid var(--accent-dim)',display:'inline-flex',alignItems:'center',gap:'6px',padding:'5px 11px',fontWeight:600}}>
+                      <Icon name="sparkles" size={13} /> {aiDrafting ? 'Drafting…' : 'AI reply'}
+                    </button>
+                  )}
+                  {composeReplyMeta && (() => {
+                    const fe = (composeTo.split(',')[0] || '').trim();
+                    const p = profileForEmail(fe);
+                    return p?.primary_letter
+                      ? <span style={{fontSize:'11px',color:'var(--text-3)'}}>adapted to <strong style={{color:'var(--accent)'}}>{p.primary_letter}{p.secondary_letter ? '/' + p.secondary_letter : ''}</strong> style</span>
+                      : <span style={{fontSize:'11px',color:'var(--text-3)'}}>no DISC profile yet · neutral tone</span>;
+                  })()}
+                  <span style={{marginLeft:'auto'}}><AriRewriteButton text={composeBody} onRewrite={setComposeBody} contactName={composeTo} /></span>
+                </div>
+                <textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required />
+              </div>
               {sendMsg && <p style={{fontSize:'13px',color: sendMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',margin:'4px 0'}}>{sendMsg}</p>}
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
