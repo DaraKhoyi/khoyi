@@ -1014,6 +1014,23 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
     setSettings(prev => ({ ...prev, user_mode: newMode }));
   }
 
+  // One cohesive segmented-control language for both the mode switch and the
+  // sub-tabs: a bordered track holding pill segments; the active segment is a
+  // single gold pill with dark text. Same radius, weight, and motion everywhere.
+  const segTrack = {
+    display: 'flex', gap: '4px', padding: '4px',
+    background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '14px',
+  };
+  const seg = (active) => ({
+    border: 'none', cursor: 'pointer', borderRadius: '10px',
+    fontSize: '12px', fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+    transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
+    background: active ? 'var(--accent)' : 'transparent',
+    color: active ? 'var(--bg-base)' : 'var(--text-2)',
+    boxShadow: active ? '0 1px 6px rgba(197,169,94,0.35)' : 'none',
+  });
+
   return (
     <div className="view">
       {readOnly && (
@@ -1051,21 +1068,18 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
             </span>
           </div>
 
-          {/* Mode pills */}
-          <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'999px'}}>
+          {/* Mode switch — same segmented-control language as the sub-tabs below */}
+          <div style={segTrack}>
             {['agent','partner','coach'].map(m => (
               <button key={m} onClick={() => changeUserMode(m)}
                 title={m === 'agent' ? 'Your full workspace' : m === 'partner' ? 'Read-only accountability view' : 'Coach: unlocks system limits + extra reports'}
-                style={{padding:'5px 12px',border:'none',borderRadius:'999px',fontSize:'11px',fontWeight:700,cursor:'pointer',
-                  background:userMode===m?(m==='coach'?'var(--accent)':m==='partner'?'#3b82f6':'var(--text-1)'):'transparent',
-                  color:userMode===m?(m==='partner'?'#fff':'var(--bg-base)'):'var(--text-2)',
-                  textTransform:'capitalize'}}>
-                <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name={m === 'agent' ? 'contacts' : m === 'partner' ? 'users' : 'target'} size={12} /> {m}</span>
+                style={{...seg(userMode===m), padding:'7px 13px', textTransform:'capitalize'}}>
+                <Icon name={m === 'agent' ? 'contacts' : m === 'partner' ? 'users' : 'target'} size={12} /> {m}
               </button>
             ))}
           </div>
         </div>
-        <div style={{display:'flex',gap:'4px',overflowX:'auto',scrollbarWidth:'none',msOverflowStyle:'none'}}>
+        <div style={{...segTrack, width:'100%'}}>
           {[
             { id: 'dashboard', label: 'Dashboard', iconName: 'zap' },
             { id: 'blueprint', label: 'Blueprint', iconName: 'ruler' },
@@ -1073,11 +1087,9 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
             { id: 'reports',   label: 'Reports',   iconName: 'chart' },
           ].map(t => (
             <button key={t.id} onClick={() => setSubView(t.id)}
-              style={{padding:'8px 14px',border:'none',borderRadius:'999px',fontSize:'12px',fontWeight:700,letterSpacing:'0.02em',whiteSpace:'nowrap',cursor:'pointer',
-                background: subView === t.id ? 'var(--accent)' : 'var(--bg-hover)',
-                color: subView === t.id ? 'var(--bg-base)' : 'var(--text-2)',
-                transition: 'all 0.15s'}}>
-              <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name={t.iconName} size={13} /> {t.label}</span>
+              style={{...seg(subView===t.id), flex:'1 1 0', minWidth:0, padding:'9px 8px'}}>
+              <Icon name={t.iconName} size={14} />
+              <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{t.label}</span>
             </button>
           ))}
         </div>
