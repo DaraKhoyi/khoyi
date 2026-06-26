@@ -138,12 +138,12 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
       .eq("user_id", userId)
       .ilike("from_address", contact.email)
       .order("internal_date", { ascending: false })
-      .limit(20);
+      .limit(25);
     for (const m of inMsgs || []) {
       evidence.push({
         ref: `email_in:${m.id}`,
         kind: "email_incoming",
-        excerpt: `Subject: ${m.subject || ''}\n${(m.body_text || m.snippet || '').slice(0, 1800)}`,
+        excerpt: `Subject: ${m.subject || ''}\n${(m.body_text || m.snippet || '').slice(0, 2600)}`,
         dated_at: m.internal_date,
       });
     }
@@ -159,7 +159,7 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
       evidence.push({
         ref: `email_out:${m.id}`,
         kind: "email_outgoing",
-        excerpt: `Subject: ${m.subject || ''}\n${(m.body_text || m.snippet || '').slice(0, 1200)}`,
+        excerpt: `Subject: ${m.subject || ''}\n${(m.body_text || m.snippet || '').slice(0, 1600)}`,
         dated_at: m.internal_date,
       });
     }

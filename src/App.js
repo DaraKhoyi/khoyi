@@ -2546,45 +2546,66 @@ function WeekSparkline({ days }) {
 
 // "Plan my day" — asks Ari to triage the day's due/overdue + top tasks into a
 // realistic ordered sequence around the calendar.
-function PlanMyDayModal({ tasks, events, contacts = [], userId, name, onClose }) {
+function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose }) {
   const [state, setState] = useState({ loading: true });
+  const [accepting, setAccepting] = useState(false);
+  const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const today = new Date();
         const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        const map = new Map();
-        tasks.filter(t => !t.completed && t.due_date && t.due_date <= todayISO).forEach(t => map.set(t.id, t));
-        tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!map.has(t.id)) map.set(t.id, t); });
-        const payloadTasks = Array.from(map.values()).slice(0, 30).map(t => ({ title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }));
+        const tmap = new Map(), cmap = new Map(), emap = new Map();
+
+        // Tasks (due/overdue + top priority), each given a stable id token
+        const tsel = new Map();
+        tasks.filter(t => !t.completed && t.due_date && t.due_date <= todayISO).forEach(t => tsel.set(t.id, t));
+        tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!tsel.has(t.id)) tsel.set(t.id, t); });
+        const payloadTasks = Array.from(tsel.values()).slice(0, 30).map((t, i) => { const id = `t${i + 1}`; tmap.set(id, t); return { id, title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }; });
+
         const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => ({ title: e.title, start_at: e.start_at, all_day: e.all_day }));
 
-        // Reach-outs — mirror the Needs Attention logic (replies owed + cadence overdue)
+        // Reach-outs — replies owed + cadence overdue (mirrors Needs Attention)
         const nowMs = Date.now();
         const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
         const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
         const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
         const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
-        const reachouts = [
-          ...owe.slice(0, 10).map(c => ({ name: c.name, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
-          ...outreach.slice(0, 10).map(c => ({ name: c.name, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
+        const reachSource = [
+          ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
+          ...outreach.slice(0, 10).map(c => ({ c, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
         ].slice(0, 15);
+        const reachouts = reachSource.map((x, i) => { const id = `r${i + 1}`; cmap.set(id, x.c); return { id, name: x.c.name, reason: x.reason }; });
 
-        // Unread inbox — same lean shape (sender, subject, age), capped
+        // Unread inbox WITH body text (the planner now reads the actual email)
         let unreadEmails = [];
         try {
-          const { data: th } = await supabase.from('email_threads')
-            .select('subject,participants,last_message_at')
-            .eq('user_id', userId).eq('has_unread', true).contains('labels', ['INBOX']).is('snoozed_until', null)
-            .order('last_message_at', { ascending: false }).limit(12);
-          unreadEmails = (th || []).map(t => {
-            const p = Array.isArray(t.participants) && t.participants[0] ? t.participants[0] : {};
-            return { from: p.name || p.email || 'Unknown', subject: t.subject || '(no subject)', age: relAge(t.last_message_at) };
+          const { data: msgs } = await supabase.from('email_messages')
+            .select('id,thread_id,subject,from_name,from_address,body_text,snippet,internal_date')
+            .eq('user_id', userId).eq('is_read', false).contains('labels', ['INBOX'])
+            .order('internal_date', { ascending: false }).limit(24);
+          const seen = new Set();
+          (msgs || []).forEach(m => {
+            if (seen.has(m.thread_id)) return; seen.add(m.thread_id);
+            if (unreadEmails.length >= 12) return;
+            const id = `e${unreadEmails.length + 1}`;
+            emap.set(id, { thread_id: m.thread_id });
+            unreadEmails.push({ id, from: m.from_name || m.from_address || 'Unknown', subject: m.subject || '(no subject)', age: relAge(m.internal_date), excerpt: (m.body_text || m.snippet || '').slice(0, 700) });
           });
         } catch (_e) { /* inbox optional */ }
 
-        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails } });
+        // Supabase enrichment: live deals + properties for context
+        let dealsCtx = [];
+        try {
+          const { data: dl } = await supabase.from('deals').select('name,client_name,status,side,list_price,sale_price,notes').eq('user_id', userId).order('updated_at', { ascending: false }).limit(25);
+          dealsCtx = (dl || []).map(d => ({ name: d.name || d.client_name || 'Deal', client: d.client_name, status: d.status, side: d.side, price: d.sale_price || d.list_price, notes: d.notes }));
+        } catch (_e) {}
+        const propsCtx = (properties || []).slice(0, 25).map(p => ({ name: p.nickname || p.address, status: p.status, notes: p.notes }));
+
+        mapsRef.current = { tasks: tmap, contacts: cmap, emails: emap };
+
+        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx } });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
         if (alive) setState({ loading: false, summary: data?.summary, plan: data?.plan || [] });
@@ -2593,17 +2614,59 @@ function PlanMyDayModal({ tasks, events, contacts = [], userId, name, onClose })
     return () => { alive = false; };
   }, []); // eslint-disable-line
 
+  const resolveRef = (refs) => {
+    const list = refs || [];
+    const t = list.find(r => mapsRef.current.tasks.has(r));
+    if (t) return { type: 'task', obj: mapsRef.current.tasks.get(t) };
+    const r = list.find(x => mapsRef.current.contacts.has(x));
+    if (r) return { type: 'contact', obj: mapsRef.current.contacts.get(r) };
+    const e = list.find(x => mapsRef.current.emails.has(x));
+    if (e) return { type: 'email', obj: mapsRef.current.emails.get(e) };
+    return null;
+  };
+  const openStep = (refs) => {
+    const hit = resolveRef(refs);
+    if (!hit) return;
+    if (hit.type === 'task' && onOpenTask) { onClose(); onOpenTask(hit.obj); return; }
+    onClose();
+    if (hit.type === 'task') setView && setView('tasks');
+    else if (hit.type === 'contact') setView && setView('contacts');
+    else if (hit.type === 'email') setView && setView('inbox');
+  };
+
+  const acceptPlan = async () => {
+    if (accepting) return;
+    setAccepting(true);
+    try {
+      const today = new Date();
+      const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const pullIds = []; const creates = [];
+      (state.plan || []).forEach(p => {
+        const tRef = (p.refs || []).find(r => mapsRef.current.tasks.has(r));
+        const t = tRef ? mapsRef.current.tasks.get(tRef) : null;
+        if (t) { if (t.due_date !== todayISO) pullIds.push(t.id); }
+        else creates.push({ user_id: userId, title: p.title, due_date: todayISO, notes: `From Plan my day${p.when ? ` · ${p.when}` : ''}`, completed: false });
+      });
+      if (pullIds.length) await supabase.from('tasks').update({ due_date: todayISO }).in('id', pullIds);
+      let inserted = [];
+      if (creates.length) { const { data } = await supabase.from('tasks').insert(creates).select(); inserted = data || []; }
+      if (setTasks) setTasks(prev => [...prev.map(t => pullIds.includes(t.id) ? { ...t, due_date: todayISO } : t), ...inserted]);
+      setState(s => ({ ...s, accepted: pullIds.length + inserted.length }));
+    } catch (e) { setState(s => ({ ...s, acceptError: String(e.message || e) })); }
+    setAccepting(false);
+  };
+
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.5)' }}>
-        <div style={{ position: 'sticky', top: 0, background: 'linear-gradient(180deg,var(--bg-card),rgba(22,23,27,0.96))', padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'linear-gradient(180deg,var(--bg-card),rgba(22,23,27,0.96))', padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>✦ Your day, planned</h3>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: '16px 18px' }}>
           {state.loading && (
             <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-2)' }}>
-              <div style={{ fontSize: 13 }}>{name || 'Ari'} is triaging your day…</div>
+              <div style={{ fontSize: 13 }}>{name || 'Ari'} is reading your inbox & triaging your day…</div>
               <div style={{ marginTop: 12, display: 'flex', gap: 6, justifyContent: 'center' }}>
                 {[0, 1, 2].map(i => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', opacity: 0.4, animation: `pmd 1s ${i * 0.15}s infinite` }} />)}
               </div>
@@ -2617,8 +2680,12 @@ function PlanMyDayModal({ tasks, events, contacts = [], userId, name, onClose })
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(state.plan || []).map((p, i) => {
                   const kindTag = { task: { l: 'Task', c: 'var(--text-2)' }, reachout: { l: 'Reach out', c: 'var(--accent)' }, email: { l: 'Email', c: '#6aa9ff' }, focus: { l: 'Focus', c: '#4ade80' } }[p.kind] || { l: 'Task', c: 'var(--text-2)' };
+                  const tappable = !!resolveRef(p.refs);
                   return (
-                  <div key={i} style={{ display: 'flex', gap: 12, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
+                  <div key={i} onClick={tappable ? () => openStep(p.refs) : undefined}
+                    style={{ display: 'flex', gap: 12, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', cursor: tappable ? 'pointer' : 'default', transition: 'border-color .12s' }}
+                    onMouseEnter={tappable ? (e) => e.currentTarget.style.borderColor = 'var(--accent)' : undefined}
+                    onMouseLeave={tappable ? (e) => e.currentTarget.style.borderColor = 'var(--border)' : undefined}>
                     <span style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,var(--accent-2),var(--accent))', color: '#1b180f', fontWeight: 800, fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2628,11 +2695,28 @@ function PlanMyDayModal({ tasks, events, contacts = [], userId, name, onClose })
                       {p.when && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, marginTop: 3 }}>{p.when}</div>}
                       {p.why && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.45 }}>{p.why}</div>}
                     </div>
+                    {tappable && <span style={{ flexShrink: 0, alignSelf: 'center', color: 'var(--text-3)', fontSize: 18 }}>›</span>}
                   </div>
                   );
                 })}
                 {(!state.plan || state.plan.length === 0) && <div style={{ color: 'var(--text-2)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Nothing urgent to sequence — your runway is open.</div>}
               </div>
+
+              {(state.plan && state.plan.length > 0) && (
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                  {state.accepted != null ? (
+                    <div style={{ textAlign: 'center', color: '#4ade80', fontSize: 13.5, fontWeight: 700 }}>✓ Added {state.accepted} {state.accepted === 1 ? 'item' : 'items'} to Today — open Tasks to see your sequence.</div>
+                  ) : (
+                    <>
+                      <button onClick={acceptPlan} disabled={accepting} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', borderRadius: 11, padding: '12px', fontSize: 14, opacity: accepting ? 0.6 : 1 }}>
+                        {accepting ? 'Adding…' : '✓ Accept plan → add to Today'}
+                      </button>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', marginTop: 7 }}>Pulls existing tasks into today and creates tasks for reach-outs & emails. Tap any step to open it.</div>
+                      {state.acceptError && <div style={{ color: 'var(--red)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>{state.acceptError}</div>}
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -2803,7 +2887,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         </div>
       </div>
 
-      {planning && <PlanMyDayModal tasks={tasks} events={events} contacts={contacts} userId={user?.id} name={robot?.name || 'Ari'} onClose={()=>setPlanning(false)} />}
+      {planning && <PlanMyDayModal tasks={tasks} events={events} contacts={contacts} properties={properties} userId={user?.id} name={robot?.name || 'Ari'} setView={setView} onOpenTask={(t)=>setEditTask(t)} setTasks={setTasks} onClose={()=>setPlanning(false)} />}
 
       {/* Metric tiles */}
       <div className="cards-row">
