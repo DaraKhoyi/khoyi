@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v114-20260626-cc-bcc-cube'
+const VERSION = 'prismos-v115-20260626-datepicker-2mo'
 const APP_SHELL = [
   '/',
   '/index.html',
