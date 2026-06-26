@@ -91,9 +91,10 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 - If a step genuinely won't fit before the end of WORKING HOURS, defer it: set "start" and "end" to null. Put deferred items last. The "when" field should still be a short human label (e.g., "9:00–9:30 AM" or "Tomorrow").
 - Be realistic: ~5-8 focused items. Pick the vital few; if there's more, say what to defer.
 - For each item include: a short "why", a "when" (human label), "start"/"end" (HH:MM 24h, or null if deferred), a "kind" (exactly one of task|reachout|email|focus), and "refs" = the list of input ids (the (t#)/(r#)/(e#) tokens) the step draws from. A "triage inbox" step should list all the e# ids it covers. Use [] for refs when none apply.
+- CHANNEL (reach-outs only): for kind "reachout", add a "channel" (text|call|email) — the best way to reach that person. Infer it from any preference in the brain/journal notes (e.g., "prefers texts", "always call her"); otherwise default to "text" for a quick light touch, "call" for high-stakes or relationship-deepening conversations, and "email" when it needs detail or a document. Omit channel (null) for non-reachout kinds.
 - Motivating, human.
 Respond ONLY with strict JSON, no markdown:
-{"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"9:00–9:30 AM","start":"09:00","end":"09:30","why":"...","kind":"task|reachout|email|focus","refs":["t1","e2"]}]}`;
+{"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"9:00–9:30 AM","start":"09:00","end":"09:30","why":"...","kind":"task|reachout|email|focus","channel":"text|call|email|null","refs":["t1","e2"]}]}`;
 
     const user = `WORKING HOURS: ${String(wh.start).padStart(2, "0")}:00–${String(wh.end).padStart(2, "0")}:00 (24h). Schedule all timed work inside this window.\n\nOPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
 
@@ -110,9 +111,11 @@ Respond ONLY with strict JSON, no markdown:
     try { parsed = JSON.parse(text); } catch { return J({ summary: "Here's your day.", plan: [], raw: text }); }
     const okKind = (k) => (["task", "reachout", "email", "focus"].includes(k) ? k : "task");
     const okTime = (t) => (typeof t === "string" && /^\d{1,2}:\d{2}$/.test(t.trim()) ? t.trim().padStart(5, "0") : null);
+    const okChan = (c) => (["text", "call", "email"].includes(c) ? c : null);
     const plan = Array.isArray(parsed?.plan)
       ? parsed.plan.filter((p) => p && p.title).map((p) => ({
           title: String(p.title), when: String(p.when || ""), start: okTime(p.start), end: okTime(p.end), why: String(p.why || ""), kind: okKind(String(p.kind || "task")),
+          channel: okChan(String(p.channel || "")),
           refs: Array.isArray(p.refs) ? p.refs.map((r) => String(r)).slice(0, 20) : [],
         }))
       : [];

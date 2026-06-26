@@ -2596,6 +2596,8 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
   const [preps, setPreps] = useState({});
   const [viewMode, setViewMode] = useState(null); // 'timeline' | 'list' (null = auto)
   const [highlight, setHighlight] = useState(null);
+  const [inboxActs, setInboxActs] = useState({}); // per-step inbox action result
+  const [pushCal, setPushCal] = useState(false);   // #6 write timed blocks to calendar on accept
   const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
   const mounted = useRef(true);
   const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -2626,7 +2628,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       let unreadEmails = [];
       try {
         const { data: msgs } = await supabase.from('email_messages')
-          .select('id,thread_id,subject,from_name,from_address,body_text,snippet,internal_date')
+          .select('id,thread_id,provider_thread_id,account_id,subject,from_name,from_address,body_text,snippet,internal_date')
           .eq('user_id', userId).eq('is_read', false).contains('labels', ['INBOX'])
           .order('internal_date', { ascending: false }).limit(24);
         const seen = new Set();
@@ -2634,7 +2636,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
           if (seen.has(m.thread_id)) return; seen.add(m.thread_id);
           if (unreadEmails.length >= 12) return;
           const id = `e${unreadEmails.length + 1}`;
-          emap.set(id, { thread_id: m.thread_id, from: m.from_name || m.from_address, subject: m.subject, excerpt: (m.body_text || m.snippet || '').slice(0, 1200) });
+          emap.set(id, { thread_id: m.thread_id, provider_thread_id: m.provider_thread_id, account_id: m.account_id, from: m.from_name || m.from_address, subject: m.subject, excerpt: (m.body_text || m.snippet || '').slice(0, 1200) });
           unreadEmails.push({ id, from: m.from_name || m.from_address || 'Unknown', subject: m.subject || '(no subject)', age: relAge(m.internal_date), excerpt: (m.body_text || m.snippet || '').slice(0, 700) });
         });
       } catch (_e) {}
@@ -2782,8 +2784,21 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       createIdx.forEach((idx, k) => { if (inserted[k]) plan[idx].taskId = inserted[k].id; });
       const items = plan.map(p => ({ title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null }));
       await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: state.summary, items, updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
+      // #6 — calendar write-back: drop the timed focus blocks onto the calendar (pushes to Google on next sync)
+      let calN = 0;
+      if (pushCal) {
+        try {
+          const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+          const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+          // Clear prior Plan-my-day blocks for today to avoid duplicates on re-accept
+          await supabase.from('events').delete().eq('user_id', userId).eq('category', 'Plan my day').gte('start_at', startOfDay.toISOString()).lte('start_at', endOfDay.toISOString()).in('sync_status', ['local', 'pending_push']);
+          const mk = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); const d = new Date(); d.setHours(h, m || 0, 0, 0); return d.toISOString(); };
+          const evRows = plan.filter(p => p.start && p.end).map(p => ({ user_id: userId, title: p.title, description: `From Plan my day${p.why ? ` — ${p.why}` : ''}`, start_at: mk(p.start), end_at: mk(p.end), all_day: false, category: 'Plan my day', color: '#c5a95e', sync_status: 'pending_push' }));
+          if (evRows.length) { await supabase.from('events').insert(evRows); calN = evRows.length; }
+        } catch (_e) {}
+      }
       if (setTasks) setTasks(prev => [...prev.map(t => pullIds.includes(t.id) ? { ...t, due_date: tISO } : t), ...inserted]);
-      if (mounted.current) setState(s => ({ ...s, mode: 'saved', plan: items, justAccepted: pullIds.length + inserted.length }));
+      if (mounted.current) setState(s => ({ ...s, mode: 'saved', plan: items, justAccepted: pullIds.length + inserted.length, calN }));
     } catch (e) { if (mounted.current) setState(s => ({ ...s, acceptError: String(e.message || e) })); }
     setAccepting(false);
   };
@@ -2795,7 +2810,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       let body;
       if (hit && hit.type === 'contact') {
         const c = hit.obj;
-        body = { contact_id: c.id, contactName: c.name, company: c.company, role: c.role, channel: 'text', kind: 'follow-up', entryBody: p.why || p.title, instruction: `For today's plan step: ${p.title}` };
+        body = { contact_id: c.id, contactName: c.name, company: c.company, role: c.role, channel: p.channel === 'email' ? 'email' : 'text', kind: p.channel === 'call' ? 'call (talking points)' : 'follow-up', entryBody: p.why || p.title, instruction: `For today's plan step: ${p.title}${p.channel === 'call' ? '. Write a short call script / what to say.' : ''}` };
       } else if (hit && hit.type === 'email') {
         const em = hit.obj;
         body = { contactName: em.from || 'there', channel: 'email', kind: 'email reply', entryBody: `Subject: ${em.subject || ''}\n\n${em.excerpt || ''}`, instruction: 'Write a reply to this email.' };
@@ -2835,6 +2850,35 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     setTimeout(() => setPreps(s => ({ ...s, [idx]: { ...(s[idx] || {}), copied: false } })), 1600);
   };
 
+  // #7 — one-tap inbox actions (works on every email a step covers)
+  const resolveEmails = (refs) => (refs || []).filter(r => mapsRef.current.emails.has(r)).map(r => mapsRef.current.emails.get(r));
+  const inboxAction = async (idx, refs, action) => {
+    const emails = resolveEmails(refs);
+    if (!emails.length) return;
+    setInboxActs(s => ({ ...s, [idx]: { busy: action } }));
+    try {
+      let n = 0;
+      for (const em of emails) {
+        if (action === 'archive') {
+          if (em.account_id && em.provider_thread_id) { await supabase.functions.invoke('gmail-modify', { body: { account_id: em.account_id, thread_id: em.provider_thread_id, action: 'archive' } }); n++; }
+        } else if (action === 'read') {
+          if (em.account_id && em.provider_thread_id) { await supabase.functions.invoke('gmail-modify', { body: { account_id: em.account_id, thread_id: em.provider_thread_id, action: 'mark_read' } }); n++; }
+        } else if (action === 'snooze') {
+          const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+          if (em.thread_id) { await supabase.from('email_threads').update({ snoozed_until: d.toISOString() }).eq('id', em.thread_id); n++; }
+        } else if (action === 'task') {
+          const d = new Date(); const tISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const row = { user_id: userId, title: `Reply: ${em.subject || em.from || 'email'}`, due_date: tISO, completed: false, priority: 'medium', notes: `From ${em.from || 'inbox'}${em.excerpt ? `\n\n${em.excerpt.slice(0, 300)}` : ''}` };
+          if (em.provider_thread_id) row.email_thread_id = em.provider_thread_id;
+          const { data: t } = await supabase.from('tasks').insert(row).select();
+          if (t && t[0]) { n++; if (setTasks) setTasks(prev => [...prev, t[0]]); }
+        }
+      }
+      const label = action === 'archive' ? `Archived ${n}` : action === 'read' ? `Marked ${n} read` : action === 'snooze' ? `Snoozed ${n} to tomorrow` : `Added ${n} ${n === 1 ? 'task' : 'tasks'}`;
+      setInboxActs(s => ({ ...s, [idx]: { done: label } }));
+    } catch (e) { setInboxActs(s => ({ ...s, [idx]: { error: String(e.message || e) } })); }
+  };
+
   const saved = state.mode === 'saved';
   const doneCount = saved ? (state.plan || []).filter(taskDone).length : 0;
 
@@ -2847,6 +2891,11 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     const done = saved && taskDone(p);
     const dr = drafts[i];
     const pr = preps[i];
+    const chan = p.kind === 'reachout' ? p.channel : null;
+    const chanMeta = { text: { l: 'Text', ic: 'message' }, call: { l: 'Call', ic: 'quo' }, email: { l: 'Email', ic: 'mail' } }[chan];
+    const emailRefs = (p.refs || []).filter(r => mapsRef.current.emails.has(r));
+    const ib = inboxActs[i];
+    const draftLabel = hit && hit.type === 'email' ? 'Draft reply' : (chan === 'email' ? 'Draft email' : chan === 'call' ? 'Call script' : 'Draft message');
     return (
       <div key={i} style={{ background: 'var(--bg-base)', border: `1px solid ${highlight === i ? 'var(--accent)' : 'var(--border)'}`, boxShadow: highlight === i ? '0 0 0 2px var(--accent-dim)' : 'none', borderRadius: 12, padding: '12px 14px', transition: 'border-color .2s, box-shadow .2s' }}>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -2860,16 +2909,30 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} onClick={tappable ? () => openStep(p.refs) : undefined}>
               <span style={{ fontSize: 13.5, fontWeight: 700, color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: done ? 'line-through' : 'none', cursor: tappable ? 'pointer' : 'default' }}>{p.title}</span>
               <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: kindTag.c, border: `1px solid ${kindTag.c}`, borderRadius: 999, padding: '1px 7px', opacity: 0.9 }}>{kindTag.l}</span>
+              {chanMeta && <span title="Best way to reach them" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)', background: 'var(--accent-glow)', border: '1px solid var(--accent-dim)', borderRadius: 999, padding: '1px 8px' }}><Icon name={chanMeta.ic} size={10} /> {chanMeta.l}</span>}
             </div>
             {p.when && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, marginTop: 3 }}>{p.when}</div>}
             {p.why && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.45 }}>{p.why}</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
-              {canDraft && !dr && <button onClick={() => draftStep(i, p)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>✦ Draft {hit.type === 'email' ? 'reply' : 'message'}</button>}
+              {canDraft && !dr && <button onClick={() => draftStep(i, p)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>✦ {draftLabel}</button>}
               {canPrep && !pr && <button onClick={() => prepStep(i, p)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>✦ Prep me</button>}
               {dr && dr.loading && <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Drafting…</span>}
               {pr && pr.loading && <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Prepping…</span>}
               {tappable && <button onClick={() => openStep(p.refs)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>Open ›</button>}
             </div>
+            {emailRefs.length > 0 && (
+              ib && ib.done ? (
+                <div style={{ fontSize: 11.5, color: '#4ade80', fontWeight: 700, marginTop: 9 }}>✓ {ib.done}</div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{emailRefs.length > 1 ? `${emailRefs.length} emails:` : 'Inbox:'}</span>
+                  {[['archive', 'Archive'], ['read', 'Mark read'], ['snooze', 'Snooze'], ['task', '→ Task']].map(([a, l]) => (
+                    <button key={a} disabled={!!(ib && ib.busy)} onClick={() => inboxAction(i, p.refs, a)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5, opacity: ib && ib.busy ? 0.6 : 1 }}>{ib && ib.busy === a ? '…' : l}</button>
+                  ))}
+                  {ib && ib.error && <span style={{ fontSize: 11, color: 'var(--red)' }}>{ib.error}</span>}
+                </div>
+              )
+            )}
             {dr && dr.error && <div style={{ color: 'var(--red)', fontSize: 11.5, marginTop: 6 }}>{dr.error}</div>}
             {pr && pr.error && <div style={{ color: 'var(--red)', fontSize: 11.5, marginTop: 6 }}>{pr.error}</div>}
             {pr && !pr.loading && !pr.error && pr.prep && (
@@ -2987,14 +3050,20 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>✓ {doneCount} of {state.plan.length} done today</span>
                         <button onClick={generateFresh} className="quick-chip" style={{ padding: '7px 13px' }}>↻ Re-plan</button>
                       </div>
-                      {state.justAccepted != null && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 7 }}>Saved to today. Check items off here or in Tasks — this plan will be waiting when you reopen.</div>}
+                      {state.justAccepted != null && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 7 }}>Saved to today. Check items off here or in Tasks — this plan will be waiting when you reopen.{state.calN ? ` ${state.calN} time block${state.calN === 1 ? '' : 's'} added to your calendar — open Calendar to sync to Google.` : ''}</div>}
                     </>
                   ) : (
                     <>
+                      {(state.plan || []).some(p => p.start && p.end) && (
+                        <button onClick={() => setPushCal(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 0 11px', textAlign: 'left' }}>
+                          <span style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: `2px solid ${pushCal ? 'var(--accent)' : 'var(--border-strong)'}`, background: pushCal ? 'var(--accent)' : 'transparent', color: '#1b180f', fontWeight: 900, fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pushCal ? '✓' : ''}</span>
+                          <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>Also block this time on my calendar</span>
+                        </button>
+                      )}
                       <button onClick={acceptPlan} disabled={accepting} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', borderRadius: 11, padding: '12px', fontSize: 14, opacity: accepting ? 0.6 : 1 }}>
                         {accepting ? 'Saving…' : '✓ Accept plan → add to Today'}
                       </button>
-                      <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', marginTop: 7 }}>Saves the plan, pulls existing tasks into today, and creates tasks for reach-outs & emails.</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', marginTop: 7 }}>Saves the plan, pulls existing tasks into today, and creates tasks for reach-outs & emails.{pushCal ? ' Timed blocks are added to your calendar too.' : ''}</div>
                       {state.acceptError && <div style={{ color: 'var(--red)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>{state.acceptError}</div>}
                     </>
                   )}
