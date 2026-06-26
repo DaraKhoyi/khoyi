@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v113-20260626-cubeacr-settings'
+const VERSION = 'prismos-v114-20260626-cc-bcc-cube'
 const APP_SHELL = [
   '/',
   '/index.html',
