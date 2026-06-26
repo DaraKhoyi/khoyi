@@ -30,11 +30,15 @@ const CALENDAR_SCOPES = [
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/calendar.events",
 ];
+const DRIVE_SCOPES = [
+  "https://www.googleapis.com/auth/drive.readonly",
+];
 
 function scopesForPurpose(purpose) {
   const set = new Set(IDENTITY_SCOPES);
   if (purpose === "email" || purpose === "both") GMAIL_SCOPES.forEach(s => set.add(s));
   if (purpose === "calendar" || purpose === "both") CALENDAR_SCOPES.forEach(s => set.add(s));
+  if (purpose === "drive") DRIVE_SCOPES.forEach(s => set.add(s));
   if (set.size === IDENTITY_SCOPES.length) GMAIL_SCOPES.forEach(s => set.add(s));
   return [...set];
 }

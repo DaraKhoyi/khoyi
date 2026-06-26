@@ -22,6 +22,7 @@ function purposesFromScopes(scopeStr) {
   const purposes = [];
   if (scopes.some(s => s.includes("gmail"))) purposes.push("email");
   if (scopes.some(s => s.includes("calendar"))) purposes.push("calendar");
+  if (scopes.some(s => s.includes("drive"))) purposes.push("drive");
   return purposes.length ? purposes : ["email"];
 }
 
