@@ -2546,7 +2546,7 @@ function WeekSparkline({ days }) {
 
 // "Plan my day" — asks Ari to triage the day's due/overdue + top tasks into a
 // realistic ordered sequence around the calendar.
-function PlanMyDayModal({ tasks, events, name, onClose }) {
+function PlanMyDayModal({ tasks, events, contacts = [], userId, name, onClose }) {
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
     let alive = true;
@@ -2559,7 +2559,32 @@ function PlanMyDayModal({ tasks, events, name, onClose }) {
         tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!map.has(t.id)) map.set(t.id, t); });
         const payloadTasks = Array.from(map.values()).slice(0, 30).map(t => ({ title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }));
         const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => ({ title: e.title, start_at: e.start_at, all_day: e.all_day }));
-        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev } });
+
+        // Reach-outs — mirror the Needs Attention logic (replies owed + cadence overdue)
+        const nowMs = Date.now();
+        const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
+        const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
+        const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
+        const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
+        const reachouts = [
+          ...owe.slice(0, 10).map(c => ({ name: c.name, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
+          ...outreach.slice(0, 10).map(c => ({ name: c.name, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
+        ].slice(0, 15);
+
+        // Unread inbox — same lean shape (sender, subject, age), capped
+        let unreadEmails = [];
+        try {
+          const { data: th } = await supabase.from('email_threads')
+            .select('subject,participants,last_message_at')
+            .eq('user_id', userId).eq('has_unread', true).contains('labels', ['INBOX']).is('snoozed_until', null)
+            .order('last_message_at', { ascending: false }).limit(12);
+          unreadEmails = (th || []).map(t => {
+            const p = Array.isArray(t.participants) && t.participants[0] ? t.participants[0] : {};
+            return { from: p.name || p.email || 'Unknown', subject: t.subject || '(no subject)', age: relAge(t.last_message_at) };
+          });
+        } catch (_e) { /* inbox optional */ }
+
+        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails } });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
         if (alive) setState({ loading: false, summary: data?.summary, plan: data?.plan || [] });
@@ -2590,16 +2615,22 @@ function PlanMyDayModal({ tasks, events, name, onClose }) {
             <>
               {state.summary && <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, fontWeight: 500 }}>{state.summary}</p>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {(state.plan || []).map((p, i) => (
+                {(state.plan || []).map((p, i) => {
+                  const kindTag = { task: { l: 'Task', c: 'var(--text-2)' }, reachout: { l: 'Reach out', c: 'var(--accent)' }, email: { l: 'Email', c: '#6aa9ff' }, focus: { l: 'Focus', c: '#4ade80' } }[p.kind] || { l: 'Task', c: 'var(--text-2)' };
+                  return (
                   <div key={i} style={{ display: 'flex', gap: 12, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
                     <span style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,var(--accent-2),var(--accent))', color: '#1b180f', fontWeight: 800, fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)' }}>{p.title}</div>
-                      {p.when && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, marginTop: 2 }}>{p.when}</div>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)' }}>{p.title}</span>
+                        <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: kindTag.c, border: `1px solid ${kindTag.c}`, borderRadius: 999, padding: '1px 7px', opacity: 0.9 }}>{kindTag.l}</span>
+                      </div>
+                      {p.when && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, marginTop: 3 }}>{p.when}</div>}
                       {p.why && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.45 }}>{p.why}</div>}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {(!state.plan || state.plan.length === 0) && <div style={{ color: 'var(--text-2)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Nothing urgent to sequence — your runway is open.</div>}
               </div>
             </>
@@ -2772,7 +2803,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         </div>
       </div>
 
-      {planning && <PlanMyDayModal tasks={tasks} events={events} name={robot?.name || 'Ari'} onClose={()=>setPlanning(false)} />}
+      {planning && <PlanMyDayModal tasks={tasks} events={events} contacts={contacts} userId={user?.id} name={robot?.name || 'Ari'} onClose={()=>setPlanning(false)} />}
 
       {/* Metric tiles */}
       <div className="cards-row">
