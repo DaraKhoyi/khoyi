@@ -2933,7 +2933,16 @@ function DashboardBriefing({ user, setView }) {
   const [loading, setLoading] = useState(true);
   const [regen, setRegen] = useState(false);
   const [err, setErr] = useState('');
+  const [speaking, setSpeaking] = useState(false);
+  const firstName = String((user?.user_metadata?.full_name || user?.email || '').split(/[@ .]/)[0] || '');
+  const hour = new Date().getHours();
   const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  // The hero already greets — strip a leading greeting from the summary so we greet once.
+  const stripGreeting = (s) => {
+    let out = String(s || '').replace(/^\s*(good\s+(morning|afternoon|evening)|hi|hello|hey)\b[^.!?\n—]*([.!?—]|$)\s*/i, '').replace(/^\s*[—-]\s*/, '').trim();
+    if (out && /[a-z]/.test(out[0])) out = out[0].toUpperCase() + out.slice(1);
+    return out || String(s || '');
+  };
   const load = async (regenerate) => {
     regenerate ? setRegen(true) : setLoading(true); setErr('');
     try {
@@ -2945,6 +2954,27 @@ function DashboardBriefing({ user, setView }) {
     setLoading(false); setRegen(false);
   };
   useEffect(() => { load(false); }, []); // eslint-disable-line
+  useEffect(() => () => { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (_e) {} }, []);
+  const speak = () => {
+    try {
+      const synth = window.speechSynthesis;
+      if (!synth) { setErr('Voice playback isn’t supported in this browser.'); return; }
+      if (speaking) { synth.cancel(); setSpeaking(false); return; }
+      const ro = (b?.payload?.reachouts || []).filter(r => r.status === 'pending');
+      const gr = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+      const parts = [`${gr}${firstName ? ', ' + firstName : ''}.`];
+      if (b?.summary) parts.push(stripGreeting(b.summary));
+      if (ro.length) parts.push(`You have ${ro.length} ${ro.length === 1 ? 'person' : 'people'} to reach out to today.`);
+      parts.push('Let’s make it count.');
+      const u = new SpeechSynthesisUtterance(parts.join(' '));
+      u.rate = 1.0; u.pitch = 1.0; u.lang = 'en-US';
+      const vs = synth.getVoices() || [];
+      const v = vs.find(x => /en[-_]US/i.test(x.lang) && /samantha|female|google us/i.test(x.name)) || vs.find(x => /^en/i.test(x.lang));
+      if (v) u.voice = v;
+      u.onend = () => setSpeaking(false); u.onerror = () => setSpeaking(false);
+      synth.cancel(); setSpeaking(true); synth.speak(u);
+    } catch (_e) { setSpeaking(false); }
+  };
   const pendingN = (b?.payload?.reachouts || []).filter(r => r.status === 'pending').length;
   return (
     <div className="panel" style={{ background: 'linear-gradient(135deg,var(--bg-card),var(--bg-hover))', borderColor: 'var(--accent-dim)', marginBottom: 14 }}>
@@ -2953,7 +2983,10 @@ function DashboardBriefing({ user, setView }) {
           <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--accent)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="sparkles" size={12} /> Ari Daily Briefing</div>
           <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>{dateStr} · your morning read</div>
         </div>
-        <button className="btn btn-ghost btn-sm" disabled={regen || loading} onClick={() => load(true)}>{regen ? '…regenerating' : '↻ Regenerate'}</button>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost btn-sm" disabled={loading || !!err} onClick={speak} title="Listen to your briefing">{speaking ? <>■ Stop</> : <><Icon name="volume" size={13} /> Listen</>}</button>
+          <button className="btn btn-ghost btn-sm" disabled={regen || loading} onClick={() => load(true)}>{regen ? '…regenerating' : '↻ Regenerate'}</button>
+        </div>
       </div>
       {loading ? (
         <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 10 }}>Reading your morning…</div>
@@ -2961,7 +2994,7 @@ function DashboardBriefing({ user, setView }) {
         <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 10 }}>Your morning read isn’t ready yet. <button onClick={() => load(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, padding: 0 }}>Try again</button></div>
       ) : (
         <>
-          {b?.summary && <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.55, color: 'var(--text-1)' }}>{b.summary}</p>}
+          {b?.summary && <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.55, color: 'var(--text-1)' }}>{stripGreeting(b.summary)}</p>}
           <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8 }}>Tap <strong style={{ color: 'var(--accent)' }}>✦ Plan my day</strong> above to turn this into your ordered to-do.</div>
           {pendingN > 0
             ? <button className="btn btn-primary" onClick={() => setView('briefing')} style={{ width: '100%', justifyContent: 'center', marginTop: 12, borderRadius: 11, padding: '11px', fontSize: 13.5 }}>Review &amp; send {pendingN} reach-out{pendingN === 1 ? '' : 's'} →</button>
