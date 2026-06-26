@@ -2502,9 +2502,118 @@ function DashboardROI({ userId, setView }) {
   );
 }
 
+// Animated count-up for the dashboard's big numbers (eases from the last value
+// to the new one, so first paint counts up from 0).
+function CountUp({ value, duration = 750, style }) {
+  const target = Number(value) || 0;
+  const [n, setN] = useState(0);
+  const fromRef = useRef(0);
+  const rafRef = useRef();
+  useEffect(() => {
+    const from = fromRef.current;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const e = 1 - Math.pow(1 - t, 3);
+      setN(Math.round(from + (target - from) * e));
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+      else fromRef.current = target;
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, duration]);
+  return <span style={style}>{n}</span>;
+}
+
+// Tiny 7-day "tasks completed" sparkline (gold bars, today highlighted).
+function WeekSparkline({ days }) {
+  const max = Math.max(1, ...days.map(d => d.c));
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 30 }}>
+      {days.map((d, i) => {
+        const isToday = i === days.length - 1;
+        const h = Math.max(3, Math.round((d.c / max) * 28));
+        return (
+          <div key={i} title={`${d.label}: ${d.c} done`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div style={{ width: 7, height: h, borderRadius: 3, background: isToday ? 'linear-gradient(180deg,var(--accent-2),var(--accent))' : 'var(--border-strong)', transition: 'height .4s ease' }} />
+            <span style={{ fontSize: 8, color: isToday ? 'var(--accent)' : 'var(--text-3)', fontWeight: isToday ? 800 : 600 }}>{d.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// "Plan my day" — asks Ari to triage the day's due/overdue + top tasks into a
+// realistic ordered sequence around the calendar.
+function PlanMyDayModal({ tasks, events, name, onClose }) {
+  const [state, setState] = useState({ loading: true });
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const today = new Date();
+        const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const map = new Map();
+        tasks.filter(t => !t.completed && t.due_date && t.due_date <= todayISO).forEach(t => map.set(t.id, t));
+        tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!map.has(t.id)) map.set(t.id, t); });
+        const payloadTasks = Array.from(map.values()).slice(0, 30).map(t => ({ title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }));
+        const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => ({ title: e.title, start_at: e.start_at, all_day: e.all_day }));
+        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev } });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (alive) setState({ loading: false, summary: data?.summary, plan: data?.plan || [] });
+      } catch (e) { if (alive) setState({ loading: false, error: String(e.message || e) }); }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'sticky', top: 0, background: 'linear-gradient(180deg,var(--bg-card),rgba(22,23,27,0.96))', padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>✦ Your day, planned</h3>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: '16px 18px' }}>
+          {state.loading && (
+            <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-2)' }}>
+              <div style={{ fontSize: 13 }}>{name || 'Ari'} is triaging your day…</div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 6, justifyContent: 'center' }}>
+                {[0, 1, 2].map(i => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', opacity: 0.4, animation: `pmd 1s ${i * 0.15}s infinite` }} />)}
+              </div>
+              <style>{`@keyframes pmd{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}`}</style>
+            </div>
+          )}
+          {state.error && <div style={{ color: 'var(--red)', fontSize: 13, padding: '10px 0' }}>Couldn't build a plan: {state.error}</div>}
+          {!state.loading && !state.error && (
+            <>
+              {state.summary && <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, fontWeight: 500 }}>{state.summary}</p>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {(state.plan || []).map((p, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 12, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
+                    <span style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,var(--accent-2),var(--accent))', color: '#1b180f', fontWeight: 800, fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)' }}>{p.title}</div>
+                      {p.when && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, marginTop: 2 }}>{p.when}</div>}
+                      {p.why && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.45 }}>{p.why}</div>}
+                    </div>
+                  </div>
+                ))}
+                {(!state.plan || state.plan.length === 0) && <div style={{ color: 'var(--text-2)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Nothing urgent to sequence — your runway is open.</div>}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [] }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
+  const [planning, setPlanning] = useState(false);
 
   // Save edits to a task triggered from the dashboard. Mirrors the logic in
   // TasksView so behavior (priority system, task_contacts sync) is identical.
@@ -2588,6 +2697,18 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
   const bestStreak = fin?.best_prospecting_streak || 0;
   const money0 = (n) => '$' + Math.round(n).toLocaleString();
   const robot = robots[0];
+  // Last 7 days of completed-task counts for the hero sparkline
+  const weekDone = (() => {
+    const arr = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+      const ds = d.toDateString();
+      const c = tasks.filter(t => t.completed && (t.completed_at || t.updated_at) && new Date(t.completed_at || t.updated_at).toDateString() === ds).length;
+      arr.push({ c, label: d.toLocaleDateString('en-US', { weekday: 'narrow' }) });
+    }
+    return arr;
+  })();
+  const weekTotal = weekDone.reduce((a, b) => a + b.c, 0);
 
   // Radial progress ring (gold gradient)
   const Ring = ({ pct, size=96, stroke=10, children }) => {
@@ -2625,7 +2746,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         <div style={{ display:'flex', alignItems:'center', gap:20, marginTop:18, flexWrap:'wrap' }}>
           <div style={{ display:'flex', alignItems:'center', gap:16, flex:'1 1 260px', minWidth:240 }}>
             <Ring pct={ringPct}>
-              <span style={{ fontSize:26, fontWeight:800, color:'var(--text-1)', lineHeight:1 }}>{dueToday}</span>
+              <CountUp value={dueToday} style={{ fontSize:26, fontWeight:800, color:'var(--text-1)', lineHeight:1 }} />
               <span style={{ fontSize:9.5, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginTop:2 }}>due today</span>
             </Ring>
             <div style={{ minWidth:0 }}>
@@ -2634,12 +2755,24 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
               {gciGoal>0 && <div style={{ fontSize:11.5, color:'var(--text-3)', marginTop:5, display:'inline-flex', alignItems:'center', gap:5 }}><Icon name="target" size={12} style={{ color:'var(--accent)' }} /> {money0(gciGoal)} GCI goal</div>}
             </div>
           </div>
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
             <button className="btn btn-primary" onClick={()=>setView('chat')} style={{ borderRadius:11, padding:'11px 18px', fontSize:14, boxShadow:'0 4px 14px rgba(197,169,94,0.35)' }}>✦ Ask {robot?.name||'Ari'}</button>
+            <button className="quick-chip" onClick={()=>setPlanning(true)} style={{ padding:'11px 16px' }}>✦ Plan my day</button>
             <button className="quick-chip" onClick={()=>setView('briefing')} style={{ padding:'11px 16px' }}><Icon name="briefing" size={14} /> My briefing</button>
           </div>
         </div>
+
+        {/* Weekly momentum sparkline */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginTop:16, paddingTop:14, borderTop:'1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase', color:'var(--text-3)' }}>This week</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--text-1)', marginTop:2 }}><CountUp value={weekTotal} /> tasks completed</div>
+          </div>
+          <WeekSparkline days={weekDone} />
+        </div>
       </div>
+
+      {planning && <PlanMyDayModal tasks={tasks} events={events} name={robot?.name || 'Ari'} onClose={()=>setPlanning(false)} />}
 
       {/* Metric tiles */}
       <div className="cards-row">
@@ -2648,7 +2781,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
             <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Needs you now</span>
             <span style={{ width:30, height:30, borderRadius:9, background:'var(--accent-glow)', border:'1px solid var(--accent)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="target" size={15} style={{ color:'var(--accent)' }} /></span>
           </div>
-          <div style={{ fontSize:30, fontWeight:800, color: needsNow>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}>{needsNow}</div>
+          <div style={{ fontSize:30, fontWeight:800, color: needsNow>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={needsNow} /></div>
           <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{oweReplyN} replies · {reachN} reach-outs</div>
         </div>
         <div className="dash-tile" onClick={()=>setView('tasks')}>
@@ -2656,7 +2789,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
             <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Open tasks</span>
             <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="flame" size={15} style={{ color:'var(--text-2)' }} /></span>
           </div>
-          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}>{pending.length}</div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={pending.length} /></div>
           <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{topTasks.length} top priority</div>
         </div>
         <div className="dash-tile" onClick={()=>setView('inbox')}>
@@ -2664,7 +2797,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
             <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Unread email</span>
             <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="inbox" size={15} style={{ color:'var(--text-2)' }} /></span>
           </div>
-          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}>{unreadEmailCount}</div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={unreadEmailCount} /></div>
           <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your inbox</div>
         </div>
         <div className="dash-tile" onClick={()=>setView('tasks')}>
@@ -2672,7 +2805,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
             <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Overdue</span>
             <span style={{ width:30, height:30, borderRadius:9, background: overdue.length>0?'rgba(239,68,68,0.12)':'var(--bg-base)', border:`1px solid ${overdue.length>0?'rgba(239,68,68,0.4)':'var(--border)'}`, display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="clock" size={15} style={{ color: overdue.length>0?'#f06b6b':'var(--text-2)' }} /></span>
           </div>
-          <div style={{ fontSize:30, fontWeight:800, color: overdue.length>0?'#f06b6b':'var(--text-1)', marginTop:8, lineHeight:1 }}>{overdue.length}</div>
+          <div style={{ fontSize:30, fontWeight:800, color: overdue.length>0?'#f06b6b':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={overdue.length} /></div>
           <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{overdue.length>0?'needs rescue':'all caught up'}</div>
         </div>
       </div>
