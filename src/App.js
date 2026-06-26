@@ -2549,80 +2549,97 @@ function WeekSparkline({ days }) {
 function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose }) {
   const [state, setState] = useState({ loading: true });
   const [accepting, setAccepting] = useState(false);
+  const [recap, setRecap] = useState(null);
+  const [drafts, setDrafts] = useState({});
   const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
-  useEffect(() => {
-    let alive = true;
-    (async () => {
+  const mounted = useRef(true);
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+  // Build inputs and ask the planner for a fresh sequence
+  const generateFresh = async () => {
+    try {
+      if (mounted.current) setState({ loading: true });
+      const today = new Date();
+      const tISO = todayISO();
+      const tmap = new Map(), cmap = new Map(), emap = new Map();
+      const tsel = new Map();
+      tasks.filter(t => !t.completed && t.due_date && t.due_date <= tISO).forEach(t => tsel.set(t.id, t));
+      tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!tsel.has(t.id)) tsel.set(t.id, t); });
+      const payloadTasks = Array.from(tsel.values()).slice(0, 30).map((t, i) => { const id = `t${i + 1}`; tmap.set(id, t); return { id, title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }; });
+      const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => ({ title: e.title, start_at: e.start_at, all_day: e.all_day }));
+      const nowMs = Date.now();
+      const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
+      const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
+      const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
+      const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
+      const reachSource = [
+        ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
+        ...outreach.slice(0, 10).map(c => ({ c, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
+      ].slice(0, 15);
+      const reachouts = reachSource.map((x, i) => { const id = `r${i + 1}`; cmap.set(id, x.c); return { id, name: x.c.name, reason: x.reason }; });
+      let unreadEmails = [];
       try {
-        const today = new Date();
-        const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        const tmap = new Map(), cmap = new Map(), emap = new Map();
+        const { data: msgs } = await supabase.from('email_messages')
+          .select('id,thread_id,subject,from_name,from_address,body_text,snippet,internal_date')
+          .eq('user_id', userId).eq('is_read', false).contains('labels', ['INBOX'])
+          .order('internal_date', { ascending: false }).limit(24);
+        const seen = new Set();
+        (msgs || []).forEach(m => {
+          if (seen.has(m.thread_id)) return; seen.add(m.thread_id);
+          if (unreadEmails.length >= 12) return;
+          const id = `e${unreadEmails.length + 1}`;
+          emap.set(id, { thread_id: m.thread_id, from: m.from_name || m.from_address, subject: m.subject, excerpt: (m.body_text || m.snippet || '').slice(0, 1200) });
+          unreadEmails.push({ id, from: m.from_name || m.from_address || 'Unknown', subject: m.subject || '(no subject)', age: relAge(m.internal_date), excerpt: (m.body_text || m.snippet || '').slice(0, 700) });
+        });
+      } catch (_e) {}
+      let dealsCtx = [];
+      try {
+        const { data: dl } = await supabase.from('deals').select('name,client_name,status,side,list_price,sale_price,notes').eq('user_id', userId).order('updated_at', { ascending: false }).limit(25);
+        dealsCtx = (dl || []).map(d => ({ name: d.name || d.client_name || 'Deal', client: d.client_name, status: d.status, side: d.side, price: d.sale_price || d.list_price, notes: d.notes }));
+      } catch (_e) {}
+      const propsCtx = (properties || []).slice(0, 25).map(p => ({ name: p.nickname || p.address, status: p.status, notes: p.notes }));
+      let journalCtx = [], brainCtx = [];
+      try {
+        const { data: jr } = await supabase.from('journal_entries').select('content,occurred_at').eq('user_id', userId).order('occurred_at', { ascending: false }).limit(20);
+        journalCtx = (jr || []).filter(j => j.content).map(j => ({ when: relAge(j.occurred_at), text: j.content }));
+      } catch (_e) {}
+      try {
+        const { data: br } = await supabase.from('brain').select('title,content,pinned,updated_at').eq('user_id', userId).order('pinned', { ascending: false }).order('updated_at', { ascending: false }).limit(20);
+        brainCtx = (br || []).filter(b => b.content || b.title).map(b => ({ title: b.title, text: b.content || '' }));
+      } catch (_e) {}
+      mapsRef.current = { tasks: tmap, contacts: cmap, emails: emap };
+      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [] });
+    } catch (e) { if (mounted.current) setState({ loading: false, error: String(e.message || e) }); }
+  };
 
-        // Tasks (due/overdue + top priority), each given a stable id token
-        const tsel = new Map();
-        tasks.filter(t => !t.completed && t.due_date && t.due_date <= todayISO).forEach(t => tsel.set(t.id, t));
-        tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!tsel.has(t.id)) tsel.set(t.id, t); });
-        const payloadTasks = Array.from(tsel.values()).slice(0, 30).map((t, i) => { const id = `t${i + 1}`; tmap.set(id, t); return { id, title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }; });
-
-        const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => ({ title: e.title, start_at: e.start_at, all_day: e.all_day }));
-
-        // Reach-outs — replies owed + cadence overdue (mirrors Needs Attention)
-        const nowMs = Date.now();
-        const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
-        const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
-        const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
-        const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
-        const reachSource = [
-          ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
-          ...outreach.slice(0, 10).map(c => ({ c, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
-        ].slice(0, 15);
-        const reachouts = reachSource.map((x, i) => { const id = `r${i + 1}`; cmap.set(id, x.c); return { id, name: x.c.name, reason: x.reason }; });
-
-        // Unread inbox WITH body text (the planner now reads the actual email)
-        let unreadEmails = [];
-        try {
-          const { data: msgs } = await supabase.from('email_messages')
-            .select('id,thread_id,subject,from_name,from_address,body_text,snippet,internal_date')
-            .eq('user_id', userId).eq('is_read', false).contains('labels', ['INBOX'])
-            .order('internal_date', { ascending: false }).limit(24);
-          const seen = new Set();
-          (msgs || []).forEach(m => {
-            if (seen.has(m.thread_id)) return; seen.add(m.thread_id);
-            if (unreadEmails.length >= 12) return;
-            const id = `e${unreadEmails.length + 1}`;
-            emap.set(id, { thread_id: m.thread_id });
-            unreadEmails.push({ id, from: m.from_name || m.from_address || 'Unknown', subject: m.subject || '(no subject)', age: relAge(m.internal_date), excerpt: (m.body_text || m.snippet || '').slice(0, 700) });
-          });
-        } catch (_e) { /* inbox optional */ }
-
-        // Supabase enrichment: live deals + properties for context
-        let dealsCtx = [];
-        try {
-          const { data: dl } = await supabase.from('deals').select('name,client_name,status,side,list_price,sale_price,notes').eq('user_id', userId).order('updated_at', { ascending: false }).limit(25);
-          dealsCtx = (dl || []).map(d => ({ name: d.name || d.client_name || 'Deal', client: d.client_name, status: d.status, side: d.side, price: d.sale_price || d.list_price, notes: d.notes }));
-        } catch (_e) {}
-        const propsCtx = (properties || []).slice(0, 25).map(p => ({ name: p.nickname || p.address, status: p.status, notes: p.notes }));
-
-        // Journal + Brain notes — the broker's own written context
-        let journalCtx = [], brainCtx = [];
-        try {
-          const { data: jr } = await supabase.from('journal_entries').select('content,occurred_at').eq('user_id', userId).order('occurred_at', { ascending: false }).limit(20);
-          journalCtx = (jr || []).filter(j => j.content).map(j => ({ when: relAge(j.occurred_at), text: j.content }));
-        } catch (_e) {}
-        try {
-          const { data: br } = await supabase.from('brain').select('title,content,pinned,updated_at').eq('user_id', userId).order('pinned', { ascending: false }).order('updated_at', { ascending: false }).limit(20);
-          brainCtx = (br || []).filter(b => b.content || b.title).map(b => ({ title: b.title, text: b.content || '' }));
-        } catch (_e) {}
-
-        mapsRef.current = { tasks: tmap, contacts: cmap, emails: emap };
-
-        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx } });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        if (alive) setState({ loading: false, summary: data?.summary, plan: data?.plan || [] });
-      } catch (e) { if (alive) setState({ loading: false, error: String(e.message || e) }); }
+  useEffect(() => {
+    mounted.current = true;
+    (async () => {
+      // 1. Already planned today? Load the saved plan instead of regenerating.
+      try {
+        const { data: today } = await supabase.from('day_plans').select('*').eq('user_id', userId).eq('plan_date', todayISO()).maybeSingle();
+        if (today && Array.isArray(today.items) && today.items.length) {
+          if (mounted.current) setState({ loading: false, mode: 'saved', summary: today.summary, plan: today.items });
+          return;
+        }
+      } catch (_e) {}
+      // 2. Roll-over recap from the most recent prior plan
+      try {
+        const { data: prior } = await supabase.from('day_plans').select('plan_date,items').eq('user_id', userId).lt('plan_date', todayISO()).order('plan_date', { ascending: false }).limit(1).maybeSingle();
+        if (prior && Array.isArray(prior.items) && prior.items.length) {
+          const ids = prior.items.map(it => it.taskId).filter(Boolean);
+          let doneCount = 0;
+          if (ids.length) { const { data: pts } = await supabase.from('tasks').select('id,completed').in('id', ids); const m = new Map((pts || []).map(t => [t.id, t.completed])); doneCount = prior.items.filter(it => it.taskId && m.get(it.taskId)).length; }
+          if (mounted.current) setRecap({ date: prior.plan_date, done: doneCount, total: prior.items.length });
+        }
+      } catch (_e) {}
+      // 3. Generate fresh
+      await generateFresh();
     })();
-    return () => { alive = false; };
+    return () => { mounted.current = false; };
   }, []); // eslint-disable-line
 
   const resolveRef = (refs) => {
@@ -2645,33 +2662,122 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     else if (hit.type === 'email') setView && setView('inbox');
   };
 
+  const taskDone = (item) => { if (!item || !item.taskId) return false; const t = (tasks || []).find(x => x.id === item.taskId); return !!(t && t.completed); };
+  const toggleItemDone = async (item) => {
+    if (!item.taskId) return;
+    const cur = taskDone(item);
+    try {
+      await supabase.from('tasks').update({ completed: !cur, updated_at: new Date().toISOString() }).eq('id', item.taskId);
+      if (setTasks) setTasks(prev => prev.map(t => t.id === item.taskId ? { ...t, completed: !cur } : t));
+    } catch (_e) {}
+  };
+
   const acceptPlan = async () => {
     if (accepting) return;
     setAccepting(true);
     try {
-      const today = new Date();
-      const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const pullIds = []; const creates = [];
-      (state.plan || []).forEach(p => {
+      const tISO = todayISO();
+      const plan = (state.plan || []).map(p => ({ ...p }));
+      const pullIds = []; const createPayload = []; const createIdx = [];
+      plan.forEach((p, idx) => {
         const tRef = (p.refs || []).find(r => mapsRef.current.tasks.has(r));
         const t = tRef ? mapsRef.current.tasks.get(tRef) : null;
-        if (t) { if (t.due_date !== todayISO) pullIds.push(t.id); }
-        else creates.push({ user_id: userId, title: p.title, due_date: todayISO, notes: `From Plan my day${p.when ? ` · ${p.when}` : ''}`, completed: false });
+        if (t) { p.taskId = t.id; if (t.due_date !== tISO) pullIds.push(t.id); }
+        else { createIdx.push(idx); createPayload.push({ user_id: userId, title: p.title, due_date: tISO, notes: `From Plan my day${p.when ? ` · ${p.when}` : ''}`, completed: false }); }
       });
-      if (pullIds.length) await supabase.from('tasks').update({ due_date: todayISO }).in('id', pullIds);
+      if (pullIds.length) await supabase.from('tasks').update({ due_date: tISO }).in('id', pullIds);
       let inserted = [];
-      if (creates.length) { const { data } = await supabase.from('tasks').insert(creates).select(); inserted = data || []; }
-      if (setTasks) setTasks(prev => [...prev.map(t => pullIds.includes(t.id) ? { ...t, due_date: todayISO } : t), ...inserted]);
-      setState(s => ({ ...s, accepted: pullIds.length + inserted.length }));
-    } catch (e) { setState(s => ({ ...s, acceptError: String(e.message || e) })); }
+      if (createPayload.length) { const { data } = await supabase.from('tasks').insert(createPayload).select(); inserted = data || []; }
+      createIdx.forEach((idx, k) => { if (inserted[k]) plan[idx].taskId = inserted[k].id; });
+      const items = plan.map(p => ({ title: p.title, when: p.when, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null }));
+      await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: state.summary, items, updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
+      if (setTasks) setTasks(prev => [...prev.map(t => pullIds.includes(t.id) ? { ...t, due_date: tISO } : t), ...inserted]);
+      if (mounted.current) setState(s => ({ ...s, mode: 'saved', plan: items, justAccepted: pullIds.length + inserted.length }));
+    } catch (e) { if (mounted.current) setState(s => ({ ...s, acceptError: String(e.message || e) })); }
     setAccepting(false);
+  };
+
+  const draftStep = async (idx, p) => {
+    setDrafts(d => ({ ...d, [idx]: { loading: true } }));
+    try {
+      const hit = resolveRef(p.refs);
+      let body;
+      if (hit && hit.type === 'contact') {
+        const c = hit.obj;
+        body = { contact_id: c.id, contactName: c.name, company: c.company, role: c.role, channel: 'text', kind: 'follow-up', entryBody: p.why || p.title, instruction: `For today's plan step: ${p.title}` };
+      } else if (hit && hit.type === 'email') {
+        const em = hit.obj;
+        body = { contactName: em.from || 'there', channel: 'email', kind: 'email reply', entryBody: `Subject: ${em.subject || ''}\n\n${em.excerpt || ''}`, instruction: 'Write a reply to this email.' };
+      } else {
+        body = { contactName: 'there', channel: 'text', kind: 'message', entryBody: p.why || p.title, instruction: `Draft a short message for: ${p.title}` };
+      }
+      const { data, error } = await supabase.functions.invoke('ai-followup-draft', { body });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setDrafts(d => ({ ...d, [idx]: { loading: false, subject: data.subject, body: data.body, channel: body.channel } }));
+    } catch (e) { setDrafts(d => ({ ...d, [idx]: { loading: false, error: String(e.message || e) } })); }
+  };
+  const copyDraft = (idx) => {
+    const dr = drafts[idx]; if (!dr) return;
+    const text = (dr.subject ? `Subject: ${dr.subject}\n\n` : '') + (dr.body || '');
+    try { navigator.clipboard && navigator.clipboard.writeText(text); } catch (_e) {}
+    setDrafts(d => ({ ...d, [idx]: { ...d[idx], copied: true } }));
+    setTimeout(() => setDrafts(d => ({ ...d, [idx]: { ...(d[idx] || {}), copied: false } })), 1600);
+  };
+
+  const saved = state.mode === 'saved';
+  const doneCount = saved ? (state.plan || []).filter(taskDone).length : 0;
+
+  const renderItem = (p, i) => {
+    const kindTag = { task: { l: 'Task', c: 'var(--text-2)' }, reachout: { l: 'Reach out', c: 'var(--accent)' }, email: { l: 'Email', c: '#6aa9ff' }, focus: { l: 'Focus', c: '#4ade80' } }[p.kind] || { l: 'Task', c: 'var(--text-2)' };
+    const hit = resolveRef(p.refs);
+    const tappable = !!hit;
+    const canDraft = hit && (hit.type === 'contact' || hit.type === 'email');
+    const done = saved && taskDone(p);
+    const dr = drafts[i];
+    return (
+      <div key={i} style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
+        <div style={{ display: 'flex', gap: 12 }}>
+          {saved ? (
+            <button onClick={() => toggleItemDone(p)} title={p.taskId ? (done ? 'Mark not done' : 'Mark done') : 'No linked task'}
+              style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: `2px solid ${done ? 'var(--accent)' : 'var(--border-strong)'}`, background: done ? 'var(--accent)' : 'transparent', color: '#1b180f', fontWeight: 900, fontSize: 13, cursor: p.taskId ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{done ? '✓' : ''}</button>
+          ) : (
+            <span style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,var(--accent-2),var(--accent))', color: '#1b180f', fontWeight: 800, fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+          )}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} onClick={tappable ? () => openStep(p.refs) : undefined}>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: done ? 'line-through' : 'none', cursor: tappable ? 'pointer' : 'default' }}>{p.title}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: kindTag.c, border: `1px solid ${kindTag.c}`, borderRadius: 999, padding: '1px 7px', opacity: 0.9 }}>{kindTag.l}</span>
+            </div>
+            {p.when && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, marginTop: 3 }}>{p.when}</div>}
+            {p.why && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.45 }}>{p.why}</div>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
+              {canDraft && !dr && <button onClick={() => draftStep(i, p)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>✦ Draft {hit.type === 'email' ? 'reply' : 'message'}</button>}
+              {dr && dr.loading && <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Drafting…</span>}
+              {tappable && <button onClick={() => openStep(p.refs)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>Open ›</button>}
+            </div>
+            {dr && dr.error && <div style={{ color: 'var(--red)', fontSize: 11.5, marginTop: 6 }}>{dr.error}</div>}
+            {dr && !dr.loading && !dr.error && (dr.body || dr.subject) && (
+              <div style={{ marginTop: 9, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+                {dr.subject && <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 5 }}>Subject: {dr.subject}</div>}
+                <div style={{ fontSize: 12.5, color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{dr.body}</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                  <button onClick={() => copyDraft(i)} className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 11.5, borderRadius: 8 }}>{dr.copied ? '✓ Copied' : 'Copy'}</button>
+                  <button onClick={() => draftStep(i, p)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>↻ Redraft</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.5)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.5)' }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'linear-gradient(180deg,var(--bg-card),rgba(22,23,27,0.96))', padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>✦ Your day, planned</h3>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>✦ Your day, planned {saved && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 999, padding: '1px 8px' }}>Saved</span>}</h3>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: '16px 18px' }}>
@@ -2687,42 +2793,33 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
           {state.error && <div style={{ color: 'var(--red)', fontSize: 13, padding: '10px 0' }}>Couldn't build a plan: {state.error}</div>}
           {!state.loading && !state.error && (
             <>
+              {recap && !saved && (
+                <div style={{ marginBottom: 14, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'var(--text-2)' }}>
+                  <span style={{ color: 'var(--accent)', fontWeight: 800 }}>↻ Roll-over</span> · Your last plan: <strong style={{ color: '#4ade80' }}>{recap.done} of {recap.total} done</strong>. Anything unfinished is carried into today below.
+                </div>
+              )}
               {state.summary && <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, fontWeight: 500 }}>{state.summary}</p>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {(state.plan || []).map((p, i) => {
-                  const kindTag = { task: { l: 'Task', c: 'var(--text-2)' }, reachout: { l: 'Reach out', c: 'var(--accent)' }, email: { l: 'Email', c: '#6aa9ff' }, focus: { l: 'Focus', c: '#4ade80' } }[p.kind] || { l: 'Task', c: 'var(--text-2)' };
-                  const tappable = !!resolveRef(p.refs);
-                  return (
-                  <div key={i} onClick={tappable ? () => openStep(p.refs) : undefined}
-                    style={{ display: 'flex', gap: 12, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', cursor: tappable ? 'pointer' : 'default', transition: 'border-color .12s' }}
-                    onMouseEnter={tappable ? (e) => e.currentTarget.style.borderColor = 'var(--accent)' : undefined}
-                    onMouseLeave={tappable ? (e) => e.currentTarget.style.borderColor = 'var(--border)' : undefined}>
-                    <span style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,var(--accent-2),var(--accent))', color: '#1b180f', fontWeight: 800, fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)' }}>{p.title}</span>
-                        <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: kindTag.c, border: `1px solid ${kindTag.c}`, borderRadius: 999, padding: '1px 7px', opacity: 0.9 }}>{kindTag.l}</span>
-                      </div>
-                      {p.when && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, marginTop: 3 }}>{p.when}</div>}
-                      {p.why && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.45 }}>{p.why}</div>}
-                    </div>
-                    {tappable && <span style={{ flexShrink: 0, alignSelf: 'center', color: 'var(--text-3)', fontSize: 18 }}>›</span>}
-                  </div>
-                  );
-                })}
+                {(state.plan || []).map((p, i) => renderItem(p, i))}
                 {(!state.plan || state.plan.length === 0) && <div style={{ color: 'var(--text-2)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Nothing urgent to sequence — your runway is open.</div>}
               </div>
 
               {(state.plan && state.plan.length > 0) && (
                 <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-                  {state.accepted != null ? (
-                    <div style={{ textAlign: 'center', color: '#4ade80', fontSize: 13.5, fontWeight: 700 }}>✓ Added {state.accepted} {state.accepted === 1 ? 'item' : 'items'} to Today — open Tasks to see your sequence.</div>
+                  {saved ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>✓ {doneCount} of {state.plan.length} done today</span>
+                        <button onClick={generateFresh} className="quick-chip" style={{ padding: '7px 13px' }}>↻ Re-plan</button>
+                      </div>
+                      {state.justAccepted != null && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 7 }}>Saved to today. Check items off here or in Tasks — this plan will be waiting when you reopen.</div>}
+                    </>
                   ) : (
                     <>
                       <button onClick={acceptPlan} disabled={accepting} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', borderRadius: 11, padding: '12px', fontSize: 14, opacity: accepting ? 0.6 : 1 }}>
-                        {accepting ? 'Adding…' : '✓ Accept plan → add to Today'}
+                        {accepting ? 'Saving…' : '✓ Accept plan → add to Today'}
                       </button>
-                      <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', marginTop: 7 }}>Pulls existing tasks into today and creates tasks for reach-outs & emails. Tap any step to open it.</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', marginTop: 7 }}>Saves the plan, pulls existing tasks into today, and creates tasks for reach-outs & emails.</div>
                       {state.acceptError && <div style={{ color: 'var(--red)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>{state.acceptError}</div>}
                     </>
                   )}
