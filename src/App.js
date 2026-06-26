@@ -2608,7 +2608,52 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
         brainCtx = (br || []).filter(b => b.content || b.title).map(b => ({ title: b.title, text: b.content || '' }));
       } catch (_e) {}
       mapsRef.current = { tasks: tmap, contacts: cmap, emails: emap };
-      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx } });
+
+      // #5 GCI pace — goal vs YTD earned, against year-elapsed pace
+      let gci = null;
+      try {
+        const { data: fsRow } = await supabase.from('finance_settings').select('annual_gci_goal').eq('user_id', userId).maybeSingle();
+        const goal = Number(fsRow?.annual_gci_goal || 0);
+        if (goal > 0) {
+          const yr = today.getFullYear();
+          const { data: closed } = await supabase.from('deals').select('gross_commission,close_date').eq('user_id', userId).eq('status', 'closed');
+          const ytd = (closed || []).filter(d => d.close_date && new Date(d.close_date).getFullYear() === yr).reduce((a, d) => a + (Number(d.gross_commission) || 0), 0);
+          const start = new Date(yr, 0, 1), end = new Date(yr + 1, 0, 1);
+          const yearPct = Math.round(((today - start) / (end - start)) * 100);
+          const paceTarget = Math.round(goal * (yearPct / 100));
+          let status = 'on_track';
+          if (ytd <= 0) status = 'no_data';
+          else if (ytd < paceTarget * 0.95) status = 'behind';
+          else if (ytd > paceTarget * 1.05) status = 'ahead';
+          gci = { goal, ytd: Math.round(ytd), yearPct, paceTarget, behindBy: Math.max(0, paceTarget - Math.round(ytd)), status };
+        }
+      } catch (_e) {}
+
+      // #4 Habits — learn from follow-through across recent saved plans
+      let habits = null;
+      try {
+        const { data: plans } = await supabase.from('day_plans').select('plan_date,items').eq('user_id', userId).order('plan_date', { ascending: false }).limit(20);
+        if (plans && plans.length >= 2) {
+          const ids = new Set();
+          plans.forEach(pl => (pl.items || []).forEach(it => { if (it.taskId) ids.add(it.taskId); }));
+          let dm = new Map();
+          if (ids.size) { const { data: ts } = await supabase.from('tasks').select('id,completed,title').in('id', Array.from(ids)); dm = new Map((ts || []).map(t => [t.id, t])); }
+          const byKind = {}; const seen = {};
+          plans.forEach(pl => (pl.items || []).forEach(it => {
+            const k = it.kind || 'task';
+            byKind[k] = byKind[k] || { planned: 0, done: 0 };
+            byKind[k].planned++;
+            const t = it.taskId ? dm.get(it.taskId) : null;
+            if (t && t.completed) byKind[k].done++;
+            if (it.taskId) seen[it.taskId] = (seen[it.taskId] || 0) + 1;
+          }));
+          const byKindArr = Object.entries(byKind).map(([kind, v]) => ({ kind, planned: v.planned, done: v.done, rate: v.planned ? Math.round(v.done / v.planned * 100) : 0 }));
+          const chronic = Object.entries(seen).filter(([id, c]) => c >= 2 && !(dm.get(id) && dm.get(id).completed)).map(([id]) => dm.get(id) && dm.get(id).title).filter(Boolean).slice(0, 6);
+          habits = { plansAnalyzed: plans.length, byKind: byKindArr, chronic };
+        }
+      } catch (_e) {}
+
+      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [] });

@@ -30,7 +30,7 @@ const J = (b, s = 200) =>
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [] } = await req.json();
+    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null } = await req.json();
 
     const nothing = (!tasks || tasks.length === 0) && (!reachouts || reachouts.length === 0) && (!unreadEmails || unreadEmails.length === 0);
     if (nothing) return J({ summary: "Nothing due, no replies owed, and your inbox is clear — the day is yours. Use the open runway to prospect or get ahead.", plan: [] });
@@ -56,6 +56,21 @@ serve(async (req) => {
     const propLines = (properties || []).slice(0, 20).map((p) => `- ${[p.name, p.status].filter(Boolean).join(" · ")}${p.notes ? ` — ${String(p.notes).slice(0, 120)}` : ""}`).join("\n");
     const journalLines = (journal || []).slice(0, 25).map((j) => `- ${j.when ? `(${j.when}) ` : ""}${String(j.text || "").replace(/\s+/g, " ").trim().slice(0, 220)}`).join("\n");
     const brainLines = (brain || []).slice(0, 25).map((b) => `- ${b.title ? `${b.title}: ` : ""}${String(b.text || "").replace(/\s+/g, " ").trim().slice(0, 220)}`).join("\n");
+    const money = (n) => "$" + Math.round(Number(n) || 0).toLocaleString();
+    let gciLine = "(not provided)";
+    if (gci && gci.goal) {
+      if (gci.status === "no_data") {
+        gciLine = `Annual GCI goal: ${money(gci.goal)}. No closed GCI is recorded yet this year (you're ${gci.yearPct}% through the year). Treat this as a prompt to lean toward revenue and lead-gen work today; do NOT cite a precise dollar gap, and gently suggest logging any closed business.`;
+      } else {
+        gciLine = `Annual GCI goal: ${money(gci.goal)}. Year-to-date: ${money(gci.ytd)} (${gci.yearPct}% through the year; on-pace target is ${money(gci.paceTarget)}). Status: ${gci.status}${gci.status === "behind" ? ` by ${money(gci.behindBy)}` : ""}.`;
+      }
+    }
+    let habitsLine = "(not provided)";
+    if (habits && habits.plansAnalyzed) {
+      const kinds = (habits.byKind || []).map((k) => `${k.kind}: ${k.done}/${k.planned} done (${k.rate}%)`).join("; ");
+      const chronic = (habits.chronic || []).slice(0, 6).map((t) => `"${t}"`).join(", ");
+      habitsLine = `Based on ${habits.plansAnalyzed} recent plans — follow-through by type: ${kinds || "n/a"}.${chronic ? ` Chronically deferred (carried over repeatedly): ${chronic}.` : ""}`;
+    }
 
     const sys = `You are a sharp executive chief of staff for a real-estate broker${name ? ` named ${name}` : ""}. Today is ${date || "today"}.
 Build ONE focused, realistic plan for the day from the inputs below: open tasks, people to reach out to, unread emails (with body text), the fixed calendar, and — for CONTEXT — the broker's live deals and properties. Rules:
@@ -64,6 +79,8 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 - UNREAD EMAILS: read the body text. Surface only the few that are genuinely client-, deal-, or money-relevant (ignore newsletters, receipts, shipping, marketing) and fold the rest into ONE short "triage inbox" step that names the count.
 - USE DEALS & PROPERTIES as context to enrich the "why" — if a task, email, or person maps to a live deal or property, say so and let it raise priority. Deals/properties are context only; never turn them into standalone steps unless an input item points to them.
 - JOURNAL & BRAIN NOTES are the broker's own recent notes and observations. Use them to add a relevant, specific detail to a step's "why" — a promise made, a person's preference, a next step they jotted, a fact about a deal. Notes are context only; never create a standalone step from them. If a note clearly contradicts or updates an input, defer to the note.
+- GCI PACE: This is the broker's income goal for the year. If the status is "behind," weight revenue-generating work higher today (live deals, reach-outs to clients/leads, follow-ups on offers, lead-gen) and name the gap ONCE in the summary to create healthy, motivating urgency — never guilt. If "on_track" or "ahead," acknowledge it briefly and keep balance. If "no_data," simply lean toward revenue/lead-gen without citing a dollar gap.
+- HABITS / FOLLOW-THROUGH: This reflects what the broker actually completes. Order the day to fit real behavior — give the kinds they reliably finish prime, high-energy slots; do not over-stack kinds they rarely complete. For chronically deferred items, place them first with a gentle "just knock this out" nudge, or suggest dropping/delegating if it keeps getting skipped. Be encouraging and matter-of-fact, never judgmental.
 - Work AROUND fixed calendar events (never place work on top of a meeting).
 - Be realistic: ~5-8 focused items. Pick the vital few; if there's more, say what to defer.
 - For each item include: a short "why", a rough "when", a "kind" (exactly one of task|reachout|email|focus), and "refs" = the list of input ids (the (t#)/(r#)/(e#) tokens) the step draws from. A "triage inbox" step should list all the e# ids it covers. Use [] for refs when none apply.
@@ -71,7 +88,7 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 Respond ONLY with strict JSON, no markdown:
 {"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"...","why":"...","kind":"task|reachout|email|focus","refs":["t1","e2"]}]}`;
 
-    const user = `OPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
+    const user = `OPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
