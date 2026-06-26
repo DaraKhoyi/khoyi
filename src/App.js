@@ -2504,6 +2504,7 @@ function DashboardROI({ userId, setView }) {
 
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [] }) {
   const [editTask, setEditTask] = useState(null);
+  const [fin, setFin] = useState(null);
 
   // Save edits to a task triggered from the dashboard. Mirrors the logic in
   // TasksView so behavior (priority system, task_contacts sync) is identical.
@@ -2550,43 +2551,154 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
     }
     if (updated) setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
   }
+  // Pull streak + GCI goal for the momentum hero (best-effort).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('finance_settings')
+          .select('current_prospecting_streak,best_prospecting_streak,annual_gci_goal')
+          .eq('user_id', user?.id).maybeSingle();
+        if (alive) setFin(data || {});
+      } catch (_e) { if (alive) setFin({}); }
+    })();
+    return () => { alive = false; };
+  }, [user?.id]);
+
   const pending = tasks.filter(t=>!t.completed);
   const topTasks = sortTasks(pending.filter(isTopPriority));
   const today = new Date();
+  const now = Date.now();
   const gr = today.getHours()<12?'Good morning':today.getHours()<17?'Good afternoon':'Good evening';
   const name = user?.user_metadata?.display_name?.trim() || user?.user_metadata?.full_name?.trim()?.split(/\s+/)[0] || user?.email?.split('@')[0] || 'there';
-  const overdue = pending.filter(t=>t.due_date&&new Date(t.due_date)<today);
+  const todayISO = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const doneToday = tasks.filter(t=>t.completed && t.updated_at && new Date(t.updated_at).toDateString()===today.toDateString()).length;
+  const dueToday = pending.filter(t=>t.due_date===todayISO).length;
+  const overdue = pending.filter(t=>t.due_date && t.due_date < todayISO);
+  const todayTotal = doneToday + dueToday;
+  const ringPct = todayTotal>0 ? doneToday/todayTotal : (pending.length===0 ? 1 : 1);
+  // "Needs you now" — mirrors the Needs Attention panel's totals
+  const oweReplyN = contacts.filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).length;
+  const reachN = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); const ts = a.length ? Math.max(...a) : null; const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; }).length;
+  const dueOrOverdue = pending.filter(t => t.due_date && t.due_date <= todayISO).length;
+  const needsNow = oweReplyN + reachN + dueOrOverdue;
+  const upcoming = (events||[]).filter(e=>e.start_at && new Date(e.start_at) >= new Date()).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)).slice(0,4);
+  const gciGoal = Number(fin?.annual_gci_goal || 0);
+  const streak = fin?.current_prospecting_streak || 0;
+  const bestStreak = fin?.best_prospecting_streak || 0;
+  const money0 = (n) => '$' + Math.round(n).toLocaleString();
   const robot = robots[0];
+
+  // Radial progress ring (gold gradient)
+  const Ring = ({ pct, size=96, stroke=10, children }) => {
+    const r = (size - stroke) / 2, c = 2 * Math.PI * r;
+    const off = c * (1 - Math.max(0, Math.min(1, pct)));
+    return (
+      <div style={{ position:'relative', width:size, height:size, flexShrink:0 }}>
+        <svg width={size} height={size} style={{ transform:'rotate(-90deg)' }}>
+          <defs><linearGradient id="dashGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="var(--accent-2)"/><stop offset="1" stopColor="var(--accent)"/></linearGradient></defs>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bg-base)" strokeWidth={stroke} />
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="url(#dashGold)" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} style={{ transition:'stroke-dashoffset .7s ease' }} />
+        </svg>
+        <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>{children}</div>
+      </div>
+    );
+  };
+  const fmtEvent = (iso) => { const d = new Date(iso); const sameDay = d.toDateString() === today.toDateString(); const tom = new Date(today); tom.setDate(tom.getDate()+1); const isTom = d.toDateString() === tom.toDateString(); const t = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); return sameDay ? `Today · ${t}` : isTom ? `Tomorrow · ${t}` : `${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${t}`; };
 
   return (
     <div>
-      <div className="page-header">
-        <h2>{gr}, {name} 👋</h2>
-        <p>{today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
+      {/* Hero */}
+      <div className="dash-hero">
+        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+          <div style={{ minWidth:0 }}>
+            <h2 style={{ margin:0, fontSize:25, fontWeight:800, letterSpacing:'-0.01em', color:'var(--text-1)' }}>{gr}, {name}</h2>
+            <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--text-2)', fontWeight:500 }}>{today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
+          </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            <span title={`Best streak: ${bestStreak} days`} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'7px 12px', borderRadius:999, background:'rgba(245,158,11,0.12)', border:'1px solid rgba(245,158,11,0.4)', color:'#f5b34a', fontSize:12.5, fontWeight:800 }}>🔥 {streak}-day streak</span>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'7px 12px', borderRadius:999, background:'rgba(34,197,94,0.12)', border:'1px solid rgba(34,197,94,0.35)', color:'#4ade80', fontSize:12.5, fontWeight:800 }}>✓ {doneToday} done today</span>
+          </div>
+        </div>
+
+        {/* Today focus row: ring + momentum + CTA */}
+        <div style={{ display:'flex', alignItems:'center', gap:20, marginTop:18, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:16, flex:'1 1 260px', minWidth:240 }}>
+            <Ring pct={ringPct}>
+              <span style={{ fontSize:26, fontWeight:800, color:'var(--text-1)', lineHeight:1 }}>{dueToday}</span>
+              <span style={{ fontSize:9.5, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginTop:2 }}>due today</span>
+            </Ring>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:'var(--text-1)' }}>{dueToday===0 ? 'Today is clear' : `${dueToday} ${dueToday===1?'task':'tasks'} to close out`}</div>
+              <div style={{ fontSize:12.5, color:'var(--text-2)', marginTop:3 }}>{doneToday} done · {pending.length} open{overdue.length>0 ? <span style={{ color:'var(--red)', fontWeight:700 }}> · {overdue.length} overdue</span> : null}</div>
+              {gciGoal>0 && <div style={{ fontSize:11.5, color:'var(--text-3)', marginTop:5, display:'inline-flex', alignItems:'center', gap:5 }}><Icon name="target" size={12} style={{ color:'var(--accent)' }} /> {money0(gciGoal)} GCI goal</div>}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+            <button className="btn btn-primary" onClick={()=>setView('chat')} style={{ borderRadius:11, padding:'11px 18px', fontSize:14, boxShadow:'0 4px 14px rgba(197,169,94,0.35)' }}>✦ Ask {robot?.name||'Ari'}</button>
+            <button className="quick-chip" onClick={()=>setView('briefing')} style={{ padding:'11px 16px' }}><Icon name="briefing" size={14} /> My briefing</button>
+          </div>
+        </div>
       </div>
+
+      {/* Metric tiles */}
       <div className="cards-row">
-        <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('tasks')}><div className="stat-label">Open Tasks</div><div className="stat-value">{pending.length}</div><div className="stat-sub">{topTasks.length} top priority</div></div>
-        <div className="stat-card" style={{cursor:'pointer'}} onClick={()=>setView('inbox')}><div className="stat-label">Unread Email</div><div className="stat-value">{unreadEmailCount}</div><div className="stat-sub">in inbox</div></div>
-        <div className="stat-card"><div className="stat-label">Done Today</div><div className="stat-value" style={{color:'var(--green)'}}>{tasks.filter(t=>t.completed&&t.updated_at&&new Date(t.updated_at).toDateString()===today.toDateString()).length}</div></div>
-        <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{color:overdue.length>0?'var(--red)':'var(--text-1)'}}>{overdue.length}</div></div>
+        <div className="dash-tile" onClick={()=>{ setView(needsNow>0?'contacts':'tasks'); }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Needs you now</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--accent-glow)', border:'1px solid var(--accent)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="target" size={15} style={{ color:'var(--accent)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color: needsNow>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}>{needsNow}</div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{oweReplyN} replies · {reachN} reach-outs</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('tasks')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Open tasks</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="flame" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}>{pending.length}</div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{topTasks.length} top priority</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('inbox')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Unread email</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="inbox" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}>{unreadEmailCount}</div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your inbox</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('tasks')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Overdue</span>
+            <span style={{ width:30, height:30, borderRadius:9, background: overdue.length>0?'rgba(239,68,68,0.12)':'var(--bg-base)', border:`1px solid ${overdue.length>0?'rgba(239,68,68,0.4)':'var(--border)'}`, display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="clock" size={15} style={{ color: overdue.length>0?'#f06b6b':'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color: overdue.length>0?'#f06b6b':'var(--text-1)', marginTop:8, lineHeight:1 }}>{overdue.length}</div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{overdue.length>0?'needs rescue':'all caught up'}</div>
+        </div>
       </div>
-      {user?.id && <DashboardROI userId={user.id} setView={setView} />}
+
+      {/* Quick actions */}
+      <div style={{ display:'flex', gap:9, flexWrap:'wrap', marginBottom:20 }}>
+        <button className="quick-chip" onClick={()=>setView('chat')}>✦ Ask {robot?.name||'Ari'}</button>
+        <button className="quick-chip" onClick={()=>setView('tasks')}><Icon name="flame" size={13} /> Add task</button>
+        <button className="quick-chip" onClick={()=>setView('contacts')}><Icon name="contacts" size={13} /> Contacts</button>
+        <button className="quick-chip" onClick={()=>setView('calendar')}><Icon name="calendar" size={13} /> Calendar</button>
+        <button className="quick-chip" onClick={()=>setView('quo')}><Icon name="chat" size={13} /> Messages</button>
+      </div>
+
+      {/* Needs Attention */}
+      <NeedsAttention contacts={contacts} tasks={tasks} setTasks={setTasks} setView={setView} />
+
       <div className="dash-grid">
-        <div className="panel">
-          <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="flame" size={15} /> Top Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
+        {/* Top Priority */}
+        <div className="dash-card" style={{ marginBottom:20 }}>
+          <div className="panel-header" style={{ borderRadius:'16px 16px 0 0' }}><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="flame" size={15} style={{ color:'var(--accent)' }} /> Top Priority</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('tasks')}>All tasks</button></div>
           <div className="panel-body">
             {topTasks.length===0
               ? <div className="empty-state" style={{padding:'20px 0'}}><p>All clear — no top priority tasks.</p></div>
               : <div className="task-list">{topTasks.slice(0,5).map(t=>(
                   <div key={t.id} className="task-item" onClick={() => setEditTask(t)} style={{cursor:'pointer'}}>
-                    <input
-                      type="checkbox"
-                      checked={!!t.completed}
-                      onClick={(e) => toggleComplete(t, e)}
-                      onChange={() => { /* handled by onClick */ }}
-                      style={{flexShrink:0,width:'18px',height:'18px',cursor:'pointer',accentColor:'var(--accent)'}}
-                      title={t.completed ? 'Mark as not done' : 'Mark as done'}
-                    />
+                    <input type="checkbox" checked={!!t.completed} onClick={(e) => toggleComplete(t, e)} onChange={() => {}} style={{flexShrink:0,width:'18px',height:'18px',cursor:'pointer',accentColor:'var(--accent)'}} title={t.completed ? 'Mark as not done' : 'Mark as done'} />
                     <span className="task-text" style={{textDecoration: t.completed ? 'line-through' : 'none', color: t.completed ? 'var(--text-3)' : 'var(--text-1)'}}>{t.title}</span>
                     <div className="task-meta">
                       <span className={`task-priority ${priorityClass(t)}`}>{priorityLabel(t)}</span>
@@ -2597,33 +2709,32 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
             }
           </div>
         </div>
-        {editTask && (
-          <TaskModal
-            onClose={() => setEditTask(null)}
-            onSave={handleTaskSave}
-            initial={editTask}
-            defaultSystem={defaultSystem}
-            brain={brain}
-            contacts={contacts}
-            properties={properties}
-            events={events}
-            userId={user.id}
-          />
-        )}
-        {robot && (
-          <div className="panel" style={{cursor:'pointer',transition:'border-color 0.15s'}} onClick={()=>setView('chat')}
-            onMouseEnter={e=>e.currentTarget.style.borderColor='var(--accent)'}
-            onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}>
-            <div className="panel-header"><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chat" size={15} /> Chat with {robot.name}</h3><span className="pill pill-purple">AI</span></div>
-            <div className="panel-body" style={{textAlign:'center',padding:'28px 20px'}}>
-              <div style={{fontSize:'36px',marginBottom:'10px'}}>{robot.avatar_emoji||'🤖'}</div>
-              <p style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'4px',fontWeight:600}}>{robot.name}</p>
-              <p style={{fontSize:'12px',color:'var(--text-3)'}}>{robot.role}</p>
-              <button className="btn btn-primary" style={{marginTop:'14px'}}>Start chatting →</button>
-            </div>
+
+        {/* Today's schedule */}
+        <div className="dash-card" style={{ marginBottom:20 }}>
+          <div className="panel-header" style={{ borderRadius:'16px 16px 0 0' }}><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={15} style={{ color:'var(--accent)' }} /> What's next</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('calendar')}>Calendar</button></div>
+          <div className="panel-body">
+            {upcoming.length===0
+              ? <div className="empty-state" style={{padding:'20px 0'}}><p>Nothing on the calendar yet.</p></div>
+              : <div style={{ display:'flex', flexDirection:'column', gap:8 }}>{upcoming.map((e,i)=>(
+                  <div key={i} className="dash-row" onClick={()=>setView('calendar')} style={{ cursor:'pointer' }}>
+                    <span style={{ width:8, height:8, borderRadius:'50%', background:'var(--accent)', flexShrink:0 }} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:'var(--text-1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title || 'Untitled event'}</div>
+                      <div style={{ fontSize:11, color:'var(--text-3)', marginTop:1 }}>{e.all_day ? 'All day' : fmtEvent(e.start_at)}</div>
+                    </div>
+                  </div>
+                ))}</div>
+            }
           </div>
+        </div>
+        {editTask && (
+          <TaskModal onClose={() => setEditTask(null)} onSave={handleTaskSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts} properties={properties} events={events} userId={user.id} />
         )}
       </div>
+
+      {/* Lead-Gen ROI */}
+      {user?.id && <DashboardROI userId={user.id} setView={setView} />}
     </div>
   );
 }
