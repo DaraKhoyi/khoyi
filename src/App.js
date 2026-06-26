@@ -35,6 +35,7 @@ const FinanceView = lazyWithReload(() => import('./views/AccountingViews').then(
 const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
 const TasksView = lazyWithReload(() => import('./views/TasksView'));
 const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
+const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m => ({ default: m.GrowthView })));
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
 const CalendarView = lazyWithReload(() => import('./views/CalendarView'));
@@ -2878,10 +2879,9 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
   );
 }
 
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [] }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [], onOpenPlan }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
-  const [planning, setPlanning] = useState(false);
 
   // Save edits to a task triggered from the dashboard. Mirrors the logic in
   // TasksView so behavior (priority system, task_contacts sync) is identical.
@@ -3025,7 +3025,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
           </div>
           <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
             <button className="btn btn-primary" onClick={()=>setView('chat')} style={{ borderRadius:11, padding:'11px 18px', fontSize:14, boxShadow:'0 4px 14px rgba(197,169,94,0.35)' }}>✦ Ask {robot?.name||'Ari'}</button>
-            <button className="quick-chip" onClick={()=>setPlanning(true)} style={{ padding:'11px 16px' }}>✦ Plan my day</button>
+            <button className="quick-chip" onClick={onOpenPlan} style={{ padding:'11px 16px' }}>✦ Plan my day</button>
             <button className="quick-chip" onClick={()=>setView('briefing')} style={{ padding:'11px 16px' }}><Icon name="briefing" size={14} /> My briefing</button>
           </div>
         </div>
@@ -3039,8 +3039,6 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
           <WeekSparkline days={weekDone} />
         </div>
       </div>
-
-      {planning && <PlanMyDayModal tasks={tasks} events={events} contacts={contacts} properties={properties} userId={user?.id} name={robot?.name || 'Ari'} setView={setView} onOpenTask={(t)=>setEditTask(t)} setTasks={setTasks} onClose={()=>setPlanning(false)} />}
 
       {/* Metric tiles */}
       <div className="cards-row">
@@ -12006,6 +12004,7 @@ function AppMain() {
     setPtrPull(0);
   };
   const [focusTaskId, setFocusTaskId] = useState(null);
+  const [planOpen, setPlanOpen] = useState(false);
   const [focusEventId, setFocusEventId] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [openPath, setOpenPath] = useState([]);
@@ -12288,6 +12287,7 @@ function AppMain() {
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'briefing',    icon: '🌅', label: 'Ari Briefing', badge: null },
+    { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
@@ -12476,8 +12476,9 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events}/>
-              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks}/>
+                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)}/>
+              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
+              : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
@@ -12509,6 +12510,16 @@ function AppMain() {
       </div>
       <ToastHost />
       <ConfirmHost />
+      {planOpen && dataLoaded && user && (
+        <PlanMyDayModal
+          tasks={tasks} events={events} contacts={contacts} properties={properties}
+          userId={user.id} name={(robots && robots[0] && robots[0].name) || 'Ari'}
+          setView={setView}
+          onOpenTask={(t)=>{ if (setFocusTaskId) setFocusTaskId(t.id); setView('tasks'); }}
+          setTasks={setTasks}
+          onClose={()=>setPlanOpen(false)}
+        />
+      )}
       {/* Pass 2 Batch C: Blocking onboarding modal for new users (and existing
           users on first run after this ships). Only mounts once user_settings
           has been fetched (avoids flashing the modal before we know). */}

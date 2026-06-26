@@ -437,7 +437,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
 }
 
 
-function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [], contacts = [], properties = [], events = [], brain = [], defaultSystem = 'eisenhower', tasks = [], setTasks }) {
+function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [], contacts = [], properties = [], events = [], brain = [], defaultSystem = 'eisenhower', tasks = [], setTasks, onOpenPlan }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
   const [err, setErr] = useState(null);
@@ -694,8 +694,6 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
 
   if (loading) return <div className="loading-screen" style={{height:'50vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Ari is preparing your briefing…</div></div>;
 
-  if (showReport) return <OutreachReport userId={userId} onBack={()=>setShowReport(false)} />;
-  if (showGoal) return <GoalEngine userId={userId} onBack={()=>setShowGoal(false)} />;
   const snoozedIds = new Set((contacts||[]).filter(c=>c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()).map(c=>c.id));
   const pending = reachouts.filter(r=>r.status==='pending' && !snoozedIds.has(r.contact_id));
   const handled = reachouts.filter(r=>r.status!=='pending');
@@ -719,18 +717,19 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
           <div style={{flex:1,minWidth:'220px'}}>
             <div style={{fontSize:'11px',letterSpacing:'.18em',textTransform:'uppercase',color:'var(--accent)',fontWeight:700,display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="sparkles" size={12} /> Ari Daily Briefing</div>
             <h2 style={{margin:'4px 0 2px'}}>{greeting}{firstName?`, ${firstName}`:''}.</h2>
-            <div style={{fontSize:'12px',color:'var(--text-3)'}}>{dateStr}</div>
+            <div style={{fontSize:'12px',color:'var(--text-3)'}}>{dateStr} · your morning read</div>
           </div>
           <div style={{display:'flex',gap:'6px',flexShrink:0,flexWrap:'wrap'}}><button className="btn btn-primary btn-sm" disabled={!pending.length} onClick={startReview}><Icon name="zap" size={13} /> Review{pending.length?` ${pending.length}`:''}</button><button className="btn btn-ghost btn-sm" onClick={speakBriefing} title="Listen to your briefing">{speaking?<>■ Stop</>:<><Icon name="volume" size={13} /> Listen</>}</button><button className="btn btn-ghost btn-sm" disabled={regenerating} onClick={()=>load(true)}>{regenerating?'…regenerating':'↻ Regenerate'}</button></div>
         </div>
         {briefing?.summary && <p style={{marginTop:'10px',fontSize:'14px',lineHeight:1.5,color:'var(--text-1)'}}>{briefing.summary}</p>}
+        {onOpenPlan && <button className="btn btn-primary" onClick={onOpenPlan} style={{width:'100%',justifyContent:'center',marginTop:'12px',borderRadius:'11px',padding:'12px',fontSize:'14px',boxShadow:'0 4px 14px rgba(197,169,94,0.3)'}}>✦ Plan my day → turn this into your ordered to-do</button>}
       </div>
 
-      <NorthStarStrip userId={userId} onOpen={()=>setShowGoal(true)} />
+      <NorthStarStrip userId={userId} onOpen={()=>setView('growth')} />
       {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 
       <div className="panel">
-        <div className="panel-header"><h3 onClick={()=>setShowScore(v=>!v)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chart" size={15} /> This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowReport(true)}>Full report →</button></div>
+        <div className="panel-header"><h3 onClick={()=>setShowScore(v=>!v)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="chart" size={15} /> This week</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('growth')}>Full report →</button></div>
         {showScore && (score && score.sent ? (
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}}>
             {[['Sent',score.sent],['Replies',`${score.replied} (${score.replyRate}%)`],['Meetings',score.meetings],['Files moved',score.deals]].map(([k,v])=>(
@@ -914,5 +913,24 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
 // ─────────────────────────────────────────
 // REUSABLE: ✨ Ari rewrite (your draft → your voice, adapted to recipient)
 // ─────────────────────────────────────────
+
+// GrowthView — weekly strategy home: outreach analytics + goal/wealth engine.
+// Relocated out of the daily Briefing so the morning ritual stays action-only.
+export function GrowthView({ userId, setView }) {
+  const [tab, setTab] = useState('results');
+  return (
+    <>
+      <div style={{ padding: '12px 16px 0' }}>
+        <div className="seg-track">
+          <button className={`seg-btn ${tab === 'results' ? 'active' : ''}`} onClick={() => setTab('results')}>Results</button>
+          <button className={`seg-btn ${tab === 'goal' ? 'active' : ''}`} onClick={() => setTab('goal')}>Goal</button>
+        </div>
+      </div>
+      {tab === 'results'
+        ? <OutreachReport userId={userId} onBack={() => setView('dashboard')} />
+        : <GoalEngine userId={userId} onBack={() => setView('dashboard')} />}
+    </>
+  );
+}
 
 export default AriBriefingView;
