@@ -2926,6 +2926,52 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
   );
 }
 
+// Morning read — Ari's daily briefing narrative, folded into the Dashboard so
+// there's one home. Heavy outreach actions live in the on-demand workspace.
+function DashboardBriefing({ user, setView }) {
+  const [b, setB] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [regen, setRegen] = useState(false);
+  const [err, setErr] = useState('');
+  const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const load = async (regenerate) => {
+    regenerate ? setRegen(true) : setLoading(true); setErr('');
+    try {
+      const d = new Date(); const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const { data, error } = await supabase.functions.invoke('ari-briefing', { body: { today, regenerate: !!regenerate } });
+      if (error || data?.error) throw new Error(error?.message || data?.error);
+      setB(data.briefing);
+    } catch (e) { setErr(e.message || String(e)); }
+    setLoading(false); setRegen(false);
+  };
+  useEffect(() => { load(false); }, []); // eslint-disable-line
+  const pendingN = (b?.payload?.reachouts || []).filter(r => r.status === 'pending').length;
+  return (
+    <div className="panel" style={{ background: 'linear-gradient(135deg,var(--bg-card),var(--bg-hover))', borderColor: 'var(--accent-dim)', marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--accent)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="sparkles" size={12} /> Ari Daily Briefing</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>{dateStr} · your morning read</div>
+        </div>
+        <button className="btn btn-ghost btn-sm" disabled={regen || loading} onClick={() => load(true)}>{regen ? '…regenerating' : '↻ Regenerate'}</button>
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 10 }}>Reading your morning…</div>
+      ) : err ? (
+        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 10 }}>Your morning read isn’t ready yet. <button onClick={() => load(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, padding: 0 }}>Try again</button></div>
+      ) : (
+        <>
+          {b?.summary && <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.55, color: 'var(--text-1)' }}>{b.summary}</p>}
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8 }}>Tap <strong style={{ color: 'var(--accent)' }}>✦ Plan my day</strong> above to turn this into your ordered to-do.</div>
+          {pendingN > 0
+            ? <button className="btn btn-primary" onClick={() => setView('briefing')} style={{ width: '100%', justifyContent: 'center', marginTop: 12, borderRadius: 11, padding: '11px', fontSize: 13.5 }}>Review &amp; send {pendingN} reach-out{pendingN === 1 ? '' : 's'} →</button>
+            : <button className="btn btn-ghost btn-sm" onClick={() => setView('briefing')} style={{ marginTop: 12 }}>Open outreach workspace →</button>}
+        </>
+      )}
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [], onOpenPlan }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
@@ -3073,7 +3119,6 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
           <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
             <button className="btn btn-primary" onClick={()=>setView('chat')} style={{ borderRadius:11, padding:'11px 18px', fontSize:14, boxShadow:'0 4px 14px rgba(197,169,94,0.35)' }}>✦ Ask {robot?.name||'Ari'}</button>
             <button className="quick-chip" onClick={onOpenPlan} style={{ padding:'11px 16px' }}>✦ Plan my day</button>
-            <button className="quick-chip" onClick={()=>setView('briefing')} style={{ padding:'11px 16px' }}><Icon name="briefing" size={14} /> My briefing</button>
           </div>
         </div>
 
@@ -3086,6 +3131,8 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
           <WeekSparkline days={weekDone} />
         </div>
       </div>
+
+      <DashboardBriefing user={user} setView={setView} />
 
       {/* Metric tiles */}
       <div className="cards-row">
@@ -12333,7 +12380,6 @@ function AppMain() {
 
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
-    { id: 'briefing',    icon: '🌅', label: 'Ari Briefing', badge: null },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
@@ -12365,7 +12411,7 @@ function AppMain() {
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
-  const MAIN_ORDER = ['dashboard', 'chat', 'briefing', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
+  const MAIN_ORDER = ['dashboard', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
   const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
@@ -12407,7 +12453,6 @@ function AppMain() {
     { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
     // Today
     { label: 'My day', icon: 'clock', children: [
-      { label: 'Daily Briefing', view: 'briefing', icon: 'briefing', ai: true },
       { label: 'Tasks', view: 'tasks', icon: 'tasks' },
       { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
       { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
