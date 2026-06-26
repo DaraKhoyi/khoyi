@@ -30,7 +30,9 @@ const J = (b, s = 200) =>
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null } = await req.json();
+    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null, workingHours = null } = await req.json();
+    const wh = { start: Number(workingHours?.start) || 8, end: Number(workingHours?.end) || 18 };
+    const hhmm = (iso) => { try { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return ""; } };
 
     const nothing = (!tasks || tasks.length === 0) && (!reachouts || reachouts.length === 0) && (!unreadEmails || unreadEmails.length === 0);
     if (nothing) return J({ summary: "Nothing due, no replies owed, and your inbox is clear — the day is yours. Use the open runway to prospect or get ahead.", plan: [] });
@@ -41,8 +43,11 @@ serve(async (req) => {
       return `(${t.id}) ${t.title}${due}${pri}`;
     }).join("\n");
     const eventLines = (events || []).slice(0, 15).map((e) => {
-      const when = e.all_day ? "all day" : (e.start_at ? new Date(e.start_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "");
-      return `- ${e.title}${when ? ` @ ${when}` : ""}`;
+      if (e.all_day) return `- ${e.title} (all day)`;
+      const s = e.start ? e.start : (e.start_at ? hhmm(e.start_at) : "");
+      const en = e.end ? e.end : (e.end_at ? hhmm(e.end_at) : "");
+      const span = s ? (en && en !== s ? `${s}–${en}` : s) : "";
+      return `- ${e.title}${span ? ` @ ${span}` : ""}`;
     }).join("\n");
     const reachLines = (reachouts || []).slice(0, 15).map((r) => `(${r.id}) ${r.name}${r.reason ? ` — ${r.reason}` : ""}`).join("\n");
     const emailLines = (unreadEmails || []).slice(0, 12).map((e) => {
@@ -81,14 +86,16 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 - JOURNAL & BRAIN NOTES are the broker's own recent notes and observations. Use them to add a relevant, specific detail to a step's "why" — a promise made, a person's preference, a next step they jotted, a fact about a deal. Notes are context only; never create a standalone step from them. If a note clearly contradicts or updates an input, defer to the note.
 - GCI PACE: This is the broker's income goal for the year. If the status is "behind," weight revenue-generating work higher today (live deals, reach-outs to clients/leads, follow-ups on offers, lead-gen) and name the gap ONCE in the summary to create healthy, motivating urgency — never guilt. If "on_track" or "ahead," acknowledge it briefly and keep balance. If "no_data," simply lean toward revenue/lead-gen without citing a dollar gap.
 - HABITS / FOLLOW-THROUGH: This reflects what the broker actually completes. Order the day to fit real behavior — give the kinds they reliably finish prime, high-energy slots; do not over-stack kinds they rarely complete. For chronically deferred items, place them first with a gentle "just knock this out" nudge, or suggest dropping/delegating if it keeps getting skipped. Be encouraging and matter-of-fact, never judgmental.
-- Work AROUND fixed calendar events (never place work on top of a meeting).
+- Work AROUND fixed calendar events (never place work on top of a meeting). Do NOT output the fixed calendar events themselves as plan steps — they are already on the calendar and will be shown separately. Only schedule the actionable work in the open gaps around them.
+- TIME-BLOCK THE DAY: lay the plan on a real timeline inside WORKING HOURS. Treat fixed calendar events as immovable. Slot each actionable step into an open gap and give it a concrete "start" and "end" in 24-hour HH:MM. Use realistic durations — texts/calls 10–20 min, inbox triage 20–30 min, focused work 30–60 min. Never overlap an event or another step. Leave small buffers between blocks; do not pack every minute. Order matters: put the highest-leverage work (and, when behind on GCI, revenue work) in the prime morning slots, respecting the HABITS guidance.
+- If a step genuinely won't fit before the end of WORKING HOURS, defer it: set "start" and "end" to null. Put deferred items last. The "when" field should still be a short human label (e.g., "9:00–9:30 AM" or "Tomorrow").
 - Be realistic: ~5-8 focused items. Pick the vital few; if there's more, say what to defer.
-- For each item include: a short "why", a rough "when", a "kind" (exactly one of task|reachout|email|focus), and "refs" = the list of input ids (the (t#)/(r#)/(e#) tokens) the step draws from. A "triage inbox" step should list all the e# ids it covers. Use [] for refs when none apply.
+- For each item include: a short "why", a "when" (human label), "start"/"end" (HH:MM 24h, or null if deferred), a "kind" (exactly one of task|reachout|email|focus), and "refs" = the list of input ids (the (t#)/(r#)/(e#) tokens) the step draws from. A "triage inbox" step should list all the e# ids it covers. Use [] for refs when none apply.
 - Motivating, human.
 Respond ONLY with strict JSON, no markdown:
-{"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"...","why":"...","kind":"task|reachout|email|focus","refs":["t1","e2"]}]}`;
+{"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"9:00–9:30 AM","start":"09:00","end":"09:30","why":"...","kind":"task|reachout|email|focus","refs":["t1","e2"]}]}`;
 
-    const user = `OPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
+    const user = `WORKING HOURS: ${String(wh.start).padStart(2, "0")}:00–${String(wh.end).padStart(2, "0")}:00 (24h). Schedule all timed work inside this window.\n\nOPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -102,9 +109,10 @@ Respond ONLY with strict JSON, no markdown:
     let parsed;
     try { parsed = JSON.parse(text); } catch { return J({ summary: "Here's your day.", plan: [], raw: text }); }
     const okKind = (k) => (["task", "reachout", "email", "focus"].includes(k) ? k : "task");
+    const okTime = (t) => (typeof t === "string" && /^\d{1,2}:\d{2}$/.test(t.trim()) ? t.trim().padStart(5, "0") : null);
     const plan = Array.isArray(parsed?.plan)
       ? parsed.plan.filter((p) => p && p.title).map((p) => ({
-          title: String(p.title), when: String(p.when || ""), why: String(p.why || ""), kind: okKind(String(p.kind || "task")),
+          title: String(p.title), when: String(p.when || ""), start: okTime(p.start), end: okTime(p.end), why: String(p.why || ""), kind: okKind(String(p.kind || "task")),
           refs: Array.isArray(p.refs) ? p.refs.map((r) => String(r)).slice(0, 20) : [],
         }))
       : [];

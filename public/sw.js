@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v110-20260626-read-listen'
+const VERSION = 'prismos-v111-20260626-plan-timeline'
 const APP_SHELL = [
   '/',
   '/index.html',

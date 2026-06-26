@@ -2547,12 +2547,55 @@ function WeekSparkline({ days }) {
 
 // "Plan my day" — asks Ari to triage the day's due/overdue + top tasks into a
 // realistic ordered sequence around the calendar.
+// Vertical time-blocked day timeline — fixed events + scheduled plan steps.
+function PlanTimeline({ steps = [], events = [], onTapStep, isDone, saved }) {
+  const toMin = (t) => { const a = String(t || '').split(':'); return (Number(a[0]) || 0) * 60 + (Number(a[1]) || 0); };
+  const evs = (events || []).filter(e => e.start).map(e => ({ title: e.title, s: toMin(e.start), e: e.end ? toMin(e.end) : toMin(e.start) + 30 }));
+  const blk = steps.map(x => ({ ...x, s: toMin(x.p.start), e: x.p.end ? toMin(x.p.end) : toMin(x.p.start) + 30 }));
+  const starts = [...evs.map(x => x.s), ...blk.map(x => x.s)];
+  const ends = [...evs.map(x => x.e), ...blk.map(x => x.e)];
+  if (!starts.length) return null;
+  let winS = Math.min(...starts, 8 * 60), winE = Math.max(...ends, 18 * 60);
+  winS = Math.floor(winS / 60) * 60; winE = Math.ceil(winE / 60) * 60;
+  const PXM = 1.05, H = (winE - winS) * PXM;
+  const hours = []; for (let h = winS; h <= winE; h += 60) hours.push(h);
+  const fmtH = (m) => { const h = Math.floor(m / 60); const ap = h < 12 ? 'AM' : 'PM'; const hh = h % 12 === 0 ? 12 : h % 12; return `${hh} ${ap}`; };
+  const fmt = (m) => { const h = Math.floor(m / 60), mm = m % 60, ap = h < 12 ? 'a' : 'p', hh = h % 12 === 0 ? 12 : h % 12; return mm ? `${hh}:${String(mm).padStart(2, '0')}${ap}` : `${hh}${ap}`; };
+  const kindC = { reachout: 'var(--accent)', email: '#6aa9ff', focus: '#4ade80', task: 'var(--text-2)' };
+  return (
+    <div style={{ position: 'relative', marginLeft: 46, height: H }}>
+      {hours.map(h => (
+        <div key={h} style={{ position: 'absolute', top: (h - winS) * PXM, left: -46, right: 0, borderTop: '1px dashed var(--border)' }}>
+          <span style={{ position: 'absolute', top: -7, left: 0, width: 40, textAlign: 'right', fontSize: 9.5, color: 'var(--text-3)' }}>{fmtH(h)}</span>
+        </div>
+      ))}
+      {evs.map((e, k) => (
+        <div key={'e' + k} style={{ position: 'absolute', top: (e.s - winS) * PXM + 1, height: Math.max(24, (e.e - e.s) * PXM - 3), left: 0, right: 0, background: 'var(--bg-hover)', border: '1px solid var(--border-strong)', borderLeft: '3px solid var(--text-3)', borderRadius: 8, padding: '4px 9px', overflow: 'hidden' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><Icon name="calendar" size={11} style={{ verticalAlign: '-1px', marginRight: 4 }} />{e.title}</div>
+          {(e.e - e.s) * PXM > 34 && <div style={{ fontSize: 9.5, color: 'var(--text-3)', marginTop: 1 }}>{fmt(e.s)}–{fmt(e.e)}</div>}
+        </div>
+      ))}
+      {blk.map((b) => {
+        const done = saved && isDone(b.p); const c = kindC[b.p.kind] || 'var(--accent)'; const tall = (b.e - b.s) * PXM > 36;
+        return (
+          <div key={'b' + b.i} onClick={() => onTapStep(b.i)} style={{ position: 'absolute', top: (b.s - winS) * PXM + 1, height: Math.max(26, (b.e - b.s) * PXM - 3), left: 0, right: 0, background: 'linear-gradient(135deg, rgba(197,169,94,0.18), rgba(197,169,94,0.06))', border: `1px solid ${c}`, borderLeft: `3px solid ${c}`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer', overflow: 'hidden', opacity: done ? 0.55 : 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', textDecoration: done ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{done ? '✓ ' : ''}{b.p.title}</div>
+            {tall && <div style={{ fontSize: 9.5, color: 'var(--text-3)', marginTop: 1 }}>{fmt(b.s)}–{fmt(b.e)}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose }) {
   const [state, setState] = useState({ loading: true });
   const [accepting, setAccepting] = useState(false);
   const [recap, setRecap] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [preps, setPreps] = useState({});
+  const [viewMode, setViewMode] = useState(null); // 'timeline' | 'list' (null = auto)
+  const [highlight, setHighlight] = useState(null);
   const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
   const mounted = useRef(true);
   const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -2568,7 +2611,8 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       tasks.filter(t => !t.completed && t.due_date && t.due_date <= tISO).forEach(t => tsel.set(t.id, t));
       tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!tsel.has(t.id)) tsel.set(t.id, t); });
       const payloadTasks = Array.from(tsel.values()).slice(0, 30).map((t, i) => { const id = `t${i + 1}`; tmap.set(id, t); return { id, title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }; });
-      const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => ({ title: e.title, start_at: e.start_at, all_day: e.all_day }));
+      const localHHMM = (iso) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+      const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => e.all_day ? ({ title: e.title, all_day: true }) : ({ title: e.title, start: localHHMM(e.start_at), end: e.end_at ? localHHMM(e.end_at) : null }));
       const nowMs = Date.now();
       const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
       const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
@@ -2655,7 +2699,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
         }
       } catch (_e) {}
 
-      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits } });
+      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits, workingHours: { start: 8, end: 18 } } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [] });
@@ -2736,7 +2780,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       let inserted = [];
       if (createPayload.length) { const { data } = await supabase.from('tasks').insert(createPayload).select(); inserted = data || []; }
       createIdx.forEach((idx, k) => { if (inserted[k]) plan[idx].taskId = inserted[k].id; });
-      const items = plan.map(p => ({ title: p.title, when: p.when, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null }));
+      const items = plan.map(p => ({ title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null }));
       await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: state.summary, items, updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
       if (setTasks) setTasks(prev => [...prev.map(t => pullIds.includes(t.id) ? { ...t, due_date: tISO } : t), ...inserted]);
       if (mounted.current) setState(s => ({ ...s, mode: 'saved', plan: items, justAccepted: pullIds.length + inserted.length }));
@@ -2804,7 +2848,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     const dr = drafts[i];
     const pr = preps[i];
     return (
-      <div key={i} style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
+      <div key={i} style={{ background: 'var(--bg-base)', border: `1px solid ${highlight === i ? 'var(--accent)' : 'var(--border)'}`, boxShadow: highlight === i ? '0 0 0 2px var(--accent-dim)' : 'none', borderRadius: 12, padding: '12px 14px', transition: 'border-color .2s, box-shadow .2s' }}>
         <div style={{ display: 'flex', gap: 12 }}>
           {saved ? (
             <button onClick={() => toggleItemDone(p)} title={p.taskId ? (done ? 'Mark not done' : 'Mark done') : 'No linked task'}
@@ -2892,8 +2936,46 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                 </div>
               )}
               {state.summary && <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, fontWeight: 500 }}>{state.summary}</p>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {(state.plan || []).map((p, i) => renderItem(p, i))}
+              {(() => {
+                const plan = state.plan || [];
+                const hasTimed = plan.some(p => p.start);
+                const mode = viewMode || (hasTimed ? 'timeline' : 'list');
+                const localHHMM = (iso) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+                const td = new Date();
+                const eventsToday = (events || []).filter(e => e.start_at && !e.all_day && new Date(e.start_at).toDateString() === td.toDateString()).map(e => ({ title: e.title, start: localHHMM(e.start_at), end: e.end_at ? localHHMM(e.end_at) : null }));
+                if (plan.length === 0) return <div style={{ color: 'var(--text-2)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Nothing urgent to sequence — your runway is open.</div>;
+                const timed = plan.map((p, i) => ({ p, i })).filter(x => x.p.start);
+                const deferred = plan.map((p, i) => ({ p, i })).filter(x => !x.p.start);
+                return (
+                  <>
+                    {hasTimed && (
+                      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+                        <div className="seg-track" style={{ maxWidth: 240 }}>
+                          <button className={`seg-btn ${mode === 'timeline' ? 'active' : ''}`} onClick={() => setViewMode('timeline')}>Timeline</button>
+                          <button className={`seg-btn ${mode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}>List</button>
+                        </div>
+                      </div>
+                    )}
+                    {mode === 'timeline' ? (
+                      <>
+                        <PlanTimeline steps={timed} events={eventsToday} saved={saved} isDone={(p) => taskDone(p)} onTapStep={(i) => { setViewMode('list'); setHighlight(i); setTimeout(() => setHighlight(null), 2200); }} />
+                        {deferred.length > 0 && (
+                          <div style={{ marginTop: 16 }}>
+                            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>Later / if there's time</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{deferred.map(x => renderItem(x.p, x.i))}</div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {plan.map((p, i) => renderItem(p, i))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+              <div style={{ display: 'none' }}>
+                {(state.plan || []).map((p, i) => null)}
                 {(!state.plan || state.plan.length === 0) && <div style={{ color: 'var(--text-2)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Nothing urgent to sequence — your runway is open.</div>}
               </div>
 
