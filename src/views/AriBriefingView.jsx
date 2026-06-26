@@ -459,9 +459,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const [batchMsg, setBatchMsg] = useState('');
   const [score, setScore] = useState(null);
   const [showScore, setShowScore] = useState(false);
-  const [showReport, setShowReport] = useState(false);
   const [hubId, setHubId] = useState(null);
-  const [showGoal, setShowGoal] = useState(false);
   const [followUpFor, setFollowUpFor] = useState(null); // reach-out we're creating a follow-up task for
   const [snoozeFor, setSnoozeFor] = useState(null);      // contact_id whose snooze picker is open
   const [expandMsg, setExpandMsg] = useState({});        // per-contact "show full message" toggle

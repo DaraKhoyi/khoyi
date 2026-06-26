@@ -2552,6 +2552,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
   const [accepting, setAccepting] = useState(false);
   const [recap, setRecap] = useState(null);
   const [drafts, setDrafts] = useState({});
+  const [preps, setPreps] = useState({});
   const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
   const mounted = useRef(true);
   const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -2771,6 +2772,25 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     setTimeout(() => setDrafts(d => ({ ...d, [idx]: { ...(d[idx] || {}), copied: false } })), 1600);
   };
 
+  // #D — call prep (opener + talking points) folded in from the briefing
+  const prepStep = async (idx, p) => {
+    const hit = resolveRef(p.refs);
+    if (!hit || hit.type !== 'contact') return;
+    setPreps(s => ({ ...s, [idx]: { loading: true } }));
+    try {
+      const { data, error } = await supabase.functions.invoke('ari-call-prep', { body: { contact_id: hit.obj.id } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setPreps(s => ({ ...s, [idx]: { loading: false, prep: data.prep || null, disc: data.disc || null } }));
+    } catch (e) { setPreps(s => ({ ...s, [idx]: { loading: false, error: String(e.message || e) } })); }
+  };
+  const copyOpener = (idx) => {
+    const pr = preps[idx]; if (!pr || !pr.prep) return;
+    try { navigator.clipboard && navigator.clipboard.writeText(pr.prep.opener || ''); } catch (_e) {}
+    setPreps(s => ({ ...s, [idx]: { ...s[idx], copied: true } }));
+    setTimeout(() => setPreps(s => ({ ...s, [idx]: { ...(s[idx] || {}), copied: false } })), 1600);
+  };
+
   const saved = state.mode === 'saved';
   const doneCount = saved ? (state.plan || []).filter(taskDone).length : 0;
 
@@ -2779,8 +2799,10 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     const hit = resolveRef(p.refs);
     const tappable = !!hit;
     const canDraft = hit && (hit.type === 'contact' || hit.type === 'email');
+    const canPrep = hit && hit.type === 'contact';
     const done = saved && taskDone(p);
     const dr = drafts[i];
+    const pr = preps[i];
     return (
       <div key={i} style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -2799,10 +2821,35 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
             {p.why && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.45 }}>{p.why}</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
               {canDraft && !dr && <button onClick={() => draftStep(i, p)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>✦ Draft {hit.type === 'email' ? 'reply' : 'message'}</button>}
+              {canPrep && !pr && <button onClick={() => prepStep(i, p)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>✦ Prep me</button>}
               {dr && dr.loading && <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Drafting…</span>}
+              {pr && pr.loading && <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Prepping…</span>}
               {tappable && <button onClick={() => openStep(p.refs)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>Open ›</button>}
             </div>
             {dr && dr.error && <div style={{ color: 'var(--red)', fontSize: 11.5, marginTop: 6 }}>{dr.error}</div>}
+            {pr && pr.error && <div style={{ color: 'var(--red)', fontSize: 11.5, marginTop: 6 }}>{pr.error}</div>}
+            {pr && !pr.loading && !pr.error && pr.prep && (
+              <div style={{ marginTop: 9, background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 10, padding: '10px 12px' }}>
+                {pr.disc && pr.disc.letter && <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 6 }}>{pr.disc.letter} · {String(pr.disc.label || '').split('—')[0].trim()}</div>}
+                {pr.prep.communicate && <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 8 }}>{pr.prep.communicate}</div>}
+                {pr.prep.opener && (
+                  <div style={{ background: 'var(--bg-hover)', border: '1px solid var(--accent-dim)', borderRadius: 9, padding: '9px 11px', marginBottom: pr.prep.talking_points && pr.prep.talking_points.length ? 9 : 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)' }}>Opener</span>
+                      <button onClick={() => copyOpener(i)} style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 10, cursor: 'pointer', textTransform: 'uppercase' }}>{pr.copied ? 'copied' : 'copy'}</button>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.5 }}>{pr.prep.opener}</div>
+                  </div>
+                )}
+                {pr.prep.talking_points && pr.prep.talking_points.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 4 }}>Talking points</div>
+                    <ul style={{ margin: 0, paddingLeft: 16 }}>{pr.prep.talking_points.map((tp, k) => <li key={k} style={{ fontSize: 12.5, color: 'var(--text-1)', lineHeight: 1.5, marginBottom: 3 }}>{tp}</li>)}</ul>
+                  </div>
+                )}
+                {pr.prep.next_step && <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 8 }}><span style={{ color: 'var(--accent)', fontWeight: 700 }}>Aim for:</span> {pr.prep.next_step}</div>}
+              </div>
+            )}
             {dr && !dr.loading && !dr.error && (dr.body || dr.subject) && (
               <div style={{ marginTop: 9, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
                 {dr.subject && <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 5 }}>Subject: {dr.subject}</div>}
