@@ -162,6 +162,11 @@ serve(async (req) => {
         }
         contact = (contactCache[call.user_id] || []).find((c) => last10(c.phone) === key10) || null;
       }
+      // Cube ACR (and any pre-linked source) can set contact_id ahead of time when the phone isn't in the filename.
+      if (!contact && call.contact_id) {
+        const { data: pc } = await admin.from("contacts").select("id,name,phone,last_contact_at").eq("id", call.contact_id).maybeSingle();
+        if (pc) contact = pc;
+      }
 
       const occurredAt = call.completed_at || call.answered_at || call.op_created_at || new Date().toISOString();
       const dir = String(call.direction || "").toLowerCase().includes("out") ? "outbound" : "inbound";
@@ -227,6 +232,13 @@ serve(async (req) => {
         processed_at: new Date().toISOString(),
       }).eq("id", call.id);
       processed++;
+      // A call is rich DISC signal — queue the contact for re-analysis (nightly batch picks it up). Guard against dup pending rows.
+      if (contact) {
+        try {
+          const { data: pend } = await admin.from("disc_analysis_queue").select("id").eq("contact_id", contact.id).eq("status", "pending").limit(1);
+          if (!pend || !pend.length) await admin.from("disc_analysis_queue").insert({ user_id: call.user_id, contact_id: contact.id, reason: "call", priority: 3, status: "pending", queued_at: new Date().toISOString() });
+        } catch (_e) { /* DISC enqueue is best-effort */ }
+      }
     }
 
     return new Response(JSON.stringify({ processed, timelined, actions }), { headers: { ...cors, "Content-Type": "application/json" } });

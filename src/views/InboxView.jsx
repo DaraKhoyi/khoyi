@@ -1067,6 +1067,9 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [syncMsg, setSyncMsg] = useState('');
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState('');
+  const [composeCc, setComposeCc] = useState('');
+  const [composeBcc, setComposeBcc] = useState('');
+  const [showCcBcc, setShowCcBcc] = useState(false);
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [composeFrom, setComposeFrom] = useState('');  // resolved sender address
@@ -1459,6 +1462,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
 
   function openCompose() {
     setComposeTo(''); setComposeSubject(''); setComposeBody('');
+    setComposeCc(''); setComposeBcc(''); setShowCcBcc(false);
     setComposeFrom(defaultAlias?.email_address || account.email_address);
     setComposeReplyMeta(null);
     setSendMsg('');
@@ -1487,6 +1491,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       `\n${quoted}`
     );
     setComposeFrom(defaultAlias?.email_address || account.email_address);
+    setComposeCc(''); setComposeBcc(''); setShowCcBcc(false);
     // Forward doesn't preserve thread — start a new conversation
     setComposeReplyMeta(null);
     setSendMsg('');
@@ -1867,18 +1872,25 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     // Docs share notification → real human), fall back to From.
     const primary = extractEmails(msg.reply_to);
     let toList = primary.length ? primary : extractEmails(msg.from_address);
+    let ccList = [];
     if (replyAll) {
       const myAddrs = new Set([
         account.email_address.toLowerCase(),
         ...verifiedAliases.map(a => a.email_address.toLowerCase()),
       ]);
-      const extraTos = extractEmails(msg.to_addresses).filter(a => !myAddrs.has(a.toLowerCase()));
-      toList = Array.from(new Set([...toList, ...extraTos]));
+      const senderSet = new Set(toList.map(a => a.toLowerCase()));
+      // Reply All: everyone else (original To + Cc) goes to Cc, not To — keeps the
+      // primary recipient clear and matches how Gmail/Outlook behave.
+      ccList = Array.from(new Set([...extractEmails(msg.to_addresses), ...extractEmails(msg.cc_addresses)]
+        .filter(a => !myAddrs.has(a.toLowerCase()) && !senderSet.has(a.toLowerCase()))));
     }
     const subj = (msg.subject || '').match(/^re:/i) ? msg.subject : `Re: ${msg.subject || ''}`;
     const when = msg.internal_date ? new Date(msg.internal_date).toLocaleString() : '';
     const quoted = (msg.body_text || msg.snippet || '').split('\n').map(l => '> ' + l).join('\n');
     setComposeTo(toList.join(', '));
+    setComposeCc(ccList.join(', '));
+    setComposeBcc('');
+    setShowCcBcc(ccList.length > 0);
     setComposeSubject(subj);
     setComposeBody(`\n\nOn ${when}, ${msg.from_name || msg.from_address} wrote:\n${quoted}`);
     setComposeFrom(chooseReplyFrom(msg));
@@ -1904,6 +1916,10 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         subject: composeSubject,
         body_text: composeBody,
       };
+      const ccArr = composeCc.split(',').map(s => s.trim()).filter(Boolean);
+      const bccArr = composeBcc.split(',').map(s => s.trim()).filter(Boolean);
+      if (ccArr.length) payload.cc = ccArr;
+      if (bccArr.length) payload.bcc = bccArr;
       if (composeFrom && composeFrom !== account.email_address) {
         payload.from_address = composeFrom;
       }
@@ -1916,7 +1932,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
       setSendMsg('Sent.');
       setShowCompose(false);
-      setComposeTo(''); setComposeSubject(''); setComposeBody(''); setComposeFrom(''); setComposeReplyMeta(null);
+      setComposeTo(''); setComposeCc(''); setComposeBcc(''); setShowCcBcc(false); setComposeSubject(''); setComposeBody(''); setComposeFrom(''); setComposeReplyMeta(null);
       // Trigger a sync so the sent message shows up
       runSync();
     } catch (err) {
@@ -2803,7 +2819,10 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                 )}
               </div>
               <div className="form-group">
-                <label className="form-label">To</label>
+                <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>To</span>
+                  {!showCcBcc && <button type="button" onClick={()=>setShowCcBcc(true)} className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px',color:'var(--accent)'}}>+ Cc/Bcc</button>}
+                </label>
                 <RecipientPicker
                   value={composeTo}
                   onChange={setComposeTo}
@@ -2813,6 +2832,21 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                   autoFocus={!composeReplyMeta}
                 />
               </div>
+              {showCcBcc && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Cc</label>
+                    <RecipientPicker value={composeCc} onChange={setComposeCc} contacts={contacts} profiles={profiles} placeholder="Carbon copy — they'll see each other" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span>Bcc</span>
+                      <span style={{fontSize:'10px',color:'var(--text-3)',fontWeight:400}}>hidden from all recipients</span>
+                    </label>
+                    <RecipientPicker value={composeBcc} onChange={setComposeBcc} contacts={contacts} profiles={profiles} placeholder="Blind copy — others won't see these" />
+                  </div>
+                </>
+              )}
               <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject" required /></div>
               <div className="form-group">
                 <label className="form-label">Message</label>
