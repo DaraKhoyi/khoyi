@@ -2603,9 +2603,20 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
         } catch (_e) {}
         const propsCtx = (properties || []).slice(0, 25).map(p => ({ name: p.nickname || p.address, status: p.status, notes: p.notes }));
 
+        // Journal + Brain notes — the broker's own written context
+        let journalCtx = [], brainCtx = [];
+        try {
+          const { data: jr } = await supabase.from('journal_entries').select('content,occurred_at').eq('user_id', userId).order('occurred_at', { ascending: false }).limit(20);
+          journalCtx = (jr || []).filter(j => j.content).map(j => ({ when: relAge(j.occurred_at), text: j.content }));
+        } catch (_e) {}
+        try {
+          const { data: br } = await supabase.from('brain').select('title,content,pinned,updated_at').eq('user_id', userId).order('pinned', { ascending: false }).order('updated_at', { ascending: false }).limit(20);
+          brainCtx = (br || []).filter(b => b.content || b.title).map(b => ({ title: b.title, text: b.content || '' }));
+        } catch (_e) {}
+
         mapsRef.current = { tasks: tmap, contacts: cmap, emails: emap };
 
-        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx } });
+        const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx } });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
         if (alive) setState({ loading: false, summary: data?.summary, plan: data?.plan || [] });

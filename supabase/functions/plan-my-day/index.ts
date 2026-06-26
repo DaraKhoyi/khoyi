@@ -30,7 +30,7 @@ const J = (b, s = 200) =>
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [] } = await req.json();
+    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [] } = await req.json();
 
     const nothing = (!tasks || tasks.length === 0) && (!reachouts || reachouts.length === 0) && (!unreadEmails || unreadEmails.length === 0);
     if (nothing) return J({ summary: "Nothing due, no replies owed, and your inbox is clear — the day is yours. Use the open runway to prospect or get ahead.", plan: [] });
@@ -54,6 +54,8 @@ serve(async (req) => {
       return `- ${bits}${d.notes ? ` — ${String(d.notes).slice(0, 120)}` : ""}`;
     }).join("\n");
     const propLines = (properties || []).slice(0, 20).map((p) => `- ${[p.name, p.status].filter(Boolean).join(" · ")}${p.notes ? ` — ${String(p.notes).slice(0, 120)}` : ""}`).join("\n");
+    const journalLines = (journal || []).slice(0, 25).map((j) => `- ${j.when ? `(${j.when}) ` : ""}${String(j.text || "").replace(/\s+/g, " ").trim().slice(0, 220)}`).join("\n");
+    const brainLines = (brain || []).slice(0, 25).map((b) => `- ${b.title ? `${b.title}: ` : ""}${String(b.text || "").replace(/\s+/g, " ").trim().slice(0, 220)}`).join("\n");
 
     const sys = `You are a sharp executive chief of staff for a real-estate broker${name ? ` named ${name}` : ""}. Today is ${date || "today"}.
 Build ONE focused, realistic plan for the day from the inputs below: open tasks, people to reach out to, unread emails (with body text), the fixed calendar, and — for CONTEXT — the broker's live deals and properties. Rules:
@@ -61,6 +63,7 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 - REACH-OUTS are relationship/revenue work; weight them highly. You may group a few quick calls/texts into one "power hour" block.
 - UNREAD EMAILS: read the body text. Surface only the few that are genuinely client-, deal-, or money-relevant (ignore newsletters, receipts, shipping, marketing) and fold the rest into ONE short "triage inbox" step that names the count.
 - USE DEALS & PROPERTIES as context to enrich the "why" — if a task, email, or person maps to a live deal or property, say so and let it raise priority. Deals/properties are context only; never turn them into standalone steps unless an input item points to them.
+- JOURNAL & BRAIN NOTES are the broker's own recent notes and observations. Use them to add a relevant, specific detail to a step's "why" — a promise made, a person's preference, a next step they jotted, a fact about a deal. Notes are context only; never create a standalone step from them. If a note clearly contradicts or updates an input, defer to the note.
 - Work AROUND fixed calendar events (never place work on top of a meeting).
 - Be realistic: ~5-8 focused items. Pick the vital few; if there's more, say what to defer.
 - For each item include: a short "why", a rough "when", a "kind" (exactly one of task|reachout|email|focus), and "refs" = the list of input ids (the (t#)/(r#)/(e#) tokens) the step draws from. A "triage inbox" step should list all the e# ids it covers. Use [] for refs when none apply.
@@ -68,7 +71,7 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 Respond ONLY with strict JSON, no markdown:
 {"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"...","why":"...","kind":"task|reachout|email|focus","refs":["t1","e2"]}]}`;
 
-    const user = `OPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
+    const user = `OPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

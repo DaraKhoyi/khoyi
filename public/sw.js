@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v103-20260626-plan-tappable-accept'
+const VERSION = 'prismos-v104-20260626-plan-journal-brain'
 const APP_SHELL = [
   '/',
   '/index.html',
