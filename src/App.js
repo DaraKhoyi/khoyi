@@ -10918,16 +10918,26 @@ function ConversionDashboard({ userId, agents }){
   const [scope,setScope]=useState('all');
   const teams=[...new Set(agents.map(a=>a.team).filter(Boolean))];
   useEffect(()=>{ (async()=>{
-    const [{ data:leads },{ data:acts },{ data:appts },{ data:led }] = await Promise.all([
+    const [{ data:leads },{ data:acts },{ data:appts },{ data:led },{ data:cons },{ data:sys }] = await Promise.all([
       supabase.from('leads').select('*'),
       supabase.from('lead_activities').select('id,lead_id,agent_id,type,occurred_at'),
       supabase.from('lead_appointments').select('id,lead_id,agent_id,status,start_at'),
       supabase.from('cda_ledger').select('id,agent_id,closed_on,created_at'),
+      supabase.from('contacts').select('id,type,lead_gen_system_id,pipeline_stage'),
+      supabase.from('lead_gen_systems').select('id,name,color,monthly_budget,is_archived'),
     ]);
-    setData({ leads:leads||[], acts:acts||[], appts:appts||[], led:led||[] });
+    setData({ leads:leads||[], acts:acts||[], appts:appts||[], led:led||[], cons:cons||[], sys:(sys||[]).filter(s=>!s.is_archived) });
   })(); },[]);
   if(!data) return <div className="panel" style={{marginTop:'12px',padding:'24px',textAlign:'center',color:'var(--text-2)'}}>Loading conversion…</div>;
 
+  const PSTAGES = [['new','New'],['attempting','Attempting'],['contacted','Contacted'],['appointment_set','Appt'],['nurture','Nurture'],['closed','Closed']];
+  const pipeContacts = (data.cons||[]).filter(c=>c.pipeline_stage && c.pipeline_stage!=='lost');
+  const cFunnel = PSTAGES.map(([id,label])=>({ id,label, n: pipeContacts.filter(c=>c.pipeline_stage===id).length }));
+  const funnelMax = Math.max(1, ...cFunnel.map(f=>f.n));
+  const _srcById={}; (data.cons||[]).forEach(c=>{ if(!c.lead_gen_system_id) return; const k=c.lead_gen_system_id; _srcById[k]=_srcById[k]||{leads:0,closed:0}; _srcById[k].leads++; if(c.pipeline_stage==='closed') _srcById[k].closed++; });
+  const srcKpi = (data.sys||[]).map(s=>{ const d=_srcById[s.id]||{leads:0,closed:0}; const conv=d.leads?Math.round(d.closed/d.leads*100):0; const budget=Number(s.monthly_budget)||0; const cpl=d.leads?budget/d.leads:null; return {id:s.id,name:s.name,color:s.color,leads:d.leads,closed:d.closed,conv,budget,cpl}; }).filter(x=>x.leads>0||x.budget>0).sort((a,b)=>b.leads-a.leads);
+  const srcMax = Math.max(1, ...srcKpi.map(x=>x.leads));
+  const totalAttributed = pipeContacts.length;
   const cutoff = range==='all'? 0 : Date.now()-Number(range)*86400000;
   const inRange=(d)=> range==='all' || (d && new Date(d).getTime()>=cutoff);
   const agentIds = scope==='all'? null : scope.startsWith('team:')? new Set(agents.filter(a=>a.team===scope.slice(5)).map(a=>a.id)) : new Set([scope.slice(6)]);
@@ -10962,6 +10972,30 @@ function ConversionDashboard({ userId, agents }){
 
   return (
     <div style={{marginTop:'12px',display:'grid',gap:'12px'}}>
+      <div className="panel" style={{padding:'16px'}}>
+        <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',marginBottom:'2px',display:'inline-flex',alignItems:'center',gap:'8px'}}><Icon name="signal" size={16}/> Lead Source Effectiveness</div>
+        <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'14px'}}>Live from your contact pipeline · {totalAttributed} attributed contact{totalAttributed===1?'':'s'}</div>
+        {srcKpi.length===0 ? <div style={{fontSize:'12px',color:'var(--text-3)'}}>No lead sources attributed yet. Tag a contact with a Lead Source on its Overview to populate this.</div> :
+          srcKpi.map(k=>(<div key={k.id} style={{marginBottom:'12px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'4px',gap:'8px'}}>
+              <span style={{fontSize:'12.5px',fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</span>
+              <span style={{fontSize:'11px',color:'var(--text-2)',flexShrink:0}}>{k.leads} lead{k.leads===1?'':'s'} · {k.conv}% closed</span>
+            </div>
+            <div style={{height:'10px',borderRadius:'5px',background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:(Math.round(k.leads/srcMax*100))+'%',background:k.color||'var(--accent)',borderRadius:'5px'}}/></div>
+            <div style={{marginTop:'3px',fontSize:'10.5px',color:'var(--text-3)'}}>{k.budget>0?('$'+k.budget.toLocaleString()+'/mo'+(k.cpl!=null?' · $'+Math.round(k.cpl).toLocaleString()+'/lead':'')):'No spend'}{k.closed>0?' · '+k.closed+' closed':''}</div>
+          </div>))
+        }
+      </div>
+      <div className="panel" style={{padding:'16px'}}>
+        <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',marginBottom:'14px',display:'inline-flex',alignItems:'center',gap:'8px'}}><Icon name="target" size={16}/> Pipeline funnel</div>
+        {totalAttributed===0 ? <div style={{fontSize:'12px',color:'var(--text-3)'}}>No contacts in pipeline yet. Set a stage on a contact Overview to start.</div> :
+          cFunnel.map(f=>(<div key={f.id} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
+            <span style={{width:'80px',fontSize:'11px',color:'var(--text-2)',flexShrink:0}}>{f.label}</span>
+            <div style={{flex:1,height:'18px',borderRadius:'5px',background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:(Math.round(f.n/funnelMax*100))+'%',background:'var(--accent)',borderRadius:'5px',minWidth:f.n>0?'4px':'0'}}/></div>
+            <span style={{width:'26px',textAlign:'right',fontSize:'12px',fontWeight:700,color:'var(--text-1)'}}>{f.n}</span>
+          </div>))
+        }
+      </div>
       <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
         <select className="form-input" value={scope} onChange={e=>setScope(e.target.value)} style={{padding:'6px 9px',fontSize:'13px',width:'auto'}}>
           <option value="all">Whole brokerage</option>
