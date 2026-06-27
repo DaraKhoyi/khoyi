@@ -233,6 +233,40 @@ function PrismMark() {
   );
 }
 
+// Brand lockup with "Advantage" on its own line, horizontally centered under
+// the E in ONE. The exact glyph is measured at layout time (and again after
+// fonts load / on resize) so the alignment holds across sizes and surfaces.
+function RogLogo() {
+  const wmRef = useRef(null);
+  const eRef = useRef(null);
+  const advRef = useRef(null);
+  React.useLayoutEffect(() => {
+    const center = () => {
+      const wm = wmRef.current, e = eRef.current, adv = advRef.current;
+      if (!wm || !e || !adv) return;
+      const wmR = wm.getBoundingClientRect(), eR = e.getBoundingClientRect();
+      if (!wmR.width || !eR.width) return;
+      const eCenter = (eR.left - wmR.left) + eR.width / 2;
+      const advW = adv.getBoundingClientRect().width;
+      adv.style.marginLeft = Math.max(0, Math.round(eCenter - advW / 2)) + 'px';
+    };
+    center();
+    const t = setTimeout(center, 150);
+    window.addEventListener('resize', center);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(center).catch(() => {});
+    return () => { clearTimeout(t); window.removeEventListener('resize', center); };
+  }, []);
+  return (
+    <>
+      <div className="rog-wordmark rog-wordmark--stack" ref={wmRef}>
+        <span className="rog-realty">REALTY</span><span className="rog-one">ON<span ref={eRef}>E</span></span><span className="rog-group">GROUP</span>
+        <span className="rog-adv" ref={advRef}>Advantage</span>
+      </div>
+      <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></div>
+    </>
+  );
+}
+
 // ─── PRISM MIRROR PRINCIPLE ─────────────────────────────────────────
 // Core PrismOS rule for any AI that drafts communication on behalf of the
 // user (email, text, DM, voicemail script, social DM, etc.). Pass this
@@ -308,8 +342,7 @@ function AuthScreen() {
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <div className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></div>
-          <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></div>
+          <RogLogo />
         </div>
         {mode === 'login' && <>
           <h2>Welcome back</h2>
@@ -13123,8 +13156,7 @@ function AppMain() {
         {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
-            <div className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></div>
-            <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></div>
+            <RogLogo />
           </div>
           <div className="sidebar-nav">
             <div className="nav-section-label">Menu</div>

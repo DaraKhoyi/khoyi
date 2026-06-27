@@ -1106,11 +1106,13 @@ body {
 .rog-wordmark .rog-group { color: var(--text-1); font-weight: 600; }
 .rog-wordmark .rog-one   { color: var(--accent); font-weight: 800; }
 .rog-wordmark .rog-adv   { color: var(--accent); font-weight: 400; font-size: 0.78em; letter-spacing: 0; margin-left: -0.25em; }
+/* Stacked lockup: Advantage drops to its own line; JS centers it under the E in ONE */
+.rog-wordmark--stack .rog-adv { display: block; width: max-content; margin-left: 0; }
 /* Rainbow PRISM wordmark — DISC palette (D/I/S/C) + violet as the 5th */
 .prism-mark { letter-spacing: 0.4px; }
 .prism-mark span { font-weight: 800; }
 .rog-sub { color: var(--text-1); font-weight: 500; line-height: 1.1; white-space: nowrap; margin-top: 2px; }
-.rog-sub .rog-pb { font-style: italic; color: var(--text-1); }
+.rog-sub .rog-pb { font-style: italic; color: var(--text-1); font-size: 0.7em; font-weight: 300; }
 .rog-sub .rog-os { color: var(--accent); font-weight: 600; }
 
 /* Mobile header: stack the lockup, vertically centered in the 56px bar */
