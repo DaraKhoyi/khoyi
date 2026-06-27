@@ -3732,24 +3732,28 @@ function GciGauge({ deals=[], gciGoal=0, setView, userId }){
   const onTrack=goal>0 && gciYtd>=expected;
   const R=92, SW=14, C=2*Math.PI*R;
   const off=anim?C*(1-pctG):C;
-  const markerAngle=expectedPct*360;
+  const paceRad=(135+expectedPct*270)*Math.PI/180;
+  const paceX=110+90*Math.cos(paceRad), paceY=110+90*Math.sin(paceRad);
+  const goalLbl=goal>=1000?('$'+Math.round(goal/1000)+'k'):('$'+Math.round(goal));
   return (<div className="dash-panel prism-pop" style={{background:'linear-gradient(150deg, rgba(197,169,94,0.10), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:18,padding:20,marginBottom:16}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
       <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',display:'inline-flex',gap:7,alignItems:'center'}}><Icon name="dollar" size={15} style={{color:'var(--accent)'}}/> GCI to goal</div>
       <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals \u2192</button>
     </div>
     <div style={{display:'flex',justifyContent:'center',margin:'2px 0'}}>
-      <svg width="220" height="220" viewBox="0 0 220 220">
+      <svg width="230" height="200" viewBox="0 0 220 196">
         <defs>
           <linearGradient id="gciG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="var(--accent-2)"/><stop offset="1" stopColor="#9A8038"/></linearGradient>
           <filter id="gciGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         </defs>
-        <circle cx="110" cy="110" r={R} fill="none" stroke="var(--border)" strokeWidth={SW}/>
-        {pctG>0 && <circle cx="110" cy="110" r={R} fill="none" stroke="url(#gciG)" strokeWidth={SW} strokeLinecap="round" strokeDasharray={C} strokeDashoffset={off} transform="rotate(-90 110 110)" filter="url(#gciGlow)" style={{transition:'stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)'}}/>}
-        {goal>0 && <g transform={'rotate('+markerAngle+' 110 110)'}><circle cx="110" cy="18" r="4.5" fill="var(--text-1)" stroke="var(--bg-card)" strokeWidth="2"/></g>}
-        <text x="110" y="102" textAnchor="middle" fill="var(--text-1)" fontSize="30" fontWeight="800">{m0(gciYtd)}</text>
-        <text x="110" y="123" textAnchor="middle" fill="var(--text-3)" fontSize="12">{goal>0?('of '+m0(goal)):'no goal set'}</text>
-        {goal>0 && <text x="110" y="141" textAnchor="middle" fill="var(--accent)" fontSize="12" fontWeight="700">{Math.round(pctG*100)}% to goal</text>}
+        <path d="M 46.36 173.64 A 90 90 0 1 1 173.64 173.64" fill="none" stroke="var(--border)" strokeWidth="14" strokeLinecap="round"/>
+        {pctG>0 && <path d="M 46.36 173.64 A 90 90 0 1 1 173.64 173.64" fill="none" stroke="url(#gciG)" strokeWidth="14" strokeLinecap="round" pathLength="100" strokeDasharray="100" strokeDashoffset={anim?(100-pctG*100):100} filter="url(#gciGlow)" style={{transition:'stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)'}}/>}
+        {goal>0 && <circle cx={paceX} cy={paceY} r="4.5" fill="var(--text-1)" stroke="var(--bg-card)" strokeWidth="2"/>}
+        <text x="110" y="104" textAnchor="middle" fill="var(--text-1)" fontSize="30" fontWeight="800">{m0(gciYtd)}</text>
+        <text x="110" y="126" textAnchor="middle" fill="var(--text-3)" fontSize="12">{goal>0?('of '+m0(goal)):'no goal set'}</text>
+        {goal>0 && <text x="110" y="146" textAnchor="middle" fill="var(--accent)" fontSize="12" fontWeight="700">{Math.round(pctG*100)}% to goal</text>}
+        {goal>0 && <text x="42" y="192" textAnchor="middle" fill="var(--text-3)" fontSize="10">$0</text>}
+        {goal>0 && <text x="178" y="192" textAnchor="middle" fill="var(--text-3)" fontSize="10">{goalLbl}</text>}
       </svg>
     </div>
     {goal>0 ? (
@@ -3946,13 +3950,13 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
   const needsNow = oweReplyN + reachN + dueOrOverdue;
   const upcoming = (events||[]).filter(e=>e.start_at && new Date(e.start_at) >= new Date()).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)).slice(0,4);
   const apptWeek = (events||[]).filter(e=>e.start_at && new Date(e.start_at).getTime() >= now && (new Date(e.start_at).getTime()-now) <= 7*86400000).length;
+  const gciGoal = Number(fin?.annual_gci_goal || 0);
   const _ACTIVE = ['lead','active','under_contract','closing'];
   const _gciOf = (d)=>{ const g=Number(d.gross_commission)||0; if(g) return g; const sp=Number(d.sale_price)||0, pct=Number(d.commission_pct)||0; return sp*pct/100; };
   const _yrNow = new Date().getFullYear();
   const pipelineGci = (deals||[]).filter(d=>_ACTIVE.includes(d.status)).reduce((a,d)=>a+_gciOf(d),0);
   const gciYtd = (deals||[]).filter(d=>d.status==='closed' && d.close_date && new Date(d.close_date).getFullYear()===_yrNow).reduce((a,d)=>a+_gciOf(d),0);
   const gciPct = gciGoal>0 ? Math.min(100, Math.round(gciYtd/gciGoal*100)) : 0;
-  const gciGoal = Number(fin?.annual_gci_goal || 0);
   const streak = fin?.current_prospecting_streak || 0;
   const bestStreak = fin?.best_prospecting_streak || 0;
   const money0 = (n) => '$' + Math.round(n).toLocaleString();
