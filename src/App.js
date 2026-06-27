@@ -5286,6 +5286,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const [analyzing, setAnalyzing] = useState(false);
   const [textTo, setTextTo] = useState(null); // { phone } when the Quo text composer is open
   const [tab, setTab] = useState('overview');
+  const [leadSystems, setLeadSystems] = useState([]);
+  useEffect(() => { let go = true; supabase.from('lead_gen_systems').select('id,name,category,color,monthly_budget,target_leads_per_month,is_active,is_archived').then(({ data }) => { if (go) setLeadSystems((data || []).filter(s => !s.is_archived)); }); return () => { go = false; }; }, []);
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
   const [evidence, setEvidence] = useState([]);
   const [loadingEvidence, setLoadingEvidence] = useState(true);
@@ -5898,6 +5900,21 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   if (_hdrReferredBy) hdrKeyFacts.push({ k:'Referred by', v:_hdrReferredBy });
   if (_hdrHome) hdrKeyFacts.push({ k:'Home', v:_hdrHome });
   if (_hdrBiz) hdrKeyFacts.push({ k:'Business', v:_hdrBiz });
+  const PIPE_STAGES = [ { id:'new', label:'New' }, { id:'attempting', label:'Attempting' }, { id:'contacted', label:'Contacted' }, { id:'appointment_set', label:'Appt' }, { id:'nurture', label:'Nurture' }, { id:'closed', label:'Closed' } ];
+  const updatePipe = async (patch) => {
+    patch = { ...patch };
+    if (patch.pipeline_stage !== undefined) patch.pipeline_stage_changed_at = new Date().toISOString();
+    const { error } = await supabase.from('contacts').update(patch).eq('id', contact.id);
+    if (!error) { Object.assign(contact, patch); if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c)); }
+  };
+  const curStageIdx = contact.pipeline_stage ? PIPE_STAGES.findIndex(s => s.id === contact.pipeline_stage) : -1;
+  const curSystem = contact.lead_gen_system_id ? leadSystems.find(s => s.id === contact.lead_gen_system_id) : null;
+  const leadKpi = (() => {
+    const byId = {};
+    (contacts || []).forEach(c => { if (!c.lead_gen_system_id) return; const k = c.lead_gen_system_id; byId[k] = byId[k] || { leads:0, closed:0 }; byId[k].leads++; if (c.pipeline_stage === 'closed') byId[k].closed++; });
+    return leadSystems.map(s => { const d = byId[s.id] || { leads:0, closed:0 }; const conv = d.leads ? Math.round((d.closed / d.leads) * 100) : 0; const budget = Number(s.monthly_budget) || 0; const cpl = d.leads ? budget / d.leads : null; return { id:s.id, name:s.name, color:s.color, leads:d.leads, closed:d.closed, conv, budget, cpl }; }).filter(x => x.leads > 0 || x.budget > 0).sort((a,b) => b.leads - a.leads);
+  })();
+  const leadKpiMax = Math.max(1, ...leadKpi.map(x => x.leads));
   return (
     <div className="modal-overlay overlay-fade" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
       <div className="modal sheet-rise" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -5936,10 +5953,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
 
         <div style={{padding:'13px 16px 10px'}}>
           <div className="seg-track" style={{display:'flex',gap:'2px'}}>
-            <button type="button" className={'seg-btn '+(tab==='overview'?'active':'')} style={{flex:1}} onClick={()=>setTab('overview')}>Overview</button>
-            <button type="button" className={'seg-btn '+(tab==='activity'?'active':'')} style={{flex:1}} onClick={()=>setTab('activity')}>Activity</button>
-            <button type="button" className={'seg-btn '+(tab==='insights'?'active':'')} style={{flex:1}} onClick={()=>setTab('insights')}>Insights</button>
-            <button type="button" className={'seg-btn '+(tab==='linked'?'active':'')} style={{flex:1}} onClick={()=>setTab('linked')}>Linked</button>
+            <button type="button" className={'seg-btn '+(tab==='overview'?'active':'')} style={{flex:1,fontSize:'10.5px',padding:'7px 1px'}} onClick={()=>setTab('overview')}>Overview</button>
+            <button type="button" className={'seg-btn '+(tab==='activity'?'active':'')} style={{flex:1,fontSize:'10.5px',padding:'7px 1px'}} onClick={()=>setTab('activity')}>Activity</button>
+            <button type="button" className={'seg-btn '+(tab==='insights'?'active':'')} style={{flex:1,fontSize:'10.5px',padding:'7px 1px'}} onClick={()=>setTab('insights')}>Insights</button>
+            <button type="button" className={'seg-btn '+(tab==='details'?'active':'')} style={{flex:1,fontSize:'10.5px',padding:'7px 1px'}} onClick={()=>setTab('details')}>Details</button>
+            <button type="button" className={'seg-btn '+(tab==='linked'?'active':'')} style={{flex:1,fontSize:'10.5px',padding:'7px 1px'}} onClick={()=>setTab('linked')}>Linked</button>
           </div>
         </div>
 
@@ -6001,6 +6019,35 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               </div>
             );
           })()}
+          {(() => {
+            return (
+              <div style={{margin:'0 16px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',marginBottom:'12px'}}>
+                  <span style={{fontSize:'10px',fontWeight:800,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="target" size={13} /> Lead Source &amp; Pipeline</span>
+                  {contact.pipeline_stage === 'lost' && <span style={{fontSize:'10.5px',fontWeight:700,color:'#ef4444'}}>Lost</span>}
+                </div>
+                <div style={{display:'flex',gap:'4px',marginBottom:'12px'}}>
+                  {PIPE_STAGES.map((st, i) => { const active = i <= curStageIdx; const isCur = i === curStageIdx; return (
+                    <button key={st.id} type="button" onClick={() => updatePipe({ pipeline_stage: st.id })} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'5px',background:'none',border:'none',cursor:'pointer',padding:0}}>
+                      <div style={{width:'100%',height:'5px',borderRadius:'3px',background: active ? 'var(--accent)' : 'var(--bg-base)',transition:'background 0.3s'}} />
+                      <span style={{fontSize:'9px',fontWeight: isCur ? 800 : 600,color: isCur ? 'var(--accent)' : active ? 'var(--text-2)' : 'var(--text-3)',whiteSpace:'nowrap'}}>{st.label}</span>
+                    </button>
+                  ); })}
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                  <span style={{fontSize:'11px',color:'var(--text-3)',minWidth:'52px'}}>Source</span>
+                  <select value={contact.lead_gen_system_id || ''} onChange={e => updatePipe({ lead_gen_system_id: e.target.value || null })} style={{flex:1,background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',padding:'8px 10px',fontSize:'12.5px'}}>
+                    <option value="">— Not attributed —</option>
+                    {leadSystems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div style={{marginTop:'10px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
+                  <button type="button" onClick={() => updatePipe({ pipeline_stage: contact.pipeline_stage === 'lost' ? 'new' : 'lost' })} style={{fontSize:'11px',fontWeight:600,color: contact.pipeline_stage === 'lost' ? 'var(--accent)' : '#ef4444',background:'none',border:'none',cursor:'pointer',padding:0}}>{contact.pipeline_stage === 'lost' ? 'Reopen' : 'Mark lost'}</button>
+                  {curSystem && Number(curSystem.monthly_budget) > 0 && <span style={{fontSize:'10px',color:'var(--text-3)'}}>${Number(curSystem.monthly_budget).toLocaleString()}/mo budget</span>}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{padding:'2px 16px 14px'}}>
             {Array.isArray(contact.emails) && contact.emails.length > 0 && (
               <div style={{marginBottom:'6px'}}>
@@ -6058,6 +6105,24 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
           </>)}
           {tab==='insights' && (<>
+          {leadKpi.length > 0 && (
+            <div style={{margin:'2px 16px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px'}}>
+              <div style={{fontSize:'10px',fontWeight:800,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'6px',marginBottom:'12px'}}><Icon name="signal" size={13} /> Lead Source Effectiveness</div>
+              {leadKpi.map(k => (
+                <div key={k.id} style={{marginBottom:'12px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'4px',gap:'8px'}}>
+                    <span style={{fontSize:'12px',fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</span>
+                    <span style={{fontSize:'11px',color:'var(--text-2)',flexShrink:0}}>{k.leads} lead{k.leads===1?'':'s'} · {k.conv}% closed</span>
+                  </div>
+                  <div style={{height:'8px',borderRadius:'4px',background:'var(--bg-base)',overflow:'hidden'}}>
+                    <div className="bar-fill-anim" style={{height:'100%',width:(Math.round(k.leads/leadKpiMax*100))+'%',background: k.color || 'var(--accent)',borderRadius:'4px'}} />
+                  </div>
+                  <div style={{marginTop:'3px',fontSize:'10px',color:'var(--text-3)'}}>{k.budget>0 ? ('$'+k.budget.toLocaleString()+'/mo'+(k.cpl!=null?' · $'+Math.round(k.cpl).toLocaleString()+'/lead':'')) : 'No spend'}{k.closed>0 ? ' · '+k.closed+' closed' : ''}</div>
+                </div>
+              ))}
+              <div style={{fontSize:'10px',color:'var(--text-3)'}}>Across all contacts attributed to each system.</div>
+            </div>
+          )}
 
           {analyzeMsg && (
             <div style={{padding:'8px 12px',marginBottom:'14px',borderRadius:'6px',fontSize:'12px',
@@ -6267,6 +6332,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             </div>
           )}
 
+          </>)}
+          {tab==='details' && (<>
           {/* ── Prism CRM custom fields ───────────────────────── */}
           <div style={{marginTop:'18px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
             <div style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'8px'}}>
