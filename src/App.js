@@ -10912,6 +10912,74 @@ function LeadDetail({ lead, agents, acts, appts, canWrite, onClose, patch, assig
 }
 const lbl={ display:'flex', flexDirection:'column', gap:'3px', fontSize:'10px', color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'.04em', fontWeight:700 };
 
+function PipelineView({ contacts, userId }){
+  const [systems,setSystems]=useState(null);
+  useEffect(()=>{ (async()=>{ const { data } = await supabase.from('lead_gen_systems').select('id,name,color,monthly_budget,is_archived'); setSystems((data||[]).filter(s=>!s.is_archived)); })(); },[]);
+  const PSTAGES = [['new','New'],['attempting','Attempting'],['contacted','Contacted'],['appointment_set','Appt set'],['nurture','Nurture'],['closed','Closed']];
+  const STAGE_COLORS = { new:'#3b82f6', attempting:'#8b5cf6', contacted:'#f59e0b', appointment_set:'#06b6d4', nurture:'#22c55e', closed:'var(--accent)' };
+  const all = contacts||[];
+  const pipe = all.filter(c=>c.pipeline_stage && c.pipeline_stage!=='lost');
+  const closed = pipe.filter(c=>c.pipeline_stage==='closed');
+  const active = pipe.filter(c=>c.pipeline_stage!=='closed');
+  const winRate = pipe.length? Math.round(closed.length/pipe.length*100):0;
+  const funnel = PSTAGES.map(([id,label])=>({ id,label, n: pipe.filter(c=>c.pipeline_stage===id).length }));
+  const funnelMax = Math.max(1, ...funnel.map(f=>f.n));
+  const _byId={}; all.forEach(c=>{ if(!c.lead_gen_system_id) return; const k=c.lead_gen_system_id; _byId[k]=_byId[k]||{leads:0,closed:0}; _byId[k].leads++; if(c.pipeline_stage==='closed') _byId[k].closed++; });
+  const srcKpi = (systems||[]).map(s=>{ const d=_byId[s.id]||{leads:0,closed:0}; const conv=d.leads?Math.round(d.closed/d.leads*100):0; const budget=Number(s.monthly_budget)||0; const cpl=d.leads?budget/d.leads:null; return {id:s.id,name:s.name,color:s.color,leads:d.leads,closed:d.closed,conv,budget,cpl}; }).filter(x=>x.leads>0).sort((a,b)=>b.leads-a.leads);
+  const srcMax = Math.max(1, ...srcKpi.map(x=>x.leads));
+  const stat=(label,val,sub)=> (<div className="panel" style={{padding:'14px',flex:1,minWidth:'120px'}}>
+      <div style={{fontSize:'24px',fontWeight:800,color:'var(--text-1)',lineHeight:1}}>{val}</div>
+      <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'4px'}}>{label}</div>
+      {sub?<div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{sub}</div>:null}
+    </div>);
+  if(systems===null) return <div className="view"><div className="panel" style={{padding:'24px',textAlign:'center',color:'var(--text-2)'}}>Loading your pipeline…</div></div>;
+  return (
+    <div className="view">
+      <div className="panel" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="target" size={20}/> My pipeline</h2>
+          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Your leads by stage and where they came from</div>
+        </div>
+      </div>
+      {pipe.length===0 ? (
+        <div className="panel" style={{marginTop:'12px',padding:'28px',textAlign:'center'}}>
+          <div style={{fontSize:'15px',fontWeight:700,color:'var(--text-1)',marginBottom:'6px'}}>No leads in your pipeline yet</div>
+          <div style={{fontSize:'13px',color:'var(--text-2)',maxWidth:'440px',margin:'0 auto',lineHeight:1.5}}>Open any contact, then on the Overview tab set a <b>pipeline stage</b> and tag a <b>lead source</b>. They will roll up here into your funnel and source ROI.</div>
+        </div>
+      ) : (<>
+        <div style={{display:'flex',gap:'10px',flexWrap:'wrap',marginTop:'12px'}}>
+          {stat('In pipeline', pipe.length)}
+          {stat('Active', active.length, 'not yet closed')}
+          {stat('Closed', closed.length)}
+          {stat('Win rate', winRate+'%', closed.length+' of '+pipe.length)}
+        </div>
+        <div className="panel" style={{marginTop:'12px',padding:'18px'}}>
+          <div style={{fontSize:'14px',fontWeight:700,color:'var(--text-1)',marginBottom:'16px',display:'inline-flex',alignItems:'center',gap:'8px'}}><Icon name="chart" size={16}/> Pipeline funnel</div>
+          {funnel.map(f=>(<div key={f.id} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}}>
+            <span style={{width:'82px',fontSize:'12px',color:'var(--text-2)',flexShrink:0}}>{f.label}</span>
+            <div style={{flex:1,height:'22px',borderRadius:'6px',background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:(Math.round(f.n/funnelMax*100))+'%',background:STAGE_COLORS[f.id]||'var(--accent)',borderRadius:'6px',minWidth:f.n>0?'4px':'0',transition:'width .5s ease'}}/></div>
+            <span style={{width:'30px',textAlign:'right',fontSize:'13px',fontWeight:700,color:'var(--text-1)'}}>{f.n}</span>
+          </div>))}
+        </div>
+        <div className="panel" style={{marginTop:'12px',padding:'18px'}}>
+          <div style={{fontSize:'14px',fontWeight:700,color:'var(--text-1)',marginBottom:'4px',display:'inline-flex',alignItems:'center',gap:'8px'}}><Icon name="signal" size={16}/> Lead Source Effectiveness</div>
+          <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'16px'}}>Which systems are actually producing</div>
+          {srcKpi.length===0 ? <div style={{fontSize:'12px',color:'var(--text-3)'}}>No lead sources tagged yet. Add a Lead Source on a contact Overview to see ROI here.</div> :
+            srcKpi.map(k=>(<div key={k.id} style={{marginBottom:'14px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'5px',gap:'8px'}}>
+                <span style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</span>
+                <span style={{fontSize:'11px',color:'var(--text-2)',flexShrink:0}}>{k.leads} lead{k.leads===1?'':'s'} · {k.conv}% closed</span>
+              </div>
+              <div style={{height:'12px',borderRadius:'6px',background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:(Math.round(k.leads/srcMax*100))+'%',background:k.color||'var(--accent)',borderRadius:'6px',transition:'width .5s ease'}}/></div>
+              <div style={{marginTop:'4px',fontSize:'10.5px',color:'var(--text-3)'}}>{k.budget>0?('$'+k.budget.toLocaleString()+'/mo'+(k.cpl!=null?' · $'+Math.round(k.cpl).toLocaleString()+'/lead':'')):'No spend tracked'}{k.closed>0?' · '+k.closed+' closed':''}</div>
+            </div>))
+          }
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 function ConversionDashboard({ userId, agents }){
   const [data,setData]=useState(null);
   const [range,setRange]=useState('90');
@@ -13143,6 +13211,7 @@ function AppMain() {
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
+    { id: 'pipeline',    icon: '🎯', label: 'My pipeline', badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
@@ -13173,7 +13242,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
+  const MORE_ORDER = ['pipeline', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -13228,7 +13297,7 @@ function AppMain() {
     { label: 'Grow my pipeline', icon: 'target', children: [
       { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
       { label: 'Lead-gen systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
-      { label: 'Lead funnel', built: false, icon: 'chart' },
+      { label: 'My pipeline', view: 'pipeline', icon: 'chart' },
       { label: 'Lead-gen suggestions', built: false, ai: true, icon: 'bulb' },
     ] },
     { label: 'Deals & transactions', icon: 'briefcase', children: [
@@ -13331,6 +13400,7 @@ function AppMain() {
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
+              : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
