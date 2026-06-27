@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v125-20260627-agent-pipeline-view'
+const VERSION = 'prismos-v126-20260627-dashboard-kpi-redesign'
 const APP_SHELL = [
   '/',
   '/index.html',

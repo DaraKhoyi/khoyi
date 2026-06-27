@@ -3432,6 +3432,53 @@ function DashboardBriefing({ user, setView }) {
   );
 }
 
+function DashboardPipelinePanel({ contacts = [], setView }){
+  const [systems,setSystems]=useState(null);
+  useEffect(()=>{ (async()=>{ const { data } = await supabase.from('lead_gen_systems').select('id,name,color,monthly_budget,is_archived,is_overhead'); setSystems((data||[]).filter(s=>!s.is_archived)); })(); },[]);
+  const TYPE_META = [['our_agent','Agents','var(--accent)'],['recruit','Recruits','#8b5cf6'],['lead','Leads','#f59e0b'],['client','Clients','#22c55e'],['vendor','Vendors','#3b82f6'],['partner','Partners','#06b6d4'],['family','Family','#ec4899'],['personal','Personal','#94a3b8'],['agent','Agents (other)','#eab308']];
+  const all = contacts||[];
+  const _byId={}; all.forEach(c=>{ if(!c.lead_gen_system_id) return; const k=c.lead_gen_system_id; _byId[k]=_byId[k]||{leads:0,closed:0}; _byId[k].leads++; if(c.pipeline_stage==='closed') _byId[k].closed++; });
+  const srcKpi = (systems||[]).filter(s=>!s.is_overhead).map(s=>{ const d=_byId[s.id]||{leads:0,closed:0}; const conv=d.leads?Math.round(d.closed/d.leads*100):0; const budget=Number(s.monthly_budget)||0; const cpl=d.leads?budget/d.leads:null; return {id:s.id,name:s.name,color:s.color,leads:d.leads,closed:d.closed,conv,budget,cpl}; }).filter(x=>x.leads>0||x.budget>0).sort((a,b)=>(b.leads-a.leads)||(b.budget-a.budget));
+  const anyLeads = srcKpi.some(x=>x.leads>0);
+  const srcMax = Math.max(1, ...srcKpi.map(x=>x.leads));
+  const counts={}; all.forEach(c=>{ const ty=c.type||'other'; counts[ty]=(counts[ty]||0)+1; });
+  const sphere = TYPE_META.map(([id,label,color])=>({id,label,color,n:counts[id]||0})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
+  const sphereMax = Math.max(1, ...sphere.map(x=>x.n));
+  if(systems===null) return null;
+  return (<>
+    <div className="dash-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:16,padding:18,marginBottom:20}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4,gap:8}}>
+        <div style={{fontSize:14,fontWeight:700,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:8}}><Icon name="signal" size={16} style={{color:'var(--accent)'}}/> Lead Source Effectiveness</div>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setView('pipeline')}>My pipeline →</button>
+      </div>
+      <div style={{fontSize:11,color:'var(--text-3)',marginBottom:14}}>{anyLeads?'Leads produced and what closed, by system':'Your active systems and monthly spend — tag contacts with a source to see what converts'}</div>
+      {srcKpi.length===0 ? <div style={{fontSize:12,color:'var(--text-3)'}}>No lead-gen systems set up yet.</div> :
+        srcKpi.map(k=>(<div key={k.id} style={{marginBottom:13}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:5,gap:8}}>
+            <span style={{fontSize:13,fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</span>
+            <span style={{fontSize:11,color:'var(--text-2)',flexShrink:0}}>{k.leads} lead{k.leads===1?'':'s'} · {k.conv}% closed</span>
+          </div>
+          <div style={{height:11,borderRadius:6,background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:(anyLeads?Math.round(k.leads/srcMax*100):100)+'%',background:k.color||'var(--accent)',borderRadius:6,opacity:anyLeads?1:0.3,transition:'width .6s ease'}}/></div>
+          <div style={{marginTop:4,fontSize:10.5,color:'var(--text-3)'}}>{k.budget>0?('$'+k.budget.toLocaleString()+'/mo'+(k.cpl!=null?' · $'+Math.round(k.cpl).toLocaleString()+'/lead':'')):'No spend tracked'}{k.closed>0?' · '+k.closed+' closed':''}</div>
+        </div>))
+      }
+    </div>
+    <div className="dash-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:16,padding:18,marginBottom:20}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,gap:8}}>
+        <div style={{fontSize:14,fontWeight:700,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:8}}><Icon name="contacts" size={16} style={{color:'var(--accent)'}}/> Your sphere</div>
+        <span style={{fontSize:12,color:'var(--text-2)'}}>{all.length} contacts</span>
+      </div>
+      {sphere.length===0 ? <div style={{fontSize:12,color:'var(--text-3)'}}>No contacts yet.</div> :
+        sphere.map(s=>(<div key={s.id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:9}}>
+          <span style={{width:96,fontSize:12,color:'var(--text-2)',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.label}</span>
+          <div style={{flex:1,height:16,borderRadius:5,background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:Math.round(s.n/sphereMax*100)+'%',background:s.color,borderRadius:5,minWidth:s.n>0?4:0,transition:'width .6s ease'}}/></div>
+          <span style={{width:34,textAlign:'right',fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{s.n}</span>
+        </div>))
+      }
+    </div>
+  </>);
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [], onOpenPlan }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
@@ -3513,6 +3560,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
   const dueOrOverdue = pending.filter(t => t.due_date && t.due_date <= todayISO).length;
   const needsNow = oweReplyN + reachN + dueOrOverdue;
   const upcoming = (events||[]).filter(e=>e.start_at && new Date(e.start_at) >= new Date()).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)).slice(0,4);
+  const apptWeek = (events||[]).filter(e=>e.start_at && new Date(e.start_at).getTime() >= now && (new Date(e.start_at).getTime()-now) <= 7*86400000).length;
   const gciGoal = Number(fin?.annual_gci_goal || 0);
   const streak = fin?.current_prospecting_streak || 0;
   const bestStreak = fin?.best_prospecting_streak || 0;
@@ -3628,6 +3676,38 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
           <div style={{ fontSize:30, fontWeight:800, color: overdue.length>0?'#f06b6b':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={overdue.length} /></div>
           <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{overdue.length>0?'needs rescue':'all caught up'}</div>
         </div>
+        <div className="dash-tile" onClick={()=>setView('contacts')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Reach-outs due</span>
+            <span style={{ width:30, height:30, borderRadius:9, background: reachN>0?'var(--accent-glow)':'var(--bg-base)', border:`1px solid ${reachN>0?'var(--accent)':'var(--border)'}`, display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="contacts" size={15} style={{ color: reachN>0?'var(--accent)':'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color: reachN>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={reachN} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>sphere touches</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('calendar')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Appointments</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="calendar" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={apptWeek} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>next 7 days</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('contacts')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Contacts</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="contacts" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={contacts.length} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your sphere</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('tasks')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Done this week</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'rgba(34,197,94,0.12)', border:'1px solid rgba(34,197,94,0.35)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="flame" size={15} style={{ color:'#4ade80' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={weekTotal} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>tasks completed</div>
+        </div>
       </div>
 
       {/* Quick actions */}
@@ -3639,8 +3719,8 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         <button className="quick-chip" onClick={()=>setView('quo')}><Icon name="chat" size={13} /> Messages</button>
       </div>
 
-      {/* Needs Attention */}
-      <NeedsAttention contacts={contacts} tasks={tasks} setTasks={setTasks} setView={setView} />
+      {/* Pipeline & lead sources (KPIs replace the old long lists) */}
+      <DashboardPipelinePanel contacts={contacts} setView={setView} />
 
       <div className="dash-grid">
         {/* Top Priority */}
@@ -6105,24 +6185,6 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
           </>)}
           {tab==='insights' && (<>
-          {leadKpi.length > 0 && (
-            <div style={{margin:'2px 16px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px'}}>
-              <div style={{fontSize:'10px',fontWeight:800,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'6px',marginBottom:'12px'}}><Icon name="signal" size={13} /> Lead Source Effectiveness</div>
-              {leadKpi.map(k => (
-                <div key={k.id} style={{marginBottom:'12px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'4px',gap:'8px'}}>
-                    <span style={{fontSize:'12px',fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{k.name}</span>
-                    <span style={{fontSize:'11px',color:'var(--text-2)',flexShrink:0}}>{k.leads} lead{k.leads===1?'':'s'} · {k.conv}% closed</span>
-                  </div>
-                  <div style={{height:'8px',borderRadius:'4px',background:'var(--bg-base)',overflow:'hidden'}}>
-                    <div className="bar-fill-anim" style={{height:'100%',width:(Math.round(k.leads/leadKpiMax*100))+'%',background: k.color || 'var(--accent)',borderRadius:'4px'}} />
-                  </div>
-                  <div style={{marginTop:'3px',fontSize:'10px',color:'var(--text-3)'}}>{k.budget>0 ? ('$'+k.budget.toLocaleString()+'/mo'+(k.cpl!=null?' · $'+Math.round(k.cpl).toLocaleString()+'/lead':'')) : 'No spend'}{k.closed>0 ? ' · '+k.closed+' closed' : ''}</div>
-                </div>
-              ))}
-              <div style={{fontSize:'10px',color:'var(--text-3)'}}>Across all contacts attributed to each system.</div>
-            </div>
-          )}
 
           {analyzeMsg && (
             <div style={{padding:'8px 12px',marginBottom:'14px',borderRadius:'6px',fontSize:'12px',
@@ -12899,6 +12961,8 @@ function AppMain() {
   // reload, so in-progress work is never lost. Native pull-to-refresh is disabled
   // app-wide in CSS (overscroll-behavior), which is what used to wipe state.
   const mainScrollRef = useRef(null);
+  // Always open a freshly-selected view at its top (don't restore prior scroll position).
+  useEffect(() => { const el = mainScrollRef.current; if (el) el.scrollTo({ top: 0, left: 0 }); }, [view]);
   const ptrRef = useRef({ startY: 0, active: false });
   const [ptrPull, setPtrPull] = useState(0);
   const [ptrBusy, setPtrBusy] = useState(false);
