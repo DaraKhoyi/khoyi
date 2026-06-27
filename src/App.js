@@ -3432,6 +3432,54 @@ function DashboardBriefing({ user, setView }) {
   );
 }
 
+function BusinessKPIs({ deals = [], gciGoal = 0, setView }){
+  const ACTIVE=['lead','active','under_contract','closing'];
+  const PROB={closing:0.90,under_contract:0.75,active:0.35,lead:0.15};
+  const m0=(n)=>'$'+Math.round(n||0).toLocaleString();
+  const gciOf=(d)=>{ const g=Number(d.gross_commission)||0; if(g) return g; const sp=Number(d.sale_price)||0, pct=Number(d.commission_pct)||0; return sp*pct/100; };
+  const yr=new Date().getFullYear();
+  const active=deals.filter(d=>ACTIVE.includes(d.status));
+  const pipelineGci=active.reduce((a,d)=>a+gciOf(d),0);
+  const weighted=active.reduce((a,d)=>a+gciOf(d)*(PROB[d.status]??0.3),0);
+  const closed=deals.filter(d=>d.status==='closed' && d.close_date && new Date(d.close_date).getFullYear()===yr);
+  const gciYtd=closed.reduce((a,d)=>a+gciOf(d),0);
+  const dayOfYear=Math.max(1,Math.floor((Date.now()-new Date(yr,0,0))/86400000));
+  const expected=gciGoal>0?gciGoal*(dayOfYear/365):0;
+  const pct=gciGoal>0?Math.min(1,gciYtd/gciGoal):0;
+  const onTrack=gciGoal>0 && gciYtd>=expected;
+  const empty = deals.length===0 && gciYtd===0 && gciGoal<=0;
+  if(empty){
+    return (<div className="dash-panel" onClick={()=>setView('deals')} style={{cursor:'pointer',background:'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:16,padding:18,marginBottom:20}}>
+      <div style={{fontSize:14,fontWeight:700,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:8,marginBottom:5}}><Icon name="dollar" size={16} style={{color:'var(--accent)'}}/> Track your deals to see GCI &amp; pipeline</div>
+      <div style={{fontSize:12.5,color:'var(--text-2)',lineHeight:1.5}}>Add your active and closed deals and your commission, pipeline value, and goal pace fill in here automatically. Tap to add your first deal.</div>
+    </div>);
+  }
+  return (<div className="dash-panel" style={{background:'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:16,padding:18,marginBottom:20}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,gap:8}}>
+      <div style={{fontSize:14,fontWeight:700,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16} style={{color:'var(--accent)'}}/> Business at a glance</div>
+      <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals →</button>
+    </div>
+    <div style={{marginBottom:14}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6,gap:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:24,fontWeight:800,color:'var(--text-1)',lineHeight:1}}>{m0(gciYtd)} <span style={{fontSize:12,fontWeight:600,color:'var(--text-3)'}}>GCI {yr}</span></span>
+        {gciGoal>0 && <span style={{fontSize:12,color:'var(--text-2)'}}>of {m0(gciGoal)} goal &middot; {Math.round(pct*100)}%</span>}
+      </div>
+      {gciGoal>0 ? (<>
+        <div style={{height:12,borderRadius:6,background:'var(--bg-base)',overflow:'hidden',position:'relative'}}>
+          <div className="bar-fill-anim" style={{height:'100%',width:(pct*100)+'%',background:'linear-gradient(90deg,var(--accent-2),var(--accent))',borderRadius:6}}/>
+          <div title="Pace to date" style={{position:'absolute',top:-2,bottom:-2,left:'calc('+Math.min(100,Math.round(dayOfYear/365*100))+'% - 1px)',width:2,background:'var(--text-2)',opacity:0.75}}/>
+        </div>
+        <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:onTrack?'var(--green)':'#f5b34a'}}>{onTrack?'On pace \u2713':'Behind pace by '+m0(expected-gciYtd)}</div>
+      </>) : <div style={{fontSize:11.5,color:'var(--text-3)'}}>Set an annual GCI goal in Finance to track your pace.</div>}
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,paddingTop:12,borderTop:'1px solid var(--border)'}}>
+      <div><div style={{fontSize:18,fontWeight:800,color:'var(--text-1)',lineHeight:1.1}}>{m0(pipelineGci)}</div><div style={{fontSize:10.5,color:'var(--text-3)',marginTop:3}}>Pipeline value</div>{weighted>0 && <div style={{fontSize:9.5,color:'var(--text-3)',marginTop:1}}>~{m0(weighted)} weighted</div>}</div>
+      <div><div style={{fontSize:18,fontWeight:800,color:'var(--text-1)',lineHeight:1.1}}>{active.length}</div><div style={{fontSize:10.5,color:'var(--text-3)',marginTop:3}}>Active deals</div></div>
+      <div><div style={{fontSize:18,fontWeight:800,color:'var(--text-1)',lineHeight:1.1}}>{closed.length}</div><div style={{fontSize:10.5,color:'var(--text-3)',marginTop:3}}>Closed {yr}</div></div>
+    </div>
+  </div>);
+}
+
 function DashboardPipelinePanel({ contacts = [], setView }){
   const [systems,setSystems]=useState(null);
   useEffect(()=>{ (async()=>{ const { data } = await supabase.from('lead_gen_systems').select('id,name,color,monthly_budget,is_archived,is_overhead'); setSystems((data||[]).filter(s=>!s.is_archived)); })(); },[]);
@@ -3479,7 +3527,7 @@ function DashboardPipelinePanel({ contacts = [], setView }){
   </>);
 }
 
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [], onOpenPlan }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [] }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
 
@@ -3641,6 +3689,9 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
       </div>
 
       <DashboardBriefing user={user} setView={setView} />
+
+      {/* Business at a glance — GCI / pipeline / value */}
+      <BusinessKPIs deals={deals} gciGoal={gciGoal} setView={setView} />
 
       {/* Metric tiles */}
       <div className="cards-row">
@@ -13461,7 +13512,7 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)}/>
+                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
