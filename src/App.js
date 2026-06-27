@@ -3588,7 +3588,7 @@ function BusinessKPIs({ deals = [], gciGoal = 0, setView, userId }){
   </div>);
 }
 
-function DashboardPipelinePanel({ contacts = [], setView }){
+function DashboardPipelinePanel({ contacts = [], setView, showSphere = true }){
   const [systems,setSystems]=useState(null);
   useEffect(()=>{ (async()=>{ const { data } = await supabase.from('lead_gen_systems').select('id,name,color,monthly_budget,is_archived,is_overhead'); setSystems((data||[]).filter(s=>!s.is_archived)); })(); },[]);
   const TYPE_META = [['our_agent','Agents','var(--accent)'],['recruit','Recruits','#8b5cf6'],['lead','Leads','#f59e0b'],['client','Clients','#22c55e'],['vendor','Vendors','#3b82f6'],['partner','Partners','#06b6d4'],['family','Family','#ec4899'],['personal','Personal','#94a3b8'],['agent','Agents (other)','#eab308']];
@@ -3619,7 +3619,7 @@ function DashboardPipelinePanel({ contacts = [], setView }){
         </div>))
       }
     </div>
-    <div className="dash-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:16,padding:18,marginBottom:20}}>
+    {showSphere && (<div className="dash-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:16,padding:18,marginBottom:20}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,gap:8}}>
         <div style={{fontSize:14,fontWeight:700,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:8}}><Icon name="contacts" size={16} style={{color:'var(--accent)'}}/> Your sphere</div>
         <span style={{fontSize:12,color:'var(--text-2)'}}>{all.length} contacts</span>
@@ -3631,7 +3631,7 @@ function DashboardPipelinePanel({ contacts = [], setView }){
           <span style={{width:34,textAlign:'right',fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{s.n}</span>
         </div>))
       }
-    </div>
+    </div>)}
   </>);
 }
 
@@ -3706,6 +3706,133 @@ function MetricTiles({ needsNow, oweReplyN, reachN, pending=[], overdue=[], unre
   );
 }
 
+function GciGauge({ deals=[], gciGoal=0, setView, userId }){
+  const [goalOverride,setGoalOverride]=useState(null);
+  const [editGoal,setEditGoal]=useState(false);
+  const [goalInput,setGoalInput]=useState('');
+  const [savingGoal,setSavingGoal]=useState(false);
+  const [anim,setAnim]=useState(false);
+  useEffect(()=>{ const tm=setTimeout(()=>setAnim(true),80); return ()=>clearTimeout(tm); },[]);
+  const goal = goalOverride!=null ? goalOverride : (Number(gciGoal)||0);
+  const saveGoal=async()=>{ const val=Math.round(Number(String(goalInput).replace(/[^0-9.]/g,''))||0); if(!val){ setEditGoal(false); return; } setSavingGoal(true); try{ await supabase.from('finance_settings').upsert({ user_id:userId, annual_gci_goal:val }, { onConflict:'user_id' }); setGoalOverride(val); setEditGoal(false); if(window.__notify) window.__notify('GCI goal set to $'+val.toLocaleString(),'success'); }catch(e){ if(window.__notify) window.__notify('Could not save goal.','error'); } setSavingGoal(false); };
+  const ACTIVE=['lead','active','under_contract','closing'];
+  const PROB={closing:0.90,under_contract:0.75,active:0.35,lead:0.15};
+  const m0=(n)=>'$'+Math.round(n||0).toLocaleString();
+  const gciOf=(d)=>{ const g=Number(d.gross_commission)||0; if(g) return g; const sp=Number(d.sale_price)||0, pct=Number(d.commission_pct)||0; return sp*pct/100; };
+  const yr=new Date().getFullYear();
+  const active=deals.filter(d=>ACTIVE.includes(d.status));
+  const pipelineGci=active.reduce((a,d)=>a+gciOf(d),0);
+  const weighted=active.reduce((a,d)=>a+gciOf(d)*(PROB[d.status]??0.3),0);
+  const closed=deals.filter(d=>d.status==='closed' && d.close_date && new Date(d.close_date).getFullYear()===yr);
+  const gciYtd=closed.reduce((a,d)=>a+gciOf(d),0);
+  const dayOfYear=Math.max(1,Math.floor((Date.now()-new Date(yr,0,0))/86400000));
+  const expectedPct=Math.min(1,dayOfYear/365);
+  const expected=goal>0?goal*expectedPct:0;
+  const pctG=goal>0?Math.min(1,gciYtd/goal):0;
+  const onTrack=goal>0 && gciYtd>=expected;
+  const R=92, SW=14, C=2*Math.PI*R;
+  const off=anim?C*(1-pctG):C;
+  const markerAngle=expectedPct*360;
+  return (<div className="dash-panel prism-pop" style={{background:'linear-gradient(150deg, rgba(197,169,94,0.10), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:18,padding:20,marginBottom:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+      <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',display:'inline-flex',gap:7,alignItems:'center'}}><Icon name="dollar" size={15} style={{color:'var(--accent)'}}/> GCI to goal</div>
+      <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals \u2192</button>
+    </div>
+    <div style={{display:'flex',justifyContent:'center',margin:'2px 0'}}>
+      <svg width="220" height="220" viewBox="0 0 220 220">
+        <defs>
+          <linearGradient id="gciG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="var(--accent-2)"/><stop offset="1" stopColor="#9A8038"/></linearGradient>
+          <filter id="gciGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <circle cx="110" cy="110" r={R} fill="none" stroke="var(--border)" strokeWidth={SW}/>
+        {pctG>0 && <circle cx="110" cy="110" r={R} fill="none" stroke="url(#gciG)" strokeWidth={SW} strokeLinecap="round" strokeDasharray={C} strokeDashoffset={off} transform="rotate(-90 110 110)" filter="url(#gciGlow)" style={{transition:'stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)'}}/>}
+        {goal>0 && <g transform={'rotate('+markerAngle+' 110 110)'}><circle cx="110" cy="18" r="4.5" fill="var(--text-1)" stroke="var(--bg-card)" strokeWidth="2"/></g>}
+        <text x="110" y="102" textAnchor="middle" fill="var(--text-1)" fontSize="30" fontWeight="800">{m0(gciYtd)}</text>
+        <text x="110" y="123" textAnchor="middle" fill="var(--text-3)" fontSize="12">{goal>0?('of '+m0(goal)):'no goal set'}</text>
+        {goal>0 && <text x="110" y="141" textAnchor="middle" fill="var(--accent)" fontSize="12" fontWeight="700">{Math.round(pctG*100)}% to goal</text>}
+      </svg>
+    </div>
+    {goal>0 ? (
+      <div style={{textAlign:'center',marginBottom:14}}><span style={{fontSize:11.5,fontWeight:700,color:onTrack?'var(--green)':'#f5b34a',background:onTrack?'rgba(34,197,94,0.12)':'rgba(245,179,74,0.12)',border:'1px solid '+(onTrack?'rgba(34,197,94,0.35)':'rgba(245,179,74,0.35)'),borderRadius:999,padding:'4px 12px'}}>{onTrack?('On pace \u2713 \u00b7 '+m0(gciYtd-expected)+' ahead'):('Behind pace by '+m0(expected-gciYtd))}</span></div>
+    ) : (
+      <div style={{marginBottom:14}}>{editGoal ? (
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',justifyContent:'center'}}>
+          <input type="number" inputMode="numeric" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="e.g. 150000" style={{flex:'1 1 140px',minWidth:120,background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text-1)',padding:'8px 10px',fontSize:13}}/>
+          <button className="btn btn-primary btn-sm" disabled={savingGoal} onClick={saveGoal}>{savingGoal?'Saving\u2026':'Save goal'}</button>
+        </div>
+      ) : (
+        <div style={{textAlign:'center'}}><button className="btn btn-primary btn-sm" onClick={()=>{setGoalInput('');setEditGoal(true);}}>Set your annual GCI goal</button></div>
+      )}</div>
+    )}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,paddingTop:14,borderTop:'1px solid var(--border)'}}>
+      <div style={{textAlign:'center'}}><div style={{fontSize:18,fontWeight:800,color:'var(--text-1)'}}>{m0(pipelineGci)}</div><div style={{fontSize:10,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)',marginTop:4}}>Pipeline</div>{weighted>0 && <div style={{fontSize:9.5,color:'var(--text-3)',marginTop:1}}>~{m0(weighted)} wtd</div>}</div>
+      <div style={{textAlign:'center'}}><div style={{fontSize:18,fontWeight:800,color:'var(--text-1)'}}>{active.length}</div><div style={{fontSize:10,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)',marginTop:4}}>Active</div></div>
+      <div style={{textAlign:'center'}}><div style={{fontSize:18,fontWeight:800,color:'var(--text-1)'}}>{closed.length}</div><div style={{fontSize:10,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)',marginTop:4}}>Closed {yr}</div></div>
+    </div>
+  </div>);
+}
+
+function PipelineFunnel({ deals=[], setView }){
+  const STAGES=[['lead','Lead','#f59e0b'],['active','Active','#3b82f6'],['under_contract','Under contract','#8b5cf6'],['closing','Closing','#06b6d4'],['closed','Closed','#22c55e']];
+  const gciOf=(d)=>{ const g=Number(d.gross_commission)||0; if(g) return g; const sp=Number(d.sale_price)||0, pct=Number(d.commission_pct)||0; return sp*pct/100; };
+  const yr=new Date().getFullYear();
+  const rows=STAGES.map(([id,label,color])=>{ const ds=deals.filter(d=> id==='closed' ? (d.status==='closed'&&d.close_date&&new Date(d.close_date).getFullYear()===yr) : d.status===id ); return {id,label,color,n:ds.length,gci:ds.reduce((a,d)=>a+gciOf(d),0)}; });
+  const total=rows.reduce((a,r)=>a+r.n,0);
+  const mx=Math.max(1,...rows.map(r=>r.n));
+  return (<div className="dash-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:18,padding:20,marginBottom:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:total>0?14:6}}>
+      <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',display:'inline-flex',gap:7,alignItems:'center'}}><Icon name="signal" size={15} style={{color:'var(--accent)'}}/> Pipeline funnel</div>
+      <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals \u2192</button>
+    </div>
+    {total===0 ? (
+      <div style={{fontSize:12.5,color:'var(--text-3)',lineHeight:1.55}}>Your pipeline is clear. As you add deals they flow through these stages \u2014 with live commission value at each step.
+        <div style={{display:'flex',gap:6,marginTop:12,flexWrap:'wrap'}}>{STAGES.map(([id,label])=>(<span key={id} style={{fontSize:10.5,fontWeight:600,color:'var(--text-3)',border:'1px dashed var(--border)',borderRadius:999,padding:'4px 10px'}}>{label}</span>))}</div>
+      </div>
+    ) : (
+      <div>{rows.map((r)=>(
+        <div key={r.id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:9}}>
+          <span style={{width:96,fontSize:12,color:'var(--text-2)',flexShrink:0}}>{r.label}</span>
+          <div style={{flex:1}}><div style={{width:Math.max(r.n>0?8:0,Math.round(r.n/mx*100))+'%',minWidth:r.n>0?28:0,height:24,borderRadius:7,background:r.color,opacity:0.9,display:'flex',alignItems:'center',justifyContent:'center',transition:'width .7s ease'}}>{r.n>0 && <span style={{fontSize:12,fontWeight:800,color:'#0c0c0f'}}>{r.n}</span>}</div></div>
+          <span style={{width:70,textAlign:'right',fontSize:11,color:'var(--text-3)',flexShrink:0}}>{r.gci>0?('$'+Math.round(r.gci).toLocaleString()):'\u2014'}</span>
+        </div>))}
+      </div>
+    )}
+  </div>);
+}
+
+function SphereDonut({ contacts=[], setView }){
+  const [anim,setAnim]=useState(false);
+  useEffect(()=>{ const tm=setTimeout(()=>setAnim(true),100); return ()=>clearTimeout(tm); },[]);
+  const TYPE_META=[['our_agent','Agents','#C5A95E'],['recruit','Recruits','#8b5cf6'],['vendor','Vendors','#3b82f6'],['family','Family','#ec4899'],['lead','Leads','#f59e0b'],['client','Clients','#22c55e'],['partner','Partners','#06b6d4'],['personal','Personal','#94a3b8'],['agent','Agents (other)','#eab308']];
+  const counts={}; (contacts||[]).forEach(c=>{ const ty=c.type||'other'; counts[ty]=(counts[ty]||0)+1; });
+  let seg=TYPE_META.map(([id,label,color])=>({id,label,color,n:counts[id]||0})).filter(x=>x.n>0);
+  const known=new Set(TYPE_META.map(m=>m[0])); let otherN=0; Object.keys(counts).forEach(k=>{ if(!known.has(k)) otherN+=counts[k]; }); if(otherN>0) seg.push({id:'other',label:'Other',color:'#64748b',n:otherN});
+  seg.sort((a,b)=>b.n-a.n);
+  const tot=seg.reduce((a,s)=>a+s.n,0);
+  const R=58, C=2*Math.PI*R; let off=0;
+  if(tot===0) return (<div className="dash-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:18,padding:20,marginBottom:16}}><div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',marginBottom:6}}>Your sphere</div><div style={{fontSize:12,color:'var(--text-3)'}}>No contacts yet.</div></div>);
+  return (<div className="dash-panel prism-pop" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:18,padding:20,marginBottom:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+      <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',display:'inline-flex',gap:7,alignItems:'center'}}><Icon name="contacts" size={15} style={{color:'var(--accent)'}}/> Your sphere</div>
+      <button className="btn btn-ghost btn-sm" onClick={()=>setView('contacts')}>{tot} contacts \u2192</button>
+    </div>
+    <div style={{display:'flex',gap:18,alignItems:'center',flexWrap:'wrap'}}>
+      <svg width="150" height="150" viewBox="0 0 150 150" style={{flexShrink:0,margin:'0 auto'}}>
+        {seg.map((s,i)=>{ const len=s.n/tot*C; const el=(<circle key={i} cx="75" cy="75" r={R} fill="none" stroke={s.color} strokeWidth="20" strokeDasharray={(anim?Math.max(0,len-1.5):0)+' '+C} strokeDashoffset={-off} transform="rotate(-90 75 75)" style={{transition:'stroke-dasharray .9s cubic-bezier(.22,1,.36,1)'}}/>); off+=len; return el; })}
+        <text x="75" y="71" textAnchor="middle" fill="var(--text-1)" fontSize="26" fontWeight="800">{tot}</text>
+        <text x="75" y="90" textAnchor="middle" fill="var(--text-3)" fontSize="9.5" letterSpacing=".08em">CONTACTS</text>
+      </svg>
+      <div style={{flex:1,minWidth:150}}>
+        {seg.map((s,i)=>(<div key={i} onClick={()=>setView('contacts')} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,cursor:'pointer'}}>
+          <span style={{width:9,height:9,borderRadius:3,background:s.color,flexShrink:0}}/>
+          <span style={{flex:1,fontSize:12,color:'var(--text-2)'}}>{s.label}</span>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--text-1)'}}>{s.n}</span>
+        </div>))}
+      </div>
+    </div>
+  </div>);
+}
+
 function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmailCount=0, setView, userId }){
   const [gciGoal,setGciGoal]=useState(0);
   useEffect(()=>{ (async()=>{ try{ const { data } = await supabase.from('finance_settings').select('annual_gci_goal').eq('user_id',userId).maybeSingle(); setGciGoal(Number(data?.annual_gci_goal)||0); }catch(_e){} })(); },[userId]);
@@ -3726,9 +3853,12 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
       <div><h2 style={{ margin:0 }}>My numbers</h2><div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>Your production, pipeline, and activity</div></div>
     </div>
     <div style={{ marginTop:14 }}>
-      <BusinessKPIs deals={deals} gciGoal={gciGoal} setView={setView} userId={userId} />
+      <GciGauge deals={deals} gciGoal={gciGoal} setView={setView} userId={userId} />
+      <SphereDonut contacts={contacts} setView={setView} />
+      <PipelineFunnel deals={deals} setView={setView} />
+      <div style={{ fontSize:10.5, fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', margin:'2px 2px 10px' }}>Activity</div>
       <MetricTiles needsNow={needsNow} oweReplyN={oweReplyN} reachN={reachN} pending={pending} overdue={overdue} unreadEmailCount={unreadEmailCount} apptWeek={apptWeek} contacts={contacts} weekTotal={weekTotal} topTasks={topTasks} setView={setView} />
-      <DashboardPipelinePanel contacts={contacts} setView={setView} />
+      <DashboardPipelinePanel contacts={contacts} setView={setView} showSphere={false} />
       {userId && <DashboardROI userId={userId} setView={setView} />}
     </div>
   </div>);
