@@ -11636,7 +11636,10 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
           {agents.map(a=>(
             <div key={a.id} className="panel" onClick={()=>setOpenId(a.id)} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div><div style={{fontWeight:700}}>{a.name}{!a.active&&<span style={{fontSize:'10px',color:'var(--text-3)'}}> \u00B7 inactive</span>}</div><div style={{fontSize:'12px',color:'var(--text-2)'}}>{ROLE_LABEL[a.role]}{a.team?` \u00B7 ${a.team}`:''}{a.email?` \u00B7 ${a.email}`:''}</div></div>
-              <Icon name="chevron-right" size={16} fb="\u203A"/>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',flexShrink:0}}>
+                {a.auth_user_id ? <span style={{fontSize:'10px',fontWeight:700,color:'var(--green)'}}>● linked</span> : <span style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)'}}>○ no login</span>}
+                <Icon name="chevron-right" size={16} fb="\u203A"/>
+              </div>
             </div>
           ))}
         </div>}
@@ -11675,6 +11678,9 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
       setLoginPw(''); if(window.__notify) window.__notify('Password reset.','success');
     }catch(e){ if(window.__notify) window.__notify('Failed.','error'); } finally{ setLoginBusy(false); }
   };
+  const [linkBusy,setLinkBusy]=useState(false);
+  const linkExisting=async()=>{ if(!loginEmail.trim()){ if(window.__notify) window.__notify('Enter the login email first.','error'); return; } setLinkBusy(true); try{ const { data, error } = await supabase.rpc('admin_link_agent_by_email',{ p_agent_id:agent.id, p_email:loginEmail.trim() }); const row=Array.isArray(data)?data[0]:data; if(error||!row||!row.ok){ if(window.__notify) window.__notify((row&&row.msg)||'Could not link.','error'); return; } const u={...a, auth_user_id:row.linked_uid, email:loginEmail.trim()}; setA(u); onSaved(u); if(window.__notify) window.__notify('Linked to existing login.','success'); }catch(e){ if(window.__notify) window.__notify('Link failed.','error'); } finally{ setLinkBusy(false); } };
+  const unlinkLogin=async()=>{ if(!await confirmDialog('Unlink this login from '+agent.name+'? Their work will stop attributing to them on leaderboards until re-linked.')) return; setLinkBusy(true); try{ const { data } = await supabase.rpc('admin_unlink_agent',{ p_agent_id:agent.id }); if(data===true){ const u={...a, auth_user_id:null}; setA(u); onSaved(u); if(window.__notify) window.__notify('Login unlinked.','success'); } else if(window.__notify) window.__notify('Could not unlink.','error'); }catch(e){ if(window.__notify) window.__notify('Unlink failed.','error'); } finally{ setLinkBusy(false); } };
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:'640px',width:'100%',maxHeight:'94vh',overflowY:'auto'}}>
@@ -11708,6 +11714,7 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
                   <label className="form-label" style={{flex:1}}>Reset password<input className="form-input" type="text" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="New password (8+ chars)"/></label>
                   <button className="btn btn-ghost btn-sm" onClick={resetLogin} disabled={loginBusy}>Reset</button>
                 </div>
+                <button className="btn btn-ghost btn-sm" style={{color:'var(--red)',justifySelf:'start'}} onClick={unlinkLogin} disabled={linkBusy}>Unlink login</button>
               </div>
             ) : (
               <div style={{display:'grid',gap:'8px'}}>
@@ -11717,6 +11724,8 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
                   <label className="form-label">Temp password<input className="form-input" type="text" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="8+ characters"/></label>
                 </div>
                 <button className="btn btn-primary btn-sm" onClick={createLogin} disabled={loginBusy} style={{justifySelf:'start'}}>{loginBusy?'Creating\u2026':'Create login'}</button>
+                <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Already signed up themselves? Link their existing account instead.</div>
+                <button className="btn btn-ghost btn-sm" onClick={linkExisting} disabled={linkBusy} style={{justifySelf:'start'}}>{linkBusy?'Linking...':'Link existing account by email'}</button>
               </div>
             )}
           </>}
@@ -13088,7 +13097,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
 function AppMain() {
   const [session, setSession] = useState(null);
   const [appCtx, setAppCtx] = useState(null);
-  useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
+  useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ try{ await supabase.rpc('claim_agent_profile'); }catch(_e){} const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
   // Dashboard-only pull-to-refresh: re-syncs data via loadData() without a page
