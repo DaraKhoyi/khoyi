@@ -2615,6 +2615,9 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
   const [constraints, setConstraints] = useState(''); // #9 active re-plan constraint
   const [conInput, setConInput] = useState('');       // #9 free-text constraint draft
   const CON_CHIPS = ['Only 2 hours', 'Half day', 'Out until noon', 'Working from home'];
+  const [reviewing, setReviewing] = useState(false);  // #11 end-of-day review open
+  const [review, setReview] = useState({ mood: '', note: '', recap: '', loadingRecap: false, carried: 0, saving: false, saved: false });
+  const tomorrowISO = () => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
   const mounted = useRef(true);
   const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -2738,7 +2741,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits, workingHours: { start: 8, end: 18 }, constraints: effCon, pipeline: { contacts: pipelineContacts, systems: pipelineSystems }, lightDay } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [], light: lightDay, constraint: effCon });
+      if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [], light: lightDay, constraint: effCon, flags: data?.flags || [] });
     } catch (e) { if (mounted.current) setState({ loading: false, error: String(e.message || e) }); }
   };
 
@@ -2750,6 +2753,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
         const { data: today } = await supabase.from('day_plans').select('*').eq('user_id', userId).eq('plan_date', todayISO()).maybeSingle();
         if (today && Array.isArray(today.items) && today.items.length) {
           if (mounted.current) setState({ loading: false, mode: 'saved', summary: today.summary, plan: today.items });
+          if (mounted.current && today.review) setReview(r => ({ ...r, mood: today.review.mood || '', note: today.review.note || '', recap: today.review.recap || '', saved: true }));
           return;
         }
       } catch (_e) {}
@@ -2835,6 +2839,72 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       if (mounted.current) setState(s => ({ ...s, mode: 'saved', plan: items, justAccepted: pullIds.length + inserted.length, calN }));
     } catch (e) { if (mounted.current) setState(s => ({ ...s, acceptError: String(e.message || e) })); }
     setAccepting(false);
+  };
+
+  // #11 — End-of-day review loop -------------------------------------------------
+  const reviewSplit = () => {
+    const items = state.plan || [];
+    const done = items.filter(taskDone);
+    const undone = items.filter(p => !taskDone(p));
+    return { done, undone, total: items.length };
+  };
+  const carryToTomorrow = async () => {
+    const { undone } = reviewSplit();
+    if (!undone.length) return;
+    const tISO = tomorrowISO();
+    try {
+      const haveTask = undone.filter(p => p.taskId);
+      const noTask = undone.filter(p => !p.taskId);
+      if (haveTask.length) await supabase.from('tasks').update({ due_date: tISO, completed: false }).in('id', haveTask.map(p => p.taskId));
+      let inserted = [];
+      if (noTask.length) {
+        const payload = noTask.map(p => ({ user_id: userId, title: p.title, due_date: tISO, notes: `Carried from ${todayISO()} plan`, completed: false }));
+        const { data } = await supabase.from('tasks').insert(payload).select();
+        inserted = data || [];
+      }
+      if (setTasks) setTasks(prev => [...prev.map(t => haveTask.some(p => p.taskId === t.id) ? { ...t, due_date: tISO, completed: false } : t), ...inserted]);
+      setReview(r => ({ ...r, carried: undone.length }));
+    } catch (e) { setReview(r => ({ ...r, error: String(e.message || e) })); }
+  };
+  const generateRecap = async () => {
+    const { done, undone, total } = reviewSplit();
+    setReview(r => ({ ...r, loadingRecap: true, error: null }));
+    try {
+      let gci = null;
+      try {
+        const { data: fsRow } = await supabase.from('finance_settings').select('annual_gci_goal').eq('user_id', userId).maybeSingle();
+        const goal = Number(fsRow?.annual_gci_goal || 0);
+        if (goal > 0) {
+          const yr = new Date().getFullYear();
+          const { data: closed } = await supabase.from('deals').select('gross_commission,close_date').eq('user_id', userId).eq('status', 'closed');
+          const ytd = (closed || []).filter(d => d.close_date && new Date(d.close_date).getFullYear() === yr).reduce((a, d) => a + (Number(d.gross_commission) || 0), 0);
+          const now = new Date(), start = new Date(yr, 0, 1), end = new Date(yr + 1, 0, 1);
+          const paceTarget = Math.round(goal * ((now - start) / (end - start)));
+          let status = 'on_track'; if (ytd <= 0) status = 'no_data'; else if (ytd < paceTarget * 0.95) status = 'behind'; else if (ytd > paceTarget * 1.05) status = 'ahead';
+          gci = { goal, ytd: Math.round(ytd), paceTarget, behindBy: Math.max(0, paceTarget - Math.round(ytd)), status };
+        }
+      } catch (_e) {}
+      const { data, error } = await supabase.functions.invoke('day-review', { body: { name, date: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), doneCount: done.length, total, done: done.map(p => p.title), undone: undone.map(p => p.title), mood: review.mood, note: review.note, gci } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setReview(r => ({ ...r, loadingRecap: false, recap: data?.recap || '' }));
+    } catch (e) { setReview(r => ({ ...r, loadingRecap: false, error: String(e.message || e) })); }
+  };
+  const saveReview = async () => {
+    const { done, total } = reviewSplit();
+    setReview(r => ({ ...r, saving: true, error: null }));
+    try {
+      const reviewObj = { mood: review.mood || null, note: review.note || null, recap: review.recap || null, done: done.length, total, reviewed_at: new Date().toISOString() };
+      await supabase.from('day_plans').update({ review: reviewObj, updated_at: new Date().toISOString() }).eq('user_id', userId).eq('plan_date', todayISO());
+      // Close the loop: write the reflection to the journal so it feeds tomorrow's plan.
+      const dl = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+      const moodTxt = review.mood ? ` Felt: ${review.mood}.` : '';
+      const noteTxt = review.note ? ` ${review.note.trim()}` : '';
+      const recapTxt = review.recap ? `\n\n${review.recap}` : '';
+      const content = `End-of-day review (${dl}): ${done.length} of ${total} planned items done.${moodTxt}${noteTxt}${recapTxt}`;
+      try { await logJournalEntry(userId, content, 'text'); } catch (_e) {}
+      setReview(r => ({ ...r, saving: false, saved: true }));
+    } catch (e) { setReview(r => ({ ...r, saving: false, error: String(e.message || e) })); }
   };
 
   const draftStep = async (idx, p) => {
@@ -3025,7 +3095,70 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
             </div>
           )}
           {state.error && <div style={{ color: 'var(--red)', fontSize: 13, padding: '10px 0' }}>Couldn't build a plan: {state.error}</div>}
-          {!state.loading && !state.error && (
+          {!state.loading && !state.error && reviewing && saved && (() => {
+            const { done, undone, total } = reviewSplit();
+            const MOODS = [{ k: 'Great', e: '😀' }, { k: 'Solid', e: '🙂' }, { k: 'Tough', e: '😓' }];
+            return (
+              <div>
+                <button onClick={() => setReviewing(false)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5, marginBottom: 14 }}>‹ Back to plan</button>
+                <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                  <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--accent)', lineHeight: 1 }}>{done.length}<span style={{ fontSize: 18, color: 'var(--text-3)' }}> / {total}</span></div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 4 }}>{done.length === total ? 'Everything done — a clean sweep. 🎯' : `${done.length} done · ${undone.length} to carry forward`}</div>
+                </div>
+
+                {undone.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Unfinished</span>
+                      {review.carried ? <span style={{ fontSize: 11, color: '#4ade80', fontWeight: 700 }}>✓ {review.carried} carried to tomorrow</span>
+                        : <button onClick={carryToTomorrow} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>→ Carry all to tomorrow</button>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {undone.map((p, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: 'var(--text-2)', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 11px' }}>
+                          <span style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: 'var(--text-3)' }} />{p.title}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>How did today go?</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {MOODS.map(m => {
+                      const active = review.mood === m.k;
+                      return <button key={m.k} onClick={() => setReview(r => ({ ...r, mood: active ? '' : m.k }))} className="quick-chip" style={{ flex: 1, justifyContent: 'center', padding: '9px 0', fontSize: 13, ...(active ? { background: 'var(--accent)', color: '#1b180f', borderColor: 'var(--accent)', fontWeight: 700 } : {}) }}>{m.e} {m.k}</button>;
+                    })}
+                  </div>
+                  <textarea value={review.note} onChange={e => setReview(r => ({ ...r, note: e.target.value }))} placeholder="A line on the day — a win, a lesson, what's on your mind (optional)…" rows={2}
+                    style={{ width: '100%', marginTop: 9, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 11px', color: 'var(--text-1)', fontSize: 12.5, resize: 'vertical', boxSizing: 'border-box' }} />
+                </div>
+
+                {review.recap ? (
+                  <div style={{ marginBottom: 16, background: 'var(--accent-glow)', border: '1px solid var(--accent-dim)', borderRadius: 10, padding: '11px 13px', fontSize: 13, color: 'var(--text-1)', lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 6 }}>✦ {name || 'Ari'}'s reflection</div>
+                    {review.recap}
+                  </div>
+                ) : (
+                  <button onClick={generateRecap} disabled={review.loadingRecap} className="quick-chip" style={{ width: '100%', justifyContent: 'center', padding: '10px', fontSize: 13, marginBottom: 14 }}>
+                    {review.loadingRecap ? `${name || 'Ari'} is reflecting…` : `✦ Get ${name || 'Ari'}'s end-of-day reflection`}
+                  </button>
+                )}
+
+                {review.error && <div style={{ color: 'var(--red)', fontSize: 12, textAlign: 'center', marginBottom: 10 }}>{review.error}</div>}
+                {review.saved ? (
+                  <div style={{ textAlign: 'center', padding: '10px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 13, color: '#4ade80', fontWeight: 700 }}>✓ Day closed out — saved to your journal.</div>
+                ) : (
+                  <button onClick={saveReview} disabled={review.saving} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', borderRadius: 11, padding: '12px', fontSize: 14, opacity: review.saving ? 0.6 : 1 }}>
+                    {review.saving ? 'Saving…' : '✓ Close out the day'}
+                  </button>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', marginTop: 7 }}>Saves your reflection to the Journal, so it informs tomorrow's plan.</div>
+              </div>
+            );
+          })()}
+          {!state.loading && !state.error && !(reviewing && saved) && (
             <>
               {recap && !saved && (
                 <div style={{ marginBottom: 14, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'var(--text-2)' }}>
@@ -3038,6 +3171,46 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                   <Icon name="bulb" size={13} /><span><strong style={{ color: 'var(--accent)' }}>Light day</strong> — Ari added pipeline-protection time so a quiet day doesn't go to waste.</span>
                 </div>
               )}
+              {/* #12 — Risk & conflict flags: deterministic structural checks merged with Ari's judgment flags */}
+              {(() => {
+                const plan = state.plan || [];
+                const out = [];
+                // a) calendar double-booking among today's timed events
+                const td = new Date();
+                const evs = (events || []).filter(e => e.start_at && !e.all_day && new Date(e.start_at).toDateString() === td.toDateString())
+                  .map(e => ({ title: e.title, s: new Date(e.start_at).getTime(), e: e.end_at ? new Date(e.end_at).getTime() : new Date(e.start_at).getTime() + 3600000 }))
+                  .sort((a, b) => a.s - b.s);
+                for (let i = 1; i < evs.length; i++) { if (evs[i].s < evs[i - 1].e) { out.push({ level: 'risk', text: `Calendar conflict: “${evs[i - 1].title}” overlaps “${evs[i].title}.”` }); break; } }
+                // b) due-today tasks that ended up deferred (start null)
+                const deferred = plan.filter(p => !p.start);
+                const dueToday = [];
+                deferred.forEach(p => { (p.refs || []).forEach(r => { const t = mapsRef.current.tasks.get(r); if (t && t.due_date === todayISO() && !t.completed && !dueToday.includes(t.title)) dueToday.push(t.title); }); });
+                if (dueToday.length) out.push({ level: 'risk', text: `Due today but unscheduled: ${dueToday.slice(0, 2).map(t => `“${t}”`).join(', ')}${dueToday.length > 2 ? ` +${dueToday.length - 2} more` : ''}.` });
+                // c) overall over-capacity
+                const otherDeferred = deferred.length - 0;
+                if (otherDeferred > 0 && !dueToday.length) out.push({ level: 'warn', text: `${otherDeferred} item${otherDeferred === 1 ? '' : 's'} won’t fit today — moved to “later / if there’s time.”` });
+                // d) Ari's judgment flags from the planner
+                (state.flags || []).forEach(f => out.push(f));
+                if (!out.length) return null;
+                const dedup = []; const seen = new Set();
+                out.forEach(f => { const k = (f.text || '').toLowerCase().slice(0, 40); if (!seen.has(k)) { seen.add(k); dedup.push(f); } });
+                return (
+                  <div style={{ marginBottom: 14, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>⚠ Heads up</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {dedup.slice(0, 5).map((f, i) => {
+                        const c = f.level === 'risk' ? '#ef4444' : '#f59e0b';
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'var(--text-1)', lineHeight: 1.45 }}>
+                            <span style={{ flexShrink: 0, marginTop: 5, width: 7, height: 7, borderRadius: '50%', background: c }} />
+                            <span>{f.text}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
               {/* #9 — Adjust the day: re-plan around real constraints */}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>Adjust the day</div>
@@ -3117,6 +3290,9 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>✓ {doneCount} of {state.plan.length} done today</span>
                         <button onClick={generateFresh} className="quick-chip" style={{ padding: '7px 13px' }}>↻ Re-plan</button>
                       </div>
+                      <button onClick={() => setReviewing(true)} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', borderRadius: 11, padding: '11px', fontSize: 13.5, marginTop: 11 }}>
+                        {review.saved ? '✓ View end-of-day review' : '🌙 End-of-day review'}
+                      </button>
                       {state.justAccepted != null && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 7 }}>Saved to today. Check items off here or in Tasks — this plan will be waiting when you reopen.{state.calN ? ` ${state.calN} time block${state.calN === 1 ? '' : 's'} added to your calendar — open Calendar to sync to Google.` : ''}</div>}
                     </>
                   ) : (

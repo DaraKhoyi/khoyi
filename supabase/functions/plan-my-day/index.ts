@@ -103,9 +103,10 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 - CHANNEL (reach-outs only): for kind "reachout", add a "channel" (text|call|email) — the best way to reach that person. Infer it from any preference in the brain/journal notes (e.g., "prefers texts", "always call her"); otherwise default to "text" for a quick light touch, "call" for high-stakes or relationship-deepening conversations, and "email" when it needs detail or a document. Omit channel (null) for non-reachout kinds.
 - CONSTRAINTS (if provided): the broker has told you specific limits on today — available time, hours they're away, or location (e.g., "only have 2 hours", "out until noon", "working from home", "no calls today"). Treat these as HARD limits and reshape the whole plan around them. Recompute the usable window: if they only have N hours, schedule at most ~N hours of timed work and DEFER the rest (start/end null); if they're out until a time, place nothing before it; if location- or channel-bound (WFH / traveling / no calls), prefer the work that fits (calls/emails/remote vs in-person showings, or text/email when calls are out). Keep only the vital few that fit the limit; defer everything else. Acknowledge the constraint in ONE short phrase in the summary.
 - PIPELINE PROTECTION (light days): if LIGHT DAY is true, the broker's task and meeting load is thin — and a quiet day is a silent pipeline risk. Proactively ADD 1-3 concrete revenue-protecting blocks in the open runway, drawn ONLY from the PIPELINE list below. Two kinds: (a) reach out to specific nurture/sphere people — use kind "reachout", put their (p#) id in refs, and set a channel; (b) run a focused prospecting power-hour on ONE of the broker's active lead-gen systems — use kind "focus" and name the actual system (e.g., "Power hour: Sphere of Influence — 30 min of calls/texts"). Name real people and the real system; never invent contacts. On a day with little else, this IS the most important work — give it a prime morning slot, not the leftovers. Do NOT add pipeline blocks when LIGHT DAY is false (the day is already full). If CONSTRAINTS shrink the day, respect them first and add fewer (or no) pipeline blocks.
+- RISK & CONFLICT FLAGS: after building the plan, scan for genuine risks the broker should see at a glance and list them in "flags". Each flag is {"level":"warn"|"risk","text":"..."} — "risk" for things that could cost money or break a commitment, "warn" for friction. Look for: a time-sensitive email or deal item (offer expiring, deadline, client waiting) that you could NOT give a prime slot; being BEHIND on GCI with little/no revenue-generating work scheduled today; an item that is chronically deferred (per HABITS) — flag it to drop, delegate, or finally do; an unrealistically ambitious day where important work had to be deferred; a high-stakes step with no buffer before a hard meeting. Do NOT flag simple calendar overlaps or a generic count of deferred items — those are handled elsewhere. Keep flags to the vital few (max 3). Each text is one short, specific, actionable sentence. Use [] when there are no real risks — do not manufacture them.
 - Motivating, human.
 Respond ONLY with strict JSON, no markdown:
-{"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"9:00–9:30 AM","start":"09:00","end":"09:30","why":"...","kind":"task|reachout|email|focus","channel":"text|call|email|null","refs":["t1","e2"]}]}`;
+{"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"9:00–9:30 AM","start":"09:00","end":"09:30","why":"...","kind":"task|reachout|email|focus","channel":"text|call|email|null","refs":["t1","e2"]}],"flags":[{"level":"warn|risk","text":"..."}]}`;
 
     const user = `WORKING HOURS: ${String(wh.start).padStart(2, "0")}:00–${String(wh.end).padStart(2, "0")}:00 (24h). Schedule all timed work inside this window.\n\nCONSTRAINTS FOR TODAY: ${con || "(none — use the full working window)"}\n\nLIGHT DAY: ${lightDay ? "YES — load is thin; proactively protect the pipeline using the PIPELINE list below." : "no — the day has enough real work; do not add pipeline filler."}\n\nOPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nPIPELINE (nurture/sphere people to get ahead on, and active lead-gen systems — use ONLY on a LIGHT DAY):\nContacts:\n${pipeContactLines || "(none)"}\nActive lead-gen systems:\n${pipeSystemLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
 
@@ -123,6 +124,7 @@ Respond ONLY with strict JSON, no markdown:
     const okKind = (k) => (["task", "reachout", "email", "focus"].includes(k) ? k : "task");
     const okTime = (t) => (typeof t === "string" && /^\d{1,2}:\d{2}$/.test(t.trim()) ? t.trim().padStart(5, "0") : null);
     const okChan = (c) => (["text", "call", "email"].includes(c) ? c : null);
+    const okLevel = (l) => (["warn", "risk"].includes(l) ? l : "warn");
     const plan = Array.isArray(parsed?.plan)
       ? parsed.plan.filter((p) => p && p.title).map((p) => ({
           title: String(p.title), when: String(p.when || ""), start: okTime(p.start), end: okTime(p.end), why: String(p.why || ""), kind: okKind(String(p.kind || "task")),
@@ -130,7 +132,10 @@ Respond ONLY with strict JSON, no markdown:
           refs: Array.isArray(p.refs) ? p.refs.map((r) => String(r)).slice(0, 20) : [],
         }))
       : [];
-    return J({ summary: String(parsed?.summary || "Here's your focused plan for today."), plan });
+    const flags = Array.isArray(parsed?.flags)
+      ? parsed.flags.filter((f) => f && f.text).map((f) => ({ level: okLevel(String(f.level || "warn")), text: String(f.text).slice(0, 220) })).slice(0, 3)
+      : [];
+    return J({ summary: String(parsed?.summary || "Here's your focused plan for today."), plan, flags });
   } catch (e) {
     return J({ error: String((e && e.message) || e) }, 500);
   }
