@@ -399,7 +399,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
         return;
       }
       // Refresh contacts state
-      const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+      const { data: fresh } = await supabase.from('contacts').select('*').order('name');
       if (fresh) setContacts(fresh);
       // Remove from local suggestion list (link AND new-contact, since linking covers both)
       let nextLink = [];
@@ -797,7 +797,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           just_ran: true,
         });
         // Refresh contacts since some may have been auto-filled
-        const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+        const { data: fresh } = await supabase.from('contacts').select('*').order('name');
         if (fresh) setContacts(fresh);
         const totalPending = (data.suggestions_count || 0) + (data.new_contact_suggestions_count || 0);
         if (totalPending > 0) setShowLinkReview(true);
@@ -814,7 +814,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
         body: { user_id: userId, apply: true },
       });
       if (data?.ok) {
-        const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+        const { data: fresh } = await supabase.from('contacts').select('*').order('name');
         if (fresh) setContacts(fresh);
         if (data.filled > 0) {
           setPhoneMsg({ type: 'ok', text: `Filled ${data.filled} phone${data.filled === 1 ? '' : 's'} from email signatures.` });
@@ -1365,7 +1365,7 @@ function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, 
       }
 
       // Step 5: refresh contacts in parent + remove this group from list
-      const { data: fresh } = await supabase.from('contacts').select('*').eq('user_id', userId).order('name');
+      const { data: fresh } = await supabase.from('contacts').select('*').order('name');
       if (fresh) setContacts(fresh);
       const remaining = localGroups.filter(g => g.key !== group.key);
       setLocalGroups(remaining);

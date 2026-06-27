@@ -7384,7 +7384,6 @@ function SingleContactPicker({ value, onChange, contacts, setContacts, currentCo
       try {
         let query = supabase.from('contacts')
           .select('*')
-          .eq('user_id', userId)
           .or(`name.ilike.*${safeQ}*,email.ilike.*${safeQ}*,company.ilike.*${safeQ}*`)
           .order('name')
           .limit(12);
@@ -11605,6 +11604,41 @@ function AccountingView({ userId, ownerId, agents, isAdmin }){
 // =================== END ACCOUNTING ===================
 
 
+function TeamView(){
+  const [team,setTeam]=useState(undefined);
+  useEffect(()=>{ (async()=>{ try{ const { data } = await supabase.rpc('get_my_team'); setTeam(data||null); }catch(e){ setTeam(null); } })(); },[]);
+  const TYPE_LABELS={our_agent:'Our agents',recruit:'Recruits',vendor:'Vendors',lead:'Leads',client:'Clients',partner:'Partners',family:'Family',personal:'Personal'};
+  if(team===undefined) return (<div className="view"><div className="panel" style={{padding:24,textAlign:'center',color:'var(--text-2)'}}>Loading team\u2026</div></div>);
+  if(!team) return (<div className="view"><div className="panel" style={{padding:20,color:'var(--text-2)',fontSize:13}}>You are not on a team yet.</div></div>);
+  const roleMeta=(r)=> r==='owner'?{t:'Owner',c:'var(--accent)'}:r==='admin'?{t:'Admin',c:'#8b5cf6'}:{t:'Member',c:'var(--text-3)'};
+  const ruleText=(r)=>{ if(r.resource_type==='contacts'){ const ty=r.match&&r.match.type; return ty?('Contacts tagged \u201c'+(TYPE_LABELS[ty]||ty)+'\u201d'):'All contacts'; } return r.resource_type; };
+  return (<div className="view">
+    <div className="panel" style={{display:'flex',alignItems:'center',gap:12}}>
+      <div style={{width:42,height:42,borderRadius:12,background:'var(--accent-glow)',border:'1px solid var(--accent)',display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name="users" size={20} style={{color:'var(--accent)'}}/></div>
+      <div><h2 style={{margin:0}}>{team.name}</h2><div style={{fontSize:12,color:'var(--text-2)',marginTop:2}}>Shared workspace for your brokerage team</div></div>
+    </div>
+    <div className="panel" style={{marginTop:12,padding:16}}>
+      <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',marginBottom:8,display:'inline-flex',alignItems:'center',gap:8}}><Icon name="users" size={15} style={{color:'var(--accent)'}}/> Members ({team.members.length})</div>
+      {team.members.map(m=>{ const rm=roleMeta(m.role); return (
+        <div key={m.auth_user_id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+          <span style={{fontSize:13.5,fontWeight:600,color:'var(--text-1)'}}>{m.name}</span>
+          <span style={{fontSize:10.5,fontWeight:700,color:rm.c,border:'1px solid '+rm.c,borderRadius:999,padding:'2px 9px'}}>{rm.t}</span>
+        </div>); })}
+    </div>
+    <div className="panel" style={{marginTop:12,padding:16}}>
+      <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',marginBottom:8,display:'inline-flex',alignItems:'center',gap:8}}><Icon name="signal" size={15} style={{color:'var(--accent)'}}/> What's shared with the team</div>
+      {(team.rules||[]).length===0 ? <div style={{fontSize:12.5,color:'var(--text-3)'}}>Nothing shared yet.</div> :
+        team.rules.map((r,i)=>(
+          <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+            <div><div style={{fontSize:13,fontWeight:600,color:'var(--text-1)'}}>{ruleText(r)}</div><div style={{fontSize:11,color:'var(--text-3)',marginTop:1}}>Visible to all {team.members.length} members, on every device</div></div>
+            <span style={{fontSize:15,fontWeight:800,color:'var(--accent)'}}>{(team.shared_counts&&team.shared_counts[r.resource_type])||0}</span>
+          </div>))
+      }
+      <div style={{fontSize:11,color:'var(--text-3)',marginTop:12,lineHeight:1.5}}>More shared resources (vendors, listings, company leads, documents, templates) can be added to this team as we build them.</div>
+    </div>
+  </div>);
+}
+
 function AgentsView({ userId, user, appCtx, isAdmin }){
   const role = appCtx?.role; const myTeam = appCtx?.team||''; const ownerId = appCtx?.owner_id || userId; const canWrite = isAdmin || !!appCtx?.is_team_leader;
   const roleOpts = isAdmin ? AGENT_ROLES : AGENT_ROLES.filter(r=>['agent','team_leader'].includes(r.value));
@@ -13515,6 +13549,7 @@ function AppMain() {
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'pipeline',    icon: '🎯', label: 'My pipeline', badge: null },
     { id: 'scoreboard',  icon: '🏆', label: "How I'm doing", badge: null },
+    { id: 'team',        icon: '👥', label: 'Team', badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
@@ -13545,7 +13580,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['pipeline', 'scoreboard', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
+  const MORE_ORDER = ['pipeline', 'scoreboard', 'team', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -13559,6 +13594,7 @@ function AppMain() {
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
   const brokerageGroup = { label: 'Brokerage', icon: 'building', children: [
     { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
+    { label: 'Team & sharing', view: 'team', icon: 'users' },
     { label: 'Agent roster', view: 'agents', icon: 'users', children: [
       { label: '+ Add agent', view: 'agents', icon: 'recruiting' },
       { label: 'Set up agent profile', view: 'agents', icon: 'clipboard' },
@@ -13714,6 +13750,7 @@ function AppMain() {
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
               : view==='deals'       ? <DealsView deals={deals} setDeals={setDeals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='files'       ? <FilesView files={files} setFiles={setFiles} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id} user={user} isAdmin={isAdmin}/>
+              : view==='team'        ? <TeamView/>
               : view==='agents' && (isAdmin||isTeamLeader) ? <AgentsView userId={user.id} user={user} appCtx={appCtx} isAdmin={isAdmin}/>
               : view==='mileage'     ? <MileageView mileageEntries={mileageEntries} setMileageEntries={setMileageEntries} deals={deals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
