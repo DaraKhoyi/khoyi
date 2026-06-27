@@ -30,12 +30,19 @@ const J = (b, s = 200) =>
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null, workingHours = null } = await req.json();
+    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null, workingHours = null, constraints = "", pipeline = null, lightDay = false } = await req.json();
     const wh = { start: Number(workingHours?.start) || 8, end: Number(workingHours?.end) || 18 };
     const hhmm = (iso) => { try { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return ""; } };
 
+    const con = String(constraints || "").trim().slice(0, 300);
+    const pipeContacts = (pipeline?.contacts || []).slice(0, 8);
+    const pipeSystems = (pipeline?.systems || []).slice(0, 8);
+    const hasPipeline = pipeContacts.length > 0 || pipeSystems.length > 0;
+
     const nothing = (!tasks || tasks.length === 0) && (!reachouts || reachouts.length === 0) && (!unreadEmails || unreadEmails.length === 0);
-    if (nothing) return J({ summary: "Nothing due, no replies owed, and your inbox is clear — the day is yours. Use the open runway to prospect or get ahead.", plan: [] });
+    // Truly empty day AND nothing to prospect → hand the runway back. But if there's a
+    // pipeline to protect, fall through and build a pipeline-only day instead.
+    if (nothing && !hasPipeline) return J({ summary: "Nothing due, no replies owed, and your inbox is clear — the day is yours. Use the open runway to prospect or get ahead.", plan: [] });
 
     const taskLines = (tasks || []).slice(0, 30).map((t) => {
       const due = t.due_date ? ` (due ${t.due_date})` : "";
@@ -76,6 +83,8 @@ serve(async (req) => {
       const chronic = (habits.chronic || []).slice(0, 6).map((t) => `"${t}"`).join(", ");
       habitsLine = `Based on ${habits.plansAnalyzed} recent plans — follow-through by type: ${kinds || "n/a"}.${chronic ? ` Chronically deferred (carried over repeatedly): ${chronic}.` : ""}`;
     }
+    const pipeContactLines = pipeContacts.map((c) => `(${c.id}) ${c.name}${c.reason ? ` — ${c.reason}` : ""}`).join("\n");
+    const pipeSystemLines = pipeSystems.map((s) => `- ${s.name}${s.category ? ` (${s.category})` : ""}`).join("\n");
 
     const sys = `You are a sharp executive chief of staff for a real-estate broker${name ? ` named ${name}` : ""}. Today is ${date || "today"}.
 Build ONE focused, realistic plan for the day from the inputs below: open tasks, people to reach out to, unread emails (with body text), the fixed calendar, and — for CONTEXT — the broker's live deals and properties. Rules:
@@ -90,13 +99,15 @@ Build ONE focused, realistic plan for the day from the inputs below: open tasks,
 - TIME-BLOCK THE DAY: lay the plan on a real timeline inside WORKING HOURS. Treat fixed calendar events as immovable. Slot each actionable step into an open gap and give it a concrete "start" and "end" in 24-hour HH:MM. Use realistic durations — texts/calls 10–20 min, inbox triage 20–30 min, focused work 30–60 min. Never overlap an event or another step. Leave small buffers between blocks; do not pack every minute. Order matters: put the highest-leverage work (and, when behind on GCI, revenue work) in the prime morning slots, respecting the HABITS guidance.
 - If a step genuinely won't fit before the end of WORKING HOURS, defer it: set "start" and "end" to null. Put deferred items last. The "when" field should still be a short human label (e.g., "9:00–9:30 AM" or "Tomorrow").
 - Be realistic: ~5-8 focused items. Pick the vital few; if there's more, say what to defer.
-- For each item include: a short "why", a "when" (human label), "start"/"end" (HH:MM 24h, or null if deferred), a "kind" (exactly one of task|reachout|email|focus), and "refs" = the list of input ids (the (t#)/(r#)/(e#) tokens) the step draws from. A "triage inbox" step should list all the e# ids it covers. Use [] for refs when none apply.
+- For each item include: a short "why", a "when" (human label), "start"/"end" (HH:MM 24h, or null if deferred), a "kind" (exactly one of task|reachout|email|focus), and "refs" = the list of input ids (the (t#)/(r#)/(e#)/(p#) tokens) the step draws from. A "triage inbox" step should list all the e# ids it covers. Use [] for refs when none apply.
 - CHANNEL (reach-outs only): for kind "reachout", add a "channel" (text|call|email) — the best way to reach that person. Infer it from any preference in the brain/journal notes (e.g., "prefers texts", "always call her"); otherwise default to "text" for a quick light touch, "call" for high-stakes or relationship-deepening conversations, and "email" when it needs detail or a document. Omit channel (null) for non-reachout kinds.
+- CONSTRAINTS (if provided): the broker has told you specific limits on today — available time, hours they're away, or location (e.g., "only have 2 hours", "out until noon", "working from home", "no calls today"). Treat these as HARD limits and reshape the whole plan around them. Recompute the usable window: if they only have N hours, schedule at most ~N hours of timed work and DEFER the rest (start/end null); if they're out until a time, place nothing before it; if location- or channel-bound (WFH / traveling / no calls), prefer the work that fits (calls/emails/remote vs in-person showings, or text/email when calls are out). Keep only the vital few that fit the limit; defer everything else. Acknowledge the constraint in ONE short phrase in the summary.
+- PIPELINE PROTECTION (light days): if LIGHT DAY is true, the broker's task and meeting load is thin — and a quiet day is a silent pipeline risk. Proactively ADD 1-3 concrete revenue-protecting blocks in the open runway, drawn ONLY from the PIPELINE list below. Two kinds: (a) reach out to specific nurture/sphere people — use kind "reachout", put their (p#) id in refs, and set a channel; (b) run a focused prospecting power-hour on ONE of the broker's active lead-gen systems — use kind "focus" and name the actual system (e.g., "Power hour: Sphere of Influence — 30 min of calls/texts"). Name real people and the real system; never invent contacts. On a day with little else, this IS the most important work — give it a prime morning slot, not the leftovers. Do NOT add pipeline blocks when LIGHT DAY is false (the day is already full). If CONSTRAINTS shrink the day, respect them first and add fewer (or no) pipeline blocks.
 - Motivating, human.
 Respond ONLY with strict JSON, no markdown:
 {"summary":"1-2 sentence game plan","plan":[{"title":"...","when":"9:00–9:30 AM","start":"09:00","end":"09:30","why":"...","kind":"task|reachout|email|focus","channel":"text|call|email|null","refs":["t1","e2"]}]}`;
 
-    const user = `WORKING HOURS: ${String(wh.start).padStart(2, "0")}:00–${String(wh.end).padStart(2, "0")}:00 (24h). Schedule all timed work inside this window.\n\nOPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
+    const user = `WORKING HOURS: ${String(wh.start).padStart(2, "0")}:00–${String(wh.end).padStart(2, "0")}:00 (24h). Schedule all timed work inside this window.\n\nCONSTRAINTS FOR TODAY: ${con || "(none — use the full working window)"}\n\nLIGHT DAY: ${lightDay ? "YES — load is thin; proactively protect the pipeline using the PIPELINE list below." : "no — the day has enough real work; do not add pipeline filler."}\n\nOPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nPIPELINE (nurture/sphere people to get ahead on, and active lead-gen systems — use ONLY on a LIGHT DAY):\nContacts:\n${pipeContactLines || "(none)"}\nActive lead-gen systems:\n${pipeSystemLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

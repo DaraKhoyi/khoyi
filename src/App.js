@@ -2612,13 +2612,19 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
   const [highlight, setHighlight] = useState(null);
   const [inboxActs, setInboxActs] = useState({}); // per-step inbox action result
   const [pushCal, setPushCal] = useState(false);   // #6 write timed blocks to calendar on accept
+  const [constraints, setConstraints] = useState(''); // #9 active re-plan constraint
+  const [conInput, setConInput] = useState('');       // #9 free-text constraint draft
+  const CON_CHIPS = ['Only 2 hours', 'Half day', 'Out until noon', 'Working from home'];
   const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
   const mounted = useRef(true);
   const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-  // Build inputs and ask the planner for a fresh sequence
-  const generateFresh = async () => {
+  // Build inputs and ask the planner for a fresh sequence.
+  // conArg (optional): a re-plan constraint like "Only 2 hours" / "Out until noon".
+  const generateFresh = async (conArg) => {
+    const effCon = conArg !== undefined ? conArg : constraints;
     try {
+      if (conArg !== undefined) setConstraints(conArg);
       if (mounted.current) setState({ loading: true });
       const today = new Date();
       const tISO = todayISO();
@@ -2639,6 +2645,18 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
         ...outreach.slice(0, 10).map(c => ({ c, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
       ].slice(0, 15);
       const reachouts = reachSource.map((x, i) => { const id = `r${i + 1}`; cmap.set(id, x.c); return { id, name: x.c.name, reason: x.reason }; });
+      // #10 Pipeline protection — nurture/sphere people to get ahead on (on a cadence but not yet
+      // due, so they don't surface as reach-outs), plus the broker's active lead-gen systems.
+      const inReach = new Set(reachSource.map(x => x.c.id));
+      const nurtureAhead = (contacts || []).filter(c => c.cadence_days && !inReach.has(c.id) && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()))
+        .sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0))
+        .slice(0, 8);
+      const pipelineContacts = nurtureAhead.map((c, i) => { const id = `p${i + 1}`; cmap.set(id, c); return { id, name: c.name, reason: `nurture — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` }; });
+      let pipelineSystems = [];
+      try {
+        const { data: sys } = await supabase.from('lead_gen_systems').select('name,category,is_overhead,is_active,is_archived').eq('user_id', userId).eq('is_active', true).limit(20);
+        pipelineSystems = (sys || []).filter(s => !s.is_archived && !s.is_overhead && s.category !== 'overhead').map(s => ({ name: s.name, category: s.category })).slice(0, 8);
+      } catch (_e) {}
       let unreadEmails = [];
       try {
         const { data: msgs } = await supabase.from('email_messages')
@@ -2715,10 +2733,12 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
         }
       } catch (_e) {}
 
-      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits, workingHours: { start: 8, end: 18 } } });
+      // #10 Light-day detection — thin task/reach-out/email load means the day is a pipeline risk.
+      const lightDay = (payloadTasks.length + reachouts.length + unreadEmails.length) <= 4;
+      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits, workingHours: { start: 8, end: 18 }, constraints: effCon, pipeline: { contacts: pipelineContacts, systems: pipelineSystems }, lightDay } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [] });
+      if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [], light: lightDay, constraint: effCon });
     } catch (e) { if (mounted.current) setState({ loading: false, error: String(e.message || e) }); }
   };
 
@@ -3013,6 +3033,39 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                 </div>
               )}
               {state.summary && <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, fontWeight: 500 }}>{state.summary}</p>}
+              {state.light && (state.plan || []).length > 0 && (
+                <div style={{ marginBottom: 14, background: 'var(--accent-glow)', border: '1px solid var(--accent-dim)', borderRadius: 10, padding: '9px 12px', fontSize: 12, color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon name="bulb" size={13} /><span><strong style={{ color: 'var(--accent)' }}>Light day</strong> — Ari added pipeline-protection time so a quiet day doesn't go to waste.</span>
+                </div>
+              )}
+              {/* #9 — Adjust the day: re-plan around real constraints */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>Adjust the day</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {CON_CHIPS.map(opt => {
+                    const active = constraints === opt;
+                    return (
+                      <button key={opt} onClick={() => { const v = active ? '' : opt; setConInput(''); generateFresh(v); }} className="quick-chip"
+                        style={{ padding: '6px 12px', fontSize: 12, ...(active ? { background: 'var(--accent)', color: '#1b180f', borderColor: 'var(--accent)', fontWeight: 700 } : {}) }}>
+                        {active ? '✓ ' : ''}{opt}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
+                  <input value={conInput} onChange={e => setConInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && conInput.trim()) { generateFresh(conInput.trim()); } }}
+                    placeholder="…or type a limit (e.g. only mornings, no calls)"
+                    style={{ flex: 1, minWidth: 0, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 11px', color: 'var(--text-1)', fontSize: 12.5 }} />
+                  <button onClick={() => { if (conInput.trim()) generateFresh(conInput.trim()); }} className="quick-chip" style={{ padding: '8px 14px', fontSize: 12.5, flexShrink: 0 }}>↻ Re-plan</button>
+                </div>
+                {constraints && !CON_CHIPS.includes(constraints) && (
+                  <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text-2)' }}>
+                    Planning around: <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{constraints}</span>
+                    <button onClick={() => { setConInput(''); generateFresh(''); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 11.5, textDecoration: 'underline', marginLeft: 8 }}>clear</button>
+                  </div>
+                )}
+              </div>
               {(() => {
                 const plan = state.plan || [];
                 const hasTimed = plan.some(p => p.start);
