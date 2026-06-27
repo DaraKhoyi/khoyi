@@ -174,10 +174,10 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const referredName = referredById ? ((contacts.find(c=>c.id===referredById)||{}).name || '') : '';
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
+      <div className="modal" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {/* Header mirrors the contact sheet so editing feels like the same surface */}
-        <div style={{padding:'16px 16px 14px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
+        <div style={{padding:'calc(14px + env(safe-area-inset-top, 0px)) 16px 14px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
           <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
             <div style={{width:'48px',height:'48px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'17px',color:'var(--accent)'}}>{mInitials}</div>
             <div style={{flex:1,minWidth:0}}>
@@ -193,7 +193,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div style={{maxHeight:'60vh',overflowY:'auto',padding:'10px 16px 6px'}}>
+          <div style={{flex:1,minHeight:0,overflowY:'auto',padding:'10px 16px 6px'}}>
 
             <EditSection icon="contacts" title="Identity" open={openSec.identity} onToggle={()=>tog('identity')} hint="The basics — who they are and where they work." summary={[(CONTACT_TYPE_LABELS[type]||type), company].filter(Boolean).join(' · ')}>
               <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>

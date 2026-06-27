@@ -5899,9 +5899,9 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   if (_hdrHome) hdrKeyFacts.push({ k:'Home', v:_hdrHome });
   if (_hdrBiz) hdrKeyFacts.push({ k:'Business', v:_hdrBiz });
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{maxWidth:'640px'}}>
-        <div style={{padding:'16px 16px 12px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
+      <div className="modal" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{padding:'calc(14px + env(safe-area-inset-top, 0px)) 16px 12px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
           <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
             <div style={{width:'54px',height:'54px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'19px',color:'var(--accent)',boxShadow:'0 0 0 4px rgba(197,169,94,0.08)'}}>{hdrInitials}</div>
             <div style={{flex:1,minWidth:0}}>
@@ -5914,14 +5914,14 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               {onEdit && (
                 <button type="button" onClick={onEdit} title="Edit" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="edit" size={15} /></button>
               )}
-              <button type="button" onClick={onClose} title="Close" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'17px',lineHeight:1}}>\u00d7</button>
+              <button type="button" onClick={onClose} title="Close" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'17px',lineHeight:1}}>×</button>
             </div>
           </div>
           <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'12px'}}>
             {hdrTypeLabel && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--accent)'}}>{hdrTypeLabel}</span>}
-            {profile?.primary_letter && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(255,255,255,0.04)',border:'1px solid '+discBarColors[profile.primary_letter],color:discBarColors[profile.primary_letter]}}>\u25ce {profile.primary_letter}{profile.secondary_letter ? '/'+profile.secondary_letter : ''}</span>}
+            {profile?.primary_letter && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(255,255,255,0.04)',border:'1px solid '+discBarColors[profile.primary_letter],color:discBarColors[profile.primary_letter]}}>DISC {profile.primary_letter}{profile.secondary_letter ? '/'+profile.secondary_letter : ''}</span>}
             {hdrTouchDue && <span style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(245,158,11,0.13)',border:'1px solid rgba(245,158,11,0.4)',color:'#fbbf24'}}><span style={{width:'6px',height:'6px',borderRadius:'50%',background:'#fbbf24'}} />Touch due</span>}
-            {hdrLastAge && <span style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-2)'}}>{hdrLastDir} \u00b7 {hdrLastAge}</span>}
+            {hdrLastAge && <span style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-2)'}}>{hdrLastDir} · {hdrLastAge}</span>}
           </div>
         </div>
 
@@ -5943,8 +5943,41 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
         </div>
 
-        <div style={{maxHeight:'56vh',overflowY:'auto',paddingRight:'4px'}}>
+        <div style={{flex:1,minHeight:0,overflowY:'auto',paddingRight:'4px'}}>
           {tab==='overview' && (<>
+          {profile && (profile.primary_letter || hasBaseline) && (() => {
+            const NAMES = { D:'Dominance', I:'Influence', S:'Steadiness', C:'Conscientiousness' };
+            const TIPS = { D:'Direct and results-driven — be brief, lead with the bottom line, respect their time.', I:'Outgoing and relationship-driven — be warm and personal, keep the energy up.', S:'Steady and loyal — be patient and supportive; give time to decide, never pressure.', C:'Precise and analytical — lead with the facts and the detail; be accurate and thorough.' };
+            const pl = profile.primary_letter, sl = profile.secondary_letter;
+            const ub = hasBaseline;
+            const dd = ub ? profile.baseline_d_score : profile.d_score;
+            const ii = ub ? profile.baseline_i_score : profile.i_score;
+            const ss = ub ? profile.baseline_s_score : profile.s_score;
+            const cc = ub ? profile.baseline_c_score : profile.c_score;
+            const pct = profile.confidence_pct;
+            const confText = ub ? 'Verified assessment' : (pct != null ? pct + '% confidence' : 'Inferred');
+            const confColor = ub ? '#34d399' : (pct >= 70 ? '#34d399' : pct >= 40 ? '#fbbf24' : 'var(--text-3)');
+            const srcLine = ub
+              ? ('Source: ' + (profile.baseline_source || 'Official DISC') + (profile.baseline_taken_at ? ' · ' + new Date(profile.baseline_taken_at).toLocaleDateString() : ''))
+              : 'Inferred from notes & communications';
+            return (
+              <div style={{margin:'2px 16px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',marginBottom:'12px'}}>
+                  <span style={{fontSize:'10px',fontWeight:800,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="target" size={13} /> Behavioral Signal · DISC</span>
+                  <span style={{fontSize:'10.5px',fontWeight:700,padding:'3px 10px',borderRadius:'999px',border:'1px solid '+confColor,color:confColor,whiteSpace:'nowrap'}}>{confText}</span>
+                </div>
+                {(dd!=null||ii!=null||ss!=null||cc!=null) && discBars(dd, ii, ss, cc, null)}
+                {pl && (
+                  <div style={{marginTop:'12px',display:'flex',alignItems:'baseline',gap:'9px',flexWrap:'wrap'}}>
+                    <span style={{fontSize:'24px',fontWeight:800,color:discBarColors[pl],lineHeight:1}}>{pl}{sl?'/'+sl:''}</span>
+                    <span style={{fontSize:'12.5px',color:'var(--text-2)'}}>{NAMES[pl]}{sl?' · '+NAMES[sl]:''}</span>
+                  </div>
+                )}
+                {pl && TIPS[pl] && <div style={{marginTop:'10px',fontSize:'12.5px',color:'var(--text-1)',lineHeight:1.5,borderLeft:'2px solid '+discBarColors[pl],paddingLeft:'11px'}}>{TIPS[pl]}</div>}
+                <div style={{marginTop:'10px',fontSize:'10.5px',color:'var(--text-3)'}}>{srcLine}</div>
+              </div>
+            );
+          })()}
           <div style={{padding:'2px 16px 14px'}}>
             {Array.isArray(contact.emails) && contact.emails.length > 0 && (
               <div style={{marginBottom:'6px'}}>
@@ -5954,7 +5987,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                     <a href={`mailto:${e.value}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                       <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> {e.value}</span>
                     </a>
-                    {e.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>\u2605</span>}
+                    {e.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
                   </div>
                 ))}
               </div>
@@ -5968,7 +6001,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                       <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="quo" size={12} /> {p.value}</span>
                     </a>
                     <button type="button" onClick={()=>setTextTo({ phone: p.value })} title="Text via Quo" style={{color:'var(--text-3)',background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'2px 4px'}}><Icon name="message" size={13} /></button>
-                    {p.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>\u2605</span>}
+                    {p.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
                   </div>
                 ))}
               </div>
