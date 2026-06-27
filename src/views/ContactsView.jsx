@@ -727,6 +727,16 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   const [editContact, setEditContact] = useState(null);
   const [editFromDetail, setEditFromDetail] = useState(false);
   const [detailContact, setDetailContact] = useState(null);
+  // Bulk lead-source tagging
+  const [tagMode, setTagMode] = useState(false);
+  const [selIds, setSelIds] = useState(() => new Set());
+  const [tagSystems, setTagSystems] = useState([]);
+  const [tagSysId, setTagSysId] = useState('');
+  const [applyingTag, setApplyingTag] = useState(false);
+  useEffect(()=>{ (async()=>{ const { data } = await supabase.from('lead_gen_systems').select('id,name,is_archived').eq('user_id', userId).order('name'); setTagSystems((data||[]).filter(s=>!s.is_archived)); })(); },[userId]);
+  const toggleSel = (id)=> setSelIds(prev=>{ const nx=new Set(prev); nx.has(id)?nx.delete(id):nx.add(id); return nx; });
+  const exitTag = ()=>{ setTagMode(false); setSelIds(new Set()); setTagSysId(''); };
+  const applyTag = async ()=>{ if(!tagSysId || selIds.size===0) return; setApplyingTag(true); const ids=[...selIds]; const { error } = await supabase.from('contacts').update({ lead_gen_system_id: tagSysId }).in('id', ids); if(error){ if(window.__notify) window.__notify('Could not tag contacts.','error'); setApplyingTag(false); return; } setContacts(prev=>prev.map(c=> selIds.has(c.id) ? { ...c, lead_gen_system_id: tagSysId } : c)); if(window.__notify) window.__notify(ids.length+' contact'+(ids.length===1?'':'s')+' tagged.','success'); setApplyingTag(false); exitTag(); };
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added' | 'cadence_due'
   const [dueOnly, setDueOnly] = useState(false);
@@ -997,6 +1007,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="contacts" size={26} style={{color:'var(--accent)',flexShrink:0}} />Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
+          <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Tag lead source on many contacts" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Tag source'}</button>
           <HeaderSearchIcon
             value={search}
             open={searchOpen}
@@ -1005,6 +1016,18 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
         </div>
       </div>
+
+      {tagMode && (
+        <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:60,background:'var(--bg-card)',borderTop:'1px solid var(--accent)',padding:'12px 16px calc(12px + env(safe-area-inset-bottom,0px))',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 20px rgba(0,0,0,0.45)'}}>
+          <span style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{selIds.size} selected</span>
+          <select className="form-input" value={tagSysId} onChange={e=>setTagSysId(e.target.value)} style={{flex:'1 1 150px',minWidth:140,margin:0,padding:'8px 10px',fontSize:13}}>
+            <option value="">Choose lead source…</option>
+            {tagSystems.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button className="btn btn-ghost btn-sm" onClick={exitTag}>Cancel</button>
+          <button className="btn btn-primary btn-sm" disabled={!tagSysId || selIds.size===0 || applyingTag} onClick={applyTag}>{applyingTag?'Applying…':'Apply'}</button>
+        </div>
+      )}
 
       {/* Search input — collapsible. Only renders when icon is toggled open. */}
       {searchOpen && (
@@ -1123,7 +1146,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                   const p = profileByContact.get(c.id);
                   const discColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
                   return (
-                    <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setDetailContact(c);}}>
+                    <div key={c.id} className="task-item" style={{cursor:'pointer', ...(tagMode && selIds.has(c.id) ? {background:'var(--accent-glow)',border:'1px solid var(--accent)'} : {})}} onClick={()=>{ if(tagMode){ toggleSel(c.id); } else { setDetailContact(c); } }}>
+                      {tagMode && <span style={{width:20,height:20,borderRadius:5,border:'1.5px solid '+(selIds.has(c.id)?'var(--accent)':'var(--text-3)'),background:selIds.has(c.id)?'var(--accent)':'transparent',color:'#111',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0,marginRight:8}}>{selIds.has(c.id)?'✓':''}</span>}
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
                           {c.name}

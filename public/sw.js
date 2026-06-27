@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v127-20260627-business-kpis'
+const VERSION = 'prismos-v128-20260627-scoreboard-goal-bulktag'
 const APP_SHELL = [
   '/',
   '/index.html',

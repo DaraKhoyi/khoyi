@@ -3432,7 +3432,13 @@ function DashboardBriefing({ user, setView }) {
   );
 }
 
-function BusinessKPIs({ deals = [], gciGoal = 0, setView }){
+function BusinessKPIs({ deals = [], gciGoal = 0, setView, userId }){
+  const [goalOverride,setGoalOverride]=useState(null);
+  const [editGoal,setEditGoal]=useState(false);
+  const [goalInput,setGoalInput]=useState('');
+  const [savingGoal,setSavingGoal]=useState(false);
+  const goal = goalOverride!=null ? goalOverride : (Number(gciGoal)||0);
+  const saveGoal=async()=>{ const val=Math.round(Number(String(goalInput).replace(/[^0-9.]/g,''))||0); if(!val){ setEditGoal(false); return; } setSavingGoal(true); try{ await supabase.from('finance_settings').upsert({ user_id:userId, annual_gci_goal:val }, { onConflict:'user_id' }); setGoalOverride(val); setEditGoal(false); if(window.__notify) window.__notify('GCI goal set to $'+val.toLocaleString(),'success'); }catch(e){ if(window.__notify) window.__notify('Could not save goal.','error'); } setSavingGoal(false); };
   const ACTIVE=['lead','active','under_contract','closing'];
   const PROB={closing:0.90,under_contract:0.75,active:0.35,lead:0.15};
   const m0=(n)=>'$'+Math.round(n||0).toLocaleString();
@@ -3444,14 +3450,23 @@ function BusinessKPIs({ deals = [], gciGoal = 0, setView }){
   const closed=deals.filter(d=>d.status==='closed' && d.close_date && new Date(d.close_date).getFullYear()===yr);
   const gciYtd=closed.reduce((a,d)=>a+gciOf(d),0);
   const dayOfYear=Math.max(1,Math.floor((Date.now()-new Date(yr,0,0))/86400000));
-  const expected=gciGoal>0?gciGoal*(dayOfYear/365):0;
-  const pct=gciGoal>0?Math.min(1,gciYtd/gciGoal):0;
-  const onTrack=gciGoal>0 && gciYtd>=expected;
-  const empty = deals.length===0 && gciYtd===0 && gciGoal<=0;
-  if(empty){
-    return (<div className="dash-panel" onClick={()=>setView('deals')} style={{cursor:'pointer',background:'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:16,padding:18,marginBottom:20}}>
-      <div style={{fontSize:14,fontWeight:700,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:8,marginBottom:5}}><Icon name="dollar" size={16} style={{color:'var(--accent)'}}/> Track your deals to see GCI &amp; pipeline</div>
-      <div style={{fontSize:12.5,color:'var(--text-2)',lineHeight:1.5}}>Add your active and closed deals and your commission, pipeline value, and goal pace fill in here automatically. Tap to add your first deal.</div>
+  const expected=goal>0?goal*(dayOfYear/365):0;
+  const pctG=goal>0?Math.min(1,gciYtd/goal):0;
+  const onTrack=goal>0 && gciYtd>=expected;
+  const goalSetter=(<div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:4}}>
+      <span style={{fontSize:12,color:'var(--text-2)'}}>Annual GCI goal</span>
+      <input type="number" inputMode="numeric" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="e.g. 150000" style={{flex:'1 1 120px',minWidth:110,background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text-1)',padding:'8px 10px',fontSize:13}}/>
+      <button className="btn btn-primary btn-sm" disabled={savingGoal} onClick={saveGoal}>{savingGoal?'Saving…':'Save goal'}</button>
+    </div>);
+  const empty = deals.length===0 && gciYtd===0 && goal<=0;
+  if(empty && !editGoal){
+    return (<div className="dash-panel" style={{background:'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:16,padding:18,marginBottom:20}}>
+      <div style={{fontSize:14,fontWeight:700,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:8,marginBottom:5}}><Icon name="dollar" size={16} style={{color:'var(--accent)'}}/> Set your year up for success</div>
+      <div style={{fontSize:12.5,color:'var(--text-2)',lineHeight:1.5,marginBottom:12}}>Set your annual GCI goal and add your deals — your commission, pipeline value, and goal pace will track here automatically.</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        <button className="btn btn-primary btn-sm" onClick={()=>{setGoalInput('');setEditGoal(true);}}>Set GCI goal</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Add a deal</button>
+      </div>
     </div>);
   }
   return (<div className="dash-panel" style={{background:'linear-gradient(135deg, rgba(197,169,94,0.08), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:16,padding:18,marginBottom:20}}>
@@ -3462,15 +3477,15 @@ function BusinessKPIs({ deals = [], gciGoal = 0, setView }){
     <div style={{marginBottom:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6,gap:8,flexWrap:'wrap'}}>
         <span style={{fontSize:24,fontWeight:800,color:'var(--text-1)',lineHeight:1}}>{m0(gciYtd)} <span style={{fontSize:12,fontWeight:600,color:'var(--text-3)'}}>GCI {yr}</span></span>
-        {gciGoal>0 && <span style={{fontSize:12,color:'var(--text-2)'}}>of {m0(gciGoal)} goal &middot; {Math.round(pct*100)}%</span>}
+        {goal>0 && <span style={{fontSize:12,color:'var(--text-2)'}}>of {m0(goal)} goal &middot; {Math.round(pctG*100)}%</span>}
       </div>
-      {gciGoal>0 ? (<>
+      {goal>0 ? (<>
         <div style={{height:12,borderRadius:6,background:'var(--bg-base)',overflow:'hidden',position:'relative'}}>
-          <div className="bar-fill-anim" style={{height:'100%',width:(pct*100)+'%',background:'linear-gradient(90deg,var(--accent-2),var(--accent))',borderRadius:6}}/>
+          <div className="bar-fill-anim" style={{height:'100%',width:(pctG*100)+'%',background:'linear-gradient(90deg,var(--accent-2),var(--accent))',borderRadius:6}}/>
           <div title="Pace to date" style={{position:'absolute',top:-2,bottom:-2,left:'calc('+Math.min(100,Math.round(dayOfYear/365*100))+'% - 1px)',width:2,background:'var(--text-2)',opacity:0.75}}/>
         </div>
         <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:onTrack?'var(--green)':'#f5b34a'}}>{onTrack?'On pace \u2713':'Behind pace by '+m0(expected-gciYtd)}</div>
-      </>) : <div style={{fontSize:11.5,color:'var(--text-3)'}}>Set an annual GCI goal in Finance to track your pace.</div>}
+      </>) : (editGoal ? goalSetter : <button className="btn btn-ghost btn-sm" onClick={()=>{setGoalInput('');setEditGoal(true);}} style={{marginTop:2}}>+ Set annual GCI goal to track pace</button>)}
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,paddingTop:12,borderTop:'1px solid var(--border)'}}>
       <div><div style={{fontSize:18,fontWeight:800,color:'var(--text-1)',lineHeight:1.1}}>{m0(pipelineGci)}</div><div style={{fontSize:10.5,color:'var(--text-3)',marginTop:3}}>Pipeline value</div>{weighted>0 && <div style={{fontSize:9.5,color:'var(--text-3)',marginTop:1}}>~{m0(weighted)} weighted</div>}</div>
@@ -3691,7 +3706,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
       <DashboardBriefing user={user} setView={setView} />
 
       {/* Business at a glance — GCI / pipeline / value */}
-      <BusinessKPIs deals={deals} gciGoal={gciGoal} setView={setView} />
+      <BusinessKPIs deals={deals} gciGoal={gciGoal} setView={setView} userId={user.id} />
 
       {/* Metric tiles */}
       <div className="cards-row">
@@ -11025,6 +11040,74 @@ function LeadDetail({ lead, agents, acts, appts, canWrite, onClose, patch, assig
 }
 const lbl={ display:'flex', flexDirection:'column', gap:'3px', fontSize:'10px', color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'.04em', fontWeight:700 };
 
+function ScoreboardView({ userId, appCtx, setView }){
+  const ownerId = (appCtx && appCtx.owner_id) || userId;
+  const [rows,setRows]=useState(null);
+  const [metric,setMetric]=useState('contacts');
+  useEffect(()=>{ let alive=true; (async()=>{ try{ const { data } = await supabase.rpc('brokerage_scoreboard',{ p_owner: ownerId }); if(alive) setRows(data||[]); }catch(e){ if(alive) setRows([]); } })(); return ()=>{alive=false;}; },[ownerId]);
+  const m0=(v)=>'$'+Math.round(v||0).toLocaleString();
+  const METRICS=[
+    {id:'contacts',label:'Sphere',get:r=>Number(r.contacts)||0,fmt:v=>String(v),note:'Contacts in your CRM'},
+    {id:'activity',label:'Activity',get:r=>Number(r.tasks_done_30d)||0,fmt:v=>String(v),note:'Tasks completed in 30 days'},
+    {id:'pipeline',label:'Pipeline',get:r=>Number(r.pipeline_gci)||0,fmt:m0,note:'Commission in active deals'},
+    {id:'deals',label:'Closed',get:r=>Number(r.deals_closed)||0,fmt:v=>String(v),note:'Deals closed this year'},
+    {id:'gci',label:'GCI',get:r=>Number(r.gci_ytd)||0,fmt:m0,note:'Gross commission, year to date'},
+  ];
+  if(rows===null) return (<div className="view"><div className="panel" style={{padding:24,textAlign:'center',color:'var(--text-2)'}}>Loading the board…</div></div>);
+  const M=METRICS.find(x=>x.id===metric)||METRICS[0];
+  const sorted=[...rows].sort((a,b)=>M.get(b)-M.get(a));
+  const n=sorted.length;
+  const meIdx=sorted.findIndex(r=>r.is_me);
+  const me=meIdx>=0?sorted[meIdx]:null;
+  const myRank=meIdx>=0?meIdx+1:null;
+  const avg=n?sorted.reduce((a,r)=>a+M.get(r),0)/n:0;
+  const maxV=Math.max(1,...sorted.map(x=>M.get(x)));
+  const anyData=sorted.some(r=>M.get(r)>0);
+  const medal=(i)=> i===0?'#FFD24A':i===1?'#C4CBD4':i===2?'#CE8E54':'var(--text-3)';
+  return (
+    <div className="view">
+      <div className="panel" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <div>
+          <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><Icon name="target" size={20}/> How I'm doing</h2>
+          <div style={{fontSize:12,color:'var(--text-2)',marginTop:2}}>Where you stand across the brokerage</div>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:12}}>
+        {METRICS.map(x=>(<button key={x.id} onClick={()=>setMetric(x.id)} style={{background:metric===x.id?'var(--accent)':'transparent',color:metric===x.id?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:700,borderRadius:999,padding:'6px 13px',fontSize:12.5,cursor:'pointer'}}>{x.label}</button>))}
+      </div>
+      {me ? (
+        <div className="dash-panel" style={{marginTop:12,padding:18,background:'linear-gradient(135deg, rgba(197,169,94,0.10), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:16}}>
+          <div style={{display:'flex',alignItems:'center',gap:18,flexWrap:'wrap'}}>
+            <div style={{textAlign:'center',minWidth:84}}>
+              <div style={{fontSize:40,fontWeight:800,color:'var(--accent)',lineHeight:1}}>#{myRank}</div>
+              <div style={{fontSize:11,color:'var(--text-3)',marginTop:3,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase'}}>of {n}</div>
+            </div>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontSize:26,fontWeight:800,color:'var(--text-1)',lineHeight:1}}>{M.fmt(M.get(me))}</div>
+              <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:3}}>{M.label} · {M.note}</div>
+              <div style={{fontSize:12,marginTop:8,fontWeight:700,color: M.get(me)>=avg?'var(--green)':'#f5b34a'}}>{M.get(me)>=avg?'Above':'Below'} brokerage average ({M.fmt(avg)})</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="panel" style={{marginTop:12,padding:16,color:'var(--text-2)',fontSize:13}}>Your agent profile isn't linked to this login yet, so your own row isn't highlighted. An admin can link it under Brokerage → Agent roster.</div>
+      )}
+      <div className="dash-panel" style={{marginTop:12,padding:16,borderRadius:16,background:'var(--bg-card)',border:'1px solid var(--border)'}}>
+        <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',marginBottom:14,display:'inline-flex',alignItems:'center',gap:8}}><Icon name="chart" size={15} style={{color:'var(--accent)'}}/> Leaderboard · {M.label}</div>
+        {!anyData ? <div style={{fontSize:12.5,color:'var(--text-3)'}}>No {M.label.toLowerCase()} logged yet — the board fills in as the brokerage works. Keep going.</div> :
+          sorted.map((r,i)=>{ const v=M.get(r); return (
+            <div key={r.agent_id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,padding:r.is_me?'7px 9px':'0 0',background:r.is_me?'var(--accent-glow)':'transparent',border:r.is_me?'1px solid var(--accent)':'none',borderRadius:10}}>
+              <span style={{width:24,textAlign:'center',fontSize:14,fontWeight:800,color:medal(i),flexShrink:0}}>{i+1}</span>
+              <span style={{width:104,fontSize:12.5,fontWeight:r.is_me?800:600,color:'var(--text-1)',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.is_me?'You':(r.name||'\u2014')}</span>
+              <div style={{flex:1,height:14,borderRadius:5,background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:Math.round(v/maxV*100)+'%',background:r.is_me?'var(--accent)':'var(--accent-dim)',borderRadius:5,minWidth:v>0?4:0,transition:'width .6s ease'}}/></div>
+              <span style={{width:78,textAlign:'right',fontSize:12.5,fontWeight:700,color:'var(--text-1)',flexShrink:0}}>{M.fmt(v)}</span>
+            </div>); })
+        }
+      </div>
+    </div>
+  );
+}
+
 function PipelineView({ contacts, userId }){
   const [systems,setSystems]=useState(null);
   useEffect(()=>{ (async()=>{ const { data } = await supabase.from('lead_gen_systems').select('id,name,color,monthly_budget,is_archived'); setSystems((data||[]).filter(s=>!s.is_archived)); })(); },[]);
@@ -13327,6 +13410,7 @@ function AppMain() {
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'pipeline',    icon: '🎯', label: 'My pipeline', badge: null },
+    { id: 'scoreboard',  icon: '🏆', label: "How I'm doing", badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
@@ -13357,7 +13441,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['pipeline', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
+  const MORE_ORDER = ['pipeline', 'scoreboard', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -13413,6 +13497,7 @@ function AppMain() {
       { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
       { label: 'Lead-gen systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
       { label: 'My pipeline', view: 'pipeline', icon: 'chart' },
+      { label: "How I'm doing", view: 'scoreboard', icon: 'target' },
       { label: 'Lead-gen suggestions', built: false, ai: true, icon: 'bulb' },
     ] },
     { label: 'Deals & transactions', icon: 'briefcase', children: [
@@ -13515,6 +13600,7 @@ function AppMain() {
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
+              : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
               : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
