@@ -3635,6 +3635,105 @@ function DashboardPipelinePanel({ contacts = [], setView }){
   </>);
 }
 
+function MetricTiles({ needsNow, oweReplyN, reachN, pending=[], overdue=[], unreadEmailCount=0, apptWeek, contacts=[], weekTotal, topTasks=[], setView }){
+  return (
+      <div className="cards-row">
+        <div className="dash-tile" onClick={()=>{ setView(needsNow>0?'contacts':'tasks'); }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Needs you now</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--accent-glow)', border:'1px solid var(--accent)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="target" size={15} style={{ color:'var(--accent)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color: needsNow>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={needsNow} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{oweReplyN} replies · {reachN} reach-outs</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('tasks')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Open tasks</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="flame" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={pending.length} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{topTasks.length} top priority</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('inbox')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Unread email</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="inbox" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={unreadEmailCount} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your inbox</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('tasks')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Overdue</span>
+            <span style={{ width:30, height:30, borderRadius:9, background: overdue.length>0?'rgba(239,68,68,0.12)':'var(--bg-base)', border:`1px solid ${overdue.length>0?'rgba(239,68,68,0.4)':'var(--border)'}`, display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="clock" size={15} style={{ color: overdue.length>0?'#f06b6b':'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color: overdue.length>0?'#f06b6b':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={overdue.length} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{overdue.length>0?'needs rescue':'all caught up'}</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('contacts')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Reach-outs due</span>
+            <span style={{ width:30, height:30, borderRadius:9, background: reachN>0?'var(--accent-glow)':'var(--bg-base)', border:`1px solid ${reachN>0?'var(--accent)':'var(--border)'}`, display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="contacts" size={15} style={{ color: reachN>0?'var(--accent)':'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color: reachN>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={reachN} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>sphere touches</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('calendar')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Appointments</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="calendar" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={apptWeek} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>next 7 days</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('contacts')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Contacts</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="contacts" size={15} style={{ color:'var(--text-2)' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={contacts.length} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your sphere</div>
+        </div>
+        <div className="dash-tile" onClick={()=>setView('tasks')}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Done this week</span>
+            <span style={{ width:30, height:30, borderRadius:9, background:'rgba(34,197,94,0.12)', border:'1px solid rgba(34,197,94,0.35)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="flame" size={15} style={{ color:'#4ade80' }} /></span>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={weekTotal} /></div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>tasks completed</div>
+        </div>
+      </div>
+  );
+}
+
+function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmailCount=0, setView, userId }){
+  const [gciGoal,setGciGoal]=useState(0);
+  useEffect(()=>{ (async()=>{ try{ const { data } = await supabase.from('finance_settings').select('annual_gci_goal').eq('user_id',userId).maybeSingle(); setGciGoal(Number(data?.annual_gci_goal)||0); }catch(_e){} })(); },[userId]);
+  const now=Date.now(); const todayISO=new Date(now).toISOString().slice(0,10);
+  const pending=tasks.filter(t=>!t.completed);
+  const overdue=pending.filter(t=>t.due_date && t.due_date<todayISO);
+  const topTasks=pending.filter(t=>t.priority==='high');
+  const lastTouch=(c)=>{ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(x=>new Date(x).getTime()); return a.length?Math.max(...a):null; };
+  const oweReplyN=contacts.filter(c=>{ if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; if(c.last_communication_direction!=='inbound'||!c.last_inbound_at)return false; const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0; return lin>lout; }).length;
+  const reachN=contacts.filter(c=>{ const cad=c.cadence_days; if(!cad)return false; if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; const ts=lastTouch(c); const ds=ts===null?null:Math.floor((now-ts)/86400000); return ds===null?true:ds>=cad; }).length;
+  const dueOrOverdue=pending.filter(t=>t.due_date&&t.due_date<=todayISO).length;
+  const needsNow=oweReplyN+reachN+dueOrOverdue;
+  const apptWeek=(events||[]).filter(e=>e.start_at&&new Date(e.start_at).getTime()>=now&&(new Date(e.start_at).getTime()-now)<=7*86400000).length;
+  const weekTotal=tasks.filter(t=>t.completed&&t.completed_at&&(now-new Date(t.completed_at).getTime())<=7*86400000).length;
+  return (<div className="view">
+    <div className="panel" style={{ display:'flex', alignItems:'center', gap:12 }}>
+      <div style={{ width:42, height:42, borderRadius:12, background:'var(--accent-glow)', border:'1px solid var(--accent)', display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Icon name="chart" size={20} style={{ color:'var(--accent)' }}/></div>
+      <div><h2 style={{ margin:0 }}>My numbers</h2><div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>Your production, pipeline, and activity</div></div>
+    </div>
+    <div style={{ marginTop:14 }}>
+      <BusinessKPIs deals={deals} gciGoal={gciGoal} setView={setView} userId={userId} />
+      <MetricTiles needsNow={needsNow} oweReplyN={oweReplyN} reachN={reachN} pending={pending} overdue={overdue} unreadEmailCount={unreadEmailCount} apptWeek={apptWeek} contacts={contacts} weekTotal={weekTotal} topTasks={topTasks} setView={setView} />
+      <DashboardPipelinePanel contacts={contacts} setView={setView} />
+      {userId && <DashboardROI userId={userId} setView={setView} />}
+    </div>
+  </div>);
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [] }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
@@ -3717,6 +3816,12 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
   const needsNow = oweReplyN + reachN + dueOrOverdue;
   const upcoming = (events||[]).filter(e=>e.start_at && new Date(e.start_at) >= new Date()).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)).slice(0,4);
   const apptWeek = (events||[]).filter(e=>e.start_at && new Date(e.start_at).getTime() >= now && (new Date(e.start_at).getTime()-now) <= 7*86400000).length;
+  const _ACTIVE = ['lead','active','under_contract','closing'];
+  const _gciOf = (d)=>{ const g=Number(d.gross_commission)||0; if(g) return g; const sp=Number(d.sale_price)||0, pct=Number(d.commission_pct)||0; return sp*pct/100; };
+  const _yrNow = new Date().getFullYear();
+  const pipelineGci = (deals||[]).filter(d=>_ACTIVE.includes(d.status)).reduce((a,d)=>a+_gciOf(d),0);
+  const gciYtd = (deals||[]).filter(d=>d.status==='closed' && d.close_date && new Date(d.close_date).getFullYear()===_yrNow).reduce((a,d)=>a+_gciOf(d),0);
+  const gciPct = gciGoal>0 ? Math.min(100, Math.round(gciYtd/gciGoal*100)) : 0;
   const gciGoal = Number(fin?.annual_gci_goal || 0);
   const streak = fin?.current_prospecting_streak || 0;
   const bestStreak = fin?.best_prospecting_streak || 0;
@@ -3798,90 +3903,24 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
 
       <NextBestAction contacts={contacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} />
 
-      <DashboardBriefing user={user} setView={setView} />
-
-      {/* Business at a glance — GCI / pipeline / value */}
-      <BusinessKPIs deals={deals} gciGoal={gciGoal} setView={setView} userId={user.id} />
-
-      {/* Metric tiles */}
-      <div className="cards-row">
-        <div className="dash-tile" onClick={()=>{ setView(needsNow>0?'contacts':'tasks'); }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Needs you now</span>
-            <span style={{ width:30, height:30, borderRadius:9, background:'var(--accent-glow)', border:'1px solid var(--accent)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="target" size={15} style={{ color:'var(--accent)' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color: needsNow>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={needsNow} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{oweReplyN} replies · {reachN} reach-outs</div>
-        </div>
-        <div className="dash-tile" onClick={()=>setView('tasks')}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Open tasks</span>
-            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="flame" size={15} style={{ color:'var(--text-2)' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={pending.length} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{topTasks.length} top priority</div>
-        </div>
-        <div className="dash-tile" onClick={()=>setView('inbox')}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Unread email</span>
-            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="inbox" size={15} style={{ color:'var(--text-2)' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={unreadEmailCount} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your inbox</div>
-        </div>
-        <div className="dash-tile" onClick={()=>setView('tasks')}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Overdue</span>
-            <span style={{ width:30, height:30, borderRadius:9, background: overdue.length>0?'rgba(239,68,68,0.12)':'var(--bg-base)', border:`1px solid ${overdue.length>0?'rgba(239,68,68,0.4)':'var(--border)'}`, display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="clock" size={15} style={{ color: overdue.length>0?'#f06b6b':'var(--text-2)' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color: overdue.length>0?'#f06b6b':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={overdue.length} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>{overdue.length>0?'needs rescue':'all caught up'}</div>
-        </div>
-        <div className="dash-tile" onClick={()=>setView('contacts')}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Reach-outs due</span>
-            <span style={{ width:30, height:30, borderRadius:9, background: reachN>0?'var(--accent-glow)':'var(--bg-base)', border:`1px solid ${reachN>0?'var(--accent)':'var(--border)'}`, display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="contacts" size={15} style={{ color: reachN>0?'var(--accent)':'var(--text-2)' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color: reachN>0?'var(--accent)':'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={reachN} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>sphere touches</div>
-        </div>
-        <div className="dash-tile" onClick={()=>setView('calendar')}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Appointments</span>
-            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="calendar" size={15} style={{ color:'var(--text-2)' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={apptWeek} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>next 7 days</div>
-        </div>
-        <div className="dash-tile" onClick={()=>setView('contacts')}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Contacts</span>
-            <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="contacts" size={15} style={{ color:'var(--text-2)' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={contacts.length} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your sphere</div>
-        </div>
-        <div className="dash-tile" onClick={()=>setView('tasks')}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Done this week</span>
-            <span style={{ width:30, height:30, borderRadius:9, background:'rgba(34,197,94,0.12)', border:'1px solid rgba(34,197,94,0.35)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="flame" size={15} style={{ color:'#4ade80' }} /></span>
-          </div>
-          <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={weekTotal} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>tasks completed</div>
-        </div>
+      {/* At-a-glance pulse — full metrics live in My numbers */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+        <span style={{ fontSize:10.5, fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)' }}>At a glance</span>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setView('numbers')}>My numbers →</button>
       </div>
-
-      {/* Quick actions */}
-      <div style={{ display:'flex', gap:9, flexWrap:'wrap', marginBottom:20 }}>
-        <button className="quick-chip" onClick={()=>setView('chat')}>✦ Ask {robot?.name||'Ari'}</button>
-        <button className="quick-chip" onClick={()=>setView('tasks')}><Icon name="flame" size={13} /> Add task</button>
-        <button className="quick-chip" onClick={()=>setView('contacts')}><Icon name="contacts" size={13} /> Contacts</button>
-        <button className="quick-chip" onClick={()=>setView('calendar')}><Icon name="calendar" size={13} /> Calendar</button>
-        <button className="quick-chip" onClick={()=>setView('quo')}><Icon name="chat" size={13} /> Messages</button>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(78px,1fr))', gap:9, marginBottom:22 }}>
+        {[
+          { label:'Needs now', val:needsNow, color: needsNow>0?'var(--accent)':'var(--text-1)' },
+          { label:'Appts 7d', val:apptWeek, color:'var(--text-1)' },
+          { label:'Pipeline', val:money0(pipelineGci), color:'var(--text-1)' },
+          { label: gciGoal>0?'GCI pace':'GCI', val: gciGoal>0?(gciPct+'%'):money0(gciYtd), color:'var(--accent)' },
+        ].map((s,si)=>(
+          <div key={si} onClick={()=>setView('numbers')} style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:13, padding:'13px 10px', cursor:'pointer', textAlign:'center' }}>
+            <div style={{ fontSize:20, fontWeight:800, color:s.color, lineHeight:1 }}>{s.val}</div>
+            <div style={{ fontSize:9.5, color:'var(--text-3)', marginTop:4, fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase' }}>{s.label}</div>
+          </div>
+        ))}
       </div>
-
-      {/* Pipeline & lead sources (KPIs replace the old long lists) */}
-      <DashboardPipelinePanel contacts={contacts} setView={setView} />
 
       <div className="dash-grid">
         {/* Top Priority */}
@@ -3928,7 +3967,6 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
       </div>
 
       {/* Lead-Gen ROI */}
-      {user?.id && <DashboardROI userId={user.id} setView={setView} />}
     </div>
   );
 }
@@ -13545,6 +13583,8 @@ function AppMain() {
 
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
+    { id: 'numbers',     icon: '📊', label: 'My numbers' },
+    { id: 'briefing',    icon: '📋', label: 'Daily briefing' },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'pipeline',    icon: '🎯', label: 'My pipeline', badge: null },
@@ -13579,8 +13619,8 @@ function AppMain() {
   const mv = userSettings?.module_visibility || {};
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
-  const MAIN_ORDER = ['dashboard', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['pipeline', 'scoreboard', 'team', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
+  const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
+  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -13619,6 +13659,7 @@ function AppMain() {
   const MENU = [
     // Quick access \u2014 the daily drivers
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
+    { label: 'My numbers', view: 'numbers', icon: 'chart' },
     { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
     // Today
     { label: 'My day', icon: 'clock', children: [
@@ -13738,6 +13779,7 @@ function AppMain() {
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
+                : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
