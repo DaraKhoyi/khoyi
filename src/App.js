@@ -5285,6 +5285,7 @@ function RelationshipIntel({ profile }) {
 function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [], setContacts }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [textTo, setTextTo] = useState(null); // { phone } when the Quo text composer is open
+  const [tab, setTab] = useState('overview');
   const [analyzeMsg, setAnalyzeMsg] = useState(null);
   const [evidence, setEvidence] = useState([]);
   const [loadingEvidence, setLoadingEvidence] = useState(true);
@@ -5879,129 +5880,99 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
     );
   }
 
+  const hdrInitials = (contact.name || '?').trim().split(/\s+/).map(w => w[0]).filter(Boolean).slice(0,2).join('').toUpperCase() || '?';
+  const _hdrTypeMap = { our_agent:'Our Agent', agent:'Agent', lead:'Lead', recruit:'Recruit', prospect_agent:'Prospect Agent', vendor:'Vendor', family:'Family', personal:'Personal', partner:'Partner', broker:'Broker', brokerage:'Brokerage', commercial_tenant:'Tenant', doctor:'Doctor', other:'Other', misc:'Other' };
+  const hdrTypeLabel = contact.type ? (_hdrTypeMap[contact.type] || contact.type.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase())) : null;
+  const _hdrTs = [contact.last_contact_at, contact.last_inbound_at, contact.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime());
+  const _hdrLastTs = _hdrTs.length ? Math.max(..._hdrTs) : null;
+  const _hdrRelAge = (ms) => { if (!ms) return null; const d = Math.floor((Date.now()-ms)/86400000); if (d<=0) return 'today'; if (d===1) return '1d ago'; if (d<7) return d+'d ago'; if (d<30) return Math.floor(d/7)+'w ago'; if (d<365) return Math.floor(d/30)+'mo ago'; return Math.floor(d/365)+'y ago'; };
+  const hdrLastAge = _hdrRelAge(_hdrLastTs);
+  const hdrLastDir = contact.last_communication_direction === 'inbound' ? '\u2193 They' : contact.last_communication_direction === 'outbound' ? '\u2191 You' : (_hdrLastTs ? 'Last' : null);
+  const hdrTouchDue = contact.cadence_days ? (_hdrLastTs ? (Date.now()-_hdrLastTs)/86400000 >= contact.cadence_days : true) : false;
+  const _hdrOriginMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',clickup:'ClickUp import',csv:'CSV import',import:'Import',other:'Other'};
+  const _hdrReferredBy = contact.referred_by_contact_id ? ((contacts.find(c => c.id === contact.referred_by_contact_id) || {}).name) : null;
+  const _hdrHome = [contact.home_address, contact.home_city, contact.home_state].filter(Boolean).join(', ');
+  const _hdrBiz = [contact.business_address, contact.business_city, contact.business_state].filter(Boolean).join(', ');
+  const hdrKeyFacts = [];
+  if (contact.origin) hdrKeyFacts.push({ k:'Origin', v:(_hdrOriginMap[contact.origin]||contact.origin) + (contact.origin_detail ? ' \u00b7 '+contact.origin_detail : '') });
+  if (_hdrReferredBy) hdrKeyFacts.push({ k:'Referred by', v:_hdrReferredBy });
+  if (_hdrHome) hdrKeyFacts.push({ k:'Home', v:_hdrHome });
+  if (_hdrBiz) hdrKeyFacts.push({ k:'Business', v:_hdrBiz });
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{maxWidth:'640px'}}>
-        <div className="modal-header">
-          <h3 style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0,flex:1}}>
-            <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{contact.name || '(unnamed)'}</span>
-            {profile?.primary_letter && (
-              <span className="pill" style={{
-                fontSize:'11px',padding:'2px 8px',
-                background: discBarColors[profile.primary_letter],
-                color:'#fff', fontWeight:700, flexShrink:0,
-              }}>
-                {profile.primary_letter}{profile.secondary_letter ? `/${profile.secondary_letter}` : ''}
-                {profile.confidence_pct ? ` · ${profile.confidence_pct}%` : ''}
-              </span>
-            )}
-          </h3>
-          <div style={{display:'flex',alignItems:'center',gap:'2px',flexShrink:0}}>
-            {onEdit && (
-              <button type="button" onClick={onEdit} title="Edit basic info"
-                aria-label="Edit contact"
-                style={{
-                  background:'none',border:'none',color:'var(--text-2)',
-                  cursor:'pointer',fontSize:'15px',padding:'6px 9px',
-                  borderRadius:'6px',lineHeight:1,
-                }}
-                onMouseEnter={e=>{e.currentTarget.style.background='var(--bg-hover)';e.currentTarget.style.color='var(--text-1)';}}
-                onMouseLeave={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='var(--text-2)';}}>
-                <Icon name="edit" size={16} />
-              </button>
-            )}
-            <button className="modal-close" onClick={onClose}>×</button>
+        <div style={{padding:'16px 16px 12px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
+          <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
+            <div style={{width:'54px',height:'54px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'19px',color:'var(--accent)',boxShadow:'0 0 0 4px rgba(197,169,94,0.08)'}}>{hdrInitials}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:'19px',fontWeight:800,color:'var(--text-1)',letterSpacing:'-0.3px',lineHeight:1.12,overflow:'hidden',textOverflow:'ellipsis'}}>{contact.name || '(unnamed)'}</div>
+              {(contact.role || contact.profession || contact.company) && (
+                <div style={{fontSize:'12.5px',color:'var(--text-2)',marginTop:'3px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[contact.role || contact.profession, contact.company].filter(Boolean).join(' \u00b7 ')}</div>
+              )}
+            </div>
+            <div style={{display:'flex',gap:'5px',flexShrink:0}}>
+              {onEdit && (
+                <button type="button" onClick={onEdit} title="Edit" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="edit" size={15} /></button>
+              )}
+              <button type="button" onClick={onClose} title="Close" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'17px',lineHeight:1}}>\u00d7</button>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'12px'}}>
+            {hdrTypeLabel && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--accent)'}}>{hdrTypeLabel}</span>}
+            {profile?.primary_letter && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(255,255,255,0.04)',border:'1px solid '+discBarColors[profile.primary_letter],color:discBarColors[profile.primary_letter]}}>\u25ce {profile.primary_letter}{profile.secondary_letter ? '/'+profile.secondary_letter : ''}</span>}
+            {hdrTouchDue && <span style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(245,158,11,0.13)',border:'1px solid rgba(245,158,11,0.4)',color:'#fbbf24'}}><span style={{width:'6px',height:'6px',borderRadius:'50%',background:'#fbbf24'}} />Touch due</span>}
+            {hdrLastAge && <span style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-2)'}}>{hdrLastDir} \u00b7 {hdrLastAge}</span>}
           </div>
         </div>
 
-        <div style={{maxHeight:'70vh',overflowY:'auto',paddingRight:'4px'}}>
-          {/* Contact essentials with action bar */}
-          <div style={{marginBottom:'14px'}}>
-            {(contact.role || contact.company) && (
-              <div style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'10px',lineHeight:1.5}}>
-                {[contact.role, contact.company].filter(Boolean).join(' · ')}
-              </div>
-            )}
+        {(contact.phone || contact.email) && (
+          <div style={{display:'flex',gap:'8px',padding:'13px 16px 0'}}>
+            {contact.phone && <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'11px 0',borderRadius:'11px',background:'linear-gradient(135deg,var(--accent-2),var(--accent))',color:'var(--bg-base)',textDecoration:'none',fontSize:'13.5px',fontWeight:700}}><Icon name="quo" size={15} /> Call</a>}
+            {contact.phone && <button type="button" onClick={()=>setTextTo({ phone: contact.phone })} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'11px 0',borderRadius:'11px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-1)',cursor:'pointer',fontSize:'13.5px',fontWeight:600}}><Icon name="message" size={15} /> Text</button>}
+            {contact.email && <a href={`mailto:${contact.email}`} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'11px 0',borderRadius:'11px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-1)',textDecoration:'none',fontSize:'13.5px',fontWeight:600}}><Icon name="mail" size={15} /> Email</a>}
+          </div>
+        )}
+        {textTo && <QuoTextModal contact={contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
 
-            {/* Primary action bar — uses the default phone/email for one-tap actions */}
-            {(contact.phone || contact.email) && (
-              <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}>
-                {contact.phone && (
-                  <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`}
-                    style={{
-                      padding:'8px 14px', background:'var(--accent)', color:'var(--bg-base)',
-                      borderRadius:'8px', textDecoration:'none', fontSize:'12px', fontWeight:700,
-                      display:'flex', alignItems:'center', gap:'5px',
-                    }}>
-                    <Icon name="quo" size={13} /> Call
-                  </a>
-                )}
-                {contact.phone && (
-                  <button type="button" onClick={()=>setTextTo({ phone: contact.phone })}
-                    style={{
-                      padding:'8px 14px', background:'var(--bg-card)', color:'var(--text-1)',
-                      border:'1px solid var(--border)', borderRadius:'8px', cursor:'pointer',
-                      fontSize:'12px', fontWeight:600, display:'flex', alignItems:'center', gap:'5px',
-                    }}>
-                    <Icon name="message" size={13} /> Text
-                  </button>
-                )}
-                {contact.email && (
-                  <a href={`mailto:${contact.email}`}
-                    style={{
-                      padding:'8px 14px', background:'var(--bg-card)', color:'var(--text-1)',
-                      border:'1px solid var(--border)', borderRadius:'8px', textDecoration:'none',
-                      fontSize:'12px', fontWeight:600, display:'flex', alignItems:'center', gap:'5px',
-                    }}>
-                    <Icon name="mail" size={13} /> Email
-                  </a>
-                )}
-              </div>
-            )}
+        <div style={{padding:'13px 16px 10px'}}>
+          <div className="seg-track" style={{display:'flex',gap:'2px'}}>
+            <button type="button" className={'seg-btn '+(tab==='overview'?'active':'')} style={{flex:1}} onClick={()=>setTab('overview')}>Overview</button>
+            <button type="button" className={'seg-btn '+(tab==='activity'?'active':'')} style={{flex:1}} onClick={()=>setTab('activity')}>Activity</button>
+            <button type="button" className={'seg-btn '+(tab==='insights'?'active':'')} style={{flex:1}} onClick={()=>setTab('insights')}>Insights</button>
+            <button type="button" className={'seg-btn '+(tab==='linked'?'active':'')} style={{flex:1}} onClick={()=>setTab('linked')}>Linked</button>
+          </div>
+        </div>
 
-            {textTo && <QuoTextModal contact={contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
-
-            {/* All emails (labeled) — each row is tappable, default starred */}
+        <div style={{maxHeight:'56vh',overflowY:'auto',paddingRight:'4px'}}>
+          {tab==='overview' && (<>
+          <div style={{padding:'2px 16px 14px'}}>
             {Array.isArray(contact.emails) && contact.emails.length > 0 && (
               <div style={{marginBottom:'6px'}}>
                 {contact.emails.filter(e => e?.value).map((e, idx) => (
                   <div key={idx} style={{display:'flex',alignItems:'center',gap:'8px',padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
                     <span style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,minWidth:'52px'}}>{e.label || 'Email'}</span>
-                    <a href={`mailto:${e.value}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
-                      onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
-                      onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-2)';}}>
+                    <a href={`mailto:${e.value}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                       <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> {e.value}</span>
                     </a>
-                    {e.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
+                    {e.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>\u2605</span>}
                   </div>
                 ))}
               </div>
             )}
-
-            {/* All phones (labeled) — each row has its own Call + Text icons */}
             {Array.isArray(contact.phones) && contact.phones.length > 0 && (
               <div>
                 {contact.phones.filter(p => p?.value).map((p, idx) => (
                   <div key={idx} style={{display:'flex',alignItems:'center',gap:'8px',padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
                     <span style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,minWidth:'52px'}}>{p.label || 'Phone'}</span>
-                    <a href={`tel:${p.value.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
-                      onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
-                      onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-2)';}}>
+                    <a href={`tel:${p.value.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                       <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="quo" size={12} /> {p.value}</span>
                     </a>
-                    <button type="button" onClick={()=>setTextTo({ phone: p.value })} title="Text via Quo"
-                      style={{color:'var(--text-3)',background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'2px 4px'}}
-                      onMouseEnter={ev=>{ev.currentTarget.style.color='var(--accent)';}}
-                      onMouseLeave={ev=>{ev.currentTarget.style.color='var(--text-3)';}}>
-                      <Icon name="message" size={13} />
-                    </button>
-                    {p.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
+                    <button type="button" onClick={()=>setTextTo({ phone: p.value })} title="Text via Quo" style={{color:'var(--text-3)',background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'2px 4px'}}><Icon name="message" size={13} /></button>
+                    {p.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>\u2605</span>}
                   </div>
                 ))}
               </div>
             )}
-
-            {/* Fallback when arrays are empty but legacy columns have data */}
             {(!Array.isArray(contact.emails) || contact.emails.length === 0) && contact.email && (
               <div style={{padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
                 <a href={`mailto:${contact.email}`} style={{color:'var(--text-2)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> {contact.email}</a>
@@ -6012,18 +5983,25 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} style={{color:'var(--text-2)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="quo" size={12} /> {contact.phone}</a>
               </div>
             )}
-
-            {contact.type && (
-              <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'8px',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700}}>
-                {contact.type}
+            {hdrKeyFacts.length > 0 && (
+              <div style={{marginTop:'12px',borderTop:'1px solid var(--border)',paddingTop:'10px'}}>
+                {hdrKeyFacts.map((kf,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',gap:'12px',padding:'6px 0',fontSize:'12.5px',borderTop: i ? '1px solid rgba(255,255,255,0.04)' : 'none'}}>
+                    <span style={{color:'var(--text-3)',flexShrink:0}}>{kf.k}</span>
+                    <span style={{color:'var(--text-1)',fontWeight:500,textAlign:'right'}}>{kf.v}</span>
+                  </div>
+                ))}
               </div>
             )}
-            {contact.origin && (
-              <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px'}}>
-                Origin: <span style={{color:'var(--accent)',fontWeight:600}}>{({manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',clickup:'ClickUp import',csv:'CSV import',other:'Other'})[contact.origin] || contact.origin}</span>{contact.origin_detail ? ` — ${contact.origin_detail}` : ''}{contact.created_at ? ` · added ${new Date(contact.created_at).toLocaleDateString()}` : ''}
+            {contact.notes && (
+              <div style={{marginTop:'12px',borderTop:'1px solid var(--border)',paddingTop:'10px'}}>
+                <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'5px'}}>Notes</div>
+                <div style={{fontSize:'12.5px',color:'var(--text-2)',lineHeight:1.5,whiteSpace:'pre-wrap'}}>{contact.notes}</div>
               </div>
             )}
           </div>
+          </>)}
+          {tab==='insights' && (<>
 
           {analyzeMsg && (
             <div style={{padding:'8px 12px',marginBottom:'14px',borderRadius:'6px',fontSize:'12px',
@@ -6240,7 +6218,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             </div>
             <CustomFieldsPanel userId={userId} contact={contact} contacts={contacts} setContacts={setContacts} />
           </div>
-        </div>
+        </>)}
+        {tab==='activity' && (<>
 
         {/* ========== COMMUNICATION PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
@@ -6308,6 +6287,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           />
         </div>
 
+        </>)}
+        {tab==='linked' && (<>
         {/* ========== LINKED TASKS PANEL ========== */}
         <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
@@ -6550,9 +6531,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           })}
         </div>
 
-        <div className="modal-actions">
-          <button type="button" className="btn btn-ghost" onClick={onEdit}>Edit contact</button>
-          <button type="button" className="btn btn-primary" onClick={onClose}>Close</button>
+        </>)}
         </div>
       </div>
 
