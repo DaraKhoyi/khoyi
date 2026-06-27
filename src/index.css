@@ -1252,3 +1252,15 @@ input[type="radio"], input[type="range"], select, progress {
 .quick-chip:active { transform: translateY(1px); }
 .dash-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; background: var(--bg-base); border: 1px solid transparent; transition: border-color .12s; }
 .dash-row:hover { border-color: var(--border-strong); }
+
+
+/* ── Contact sheet motion (added) ───────────────────────── */
+@keyframes sheetRise { from { transform: translateY(34px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.sheet-rise { animation: sheetRise 0.34s cubic-bezier(0.22,1,0.36,1); will-change: transform, opacity; }
+@keyframes overlayFade { from { opacity: 0; } to { opacity: 1; } }
+.overlay-fade { animation: overlayFade 0.22s ease-out; }
+@keyframes barFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.bar-fill-anim { transform-origin: left center; animation: barFill 0.65s cubic-bezier(0.22,1,0.36,1); }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-rise, .overlay-fade, .bar-fill-anim { animation: none; }
+}

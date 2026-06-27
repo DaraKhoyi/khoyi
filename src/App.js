@@ -5871,7 +5871,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           <div key={letter} style={{display:'flex',alignItems:'center',gap:'8px'}}>
             <span style={{width:'14px',fontWeight:700,color:discBarColors[letter],fontSize:'12px'}}>{letter}</span>
             <div style={{flex:1,height:'8px',background:'var(--bg-base)',borderRadius:'4px',overflow:'hidden'}}>
-              <div style={{height:'100%',width:`${val ?? 0}%`,background:discBarColors[letter],transition:'width 0.3s'}}/>
+              <div className="bar-fill-anim" style={{height:'100%',width:`${val ?? 0}%`,background:discBarColors[letter],transition:'width 0.3s'}}/>
             </div>
             <span style={{minWidth:'28px',textAlign:'right',fontSize:'11px',fontFamily:'monospace',color:'var(--text-2)'}}>{val ?? '—'}</span>
           </div>
@@ -5899,8 +5899,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   if (_hdrHome) hdrKeyFacts.push({ k:'Home', v:_hdrHome });
   if (_hdrBiz) hdrKeyFacts.push({ k:'Business', v:_hdrBiz });
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
-      <div className="modal" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+    <div className="modal-overlay overlay-fade" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
+      <div className="modal sheet-rise" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{padding:'calc(14px + env(safe-area-inset-top, 0px)) 16px 12px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
           <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
             <div style={{width:'54px',height:'54px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'19px',color:'var(--accent)',boxShadow:'0 0 0 4px rgba(197,169,94,0.08)'}}>{hdrInitials}</div>
@@ -5975,6 +5975,29 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 )}
                 {pl && TIPS[pl] && <div style={{marginTop:'10px',fontSize:'12.5px',color:'var(--text-1)',lineHeight:1.5,borderLeft:'2px solid '+discBarColors[pl],paddingLeft:'11px'}}>{TIPS[pl]}</div>}
                 <div style={{marginTop:'10px',fontSize:'10.5px',color:'var(--text-3)'}}>{srcLine}</div>
+              </div>
+            );
+          })()}
+          {(() => {
+            const cad = contact.cadence_days;
+            if (!cad) return null;
+            const ds = _hdrLastTs ? Math.floor((Date.now() - _hdrLastTs) / 86400000) : null;
+            const prog = ds != null ? Math.min(ds / cad, 1) : 1;
+            const col = ds == null ? '#fbbf24' : ds >= cad ? '#ef4444' : ds >= cad * 0.7 ? '#fbbf24' : '#34d399';
+            const statusText = ds == null ? 'No contact logged yet' : ds >= cad ? ((ds - cad) + ' day' + ((ds - cad) === 1 ? '' : 's') + ' overdue') : ((cad - ds) + ' day' + ((cad - ds) === 1 ? '' : 's') + ' until next');
+            return (
+              <div style={{margin:'0 16px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'14px',padding:'14px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+                  <span style={{fontSize:'10px',fontWeight:800,letterSpacing:'0.06em',textTransform:'uppercase',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="signal" size={13} /> Relationship</span>
+                  <span style={{fontSize:'11px',fontWeight:600,color:'var(--text-2)'}}>{hdrLastAge ? (hdrLastDir + ' · ' + hdrLastAge) : 'No touch yet'}</span>
+                </div>
+                <div style={{height:'8px',borderRadius:'4px',background:'var(--bg-base)',overflow:'hidden'}}>
+                  <div className="bar-fill-anim" style={{height:'100%',width:(Math.round(prog*100))+'%',background:col,borderRadius:'4px'}} />
+                </div>
+                <div style={{marginTop:'8px',display:'flex',justifyContent:'space-between',fontSize:'11px'}}>
+                  <span style={{color:'var(--text-3)'}}>Keep in touch every {cad} days</span>
+                  <span style={{color:col,fontWeight:700}}>{statusText}</span>
+                </div>
               </div>
             );
           })()}

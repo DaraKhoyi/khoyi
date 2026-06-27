@@ -174,8 +174,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const referredName = referredById ? ((contacts.find(c=>c.id===referredById)||{}).name || '') : '';
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
-      <div className="modal" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+    <div className="modal-overlay overlay-fade" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
+      <div className="modal sheet-rise" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {/* Header mirrors the contact sheet so editing feels like the same surface */}
         <div style={{padding:'calc(14px + env(safe-area-inset-top, 0px)) 16px 14px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
           <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
@@ -1123,7 +1123,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
                   const p = profileByContact.get(c.id);
                   const discColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
                   return (
-                    <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setEditContact(c);setShowModal(true);}}>
+                    <div key={c.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>{setDetailContact(c);}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
                           {c.name}

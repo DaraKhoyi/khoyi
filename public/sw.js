@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v121-20260627-fullscreen-disc'
+const VERSION = 'prismos-v122-20260627-tap-overview-motion'
 const APP_SHELL = [
   '/',
   '/index.html',
