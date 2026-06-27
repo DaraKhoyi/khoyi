@@ -2635,6 +2635,86 @@ function PlanTimeline({ steps = [], events = [], onTapStep, isDone, saved }) {
   );
 }
 
+// ── Next Best Action engine: answers "what do I do next?" across all signals ──
+function nbaLastTouch(c){ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(t=>new Date(t).getTime()); return a.length?Math.max(...a):null; }
+function nbaAge(d){ d=Math.max(0,Math.floor(d)); if(d<=0) return 'today'; if(d===1) return '1 day'; if(d<7) return d+' days'; if(d<14) return '1 week'; if(d<60) return Math.floor(d/7)+' weeks'; return Math.floor(d/30)+' months'; }
+function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date.now() }){
+  const out=[]; const today=new Date(now); const todayISO=today.toISOString().slice(0,10);
+  const startToday=new Date(new Date(now).setHours(0,0,0,0)).getTime();
+  contacts.forEach(c=>{
+    if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
+    if(c.last_communication_direction!=='inbound' || !c.last_inbound_at) return;
+    const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0;
+    if(lin<=lout) return; const days=Math.floor((now-lin)/86400000);
+    out.push({ key:'reply:'+c.id, score:100+Math.min(days*4,48), tag:'reply', icon:'reply', title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'view', payload:'messages' } });
+  });
+  events.forEach(e=>{ if(!e.start_at||e.all_day) return; const st=new Date(e.start_at).getTime(); const dh=(st-now)/3600000;
+    if(dh>=-1 && dh<=24){ out.push({ key:'appt:'+(e.id||e.start_at), score:96+(dh<2?6:0), tag:'appt', icon:'calendar', title:'Prep for: '+(e.title||'appointment'), why:'Starts '+(dh<1?'soon':'in about '+Math.round(dh)+'h')+' — confirm details and prepare', cta:{ label:'Calendar', kind:'view', payload:'calendar' } }); } });
+  deals.forEach(d=>{ const stt=(d.status||'').toLowerCase(); if(['under_contract','closing'].includes(stt) && d.close_date){ const cd=new Date(d.close_date).getTime(); const days=Math.round((cd-now)/86400000); if(days>=-3 && days<=14){ out.push({ key:'deal:'+d.id, score:93+(days<=5?5:0), tag:'deal', icon:'dollar', title:'Move deal forward: '+(d.client_name||d.name||'active deal'), why:'Closing '+(days<=0?'now':'in '+days+'d')+' — keep it on track', cta:{ label:'Open deal', kind:'view', payload:'deals' } }); } } });
+  tasks.forEach(tk=>{ if(tk.completed||!tk.due_date) return; const pb=tk.priority==='high'?20:tk.priority==='medium'?8:0;
+    if(tk.due_date<todayISO){ const od=Math.max(1,Math.floor((startToday-new Date(tk.due_date+'T00:00:00').getTime())/86400000)); out.push({ key:'task:'+tk.id, score:88+pb+Math.min(od*2,28), tag:'overdue', icon:'target', title:tk.title, why:'Overdue '+od+'d'+(tk.priority==='high'?' · high priority':''), cta:{ label:'Mark done', kind:'task_done', payload:tk.id } }); }
+    else if(tk.due_date===todayISO){ out.push({ key:'task:'+tk.id, score:70+pb, tag:'today', icon:'target', title:tk.title, why:'Due today'+(tk.priority==='high'?' · high priority':''), cta:{ label:'Mark done', kind:'task_done', payload:tk.id } }); } });
+  contacts.forEach(c=>{ const cad=c.cadence_days; if(!cad) return; if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
+    const ts=nbaLastTouch(c); const ds=ts===null?null:Math.floor((now-ts)/86400000); const due=ds===null||ds>=cad; if(!due) return; const over=ds===null?cad:(ds-cad);
+    out.push({ key:'reach:'+c.id, score:58+Math.min(over*1.2,34), tag:'reach', icon:'contacts', title:'Reach out to '+(c.name||'a contact'), why: ds===null?('On a '+cad+'-day cadence — no touch logged yet'):('Last touch '+ds+'d ago · '+cad+'-day cadence'), cta:{ label:'Open', kind:'view', payload:'contacts' } }); });
+  return out.sort((a,b)=>b.score-a.score);
+}
+function buildGrowthMoves({ contacts=[], deals=[], gciGoal=0, now=Date.now() }){
+  const moves=[];
+  const cold=contacts.filter(c=>{ const ts=nbaLastTouch(c); if(ts===null) return false; return Math.floor((now-ts)/86400000)>=90; });
+  if(cold.length>0) moves.push({ key:'cold', icon:'contacts', title:'Reconnect with your sphere', why: cold.length+' '+(cold.length===1?'person has':'people have')+' not heard from you in 90+ days — message 3 of them today', cta:{ label:'Open contacts', kind:'view', payload:'contacts' } });
+  const untagged=contacts.filter(c=> (c.type==='lead'||c.pipeline_stage) && !c.lead_gen_system_id);
+  if(untagged.length>0) moves.push({ key:'untagged', icon:'signal', title:'Tag where your leads came from', why: untagged.length+' lead'+(untagged.length===1?'':'s')+' have no source yet — tag them so you learn what actually produces', cta:{ label:'Tag sources', kind:'view', payload:'contacts' } });
+  const stalled=contacts.filter(c=>{ if(!c.pipeline_stage||['closed','lost'].includes(c.pipeline_stage)) return false; const ch=c.pipeline_stage_changed_at?new Date(c.pipeline_stage_changed_at).getTime():null; return ch!==null && (now-ch)>=14*86400000; });
+  if(stalled.length>0) moves.push({ key:'stalled', icon:'target', title:'Unstick stalled leads', why: stalled.length+' lead'+(stalled.length===1?'':'s')+' have sat in one stage 2+ weeks — give them a nudge', cta:{ label:'My pipeline', kind:'view', payload:'pipeline' } });
+  const closedDeals=deals.filter(d=>(d.status||'').toLowerCase()==='closed');
+  if(closedDeals.length>0) moves.push({ key:'referral', icon:'reply', title:'Ask a past client for a referral', why:'You have '+closedDeals.length+' past closing'+(closedDeals.length===1?'':'s')+' — a happy client is your best lead source', cta:{ label:'Open contacts', kind:'view', payload:'contacts' } });
+  if(!(gciGoal>0)) moves.push({ key:'goal', icon:'dollar', title:'Set your GCI goal', why:'A target turns activity into a plan — set it and your pace tracks itself', cta:{ label:'Set goal', kind:'view', payload:'finance' } });
+  moves.push({ key:'calls', icon:'contacts', title:'Make 5 connection calls', why:'The fastest path to a deal is conversations — call 5 people in your sphere today', cta:{ label:'Open contacts', kind:'view', payload:'contacts' } });
+  moves.push({ key:'oh', icon:'target', title:'Line up an open house', why:'One listing becomes many buyer leads — plan an open house this week', cta:{ label:'My pipeline', kind:'view', payload:'pipeline' } });
+  return moves;
+}
+function NextBestAction({ contacts=[], tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan }){
+  const now=Date.now();
+  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now}),[contacts,tasks,events,deals]);
+  const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
+  const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
+  const urgent=actions.length>0; const list=urgent?actions:growth;
+  const cur=list[Math.min(idx,list.length-1)]||null;
+  const runCta=(cta)=>{ if(!cta) return; if(cta.kind==='task_done'){ const id=cta.payload; try{ supabase.from('tasks').update({completed:true, completed_at:new Date().toISOString()}).eq('id',id).then(()=>{}); }catch(_){} setTasks&&setTasks(pr=>pr.map(x=>x.id===id?{...x,completed:true}:x)); if(window.__notify) window.__notify('Done — nice work.','success'); setIdx(0); } else if(cta.kind==='view'){ setView&&setView(cta.payload); } else if(cta.kind==='call'){ window.location.href='tel:'+cta.payload; } };
+  if(!cur) return null;
+  const tagColor=cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
+  return (
+    <div className="nba-card" style={{position:'relative',borderRadius:18,padding:'16px 16px 14px',marginBottom:20,background:'linear-gradient(135deg, rgba(197,169,94,0.13), rgba(197,169,94,0.03))',border:'1px solid var(--accent)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9}}>
+        <span style={{fontSize:10.5,fontWeight:800,letterSpacing:'0.10em',textTransform:'uppercase',color:'var(--accent)'}}>{urgent?'✦ Do this next':'✦ You are caught up — consider this'}</span>
+        {list.length>1 && <span style={{fontSize:10.5,color:'var(--text-3)',fontWeight:700}}>{Math.min(idx+1,list.length)} / {list.length}</span>}
+      </div>
+      <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+        <div style={{width:38,height:38,borderRadius:11,flexShrink:0,background:'var(--bg-base)',border:'1px solid '+tagColor,display:'inline-flex',alignItems:'center',justifyContent:'center'}}><Icon name={cur.icon||'target'} size={18} style={{color:tagColor}}/></div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:16.5,fontWeight:800,color:'var(--text-1)',lineHeight:1.2}}>{cur.title}</div>
+          <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:3,lineHeight:1.4}}>{cur.why}</div>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:8,marginTop:13,flexWrap:'wrap',alignItems:'center'}}>
+        {cur.cta && <button className="btn btn-primary btn-sm" onClick={()=>runCta(cur.cta)}>{cur.cta.label}</button>}
+        {list.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>setIdx(i=>(i+1)%list.length)}>Skip</button>}
+        {urgent && onOpenPlan && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenPlan()}>Plan my day</button>}
+        {list.length>1 && <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setShowAll(s=>!s)}>{showAll?'Hide':'See all ('+list.length+')'}</button>}
+      </div>
+      {showAll && <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:10}}>
+        {list.slice(0,8).map((a,i)=>(
+          <div key={a.key} onClick={()=>{setIdx(i);setShowAll(false);}} style={{display:'flex',gap:10,alignItems:'center',cursor:'pointer',opacity:i===idx?1:0.8}}>
+            <Icon name={a.icon||'target'} size={14} style={{color:'var(--text-3)',flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.title}</div><div style={{fontSize:11,color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.why}</div></div>
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
 function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose }) {
   const [state, setState] = useState({ loading: true });
   const [accepting, setAccepting] = useState(false);
@@ -3279,7 +3359,20 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                 const localHHMM = (iso) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
                 const td = new Date();
                 const eventsToday = (events || []).filter(e => e.start_at && !e.all_day && new Date(e.start_at).toDateString() === td.toDateString()).map(e => ({ title: e.title, start: localHHMM(e.start_at), end: e.end_at ? localHHMM(e.end_at) : null }));
-                if (plan.length === 0) return <div style={{ color: 'var(--text-2)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Nothing urgent to sequence — your runway is open.</div>;
+                if (plan.length === 0) { const moves=buildGrowthMoves({contacts,deals:[],gciGoal:0,now:Date.now()}); return (
+                  <div style={{ padding:'6px 0' }}>
+                    <div style={{ fontSize:13.5, color:'var(--text-1)', fontWeight:700, marginBottom:3 }}>Nothing urgent to sequence — nice.</div>
+                    <div style={{ fontSize:12.5, color:'var(--text-2)', marginBottom:14 }}>Here are some items you might want to consider today:</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                      {moves.slice(0,4).map(m=>(
+                        <div key={m.key} onClick={()=>{ if(m.cta&&m.cta.kind==='view'){ setView(m.cta.payload); onClose&&onClose(); } }} style={{ cursor:'pointer', display:'flex', gap:11, alignItems:'flex-start', background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12, padding:'12px 13px' }}>
+                          <div style={{ width:32,height:32,borderRadius:9,flexShrink:0,background:'var(--bg-base)',border:'1px solid var(--accent)',display:'inline-flex',alignItems:'center',justifyContent:'center' }}><Icon name={m.icon||'target'} size={15} style={{color:'var(--accent)'}}/></div>
+                          <div style={{ flex:1,minWidth:0 }}><div style={{ fontSize:13.5,fontWeight:700,color:'var(--text-1)' }}>{m.title}</div><div style={{ fontSize:12,color:'var(--text-2)',marginTop:2,lineHeight:1.4 }}>{m.why}</div></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ); }
                 const timed = plan.map((p, i) => ({ p, i })).filter(x => x.p.start);
                 const deferred = plan.map((p, i) => ({ p, i })).filter(x => !x.p.start);
                 return (
@@ -3702,6 +3795,8 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
           <WeekSparkline days={weekDone} />
         </div>
       </div>
+
+      <NextBestAction contacts={contacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} />
 
       <DashboardBriefing user={user} setView={setView} />
 

@@ -1281,3 +1281,13 @@ input[type="radio"], input[type="range"], select, progress {
 @media (prefers-reduced-motion: reduce){
   .dash-hero, .cards-row .dash-tile, .dash-panel { animation: none !important; }
 }
+
+/* ── Next Best Action: glowing "Do this next" card ── */
+@keyframes nbaGlow {
+  0%, 100% { box-shadow: 0 0 16px 0 rgba(197,169,94,0.16); }
+  50%      { box-shadow: 0 0 30px 5px rgba(197,169,94,0.36); }
+}
+.nba-card { animation: nbaGlow 3.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce){
+  .nba-card { animation: none; box-shadow: 0 0 22px 2px rgba(197,169,94,0.22); }
+}
