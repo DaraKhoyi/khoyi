@@ -51,19 +51,24 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
     );
 
-    // SECURITY: caller identity from JWT
+    // SECURITY: caller identity from JWT — or an internal background drip token.
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token || token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const isInternal = !!(Deno.env.get("RESEARCH_TOKEN") && (req.headers.get("x-internal-token") || "") === Deno.env.get("RESEARCH_TOKEN"));
+    let user = null;
+    if (!isInternal) {
+      if (!token || token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const r = await supabase.auth.getUser(token);
+      user = r.data?.user || null;
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Build identifiers either from contact row or from manual override
@@ -76,7 +81,7 @@ serve(async (req) => {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (contact.user_id !== user.id) {
+      if (!isInternal && contact.user_id !== user.id) {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

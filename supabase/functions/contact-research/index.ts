@@ -136,13 +136,18 @@ serve(async (req) => {
 
     const supabase = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-    if (!token || token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) return J({ error: "Unauthorized" }, 401);
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return J({ error: "Unauthorized" }, 401);
+    const isInternal = !!(Deno.env.get("RESEARCH_TOKEN") && (req.headers.get("x-internal-token") || "") === Deno.env.get("RESEARCH_TOKEN"));
+    let user = null;
+    if (!isInternal) {
+      if (!token || token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) return J({ error: "Unauthorized" }, 401);
+      const r = await supabase.auth.getUser(token);
+      user = r.data?.user || null;
+      if (!user) return J({ error: "Unauthorized" }, 401);
+    }
 
     const { data: contact, error: cErr } = await supabase.from("contacts").select("*").eq("id", contact_id).single();
     if (cErr || !contact) return J({ error: "Contact not found" }, 404);
-    if (contact.user_id !== user.id) return J({ error: "Forbidden" }, 403);
+    if (!isInternal && contact.user_id !== user.id) return J({ error: "Forbidden" }, 403);
 
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return J({ error: "ANTHROPIC_API_KEY not configured" }, 500);
@@ -152,13 +157,16 @@ serve(async (req) => {
 
     const prompt = buildResearchPrompt(candidate, contact, scope, me, disc);
 
+    // Background drip uses a faster, leaner config so it reliably finishes inside
+    // the function time limit; the interactive button keeps full Opus depth.
+    const fast = !!body.fast;
     const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-opus-4-7",
-        max_tokens: 10000,
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 14 }],
+        model: fast ? "claude-sonnet-4-6" : "claude-opus-4-7",
+        max_tokens: fast ? 6000 : 10000,
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: fast ? 6 : 14 }],
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -174,7 +182,7 @@ serve(async (req) => {
     const shortSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
 
     const profileUpdate = {
-      contact_id, user_id: contact.user_id,
+      contact_id, user_id: contact.user_id, subject_kind: "contact",
       research_headline: data.headline ?? null,
       research_identity_confidence: data.identity_confidence ?? null,
       research_profile: { background_education: data.background_education ?? null, career: data.career ?? null, expertise: data.expertise ?? [], community_media: data.community_media ?? [], interests_values: data.interests_values ?? [], causes: data.causes ?? [] },
