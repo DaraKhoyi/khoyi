@@ -3,36 +3,69 @@ import { supabase } from '../dataService';
 import { ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
 
 const CONTACT_TYPES = [
-  { id: 'attorney',           label: 'Attorney',           icon: '⚖️' },
-  { id: 'broker',             label: 'Broker',             icon: '🧑‍💼' },
-  { id: 'brokerage',          label: 'Brokerage',          icon: '🏢' },
-  { id: 'builder',            label: 'Builder',            icon: '🔨' },
-  { id: 'client_commercial',  label: 'Client – Commercial', icon: '🏬' },
-  { id: 'client_residential', label: 'Client – Residential', icon: '🏠' },
-  { id: 'commercial_tenant',  label: 'Commercial Tenant',  icon: '🏪' },
-  { id: 'contractor',         label: 'Contractor',         icon: '🛠️' },
-  { id: 'developer',          label: 'Developer',          icon: '🏗️' },
-  { id: 'doctor',             label: 'Doctor',             icon: '🩺' },
-  { id: 'family',             label: 'Family',             icon: '👨‍👩‍👧' },
-  { id: 'flipper',            label: 'Flipper',            icon: '🔄' },
-  { id: 'investments',        label: 'Investments',        icon: '💰' },
-  { id: 'lender',             label: 'Lender',             icon: '🏦' },
-  { id: 'our_agent',          label: 'Our Agent',          icon: '🌟' },
-  { id: 'personal',           label: 'Personal',           icon: '💛' },
-  { id: 'prospect_agent',     label: 'Prospect Agent',     icon: '🎣' },
-  { id: 'regulator',          label: 'Regulator',          icon: '📋' },
-  // Legacy / catchall last
-  { id: 'client',             label: 'Client (legacy)',    icon: '🤝' },
-  { id: 'lead',               label: 'Lead',               icon: '🌱' },
-  { id: 'agent',              label: 'Agent (legacy)',     icon: '🧑‍💼' },
-  { id: 'recruit',            label: 'Recruit',            icon: '🎯' },
-  { id: 'partner',            label: 'Partner',            icon: '🤲' },
-  { id: 'vendor',             label: 'Vendor',             icon: '🔧' },
-  { id: 'misc',                label: 'Misc',              icon: '🗂️' },
-  { id: 'other',              label: 'Other',              icon: '❓' },
+  // Clients & Leads
+  { id: 'client_residential', label: 'Client – Residential', icon: '🏠', category: 'Clients & Leads' },
+  { id: 'client_commercial',  label: 'Client – Commercial',  icon: '🏬', category: 'Clients & Leads' },
+  { id: 'buyer_lead',         label: 'Buyer Lead',           icon: '🔑', category: 'Clients & Leads' },
+  { id: 'seller_lead',        label: 'Seller Lead',          icon: '🏷️', category: 'Clients & Leads' },
+  { id: 'lead',               label: 'Lead',                 icon: '🌱', category: 'Clients & Leads' },
+  { id: 'past_client',        label: 'Past Client',          icon: '⭐', category: 'Clients & Leads' },
+  { id: 'renter_tenant',      label: 'Renter / Tenant',      icon: '🗝️', category: 'Clients & Leads' },
+  { id: 'landlord',           label: 'Landlord',             icon: '🏘️', category: 'Clients & Leads' },
+  { id: 'investor',           label: 'Investor',             icon: '📈', category: 'Clients & Leads' },
+  { id: 'fsbo',               label: 'FSBO',                 icon: '🪧', category: 'Clients & Leads' },
+  { id: 'expired',            label: 'Expired Listing',      icon: '⌛', category: 'Clients & Leads' },
+  { id: 'flipper',            label: 'Flipper',              icon: '🔄', category: 'Clients & Leads' },
+  // Brokerage & Agents (restricted = owners / broker admins / team leaders only)
+  { id: 'our_agent',          label: 'Our Agent',            icon: '🌟', category: 'Brokerage & Agents', cls: 'restricted' },
+  { id: 'staff',              label: 'Brokerage Staff',      icon: '🧑‍💻', category: 'Brokerage & Agents', cls: 'restricted' },
+  { id: 'prospect_agent',     label: 'Prospect Agent',       icon: '🎣', category: 'Brokerage & Agents' },
+  { id: 'recruit',            label: 'Recruit',              icon: '🎯', category: 'Brokerage & Agents' },
+  { id: 'broker',             label: 'Broker',               icon: '👔', category: 'Brokerage & Agents' },
+  { id: 'brokerage',          label: 'Brokerage',            icon: '🏢', category: 'Brokerage & Agents' },
+  { id: 'agent',              label: 'Agent (other brokerage)', icon: '🤝', category: 'Brokerage & Agents' },
+  // Transaction Partners
+  { id: 'lender',             label: 'Lender',               icon: '🏦', category: 'Transaction Partners' },
+  { id: 'title_escrow',       label: 'Title / Escrow',       icon: '📜', category: 'Transaction Partners' },
+  { id: 'inspector',          label: 'Home Inspector',       icon: '🔍', category: 'Transaction Partners' },
+  { id: 'appraiser',          label: 'Appraiser',            icon: '📐', category: 'Transaction Partners' },
+  { id: 'attorney',           label: 'Attorney',             icon: '⚖️', category: 'Transaction Partners' },
+  { id: 'insurance',          label: 'Insurance Agent',      icon: '🛡️', category: 'Transaction Partners' },
+  { id: 'transaction_coordinator', label: 'Transaction Coordinator', icon: '📑', category: 'Transaction Partners' },
+  { id: 'property_manager',   label: 'Property Manager',     icon: '🏤', category: 'Transaction Partners' },
+  { id: 'stager_photographer',label: 'Stager / Photographer',icon: '📸', category: 'Transaction Partners' },
+  // Trades & Construction
+  { id: 'contractor',         label: 'Contractor',           icon: '🛠️', category: 'Trades & Construction' },
+  { id: 'builder',            label: 'Builder',              icon: '🔨', category: 'Trades & Construction' },
+  { id: 'developer',          label: 'Developer',            icon: '🏗️', category: 'Trades & Construction' },
+  { id: 'commercial_tenant',  label: 'Commercial Tenant',    icon: '🏪', category: 'Trades & Construction' },
+  // Professional Network
+  { id: 'referral_partner',   label: 'Referral Partner',     icon: '🔗', category: 'Professional Network' },
+  { id: 'cpa_financial',      label: 'CPA / Financial',      icon: '💵', category: 'Professional Network' },
+  { id: 'doctor',             label: 'Doctor',               icon: '🩺', category: 'Professional Network' },
+  { id: 'regulator',          label: 'Regulator',            icon: '📋', category: 'Professional Network' },
+  { id: 'investments',        label: 'Investments',          icon: '💰', category: 'Professional Network' },
+  // Personal
+  { id: 'family',             label: 'Family',               icon: '👨‍👩‍👧', category: 'Personal' },
+  { id: 'friend',             label: 'Friend',               icon: '🫂', category: 'Personal' },
+  { id: 'personal',           label: 'Personal',             icon: '💛', category: 'Personal' },
+  // Other / Legacy
+  { id: 'vendor',             label: 'Vendor',               icon: '🔧', category: 'Other' },
+  { id: 'partner',            label: 'Partner',              icon: '🤲', category: 'Other' },
+  { id: 'client',             label: 'Client (legacy)',      icon: '🤝', category: 'Other' },
+  { id: 'misc',               label: 'Misc',                 icon: '🗂️', category: 'Other' },
+  { id: 'other',              label: 'Other',                icon: '❓', category: 'Other' },
 ];
-
 const CONTACT_TYPE_LABELS = Object.fromEntries(CONTACT_TYPES.map(t => [t.id, t.label]));
+
+// Live, expandable type list sourced from the contact_types table (falls back to the
+// built-in list). Restricted types are filtered out unless the viewer is privileged.
+function useContactTypes(canSeeRestricted){
+  const [db,setDb]=useState(null);
+  useEffect(()=>{ let on=true; (async()=>{ try{ const { data } = await supabase.from('contact_types').select('id,label,icon,category,sort_order,visibility_class').eq('is_active',true).order('sort_order'); if(on && data && data.length) setDb(data.map(x=>({id:x.id,label:x.label,icon:x.icon,category:x.category,cls:x.visibility_class}))); }catch(_e){} })(); return ()=>{on=false;}; },[]);
+  const list = db || CONTACT_TYPES;
+  return list.filter(t => canSeeRestricted || (t.cls||'standard')!=='restricted');
+}
 
 // ─────────────────────────────────────────
 // AUTH SCREEN
@@ -59,7 +92,8 @@ function EditSection({ icon, title, hint, summary, open, onToggle, children }) {
   );
 }
 
-function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId }) {
+function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId, canSeeRestricted = false }) {
+  const typeOptions = useContactTypes(canSeeRestricted);
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
   // phones + emails: arrays of {value, label, is_default}. Initial state seeded
@@ -200,7 +234,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
               <div className="form-row">
                 <div className="form-group"><label className="form-label">Type</label>
                   <select className="form-select" value={type} onChange={e=>setType(e.target.value)}>
-                    {CONTACT_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    {(() => { const groups=[]; const seen={}; typeOptions.forEach(t=>{ const c=t.category||'Other'; if(!seen[c]){seen[c]={cat:c,items:[]};groups.push(seen[c]);} seen[c].items.push(t); }); return groups.map(g=>(<optgroup key={g.cat} label={g.cat}>{g.items.map(t=><option key={t.id} value={t.id}>{(t.icon?t.icon+' ':'')+t.label}</option>)}</optgroup>)); })()}
                   </select>
                 </div>
                 <div className="form-group"><label className="form-label">Priority</label>
@@ -354,7 +388,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
 // user link, pick a different contact, skip, or block the sender.
 // ─────────────────────────────────────────
 
-function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChanged }) {
+function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChanged, canSeeRestricted = false }) {
+  const typeOptions = useContactTypes(canSeeRestricted);
   const [suggestions, setSuggestions] = useState(null);
   const [newContactSuggestions, setNewContactSuggestions] = useState(null);
   const [busy, setBusy] = useState({});
@@ -688,8 +723,8 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
                           <div style={{flex:'1 1 200px'}}>
                             <label style={{fontSize:'10px',color:'var(--text-3)',display:'block',marginBottom:'2px'}}>Type</label>
                             <select className="form-select" value={newContactType} onChange={e=>setNewContactType(e.target.value)} style={{padding:'6px 8px',fontSize:'12px',margin:0,width:'100%'}}>
-                              {CONTACT_TYPES.map(t => (
-                                <option key={t.id} value={t.id}>{t.label}</option>
+                              {typeOptions.map(t => (
+                                <option key={t.id} value={t.id}>{(t.icon?t.icon+' ':'')+t.label}</option>
                               ))}
                             </select>
                           </div>
@@ -721,7 +756,8 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 }
 
 
-function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) {
+function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, canSeeRestricted = false }) {
+  const typeOptions = useContactTypes(canSeeRestricted);
   const [textTo, setTextTo] = useState(null); // { contact, phone } for the Quo text composer
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
@@ -1109,7 +1145,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
               <label style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,display:'block',marginBottom:'4px'}}>Filter by type</label>
               <select className="form-select" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{margin:0}}>
                 <option value="all">All ({contacts.length})</option>
-                {CONTACT_TYPES.map(t => {
+                {typeOptions.map(t => {
                   const count = contacts.filter(c => c.type === t.id).length;
                   if (count === 0) return null;
                   return <option key={t.id} value={t.id}>{t.icon} {t.label} ({count})</option>;
@@ -1240,7 +1276,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
         </div>
       </div>
       {textTo && <QuoTextModal contact={textTo.contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
-      {showModal && <ContactModal
+      {showModal && <ContactModal canSeeRestricted={canSeeRestricted}
         onClose={()=>{ setShowModal(false); if (editFromDetail && editContact) setDetailContact(editContact); setEditContact(null); setEditFromDetail(false); }}
         onSave={handleSave}
         onDelete={async (c)=>{ if(!await confirmDialog(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); setEditFromDetail(false); }}
@@ -1264,7 +1300,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
         />
       )}
       {showLinkReview && (
-        <EmailLinkReviewModal
+        <EmailLinkReviewModal canSeeRestricted={canSeeRestricted}
           userId={userId}
           contacts={contacts}
           setContacts={setContacts}

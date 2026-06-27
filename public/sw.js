@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v134-20260627-speedo-dashfix'
+const VERSION = 'prismos-v135-20260627-contact-types'
 const APP_SHELL = [
   '/',
   '/index.html',
