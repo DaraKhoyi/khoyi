@@ -38,6 +38,27 @@ const CONTACT_TYPE_LABELS = Object.fromEntries(CONTACT_TYPES.map(t => [t.id, t.l
 // AUTH SCREEN
 // ─────────────────────────────────────────
 
+// Collapsible, labeled section used throughout the contact edit form. Defined at
+// module scope so it keeps a stable identity (inputs inside never lose focus).
+function EditSection({ icon, title, hint, summary, open, onToggle, children }) {
+  return (
+    <div style={{marginTop:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+      <button type="button" onClick={onToggle} style={{width:'100%',display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+        <span style={{color:'var(--accent)',display:'inline-flex',flexShrink:0}}><Icon name={icon} size={15} /></span>
+        <span style={{flex:1,minWidth:0}}>
+          <span style={{display:'block',fontSize:'12px',fontWeight:700,color:'var(--text-1)',textTransform:'uppercase',letterSpacing:'0.04em'}}>{title}</span>
+          {!open && summary && <span style={{display:'block',fontSize:'11.5px',color:'var(--text-3)',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{summary}</span>}
+        </span>
+        <span style={{color:'var(--text-3)',fontSize:'11px',flexShrink:0}}>{open ? '▼' : '▶'}</span>
+      </button>
+      {open && <div style={{padding:'0 14px 14px'}}>
+        {hint && <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'12px',lineHeight:1.5}}>{hint}</div>}
+        {children}
+      </div>}
+    </div>
+  );
+}
+
 function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId }) {
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
@@ -89,6 +110,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const [w9CollectedDate, setW9CollectedDate]   = useState(initial?.w9_collected_date || '');
   const [exempt1099Reason, setExempt1099Reason] = useState(initial?.exempt_1099_reason || '');
   const [force1099, setForce1099]               = useState(!!(initial?.force_1099));
+  const [openSec, setOpenSec] = useState({ identity:true, reach:true, source:false, addr:false, compliance:!!(initial?.is_1099_vendor), notes:true });
+  const tog = (k) => setOpenSec(s => ({ ...s, [k]: !s[k] }));
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -142,203 +165,121 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
     });
   }
 
+  const VENDOR_TYPES = ['vendor','contractor','attorney','builder','developer','lender'];
+  const showCompliance = VENDOR_TYPES.includes(type) || is1099Vendor;
+  const mInitials = ((name || '').trim().split(/\s+/).map(w=>w[0]).filter(Boolean).slice(0,2).join('').toUpperCase()) || (initial ? '?' : '+');
+  const homeSummary = [homeAddress,[homeCity,homeState].filter(Boolean).join(', '),homeZip].filter(Boolean).join(' · ').trim();
+  const bizSummary = [businessAddress,[businessCity,businessState].filter(Boolean).join(', '),businessZip].filter(Boolean).join(' · ').trim();
+  const originLabelMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',clickup:'ClickUp import',csv:'CSV import',other:'Other'};
+  const referredName = referredById ? ((contacts.find(c=>c.id===referredById)||{}).name || '') : '';
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="modal-header">
+        {/* Header mirrors the contact sheet so editing feels like the same surface */}
+        <div style={{padding:'16px 16px 14px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
           <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-            <h3>{initial ? 'Edit Contact' : 'New Contact'}</h3>
-            {initial && onDelete && <button type="button" className="modal-delete" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete"><Icon name="trash" size={16} /></button>}
-          </div>
-          <div className="modal-header-actions">
-            {initial && onShowDetails && (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onShowDetails(initial)}
-                title="View activity, DISC, timeline" style={{fontSize:'11px',padding:'4px 10px'}}>
-                More →
-              </button>
-            )}
-            <button className="modal-close" onClick={onClose}>×</button>
+            <div style={{width:'48px',height:'48px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'17px',color:'var(--accent)'}}>{mInitials}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{initial ? 'Editing' : 'New contact'}</div>
+              <div style={{fontSize:'17px',fontWeight:800,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name || (initial ? initial.name : 'New contact')}</div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:'5px',flexShrink:0}}>
+              {initial && onShowDetails && <button type="button" onClick={()=>onShowDetails(initial)} title="View details" style={{height:'32px',padding:'0 11px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:700}}>View →</button>}
+              {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="trash" size={15} /></button>}
+              <button type="button" onClick={onClose} title="Close" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'17px',lineHeight:1}}>×</button>
+            </div>
           </div>
         </div>
+
         <form onSubmit={handleSubmit}>
-          <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Type</label>
-              <select className="form-select" value={type} onChange={e=>setType(e.target.value)}>
-                {CONTACT_TYPES.map(t => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group"><label className="form-label">Priority</label>
-              <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
-                <option value="urgent">Urgent</option>
-                <option value="high">High</option>
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Emails</label>
-            <MultiValueField values={emails} onChange={setEmails} kind="email" addLabel="+ Add email"/>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Phones</label>
-            <MultiValueField values={phones} onChange={setPhones} kind="phone" addLabel="+ Add phone"/>
-          </div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Company</label><input className="form-input" value={company} onChange={e=>setCompany(e.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Role / Title</label><input className="form-input" value={role} onChange={e=>setRole(e.target.value)} /></div>
-          </div>
-          <div className="form-group"><label className="form-label">Profession</label><input className="form-input" value={profession} onChange={e=>setProfession(e.target.value)} placeholder="e.g. Realtor, Attorney, Jeweler, Doctor…" /></div>
+          <div style={{maxHeight:'60vh',overflowY:'auto',padding:'10px 16px 6px'}}>
 
-          <div className="form-group">
-            <label className="form-label">Referred by</label>
-            <SingleContactPicker
-              value={referredById || null}
-              onChange={(id) => setReferredById(id || '')}
-              contacts={contacts}
-              setContacts={setContacts}
-              currentContactId={initial?.id}
-              userId={userId}
-              placeholder="Who referred this contact? Search or type to add…"
-              defaultNewContactType="other"
-            />
-            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Links to the person who referred them — powers referral-source tracking.</div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Origin <span style={{color:'var(--text-3)',fontWeight:400}}>· where this lead came from</span></label>
-            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-              <select className="form-input" value={origin} onChange={e=>setOrigin(e.target.value)} style={{flex:'1 1 180px'}}>
-                <option value="">— Unspecified —</option>
-                <option value="manual">Manual entry</option>
-                <option value="referral">Referral</option>
-                <option value="open_house">Open house</option>
-                <option value="prospecting">Cold list / prospecting</option>
-                <option value="website">Website / inbound</option>
-                <option value="sphere">Sphere / past client</option>
-                <option value="event">Event / networking</option>
-                <option value="social">Social media</option>
-                <option value="email">From email</option>
-                <option value="clickup">ClickUp import</option>
-                <option value="csv">CSV import</option>
-                <option value="other">Other</option>
-              </select>
-              {origin && origin !== 'manual' && (
-                <input className="form-input" value={originDetail} onChange={e=>setOriginDetail(e.target.value)} placeholder={origin==='referral' ? 'Who / what source?' : origin==='event' ? 'Which event?' : origin==='social' ? 'Which platform?' : 'Detail (optional)'} style={{flex:'1 1 180px'}} />
-              )}
-            </div>
-            <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>New contacts default to “Manual entry.” Imports are stamped automatically.</div>
-          </div>
-
-          {/* HOME ADDRESS — collapsed by default; tap header to expand */}
-          {(() => {
-            const homeSummary = [homeAddress, [homeCity, homeState].filter(Boolean).join(', '), homeZip]
-              .filter(Boolean).join(' · ').trim();
-            return (
-              <div style={{marginTop:'18px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-                <button type="button" onClick={() => setShowHomeAddr(v => !v)}
-                  style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: showHomeAddr ? '10px' : 0,textAlign:'left'}}>
-                  <span style={{display:'flex',flexDirection:'column',gap:'3px',flex:1,minWidth:0}}>
-                    <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-                      <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="home" size={13} /> Home Address</span>
-                      {homeOwnership && <span style={{color:'var(--accent)',marginLeft:'6px'}}>· {homeOwnership === 'own' ? 'Own' : 'Rent'}</span>}
-                    </span>
-                    {!showHomeAddr && (
-                      <span style={{fontSize:'13px',color: homeSummary ? 'var(--text-1)' : 'var(--text-3)',fontStyle: homeSummary ? 'normal' : 'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                        {homeSummary || 'Tap to add'}
-                      </span>
-                    )}
-                  </span>
-                  <span style={{color:'var(--text-3)',fontSize:'12px',marginLeft:'10px',flexShrink:0}}>{showHomeAddr ? '▼ Hide' : '▶ Edit'}</span>
-                </button>
-                {showHomeAddr && (
-                  <>
-                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={homeAddress} onChange={e=>setHomeAddress(e.target.value)} /></div>
-                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={homeCity} onChange={e=>setHomeCity(e.target.value)} /></div>
-                    {/* State + ZIP share one row even on mobile — keeps a compact 2-line address */}
-                    <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px',marginBottom:'8px'}}>
-                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={homeState} onChange={e=>setHomeState(e.target.value.toUpperCase())} /></div>
-                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={homeZip} onChange={e=>setHomeZip(e.target.value)} /></div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-group"><label className="form-label">Own / Rent</label>
-                        <select className="form-select" value={homeOwnership} onChange={e=>setHomeOwnership(e.target.value)}>
-                          <option value="">—</option>
-                          <option value="own">Own</option>
-                          <option value="rent">Rent</option>
-                        </select>
-                      </div>
-                      {homeOwnership === 'own' && (
-                        <div className="form-group"><label className="form-label">Year Purchased</label>
-                          <input className="form-input" type="number" min="1800" max="2100" value={homePurchaseYear} onChange={e=>setHomePurchaseYear(e.target.value)} placeholder="e.g. 1998" /></div>
-                      )}
-                    </div>
-                  </>
-                )}
+            <EditSection icon="contacts" title="Identity" open={openSec.identity} onToggle={()=>tog('identity')} hint="The basics — who they are and where they work." summary={[(CONTACT_TYPE_LABELS[type]||type), company].filter(Boolean).join(' · ')}>
+              <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Type</label>
+                  <select className="form-select" value={type} onChange={e=>setType(e.target.value)}>
+                    {CONTACT_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label className="form-label">Priority</label>
+                  <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
+                    <option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
+                  </select>
+                </div>
               </div>
-            );
-          })()}
-
-          {/* BUSINESS ADDRESS — collapsed by default; tap header to expand */}
-          {(() => {
-            const bizSummary = [businessAddress, [businessCity, businessState].filter(Boolean).join(', '), businessZip]
-              .filter(Boolean).join(' · ').trim();
-            return (
-              <div style={{marginTop:'12px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-                <button type="button" onClick={() => setShowBizAddr(v => !v)}
-                  style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: showBizAddr ? '10px' : 0,textAlign:'left'}}>
-                  <span style={{display:'flex',flexDirection:'column',gap:'3px',flex:1,minWidth:0}}>
-                    <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-                      <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="building" size={13} /> Business Address</span>
-                    </span>
-                    {!showBizAddr && (
-                      <span style={{fontSize:'13px',color: bizSummary ? 'var(--text-1)' : 'var(--text-3)',fontStyle: bizSummary ? 'normal' : 'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                        {bizSummary || 'Tap to add'}
-                      </span>
-                    )}
-                  </span>
-                  <span style={{color:'var(--text-3)',fontSize:'12px',marginLeft:'10px',flexShrink:0}}>{showBizAddr ? '▼ Hide' : '▶ Edit'}</span>
-                </button>
-                {showBizAddr && (
-                  <>
-                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={businessAddress} onChange={e=>setBusinessAddress(e.target.value)} /></div>
-                    <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={businessCity} onChange={e=>setBusinessCity(e.target.value)} /></div>
-                    <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px'}}>
-                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
-                      <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
-                    </div>
-                  </>
-                )}
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Company</label><input className="form-input" value={company} onChange={e=>setCompany(e.target.value)} /></div>
+                <div className="form-group"><label className="form-label">Role / Title</label><input className="form-input" value={role} onChange={e=>setRole(e.target.value)} /></div>
               </div>
-            );
-          })()}
+              <div className="form-group" style={{marginBottom:0}}><label className="form-label">Profession</label><input className="form-input" value={profession} onChange={e=>setProfession(e.target.value)} placeholder="e.g. Realtor, Attorney, Jeweler, Doctor…" /></div>
+            </EditSection>
 
-          {/* 1099-NEC / W-9 — collapsible. Contains sensitive PII (TIN); only
-              shown for active 1099 vendors by default. */}
-          <div style={{marginTop:'12px',padding:'12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-            <button type="button" onClick={() => setShow1099(v => !v)}
-              style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',background:'transparent',border:'none',color:'var(--text-1)',cursor:'pointer',padding:0,marginBottom: show1099 ? '10px' : 0}}>
-              <span style={{fontSize:'11px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-                <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="file" size={13} /> 1099 / W-9</span> {is1099Vendor && <span style={{color:'var(--accent)'}}>· flagged</span>}
-                {w9Collected && <span style={{color:'var(--green)'}}> · W-9 ✓</span>}
-              </span>
-              <span style={{color:'var(--text-3)',fontSize:'12px'}}>{show1099 ? '▼' : '▶'}</span>
-            </button>
-            {show1099 && (
-              <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+            <EditSection icon="message" title="Reach" open={openSec.reach} onToggle={()=>tog('reach')} hint="Star one of each as the default — that’s what the Call / Text / Email buttons use." summary={[emails.filter(e=>e.value).length+' email'+(emails.filter(e=>e.value).length===1?'':'s'), phones.filter(p=>p.value).length+' phone'+(phones.filter(p=>p.value).length===1?'':'s')].join(' · ')}>
+              <div className="form-group"><label className="form-label">Emails</label><MultiValueField values={emails} onChange={setEmails} kind="email" addLabel="+ Add email"/></div>
+              <div className="form-group" style={{marginBottom:0}}><label className="form-label">Phones</label><MultiValueField values={phones} onChange={setPhones} kind="phone" addLabel="+ Add phone"/></div>
+            </EditSection>
+
+            <EditSection icon="link" title="Source" open={openSec.source} onToggle={()=>tog('source')} hint="Where this contact came from — powers your referral-source and lead reporting." summary={([referredName ? 'via '+referredName : '', origin ? (originLabelMap[origin]||origin) : ''].filter(Boolean).join(' · ')) || 'Not set'}>
+              <div className="form-group">
+                <label className="form-label">Referred by</label>
+                <SingleContactPicker value={referredById || null} onChange={(id)=>setReferredById(id||'')} contacts={contacts} setContacts={setContacts} currentContactId={initial?.id} userId={userId} placeholder="Who referred this contact? Search or type to add…" defaultNewContactType="other" />
+              </div>
+              <div className="form-group" style={{marginBottom:0}}>
+                <label className="form-label">Origin</label>
+                <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+                  <select className="form-input" value={origin} onChange={e=>setOrigin(e.target.value)} style={{flex:'1 1 160px'}}>
+                    <option value="">— Unspecified —</option>
+                    <option value="manual">Manual entry</option>
+                    <option value="referral">Referral</option>
+                    <option value="open_house">Open house</option>
+                    <option value="prospecting">Cold list / prospecting</option>
+                    <option value="website">Website / inbound</option>
+                    <option value="sphere">Sphere / past client</option>
+                    <option value="event">Event / networking</option>
+                    <option value="social">Social media</option>
+                    <option value="email">From email</option>
+                    <option value="clickup">ClickUp import</option>
+                    <option value="csv">CSV import</option>
+                    <option value="other">Other</option>
+                  </select>
+                  {origin && origin !== 'manual' && <input className="form-input" value={originDetail} onChange={e=>setOriginDetail(e.target.value)} placeholder={origin==='referral' ? 'Who / what source?' : origin==='event' ? 'Which event?' : origin==='social' ? 'Which platform?' : 'Detail (optional)'} style={{flex:'1 1 160px'}} />}
+                </div>
+              </div>
+            </EditSection>
+
+            <EditSection icon="home" title="Addresses" open={openSec.addr} onToggle={()=>tog('addr')} hint="Optional — home and business locations." summary={([homeSummary?'Home':'', bizSummary?'Business':''].filter(Boolean).join(' · ')) || 'None'}>
+              <div style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'8px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="home" size={12} /> Home</div>
+              <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={homeAddress} onChange={e=>setHomeAddress(e.target.value)} /></div>
+              <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={homeCity} onChange={e=>setHomeCity(e.target.value)} /></div>
+              <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px',marginBottom:'8px'}}>
+                <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={homeState} onChange={e=>setHomeState(e.target.value.toUpperCase())} /></div>
+                <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={homeZip} onChange={e=>setHomeZip(e.target.value)} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Own / Rent</label>
+                  <select className="form-select" value={homeOwnership} onChange={e=>setHomeOwnership(e.target.value)}><option value="">—</option><option value="own">Own</option><option value="rent">Rent</option></select>
+                </div>
+                {homeOwnership === 'own' && <div className="form-group"><label className="form-label">Year Purchased</label><input className="form-input" type="number" min="1800" max="2100" value={homePurchaseYear} onChange={e=>setHomePurchaseYear(e.target.value)} placeholder="e.g. 1998" /></div>}
+              </div>
+              <div style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',margin:'16px 0 8px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="building" size={12} /> Business</div>
+              <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">Street</label><input className="form-input" value={businessAddress} onChange={e=>setBusinessAddress(e.target.value)} /></div>
+              <div className="form-group" style={{marginBottom:'8px'}}><label className="form-label">City</label><input className="form-input" value={businessCity} onChange={e=>setBusinessCity(e.target.value)} /></div>
+              <div style={{display:'grid',gridTemplateColumns:'88px 1fr',gap:'12px'}}>
+                <div className="form-group" style={{marginBottom:0}}><label className="form-label">State</label><input className="form-input" maxLength={2} value={businessState} onChange={e=>setBusinessState(e.target.value.toUpperCase())} /></div>
+                <div className="form-group" style={{marginBottom:0}}><label className="form-label">ZIP</label><input className="form-input" value={businessZip} onChange={e=>setBusinessZip(e.target.value)} /></div>
+              </div>
+            </EditSection>
+
+            {showCompliance && (
+              <EditSection icon="file" title="1099 / W-9" open={openSec.compliance} onToggle={()=>tog('compliance')} hint="For independent contractors / vendors paid $600+ in a calendar year. Sensitive info is stored encrypted — only you can read it." summary={is1099Vendor ? ('Flagged' + (w9Collected ? ' · W-9 ✓' : '')) : 'Not flagged'}>
+                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',marginBottom:'10px'}}>
                   <input type="checkbox" checked={is1099Vendor} onChange={e => setIs1099Vendor(e.target.checked)}/>
                   <span style={{fontSize:'12px',color:'var(--text-1)',fontWeight:600}}>Track as 1099-NEC vendor</span>
                 </label>
-                <div style={{fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',marginTop:'-4px',marginLeft:'24px',lineHeight:1.5}}>
-                  Check this for any independent contractor / service vendor paid $600+ in a calendar year (Cynthia, attorneys, contractors, etc.).
-                </div>
-
                 {is1099Vendor && (
-                  <>
+                  <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
                     <div className="form-group" style={{marginBottom:0}}>
                       <label className="form-label">Entity type (from W-9)</label>
                       <select className="form-select" value={entityType} onChange={e => setEntityType(e.target.value)}>
@@ -355,32 +296,18 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                         <option value="nonprofit">Tax-exempt / nonprofit</option>
                         <option value="other">Other</option>
                       </select>
-                      <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px',lineHeight:1.5}}>
-                        Corps generally do NOT need 1099s — except attorneys, which always do. Use Force 1099 below for those.
-                      </div>
+                      <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',lineHeight:1.5}}>Corps generally do NOT need 1099s — except attorneys, which always do. Use Force 1099 below for those.</div>
                     </div>
-
                     <div className="form-row">
                       <div className="form-group" style={{flex:'0 0 110px',marginBottom:0}}>
                         <label className="form-label">TIN type</label>
-                        <select className="form-select" value={taxIdType} onChange={e => setTaxIdType(e.target.value)}>
-                          <option value="">—</option>
-                          <option value="ssn">SSN</option>
-                          <option value="ein">EIN</option>
-                        </select>
+                        <select className="form-select" value={taxIdType} onChange={e => setTaxIdType(e.target.value)}><option value="">—</option><option value="ssn">SSN</option><option value="ein">EIN</option></select>
                       </div>
                       <div className="form-group" style={{flex:1,marginBottom:0}}>
                         <label className="form-label">Tax ID number</label>
-                        <input className="form-input" type="text" value={taxIdFull}
-                          onChange={e => setTaxIdFull(e.target.value)}
-                          placeholder={taxIdType === 'ein' ? '12-3456789' : '123-45-6789'}
-                          autoComplete="off"/>
+                        <input className="form-input" type="text" value={taxIdFull} onChange={e => setTaxIdFull(e.target.value)} placeholder={taxIdType === 'ein' ? '12-3456789' : '123-45-6789'} autoComplete="off"/>
                       </div>
                     </div>
-                    <div style={{fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',marginTop:'-4px',lineHeight:1.5}}>
-                      ⚠ Sensitive. Stored encrypted at rest by Supabase; only you can read it (RLS). Used only on the 1099-NEC year-end report.
-                    </div>
-
                     <div className="form-row">
                       <label className="form-group" style={{flex:1,display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',marginBottom:0}}>
                         <input type="checkbox" checked={w9Collected} onChange={e => setW9Collected(e.target.checked)}/>
@@ -389,33 +316,31 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                       {w9Collected && (
                         <div className="form-group" style={{flex:1,marginBottom:0}}>
                           <label className="form-label">Date received</label>
-                          <input className="form-input" type="date" value={w9CollectedDate}
-                            onChange={e => setW9CollectedDate(e.target.value)}/>
+                          <input className="form-input" type="date" value={w9CollectedDate} onChange={e => setW9CollectedDate(e.target.value)}/>
                         </div>
                       )}
                     </div>
-
                     <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
                       <input type="checkbox" checked={force1099} onChange={e => setForce1099(e.target.checked)}/>
                       <span style={{fontSize:'12px',color:'var(--text-1)'}}>Force 1099 even if corporation (attorneys, etc.)</span>
                     </label>
-
                     <div className="form-group" style={{marginBottom:0}}>
                       <label className="form-label">Exempt reason (optional)</label>
-                      <input className="form-input" type="text" value={exempt1099Reason}
-                        onChange={e => setExempt1099Reason(e.target.value)}
-                        placeholder='e.g. "Paid via credit card" — those go on 1099-K, not 1099-NEC'/>
+                      <input className="form-input" type="text" value={exempt1099Reason} onChange={e => setExempt1099Reason(e.target.value)} placeholder='e.g. "Paid via credit card"'/>
                     </div>
-                  </>
+                  </div>
                 )}
-              </div>
+              </EditSection>
             )}
-          </div>
 
-          <div className="form-group" style={{marginTop:'14px'}}><label className="form-label">Notes</label><textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Context, history, anything to remember…" /></div>
-          <div className="modal-actions">
+            <EditSection icon="edit" title="Notes" open={openSec.notes} onToggle={()=>tog('notes')} hint="Context, history, anything to remember." summary={notes ? (notes.slice(0,42).replace(/\n/g,' ') + (notes.length>42?'…':'')) : 'None'}>
+              <textarea className="form-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Context, history, anything to remember…" style={{minHeight:'90px'}} />
+            </EditSection>
+
+          </div>
+          <div className="modal-actions" style={{padding:'12px 16px',borderTop:'1px solid var(--border)',margin:0}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Save Contact</button>
+            <button type="submit" className="btn btn-primary">{initial ? 'Save changes' : 'Create contact'}</button>
           </div>
         </form>
       </div>
@@ -800,6 +725,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   const [textTo, setTextTo] = useState(null); // { contact, phone } for the Quo text composer
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
+  const [editFromDetail, setEditFromDetail] = useState(false);
   const [detailContact, setDetailContact] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added' | 'cadence_due'
@@ -1030,12 +956,14 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
   });
 
   async function handleSave(data) {
+    let savedRow = null;
     if (editContact) {
       const { data: updated, error } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
       if (error) {
         notify("Couldn't save contact. Try again.", 'error');
         return;
       }
+      savedRow = updated;
       if (updated) setContacts(prev => prev.map(c => c.id === updated.id ? updated : c));
     } else {
       const { data: created, error } = await supabase.from('contacts').insert({ ...data, user_id: userId }).select().single();
@@ -1043,9 +971,12 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
         notify("Couldn't create contact. Try again.", 'error');
         return;
       }
+      savedRow = created;
       if (created) setContacts(prev => [created, ...prev]);
     }
-    setShowModal(false); setEditContact(null);
+    setShowModal(false);
+    if (editFromDetail && savedRow) setDetailContact(savedRow);
+    setEditContact(null); setEditFromDetail(false);
   }
 
   async function deleteContact(id) {
@@ -1286,10 +1217,10 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
       </div>
       {textTo && <QuoTextModal contact={textTo.contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
       {showModal && <ContactModal
-        onClose={()=>{setShowModal(false);setEditContact(null);}}
+        onClose={()=>{ setShowModal(false); if (editFromDetail && editContact) setDetailContact(editContact); setEditContact(null); setEditFromDetail(false); }}
         onSave={handleSave}
-        onDelete={async (c)=>{ if(!await confirmDialog(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); }}
-        onShowDetails={(c)=>{ setShowModal(false); setDetailContact(c); }}
+        onDelete={async (c)=>{ if(!await confirmDialog(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); setEditFromDetail(false); }}
+        onShowDetails={(c)=>{ setShowModal(false); setEditContact(null); setEditFromDetail(false); setDetailContact(c); }}
         initial={editContact}
         contacts={contacts}
         setContacts={setContacts}
@@ -1303,8 +1234,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles }) 
           contacts={contacts}
           setContacts={setContacts}
           onClose={() => setDetailContact(null)}
-          onEdit={() => { setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
-          onBack={() => { setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
+          onEdit={() => { setEditFromDetail(true); setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
+          onBack={() => { setEditFromDetail(true); setEditContact(detailContact); setDetailContact(null); setShowModal(true); }}
           onProfileUpdate={handleProfileUpdate}
         />
       )}
