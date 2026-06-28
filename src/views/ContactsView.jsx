@@ -240,8 +240,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
           </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{flex:1,minHeight:0,overflowY:'auto',padding:'10px 16px 6px'}}>
+        <form onSubmit={handleSubmit} style={{flex:1,minHeight:0,display:'flex',flexDirection:'column'}}>
+          <div style={{flex:1,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'10px 16px 6px'}}>
 
             <EditSection icon="contacts" title="Identity" open={openSec.identity} onToggle={()=>tog('identity')} hint="The basics — who they are and where they work." summary={[(CONTACT_TYPE_LABELS[type]||type), company].filter(Boolean).join(' · ')}>
               <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} autoFocus required /></div>
@@ -397,7 +397,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
             </EditSection>
 
           </div>
-          <div className="modal-actions" style={{padding:'12px 16px',borderTop:'1px solid var(--border)',margin:0}}>
+          <div className="modal-actions" style={{padding:'12px 16px calc(12px + env(safe-area-inset-bottom, 0px))',borderTop:'1px solid var(--border)',margin:0,flexShrink:0}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">{initial ? 'Save changes' : 'Create contact'}</button>
           </div>
