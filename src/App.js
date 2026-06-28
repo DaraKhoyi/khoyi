@@ -11783,10 +11783,11 @@ function ContactTypesAdmin({ isPrivileged }){
   const [draft,setDraft]=useState({});
   const [delId,setDelId]=useState(null);
   const [adding,setAdding]=useState(false);
+  const [pstats,setPstats]=useState(null);
   const [nl,setNl]=useState(''); const [ni,setNi]=useState('🏷️'); const [nc,setNc]=useState('Clients & Leads'); const [nr,setNr]=useState(false);
   const EMOJI=['🏷️','🏠','🏬','🔑','🌱','⭐','📈','🌟','🧑‍💻','🎯','🏦','⚖️','🛠️','🩺','👨‍👩‍👧','💛','🔧','💎','🔥','📌','🏆','🌐'];
   const lb={background:'none',border:'none',color:'var(--text-2)',fontSize:11.5,fontWeight:600,cursor:'pointer',padding:0};
-  const load=async()=>{ try{ const { data } = await supabase.from('contact_types').select('*').is('owner_user_id', null).order('sort_order'); setRows(data||[]); }catch(e){ setRows([]); } };
+  const load=async()=>{ try{ const { data } = await supabase.from('contact_types').select('*').is('owner_user_id', null).order('sort_order'); setRows(data||[]); }catch(e){ setRows([]); } try{ const { data:ps } = await supabase.rpc('personal_contact_type_stats'); setPstats(Array.isArray(ps)?ps[0]:ps); }catch(_e){} };
   useEffect(()=>{ load(); },[]);
   if(!isPrivileged) return (<div className="view"><div className="panel" style={{padding:20,color:'var(--text-2)',fontSize:13}}>Only owners, broker admins, and team leaders can manage contact types.</div></div>);
   if(rows===null) return (<div className="view"><div className="panel" style={{padding:24,textAlign:'center',color:'var(--text-2)'}}>Loading types…</div></div>);
@@ -11803,9 +11804,26 @@ function ContactTypesAdmin({ isPrivileged }){
     <div className="panel" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
       <div style={{display:'flex',alignItems:'center',gap:12}}>
         <div style={{width:42,height:42,borderRadius:12,background:'var(--accent-glow)',border:'1px solid var(--accent)',display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name="clipboard" size={20} style={{color:'var(--accent)'}}/></div>
-        <div><h2 style={{margin:0}}>Contact types</h2><div style={{fontSize:12,color:'var(--text-2)',marginTop:2}}>Add, rename, reorder, and restrict the brokerage-wide types</div></div>
+        <div><h2 style={{margin:0}}>Contact types</h2><div style={{fontSize:12,color:'var(--text-2)',marginTop:2}}>Add, rename, reorder, and set the class of brokerage-wide types</div></div>
       </div>
       {!adding && <button className="btn btn-primary btn-sm" onClick={()=>setAdding(true)}>+ Add</button>}
+    </div>
+    <div className="panel" style={{marginTop:12,padding:16}}>
+      <div style={{fontSize:11,fontWeight:800,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:11}}>Type classes</div>
+      <div style={{display:'flex',flexDirection:'column',gap:11}}>
+        <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+          <span style={{flexShrink:0,fontSize:10.5,fontWeight:700,borderRadius:999,padding:'3px 9px',whiteSpace:'nowrap',background:'var(--bg-base)',border:'1px solid var(--border)',color:'var(--text-2)'}}>🏢 Brokerage-wide</span>
+          <span style={{fontSize:12,color:'var(--text-2)',flex:1,lineHeight:1.45}}>The brokerage standard. Available to <strong>everyone</strong> in the company.</span>
+        </div>
+        <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+          <span style={{flexShrink:0,fontSize:10.5,fontWeight:700,borderRadius:999,padding:'3px 9px',whiteSpace:'nowrap',background:'rgba(178,58,58,0.12)',border:'1px solid #B23A3A',color:'#d77'}}>🔒 Leadership-only</span>
+          <span style={{fontSize:12,color:'var(--text-2)',flex:1,lineHeight:1.45}}>Restricted. Only <strong>owners, broker admins &amp; team leaders</strong> can see, choose, or open contacts of this type.</span>
+        </div>
+        <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+          <span style={{flexShrink:0,fontSize:10.5,fontWeight:700,borderRadius:999,padding:'3px 9px',whiteSpace:'nowrap',background:'rgba(74,111,176,0.12)',border:'1px solid #4a6fb0',color:'#9bb8e6'}}>👤 Personal</span>
+          <span style={{fontSize:12,color:'var(--text-2)',flex:1,lineHeight:1.45}}>Made by an <strong>individual agent</strong> for their own use \u2014 private to them and not listed here.{pstats && pstats.total>0 ? (' Agents have created '+pstats.total+' personal type'+(pstats.total===1?'':'s')+' so far.') : ''}</span>
+        </div>
+      </div>
     </div>
     {adding && <div className="panel" style={{marginTop:12,padding:16}}>
       <div style={{fontSize:12,fontWeight:700,color:'var(--text-1)',marginBottom:10}}>New type</div>
@@ -11837,7 +11855,7 @@ function ContactTypesAdmin({ isPrivileged }){
                 <div style={{fontSize:13.5,fontWeight:600,color:r.is_active?'var(--text-1)':'var(--text-3)'}}>{r.label}{!r.is_active && <span style={{fontSize:10,color:'var(--text-3)',fontWeight:500}}> · hidden</span>}</div>
                 <div style={{fontSize:10,color:'var(--text-3)',marginTop:1,fontFamily:'monospace'}}>{r.id}</div>
               </div>
-              <button type="button" onClick={()=>toggleRestricted(r)} title="Toggle restricted" style={{flexShrink:0,fontSize:10.5,fontWeight:700,borderRadius:999,padding:'3px 9px',cursor:'pointer',background:restricted?'rgba(178,58,58,0.12)':'var(--bg-base)',border:'1px solid '+(restricted?'#B23A3A':'var(--border)'),color:restricted?'#d77':'var(--text-3)'}}>{restricted?'🔒 Restricted':'Standard'}</button>
+              <button type="button" onClick={()=>toggleRestricted(r)} title="Tap to change class" style={{flexShrink:0,fontSize:10.5,fontWeight:700,borderRadius:999,padding:'3px 9px',cursor:'pointer',background:restricted?'rgba(178,58,58,0.12)':'var(--bg-base)',border:'1px solid '+(restricted?'#B23A3A':'var(--border)'),color:restricted?'#d77':'var(--text-2)'}}>{restricted?'🔒 Leadership-only':'🏢 Brokerage-wide'}</button>
             </div>
             <div style={{display:'flex',gap:16,marginTop:7,marginLeft:26}}>
               <button type="button" style={lb} onClick={()=>startEdit(r)}>Edit</button>
