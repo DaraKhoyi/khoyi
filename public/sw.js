@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v140-20260627-planday-stale-hint'
+const VERSION = 'prismos-v141-20260628-dash-responsive'
 const APP_SHELL = [
   '/',
   '/index.html',
