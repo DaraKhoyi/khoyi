@@ -62,9 +62,18 @@ const CONTACT_TYPE_LABELS = Object.fromEntries(CONTACT_TYPES.map(t => [t.id, t.l
 // built-in list). Restricted types are filtered out unless the viewer is privileged.
 function useContactTypes(canSeeRestricted){
   const [db,setDb]=useState(null);
-  useEffect(()=>{ let on=true; (async()=>{ try{ const { data } = await supabase.from('contact_types').select('id,label,icon,category,sort_order,visibility_class').eq('is_active',true).order('sort_order'); if(on && data && data.length) setDb(data.map(x=>({id:x.id,label:x.label,icon:x.icon,category:x.category,cls:x.visibility_class}))); }catch(_e){} })(); return ()=>{on=false;}; },[]);
+  const reload=useCallback(async()=>{ try{ const { data } = await supabase.from('contact_types').select('id,label,icon,category,sort_order,visibility_class').eq('is_active',true).order('sort_order'); if(data && data.length) setDb(data.map(x=>({id:x.id,label:x.label,icon:x.icon,category:x.category,cls:x.visibility_class}))); }catch(_e){} },[]);
+  useEffect(()=>{ reload(); },[reload]);
   const list = db || CONTACT_TYPES;
-  return list.filter(t => canSeeRestricted || (t.cls||'standard')!=='restricted');
+  return [list.filter(t => canSeeRestricted || (t.cls||'standard')!=='restricted'), reload];
+}
+
+// Create a private custom type owned by the current user (RLS keeps it private).
+async function createCustomType(userId, label, icon){
+  const id = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  const { data, error } = await supabase.from('contact_types').insert({ id, label: (label||'').trim(), icon: icon||'🏷️', category: 'My Types', sort_order: 800, visibility_class: 'standard', owner_user_id: userId, is_active: true }).select().single();
+  if(error) throw error;
+  return data;
 }
 
 // ─────────────────────────────────────────
@@ -93,7 +102,7 @@ function EditSection({ icon, title, hint, summary, open, onToggle, children }) {
 }
 
 function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId, canSeeRestricted = false }) {
-  const typeOptions = useContactTypes(canSeeRestricted);
+  const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
   // phones + emails: arrays of {value, label, is_default}. Initial state seeded
@@ -199,6 +208,11 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
     });
   }
 
+  const [addingType,setAddingType]=useState(false);
+  const [newTypeLabel,setNewTypeLabel]=useState('');
+  const [newTypeIcon,setNewTypeIcon]=useState('🏷️');
+  const [savingType,setSavingType]=useState(false);
+  const saveCustomType=async()=>{ const lbl=newTypeLabel.trim(); if(!lbl) return; setSavingType(true); try{ const row=await createCustomType(userId,lbl,newTypeIcon); await reloadTypes(); setType(row.id); setAddingType(false); setNewTypeLabel(''); setNewTypeIcon('🏷️'); if(window.__notify) window.__notify('Added private type \u201c'+lbl+'\u201d','success'); }catch(e){ if(window.__notify) window.__notify('Could not add type.','error'); } setSavingType(false); };
   const VENDOR_TYPES = ['vendor','contractor','attorney','builder','developer','lender'];
   const showCompliance = VENDOR_TYPES.includes(type) || is1099Vendor;
   const mInitials = ((name || '').trim().split(/\s+/).map(w=>w[0]).filter(Boolean).slice(0,2).join('').toUpperCase()) || (initial ? '?' : '+');
@@ -236,6 +250,17 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                   <select className="form-select" value={type} onChange={e=>setType(e.target.value)}>
                     {(() => { const groups=[]; const seen={}; typeOptions.forEach(t=>{ const c=t.category||'Other'; if(!seen[c]){seen[c]={cat:c,items:[]};groups.push(seen[c]);} seen[c].items.push(t); }); return groups.map(g=>(<optgroup key={g.cat} label={g.cat}>{g.items.map(t=><option key={t.id} value={t.id}>{(t.icon?t.icon+' ':'')+t.label}</option>)}</optgroup>)); })()}
                   </select>
+                  {!addingType
+                    ? <button type="button" onClick={()=>setAddingType(true)} style={{marginTop:6,background:'none',border:'none',color:'var(--accent)',fontSize:11.5,fontWeight:600,cursor:'pointer',padding:0}}>+ New private type</button>
+                    : <div style={{marginTop:8,padding:10,border:'1px solid var(--border)',borderRadius:10,background:'var(--bg-base)'}}>
+                        <div style={{fontSize:10.5,color:'var(--text-3)',marginBottom:7}}>Private to you \u2014 only you will see this type.</div>
+                        <div style={{display:'flex',gap:6,marginBottom:7,flexWrap:'wrap'}}>{['🏷️','💎','⭐','🔥','📌','🧲','🏆','🌐'].map(em=>(<button key={em} type="button" onClick={()=>setNewTypeIcon(em)} style={{fontSize:16,lineHeight:1,padding:'4px 7px',borderRadius:8,cursor:'pointer',background:newTypeIcon===em?'var(--accent-glow)':'transparent',border:'1px solid '+(newTypeIcon===em?'var(--accent)':'var(--border)')}}>{em}</button>))}</div>
+                        <div style={{display:'flex',gap:6}}>
+                          <input className="form-input" value={newTypeLabel} onChange={e=>setNewTypeLabel(e.target.value)} placeholder="Type name (e.g. VIP, A-list lender)" style={{flex:1,margin:0}} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); saveCustomType(); } }} />
+                          <button type="button" className="btn btn-primary btn-sm" disabled={savingType||!newTypeLabel.trim()} onClick={saveCustomType}>{savingType?'\u2026':'Add'}</button>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setAddingType(false);setNewTypeLabel('');}}>Cancel</button>
+                        </div>
+                      </div>}
                 </div>
                 <div className="form-group"><label className="form-label">Priority</label>
                   <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
@@ -389,7 +414,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
 // ─────────────────────────────────────────
 
 function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChanged, canSeeRestricted = false }) {
-  const typeOptions = useContactTypes(canSeeRestricted);
+  const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [suggestions, setSuggestions] = useState(null);
   const [newContactSuggestions, setNewContactSuggestions] = useState(null);
   const [busy, setBusy] = useState({});
@@ -757,7 +782,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 
 
 function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, canSeeRestricted = false }) {
-  const typeOptions = useContactTypes(canSeeRestricted);
+  const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [textTo, setTextTo] = useState(null); // { contact, phone } for the Quo text composer
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
