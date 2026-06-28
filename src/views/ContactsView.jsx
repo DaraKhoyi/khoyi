@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
+import { useBackClose, ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
 
 const CONTACT_TYPES = [
   // Clients & Leads
@@ -102,6 +102,8 @@ function EditSection({ icon, title, hint, summary, open, onToggle, children }) {
 }
 
 function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId, canSeeRestricted = false }) {
+
+  useBackClose(onClose);
   const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [name, setName] = useState(initial?.name || '');
   const [type, setType] = useState(initial?.type || 'lead');
@@ -414,6 +416,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
 // ─────────────────────────────────────────
 
 function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChanged, canSeeRestricted = false }) {
+
+  useBackClose(onClose);
   const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [suggestions, setSuggestions] = useState(null);
   const [newContactSuggestions, setNewContactSuggestions] = useState(null);
@@ -1359,6 +1363,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
 // ─────────────────────────────────────────
 
 function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, onMerged }) {
+
+  useBackClose(onClose);
   const [localGroups, setLocalGroups] = useState(groups);
   const [selectedCanonical, setSelectedCanonical] = useState({});  // groupKey -> contactId
   const [merging, setMerging] = useState({});  // groupKey -> bool

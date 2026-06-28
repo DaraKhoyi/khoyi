@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { ActivityTimeline, Icon, MileageView, RecruitingKpiTile, SingleContactPicker, confirmDialog, lbl, modal, money, stageMeta } from '../App';
+import { useBackClose, ActivityTimeline, Icon, MileageView, RecruitingKpiTile, SingleContactPicker, confirmDialog, lbl, modal, money, stageMeta } from '../App';
 
 function cleanDateInput(v) {
   if (!v) return '';
@@ -374,6 +374,8 @@ function DealCard({ deal, stage, contacts, properties, onClick, onDragStart, onD
 // modal that pre-fills final numbers from the current file state.
 
 function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSystems, userId, onClose, onSave, onDelete, onCloseDeal }) {
+
+  useBackClose(onClose);
   const [name, setName]                       = useState(deal.name || '');
   const [side, setSide]                       = useState(deal.side || 'buyer');
   const [listPrice, setListPrice]             = useState(deal.list_price ?? '');
@@ -827,6 +829,8 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
 // Anything the user types here overwrites the file before logging income.
 
 function CloseDealModal({ deal, onClose, onConfirm }) {
+
+  useBackClose(onClose);
   const [salePrice, setSalePrice]             = useState(deal.sale_price ?? '');
   const [commissionPct, setCommissionPct]     = useState(deal.commission_pct ?? '');
   const [grossCommission, setGrossCommission] = useState(deal.gross_commission ?? '');

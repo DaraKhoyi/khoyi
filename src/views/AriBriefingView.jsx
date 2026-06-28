@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { Icon, QuoTextModal, TaskModal, money } from '../App';
+import { useBackClose, Icon, QuoTextModal, TaskModal, money } from '../App';
 
 function ActionHubModal({ contactId, userId, onClose }) {
+
+  useBackClose(onClose);
   const [loading, setLoading] = useState(true);
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');

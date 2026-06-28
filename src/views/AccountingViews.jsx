@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { HeaderSearchIcon, HeaderSearchInput, Icon, RecruitingKpiTile, confirmDialog, modal, money, num, todayISO, today_ymd, ymd } from '../App';
+import { useBackClose, HeaderSearchIcon, HeaderSearchInput, Icon, RecruitingKpiTile, confirmDialog, modal, money, num, todayISO, today_ymd, ymd } from '../App';
 
 const TIER_BANDS = [
   { id: 'rookie',       label: 'Rookie',       color: '#cd7f32' },
@@ -527,6 +527,8 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
 // ─── TimeLogModal — view / edit / delete / add today's time for one system ───
 
 function TimeLogModal({ system, userId, timeEntries, setTimeEntries, hourlyRate, onClose }) {
+
+  useBackClose(onClose);
   const today = today_ymd();
   const [addMin, setAddMin] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2405,6 +2407,9 @@ function guessColumn(headers, kind) {
 
 
 function CsvImportModal({ userId, existingTransactions, taxCategories, trackPersonal, onClose, onImported, onBatchRevoked }) {
+
+
+  useBackClose(onClose);
   const [tab, setTab] = useState('new');        // 'new' | 'recent' — top-level toggle
   const [step, setStep] = useState('upload');   // 'upload' | 'map' | 'preview' | 'importing' | 'done'
   const [fileName, setFileName] = useState('');
@@ -3415,6 +3420,8 @@ function buildSuggester(categorizedTransactions) {
 // payee to all similar rows" shortcut. Single batched UPDATE on save.
 
 function BulkCategorizeModal({ userId, transactions, setTransactions, taxCategories, systems, scope, onClose }) {
+
+  useBackClose(onClose);
   // The uncategorized backlog — only rows in the matching scope (so the
   // Business and Personal flows stay separated and the dropdowns stay
   // relevant) AND missing a tax_category_id.
@@ -3806,6 +3813,9 @@ function RecurringList({ userId, recurringTemplates, setRecurringTemplates, taxC
 
 
 function RecurringTemplateModal({ userId, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved }) {
+
+
+  useBackClose(onClose);
   const overheadSystem = systems.find(s => s.is_overhead);
   const advertisingCat = taxCategories.find(c => /advert/i.test(c.name));
   const [amount, setAmount] = useState(initial ? Math.abs(Number(initial.template_amount)) : '');
@@ -3953,6 +3963,9 @@ function RecurringTemplateModal({ userId, initial, taxCategories, systems, perso
 
 
 function TransactionModal({ userId, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved, onDelete }) {
+
+
+  useBackClose(onClose);
   const overheadSystem = systems.find(s => s.is_overhead);
   const advertisingCat = taxCategories.find(c => /advert/i.test(c.name));
   const personalCats = personalBudget || [];
@@ -4539,6 +4552,9 @@ function ROIBar({ stats }) {
 
 
 function TimeEntryModal({ userId, system, onClose, onSaved }) {
+
+
+  useBackClose(onClose);
   const [date, setDate] = useState(today_ymd());
   const [minutes, setMinutes] = useState('');
   const [description, setDescription] = useState('');
@@ -4605,6 +4621,9 @@ function TimeEntryModal({ userId, system, onClose, onSaved }) {
 
 
 function SystemModal({ userId, initial, onClose, onSaved }) {
+
+
+  useBackClose(onClose);
   const [name, setName] = useState(initial?.name || '');
   const [category, setCategory] = useState(initial?.category || 'digital');
   const [description, setDescription] = useState(initial?.description || '');
@@ -4859,6 +4878,8 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
 // ─── TemplateActivateModal — preview + activate a template ──────────
 
 function TemplateActivateModal({ userId, template, onClose, onActivated }) {
+
+  useBackClose(onClose);
   const [monthlyBudget, setMonthlyBudget] = useState(Number(template.suggested_monthly_budget) || 0);
   const [color, setColor] = useState(
     template.section === 'digital' ? '#3b82f6'
@@ -6425,6 +6446,8 @@ function WorkingsRow({ label, amount, bold }) {
 // Modal to capture filing status, prior-year safe harbor data, other income, etc.
 
 function TaxSettingsModal({ settings, onSave, onClose }) {
+
+  useBackClose(onClose);
   const [filingStatus, setFilingStatus] = useState(settings.filing_status || 'single');
   const [otherIncome, setOtherIncome] = useState(settings.estimated_other_income ?? 0);
   const [withholding, setWithholding] = useState(settings.withholding_ytd ?? 0);

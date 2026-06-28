@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { DealsView, Icon, RecruitingKpiTile, modal, stageMeta } from '../App';
+import { useBackClose, DealsView, Icon, RecruitingKpiTile, modal, stageMeta } from '../App';
 
 const RECRUITING_STAGES = [
   { id: 'lead',         label: 'Lead',         color: '#9499b0', help: 'Spotted / cold / not contacted yet' },
@@ -253,6 +253,9 @@ function RecruitCard({ recruit, systems, stage, onClick }) {
 
 
 function RecruitDetailModal({ recruit, systems, onClose, onSave }) {
+
+
+  useBackClose(onClose);
   const [stage, setStage] = useState(recruit.recruiting_stage || 'lead');
   const [sourceId, setSourceId] = useState(recruit.recruiting_source_system_id || '');
   const [firstContact, setFirstContact] = useState(recruit.recruiting_first_contact_at || '');

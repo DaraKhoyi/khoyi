@@ -1,6 +1,27 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './dataService';
+
+// --- Hardware/gesture BACK button closes the top modal instead of leaving the PWA ---
+// Each modal calls useBackClose(onClose). On open we push a history entry; Android back
+// fires popstate -> we close the modal (staying in the app). Closing via the UI cleans up
+// the pushed entry. A module-level suppress flag keeps a UI-close from cascading to modals
+// underneath it when several are stacked.
+let __prismSuppressPop = false;
+export function useBackClose(onClose) {
+  const __cb = useRef(onClose); __cb.current = onClose;
+  useEffect(() => {
+    if (typeof __cb.current !== 'function') return;
+    try { window.history.pushState({ __prismModal: true }, ''); } catch (_e) {}
+    let viaPop = false;
+    const onPop = () => { if (__prismSuppressPop) return; viaPop = true; try { __cb.current && __cb.current(); } catch (_e) {} };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (!viaPop) { __prismSuppressPop = true; try { window.history.back(); } catch (_e) {} setTimeout(() => { __prismSuppressPop = false; }, 0); }
+    };
+  }, []);
+}
 import { logJournalEntry } from './lib/journalLog';
 import { BUILD_VERSION } from './version';
 import './index.css';
@@ -1473,6 +1494,8 @@ function AutoScheduleFields({ initial, dueDate, onChange }) {
 }
 
 function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, contacts = [], properties = [], events = [], userId }) {
+
+  useBackClose(onClose);
   const initialSystem = initial?.priority_system || defaultSystem || 'eisenhower';
   const [title, setTitle] = useState(initial?.title || '');
   const [system, setSystem] = useState(initialSystem);
@@ -2179,6 +2202,7 @@ function HeaderSearchInput({ value, onChange, placeholder, onClose, autoFocus = 
 // TASKS VIEW — main component
 // ─────────────────────────────────────────────────────────────────────
 function DatePickerModal({ initial, onCancel, onPick }) {
+  useBackClose(onCancel);
   const [year, setYear] = useState(() => {
     const [y] = (initial || todayISO()).split('-').map(Number);
     return y;
@@ -2716,6 +2740,8 @@ function NextBestAction({ contacts=[], tasks=[], setTasks, events=[], deals=[], 
 }
 
 function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose }) {
+
+  useBackClose(onClose);
   const [state, setState] = useState({ loading: true });
   const [accepting, setAccepting] = useState(false);
   const [recap, setRecap] = useState(null);
@@ -4573,6 +4599,7 @@ function applyMergeFields(text, { contact, deal, property, senderName } = {}) {
 
 // Templates manager — create / edit / delete reusable email & text snippets.
 function TemplatesModal({ userId, templates, setTemplates, onClose, onPick }) {
+  useBackClose(onClose);
   const blank = { name: '', channel: 'email', category: '', subject: '', body: '' };
   const [editing, setEditing] = useState(null); // template object or null
   const [form, setForm] = useState(blank);
@@ -4675,6 +4702,7 @@ function TemplatesModal({ userId, templates, setTemplates, onClose, onPick }) {
 // copy/paste into a phone's Messages app. Logs the text to the contact timeline.
 // ─────────────────────────────────────────
 function QuoTextModal({ contact, userId, defaultText = '', phone, onClose, onSent }) {
+  useBackClose(onClose);
   const name = contact?.name || 'this contact';
   const phoneRaw = phone || contact?.phone || contact?.mobile || '';
   const [text, setText] = useState(defaultText || '');
@@ -4751,6 +4779,8 @@ function QuoTextModal({ contact, userId, defaultText = '', phone, onClose, onSen
 }
 
 function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, userId, onClose, onLogged }) {
+
+  useBackClose(onClose);
   const candidates = (() => {
     const list = [];
     if (defaultContact && defaultContact.id) list.push(defaultContact);
@@ -5735,6 +5765,8 @@ function RelationshipIntel({ profile }) {
 }
 
 function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [], setContacts }) {
+
+  useBackClose(onClose);
   const [analyzing, setAnalyzing] = useState(false);
   const [textTo, setTextTo] = useState(null); // { phone } when the Quo text composer is open
   const [tab, setTab] = useState('overview');
@@ -8294,6 +8326,7 @@ function readValue(v, type) {
 
 // ─── AddCustomFieldModal — user-defined fields ───────────────────────
 function AddCustomFieldModal({ userId, existingKeys, onClose, onCreated }) {
+  useBackClose(onClose);
   const [label, setLabel] = useState('');
   const [fieldType, setFieldType] = useState('text');
   const [optionsText, setOptionsText] = useState('');  // newline-separated for dropdowns/multiselects
@@ -8539,6 +8572,8 @@ function RecruitingKpiTile({ label, value, sub, color }) {
 }
 
 function PropertyModal({ onClose, onSave, onDelete, initial }) {
+
+  useBackClose(onClose);
   const [nickname, setNickname] = useState(initial?.nickname || '');
   const [category, setCategory] = useState(initial?.category || 'listing');
   const [address, setAddress] = useState(initial?.address || '');
@@ -10133,6 +10168,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
 // PROJECT TRACKER  (tracker schema — multi-user RBAC)
 // ─────────────────────────────────────────
 function TrackerTaskModal({ onClose, onSave, onDelete, initial, defaultSystem, assignable, contacts, nameOf }) {
+  useBackClose(onClose);
   const [title, setTitle] = useState(initial?.title || '');
   const [system, setSystem] = useState(initial?.priority_system || defaultSystem || 'eisenhower');
   const [priority, setPriority] = useState(initial?.priority || 'medium');
@@ -12642,6 +12678,8 @@ function SignPortal({ token }){
 }
 
 function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, onCreated }){
+
+  useBackClose(onClose);
   const seedSigners=()=>{ const out=[]; for(const p of (parties||[])){ const c=(contacts||[]).find(x=>x.id===p.contact_id); if(c?.email) out.push({ name:p.name||c.name||'', email:c.email, role:p.role||'' }); } if(file.buyer_name && !out.some(s=>s.role==='buyer')) out.unshift({ name:file.buyer_name, email:'', role:'buyer' }); return out.length?out:[{name:'',email:'',role:''}]; };
   const [signers,setSigners]=useState(seedSigners());
   const [title,setTitle]=useState(doc.title||'Document');
@@ -12718,6 +12756,8 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
 }
 
 function SignatureManageModal({ request, file, userId, onClose, onChanged }){
+
+  useBackClose(onClose);
   const [signers,setSigners]=useState(request.signers||[]);
   const [busy,setBusy]=useState(false);
   const resend=async(s)=>{
@@ -12765,6 +12805,8 @@ function SignatureManageModal({ request, file, userId, onClose, onChanged }){
 }
 
 function FileModal({ onClose, onSave, initial, properties, contacts }){
+
+  useBackClose(onClose);
   const [f,setF]=useState({
     address:initial?.address||'', city:initial?.city||'', state:initial?.state||'FL', zip:initial?.zip||'',
     buyer_name:initial?.buyer_name||'', status:initial?.status||'active',
@@ -12829,6 +12871,8 @@ function FileModal({ onClose, onSave, initial, properties, contacts }){
 }
 
 function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properties, userId, isAdmin, setProgress }){
+
+  useBackClose(onClose);
   const fileId=file.id;
   const [tab,setTab]=useState('overview');
   const [docs,setDocs]=useState([]); const [parties,setParties]=useState([]); const [items,setItems]=useState([]); const [events,setEvents]=useState([]);

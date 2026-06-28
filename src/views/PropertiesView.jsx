@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { ActivityTimeline, Icon, PropertyModal, confirmDialog, modal } from '../App';
+import { useBackClose, ActivityTimeline, Icon, PropertyModal, confirmDialog, modal } from '../App';
 
 function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, userId }) {
+
+  useBackClose(onClose);
   const [linkedContactIds, setLinkedContactIds] = useState([]);
   const [linkedTasks, setLinkedTasks] = useState([]);
   const [linkedEvents, setLinkedEvents] = useState([]);
@@ -283,6 +285,8 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
 // ─────────────────────────────────────────
 
 function DrawingViewerModal({ drawing, onClose }) {
+
+  useBackClose(onClose);
   // Memoize so the useMemo below doesn't see a new array on every render.
   const shapes = useMemo(
     () => Array.isArray(drawing.shapes) ? drawing.shapes : [],

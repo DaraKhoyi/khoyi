@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { Icon, RecruitingKpiTile, SingleContactPicker, confirmDialog, modal } from '../App';
+import { useBackClose, Icon, RecruitingKpiTile, SingleContactPicker, confirmDialog, modal } from '../App';
 
 const MILEAGE_CATEGORIES = [
   { id: 'business', label: 'Business',  color: 'var(--accent)' },
@@ -418,6 +418,8 @@ function MileageRow({ entry, deals, contacts, properties, onClick, onDelete }) {
 // Detail modal — all fields editable for an existing entry.
 
 function MileageDetailModal({ entry, deals, contacts, setContacts, properties, leadGenSystems, rates, userId, onClose, onSave, onDelete }) {
+
+  useBackClose(onClose);
   const [date, setDate]                 = useState(entry.date || '');
   const [miles, setMiles]               = useState(entry.miles ?? '');
   const [isRoundTrip, setIsRoundTrip]   = useState(!!entry.is_round_trip);

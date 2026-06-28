@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { Icon, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd } from '../App';
+import { useBackClose, Icon, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd } from '../App';
 
 function startOfMonthGrid(year, month) {
   // month: 0-indexed. Returns the Sunday on/before the 1st.
@@ -76,6 +76,9 @@ function ContactSearchSelect({ contacts = [], value, onChange, placeholder = 'Se
 
 
 function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts, properties = [] }) {
+
+
+  useBackClose(onClose);
   const init = initial || {};
   const startInit = init.start_at ? new Date(init.start_at) : (defaultDate ? new Date(defaultDate + 'T09:00:00') : new Date());
   const endInit = init.end_at ? new Date(init.end_at) : new Date(startInit.getTime() + 60*60*1000);
@@ -792,6 +795,8 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 // Writes a flexible_hours row whose `rules` the scheduler reads.
 
 function FlexibleHoursModal({ date, userId, onClose, onApplied }) {
+
+  useBackClose(onClose);
   const dateKey = ymd(date);
   const niceDate = date.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' });
   const [blockDay, setBlockDay] = useState(false);

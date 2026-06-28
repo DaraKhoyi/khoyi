@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { ActivityTimeline, ContactPicker, Icon, confirmDialog, modal, notify } from '../App';
+import { useBackClose, ActivityTimeline, ContactPicker, Icon, confirmDialog, modal, notify } from '../App';
 
 function InvestmentModal({ onClose, onSave, onDelete, initial, properties, contacts = [], userId }) {
+
+  useBackClose(onClose);
   const [name, setName] = useState(initial?.name || '');
   const [kind, setKind] = useState(initial?.kind || 'deal');
   const [stage, setStage] = useState(initial?.stage || 'screening');
