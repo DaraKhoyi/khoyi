@@ -1242,7 +1242,9 @@ input[type="radio"], input[type="range"], select, progress {
 }
 .dash-tile:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 10px 26px rgba(0,0,0,0.4); }
 .dash-tile:active { transform: translateY(0); }
-.dash-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; }
+.dash-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; min-width: 0; }
+.dash-grid { min-width: 0; }
+.dash-grid > * { min-width: 0; }
 .quick-chip {
   display: inline-flex; align-items: center; gap: 7px;
   background: var(--bg-card); border: 1px solid var(--border); color: var(--text-1);
