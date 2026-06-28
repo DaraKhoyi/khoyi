@@ -1773,7 +1773,7 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
                 if(on && !emailMsg){
                   const lc = contactIds.map(id=>contacts.find(c=>c.id===id)).filter(Boolean);
                   if(!emailTo && lc[0] && lc[0].email) setEmailTo(lc[0].email);
-                  setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n\u2022 ${title||'(task)'}\n${due_date?`\u2022 Due: ${due_date}\n`:''}${(notes||'').trim()?`\nDetails:\n${notes.trim()}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
+                  setEmailMsg(`Hi,\n\nI'd like your help with this task:\n\n• ${title||'(task)'}\n${due_date?`• Due: ${due_date}\n`:''}${(notes||'').trim()?`\nDetails:\n${notes.trim()}\n`:''}\nJust reply to this email with an update, or let me know when it's done or if you can't take it on. Thanks!`);
                 }
               }}/>
               <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> Assign by email — no app account needed</span>
@@ -3313,8 +3313,8 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                 const hhmm = new Date(state.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
                 return (
                   <div style={{ margin: '-6px 0 14px', fontSize: 11.5, color: state.stale ? '#d9a93a' : 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.5 }}>
-                    <span>Saved {hhmm}{state.stale ? '' : ' \u00b7 up to date'}</span>
-                    {state.stale && (<><span>\u00b7 your tasks or calendar changed since</span><button onClick={() => { setConInput(''); generateFresh(''); }} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, textDecoration: 'underline', padding: 0, fontSize: 11.5 }}>\u21bb Re-plan</button></>)}
+                    <span>Saved {hhmm}{state.stale ? '' : ' · up to date'}</span>
+                    {state.stale && (<><span>· your tasks or calendar changed since</span><button onClick={() => { setConInput(''); generateFresh(''); }} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, textDecoration: 'underline', padding: 0, fontSize: 11.5 }}>↻ Re-plan</button></>)}
                   </div>
                 );
               })()}
@@ -3616,7 +3616,7 @@ function BusinessKPIs({ deals = [], gciGoal = 0, setView, userId }){
           <div className="bar-fill-anim" style={{height:'100%',width:(pctG*100)+'%',background:'linear-gradient(90deg,var(--accent-2),var(--accent))',borderRadius:6}}/>
           <div title="Pace to date" style={{position:'absolute',top:-2,bottom:-2,left:'calc('+Math.min(100,Math.round(dayOfYear/365*100))+'% - 1px)',width:2,background:'var(--text-2)',opacity:0.75}}/>
         </div>
-        <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:onTrack?'var(--green)':'#f5b34a'}}>{onTrack?'On pace \u2713':'Behind pace by '+m0(expected-gciYtd)}</div>
+        <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:onTrack?'var(--green)':'#f5b34a'}}>{onTrack?'On pace ✓':'Behind pace by '+m0(expected-gciYtd)}</div>
       </>) : (editGoal ? goalSetter : <button className="btn btn-ghost btn-sm" onClick={()=>{setGoalInput('');setEditGoal(true);}} style={{marginTop:2}}>+ Set annual GCI goal to track pace</button>)}
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,paddingTop:12,borderTop:'1px solid var(--border)'}}>
@@ -3777,7 +3777,7 @@ function GciGauge({ deals=[], gciGoal=0, setView, userId }){
   return (<div className="dash-panel prism-pop" style={{background:'linear-gradient(150deg, rgba(197,169,94,0.10), rgba(197,169,94,0.02))',border:'1px solid var(--accent)',borderRadius:18,padding:20,marginBottom:16}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
       <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',display:'inline-flex',gap:7,alignItems:'center'}}><Icon name="dollar" size={15} style={{color:'var(--accent)'}}/> GCI to goal</div>
-      <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals \u2192</button>
+      <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals →</button>
     </div>
     <div style={{display:'flex',justifyContent:'center',margin:'2px 0'}}>
       <svg width="230" height="200" viewBox="0 0 220 196">
@@ -3796,12 +3796,12 @@ function GciGauge({ deals=[], gciGoal=0, setView, userId }){
       </svg>
     </div>
     {goal>0 ? (
-      <div style={{textAlign:'center',marginBottom:14}}><span style={{fontSize:11.5,fontWeight:700,color:onTrack?'var(--green)':'#f5b34a',background:onTrack?'rgba(34,197,94,0.12)':'rgba(245,179,74,0.12)',border:'1px solid '+(onTrack?'rgba(34,197,94,0.35)':'rgba(245,179,74,0.35)'),borderRadius:999,padding:'4px 12px'}}>{onTrack?('On pace \u2713 \u00b7 '+m0(gciYtd-expected)+' ahead'):('Behind pace by '+m0(expected-gciYtd))}</span></div>
+      <div style={{textAlign:'center',marginBottom:14}}><span style={{fontSize:11.5,fontWeight:700,color:onTrack?'var(--green)':'#f5b34a',background:onTrack?'rgba(34,197,94,0.12)':'rgba(245,179,74,0.12)',border:'1px solid '+(onTrack?'rgba(34,197,94,0.35)':'rgba(245,179,74,0.35)'),borderRadius:999,padding:'4px 12px'}}>{onTrack?('On pace ✓ · '+m0(gciYtd-expected)+' ahead'):('Behind pace by '+m0(expected-gciYtd))}</span></div>
     ) : (
       <div style={{marginBottom:14}}>{editGoal ? (
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',justifyContent:'center'}}>
           <input type="number" inputMode="numeric" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="e.g. 150000" style={{flex:'1 1 140px',minWidth:120,background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text-1)',padding:'8px 10px',fontSize:13}}/>
-          <button className="btn btn-primary btn-sm" disabled={savingGoal} onClick={saveGoal}>{savingGoal?'Saving\u2026':'Save goal'}</button>
+          <button className="btn btn-primary btn-sm" disabled={savingGoal} onClick={saveGoal}>{savingGoal?'Saving…':'Save goal'}</button>
         </div>
       ) : (
         <div style={{textAlign:'center'}}><button className="btn btn-primary btn-sm" onClick={()=>{setGoalInput('');setEditGoal(true);}}>Set your annual GCI goal</button></div>
@@ -3825,10 +3825,10 @@ function PipelineFunnel({ deals=[], setView }){
   return (<div className="dash-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:18,padding:20,marginBottom:16}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:total>0?14:6}}>
       <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',display:'inline-flex',gap:7,alignItems:'center'}}><Icon name="signal" size={15} style={{color:'var(--accent)'}}/> Pipeline funnel</div>
-      <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals \u2192</button>
+      <button className="btn btn-ghost btn-sm" onClick={()=>setView('deals')}>Deals →</button>
     </div>
     {total===0 ? (
-      <div style={{fontSize:12.5,color:'var(--text-3)',lineHeight:1.55}}>Your pipeline is clear. As you add deals they flow through these stages \u2014 with live commission value at each step.
+      <div style={{fontSize:12.5,color:'var(--text-3)',lineHeight:1.55}}>Your pipeline is clear. As you add deals they flow through these stages — with live commission value at each step.
         <div style={{display:'flex',gap:6,marginTop:12,flexWrap:'wrap'}}>{STAGES.map(([id,label])=>(<span key={id} style={{fontSize:10.5,fontWeight:600,color:'var(--text-3)',border:'1px dashed var(--border)',borderRadius:999,padding:'4px 10px'}}>{label}</span>))}</div>
       </div>
     ) : (
@@ -3836,7 +3836,7 @@ function PipelineFunnel({ deals=[], setView }){
         <div key={r.id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:9}}>
           <span style={{width:96,fontSize:12,color:'var(--text-2)',flexShrink:0}}>{r.label}</span>
           <div style={{flex:1}}><div style={{width:Math.max(r.n>0?8:0,Math.round(r.n/mx*100))+'%',minWidth:r.n>0?28:0,height:24,borderRadius:7,background:r.color,opacity:0.9,display:'flex',alignItems:'center',justifyContent:'center',transition:'width .7s ease'}}>{r.n>0 && <span style={{fontSize:12,fontWeight:800,color:'#0c0c0f'}}>{r.n}</span>}</div></div>
-          <span style={{width:70,textAlign:'right',fontSize:11,color:'var(--text-3)',flexShrink:0}}>{r.gci>0?('$'+Math.round(r.gci).toLocaleString()):'\u2014'}</span>
+          <span style={{width:70,textAlign:'right',fontSize:11,color:'var(--text-3)',flexShrink:0}}>{r.gci>0?('$'+Math.round(r.gci).toLocaleString()):'—'}</span>
         </div>))}
       </div>
     )}
@@ -3857,7 +3857,7 @@ function SphereDonut({ contacts=[], setView }){
   return (<div className="dash-panel prism-pop" style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:18,padding:20,marginBottom:16}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
       <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',display:'inline-flex',gap:7,alignItems:'center'}}><Icon name="contacts" size={15} style={{color:'var(--accent)'}}/> Your sphere</div>
-      <button className="btn btn-ghost btn-sm" onClick={()=>setView('contacts')}>{tot} contacts \u2192</button>
+      <button className="btn btn-ghost btn-sm" onClick={()=>setView('contacts')}>{tot} contacts →</button>
     </div>
     <div style={{display:'flex',gap:18,alignItems:'center',flexWrap:'wrap'}}>
       <svg width="150" height="150" viewBox="0 0 150 150" style={{flexShrink:0,margin:'0 auto'}}>
@@ -6341,14 +6341,14 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const _hdrLastTs = _hdrTs.length ? Math.max(..._hdrTs) : null;
   const _hdrRelAge = (ms) => { if (!ms) return null; const d = Math.floor((Date.now()-ms)/86400000); if (d<=0) return 'today'; if (d===1) return '1d ago'; if (d<7) return d+'d ago'; if (d<30) return Math.floor(d/7)+'w ago'; if (d<365) return Math.floor(d/30)+'mo ago'; return Math.floor(d/365)+'y ago'; };
   const hdrLastAge = _hdrRelAge(_hdrLastTs);
-  const hdrLastDir = contact.last_communication_direction === 'inbound' ? '\u2193 They' : contact.last_communication_direction === 'outbound' ? '\u2191 You' : (_hdrLastTs ? 'Last' : null);
+  const hdrLastDir = contact.last_communication_direction === 'inbound' ? '↓ They' : contact.last_communication_direction === 'outbound' ? '↑ You' : (_hdrLastTs ? 'Last' : null);
   const hdrTouchDue = contact.cadence_days ? (_hdrLastTs ? (Date.now()-_hdrLastTs)/86400000 >= contact.cadence_days : true) : false;
   const _hdrOriginMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',clickup:'ClickUp import',csv:'CSV import',import:'Import',other:'Other'};
   const _hdrReferredBy = contact.referred_by_contact_id ? ((contacts.find(c => c.id === contact.referred_by_contact_id) || {}).name) : null;
   const _hdrHome = [contact.home_address, contact.home_city, contact.home_state].filter(Boolean).join(', ');
   const _hdrBiz = [contact.business_address, contact.business_city, contact.business_state].filter(Boolean).join(', ');
   const hdrKeyFacts = [];
-  if (contact.origin) hdrKeyFacts.push({ k:'Origin', v:(_hdrOriginMap[contact.origin]||contact.origin) + (contact.origin_detail ? ' \u00b7 '+contact.origin_detail : '') });
+  if (contact.origin) hdrKeyFacts.push({ k:'Origin', v:(_hdrOriginMap[contact.origin]||contact.origin) + (contact.origin_detail ? ' · '+contact.origin_detail : '') });
   if (_hdrReferredBy) hdrKeyFacts.push({ k:'Referred by', v:_hdrReferredBy });
   if (_hdrHome) hdrKeyFacts.push({ k:'Home', v:_hdrHome });
   if (_hdrBiz) hdrKeyFacts.push({ k:'Business', v:_hdrBiz });
@@ -6376,7 +6376,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:'19px',fontWeight:800,color:'var(--text-1)',letterSpacing:'-0.3px',lineHeight:1.12,overflow:'hidden',textOverflow:'ellipsis'}}>{contact.name || '(unnamed)'}</div>
               {(contact.role || contact.profession || contact.company) && (
-                <div style={{fontSize:'12.5px',color:'var(--text-2)',marginTop:'3px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[contact.role || contact.profession, contact.company].filter(Boolean).join(' \u00b7 ')}</div>
+                <div style={{fontSize:'12.5px',color:'var(--text-2)',marginTop:'3px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[contact.role || contact.profession, contact.company].filter(Boolean).join(' · ')}</div>
               )}
             </div>
             <div style={{display:'flex',gap:'5px',flexShrink:0}}>
@@ -9833,7 +9833,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   async function enablePush() {
     setPushBusy(true); setPushMsg('');
     try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') { setPushMsg('Notifications aren\u2019t supported on this device/browser.'); setPushBusy(false); return; }
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') { setPushMsg('Notifications aren’t supported on this device/browser.'); setPushBusy(false); return; }
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { setPushMsg('Permission was not granted. On iPhone, add PrismOS to your Home Screen first, then enable.'); setPushBusy(false); return; }
       const reg = await navigator.serviceWorker.ready;
@@ -9854,9 +9854,9 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       if (!sub && typeof Notification!=='undefined' && Notification.permission==='granted') sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
       if (sub) { const j=sub.toJSON(); await supabase.from('push_subscriptions').upsert({ user_id: userId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' }); setPushOn(true); }
     } catch(e){}
-    const { data, error } = await supabase.functions.invoke('push-send', { body: { title: 'Ari test \u2600\ufe0f', body: 'Push notifications are working.', url: 'https://darasapp.com' } });
+    const { data, error } = await supabase.functions.invoke('push-send', { body: { title: 'Ari test ☀️', body: 'Push notifications are working.', url: 'https://darasapp.com' } });
     setPushBusy(false);
-    setPushMsg(error || data?.error ? ('Test failed: ' + (error?.message || data?.error)) : (data?.sent ? `Sent to ${data.sent} device(s) \u2014 check your phone.` : 'Tap Enable notifications first, then test.'));
+    setPushMsg(error || data?.error ? ('Test failed: ' + (error?.message || data?.error)) : (data?.sent ? `Sent to ${data.sent} device(s) — check your phone.` : 'Tap Enable notifications first, then test.'));
   }
   async function saveBrief(nextEnabled, nextHour, nextAcct) {
     setSavingBrief(true); setBriefMsg('');
@@ -9993,8 +9993,8 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 12px',lineHeight:1.5}}>Get a push notification on this device when your briefing is ready. {pushOn ? 'Enabled on this device.' : 'Not enabled on this device yet.'}</p>
               {pushMsg && <div style={{fontSize:'12px',color:pushMsg.toLowerCase().includes('fail')||pushMsg.toLowerCase().includes('not')||pushMsg.toLowerCase().includes('could')?'var(--red)':'var(--green)',marginBottom:'10px'}}>{pushMsg}</div>}
               <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-                {!pushOn && <button className="btn btn-primary btn-sm" disabled={pushBusy} onClick={enablePush}>{pushBusy?'\u2026':'Enable notifications'}</button>}
-                {pushOn && <button className="btn btn-ghost btn-sm" disabled={pushBusy} onClick={testPush}>{pushBusy?'\u2026':'Send test notification'}</button>}
+                {!pushOn && <button className="btn btn-primary btn-sm" disabled={pushBusy} onClick={enablePush}>{pushBusy?'…':'Enable notifications'}</button>}
+                {pushOn && <button className="btn btn-ghost btn-sm" disabled={pushBusy} onClick={testPush}>{pushBusy?'…':'Send test notification'}</button>}
               </div>
             </div>
           </div>
@@ -10486,11 +10486,11 @@ function EmailRepliesPanel() {
   if (loaded && !rows.length) return null;
   return (
     <div className="panel" style={{marginBottom:'16px'}}>
-      <div className="panel-header"><h3>\ud83d\udce8 Email replies to review</h3><span className="nav-badge">{rows.length}</span></div>
+      <div className="panel-header"><h3>📨 Email replies to review</h3><span className="nav-badge">{rows.length}</span></div>
       {rows.map(t => (
         <div key={t.id} style={{padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
           <div style={{fontSize:'13px',fontWeight:600}}>{t.title}</div>
-          <div style={{fontSize:'11px',color:'var(--accent)',margin:'2px 0'}}>\u2728 Claude read it as <strong>{t.reply_intent}</strong> \u00b7 {Math.round((t.reply_confidence||0)*100)}% \u00b7 from {t.assignee_email}</div>
+          <div style={{fontSize:'11px',color:'var(--accent)',margin:'2px 0'}}>✨ Claude read it as <strong>{t.reply_intent}</strong> · {Math.round((t.reply_confidence||0)*100)}% · from {t.assignee_email}</div>
           {t.last_reply_excerpt && <div style={{fontSize:'11px',color:'var(--text-3)',fontStyle:'italic',marginBottom:'6px',whiteSpace:'pre-wrap',maxHeight:'70px',overflowY:'auto'}}>{t.last_reply_excerpt}</div>}
           <div style={{display:'flex',gap:'6px'}}>
             <button className="btn btn-primary btn-sm" onClick={()=>confirmDone(t)}>Mark done</button>
@@ -10858,7 +10858,7 @@ const FILE_DOC_TYPES = [
   { value:'counteroffer',      label:'Counteroffer',                        cat:'Contract' },
   { value:'buyer_brokerage',   label:'Buyer Brokerage Agreement',           cat:'Agency' },
   { value:'agency_disclosure', label:'Brokerage Relationship Disclosure',   cat:'Agency' },
-  { value:'seller_disclosure', label:'Seller\u2019s Property Disclosure',   cat:'Disclosures' },
+  { value:'seller_disclosure', label:'Seller’s Property Disclosure',   cat:'Disclosures' },
   { value:'lead_paint',        label:'Lead-Based Paint Disclosure',         cat:'Disclosures' },
   { value:'hoa_condo',         label:'HOA / Condo Docs & Rider',            cat:'Disclosures' },
   { value:'financing',         label:'Pre-Approval / Proof of Funds',       cat:'Financing' },
@@ -10922,7 +10922,7 @@ const FARBAR_BUYER_CHECKLIST = [
   { key:'addenda',           label:'Addenda / Amendments (as applicable)',     required:false, cat:'Contract' },
   { key:'buyer_brokerage',   label:'Buyer Brokerage Agreement (signed)',       required:true,  cat:'Agency' },
   { key:'agency_disclosure', label:'Brokerage Relationship Disclosure',        required:true,  cat:'Agency' },
-  { key:'seller_disclosure', label:'Seller\u2019s Property Disclosure',        required:true,  cat:'Disclosures' },
+  { key:'seller_disclosure', label:'Seller’s Property Disclosure',        required:true,  cat:'Disclosures' },
   { key:'lead_paint',        label:'Lead-Based Paint Disclosure (pre-1978)',   required:false, cat:'Disclosures' },
   { key:'hoa_condo',         label:'HOA / Condo docs & rider (if applicable)', required:false, cat:'Disclosures' },
   { key:'financing',         label:'Pre-Approval or Proof of Funds',           required:true,  cat:'Financing' },
@@ -10935,8 +10935,8 @@ const FARBAR_BUYER_CHECKLIST = [
 function logFileEvent(fileId, userId, kind, detail, meta){
   return supabase.from('file_events').insert({ file_id:fileId, user_id:userId, kind, detail:detail||null, meta:meta||{} }).then(()=>{}).catch(()=>{});
 }
-function money(n){ if(n===null||n===undefined||n==='') return '\u2014'; const v=Number(n); if(isNaN(v)) return '\u2014'; return '$'+v.toLocaleString(undefined,{maximumFractionDigits:0}); }
-function shortDate(d){ if(!d) return '\u2014'; try{ return new Date(d+(d.length<=10?'T00:00:00':'')).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
+function money(n){ if(n===null||n===undefined||n==='') return '—'; const v=Number(n); if(isNaN(v)) return '—'; return '$'+v.toLocaleString(undefined,{maximumFractionDigits:0}); }
+function shortDate(d){ if(!d) return '—'; try{ return new Date(d+(d.length<=10?'T00:00:00':'')).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
 function StatusPill({ status }){ const m=STATUS_META[status]||{label:status,color:'var(--text-3)'}; return <span style={{fontSize:'10px',fontWeight:700,padding:'2px 9px',borderRadius:'999px',background:m.color,color:'#fff',whiteSpace:'nowrap'}}>{m.label}</span>; }
 
 /* ---- Phase 3: contingency timeline, waiver auto-resolution, consistency audit ---- */
@@ -10949,7 +10949,7 @@ const DEADLINE_DEFS = [
 const WAIVER_TO_KIND = { dd_waiver:'inspection', appraisal_waiver:'appraisal', financing_waiver:'financing' };
 async function createDeadline(fileId, userId, kind, label, due_date, source, addr){
   let task_id=null, event_id=null;
-  try{ const { data:task } = await supabase.from('tasks').insert({ user_id:userId, title:`${label} \u2014 ${addr||'file'}`, due_date, priority:'high', list:'inbox', notes:'Auto-generated from a buyer file (contract deadline).', completed:false }).select().single(); task_id=task?.id||null; }catch(e){}
+  try{ const { data:task } = await supabase.from('tasks').insert({ user_id:userId, title:`${label} — ${addr||'file'}`, due_date, priority:'high', list:'inbox', notes:'Auto-generated from a buyer file (contract deadline).', completed:false }).select().single(); task_id=task?.id||null; }catch(e){}
   try{ const s=new Date(`${due_date}T13:00:00.000Z`).toISOString(); const e2=new Date(`${due_date}T13:30:00.000Z`).toISOString(); const { data:ev } = await supabase.from('events').insert({ user_id:userId, title:`${label}: ${addr||''}`.trim(), start_at:s, end_at:e2, all_day:true, category:'deadline', sync_status:'local', task_id }).select().single(); event_id=ev?.id||null; }catch(e){}
   const { data:dl } = await supabase.from('file_deadlines').insert({ file_id:fileId, user_id:userId, kind, label, due_date, status:'open', source, task_id, event_id }).select().single();
   return dl||null;
@@ -10959,7 +10959,7 @@ async function generateDeadlinesFromTerms(fileId, userId, ai, addr){
   const { data:existing } = await supabase.from('file_deadlines').select('kind,status').eq('file_id',fileId);
   const have = new Set((existing||[]).filter(d=>d.status!=='cancelled').map(d=>d.kind));
   const made=[];
-  for(const def of DEADLINE_DEFS){ const v=ai[def.field]; if(v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !have.has(def.kind)){ const dl=await createDeadline(fileId,userId,def.kind,def.label,v,'extracted',addr); if(dl){ made.push(dl); await logFileEvent(fileId,userId,'deadline_created',`${def.label} \u2014 ${v}`); } } }
+  for(const def of DEADLINE_DEFS){ const v=ai[def.field]; if(v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !have.has(def.kind)){ const dl=await createDeadline(fileId,userId,def.kind,def.label,v,'extracted',addr); if(dl){ made.push(dl); await logFileEvent(fileId,userId,'deadline_created',`${def.label} — ${v}`); } } }
   if(Array.isArray(ai.waives)){ for(const w of ai.waives){ if(['inspection','appraisal','financing'].includes(w)) await resolveDeadlineWaiver(fileId,userId,w); } }
   return made;
 }
@@ -11403,7 +11403,7 @@ function ScoreboardView({ userId, appCtx, setView }){
           sorted.map((r,i)=>{ const v=M.get(r); return (
             <div key={r.agent_id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,padding:r.is_me?'7px 9px':'0 0',background:r.is_me?'var(--accent-glow)':'transparent',border:r.is_me?'1px solid var(--accent)':'none',borderRadius:10}}>
               <span style={{width:24,textAlign:'center',fontSize:14,fontWeight:800,color:medal(i),flexShrink:0}}>{i+1}</span>
-              <span style={{width:104,fontSize:12.5,fontWeight:r.is_me?800:600,color:'var(--text-1)',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.is_me?'You':(r.name||'\u2014')}</span>
+              <span style={{width:104,fontSize:12.5,fontWeight:r.is_me?800:600,color:'var(--text-1)',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.is_me?'You':(r.name||'—')}</span>
               <div style={{flex:1,height:14,borderRadius:5,background:'var(--bg-base)',overflow:'hidden'}}><div style={{height:'100%',width:Math.round(v/maxV*100)+'%',background:r.is_me?'var(--accent)':'var(--accent-dim)',borderRadius:5,minWidth:v>0?4:0,transition:'width .6s ease'}}/></div>
               <span style={{width:78,textAlign:'right',fontSize:12.5,fontWeight:700,color:'var(--text-1)',flexShrink:0}}>{M.fmt(v)}</span>
             </div>); })
@@ -11860,7 +11860,7 @@ function ContactTypesAdmin({ isPrivileged }){
         </div>
         <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
           <span style={{flexShrink:0,fontSize:10.5,fontWeight:700,borderRadius:999,padding:'3px 9px',whiteSpace:'nowrap',background:'rgba(74,111,176,0.12)',border:'1px solid #4a6fb0',color:'#9bb8e6'}}>👤 Personal</span>
-          <span style={{fontSize:12,color:'var(--text-2)',flex:1,lineHeight:1.45}}>Made by an <strong>individual agent</strong> for their own use \u2014 private to them and not listed here.{pstats && pstats.total>0 ? (' Agents have created '+pstats.total+' personal type'+(pstats.total===1?'':'s')+' so far.') : ''}</span>
+          <span style={{fontSize:12,color:'var(--text-2)',flex:1,lineHeight:1.45}}>Made by an <strong>individual agent</strong> for their own use — private to them and not listed here.{pstats && pstats.total>0 ? (' Agents have created '+pstats.total+' personal type'+(pstats.total===1?'':'s')+' so far.') : ''}</span>
         </div>
       </div>
     </div>
@@ -11914,10 +11914,10 @@ function TeamView(){
   const [team,setTeam]=useState(undefined);
   useEffect(()=>{ (async()=>{ try{ const { data } = await supabase.rpc('get_my_team'); setTeam(data||null); }catch(e){ setTeam(null); } })(); },[]);
   const TYPE_LABELS={our_agent:'Our agents',recruit:'Recruits',vendor:'Vendors',lead:'Leads',client:'Clients',partner:'Partners',family:'Family',personal:'Personal'};
-  if(team===undefined) return (<div className="view"><div className="panel" style={{padding:24,textAlign:'center',color:'var(--text-2)'}}>Loading team\u2026</div></div>);
+  if(team===undefined) return (<div className="view"><div className="panel" style={{padding:24,textAlign:'center',color:'var(--text-2)'}}>Loading team…</div></div>);
   if(!team) return (<div className="view"><div className="panel" style={{padding:20,color:'var(--text-2)',fontSize:13}}>You are not on a team yet.</div></div>);
   const roleMeta=(r)=> r==='owner'?{t:'Owner',c:'var(--accent)'}:r==='admin'?{t:'Admin',c:'#8b5cf6'}:{t:'Member',c:'var(--text-3)'};
-  const ruleText=(r)=>{ if(r.resource_type==='contacts'){ const ty=r.match&&r.match.type; return ty?('Contacts tagged \u201c'+(TYPE_LABELS[ty]||ty)+'\u201d'):'All contacts'; } return r.resource_type; };
+  const ruleText=(r)=>{ if(r.resource_type==='contacts'){ const ty=r.match&&r.match.type; return ty?('Contacts tagged “'+(TYPE_LABELS[ty]||ty)+'”'):'All contacts'; } return r.resource_type; };
   return (<div className="view">
     <div className="panel" style={{display:'flex',alignItems:'center',gap:12}}>
       <div style={{width:42,height:42,borderRadius:12,background:'var(--accent-glow)',border:'1px solid var(--accent)',display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name="users" size={20} style={{color:'var(--accent)'}}/></div>
@@ -11992,9 +11992,9 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
       {mode==='conversion' && <ConversionDashboard userId={userId} agents={agents}/>}
       {mode==='accounting' && <AccountingView userId={userId} ownerId={ownerId} agents={agents} isAdmin={isAdmin}/>}
       {mode==='earnings' && (()=>{
-        if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading earnings\u2026</div>;
+        if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading earnings…</div>;
         const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===year);
-        const byA={}; for(const r of rows){ const k=r.agent_id||'\u2014'; (byA[k]=byA[k]||{deals:0,gci:0,gross:0,net:0,co:0,ps:0,sav:0,ret:0}); byA[k].deals++; byA[k].gci+=Number(r.our_gci)||0; byA[k].gross+=Number(r.agent_gross)||0; byA[k].net+=Number(r.agent_cash)||0; byA[k].co+=Number(r.company_dollar)||0; byA[k].ps+=Number(r.profit_share)||0; byA[k].sav+=Number(r.savings)||0; byA[k].ret+=Number(r.retirement)||0; }
+        const byA={}; for(const r of rows){ const k=r.agent_id||'—'; (byA[k]=byA[k]||{deals:0,gci:0,gross:0,net:0,co:0,ps:0,sav:0,ret:0}); byA[k].deals++; byA[k].gci+=Number(r.our_gci)||0; byA[k].gross+=Number(r.agent_gross)||0; byA[k].net+=Number(r.agent_cash)||0; byA[k].co+=Number(r.company_dollar)||0; byA[k].ps+=Number(r.profit_share)||0; byA[k].sav+=Number(r.savings)||0; byA[k].ret+=Number(r.retirement)||0; }
         const agOf=(id)=>agents.find(x=>x.id===id)||{}; const nameOf=(id)=>agOf(id).name||'Unassigned';
         const tot=Object.values(byA).reduce((s,v)=>({deals:s.deals+v.deals,gci:s.gci+v.gci,net:s.net+v.net,co:s.co+v.co,ps:s.ps+v.ps}),{deals:0,gci:0,net:0,co:0,ps:0});
         const keys=Object.keys(byA).sort((a,b)=>byA[b].gci-byA[a].gci);
@@ -12023,10 +12023,10 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         );
       })()}
       {mode==='profitshare' && isAdmin && (()=>{
-        if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading\u2026</div>;
+        if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading…</div>;
         const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===year && (Number(r.profit_share)||0)>0);
         const byU={}; for(const r of rows){ const ag=agents.find(x=>x.id===r.agent_id); const up=ag?.upline_id; if(!up) continue; (byU[up]=byU[up]||{owed:0,deals:0,from:new Set()}); byU[up].owed+=Number(r.profit_share)||0; byU[up].deals++; byU[up].from.add(ag?.name||''); }
-        const nameOf=(id)=>agents.find(x=>x.id===id)?.name||'\u2014';
+        const nameOf=(id)=>agents.find(x=>x.id===id)?.name||'—';
         const keys=Object.keys(byU).sort((a,b)=>byU[b].owed-byU[a].owed);
         const totalOwed=keys.reduce((s,k)=>s+byU[k].owed,0);
         const unassigned=rows.filter(r=>{ const ag=agents.find(x=>x.id===r.agent_id); return !ag?.upline_id; }).reduce((s,r)=>s+(Number(r.profit_share)||0),0);
@@ -12034,7 +12034,7 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         return (
           <div style={{marginTop:'12px',display:'grid',gap:'10px'}}>
             <div className="panel" style={{padding:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div><div style={{fontSize:'11px',color:'var(--text-3)'}}>Total profit share owed to uplines \u00B7 {year}</div><div style={{fontSize:'20px',fontWeight:800}}>{money(totalOwed)}</div></div>
+              <div><div style={{fontSize:'11px',color:'var(--text-3)'}}>Total profit share owed to uplines · {year}</div><div style={{fontSize:'20px',fontWeight:800}}>{money(totalOwed)}</div></div>
               {keys.length>0 && <button className="btn btn-ghost btn-sm" onClick={exportPS}>Export (CSV)</button>}
             </div>
             {keys.length===0 ? <div className="panel" style={{textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No profit share recorded for {year}. Set an agent's upline and a profit-share % in their pay plan.</div> :
@@ -12046,8 +12046,8 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
                 </tbody>
               </table>
             </div>}
-            {unassigned>0 && <div style={{fontSize:'11px',color:'var(--yellow)'}}>{money(unassigned)} in profit share was computed on deals whose agent has no upline set \u2014 assign uplines to route it.</div>}
-            <div style={{fontSize:'11px',color:'var(--text-3)'}}>Internal only \u2014 profit share is never shown on the CDA.</div>
+            {unassigned>0 && <div style={{fontSize:'11px',color:'var(--yellow)'}}>{money(unassigned)} in profit share was computed on deals whose agent has no upline set — assign uplines to route it.</div>}
+            <div style={{fontSize:'11px',color:'var(--text-3)'}}>Internal only — profit share is never shown on the CDA.</div>
           </div>
         );
       })()}
@@ -12065,15 +12065,15 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
           <div style={{display:'flex',justifyContent:'flex-end',gap:'8px'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowNew(false)}>Cancel</button><button className="btn btn-primary btn-sm" onClick={addAgent}>Add</button></div>
         </div>
       )}
-      {loading? <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading\u2026</div> :
+      {loading? <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading…</div> :
         agents.length===0 ? <div className="panel" style={{marginTop:'12px',textAlign:'center',color:'var(--text-2)',padding:'24px'}}>No agents yet. Add your first agent to build their pay plan.</div> :
         <div style={{display:'grid',gap:'8px',marginTop:'12px'}}>
           {agents.map(a=>(
             <div key={a.id} className="panel" onClick={()=>setOpenId(a.id)} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div><div style={{fontWeight:700}}>{a.name}{!a.active&&<span style={{fontSize:'10px',color:'var(--text-3)'}}> \u00B7 inactive</span>}</div><div style={{fontSize:'12px',color:'var(--text-2)'}}>{ROLE_LABEL[a.role]}{a.team?` \u00B7 ${a.team}`:''}{a.email?` \u00B7 ${a.email}`:''}</div></div>
+              <div><div style={{fontWeight:700}}>{a.name}{!a.active&&<span style={{fontSize:'10px',color:'var(--text-3)'}}> · inactive</span>}</div><div style={{fontSize:'12px',color:'var(--text-2)'}}>{ROLE_LABEL[a.role]}{a.team?` · ${a.team}`:''}{a.email?` · ${a.email}`:''}</div></div>
               <div style={{display:'flex',alignItems:'center',gap:'8px',flexShrink:0}}>
                 {a.auth_user_id ? <span style={{fontSize:'10px',fontWeight:700,color:'var(--green)'}}>● linked</span> : <span style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)'}}>○ no login</span>}
-                <Icon name="chevron-right" size={16} fb="\u203A"/>
+                <Icon name="chevron-right" size={16} fb="›"/>
               </div>
             </div>
           ))}
@@ -12119,7 +12119,7 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:'640px',width:'100%',maxHeight:'94vh',overflowY:'auto'}}>
-        <div className="modal-header"><h3 style={{margin:0}}>{agent.name}</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div className="modal-header"><h3 style={{margin:0}}>{agent.name}</h3><button className="modal-close" onClick={onClose}>×</button></div>
         <div style={{display:'grid',gap:'10px'}}>
           <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--text-3)'}}>Profile</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
@@ -12129,8 +12129,8 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
             <label className="form-label">Phone<input className="form-input" value={a.phone||''} onChange={e=>setAF('phone',e.target.value)} disabled={!canWrite}/></label>
             <label className="form-label">Team<input className="form-input" value={a.team||''} onChange={e=>setAF('team',e.target.value)} disabled={!isAdmin}/></label>
             <label className="form-label">License #<input className="form-input" value={a.license_no||''} onChange={e=>setAF('license_no',e.target.value)} disabled={!canWrite}/></label>
-            <label className="form-label">Upline (profit share)<select className="form-input" value={a.upline_id||''} onChange={e=>setAF('upline_id',e.target.value)} disabled={!isAdmin}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-            <label className="form-label">Mentor<select className="form-input" value={a.mentor_id||''} onChange={e=>setAF('mentor_id',e.target.value)} disabled={!canWrite}><option value="">\u2014 none \u2014</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+            <label className="form-label">Upline (profit share)<select className="form-input" value={a.upline_id||''} onChange={e=>setAF('upline_id',e.target.value)} disabled={!isAdmin}><option value="">— none —</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+            <label className="form-label">Mentor<select className="form-input" value={a.mentor_id||''} onChange={e=>setAF('mentor_id',e.target.value)} disabled={!canWrite}><option value="">— none —</option>{others.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
           </div>
           {canWrite && <>
             <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',flexDirection:'row'}}><input type="checkbox" checked={a.active!==false} onChange={e=>setAF('active',e.target.checked)}/> Active</label>
@@ -12144,7 +12144,7 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
             <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>Login & access</div>
             {a.auth_user_id ? (
               <div style={{display:'grid',gap:'8px'}}>
-                <div style={{fontSize:'12px',color:'var(--green)'}}>\u2713 Has a login ({a.email}) \u00B7 role: {ROLE_LABEL[a.role]}</div>
+                <div style={{fontSize:'12px',color:'var(--green)'}}>✓ Has a login ({a.email}) · role: {ROLE_LABEL[a.role]}</div>
                 <div style={{display:'flex',gap:'8px',alignItems:'flex-end'}}>
                   <label className="form-label" style={{flex:1}}>Reset password<input className="form-input" type="text" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="New password (8+ chars)"/></label>
                   <button className="btn btn-ghost btn-sm" onClick={resetLogin} disabled={loginBusy}>Reset</button>
@@ -12158,14 +12158,14 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
                   <label className="form-label">Login email<input className="form-input" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)}/></label>
                   <label className="form-label">Temp password<input className="form-input" type="text" value={loginPw} onChange={e=>setLoginPw(e.target.value)} placeholder="8+ characters"/></label>
                 </div>
-                <button className="btn btn-primary btn-sm" onClick={createLogin} disabled={loginBusy} style={{justifySelf:'start'}}>{loginBusy?'Creating\u2026':'Create login'}</button>
+                <button className="btn btn-primary btn-sm" onClick={createLogin} disabled={loginBusy} style={{justifySelf:'start'}}>{loginBusy?'Creating…':'Create login'}</button>
                 <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>Already signed up themselves? Link their existing account instead.</div>
                 <button className="btn btn-ghost btn-sm" onClick={linkExisting} disabled={linkBusy} style={{justifySelf:'start'}}>{linkBusy?'Linking...':'Link existing account by email'}</button>
               </div>
             )}
           </>}
           <div style={{borderTop:'1px solid var(--border)',margin:'6px 0'}}/>
-          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan\u2026</div> : (canWrite? <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan} onClose={onClose}/> : <PayPlanReadOnly plan={plan}/>)}
+          {loading? <div style={{color:'var(--text-2)'}}>Loading pay plan…</div> : (canWrite? <PayPlanEditor agentId={agent.id} userId={userId} plan={plan} agents={others} onSaved={setPlan} onClose={onClose}/> : <PayPlanReadOnly plan={plan}/>)}
         </div>
       </div>
     </div>
@@ -12173,7 +12173,7 @@ function AgentEditor({ agent, agents, userId, isAdmin, canWrite, roleOpts, myTea
 }
 function PayPlanReadOnly({ plan }){
   if(!plan) return <div style={{color:'var(--text-2)',fontSize:'13px'}}>No pay plan on file.</div>;
-  const rows=[['Split',plan.split_type==='flat'?'100% / flat':(plan.agent_split_pct!=null?plan.agent_split_pct+'%':'\u2014')],['Annual cap',plan.cap_amount!=null?'$'+Number(plan.cap_amount).toLocaleString():'\u2014'],['Transaction fee',plan.transaction_fee!=null?'$'+plan.transaction_fee:'\u2014'],['Royalty',plan.royalty_pct!=null?plan.royalty_pct+'%':'\u2014']];
+  const rows=[['Split',plan.split_type==='flat'?'100% / flat':(plan.agent_split_pct!=null?plan.agent_split_pct+'%':'—')],['Annual cap',plan.cap_amount!=null?'$'+Number(plan.cap_amount).toLocaleString():'—'],['Transaction fee',plan.transaction_fee!=null?'$'+plan.transaction_fee:'—'],['Royalty',plan.royalty_pct!=null?plan.royalty_pct+'%':'—']];
   return <div style={{display:'grid',gap:'4px'}}><div style={{fontSize:'13px',fontWeight:700}}>Pay plan</div>{rows.map((r,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>{r[0]}</span><span>{r[1]}</span></div>)}</div>;
 }
 
@@ -12257,7 +12257,7 @@ function PayPlanEditor({ agentId, userId, plan, agents, onSaved, onClose }){
         </div>
       ))}
       <button className="btn btn-ghost btn-sm" onClick={addFee} style={{justifySelf:'start'}}>+ Add custom line item</button>
-      <div style={{display:'flex',justifyContent:'flex-end',marginTop:'6px'}}><button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving\u2026':'Save pay plan'}</button></div>
+      <div style={{display:'flex',justifyContent:'flex-end',marginTop:'6px'}}><button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving…':'Save pay plan'}</button></div>
     </div>
   );
 }
@@ -12298,7 +12298,7 @@ function FilesView({ files, setFiles, contacts, setContacts, properties, userId,
     try{
       const { data, error } = await supabase.functions.invoke('files-intake-scan', { body:{ lookback_days:90, limit:8 } });
       if(error || data?.error){ if(window.__notify) window.__notify('Scan failed: '+(error?.message||data?.error),'error'); }
-      else { await loadIntake(); if(window.__notify) window.__notify(data?.staged? `${data.staged} document(s) ready to file.` : (data?.message||'Inbox scanned \u2014 nothing new.'),'success'); }
+      else { await loadIntake(); if(window.__notify) window.__notify(data?.staged? `${data.staged} document(s) ready to file.` : (data?.message||'Inbox scanned — nothing new.'),'success'); }
     }catch(e){ if(window.__notify) window.__notify('Scan failed: '+(e.message||e),'error'); }
     finally{ setScanning(false); }
   };
@@ -12373,7 +12373,7 @@ function FilesView({ files, setFiles, contacts, setContacts, properties, userId,
         if(cdComm!=null) patch.commission_cd=cdComm;
         const { data:uf } = await supabase.from('files').update(patch).eq('id',targetFileId).select().single();
         if(uf) setFiles(prev=>prev.map(x=>x.id===uf.id?uf:x));
-        await logFileEvent(targetFileId, userId, 'cd_received', `Closing Disclosure received${cdComm!=null?` \u00B7 commission ${money(cdComm)}`:''}`);
+        await logFileEvent(targetFileId, userId, 'cd_received', `Closing Disclosure received${cdComm!=null?` · commission ${money(cdComm)}`:''}`);
       }
       await supabase.from('file_intake').update({ status:'filed', filed_document_id:doc.id, suggested_file_id:targetFileId, updated_at:new Date().toISOString() }).eq('id',item.id);
       await logFileEvent(targetFileId, userId, 'doc_filed_from_email', `${DOCTYPE_LABEL[docType]||docType} filed from email${item.email_from?` (${item.email_from})`:''}`, { doc_id:doc.id });
@@ -12400,10 +12400,10 @@ function FilesView({ files, setFiles, contacts, setContacts, properties, userId,
       <div className="panel" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
         <div>
           <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="folder" size={20}/> Files</h2>
-          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Buyer-side transaction files \u00B7 FAR/BAR (Florida)</div>
+          <div style={{fontSize:'12px',color:'var(--text-2)',marginTop:'2px'}}>Buyer-side transaction files · FAR/BAR (Florida)</div>
         </div>
         <div style={{display:'flex',gap:'8px'}}>
-          <button className="btn btn-ghost" onClick={scanInbox} disabled={scanning} title="Pull contract PDFs from your connected inboxes">{scanning?'Scanning\u2026':'Scan inbox'}</button>
+          <button className="btn btn-ghost" onClick={scanInbox} disabled={scanning} title="Pull contract PDFs from your connected inboxes">{scanning?'Scanning…':'Scan inbox'}</button>
           <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ New File</button>
         </div>
       </div>
@@ -12460,7 +12460,7 @@ function FilesView({ files, setFiles, contacts, setContacts, properties, userId,
                   <div style={{flex:1,height:'6px',background:'var(--bg-hover)',borderRadius:'999px',overflow:'hidden'}}>
                     <div style={{width:pct+'%',height:'100%',background: pct===100?'var(--green)':'var(--accent)'}}/>
                   </div>
-                  <span style={{fontSize:'11px',color:'var(--text-2)',whiteSpace:'nowrap'}}>{pr?`${pr.done}/${pr.total} req`:'\u2014'}</span>
+                  <span style={{fontSize:'11px',color:'var(--text-2)',whiteSpace:'nowrap'}}>{pr?`${pr.done}/${pr.total} req`:'—'}</span>
                 </div>
               </div>
             );
@@ -12484,23 +12484,23 @@ function IntakeCard({ item, files, busy, onView, onDismiss, onFile, onCreateNew 
       <div style={{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'flex-start'}}>
         <div style={{minWidth:0}}>
           <div style={{fontWeight:600,fontSize:'13px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{item.filename||'document.pdf'}</div>
-          <div style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{item.email_subject||'(no subject)'} \u00B7 {item.email_from||''}</div>
+          <div style={{fontSize:'11px',color:'var(--text-3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{item.email_subject||'(no subject)'} · {item.email_from||''}</div>
         </div>
         {conf!=null && <span style={{fontSize:'10px',fontWeight:700,color: conf>=70?'var(--green)':conf>=40?'var(--yellow)':'var(--text-3)',whiteSpace:'nowrap'}}>{conf}% sure</span>}
       </div>
-      {(ai.summary||ai.address) && <div style={{fontSize:'12px',color:'var(--text-2)'}}>{ai.address?`\uD83D\uDCCD ${ai.address}`:''}{ai.address&&ai.price?' \u00B7 ':''}{ai.price?`$${Number(ai.price).toLocaleString()}`:''}{ai.summary?`${(ai.address||ai.price)?' \u2014 ':''}${ai.summary}`:''}</div>}
+      {(ai.summary||ai.address) && <div style={{fontSize:'12px',color:'var(--text-2)'}}>{ai.address?`📍 ${ai.address}`:''}{ai.address&&ai.price?' · ':''}{ai.price?`$${Number(ai.price).toLocaleString()}`:''}{ai.summary?`${(ai.address||ai.price)?' — ':''}${ai.summary}`:''}</div>}
       <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
         <select className="form-input" value={dtype} onChange={e=>setDtype(e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px'}}>
           {FILE_DOC_TYPES.map(d=><option key={d.value} value={d.value}>{d.label}</option>)}
         </select>
         <select className="form-input" value={target} onChange={e=>setTarget(e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px',maxWidth:'180px'}}>
-          <option value="">Choose file\u2026</option>
+          <option value="">Choose file…</option>
           {(files||[]).map(f=><option key={f.id} value={f.id}>{f.address||'(no address)'}</option>)}
         </select>
       </div>
       <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
         <button className="btn btn-ghost btn-sm" onClick={onView}><Icon name="eye" size={12}/> View</button>
-        <button className="btn btn-primary btn-sm" disabled={busy||!target} onClick={()=>onFile(target,dtype)}>{busy?'Filing\u2026':'File here'}</button>
+        <button className="btn btn-primary btn-sm" disabled={busy||!target} onClick={()=>onFile(target,dtype)}>{busy?'Filing…':'File here'}</button>
         <button className="btn btn-ghost btn-sm" disabled={busy} onClick={onCreateNew} style={{color:'var(--accent)'}}>+ New file from this</button>
         <button className="btn btn-ghost btn-sm" disabled={busy} onClick={onDismiss} style={{color:'var(--text-3)',marginLeft:'auto'}}>Dismiss</button>
       </div>
@@ -12514,8 +12514,8 @@ function MissingDocsComposer({ file, ov, missingItems, parties, contacts, userId
   const addr=file.address||'this file';
   const partyEmail = (()=>{ for(const p of (parties||[])){ const c=(contacts||[]).find(x=>x.id===p.contact_id); if(c?.email) return c.email; } return ''; })();
   const [to,setTo]=useState(partyEmail);
-  const [subject,setSubject]=useState(`Documents needed \u2014 ${addr}`);
-  const [body,setBody]=useState(`Hi,\n\nWe\u2019re finalizing the file for ${addr} and still need the following to complete it:\n\n${(missingItems||[]).map(i=>`\u2022 ${i.label}`).join('\n')}\n\nPlease send these at your earliest convenience so we can keep the closing on track.\n\nThank you,`);
+  const [subject,setSubject]=useState(`Documents needed — ${addr}`);
+  const [body,setBody]=useState(`Hi,\n\nWe’re finalizing the file for ${addr} and still need the following to complete it:\n\n${(missingItems||[]).map(i=>`• ${i.label}`).join('\n')}\n\nPlease send these at your earliest convenience so we can keep the closing on track.\n\nThank you,`);
   const [sending,setSending]=useState(false);
   useEffect(()=>{ (async()=>{ const { data } = await supabase.from('email_accounts').select('id,email_address,is_active').eq('user_id',userId); const act=(data||[]).filter(a=>a.is_active!==false); setAccounts(act); if(act[0]) setFromId(act[0].id); })(); },[userId]);
   const send=async()=>{
@@ -12534,7 +12534,7 @@ function MissingDocsComposer({ file, ov, missingItems, parties, contacts, userId
   return (
     <div className="modal-overlay" style={{zIndex:2200}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:'560px',width:'100%',maxHeight:'92vh',overflowY:'auto'}}>
-        <div className="modal-header"><h3 style={{margin:0}}>Request missing documents</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div className="modal-header"><h3 style={{margin:0}}>Request missing documents</h3><button className="modal-close" onClick={onClose}>×</button></div>
         <div style={{display:'grid',gap:'10px'}}>
           <label className="form-label">From
             <select className="form-input" value={fromId} onChange={e=>setFromId(e.target.value)}>
@@ -12548,7 +12548,7 @@ function MissingDocsComposer({ file, ov, missingItems, parties, contacts, userId
         </div>
         <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={send} disabled={sending}>{sending?'Sending\u2026':'Send request'}</button>
+          <button className="btn btn-primary" onClick={send} disabled={sending}>{sending?'Sending…':'Send request'}</button>
         </div>
       </div>
     </div>
@@ -12589,15 +12589,15 @@ function SignPortal({ token }){
       <div style={{width:'100%',maxWidth:'620px'}}>
         <div style={{background:'#0e0f13',borderBottom:'3px solid #C5A95E',padding:'18px 4px 14px',marginBottom:'20px'}}>
           <div style={{fontWeight:800,letterSpacing:'.02em'}}>REALTY ONE GROUP ADVANTAGE</div>
-          <div style={{fontSize:'11px',color:'#C5A95E'}}>powered by PrismOS \u00B7 secure e-signature</div>
+          <div style={{fontSize:'11px',color:'#C5A95E'}}>powered by PrismOS · secure e-signature</div>
         </div>
         {children}
       </div>
     </div>
   );
-  if(state.loading) return <Shell><div style={{color:'var(--text-2,#9499b0)'}}>Loading document\u2026</div></Shell>;
+  if(state.loading) return <Shell><div style={{color:'var(--text-2,#9499b0)'}}>Loading document…</div></Shell>;
   if(state.error) return <Shell><div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'20px'}}><h3 style={{marginTop:0}}>Link unavailable</h3><p style={{color:'var(--text-2,#9499b0)'}}>{state.error}. This signing link may have expired or already been completed.</p></div></Shell>;
-  if(done==='completed'||done==='signed') return <Shell><div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'24px',textAlign:'center'}}><div style={{fontSize:'40px'}}>\u2705</div><h3>Thank you, {name}!</h3><p style={{color:'var(--text-2,#9499b0)'}}>Your signature has been recorded{done==='completed'?' and the document is now fully executed':''}. A completed copy with the certificate of completion will be sent to the brokerage.</p></div></Shell>;
+  if(done==='completed'||done==='signed') return <Shell><div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'24px',textAlign:'center'}}><div style={{fontSize:'40px'}}>✅</div><h3>Thank you, {name}!</h3><p style={{color:'var(--text-2,#9499b0)'}}>Your signature has been recorded{done==='completed'?' and the document is now fully executed':''}. A completed copy with the certificate of completion will be sent to the brokerage.</p></div></Shell>;
   if(done==='declined') return <Shell><div className="panel" style={{background:'#161921',borderRadius:'12px',padding:'24px',textAlign:'center'}}><h3>Declined</h3><p style={{color:'var(--text-2,#9499b0)'}}>You've declined to sign. The brokerage has been notified.</p></div></Shell>;
   const alreadyDone = state.request?.status==='completed' || state.signer?.status==='signed';
   return (
@@ -12608,7 +12608,7 @@ function SignPortal({ token }){
           <h2 style={{margin:'4px 0'}}>{state.document?.title||state.request?.title||'Document'}</h2>
           {state.request?.message && <p style={{color:'var(--text-2,#9499b0)',marginTop:'4px'}}>{state.request.message}</p>}
         </div>
-        {state.view_url && <a href={state.view_url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{justifySelf:'start',border:'1px solid #C5A95E',color:'#C5A95E'}}>\uD83D\uDCC4 Review the document</a>}
+        {state.view_url && <a href={state.view_url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{justifySelf:'start',border:'1px solid #C5A95E',color:'#C5A95E'}}>📄 Review the document</a>}
         {alreadyDone ? <div style={{color:'var(--green,#22c55e)'}}>This document is already completed. Thank you.</div> : <>
           <div style={{background:'#0e0f13',borderRadius:'8px',padding:'12px',fontSize:'12px',color:'var(--text-2,#9499b0)',lineHeight:1.5}}>
             <label style={{display:'flex',gap:'10px',alignItems:'flex-start',cursor:'pointer'}}>
@@ -12632,11 +12632,11 @@ function SignPortal({ token }){
           </div>
           <div style={{display:'flex',gap:'10px',justifyContent:'space-between',alignItems:'center'}}>
             <button className="btn btn-ghost btn-sm" onClick={decline} disabled={busy} style={{color:'var(--text-3,#555e7a)'}}>Decline</button>
-            <button className="btn btn-primary" onClick={sign} disabled={busy||!consent||!name.trim()||(sigMode==='draw'&&!hasDrawn)} style={{background:'#C5A95E',borderColor:'#C5A95E',color:'#111',fontWeight:700}}>{busy?'Signing\u2026':'Adopt & Sign'}</button>
+            <button className="btn btn-primary" onClick={sign} disabled={busy||!consent||!name.trim()||(sigMode==='draw'&&!hasDrawn)} style={{background:'#C5A95E',borderColor:'#C5A95E',color:'#111',fontWeight:700}}>{busy?'Signing…':'Adopt & Sign'}</button>
           </div>
         </>}
       </div>
-      <div style={{textAlign:'center',fontSize:'11px',color:'var(--text-3,#555e7a)',marginTop:'16px'}}>Secured by PrismOS e-Sign \u00B7 ESIGN Act / Florida UETA compliant</div>
+      <div style={{textAlign:'center',fontSize:'11px',color:'var(--text-3,#555e7a)',marginTop:'16px'}}>Secured by PrismOS e-Sign · ESIGN Act / Florida UETA compliant</div>
     </Shell>
   );
 }
@@ -12668,7 +12668,7 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
       for(const s of (created||[])){
         const url=`https://darasapp.com/sign/${s.token}`;
         links.push({ name:s.name, email:s.email, url });
-        if(acct && s.email){ try{ await supabase.functions.invoke('gmail-send',{ body:{ account_id:acct.id, to:s.email, subject:`Signature requested: ${title}`, body_text:`${message}\n\nSign securely here:\n${url}\n\n\u2014 Realty ONE Group Advantage` } }); }catch(_){} }
+        if(acct && s.email){ try{ await supabase.functions.invoke('gmail-send',{ body:{ account_id:acct.id, to:s.email, subject:`Signature requested: ${title}`, body_text:`${message}\n\nSign securely here:\n${url}\n\n— Realty ONE Group Advantage` } }); }catch(_){} }
       }
       await logFileEvent(file.id, userId, 'esign_sent', `Sent ${title} for signature to ${valid.map(s=>s.name).join(', ')}`, { request_id:req.id });
       if(onCreated) onCreated(req, created||[]);
@@ -12679,11 +12679,11 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
   return (
     <div className="modal-overlay" style={{zIndex:2300}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:'560px',width:'100%',maxHeight:'92vh',overflowY:'auto'}}>
-        <div className="modal-header"><h3 style={{margin:0}}>Send for signature</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div className="modal-header"><h3 style={{margin:0}}>Send for signature</h3><button className="modal-close" onClick={onClose}>×</button></div>
         {result ? (
           <div style={{display:'grid',gap:'10px'}}>
-            <div style={{color:'var(--green)',fontWeight:600}}>\u2713 Request sent{result.emailed?' \u2014 signing links emailed':''}.</div>
-            <div style={{fontSize:'12px',color:'var(--text-2)'}}>Signing links{result.emailed?' (also emailed)':''} \u2014 tap to copy:</div>
+            <div style={{color:'var(--green)',fontWeight:600}}>✓ Request sent{result.emailed?' — signing links emailed':''}.</div>
+            <div style={{fontSize:'12px',color:'var(--text-2)'}}>Signing links{result.emailed?' (also emailed)':''} — tap to copy:</div>
             {result.links.map((l,i)=>(
               <button key={i} className="btn btn-ghost btn-sm" style={{justifyContent:'flex-start',textAlign:'left'}} onClick={()=>{ try{ navigator.clipboard.writeText(l.url); if(window.__notify) window.__notify('Link copied.','success'); }catch(_){}}}>
                 <span style={{fontWeight:600}}>{l.name}</span>&nbsp;<span style={{color:'var(--text-3)',fontSize:'11px',wordBreak:'break-all'}}>{l.url}</span>
@@ -12708,7 +12708,7 @@ function SignatureRequestModal({ file, doc, parties, contacts, userId, onClose, 
             <div style={{fontSize:'11px',color:'var(--text-3)'}}>Signers with an email get a secure link automatically; others you can copy and share. No login required for them.</div>
             <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'6px'}}>
               <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-              <button className="btn btn-primary" onClick={send} disabled={sending}>{sending?'Sending\u2026':'Send for signature'}</button>
+              <button className="btn btn-primary" onClick={send} disabled={sending}>{sending?'Sending…':'Send for signature'}</button>
             </div>
           </div>
         )}
@@ -12721,11 +12721,11 @@ function SignatureManageModal({ request, file, userId, onClose, onChanged }){
   const [signers,setSigners]=useState(request.signers||[]);
   const [busy,setBusy]=useState(false);
   const resend=async(s)=>{
-    if(!s.email){ if(window.__notify) window.__notify('No email on file for this signer \u2014 use Copy link.','error'); return; }
+    if(!s.email){ if(window.__notify) window.__notify('No email on file for this signer — use Copy link.','error'); return; }
     setBusy(true);
     try{ const { data:accts } = await supabase.from('email_accounts').select('id,is_active').eq('user_id',userId); const acct=(accts||[]).find(a=>a.is_active!==false); if(!acct){ if(window.__notify) window.__notify('Connect a Gmail account to send.','error'); return; }
       const url=`https://darasapp.com/sign/${s.token}`;
-      await supabase.functions.invoke('gmail-send',{ body:{ account_id:acct.id, to:s.email, subject:`Reminder: signature needed \u2014 ${request.title||'document'}`, body_text:`A signature is requested.\n\nSign securely here:\n${url}\n\n\u2014 Realty ONE Group Advantage` } });
+      await supabase.functions.invoke('gmail-send',{ body:{ account_id:acct.id, to:s.email, subject:`Reminder: signature needed — ${request.title||'document'}`, body_text:`A signature is requested.\n\nSign securely here:\n${url}\n\n— Realty ONE Group Advantage` } });
       await supabase.from('signature_signers').update({ last_reminder_at:new Date().toISOString() }).eq('id',s.id);
       if(window.__notify) window.__notify('Reminder sent.','success');
     }catch(e){ if(window.__notify) window.__notify('Send failed.','error'); } finally{ setBusy(false); }
@@ -12741,15 +12741,15 @@ function SignatureManageModal({ request, file, userId, onClose, onChanged }){
   return (
     <div className="modal-overlay" style={{zIndex:2300}} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:'520px',width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
-        <div className="modal-header"><h3 style={{margin:0}}>Signature request</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div className="modal-header"><h3 style={{margin:0}}>Signature request</h3><button className="modal-close" onClick={onClose}>×</button></div>
         <div style={{fontSize:'13px',fontWeight:600,marginBottom:'4px'}}>{request.title}</div>
-        <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'12px'}}>{request.sign_in_order?'Signs in order':'Any order'} \u00B7 {request.status}</div>
+        <div style={{fontSize:'11px',color:'var(--text-3)',marginBottom:'12px'}}>{request.sign_in_order?'Signs in order':'Any order'} · {request.status}</div>
         <div style={{display:'grid',gap:'8px'}}>
           {(signers||[]).map(s=>(
             <div key={s.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',background:'var(--bg-hover)',borderRadius:'8px'}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:'13px',fontWeight:600}}>{s.name} {s.role?<span style={{fontSize:'10px',color:'var(--text-3)'}}>\u00B7 {s.role}</span>:null}</div>
-                <div style={{fontSize:'11px',color: s.status==='signed'?'var(--green)':s.status==='declined'?'var(--red)':'var(--text-2)'}}>{s.status}{s.signed_at?` \u00B7 ${shortDate(s.signed_at.slice(0,10))}`:''}{s.email?` \u00B7 ${s.email}`:''}</div>
+                <div style={{fontSize:'13px',fontWeight:600}}>{s.name} {s.role?<span style={{fontSize:'10px',color:'var(--text-3)'}}>· {s.role}</span>:null}</div>
+                <div style={{fontSize:'11px',color: s.status==='signed'?'var(--green)':s.status==='declined'?'var(--red)':'var(--text-2)'}}>{s.status}{s.signed_at?` · ${shortDate(s.signed_at.slice(0,10))}`:''}{s.email?` · ${s.email}`:''}</div>
               </div>
               {s.status!=='signed' && <>
                 <button className="btn btn-ghost btn-sm" disabled={busy} onClick={()=>resend(s)} style={{padding:'4px 8px'}}>Resend</button>
@@ -12785,7 +12785,7 @@ function FileModal({ onClose, onSave, initial, properties, contacts }){
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal" style={{maxWidth:'520px',width:'100%',maxHeight:'92vh',overflowY:'auto'}}>
-        <div className="modal-header"><h3 style={{margin:0}}>New Buyer File</h3><button className="modal-close" onClick={onClose}>\u00d7</button></div>
+        <div className="modal-header"><h3 style={{margin:0}}>New Buyer File</h3><button className="modal-close" onClick={onClose}>×</button></div>
         <div style={{display:'grid',gap:'10px'}}>
           <label className="form-label">Property address
             <input className="form-input" value={f.address} onChange={e=>set('address',e.target.value)} placeholder="123 Main St"/>
@@ -12804,7 +12804,7 @@ function FileModal({ onClose, onSave, initial, properties, contacts }){
             </label>
             <label className="form-label">Link property
               <select className="form-input" value={f.property_id} onChange={e=>set('property_id',e.target.value)}>
-                <option value="">\u2014 none \u2014</option>
+                <option value="">— none —</option>
                 {(properties||[]).map(p=><option key={p.id} value={p.id}>{p.nickname||p.address||p.id}</option>)}
               </select>
             </label>
@@ -12821,7 +12821,7 @@ function FileModal({ onClose, onSave, initial, properties, contacts }){
         </div>
         <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'16px'}}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit} disabled={saving}>{saving?'Creating\u2026':'Create File'}</button>
+          <button className="btn btn-primary" onClick={submit} disabled={saving}>{saving?'Creating…':'Create File'}</button>
         </div>
       </div>
     </div>
@@ -12893,49 +12893,49 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
       const c=cdaCalc; const M2=(n)=>money(n);
       const sections=[
         { heading:'Property & transaction', rows:[
-          { label:'Property', value:[file.address,[file.city,file.state,file.zip].filter(Boolean).join(', ')].filter(Boolean).join(' \u2014 '), bold:true },
+          { label:'Property', value:[file.address,[file.city,file.state,file.zip].filter(Boolean).join(', ')].filter(Boolean).join(' — '), bold:true },
           { label:'Closing date', value: shortDate(ov.closing_date) },
           { label:'Contract price', value: M2(ov.contract_price) },
-          { label:'Commission rate', value: c.totalRate!=null? c.totalRate+'%':'\u2014' },
+          { label:'Commission rate', value: c.totalRate!=null? c.totalRate+'%':'—' },
           { label:'Sides represented', value: ({buyer:'Buyer',seller:'Seller',both:'Both (dual)'}[c.sides]||c.sides) },
         ]},
         { heading:'Parties', rows:[
-          { label:'Buyer', value: ov.buyer_name||'\u2014' },
-          { label:'Buyer phone / email', value:[cda.buyer_phone,cda.buyer_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
-          { label:'Seller', value: ov.seller_name||'\u2014' },
-          { label:'Seller phone / email', value:[cda.seller_phone,cda.seller_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+          { label:'Buyer', value: ov.buyer_name||'—' },
+          { label:'Buyer phone / email', value:[cda.buyer_phone,cda.buyer_email].filter(Boolean).join('  ·  ')||'—', small:true, muted:true },
+          { label:'Seller', value: ov.seller_name||'—' },
+          { label:'Seller phone / email', value:[cda.seller_phone,cda.seller_email].filter(Boolean).join('  ·  ')||'—', small:true, muted:true },
         ]},
         { heading:'Cooperating brokerage', rows:[
-          { label:'Co-op brokerage', value: cda.coop_brokerage||'\u2014' },
-          { label:'Co-op agent', value: cda.coop_agent_name||'\u2014' },
-          { label:'Co-op agent phone / email', value:[cda.coop_agent_phone,cda.coop_agent_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+          { label:'Co-op brokerage', value: cda.coop_brokerage||'—' },
+          { label:'Co-op agent', value: cda.coop_agent_name||'—' },
+          { label:'Co-op agent phone / email', value:[cda.coop_agent_phone,cda.coop_agent_email].filter(Boolean).join('  ·  ')||'—', small:true, muted:true },
           { label:'Commission to co-op brokerage (GCI)', value: M2(c.coopGci) },
         ]},
         { heading:'Title & mortgage', rows:[
-          { label:'Title company', value: cda.title_company||'\u2014' },
-          { label:'Title contact', value:[cda.title_contact,cda.title_phone,cda.title_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
-          { label:'Mortgage company', value: cda.lender_company||'\u2014' },
-          { label:'Loan officer', value:[cda.loan_officer,cda.lender_phone,cda.lender_email].filter(Boolean).join('  \u00B7  ')||'\u2014', small:true, muted:true },
+          { label:'Title company', value: cda.title_company||'—' },
+          { label:'Title contact', value:[cda.title_contact,cda.title_phone,cda.title_email].filter(Boolean).join('  ·  ')||'—', small:true, muted:true },
+          { label:'Mortgage company', value: cda.lender_company||'—' },
+          { label:'Loan officer', value:[cda.loan_officer,cda.lender_phone,cda.lender_email].filter(Boolean).join('  ·  ')||'—', small:true, muted:true },
         ]},
         { heading:'Commission math', rows:[
           { label:'Total commission (all sides)', value: M2(c.totalComm), bold:true },
-          { label:'Less: commission to co-op brokerage', value: c.coopGci?('\u2212 '+M2(c.coopGci)):'\u2014' },
-          ...(c.referral?[{ label:`Less: outbound referral${cda.referral_to?` (${cda.referral_to})`:''}`, value:'\u2212 '+M2(c.referral) }]:[]),
-          ...(c.royalty?[{ label:'Less: franchise/royalty', value:'\u2212 '+M2(c.royalty) }]:[]),
+          { label:'Less: commission to co-op brokerage', value: c.coopGci?('− '+M2(c.coopGci)):'—' },
+          ...(c.referral?[{ label:`Less: outbound referral${cda.referral_to?` (${cda.referral_to})`:''}`, value:'− '+M2(c.referral) }]:[]),
+          ...(c.royalty?[{ label:'Less: franchise/royalty', value:'− '+M2(c.royalty) }]:[]),
           { label:'Gross commission income to ROG (GCI)', value: M2(c.gciNet), bold:true },
         ]},
       ];
       const disbursement={ rows:[
         { label: c.split!=null?`Agent split (${c.split}% of GCI)`:'Agent gross', value: M2(c.agentGross), bold:true },
-        ...c.disclosedFees.map(x=>({ label:x.label, value:'\u2212 '+M2(x.amount), neg:true })),
-        ...c.contrib.map(x=>({ label:`Routed: ${x.label}`, value:'\u2212 '+M2(x.amount), muted:true })),
+        ...c.disclosedFees.map(x=>({ label:x.label, value:'− '+M2(x.amount), neg:true })),
+        ...c.contrib.map(x=>({ label:`Routed: ${x.label}`, value:'− '+M2(x.amount), muted:true })),
       ], net_label:'NET CASH TO AGENT', net_value: M2(c.agentCash) };
       const note=`Cooperating agent contact is provided for recruiting and coordination. Figures auto-calculated by PrismOS from the agent's active pay plan; verify against the executed Closing Disclosure before disbursement.`;
       const { data, error } = await supabase.functions.invoke('files-cda-generate', { body:{ file_id:fileId, doc_title:'Commission Disbursement Authorization', agent_name:agentObj?.name||'', sections, disbursement, note, recruiting_email: cda.recruiting_email||null, agent_id:cdaAgentId, closed_on: ov.closing_date||null, ledger:{ price:c.price, totalComm:c.totalComm, coopGci:c.coopGci, gciNet:c.gciNet, agentGross:c.agentGross, totalFees:c.totalFees, agentNet:c.agentNet, agentCash:c.agentCash, companyDollar:c.companyDollar, profitShare:c.profitShare, savings:c.savings, retirement:c.retirement } } });
       if(error||data?.error){ if(window.__notify) window.__notify('CDA failed: '+(error?.message||data?.error),'error'); return; }
       if(data.document) setDocs(prev=>[data.document,...prev]);
       const { data:i2 } = await supabase.from('file_checklist_items').select('*').eq('file_id',fileId).order('sort',{ascending:true}); if(i2) setItems(i2);
-      if(window.__notify) window.__notify(data.recruiting_sent?'CDA generated \u00B7 copy emailed to recruiting.':'CDA generated.','success');
+      if(window.__notify) window.__notify(data.recruiting_sent?'CDA generated · copy emailed to recruiting.':'CDA generated.','success');
       setTab('docs');
     }catch(e){ if(window.__notify) window.__notify('CDA failed: '+(e.message||e),'error'); }
     finally{ setCdaBusy(false); }
@@ -12964,8 +12964,8 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     setOv(o=>({...o,status:s}));
     const { data } = await supabase.from('files').update({status:s,updated_at:new Date().toISOString()}).eq('id',fileId).select().single();
     if(data) onChange(data);
-    await logFileEvent(fileId,userId,'status_change',`Status \u2192 ${STATUS_META[s]?.label||s}`);
-    setEvents(ev=>[{id:'t'+Date.now(),kind:'status_change',detail:`Status \u2192 ${STATUS_META[s]?.label||s}`,created_at:new Date().toISOString()},...ev]);
+    await logFileEvent(fileId,userId,'status_change',`Status → ${STATUS_META[s]?.label||s}`);
+    setEvents(ev=>[{id:'t'+Date.now(),kind:'status_change',detail:`Status → ${STATUS_META[s]?.label||s}`,created_at:new Date().toISOString()},...ev]);
   };
 
   // ---------- checklist ----------
@@ -13018,7 +13018,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     if(status==='revision_requested'||status==='rejected'){ const r=window.prompt('Note (optional):',note||''); if(r!==null) note=r; }
     setDocs(prev=>prev.map(x=>x.id===d.id?{...x,review_status:status,reviewer_note:note}:x));
     await supabase.from('file_documents').update({review_status:status,reviewer_note:note}).eq('id',d.id);
-    await logFileEvent(fileId,userId,'doc_review',`${DOCTYPE_LABEL[d.doc_type]||d.doc_type} \u2192 ${status.replace('_',' ')}`,{doc_id:d.id});
+    await logFileEvent(fileId,userId,'doc_review',`${DOCTYPE_LABEL[d.doc_type]||d.doc_type} → ${status.replace('_',' ')}`,{doc_id:d.id});
     if(status==='approved'){ const key=DOCTYPE_TO_ITEM[d.doc_type]||d.doc_type; setItems(prev=>prev.map(it=>{ if(it.item_key===key){ supabase.from('file_checklist_items').update({status:'approved',satisfied_by:d.id,updated_at:new Date().toISOString()}).eq('id',it.id); return {...it,status:'approved',satisfied_by:d.id}; } return it; })); }
   };
   const delDoc = async(d)=>{ if(!await confirmDialog('Delete this document?')) return; setDocs(prev=>prev.filter(x=>x.id!==d.id)); if(d.storage_path) await supabase.storage.from('file-docs').remove([d.storage_path]).catch(()=>{}); await supabase.from('file_documents').delete().eq('id',d.id); await logFileEvent(fileId,userId,'doc_deleted',`Deleted ${DOCTYPE_LABEL[d.doc_type]||d.doc_type}`); };
@@ -13048,7 +13048,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
         const cdComm=(ai.commission_to_brokerage!=null?ai.commission_to_brokerage:(ai.commission_total!=null?ai.commission_total:null));
         const patch={cd_received:true,updated_at:new Date().toISOString()}; if(cdComm!=null) patch.commission_cd=cdComm;
         const { data:uf } = await supabase.from('files').update(patch).eq('id',fileId).select().single(); if(uf){ onChange(uf); setOv(uf); }
-        await logFileEvent(fileId,userId,'cd_received',`Closing Disclosure read \u00B7 commission ${cdComm!=null?money(cdComm):'n/a'}`);
+        await logFileEvent(fileId,userId,'cd_received',`Closing Disclosure read · commission ${cdComm!=null?money(cdComm):'n/a'}`);
       }
       // contract terms -> offer to build timeline happens via Timeline tab; here just store
       if(window.__notify) window.__notify('Figures extracted.','success');
@@ -13065,19 +13065,19 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   const nextBest = (()=>{
     if(ov.status==='paid') return null;
     const declined = Object.values(sigByDoc).find(r=>r.status!=='completed' && (r.signers||[]).some(s=>s.status==='declined'));
-    if(declined) return { text:`A signer declined \u201c${declined.title}\u201d. Review and resend.`, cta:'Manage', act:()=>setManageReq(declined), tone:'red' };
-    if(ov.cd_received && commVariance!=null && !commReconciled) return { text:`Commission doesn\u2019t match the Closing Disclosure (${commVariance>=0?'+':''}${money(commVariance)}). Reconcile before disbursing.`, cta:'Review', act:()=>setTab('closing'), tone:'red' };
-    if(readyToDisburse && ov.status!=='paid') return { text:'Everything required is in \u2014 you can disburse and mark this file paid.', cta:'Go to Closing', act:()=>setTab('closing'), tone:'green' };
+    if(declined) return { text:`A signer declined “${declined.title}”. Review and resend.`, cta:'Manage', act:()=>setManageReq(declined), tone:'red' };
+    if(ov.cd_received && commVariance!=null && !commReconciled) return { text:`Commission doesn’t match the Closing Disclosure (${commVariance>=0?'+':''}${money(commVariance)}). Reconcile before disbursing.`, cta:'Review', act:()=>setTab('closing'), tone:'red' };
+    if(readyToDisburse && ov.status!=='paid') return { text:'Everything required is in — you can disburse and mark this file paid.', cta:'Go to Closing', act:()=>setTab('closing'), tone:'green' };
     const pendingSig = Object.values(sigByDoc).find(r=>r.status==='sent');
-    if(pendingSig){ const nx=(pendingSig.signers||[]).find(s=>s.status!=='signed'&&s.status!=='declined'); return { text:`Waiting on signature${nx?` from ${nx.name}`:''} for \u201c${pendingSig.title}\u201d.`, cta:'Manage', act:()=>setManageReq(pendingSig), tone:'gold' }; }
+    if(pendingSig){ const nx=(pendingSig.signers||[]).find(s=>s.status!=='signed'&&s.status!=='declined'); return { text:`Waiting on signature${nx?` from ${nx.name}`:''} for “${pendingSig.title}”.`, cta:'Manage', act:()=>setManageReq(pendingSig), tone:'gold' }; }
     const ownedMissing = items.find(it=>it.required && itemOrigin(it)==='owned' && it.status==='missing');
     if(ownedMissing) return { text:`Generate the ${ownedMissing.label}.`, cta:'Generate', act:()=>generateItem(ownedMissing), tone:'gold' };
     const extMissing = items.find(it=>it.required && itemOrigin(it)==='external' && it.status==='missing');
     if(extMissing) return { text:`Still need: ${extMissing.label}.`, cta:'Request', act:()=>openRequest(extMissing), tone:'gold' };
     const toReview = items.find(it=>it.required && it.status==='received');
-    if(toReview) return { text:`${toReview.label} is in \u2014 review and approve it.`, cta:'Review', act:()=>setTab('checklist'), tone:'blue' };
+    if(toReview) return { text:`${toReview.label} is in — review and approve it.`, cta:'Review', act:()=>setTab('checklist'), tone:'blue' };
     if(!ov.cd_received && ov.status!=='closed') return { text:'Waiting on the Closing Disclosure from title.', cta:'Timeline', act:()=>setTab('timeline'), tone:'gold' };
-    return { text:'This file is in good shape \u2014 nothing needs you right now.', cta:null, tone:'green' };
+    return { text:'This file is in good shape — nothing needs you right now.', cta:null, tone:'green' };
   })();
 
   const markPaid = async()=>{
@@ -13088,8 +13088,8 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     const patch={ status:'paid', paid_amount:amt, paid_method:method, paid_at:new Date(`${when}T12:00:00`).toISOString(), disbursed_at:new Date().toISOString(), updated_at:new Date().toISOString() };
     const { data:uf } = await supabase.from('files').update(patch).eq('id',fileId).select().single();
     if(uf){ onChange(uf); setOv(uf); }
-    await logFileEvent(fileId,userId,'paid',`Marked paid \u00B7 ${money(amt)} via ${method||'?'} on ${when}`);
-    if(window.__notify) window.__notify('File marked paid. \uD83C\uDF89','success');
+    await logFileEvent(fileId,userId,'paid',`Marked paid · ${money(amt)} via ${method||'?'} on ${when}`);
+    if(window.__notify) window.__notify('File marked paid. 🎉','success');
   };
 
   const cdaText = ()=>{
@@ -13136,7 +13136,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     }catch(e){ if(window.__notify) window.__notify('Generate failed: '+(e.message||e),'error'); return null; }
     finally{ setGenerating(false); }
   };
-  const generateItem=(it)=>{ const tpl=ITEM_TO_TEMPLATE[it.item_key]; if(tpl){ generateDoc(tpl); setTab('docs'); } else if(window.__notify) window.__notify('No template for this item yet \u2014 upload or mark it manually.','success'); };
+  const generateItem=(it)=>{ const tpl=ITEM_TO_TEMPLATE[it.item_key]; if(tpl){ generateDoc(tpl); setTab('docs'); } else if(window.__notify) window.__notify('No template for this item yet — upload or mark it manually.','success'); };
 
   const delFile = async()=>{ if(!await confirmDialog(`Delete the entire file for ${file.address||'this property'}? This removes all its documents and checklist.`)) return; for(const dl of deadlines){ if(dl.task_id) await supabase.from('tasks').delete().eq('id',dl.task_id); if(dl.event_id) await supabase.from('events').delete().eq('id',dl.event_id); } await supabase.from('files').delete().eq('id',fileId); onDelete(fileId); };
 
@@ -13153,7 +13153,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
     const label=window.prompt('Deadline label (e.g., Title commitment due):'); if(!label) return;
     const due=window.prompt('Due date (YYYY-MM-DD):'); if(!due||!/^\d{4}-\d{2}-\d{2}$/.test(due)){ if(window.__notify) window.__notify('Use date format YYYY-MM-DD.','error'); return; }
     await createDeadline(fileId,userId,'custom',label,due,'manual',file.address);
-    await logFileEvent(fileId,userId,'deadline_created',`${label} \u2014 ${due}`);
+    await logFileEvent(fileId,userId,'deadline_created',`${label} — ${due}`);
     await loadDeadlines();
   };
   const setDeadlineStatus = async(dl,status)=>{
@@ -13177,7 +13177,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
             <h3 style={{margin:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{file.address||'(no address)'}</h3>
             <div style={{fontSize:'12px',color:'var(--text-2)'}}>{[file.city,file.state,file.zip].filter(Boolean).join(', ')||'Buyer file'}</div>
           </div>
-          <button className="modal-close" onClick={onClose}>\u00d7</button>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
         {/* next best action */}
@@ -13198,8 +13198,8 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
           <span style={{fontSize:'12px',color:'var(--text-2)',whiteSpace:'nowrap'}}>{reqDone}/{reqItems.length} required</span>
         </div>
         {readyToPay
-          ? <div style={{background:'rgba(34,197,94,.12)',border:'1px solid var(--green)',color:'var(--green)',borderRadius:'8px',padding:'8px 12px',fontSize:'13px',fontWeight:600,marginBottom:'10px'}}>\u2713 All required documents are in \u2014 this file is ready to disburse.</div>
-          : <div style={{background:'var(--bg-hover)',borderRadius:'8px',padding:'8px 12px',fontSize:'12px',color:'var(--text-2)',marginBottom:'10px'}}>{reqItems.length-reqDone} required item(s) outstanding{!cdApproved?' \u00B7 Closing Disclosure not yet in':''}.</div>}
+          ? <div style={{background:'rgba(34,197,94,.12)',border:'1px solid var(--green)',color:'var(--green)',borderRadius:'8px',padding:'8px 12px',fontSize:'13px',fontWeight:600,marginBottom:'10px'}}>✓ All required documents are in — this file is ready to disburse.</div>
+          : <div style={{background:'var(--bg-hover)',borderRadius:'8px',padding:'8px 12px',fontSize:'12px',color:'var(--text-2)',marginBottom:'10px'}}>{reqItems.length-reqDone} required item(s) outstanding{!cdApproved?' · Closing Disclosure not yet in':''}.</div>}
 
         {/* tabs */}
         <div style={{display:'flex',gap:'4px',overflowX:'auto',borderBottom:'1px solid var(--border)',marginBottom:'12px'}}>
@@ -13210,13 +13210,13 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
           ))}
         </div>
 
-        {loading? <div style={{color:'var(--text-2)',padding:'20px',textAlign:'center'}}>Loading\u2026</div> : <>
+        {loading? <div style={{color:'var(--text-2)',padding:'20px',textAlign:'center'}}>Loading…</div> : <>
 
         {tab==='overview' && (
           <div style={{display:'grid',gap:'10px'}}>
             {cFlags.length>0 && (
               <div style={{background:'rgba(245,158,11,.10)',border:'1px solid var(--yellow)',borderRadius:'8px',padding:'10px 12px'}}>
-                <div style={{fontSize:'12px',fontWeight:700,color:'var(--yellow)',marginBottom:'4px'}}>\u26a0 Consistency check: {cFlags.length} conflict{cFlags.length>1?'s':''} across documents</div>
+                <div style={{fontSize:'12px',fontWeight:700,color:'var(--yellow)',marginBottom:'4px'}}>⚠ Consistency check: {cFlags.length} conflict{cFlags.length>1?'s':''} across documents</div>
                 {cFlags.map((f,idx)=>(
                   <div key={idx} style={{fontSize:'12px',color:'var(--text-2)',marginTop:'4px'}}>
                     <strong style={{color:'var(--text-1)'}}>{f.label}:</strong> {f.variants.map((v,i)=><span key={i}>{i>0?'  vs  ':''}{v.value} <span style={{color:'var(--text-3)'}}>({v.docs.join(', ')})</span></span>)}
@@ -13224,7 +13224,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                 ))}
               </div>
             )}
-            {docs.length>1 && cFlags.length===0 && <div style={{fontSize:'12px',color:'var(--green)'}}>\u2713 Consistency check: price, dates, and parties agree across {docs.length} documents.</div>}
+            {docs.length>1 && cFlags.length===0 && <div style={{fontSize:'12px',color:'var(--green)'}}>✓ Consistency check: price, dates, and parties agree across {docs.length} documents.</div>}
             <label className="form-label">Status
               <select className="form-input" value={ov.status} onChange={e=>changeStatus(e.target.value)}>
                 {FILE_STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
@@ -13264,7 +13264,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                 <div style={{width:'4px',alignSelf:'stretch',minHeight:'34px',borderRadius:'4px',background:past?'var(--red)':(DL_STATUS_COLOR[dl.status]||'var(--accent)')}}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:'13px',fontWeight:600}}>{dl.label}</div>
-                  <div style={{fontSize:'12px',color:past?'var(--red)':'var(--text-2)'}}>{shortDate(dl.due_date)}{dl.status==='open'&&du!=null?` \u00B7 ${du<0?`${-du}d overdue`:du===0?'today':`in ${du}d`}`:''}{dl.status!=='open'?` \u00B7 ${dl.status}`:''}</div>
+                  <div style={{fontSize:'12px',color:past?'var(--red)':'var(--text-2)'}}>{shortDate(dl.due_date)}{dl.status==='open'&&du!=null?` · ${du<0?`${-du}d overdue`:du===0?'today':`in ${du}d`}`:''}{dl.status!=='open'?` · ${dl.status}`:''}</div>
                 </div>
                 <select className="form-input" value={dl.status} onChange={e=>setDeadlineStatus(dl,e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px',color:DL_STATUS_COLOR[dl.status]}}>
                   {['open','waived','met','passed','cancelled'].map(s=><option key={s} value={s}>{s}</option>)}
@@ -13285,11 +13285,11 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                     const origin=itemOrigin(it); const done=['approved','waived','na'].includes(it.status);
                     return (
                     <div key={it.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',background:'var(--bg-hover)',borderRadius:'8px'}}>
-                      <span style={{color: done?'var(--green)':it.status==='received'?'#3b82f6':'var(--text-3)',fontWeight:700,fontSize:'15px',width:'16px',textAlign:'center',flexShrink:0}}>{done?'\u2713':it.status==='received'?'\u25d0':'\u25cb'}</span>
+                      <span style={{color: done?'var(--green)':it.status==='received'?'#3b82f6':'var(--text-3)',fontWeight:700,fontSize:'15px',width:'16px',textAlign:'center',flexShrink:0}}>{done?'✓':it.status==='received'?'◐':'○'}</span>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:'13px',display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
                           <span>{it.label}</span>
-                          <span title={origin==='owned'?'PrismOS generates this document':'Comes from outside \u2014 capture or request it'} style={{fontSize:'9px',fontWeight:700,letterSpacing:'.03em',textTransform:'uppercase',padding:'1px 6px',borderRadius:'999px',border:'1px solid '+(origin==='owned'?'var(--accent)':'var(--border)'),color:origin==='owned'?'var(--accent)':'var(--text-3)'}}>{origin==='owned'?'We generate':'External'}</span>
+                          <span title={origin==='owned'?'PrismOS generates this document':'Comes from outside — capture or request it'} style={{fontSize:'9px',fontWeight:700,letterSpacing:'.03em',textTransform:'uppercase',padding:'1px 6px',borderRadius:'999px',border:'1px solid '+(origin==='owned'?'var(--accent)':'var(--border)'),color:origin==='owned'?'var(--accent)':'var(--text-3)'}}>{origin==='owned'?'We generate':'External'}</span>
                           <span onClick={()=>toggleReq(it)} title="Toggle required" style={{cursor:'pointer',fontSize:'9px',fontWeight:700,padding:'1px 6px',borderRadius:'999px',background:it.required?'var(--accent-dim)':'transparent',border:'1px solid '+(it.required?'var(--accent)':'var(--border)'),color:it.required?'var(--accent)':'var(--text-3)'}}>{it.required?'REQUIRED':'optional'}</span>
                         </div>
                       </div>
@@ -13318,14 +13318,14 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
             {showStudio && (
               <div className="panel" style={{display:'grid',gap:'8px',background:'linear-gradient(135deg,var(--bg-card),var(--bg-hover))',borderColor:'var(--accent)'}}>
                 <div style={{fontSize:'13px',fontWeight:700,display:'flex',alignItems:'center',gap:'6px'}}><Icon name="sparkles" size={14}/> Document Studio</div>
-                <div style={{fontSize:'12px',color:'var(--text-2)'}}>PrismOS will generate a branded, pre-filled PDF from this file\u2019s data and drop it here.</div>
+                <div style={{fontSize:'12px',color:'var(--text-2)'}}>PrismOS will generate a branded, pre-filled PDF from this file’s data and drop it here.</div>
                 {[['cda','Commission Disbursement Authorization','Pre-filled with price, commission, split & net'],['buyer_rep_cover','Buyer Representation Summary','Engagement cover sheet for the file'],['compliance_attestation','Broker Compliance Attestation','Auto-lists required-doc status for sign-off']].map(([t,label,desc])=>(
                   <button key={t} className="btn btn-ghost" disabled={generating} onClick={()=>generateDoc(t)} style={{justifyContent:'flex-start',textAlign:'left',display:'grid',gap:'2px',padding:'10px'}}>
                     <span style={{fontWeight:600,fontSize:'13px'}}>{label}</span>
                     <span style={{fontSize:'11px',color:'var(--text-3)'}}>{desc}</span>
                   </button>
                 ))}
-                <div style={{display:'flex',justifyContent:'flex-end'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowStudio(false)} disabled={generating}>{generating?'Generating\u2026':'Close'}</button></div>
+                <div style={{display:'flex',justifyContent:'flex-end'}}><button className="btn btn-ghost btn-sm" onClick={()=>setShowStudio(false)} disabled={generating}>{generating?'Generating…':'Close'}</button></div>
               </div>
             )}
             {showUpload && (
@@ -13337,7 +13337,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                   <input type="file" accept=".pdf,image/*,.doc,.docx" onChange={e=>setUpFile(e.target.files?.[0]||null)} style={{fontSize:'13px'}}/>
                   <div style={{display:'flex',justifyContent:'flex-end',gap:'8px'}}>
                     <button className="btn btn-ghost btn-sm" onClick={()=>{setShowUpload(false);setUpFile(null);}}>Cancel</button>
-                    <button className="btn btn-primary btn-sm" onClick={doUpload} disabled={uploading}>{uploading?'Uploading\u2026':'Upload'}</button>
+                    <button className="btn btn-primary btn-sm" onClick={doUpload} disabled={uploading}>{uploading?'Uploading…':'Upload'}</button>
                   </div>
                 </div>)}
             {docs.length===0 && <div style={{color:'var(--text-2)',fontSize:'13px',padding:'8px'}}>No documents yet.</div>}
@@ -13348,7 +13348,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                   <div style={{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'flex-start'}}>
                     <div style={{minWidth:0}}>
                       <div style={{fontWeight:600,fontSize:'13px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{d.title||DOCTYPE_LABEL[d.doc_type]}</div>
-                      <div style={{fontSize:'11px',color:'var(--text-3)'}}>{d.file_name} \u00B7 {d.size_bytes?Math.round(d.size_bytes/1024)+'KB':''}</div>
+                      <div style={{fontSize:'11px',color:'var(--text-3)'}}>{d.file_name} · {d.size_bytes?Math.round(d.size_bytes/1024)+'KB':''}</div>
                       <div style={{display:'flex',gap:'5px',flexWrap:'wrap',marginTop:'4px'}}><OriginChip d={d}/><LifecycleChip state={d.execution_state}/></div>
                     </div>
                     <span style={{fontSize:'10px',fontWeight:700,color:rsColor,whiteSpace:'nowrap'}}>{(rs||'pending').replace('_',' ')}</span>
@@ -13356,7 +13356,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
                     <select className="form-input" value={d.doc_type} onChange={e=>setDocType(d,e.target.value)} style={{width:'auto',padding:'4px 8px',fontSize:'12px'}}>{FILE_DOC_TYPES.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select>
                     <button className="btn btn-ghost btn-sm" onClick={()=>viewDoc(d)}><Icon name="eye" size={12}/> View</button>
-                    <button className="btn btn-ghost btn-sm" disabled={!!extracting[d.id]} onClick={()=>extractDoc(d)} title="Use AI to read figures (price, dates, commission) from this document">{extracting[d.id]?'Reading\u2026':'Extract figures'}</button>
+                    <button className="btn btn-ghost btn-sm" disabled={!!extracting[d.id]} onClick={()=>extractDoc(d)} title="Use AI to read figures (price, dates, commission) from this document">{extracting[d.id]?'Reading…':'Extract figures'}</button>
                     {isAdmin && <>
                       <button className="btn btn-ghost btn-sm" style={{color:'var(--green)'}} onClick={()=>reviewDoc(d,'approved')}>Approve</button>
                       <button className="btn btn-ghost btn-sm" style={{color:'var(--yellow)'}} onClick={()=>reviewDoc(d,'revision_requested')}>Revise</button>
@@ -13365,11 +13365,11 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                     <button className="btn btn-ghost btn-sm" onClick={()=>delDoc(d)} style={{color:'var(--text-3)'}}><Icon name="trash" size={12}/></button>
                   </div>
                   {(() => { const sr=sigByDoc[d.id]; const executed=d.execution_state==='executed';
-                    if(executed) return <div style={{fontSize:'11px',color:'var(--green)',fontWeight:600}}>\u2713 Executed via PrismOS e-Sign</div>;
+                    if(executed) return <div style={{fontSize:'11px',color:'var(--green)',fontWeight:600}}>✓ Executed via PrismOS e-Sign</div>;
                     if(sr){ const signed=(sr.signers||[]).filter(s=>s.status==='signed').length; const total=(sr.signers||[]).length; const declined=(sr.signers||[]).some(s=>s.status==='declined');
-                      return <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'11px',flexWrap:'wrap'}}><span style={{color:declined?'var(--red)':'var(--accent)',fontWeight:600}}>{declined?'Declined':`Out for signature \u2014 ${signed}/${total} signed`}</span><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={()=>setManageReq(sr)}>Manage</button><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={async()=>{ const links=(sr.signers||[]).map(s=>`${s.name}: https://darasapp.com/sign/${s.token}`).join('\n'); try{ await navigator.clipboard.writeText(links); if(window.__notify) window.__notify('Signing links copied.','success'); }catch(_){}}}>Copy links</button></div>;
+                      return <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'11px',flexWrap:'wrap'}}><span style={{color:declined?'var(--red)':'var(--accent)',fontWeight:600}}>{declined?'Declined':`Out for signature — ${signed}/${total} signed`}</span><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={()=>setManageReq(sr)}>Manage</button><button className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={async()=>{ const links=(sr.signers||[]).map(s=>`${s.name}: https://darasapp.com/sign/${s.token}`).join('\n'); try{ await navigator.clipboard.writeText(links); if(window.__notify) window.__notify('Signing links copied.','success'); }catch(_){}}}>Copy links</button></div>;
                     }
-                    return <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}><button className="btn btn-ghost btn-sm" onClick={()=>setSignDoc(d)} style={{color:'var(--accent)',padding:'2px 8px',fontSize:'12px'}}>\u270D Send for signature</button><button className="btn btn-ghost btn-sm" onClick={()=>signMyself(d)} style={{color:'var(--text-2)',padding:'2px 8px',fontSize:'12px'}}>Sign it yourself</button></div>;
+                    return <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}><button className="btn btn-ghost btn-sm" onClick={()=>setSignDoc(d)} style={{color:'var(--accent)',padding:'2px 8px',fontSize:'12px'}}>✍ Send for signature</button><button className="btn btn-ghost btn-sm" onClick={()=>signMyself(d)} style={{color:'var(--text-2)',padding:'2px 8px',fontSize:'12px'}}>Sign it yourself</button></div>;
                   })()}
                   {d.reviewer_note && <div style={{fontSize:'11px',color:'var(--text-2)',fontStyle:'italic'}}>Note: {d.reviewer_note}</div>}
                 </div>
@@ -13384,17 +13384,17 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
               <div style={{fontWeight:700,fontSize:'13px'}}>Disbursement readiness</div>
               {[['All required documents approved', reqItems.length>0 && reqDone===reqItems.length],['Closing Disclosure received', !!ov.cd_received],['Commission reconciled', commReconciled]].map((row,i)=>(
                 <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px'}}>
-                  <span style={{color: row[1]?'var(--green)':'var(--text-3)',fontWeight:700}}>{row[1]?'\u2713':'\u25cb'}</span>
+                  <span style={{color: row[1]?'var(--green)':'var(--text-3)',fontWeight:700}}>{row[1]?'✓':'○'}</span>
                   <span style={{color: row[1]?'var(--text-1)':'var(--text-2)'}}>{row[0]}</span>
                 </div>
               ))}
             </div>
             <div className="panel" style={{display:'grid',gap:'4px'}}>
               <div style={{fontWeight:700,fontSize:'13px',marginBottom:'4px'}}>Commission reconciliation</div>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px'}}><span style={{color:'var(--text-2)'}}>Expected (file)</span><span>{expectedComm!=null?money(expectedComm):'\u2014'}</span></div>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px'}}><span style={{color:'var(--text-2)'}}>Per Closing Disclosure</span><span>{cdComm!=null?money(cdComm):'\u2014'}</span></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px'}}><span style={{color:'var(--text-2)'}}>Expected (file)</span><span>{expectedComm!=null?money(expectedComm):'—'}</span></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px'}}><span style={{color:'var(--text-2)'}}>Per Closing Disclosure</span><span>{cdComm!=null?money(cdComm):'—'}</span></div>
               {commVariance!=null && <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px',fontWeight:700,color: commReconciled?'var(--green)':'var(--red)'}}><span>Variance</span><span>{commVariance>=0?'+':''}{money(commVariance)}</span></div>}
-              {cdComm==null && <div style={{fontSize:'12px',color:'var(--text-3)'}}>File the Closing Disclosure (or use \u201cExtract figures\u201d on it in Documents) to pull the commission.</div>}
+              {cdComm==null && <div style={{fontSize:'12px',color:'var(--text-3)'}}>File the Closing Disclosure (or use “Extract figures” on it in Documents) to pull the commission.</div>}
             </div>
             <div className="panel" style={{display:'grid',gap:'6px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div style={{fontWeight:700,fontSize:'13px'}}>Commission Disbursement Authorization</div><button className="btn btn-ghost btn-sm" onClick={copyCDA}>Copy</button></div>
@@ -13404,9 +13404,9 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
               {missingItems.length>0 && <button className="btn btn-ghost btn-sm" onClick={()=>setShowMissing(true)}>Request missing docs ({missingItems.length})</button>}
               {ov.status!=='paid'
                 ? <button className="btn btn-primary btn-sm" disabled={!readyToDisburse} onClick={markPaid} title={readyToDisburse?'':'Complete required docs + Closing Disclosure first'}>Mark paid</button>
-                : <span style={{fontSize:'13px',color:'var(--green)',fontWeight:700,alignSelf:'center'}}>\u2713 Paid {ov.paid_amount!=null?money(ov.paid_amount):''} {ov.paid_method?`via ${ov.paid_method}`:''} {ov.paid_at?`\u00B7 ${shortDate(ov.paid_at.slice(0,10))}`:''}</span>}
+                : <span style={{fontSize:'13px',color:'var(--green)',fontWeight:700,alignSelf:'center'}}>✓ Paid {ov.paid_amount!=null?money(ov.paid_amount):''} {ov.paid_method?`via ${ov.paid_method}`:''} {ov.paid_at?`· ${shortDate(ov.paid_at.slice(0,10))}`:''}</span>}
             </div>
-            {!readyToDisburse && ov.status!=='paid' && <div style={{fontSize:'12px',color:'var(--text-3)'}}>\u201cMark paid\u201d unlocks once required docs are approved and the Closing Disclosure is in.</div>}
+            {!readyToDisburse && ov.status!=='paid' && <div style={{fontSize:'12px',color:'var(--text-3)'}}>“Mark paid” unlocks once required docs are approved and the Closing Disclosure is in.</div>}
           </div>
         )}
 
@@ -13414,11 +13414,11 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
           <div style={{display:'grid',gap:'12px'}}>
             <label className="form-label">Agent on this deal
               <select className="form-input" value={cdaAgentId} onChange={e=>pickAgent(e.target.value)}>
-                <option value="">\u2014 select agent \u2014</option>
+                <option value="">— select agent —</option>
                 {cdaAgents.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </label>
-            {cdaAgentId && !cdaPlan && <div style={{fontSize:'12px',color:'var(--yellow)'}}>No active pay plan for this agent yet \u2014 add one in Brokerage. Calculations will be partial.</div>}
+            {cdaAgentId && !cdaPlan && <div style={{fontSize:'12px',color:'var(--yellow)'}}>No active pay plan for this agent yet — add one in Brokerage. Calculations will be partial.</div>}
 
             <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:'var(--accent)'}}>File financials</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
@@ -13454,18 +13454,18 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
 
             <div className="panel" style={{display:'grid',gap:'3px',background:'var(--bg-hover)'}}>
               <div style={{fontWeight:700,fontSize:'13px',marginBottom:'4px'}}>Live calculation</div>
-              {[['Total commission',money(cdaCalc.totalComm)],['Co-op brokerage GCI',money(cdaCalc.coopGci)],...(cdaCalc.referral?[['Referral out','\u2212 '+money(cdaCalc.referral)]]:[]),...(cdaCalc.royalty?[['Franchise/royalty','\u2212 '+money(cdaCalc.royalty)]]:[]),['ROG GCI',money(cdaCalc.gciNet)],['Agent gross'+(cdaCalc.split!=null?` (${cdaCalc.split}%)`:''),money(cdaCalc.agentGross)]].map((r,i)=>(
+              {[['Total commission',money(cdaCalc.totalComm)],['Co-op brokerage GCI',money(cdaCalc.coopGci)],...(cdaCalc.referral?[['Referral out','− '+money(cdaCalc.referral)]]:[]),...(cdaCalc.royalty?[['Franchise/royalty','− '+money(cdaCalc.royalty)]]:[]),['ROG GCI',money(cdaCalc.gciNet)],['Agent gross'+(cdaCalc.split!=null?` (${cdaCalc.split}%)`:''),money(cdaCalc.agentGross)]].map((r,i)=>(
                 <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>{r[0]}</span><span style={{fontWeight:i===4||i===5?700:400}}>{r[1]}</span></div>
               ))}
-              {cdaCalc.disclosedFees.map((x,i)=><div key={'f'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--red)'}}><span>{x.label}</span><span>\u2212 {money(x.amount)}</span></div>)}
-              {cdaCalc.contrib.map((x,i)=><div key={'c'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text-3)'}}><span>Routed: {x.label}</span><span>\u2212 {money(x.amount)}</span></div>)}
+              {cdaCalc.disclosedFees.map((x,i)=><div key={'f'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--red)'}}><span>{x.label}</span><span>− {money(x.amount)}</span></div>)}
+              {cdaCalc.contrib.map((x,i)=><div key={'c'+i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text-3)'}}><span>Routed: {x.label}</span><span>− {money(x.amount)}</span></div>)}
               <div style={{display:'flex',justifyContent:'space-between',fontSize:'14px',fontWeight:800,color:'var(--green)',borderTop:'1px solid var(--border)',marginTop:'4px',paddingTop:'4px'}}><span>Net cash to agent</span><span>{money(cdaCalc.agentCash)}</span></div>
-              {cdaPlan?.split_type==='cap' && num(cdaPlan?.cap_amount)!=null && <div style={{fontSize:'11px',color:cdaCalc.capNote?'var(--accent)':'var(--text-3)',marginTop:'4px'}}>Cap: {money(cdaCapYtd)} / {money(num(cdaPlan.cap_amount))} company dollar YTD{cdaCalc.capNote?` \u00B7 ${cdaCalc.capNote}`:''}</div>}
+              {cdaPlan?.split_type==='cap' && num(cdaPlan?.cap_amount)!=null && <div style={{fontSize:'11px',color:cdaCalc.capNote?'var(--accent)':'var(--text-3)',marginTop:'4px'}}>Cap: {money(cdaCapYtd)} / {money(num(cdaPlan.cap_amount))} company dollar YTD{cdaCalc.capNote?` · ${cdaCalc.capNote}`:''}</div>}
             </div>
 
             {(cdaCalc.hiddenFees.length>0 || cdaCalc.profitShare>0) && (
               <div className="panel" style={{display:'grid',gap:'3px',border:'1px dashed var(--text-3)'}}>
-                <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)'}}>Internal only \u2014 not on CDA</div>
+                <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)'}}>Internal only — not on CDA</div>
                 {cdaCalc.profitShare>0 && <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>Profit share to upline{uplineObj?` (${uplineObj.name})`:''}</span><span>{money(cdaCalc.profitShare)}</span></div>}
                 {cdaCalc.hiddenFees.map((x,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:'12px'}}><span style={{color:'var(--text-2)'}}>{x.label} (hidden)</span><span>{money(x.amount)}</span></div>)}
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text-3)'}}><span>Company dollar retained</span><span>{money(cdaCalc.companyDollar)}</span></div>
@@ -13474,7 +13474,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
 
             <div style={{display:'flex',justifyContent:'flex-end',gap:'8px'}}>
               <button className="btn btn-ghost" onClick={saveCda}>Save inputs</button>
-              <button className="btn btn-primary" onClick={generateCda} disabled={cdaBusy}>{cdaBusy?'Generating\u2026':'Generate CDA'}</button>
+              <button className="btn btn-primary" onClick={generateCda} disabled={cdaBusy}>{cdaBusy?'Generating…':'Generate CDA'}</button>
             </div>
           </div>
         )}
@@ -13488,7 +13488,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
                 </select>
                 <input className="form-input" value={pSearch} onChange={e=>setPSearch(e.target.value)} placeholder="Search contacts or type a name"/>
               </div>
-              {partyMatches.length>0 && <div style={{display:'grid',gap:'4px'}}>{partyMatches.map(c=><button key={c.id} className="btn btn-ghost btn-sm" style={{justifyContent:'flex-start',textAlign:'left'}} onClick={()=>addParty(c)}>{c.name}{c.company?` \u00B7 ${c.company}`:''}</button>)}</div>}
+              {partyMatches.length>0 && <div style={{display:'grid',gap:'4px'}}>{partyMatches.map(c=><button key={c.id} className="btn btn-ghost btn-sm" style={{justifyContent:'flex-start',textAlign:'left'}} onClick={()=>addParty(c)}>{c.name}{c.company?` · ${c.company}`:''}</button>)}</div>}
               <button className="btn btn-primary btn-sm" onClick={()=>addParty(null)} style={{justifySelf:'start'}}>+ Add party</button>
             </div>
             {parties.length===0 && <div style={{color:'var(--text-2)',fontSize:'13px'}}>No parties added.</div>}
@@ -13520,7 +13520,7 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
       {selfSign && (
         <div className="modal-overlay" style={{zIndex:2400,padding:'12px'}}>
           <div style={{position:'relative',width:'100%',maxWidth:'660px',maxHeight:'94vh',overflowY:'auto',borderRadius:'12px'}}>
-            <button className="modal-close" style={{position:'absolute',top:10,right:12,zIndex:3,background:'rgba(0,0,0,.4)',borderRadius:'50%'}} onClick={closeSelfSign}>\u00d7</button>
+            <button className="modal-close" style={{position:'absolute',top:10,right:12,zIndex:3,background:'rgba(0,0,0,.4)',borderRadius:'50%'}} onClick={closeSelfSign}>×</button>
             <SignPortal token={selfSign}/>
           </div>
         </div>
@@ -13909,7 +13909,7 @@ function AppMain() {
       { label: '+ Add agent', view: 'agents', icon: 'recruiting' },
       { label: 'Set up agent profile', view: 'agents', icon: 'clipboard' },
       { label: 'Commission plan & GCI goal', built: false, icon: 'target' },
-      { label: 'Commission earned \u00b7 on track?', built: false, icon: 'chart' },
+      { label: 'Commission earned · on track?', built: false, icon: 'chart' },
       { label: 'DISC & lead systems deployed', built: false, icon: 'signal' },
       { label: 'Company leads', built: false, icon: 'gift' },
       { label: 'Oversight / accountability', built: false, icon: 'eye' },
@@ -13920,14 +13920,14 @@ function AppMain() {
   const teamGroup = { label: 'Team', icon: 'users', children: [
     { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
     { label: 'Team roster', view: 'agents', icon: 'users', children: [
-      { label: 'Commission earned \u00b7 on track?', built: false, icon: 'chart' },
+      { label: 'Commission earned · on track?', built: false, icon: 'chart' },
       { label: 'DISC & lead systems deployed', built: false, icon: 'signal' },
       { label: 'Company leads', built: false, icon: 'gift' },
       { label: 'Oversight / accountability', built: false, icon: 'eye' },
     ] },
   ] };
   const MENU = [
-    // Quick access \u2014 the daily drivers
+    // Quick access — the daily drivers
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
     { label: 'My numbers', view: 'numbers', icon: 'chart' },
     { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
@@ -13977,7 +13977,7 @@ function AppMain() {
     ] },
     // Role-gated tab (admin -> Brokerage, team leader -> Team, agent -> neither)
     ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
-    // Setup & settings \u2014 mostly one-time
+    // Setup & settings — mostly one-time
     { label: 'Get started', icon: 'star', ai: true, children: [
       { label: 'DISC / Grit test', built: false, icon: 'bulb' },
       { label: 'My Prism profile', view: 'prism', icon: 'prism' },
@@ -14035,7 +14035,7 @@ function AppMain() {
           {(ptrPull > 0 || ptrBusy) && (
             <div className="ptr-indicator" style={{ height: ptrBusy ? 40 : ptrPull, opacity: ptrBusy ? 1 : Math.min(ptrPull / PTR_THRESHOLD, 1) }}>
               <span className={'ptr-spinner' + (ptrBusy ? ' spin' : '')} style={!ptrBusy ? { transform: `rotate(${(ptrPull / PTR_THRESHOLD) * 180}deg)` } : undefined} />
-              <span>{ptrBusy ? 'Refreshing\u2026' : (ptrPull >= PTR_THRESHOLD ? 'Release to refresh' : 'Pull to refresh')}</span>
+              <span>{ptrBusy ? 'Refreshing…' : (ptrPull >= PTR_THRESHOLD ? 'Release to refresh' : 'Pull to refresh')}</span>
             </div>
           )}
           {gmailConnectedFlash && (
