@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v144-20260628-contact-modal-scroll'
+const VERSION = 'prismos-v145-20260628-back-closes-modal'
 const APP_SHELL = [
   '/',
   '/index.html',
