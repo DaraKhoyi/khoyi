@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v138-20260627-type-classes'
+const VERSION = 'prismos-v139-20260627-planday-sticky'
 const APP_SHELL = [
   '/',
   '/index.html',

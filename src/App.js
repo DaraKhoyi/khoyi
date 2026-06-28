@@ -2855,6 +2855,18 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [], light: lightDay, constraint: effCon, flags: data?.flags || [] });
+      // Persist the generated plan right away so leaving and returning restores it (no regenerate, no tokens).
+      // We only link to tasks/contacts that already exist (no task creation, no calendar writes — those stay on Accept).
+      try {
+        const genItems = (data?.plan || []).map(p => {
+          const tRef = (p.refs || []).find(r => mapsRef.current.tasks.has(r));
+          const tt = tRef ? mapsRef.current.tasks.get(tRef) : null;
+          const cRef = (p.refs || []).find(r => mapsRef.current.contacts.has(r));
+          const cc = cRef ? mapsRef.current.contacts.get(cRef) : null;
+          return { title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: tt ? tt.id : null, contactId: cc ? cc.id : null };
+        });
+        if (genItems.length) await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: data?.summary, items: genItems, updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
+      } catch (_save) {}
     } catch (e) { if (mounted.current) setState({ loading: false, error: String(e.message || e) }); }
   };
 
@@ -2865,6 +2877,11 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       try {
         const { data: today } = await supabase.from('day_plans').select('*').eq('user_id', userId).eq('plan_date', todayISO()).maybeSingle();
         if (today && Array.isArray(today.items) && today.items.length) {
+          if (mounted.current) {
+            const tmap = new Map(), cmap = new Map(), emap = new Map();
+            (today.items || []).forEach(it => { const key = (it.refs || [])[0]; if (!key) return; if (it.taskId) { const tt = (tasks || []).find(x => x.id === it.taskId); if (tt) { tmap.set(key, tt); return; } } if (it.contactId) { const cc = (contacts || []).find(x => x.id === it.contactId); if (cc) cmap.set(key, cc); } });
+            mapsRef.current = { tasks: tmap, contacts: cmap, emails: emap };
+          }
           if (mounted.current) setState({ loading: false, mode: 'saved', summary: today.summary, plan: today.items });
           if (mounted.current && today.review) setReview(r => ({ ...r, mood: today.review.mood || '', note: today.review.note || '', recap: today.review.recap || '', saved: true }));
           return;
@@ -2933,7 +2950,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       let inserted = [];
       if (createPayload.length) { const { data } = await supabase.from('tasks').insert(createPayload).select(); inserted = data || []; }
       createIdx.forEach((idx, k) => { if (inserted[k]) plan[idx].taskId = inserted[k].id; });
-      const items = plan.map(p => ({ title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null }));
+      const items = plan.map(p => { const cRef = (p.refs || []).find(r => mapsRef.current.contacts.has(r)); const cc = cRef ? mapsRef.current.contacts.get(cRef) : null; return { title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null, contactId: cc ? cc.id : null }; });
       await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: state.summary, items, updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
       // #6 — calendar write-back: drop the timed focus blocks onto the calendar (pushes to Google on next sync)
       let calN = 0;
