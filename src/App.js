@@ -2734,6 +2734,18 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
   const mapsRef = useRef({ tasks: new Map(), contacts: new Map(), emails: new Map() });
   const mounted = useRef(true);
   const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  // Fingerprint of the inputs that drive a plan (today/top-priority tasks + today's events).
+  // Deliberately ignores completion state, so checking off steps never marks the plan stale.
+  const inputsSig = () => {
+    const tISO = todayISO();
+    const sel = new Map();
+    (tasks || []).filter(t => t.due_date && t.due_date <= tISO).forEach(t => sel.set(t.id, t));
+    (tasks || []).filter(t => isTopPriority(t)).forEach(t => { if (!sel.has(t.id)) sel.set(t.id, t); });
+    const tpart = Array.from(sel.values()).map(t => `${t.id}:${t.due_date || ''}:${priorityLabel(t)}`).sort().join(',');
+    const td = new Date();
+    const epart = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === td.toDateString()).map(e => `${e.title}|${e.start_at}|${e.end_at || ''}`).sort().join(',');
+    return `T[${tpart}]E[${epart}]`;
+  };
 
   // Build inputs and ask the planner for a fresh sequence.
   // conArg (optional): a re-plan constraint like "Only 2 hours" / "Out until noon".
@@ -2865,7 +2877,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
           const cc = cRef ? mapsRef.current.contacts.get(cRef) : null;
           return { title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: tt ? tt.id : null, contactId: cc ? cc.id : null };
         });
-        if (genItems.length) await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: data?.summary, items: genItems, updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
+        if (genItems.length) await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: data?.summary, items: genItems, inputs_sig: inputsSig(), updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
       } catch (_save) {}
     } catch (e) { if (mounted.current) setState({ loading: false, error: String(e.message || e) }); }
   };
@@ -2882,7 +2894,8 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
             (today.items || []).forEach(it => { const key = (it.refs || [])[0]; if (!key) return; if (it.taskId) { const tt = (tasks || []).find(x => x.id === it.taskId); if (tt) { tmap.set(key, tt); return; } } if (it.contactId) { const cc = (contacts || []).find(x => x.id === it.contactId); if (cc) cmap.set(key, cc); } });
             mapsRef.current = { tasks: tmap, contacts: cmap, emails: emap };
           }
-          if (mounted.current) setState({ loading: false, mode: 'saved', summary: today.summary, plan: today.items });
+          let stale = false; try { stale = !!today.inputs_sig && today.inputs_sig !== inputsSig(); } catch (_s) {}
+          if (mounted.current) setState({ loading: false, mode: 'saved', summary: today.summary, plan: today.items, savedAt: today.updated_at || null, stale });
           if (mounted.current && today.review) setReview(r => ({ ...r, mood: today.review.mood || '', note: today.review.note || '', recap: today.review.recap || '', saved: true }));
           return;
         }
@@ -2951,7 +2964,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       if (createPayload.length) { const { data } = await supabase.from('tasks').insert(createPayload).select(); inserted = data || []; }
       createIdx.forEach((idx, k) => { if (inserted[k]) plan[idx].taskId = inserted[k].id; });
       const items = plan.map(p => { const cRef = (p.refs || []).find(r => mapsRef.current.contacts.has(r)); const cc = cRef ? mapsRef.current.contacts.get(cRef) : null; return { title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null, contactId: cc ? cc.id : null }; });
-      await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: state.summary, items, updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
+      await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: state.summary, items, inputs_sig: inputsSig(), updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
       // #6 — calendar write-back: drop the timed focus blocks onto the calendar (pushes to Google on next sync)
       let calN = 0;
       if (pushCal) {
@@ -3296,6 +3309,15 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
                 </div>
               )}
               {state.summary && <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, fontWeight: 500 }}>{state.summary}</p>}
+              {saved && state.savedAt && (() => {
+                const hhmm = new Date(state.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                return (
+                  <div style={{ margin: '-6px 0 14px', fontSize: 11.5, color: state.stale ? '#d9a93a' : 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.5 }}>
+                    <span>Saved {hhmm}{state.stale ? '' : ' \u00b7 up to date'}</span>
+                    {state.stale && (<><span>\u00b7 your tasks or calendar changed since</span><button onClick={() => { setConInput(''); generateFresh(''); }} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, textDecoration: 'underline', padding: 0, fontSize: 11.5 }}>\u21bb Re-plan</button></>)}
+                  </div>
+                );
+              })()}
               {state.light && (state.plan || []).length > 0 && (
                 <div style={{ marginBottom: 14, background: 'var(--accent-glow)', border: '1px solid var(--accent-dim)', borderRadius: 10, padding: '9px 12px', fontSize: 12, color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name="bulb" size={13} /><span><strong style={{ color: 'var(--accent)' }}>Light day</strong> — Ari added pipeline-protection time so a quiet day doesn't go to waste.</span>
