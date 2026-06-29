@@ -13985,7 +13985,7 @@ function AppMain() {
       { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
       { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
       { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
-      { label: 'Recruiting', view: 'recruiting', icon: 'recruiting' },
+      ...((isAdmin || isTeamLeader) ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
     ] },
     { label: 'Grow my pipeline', icon: 'target', children: [
       { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
