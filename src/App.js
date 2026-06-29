@@ -68,6 +68,7 @@ const DealsView = lazyWithReload(() => import('./views/DealsView'));
 const BrainView = lazyWithReload(() => import('./views/BrainView'));
 const TrackerView = lazyWithReload(() => import('./views/TrackerView'));
 const PrismView = lazyWithReload(() => import('./views/PrismView'));
+const DiscAssessmentView = lazyWithReload(() => import('./views/DiscAssessmentView'));
 
 const NotesView = lazyWithReload(() => import('./views/NotesView'));
 
@@ -14016,7 +14017,7 @@ function AppMain() {
     ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
     // Setup & settings — mostly one-time
     { label: 'Get started', icon: 'star', ai: true, children: [
-      { label: 'DISC / Grit test', built: false, icon: 'bulb' },
+      { label: 'DISC / Grit test', view: 'disc_test', icon: 'bulb' },
       { label: 'My Prism profile', view: 'prism', icon: 'prism' },
       { label: 'Voice card / memory', view: 'prism', icon: 'mic' },
       { label: 'Business questionnaire', built: false, icon: 'clipboard' },
@@ -14113,6 +14114,7 @@ function AppMain() {
               : view==='journal'     ? <JournalView userId={user.id}/>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
+              : view==='disc_test'   ? <DiscAssessmentView userId={user.id} user={user}/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
