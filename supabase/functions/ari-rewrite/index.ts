@@ -64,6 +64,23 @@ function buildIntel(profile: any, discLabel: string): string {
   return `\n\n=== WHAT I KNOW ABOUT THIS PERSON (use to shape tone and pick a genuine, relevant angle — never copy verbatim, never imply you "researched" them, never force a detail that doesn't fit) ===\n${lines.join("\n")}`;
 }
 
+// Loads the calling agent's ACTIVE personal voice card (MyVoice). Returns null for
+// users without one (e.g. Dara), preserving the default house-voice behavior.
+async function loadVoice(req: Request): Promise<{ body: string; name: string | null } | null> {
+  try {
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token) return null;
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) return null;
+    const { data: vc } = await supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1);
+    if (!vc || !vc[0] || !vc[0].body) return null;
+    let name: string | null = null;
+    try { const { data: ag } = await supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(); if (ag && ag.name) name = ag.name; } catch (_) {}
+    return { body: vc[0].body as string, name };
+  } catch (_) { return null; }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const J = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -100,7 +117,13 @@ serve(async (req) => {
       ? `\n\nThis message is in response to the following — make sure the rewrite fits it naturally:\n"""${String(b.source_text).slice(0, 1500)}"""`
       : "";
 
-    const system = `You are Ari, refining a message that Dara — a Tampa Bay real-estate broker and investor — is about to send to ${who}. Rewrite the DRAFT in Dara's voice: professional but warm, relationship-forward, concise, confident; never stiff or generic.
+    const voice = await loadVoice(req);
+    const senderName = (voice && voice.name) || "Dara";
+    const personaIntro = voice
+      ? `You are Ari, refining a message that ${senderName} — a real-estate agent — is about to send to ${who}. Rewrite the DRAFT in ${senderName}'s own voice, captured here and authoritative on tone, phrasing, rhythm, word choice, and sign-off:\n"""${voice.body}"""\nThe brokerage house voice — warm, savvy, lead with the answer, plain language, no clichés, one concrete next step, never salesy or AI-sounding — is the floor; ${senderName}'s voice above rides on top and wins wherever they differ.`
+      : `You are Ari, refining a message that Dara — a Tampa Bay real-estate broker and investor — is about to send to ${who}. Rewrite the DRAFT in Dara's voice: professional but warm, relationship-forward, concise, confident; never stiff or generic.`;
+
+    const system = `${personaIntro}
 Hard rules:
 - Preserve the draft's intent, every fact, and its medium. ${isText ? "Keep it a short SMS-style text; no subject line, no formal signature." : "Keep it an email body; do NOT add a subject line."} Keep it roughly the same length.
 - Do NOT invent facts, figures, dollar amounts, dates, or commitments that aren't in the draft (or the context provided).

@@ -53,6 +53,23 @@ function buildIntel(profile: any): string {
   return `\n\n=== WHAT I KNOW ABOUT THIS PERSON (use to shape tone and pick a genuine, relevant angle — never copy verbatim, never imply you "researched" them, never force a detail that doesn't fit) ===\n${lines.join("\n")}`;
 }
 
+// Loads the calling agent's ACTIVE personal voice card (MyVoice). Returns null for
+// users without one, preserving default behavior.
+async function loadVoice(req: Request): Promise<{ body: string; name: string | null } | null> {
+  try {
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token) return null;
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) return null;
+    const { data: vc } = await supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1);
+    if (!vc || !vc[0] || !vc[0].body) return null;
+    let name: string | null = null;
+    try { const { data: ag } = await supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(); if (ag && ag.name) name = ag.name; } catch (_) {}
+    return { body: vc[0].body as string, name };
+  } catch (_) { return null; }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -61,6 +78,11 @@ serve(async (req) => {
     const isText = channel === "text";
     const who = b.contactName || "the contact";
     const sender = b.senderName || "Dara";
+    const voice = await loadVoice(req);
+    const senderName = (voice && voice.name) || sender;
+    const voiceIntro = voice
+      ? `You draft follow-up messages for ${senderName}, a real-estate agent. Write in ${senderName}'s own voice, captured here and authoritative on tone, phrasing, rhythm, word choice, and sign-off:\n"""${voice.body}"""\nThe brokerage house voice — warm, savvy, lead with the answer, plain language, no clichés, one concrete next step, never salesy or AI-sounding — is the floor; ${senderName}'s voice above rides on top and wins wherever they differ.`
+      : `You draft follow-up messages for ${senderName}, a Tampa Bay real-estate broker and investor. Voice: professional but warm, relationship-forward, concise, and confident — never stiff, never generic filler.`;
     const recent: string[] = Array.isArray(b.recentNotes) ? b.recentNotes.filter(Boolean).slice(0, 6) : [];
     const ctx = recent.length ? `\n\nRecent history with this person (most recent first):\n${recent.map((n) => `- ${n}`).join("\n")}` : "";
 
@@ -82,10 +104,10 @@ serve(async (req) => {
       } catch (_) { /* non-fatal: draft without intel */ }
     }
 
-    const system = `You draft follow-up messages for ${sender}, a Tampa Bay real-estate broker and investor. Voice: professional but warm, relationship-forward, concise, and confident — never stiff, never generic filler.
+    const system = `${voiceIntro}
 Write a ${isText
       ? "short SMS text message: 1-3 sentences, casual but professional, no subject line, no formal signature block."
-      : `follow-up email: include a clear subject line, keep the body tight (2-4 short paragraphs), and sign off simply as "${sender}".`}
+      : `follow-up email: include a clear subject line, keep the body tight (2-4 short paragraphs), and sign off simply as "${senderName}".`}
 ${intel ? "Adapt the tone and pick your angle using the recipient knowledge provided in the user message. The goal is a message that feels personally written for THIS person — mirror how they communicate, and lean on something they genuinely care about when it fits naturally. Subtlety wins; do not stuff in facts about them." : ""}
 Ground the message in the activity being followed up. Do NOT invent facts, figures, dollar amounts, commitments, or dates that aren't supported by the provided details. If a next step was implied, reinforce it concretely.
 Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "<subject, or empty string for a text>", "body": "<the message>"}`;
