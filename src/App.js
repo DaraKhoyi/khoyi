@@ -13936,7 +13936,7 @@ function AppMain() {
   const viewInMore = moreNav.some(i => i.id === view);
 
   // Master menu (mirrors the menu plan PDF). White = built & working; greyed "soon" = not built yet.
-  const builtSet = new Set(NAV.map(i => i.id));
+  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster']);
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
