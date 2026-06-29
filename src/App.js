@@ -3,23 +3,19 @@ import { createPortal } from 'react-dom';
 import { supabase } from './dataService';
 
 // --- Hardware/gesture BACK button closes the top modal instead of leaving the PWA ---
-// Each modal calls useBackClose(onClose). On open we push a history entry; Android back
-// fires popstate -> we close the modal (staying in the app). Closing via the UI cleans up
-// the pushed entry. A module-level suppress flag keeps a UI-close from cascading to modals
-// underneath it when several are stacked.
-let __prismSuppressPop = false;
+// A modal calls useBackClose(onClose) to register its close handler in a shared LIFO
+// stack while it is mounted. The SINGLE back/popstate handler (the app-root guard, see
+// __prismModalCloseStack usage below) closes the top registered modal on back and only
+// asks to exit the app when no modals are open. The hook itself does NOT touch history or
+// add its own popstate listener — that avoids the old double-handler conflict where
+// closing a modal via the UI spuriously triggered the "Exit Prism?" prompt.
+export const __prismModalCloseStack = [];
 export function useBackClose(onClose) {
   const __cb = useRef(onClose); __cb.current = onClose;
   useEffect(() => {
-    if (typeof __cb.current !== 'function') return;
-    try { window.history.pushState({ __prismModal: true }, ''); } catch (_e) {}
-    let viaPop = false;
-    const onPop = () => { if (__prismSuppressPop) return; viaPop = true; try { __cb.current && __cb.current(); } catch (_e) {} };
-    window.addEventListener('popstate', onPop);
-    return () => {
-      window.removeEventListener('popstate', onPop);
-      if (!viaPop) { __prismSuppressPop = true; try { window.history.back(); } catch (_e) {} setTimeout(() => { __prismSuppressPop = false; }, 0); }
-    };
+    const entry = { close: () => { try { __cb.current && __cb.current(); } catch (_e) {} } };
+    __prismModalCloseStack.push(entry);
+    return () => { const i = __prismModalCloseStack.lastIndexOf(entry); if (i !== -1) __prismModalCloseStack.splice(i, 1); };
   }, []);
 }
 import { logJournalEntry } from './lib/journalLog';
@@ -13683,14 +13679,11 @@ function AppMain() {
   useEffect(() => {
     try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
     const onPop = async (e) => {
-      // If a modal overlay is on screen, close it first instead of asking to exit
-      const modal = document.querySelector('.modal-overlay');
-      if (modal) {
+      // If any modal is open, close the top one and stay in the app.
+      if (__prismModalCloseStack.length) {
+        const top = __prismModalCloseStack[__prismModalCloseStack.length - 1];
         try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
-        // Click the overlay's close button if present, else dispatch Escape
-        const closeBtn = modal.querySelector('.modal-close');
-        if (closeBtn) closeBtn.click();
-        else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        try { top.close(); } catch(_) {}
         return;
       }
       const ok = await confirmDialog('Exit Prism? Tap Cancel to stay.');
