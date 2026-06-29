@@ -2670,7 +2670,7 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
     if(c.last_communication_direction!=='inbound' || !c.last_inbound_at) return;
     const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0;
     if(lin<=lout) return; const days=Math.floor((now-lin)/86400000);
-    out.push({ key:'reply:'+c.id, score:100+Math.min(days*4,48), tag:'reply', icon:'reply', title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'view', payload:'messages' } });
+    out.push({ key:'reply:'+c.id, score:100+Math.min(days*4,48), tag:'reply', icon:'reply', title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'view', payload:'inbox' } });
   });
   events.forEach(e=>{ if(!e.start_at||e.all_day) return; const st=new Date(e.start_at).getTime(); const dh=(st-now)/3600000;
     if(dh>=-1 && dh<=24){ out.push({ key:'appt:'+(e.id||e.start_at), score:96+(dh<2?6:0), tag:'appt', icon:'calendar', title:'Prep for: '+(e.title||'appointment'), why:'Starts '+(dh<1?'soon':'in about '+Math.round(dh)+'h')+' — confirm details and prepare', cta:{ label:'Calendar', kind:'view', payload:'calendar' } }); } });

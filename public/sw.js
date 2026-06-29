@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v152-20260629-recruiting-access'
+const VERSION = 'prismos-v153-20260629-nba-open-fix'
 const APP_SHELL = [
   '/',
   '/index.html',
