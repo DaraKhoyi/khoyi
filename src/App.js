@@ -70,6 +70,8 @@ const TrackerView = lazyWithReload(() => import('./views/TrackerView'));
 const PrismView = lazyWithReload(() => import('./views/PrismView'));
 const DiscAssessmentView = lazyWithReload(() => import('./views/DiscAssessmentView'));
 const DiscRosterView = lazyWithReload(() => import('./views/DiscRosterView'));
+const MyVoiceView = lazyWithReload(() => import('./views/MyVoiceView'));
+const VoiceRosterView = lazyWithReload(() => import('./views/VoiceRosterView'));
 
 const NotesView = lazyWithReload(() => import('./views/NotesView'));
 
@@ -13936,7 +13938,7 @@ function AppMain() {
   const viewInMore = moreNav.some(i => i.id === view);
 
   // Master menu (mirrors the menu plan PDF). White = built & working; greyed "soon" = not built yet.
-  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster']);
+  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster']);
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
@@ -13945,6 +13947,7 @@ function AppMain() {
     { label: 'Team & sharing', view: 'team', icon: 'users' },
     { label: 'Contact types', view: 'contact_types', icon: 'clipboard' },
     { label: 'Agent DISC readouts', view: 'disc_roster', icon: 'bulb' },
+    { label: 'Agent voice cards', view: 'voice_roster', icon: 'mic' },
     { label: 'Agent roster', view: 'agents', icon: 'users', children: [
       { label: '+ Add agent', view: 'agents', icon: 'recruiting' },
       { label: 'Set up agent profile', view: 'agents', icon: 'clipboard' },
@@ -14020,6 +14023,7 @@ function AppMain() {
     // Setup & settings — mostly one-time
     { label: 'Get started', icon: 'star', ai: true, children: [
       { label: 'DISC / Grit test', view: 'disc_test', icon: 'bulb' },
+      { label: 'MyVoice', view: 'myvoice', icon: 'mic' },
       { label: 'My Prism profile', view: 'prism', icon: 'prism' },
       { label: 'Voice card / memory', view: 'prism', icon: 'mic' },
       { label: 'Business questionnaire', built: false, icon: 'clipboard' },
@@ -14118,6 +14122,8 @@ function AppMain() {
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
               : view==='disc_test'   ? <DiscAssessmentView userId={user.id} user={user} profiles={profiles} setProfiles={setProfiles}/>
               : view==='disc_roster' ? <DiscRosterView/>
+              : view==='myvoice'     ? <MyVoiceView userId={user.id} user={user} voiceCards={voiceCards} setVoiceCards={setVoiceCards}/>
+              : view==='voice_roster'? <VoiceRosterView/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
