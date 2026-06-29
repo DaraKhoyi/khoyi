@@ -1,0 +1,82 @@
+// email-reply-draft
+// Drafts an email reply on behalf of the signed-in agent, adapted to the recipient's
+// DISC style. Now layers the calling agent's ACTIVE personal voice card (MyVoice) on
+// top of the brokerage house voice; falls back to the default house voice when the
+// agent has no personal card. Request/response contract preserved exactly.
+//
+// POST { sender_name?, recipient_name?|from_name?, original_subject?, original_body?,
+//        disc_primary?, disc_secondary?, disc_rationale? }
+// -> { draft: string, disc: string|null } | { error: string }
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+const MODEL = "claude-sonnet-4-6";
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const DISC_GUIDE: Record<string, string> = {
+  D: "Direct and bottom-line-first. Lead with the answer or decision. Keep it short. Offer clear options. Skip small talk.",
+  I: "Warm, upbeat and personable. A little light rapport up front, then get to the point. Friendly and encouraging.",
+  S: "Friendly and reassuring; relationship-first. Patient, no pressure. Acknowledge them and keep it steady and kind.",
+  C: "Precise and specific. Give the relevant facts, details, next steps and dates. Logical and accurate. No hype.",
+};
+
+// Loads the calling agent's ACTIVE personal voice card (MyVoice). Returns null for
+// users without one, preserving default behavior.
+async function loadVoice(req: Request): Promise<{ body: string; name: string | null } | null> {
+  try {
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token) return null;
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) return null;
+    const { data: vc } = await supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1);
+    if (!vc || !vc[0] || !vc[0].body) return null;
+    let name: string | null = null;
+    try { const { data: ag } = await supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(); if (ag && ag.name) name = ag.name; } catch (_) {}
+    return { body: vc[0].body as string, name };
+  } catch (_) { return null; }
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  try {
+    const b = await req.json().catch(() => ({}));
+    const sender = (b.sender_name || "Dara").toString();
+    const recipient = (b.recipient_name || b.from_name || "there").toString();
+    const subject = (b.original_subject || "").toString().slice(0, 300);
+    const body = (b.original_body || "").toString().slice(0, 6000);
+    const dp = (b.disc_primary || "").toString().toUpperCase().slice(0, 1);
+    const ds = (b.disc_secondary || "").toString().toUpperCase().slice(0, 1);
+    const rationale = (b.disc_rationale || "").toString().slice(0, 600);
+
+    let discLine = "No DISC profile is available — use a balanced, professional tone.";
+    if (dp && DISC_GUIDE[dp]) {
+      discLine = `Recipient's DISC style is ${dp}${ds ? "/" + ds : ""}. Primary (${dp}): ${DISC_GUIDE[dp]}`;
+      if (ds && DISC_GUIDE[ds]) discLine += ` Secondary (${ds}): ${DISC_GUIDE[ds]}`;
+      if (rationale) discLine += ` Context on them: ${rationale}`;
+    }
+
+    const voice = await loadVoice(req);
+    const senderName = (voice && voice.name) || sender;
+    const system = voice
+      ? `You draft an email reply on behalf of ${senderName}, a real-estate agent, in their OWN voice — captured here and authoritative on tone, phrasing, rhythm, word choice, and sign-off:\n"""${voice.body}"""\nThe brokerage house voice (warm, clear, professional, concise, human, no clichés) is the floor; ${senderName}'s voice above rides on top and wins wherever they differ. Write ONLY the reply body as plain text, ready to send: no subject line, no "Re:", no quoted original, no email headers. Keep it appropriately brief and genuinely responsive to what the email actually asks. Adapt to the recipient's DISC communication style. Output ONLY the reply text.`
+      : `You draft an email reply on behalf of ${senderName}, a Tampa Bay real-estate broker, in their voice: warm, clear, professional, concise, and human — no corporate fluff, no clichés. Write ONLY the reply body as plain text, ready to send: no subject line, no "Re:", no quoted original, no email headers. A short natural sign-off like "Best,\n${senderName}" is fine. Keep it appropriately brief and genuinely responsive to what the email actually asks. Adapt the tone to the recipient's DISC communication style. Output ONLY the reply text.`;
+
+    const userMsg = `Recipient: ${recipient}\n${discLine}\n\nThe email ${senderName} received (from ${b.from_name || recipient}), subject "${subject}":\n---\n${body || "(no body)"}\n---\n\nWrite ${senderName}'s reply now.`;
+
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: MODEL, max_tokens: 700, system, messages: [{ role: "user", content: userMsg }] }),
+    });
+    const data = await r.json();
+    const draft = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
+    return new Response(JSON.stringify({ draft, disc: dp || null }), { headers: { ...cors, "content-type": "application/json" } });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String((e as any)?.message || e) }), { status: 200, headers: { ...cors, "content-type": "application/json" } });
+  }
+});
