@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v151-20260628-myvoice'
+const VERSION = 'prismos-v152-20260629-recruiting-access'
 const APP_SHELL = [
   '/',
   '/index.html',
