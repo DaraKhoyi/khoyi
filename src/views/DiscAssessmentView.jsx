@@ -211,7 +211,7 @@ function buildReadout({ name, style, drive, styleLbl, validityFlag }){
 /* ============================================================
    COMPONENT
    ============================================================ */
-export default function DiscAssessmentView({ userId, user }) {
+export default function DiscAssessmentView({ userId, user, profiles, setProfiles }) {
   const seedName = (user?.user_metadata?.full_name || user?.user_metadata?.name || (user?.email ? user.email.split('@')[0] : '') || '').replace(/\b\w/g, c => c.toUpperCase());
   const [phase, setPhase] = useState('loading');     // loading|intro|style|drive|computing|results
   const [name, setName] = useState(seedName);
@@ -255,6 +255,36 @@ export default function DiscAssessmentView({ userId, user }) {
     });
   }
 
+  async function syncOwnerProfile(natural, adaptive, drive) {
+    // Feed the natural baseline into the agent's own ('owner') Prism profile so the
+    // rest of the app (DISC-aware tools) knows their stable behavioral baseline.
+    try {
+      const arr = Object.entries(natural).sort((a,b)=>b[1]-a[1]);
+      const primary = arr[0][0];
+      const secondary = arr[1] && arr[1][0] !== primary ? arr[1][0] : null;
+      const nowIso = new Date().toISOString();
+      const base = {
+        d_score: natural.D, i_score: natural.I, s_score: natural.S, c_score: natural.C,
+        primary_letter: primary, secondary_letter: secondary,
+        baseline_d_score: natural.D, baseline_i_score: natural.I, baseline_s_score: natural.S, baseline_c_score: natural.C,
+        baseline_primary: primary, baseline_secondary: secondary,
+        baseline_locked: true, baseline_source: 'self_assessment', baseline_taken_at: nowIso,
+        source: 'self_assessment', confidence: 'high', confidence_pct: 90,
+        signal_snapshot: { adaptive, drive }, updated_at: nowIso,
+      };
+      const { data: existing } = await supabase.from('profiles').select('id').eq('user_id', userId).eq('subject_kind', 'owner').limit(1);
+      let row = null;
+      if (existing && existing[0]) {
+        const { data } = await supabase.from('profiles').update(base).eq('id', existing[0].id).select().single();
+        row = data;
+      } else {
+        const { data } = await supabase.from('profiles').insert({ ...base, user_id: userId, subject_kind: 'owner' }).select().single();
+        row = data;
+      }
+      if (row && setProfiles) setProfiles(prev => { const others = (prev || []).filter(x => x.id !== row.id); return [...others, row]; });
+    } catch (_e) {}
+  }
+
   async function computeAndShow() {
     setPhase('computing'); scrollTop();
     const style = computeStyleScores(styleAnswers);
@@ -262,17 +292,26 @@ export default function DiscAssessmentView({ userId, user }) {
     const styleLbl = styleLabel(style.adaptive);
     const validityFlag = computeValidityFlag(style, validityAnchor);
     const anchorLabel = validityAnchor !== null ? VALIDITY_ANCHOR_OPTIONS[validityAnchor].label : null;
-    const { readout, coaching } = buildReadout({ name, style, drive, styleLbl, validityFlag });
-    const res = { name, style, drive, styleLabel:styleLbl, validityFlag, validityAnchorLabel:anchorLabel, readout, coaching, taken_at:new Date().toISOString() };
-    await new Promise(r => setTimeout(r, 900));
+
+    // Claude-authored readout via the disc-readout edge function; deterministic local fallback.
+    const local = buildReadout({ name, style, drive, styleLbl, validityFlag });
+    let readout = local.readout, coaching = local.coaching, readoutSource = 'local';
+    try {
+      const { data, error } = await supabase.functions.invoke('disc-readout', {
+        body: { name, style: { adaptive: style.adaptive, natural: style.natural }, drive, validity: { anchorLabel, flag: validityFlag }, styleLabel: styleLbl },
+      });
+      if (!error && data && data.readout) { readout = data.readout; if (data.coaching) coaching = data.coaching; readoutSource = 'ai'; }
+    } catch (_e) {}
+
+    const res = { name, style, drive, styleLabel: styleLbl, validityFlag, validityAnchorLabel: anchorLabel, readout, coaching, readoutSource, taken_at: new Date().toISOString() };
     setResults(res); setPhase('results'); scrollTop();
-    // persist
     try {
       setSaving(true);
       await supabase.from('disc_assessments').insert({
-        user_id:userId, agent_name:name, adaptive:style.adaptive, natural_scores:style.natural,
-        drive, validity:{ anchor:validityAnchor, anchorLabel, flag:validityFlag }, style_label:styleLbl, readout, coaching,
+        user_id: userId, agent_name: name, adaptive: style.adaptive, natural_scores: style.natural,
+        drive, validity: { anchor: validityAnchor, anchorLabel, flag: validityFlag }, style_label: styleLbl, readout, coaching,
       });
+      await syncOwnerProfile(style.natural, style.adaptive, drive);
     } catch (_e) {} finally { setSaving(false); }
   }
 
@@ -458,7 +497,7 @@ function Results({ res, onRetake, saving }) {
       </div>
 
       <div className="fsa-card">
-        <div className="fsa-card-h">The read</div>
+        <div className="fsa-card-h">The read{res.readoutSource === "ai" ? <span>written by Prism · Claude</span> : null}</div>
         {String(res.readout || '').split('\n\n').map((p,i)=><p className="fsa-prose" key={i}>{p}</p>)}
       </div>
 
