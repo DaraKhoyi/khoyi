@@ -69,6 +69,7 @@ const BrainView = lazyWithReload(() => import('./views/BrainView'));
 const TrackerView = lazyWithReload(() => import('./views/TrackerView'));
 const PrismView = lazyWithReload(() => import('./views/PrismView'));
 const DiscAssessmentView = lazyWithReload(() => import('./views/DiscAssessmentView'));
+const DiscRosterView = lazyWithReload(() => import('./views/DiscRosterView'));
 
 const NotesView = lazyWithReload(() => import('./views/NotesView'));
 
@@ -13943,6 +13944,7 @@ function AppMain() {
     { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
     { label: 'Team & sharing', view: 'team', icon: 'users' },
     { label: 'Contact types', view: 'contact_types', icon: 'clipboard' },
+    { label: 'Agent DISC readouts', view: 'disc_roster', icon: 'bulb' },
     { label: 'Agent roster', view: 'agents', icon: 'users', children: [
       { label: '+ Add agent', view: 'agents', icon: 'recruiting' },
       { label: 'Set up agent profile', view: 'agents', icon: 'clipboard' },
@@ -14115,6 +14117,7 @@ function AppMain() {
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
               : view==='disc_test'   ? <DiscAssessmentView userId={user.id} user={user} profiles={profiles} setProfiles={setProfiles}/>
+              : view==='disc_roster' ? <DiscRosterView/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>

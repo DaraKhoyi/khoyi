@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v148-20260628-disc-ai-readout'
+const VERSION = 'prismos-v149-20260628-disc-roster'
 const APP_SHELL = [
   '/',
   '/index.html',
