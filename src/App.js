@@ -5769,6 +5769,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   useBackClose(onClose);
   const [analyzing, setAnalyzing] = useState(false);
   const [textTo, setTextTo] = useState(null); // { phone } when the Quo text composer is open
+  const [emailComposeOpen, setEmailComposeOpen] = useState(false); // in-app email composer (AI draft + Gmail send)
   const [tab, setTab] = useState('overview');
   const [leadSystems, setLeadSystems] = useState([]);
   useEffect(() => { let go = true; supabase.from('lead_gen_systems').select('id,name,category,color,monthly_budget,target_leads_per_month,is_active,is_archived').then(({ data }) => { if (go) setLeadSystems((data || []).filter(s => !s.is_archived)); }); return () => { go = false; }; }, []);
@@ -6430,10 +6431,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           <div style={{display:'flex',gap:'8px',padding:'13px 16px 0'}}>
             {contact.phone && <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'11px 0',borderRadius:'11px',background:'linear-gradient(135deg,var(--accent-2),var(--accent))',color:'var(--bg-base)',textDecoration:'none',fontSize:'13.5px',fontWeight:700}}><Icon name="quo" size={15} /> Call</a>}
             {contact.phone && <button type="button" onClick={()=>setTextTo({ phone: contact.phone })} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'11px 0',borderRadius:'11px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-1)',cursor:'pointer',fontSize:'13.5px',fontWeight:600}}><Icon name="message" size={15} /> Text</button>}
-            {contact.email && <a href={`mailto:${contact.email}`} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'11px 0',borderRadius:'11px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-1)',textDecoration:'none',fontSize:'13.5px',fontWeight:600}}><Icon name="mail" size={15} /> Email</a>}
+            {contact.email && <button type="button" onClick={()=>setEmailComposeOpen(true)} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'11px 0',borderRadius:'11px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-1)',cursor:'pointer',fontSize:'13.5px',fontWeight:600}}><Icon name="mail" size={15} /> Email</button>}
           </div>
         )}
         {textTo && <QuoTextModal contact={contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
+        {emailComposeOpen && <FollowupDraftModal entry={{ entity_type:'contact', entity_id:contact.id, mentions:[contact.id] }} contacts={contacts} defaultContact={contact} userId={userId} onClose={()=>setEmailComposeOpen(false)} />}
 
         <div style={{padding:'13px 16px 10px'}}>
           <div className="seg-track" style={{display:'flex',gap:'2px'}}>
