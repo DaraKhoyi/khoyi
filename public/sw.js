@@ -7,10 +7,12 @@
 //   - Cache the app shell (index.html, manifest, icons) on install
 //   - Serve index.html from cache as a navigation fallback when offline
 //   - All other requests pass through (Supabase API + auth need to be live)
-//   - New versions of the SW skip-waiting + claim clients immediately so a
-//     deploy is picked up on next page load without an extra refresh
+//   - A new SW does NOT skip-waiting automatically. Instead the running app
+//     detects the waiting worker, shows a "New version — Refresh" prompt, and
+//     activates it on demand. This guarantees deploys are picked up promptly
+//     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v157-20260630-text-ari-rewrite'
+const VERSION = 'prismos-v158-20260630-sw-auto-update'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -28,7 +30,15 @@ self.addEventListener('install', (event) => {
         // If any shell URL 404s, we still install — Chrome just needs the SW to exist
       }))
   );
-  self.skipWaiting();
+  // NOTE: intentionally NOT calling self.skipWaiting() here. A freshly deployed
+  // SW stays in the "waiting" state so the running app can show a "New version —
+  // Refresh" prompt instead of swapping the bundle out from under the user
+  // mid-task. The page triggers activation by posting { type: 'SKIP_WAITING' }.
+});
+
+// The app posts this when the user taps "Refresh" on the update prompt.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
