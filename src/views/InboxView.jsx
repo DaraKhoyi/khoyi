@@ -1225,6 +1225,16 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     }, 50);
   }
 
+  // Dashboard "Reply to…" deep-link: when an email address is staged, open the
+  // most recent thread with that person once threads are loaded.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.__inboxOpenEmail || !threads || !threads.length) return;
+    const email = String(window.__inboxOpenEmail).toLowerCase();
+    window.__inboxOpenEmail = null;
+    const match = threads.find(t => JSON.stringify(t.participants || '').toLowerCase().includes(email));
+    if (match) openThread(match);
+  }, [threads]); // eslint-disable-line
+
   // Pass 4 Batch D: load any cached triage rows for current threads so the
   // inbox list can show category dots immediately. Re-runs when threads change.
   useEffect(() => {

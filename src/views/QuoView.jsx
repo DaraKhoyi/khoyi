@@ -115,13 +115,18 @@ function QuoView({ contacts = [], userId }) {
     return () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); };
   }, []);
 
-  // Honor a tab intent set by the quick-create FAB (Text -> messages, Call -> calls)
+  // Honor a tab/conversation intent set elsewhere (quick-create FAB, or the
+  // dashboard "Reply to…" card deep-linking to a specific text thread).
   useEffect(() => {
     try {
       if (window.__quoTab) {
         const t = window.__quoTab;
         window.__quoTab = null;
-        if (t === 'messages' || t === 'calls' || t === 'feed') setTab(t);
+        if (typeof t === 'string') { if (t === 'messages' || t === 'calls' || t === 'feed') setTab(t); }
+        else if (t && typeof t === 'object') {
+          if (t.tab === 'messages' || t.tab === 'calls' || t.tab === 'feed') setTab(t.tab);
+          if (t.phone) { setTab('messages'); openConvo(t.phone, t.name); }
+        }
       }
     } catch (e) {}
   }, []);

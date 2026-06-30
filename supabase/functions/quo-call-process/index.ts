@@ -157,14 +157,14 @@ serve(async (req) => {
       let contact: any = null;
       if (key10) {
         if (!contactCache[call.user_id]) {
-          const { data: cs } = await admin.from("contacts").select("id,name,phone,last_contact_at").eq("user_id", call.user_id).not("phone", "is", null);
+          const { data: cs } = await admin.from("contacts").select("id,name,phone,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction").eq("user_id", call.user_id).not("phone", "is", null);
           contactCache[call.user_id] = cs || [];
         }
         contact = (contactCache[call.user_id] || []).find((c) => last10(c.phone) === key10) || null;
       }
       // Cube ACR (and any pre-linked source) can set contact_id ahead of time when the phone isn't in the filename.
       if (!contact && call.contact_id) {
-        const { data: pc } = await admin.from("contacts").select("id,name,phone,last_contact_at").eq("id", call.contact_id).maybeSingle();
+        const { data: pc } = await admin.from("contacts").select("id,name,phone,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction").eq("id", call.contact_id).maybeSingle();
         if (pc) contact = pc;
       }
 
@@ -194,6 +194,22 @@ serve(async (req) => {
             await admin.from("contacts").update({ last_contact_at: occurredAt }).eq("id", contact.id);
             contact.last_contact_at = occurredAt;
           }
+        }
+      }
+
+      // A real two-way OUTBOUND call closes an "owe a reply" loop. A voicemail,
+      // no-answer, or missed call does NOT — you never actually reached them — so
+      // we only advance last_outbound_at when the other side ANSWERED and the call
+      // lasted a real moment. (answered_at is absent for voicemail/no-answer.)
+      if (contact && dir === "outbound") {
+        const st = String(call.status || "").toLowerCase();
+        const bad = ["no-answer", "no_answer", "missed", "voicemail", "busy", "canceled", "cancelled", "rejected", "failed", "declined"];
+        const connected = !!call.answered_at && (call.duration || 0) >= 15 && !bad.some((b) => st.includes(b));
+        if (connected) {
+          const patch: any = {};
+          if (!contact.last_outbound_at || new Date(occurredAt) > new Date(contact.last_outbound_at)) patch.last_outbound_at = occurredAt;
+          if (!contact.last_inbound_at || new Date(occurredAt) > new Date(contact.last_inbound_at)) { patch.last_communication_direction = "outbound"; patch.last_communication_channel = "phone"; }
+          if (Object.keys(patch).length) { await admin.from("contacts").update(patch).eq("id", contact.id); Object.assign(contact, patch); }
         }
       }
 
