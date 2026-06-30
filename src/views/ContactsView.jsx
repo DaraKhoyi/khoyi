@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, ContactDetailModal, HeaderSearchIcon, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
+import { useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
 
 const CONTACT_TYPES = [
   // Clients & Leads
@@ -806,8 +806,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added' | 'cadence_due'
   const [dueOnly, setDueOnly] = useState(false);
   const [search, setSearch] = useState('');
-  // Search input collapses into a header icon; open it on demand.
-  const [searchOpen, setSearchOpen] = useState(false);
   // Render only a window of the (potentially thousands-long) contact list so the
   // page paints and scrolls fast on mobile; "Show more" extends it. The window
   // resets whenever the filter/search/sort changes so results start from the top.
@@ -1073,11 +1071,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         <div style={{flex:1,minWidth:0}}><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="contacts" size={26} style={{color:'var(--accent)',flexShrink:0}} />Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
           <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Tag lead source on many contacts" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Tag source'}</button>
-          <HeaderSearchIcon
-            value={search}
-            open={searchOpen}
-            onToggle={() => setSearchOpen(o => !o)}
-          />
           <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
         </div>
       </div>
@@ -1094,15 +1087,14 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       )}
 
-      {/* Search input — collapsible. Only renders when icon is toggled open. */}
-      {searchOpen && (
-        <HeaderSearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="🔍 Search contacts (name, email, company)…"
-          onClose={() => setSearchOpen(false)}
-        />
-      )}
+      {/* Search input — always visible. The × clears the text (no collapse). */}
+      <HeaderSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="🔍 Search contacts (name, email, company)…"
+        onClose={() => {}}
+        autoFocus={false}
+      />
       <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
         <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
           title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
