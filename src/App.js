@@ -2692,7 +2692,7 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
     if(c.last_communication_direction!=='inbound' || !c.last_inbound_at) return;
     const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0;
     if(lin<=lout) return; const days=Math.floor((now-lin)/86400000);
-    out.push({ key:'reply:'+c.id, score:100+Math.min(days*4,48), tag:'reply', icon:'reply', title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'view', payload:'inbox' } });
+    out.push({ key:'reply:'+c.id, score:100+Math.min(days*4,48), tag:'reply', icon:'reply', contactId:c.id, title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'view', payload:'inbox' } });
   });
   events.forEach(e=>{ if(!e.start_at||e.all_day) return; const st=new Date(e.start_at).getTime(); const dh=(st-now)/3600000;
     if(dh>=-1 && dh<=24){ out.push({ key:'appt:'+(e.id||e.start_at), score:96+(dh<2?6:0), tag:'appt', icon:'calendar', title:'Prep for: '+(e.title||'appointment'), why:'Starts '+(dh<1?'soon':'in about '+Math.round(dh)+'h')+' — confirm details and prepare', cta:{ label:'Calendar', kind:'view', payload:'calendar' } }); } });
@@ -2720,7 +2720,7 @@ function buildGrowthMoves({ contacts=[], deals=[], gciGoal=0, now=Date.now() }){
   moves.push({ key:'oh', icon:'target', title:'Line up an open house', why:'One listing becomes many buyer leads — plan an open house this week', cta:{ label:'My pipeline', kind:'view', payload:'pipeline' } });
   return moves;
 }
-function NextBestAction({ contacts=[], tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan }){
+function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan }){
   const now=Date.now();
   const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now}),[contacts,tasks,events,deals]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
@@ -2728,6 +2728,10 @@ function NextBestAction({ contacts=[], tasks=[], setTasks, events=[], deals=[], 
   const urgent=actions.length>0; const list=urgent?actions:growth;
   const cur=list[Math.min(idx,list.length-1)]||null;
   const runCta=(cta)=>{ if(!cta) return; if(cta.kind==='task_done'){ const id=cta.payload; try{ supabase.from('tasks').update({completed:true, completed_at:new Date().toISOString()}).eq('id',id).then(()=>{}); }catch(_){} setTasks&&setTasks(pr=>pr.map(x=>x.id===id?{...x,completed:true}:x)); if(window.__notify) window.__notify('Done — nice work.','success'); setIdx(0); } else if(cta.kind==='view'){ setView&&setView(cta.payload); } else if(cta.kind==='call'){ window.location.href='tel:'+cta.payload; } };
+  // "I already replied" — clears an owe-a-reply instantly by bumping the field the
+  // engine reads (last_outbound_at past last_inbound_at), independent of email/text
+  // sync timing. Updates local state so the card drops immediately.
+  const markReplied=(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString(); try{ supabase.from('contacts').update({ last_outbound_at:nowIso, last_contact_at:nowIso, last_communication_direction:'outbound' }).eq('id',contactId).then(()=>{},()=>{}); }catch(_){} setContacts&&setContacts(pr=>pr.map(x=>x.id===contactId?{...x,last_outbound_at:nowIso,last_contact_at:nowIso,last_communication_direction:'outbound'}:x)); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
   if(!cur) return null;
   const tagColor=cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
   return (
@@ -2745,6 +2749,7 @@ function NextBestAction({ contacts=[], tasks=[], setTasks, events=[], deals=[], 
       </div>
       <div style={{display:'flex',gap:8,marginTop:13,flexWrap:'wrap',alignItems:'center'}}>
         {cur.cta && <button className="btn btn-primary btn-sm" onClick={()=>runCta(cur.cta)}>{cur.cta.label}</button>}
+        {cur.tag==='reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={()=>markReplied(cur.contactId)} title="I've already replied — clear this">✓ Replied</button>}
         {list.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>setIdx(i=>(i+1)%list.length)}>Skip</button>}
         {urgent && onOpenPlan && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenPlan()}>Plan my day</button>}
         {list.length>1 && <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setShowAll(s=>!s)}>{showAll?'Hide':'See all ('+list.length+')'}</button>}
@@ -3955,7 +3960,7 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   </div>);
 }
 
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [] }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [] }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
 
@@ -4122,7 +4127,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
         </div>
       </div>
 
-      <NextBestAction contacts={contacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} />
+      <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} />
 
       {/* At-a-glance pulse — full metrics live in My numbers */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
@@ -4752,7 +4757,7 @@ function QuoTextModal({ contact, userId, defaultText = '', phone, onClose, onSen
             user_id: userId, contact_id: contact.id, channel: 'text', kind: 'text', direction: 'outbound',
             occurred_at: new Date().toISOString(), body: msg, brief: msg.slice(0, 140), mentions: [contact.id], tags: ['text'],
           });
-          await supabase.from('contacts').update({ last_contact_at: new Date().toISOString() }).eq('id', contact.id);
+          await supabase.from('contacts').update({ last_contact_at: new Date().toISOString(), last_outbound_at: new Date().toISOString(), last_communication_direction: 'outbound' }).eq('id', contact.id);
         } catch (_) {}
       }
       setSent(true);
@@ -14139,7 +14144,7 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
+                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>

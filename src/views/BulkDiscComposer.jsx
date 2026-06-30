@@ -95,7 +95,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
         user_id: userId, contact_id: contact.id, channel: ch, kind: ch, direction: 'outbound',
         occurred_at: new Date().toISOString(), body, brief: (subject || body).slice(0, 140), mentions: [contact.id], tags: [ch, 'broadcast'],
       });
-      await supabase.from('contacts').update({ last_contact_at: new Date().toISOString() }).eq('id', contact.id);
+      await supabase.from('contacts').update({ last_contact_at: new Date().toISOString(), last_outbound_at: new Date().toISOString(), last_communication_direction: 'outbound' }).eq('id', contact.id);
     } catch (_) {}
   }
 
