@@ -1,0 +1,257 @@
+import React, { useState, useMemo, useRef } from 'react';
+import { supabase } from '../dataService';
+import { useBackClose, Icon, notify, quoCall, quoNormPhone } from '../App';
+
+// ─────────────────────────────────────────
+// BULK DISC COMPOSER
+// Select many contacts → type one message → Ari adapts it into D/I/S/C (+ a
+// neutral version for contacts with no DISC profile). Swipe the drafts, edit any,
+// then Send: each draft fans out to the contacts whose dominant style matches.
+// {first_name} in a draft is replaced with each recipient's first name at send.
+// ─────────────────────────────────────────
+const DISC_LETTERS = ['D', 'I', 'S', 'C'];
+const DISC_STYLE_META = {
+  D: { name: 'Dominance',         color: '#ef4444', tip: 'Direct & results-driven' },
+  I: { name: 'Influence',         color: '#f59e0b', tip: 'Warm & expressive' },
+  S: { name: 'Steadiness',        color: '#22c55e', tip: 'Steady & supportive' },
+  C: { name: 'Conscientiousness', color: '#3b82f6', tip: 'Precise & analytical' },
+  neutral: { name: 'No DISC on file', color: '#9499b0', tip: 'Clean house voice' },
+};
+
+export function dominantDiscLetter(p) {
+  if (!p) return null;
+  const explicit = p.baseline_primary || p.primary_letter;
+  if (explicit && DISC_LETTERS.includes(explicit)) return explicit;
+  const hasB = p.baseline_d_score != null;
+  const d = hasB ? p.baseline_d_score : p.d_score;
+  const i = hasB ? p.baseline_i_score : p.i_score;
+  const s = hasB ? p.baseline_s_score : p.s_score;
+  const c = hasB ? p.baseline_c_score : p.c_score;
+  const arr = [['D', d], ['I', i], ['S', s], ['C', c]].filter(x => x[1] != null);
+  if (!arr.length) return null;
+  arr.sort((a, b) => b[1] - a[1]);
+  return arr[0][0];
+}
+
+export function BulkDiscComposer({ contacts, profileByContact, channel, userId, onClose, onSent }) {
+  useBackClose(onClose);
+  const isEmail = channel === 'email';
+
+  const { eligible, skipped } = useMemo(() => {
+    const e = [], s = [];
+    (contacts || []).forEach(c => { (isEmail ? c.email : c.phone) ? e.push(c) : s.push(c); });
+    return { eligible: e, skipped: s };
+  }, [contacts, isEmail]);
+
+  const buckets = useMemo(() => {
+    const b = { D: [], I: [], S: [], C: [], neutral: [] };
+    eligible.forEach(c => { const k = dominantDiscLetter(profileByContact.get(c.id)) || 'neutral'; b[k].push(c); });
+    return b;
+  }, [eligible, profileByContact]);
+  const hasNeutral = buckets.neutral.length > 0;
+  const cards = useMemo(() => [...DISC_LETTERS, ...(hasNeutral ? ['neutral'] : [])], [hasNeutral]);
+
+  const [base, setBase] = useState('');
+  const [baseSubject, setBaseSubject] = useState('');
+  const [step, setStep] = useState('compose'); // compose | review | sending | done
+  const [gen, setGen] = useState(false);
+  const [drafts, setDrafts] = useState({});
+  const [idx, setIdx] = useState(0);
+  const [expandList, setExpandList] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [result, setResult] = useState(null);
+  const touchX = useRef(null);
+
+  const firstName = c => ((c.name || '').trim().split(/\s+/)[0]) || 'there';
+  const personalize = (text, c) => (text || '').replace(/\{first[_\s]?name\}/gi, firstName(c)).replace(/\{name\}/gi, firstName(c));
+
+  async function generate() {
+    if (!base.trim() || gen) return;
+    setGen(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ari-disc-broadcast', {
+        body: { base_message: base.trim(), channel, styles: DISC_LETTERS, include_neutral: hasNeutral, base_subject: isEmail ? baseSubject.trim() : '' },
+      });
+      if (error || data?.error || !data?.drafts) { notify('Ari couldn’t draft those — try again.', 'error'); setGen(false); return; }
+      const dr = {};
+      cards.forEach(k => { const v = data.drafts[k] || { subject: '', body: '' }; dr[k] = { subject: isEmail ? (v.subject || baseSubject || '') : '', body: v.body || '' }; });
+      setDrafts(dr); setIdx(0); setStep('review');
+    } catch (e) { notify('Ari error: ' + (e.message || e), 'error'); }
+    finally { setGen(false); }
+  }
+
+  const setField = (k, field, val) => setDrafts(prev => ({ ...prev, [k]: { ...prev[k], [field]: val } }));
+
+  async function quoFrom() {
+    const { data: st } = await supabase.from('quo_settings').select('active_number').eq('user_id', userId).maybeSingle();
+    let from = st?.active_number || null;
+    if (!from) { const pn = await quoCall('/v1/phone-numbers'); from = (pn?.data || [])[0]?.number || null; }
+    if (!from) throw new Error('No Quo number set up — open the Quo tab once.');
+    return from;
+  }
+  async function logSent(contact, ch, body, subject) {
+    try {
+      await supabase.from('contact_interactions').insert({
+        user_id: userId, contact_id: contact.id, channel: ch, kind: ch, direction: 'outbound',
+        occurred_at: new Date().toISOString(), body, brief: (subject || body).slice(0, 140), mentions: [contact.id], tags: [ch, 'broadcast'],
+      });
+      await supabase.from('contacts').update({ last_contact_at: new Date().toISOString() }).eq('id', contact.id);
+    } catch (_) {}
+  }
+
+  async function sendAll() {
+    const jobs = [];
+    cards.forEach(k => { const d = drafts[k]; if (!d || !(d.body || '').trim()) return; buckets[k].forEach(c => jobs.push({ c, d })); });
+    if (!jobs.length) { notify('No drafts with recipients to send.', 'error'); return; }
+
+    let acc = null, from = null;
+    try {
+      if (isEmail) {
+        const { data: accs } = await supabase.from('email_accounts').select('id,email_address').contains('purposes', ['email']).order('created_at').limit(1);
+        acc = accs && accs[0];
+        if (!acc) { notify('No email account connected. Connect Gmail in Settings.', 'error'); return; }
+      } else { from = await quoFrom(); }
+    } catch (e) { notify(String(e.message || e), 'error'); return; }
+
+    setStep('sending'); setProgress({ done: 0, total: jobs.length });
+    let sent = 0, failed = 0;
+    for (const { c, d } of jobs) {
+      try {
+        const body = personalize(d.body, c);
+        if (isEmail) {
+          const subject = personalize(d.subject, c) || '(no subject)';
+          const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', { body: { account_id: acc.id, to: c.email, subject, body_text: body } });
+          if (se) throw se; if (sr?.error) throw new Error(sr.error);
+          await logSent(c, 'email', body, subject);
+        } else {
+          await quoCall('/v1/messages', { method: 'POST', body: { content: body, from, to: [quoNormPhone(c.phone)] } });
+          await logSent(c, 'text', body);
+        }
+        sent++;
+      } catch (_) { failed++; }
+      setProgress(p => ({ done: p.done + 1, total: p.total }));
+    }
+    setResult({ sent, failed, skipped: skipped.length });
+    setStep('done');
+    if (onSent) onSent();
+  }
+
+  const totalToSend = cards.reduce((n, k) => n + ((drafts[k] && (drafts[k].body || '').trim()) ? buckets[k].length : 0), 0);
+  const cardKey = cards[idx];
+  const meta = DISC_STYLE_META[cardKey] || DISC_STYLE_META.neutral;
+  const recip = buckets[cardKey] || [];
+
+  const chip = (k, n, dim) => {
+    const m = DISC_STYLE_META[k];
+    return <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, border: `1px solid ${m.color}`, color: dim ? 'var(--text-3)' : m.color, opacity: dim ? 0.55 : 1 }}>
+      <span style={{ width: 8, height: 8, borderRadius: 2, background: m.color }} />{k === 'neutral' ? 'No DISC' : k} · {n}
+    </span>;
+  };
+
+  return (
+    <div className="modal-overlay" onClick={() => step !== 'sending' && onClose && onClose()} style={{ zIndex: 1300 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, width: '95%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 7, margin: 0 }}>
+            <Icon name={isEmail ? 'mail' : 'message'} size={16} style={{ color: 'var(--accent)' }} />
+            {isEmail ? 'Email' : 'Text'} {eligible.length} contact{eligible.length === 1 ? '' : 's'}
+          </h3>
+          <button className="btn btn-ghost btn-sm" onClick={() => step !== 'sending' && onClose && onClose()}>✕</button>
+        </div>
+
+        <div style={{ padding: 16, overflowY: 'auto' }}>
+          {step === 'compose' && (<>
+            <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 10, lineHeight: 1.5 }}>
+              Type your message once. Ari rewrites it for each behavioral style, then each version sends only to the people who match it.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {DISC_LETTERS.map(k => chip(k, buckets[k].length, buckets[k].length === 0))}
+              {hasNeutral && chip('neutral', buckets.neutral.length, false)}
+              {skipped.length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, border: '1px solid var(--border)', color: 'var(--text-3)' }}>No {isEmail ? 'email' : 'phone'} · {skipped.length} skipped</span>}
+            </div>
+            {isEmail && (
+              <input value={baseSubject} onChange={e => setBaseSubject(e.target.value)} placeholder="Subject (Ari tunes it per style)"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', marginBottom: 10 }} />
+            )}
+            <textarea value={base} onChange={e => setBase(e.target.value)} autoFocus rows={6} placeholder="What do you want to say? (e.g. Just checking in — let me know if you'd like an updated home value for your place.)"
+              style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 14, lineHeight: 1.5, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button className="btn btn-primary" disabled={!base.trim() || gen || eligible.length === 0} onClick={generate} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                {gen ? '✨ Ari is writing…' : '✨ Generate D/I/S/C drafts'}
+              </button>
+            </div>
+          </>)}
+
+          {step === 'review' && (
+            <div
+              onTouchStart={e => { touchX.current = e.touches[0].clientX; }}
+              onTouchEnd={e => { if (touchX.current == null) return; const dx = e.changedTouches[0].clientX - touchX.current; touchX.current = null; if (dx < -45 && idx < cards.length - 1) { setIdx(idx + 1); setExpandList(false); } else if (dx > 45 && idx > 0) { setIdx(idx - 1); setExpandList(false); } }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: meta.color, lineHeight: 1 }}>{cardKey === 'neutral' ? '–' : cardKey}</span>
+                  <span><span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', display: 'block' }}>{meta.name}</span><span style={{ fontSize: 11, color: 'var(--text-3)' }}>{meta.tip}</span></span>
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{idx + 1} / {cards.length}</span>
+              </div>
+
+              <button type="button" onClick={() => recip.length && setExpandList(v => !v)}
+                style={{ width: '100%', textAlign: 'left', background: 'var(--bg-base)', border: `1px solid ${recip.length ? meta.color : 'var(--border)'}`, borderRadius: 9, padding: '8px 11px', marginBottom: 10, cursor: recip.length ? 'pointer' : 'default', color: 'var(--text-2)', fontSize: 12 }}>
+                {recip.length === 0
+                  ? <span style={{ color: 'var(--text-3)' }}>No selected contacts have this style — this draft won’t be sent.</span>
+                  : <><strong style={{ color: meta.color }}>{recip.length}</strong> {isEmail ? 'will be emailed' : 'will be texted'} this version<span style={{ color: 'var(--text-3)' }}> · {expandList ? 'hide' : 'show'} names</span></>}
+                {expandList && recip.length > 0 && <div style={{ marginTop: 6, color: 'var(--text-3)', lineHeight: 1.5 }}>{recip.map(c => c.name).join(', ')}</div>}
+              </button>
+
+              {isEmail && (
+                <input value={drafts[cardKey]?.subject || ''} onChange={e => setField(cardKey, 'subject', e.target.value)} placeholder="Subject"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', fontSize: 13.5, fontWeight: 600, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 9, color: 'var(--text-1)', marginBottom: 8 }} />
+              )}
+              <textarea value={drafts[cardKey]?.body || ''} onChange={e => setField(cardKey, 'body', e.target.value)} rows={isEmail ? 8 : 6}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 14, lineHeight: 1.5, background: 'var(--bg-base)', border: `1px solid ${meta.color}55`, borderRadius: 10, color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
+              <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 5 }}>{!isEmail && `${(drafts[cardKey]?.body || '').length} chars · `}<code style={{ color: 'var(--accent)' }}>{'{first_name}'}</code> becomes each person’s first name on send.</div>
+
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 7, margin: '14px 0 4px' }}>
+                {cards.map((k, i) => (
+                  <button key={k} onClick={() => { setIdx(i); setExpandList(false); }} aria-label={k}
+                    style={{ width: i === idx ? 22 : 8, height: 8, borderRadius: 99, border: 'none', cursor: 'pointer', padding: 0, background: i === idx ? DISC_STYLE_META[k].color : 'var(--border)', transition: 'width .15s' }} />
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 12 }}>
+                <button className="btn btn-ghost btn-sm" disabled={idx === 0} onClick={() => { setIdx(idx - 1); setExpandList(false); }}>‹ Prev</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setStep('compose')}>Edit message</button>
+                <button className="btn btn-ghost btn-sm" disabled={idx === cards.length - 1} onClick={() => { setIdx(idx + 1); setExpandList(false); }}>Next ›</button>
+              </div>
+              <button className="btn btn-primary" disabled={totalToSend === 0} onClick={sendAll} style={{ width: '100%', marginTop: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                <Icon name={isEmail ? 'mail' : 'quo'} size={15} /> Send all ({totalToSend})
+              </button>
+            </div>
+          )}
+
+          {step === 'sending' && (
+            <div style={{ padding: '18px 4px' }}>
+              <div style={{ fontSize: 13, color: 'var(--text-1)', marginBottom: 10, textAlign: 'center' }}>Sending… {progress.done} / {progress.total}</div>
+              <div style={{ height: 8, background: 'var(--bg-base)', borderRadius: 99, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${progress.total ? Math.round(progress.done / progress.total * 100) : 0}%`, background: 'var(--accent)', transition: 'width .2s' }} />
+              </div>
+            </div>
+          )}
+
+          {step === 'done' && result && (
+            <div style={{ padding: '14px 4px', textAlign: 'center' }}>
+              <div style={{ fontSize: 30, marginBottom: 6 }}>✓</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--green)', marginBottom: 8 }}>Sent {result.sent} message{result.sent === 1 ? '' : 's'}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6 }}>
+                {result.failed > 0 && <div style={{ color: 'var(--red)' }}>{result.failed} failed to send.</div>}
+                {result.skipped > 0 && <div>{result.skipped} skipped (no {isEmail ? 'email' : 'phone'} on file).</div>}
+              </div>
+              <button className="btn btn-primary" onClick={onClose} style={{ marginTop: 16 }}>Done</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

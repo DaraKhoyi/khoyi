@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify } from '../App';
+import { useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone } from '../App';
+import { BulkDiscComposer } from './BulkDiscComposer';
 
 const CONTACT_TYPES = [
   // Clients & Leads
@@ -798,6 +799,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [tagSystems, setTagSystems] = useState([]);
   const [tagSysId, setTagSysId] = useState('');
   const [applyingTag, setApplyingTag] = useState(false);
+  const [bulkChannel, setBulkChannel] = useState(null); // 'text' | 'email' when bulk DISC composer is open
   useEffect(()=>{ (async()=>{ const { data } = await supabase.from('lead_gen_systems').select('id,name,is_archived').eq('user_id', userId).order('name'); setTagSystems((data||[]).filter(s=>!s.is_archived)); })(); },[userId]);
   const toggleSel = (id)=> setSelIds(prev=>{ const nx=new Set(prev); nx.has(id)?nx.delete(id):nx.add(id); return nx; });
   const exitTag = ()=>{ setTagMode(false); setSelIds(new Set()); setTagSysId(''); };
@@ -1070,20 +1072,28 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="contacts" size={26} style={{color:'var(--accent)',flexShrink:0}} />Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
-          <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Tag lead source on many contacts" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Tag source'}</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
           <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
         </div>
       </div>
 
       {tagMode && (
         <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:60,background:'var(--bg-card)',borderTop:'1px solid var(--accent)',padding:'12px 16px calc(12px + env(safe-area-inset-bottom,0px))',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 20px rgba(0,0,0,0.45)'}}>
-          <span style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{selIds.size} selected</span>
-          <select className="form-input" value={tagSysId} onChange={e=>setTagSysId(e.target.value)} style={{flex:'1 1 150px',minWidth:140,margin:0,padding:'8px 10px',fontSize:13}}>
-            <option value="">Choose lead source…</option>
-            {tagSystems.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <button className="btn btn-ghost btn-sm" onClick={exitTag}>Cancel</button>
-          <button className="btn btn-primary btn-sm" disabled={!tagSysId || selIds.size===0 || applyingTag} onClick={applyTag}>{applyingTag?'Applying…':'Apply'}</button>
+          <div style={{display:'flex',alignItems:'center',gap:10,width:'100%',flexWrap:'wrap'}}>
+            <span style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{selIds.size} selected</span>
+            <div style={{display:'flex',gap:8,marginLeft:'auto'}}>
+              <button className="btn btn-primary btn-sm" disabled={selIds.size===0} onClick={()=>setBulkChannel('text')} style={{display:'inline-flex',alignItems:'center',gap:6}}><Icon name="message" size={14}/> Text</button>
+              <button className="btn btn-primary btn-sm" disabled={selIds.size===0} onClick={()=>setBulkChannel('email')} style={{display:'inline-flex',alignItems:'center',gap:6}}><Icon name="mail" size={14}/> Email</button>
+            </div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8,width:'100%',flexWrap:'wrap'}}>
+            <select className="form-input" value={tagSysId} onChange={e=>setTagSysId(e.target.value)} style={{flex:'1 1 150px',minWidth:140,margin:0,padding:'8px 10px',fontSize:13}}>
+              <option value="">Tag a lead source…</option>
+              {tagSystems.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button className="btn btn-ghost btn-sm" disabled={!tagSysId || selIds.size===0 || applyingTag} onClick={applyTag}>{applyingTag?'Applying…':'Apply tag'}</button>
+            <button className="btn btn-ghost btn-sm" onClick={exitTag}>Done</button>
+          </div>
         </div>
       )}
 
@@ -1297,6 +1307,16 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       </div>
       {textTo && <QuoTextModal contact={textTo.contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
+      {bulkChannel && (
+        <BulkDiscComposer
+          contacts={contacts.filter(c=>selIds.has(c.id))}
+          profileByContact={profileByContact}
+          channel={bulkChannel}
+          userId={userId}
+          onClose={()=>setBulkChannel(null)}
+          onSent={()=>{ setBulkChannel(null); exitTag(); }}
+        />
+      )}
       {showModal && <ContactModal canSeeRestricted={canSeeRestricted}
         onClose={()=>{ setShowModal(false); if (editFromDetail && editContact) setDetailContact(editContact); setEditContact(null); setEditFromDetail(false); }}
         onSave={handleSave}
