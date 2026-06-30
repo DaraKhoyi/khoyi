@@ -63,8 +63,11 @@
           ].join(';');
           btn.addEventListener('click', function () {
             btn.disabled = true; btn.textContent = 'Updating…';
-            if (worker) worker.postMessage({ type: 'SKIP_WAITING' });
-            else window.location.reload();
+            try { if (worker) worker.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
+            // Fallback: if the new worker doesn't take control quickly (or there's
+            // no waiting worker to message), force the reload anyway so the button
+            // can never get stuck on "Updating…".
+            setTimeout(function () { if (!reloading) { reloading = true; window.location.reload(); } }, 2500);
           });
 
           var dismiss = document.createElement('button');
