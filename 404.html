@@ -16,7 +16,7 @@
     <title>PrismOS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/static/js/main.HUf2lTmK.js"></script>
+    <script type="module" crossorigin src="/static/js/main.DY95jceo.js"></script>
     <link rel="modulepreload" crossorigin href="/static/js/vendor-react.C37I3Hs7.chunk.js">
     <link rel="modulepreload" crossorigin href="/static/js/vendor-react-dom.DpoMkUgU.chunk.js">
     <link rel="modulepreload" crossorigin href="/static/js/vendor.Cgi6DKmr.chunk.js">
@@ -68,8 +68,11 @@
           ].join(';');
           btn.addEventListener('click', function () {
             btn.disabled = true; btn.textContent = 'Updating…';
-            if (worker) worker.postMessage({ type: 'SKIP_WAITING' });
-            else window.location.reload();
+            try { if (worker) worker.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
+            // Fallback: if the new worker doesn't take control quickly (or there's
+            // no waiting worker to message), force the reload anyway so the button
+            // can never get stuck on "Updating…".
+            setTimeout(function () { if (!reloading) { reloading = true; window.location.reload(); } }, 2500);
           });
 
           var dismiss = document.createElement('button');
