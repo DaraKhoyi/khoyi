@@ -4753,6 +4753,7 @@ function QuoTextModal({ contact, userId, defaultText = '', phone, onClose, onSen
           <div style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '8px' }}>
             {phoneRaw ? <>To <span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{phoneRaw}</span> · sent from your Quo number</> : 'No phone number on file for this contact.'}
           </div>
+          <AriRewriteButton text={text} onRewrite={setText} contactName={name} contactId={contact?.id} />
           <textarea value={text} onChange={e => setText(e.target.value)} autoFocus rows={5}
             placeholder={`Write a text to ${name}…`}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: '14px', lineHeight: 1.5, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
@@ -10734,7 +10735,7 @@ function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText,
     <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
       {err && <span style={{fontSize:'10px',color:'var(--red)',marginRight:'auto'}}>{err}</span>}
       {prev!=null && <button type="button" className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={undo}>Undo</button>}
-      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice, adapted to the recipient" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'<Icon name="sparkles" size={13} /> Ari is writing…':'✨ Ari rewrite'}</button>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice, adapted to the recipient" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
     </div>
   );
 }
