@@ -10161,6 +10161,28 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             </form>
           </div>
         </div>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>About</h3></div>
+          <div className="panel-body">
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontWeight:700,color:'var(--text-1)',fontSize:'15px'}}>PrismOS</div>
+                <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>Build {BUILD_VERSION}</div>
+                <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>This is the version running on this device right now.</div>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={async()=>{
+                try {
+                  if (!('serviceWorker' in navigator)) { notify('Updates aren’t supported on this browser.','error'); return; }
+                  const reg = await navigator.serviceWorker.getRegistration();
+                  if (!reg) { notify('No service worker yet — reload the page once.','error'); return; }
+                  await reg.update();
+                  if (reg.waiting) notify('New version found — tap Refresh to update.','success');
+                  else notify('You’re on the latest version.','success');
+                } catch (e) { notify('Couldn’t check for updates right now.','error'); }
+              }}>Check for updates</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
