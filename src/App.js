@@ -731,20 +731,42 @@ function ChatView({ robots, userId }) {
     };
   }, [pendingImagePreview]);
 
-  function pickImage(file) {
+  // Downscale + re-encode any picked photo to JPEG before upload. Makes receipts
+  // work from iPhones (HEIC — which the server/Claude can't read, but iOS decodes
+  // natively when the image is drawn to a canvas) and keeps large photos small.
+  async function normalizeToJpeg(file) {
+    const dataUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(new Error('read')); fr.readAsDataURL(file); });
+    const img = await new Promise((res, rej) => { const im = new window.Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('decode')); im.src = dataUrl; });
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (!w || !h) throw new Error('dims');
+    const scale = Math.min(1, 1600 / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+    ctx.drawImage(img, 0, 0, cw, ch);
+    const blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', 0.85));
+    return new File([blob], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  }
+
+  async function pickImage(file) {
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
+    const looksImage = (file.type || '').startsWith('image/') || /\.(heic|heif|jpe?g|png|webp|gif)$/i.test(file.name || '');
+    if (!looksImage) {
       if (window.__notify) window.__notify('Please choose an image', 'error');
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      if (window.__notify) window.__notify('Image too large (10MB max)', 'error');
+    if (file.size > 25 * 1024 * 1024) {
+      if (window.__notify) window.__notify('Image too large (25MB max)', 'error');
       return;
     }
+    // Convert/downscale to JPEG; fall back to the original if it can't be processed.
+    let outFile = file;
+    try { outFile = await normalizeToJpeg(file); } catch (_) { outFile = file; }
     // Clean up previous preview URL
     if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
-    setPendingImageFile(file);
-    setPendingImagePreview(URL.createObjectURL(file));
+    setPendingImageFile(outFile);
+    setPendingImagePreview(URL.createObjectURL(outFile));
   }
 
   function clearPendingImage() {

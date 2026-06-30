@@ -518,7 +518,7 @@ serve(async (req) => {
     let receiptParsePromise = Promise.resolve(null);
     if (image_path) {
       const imageData = await loadImageAsBase64(supabase, image_path);
-      if (!imageData) return new Response(JSON.stringify({ error: "Could not load image" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!imageData) return new Response(JSON.stringify({ response: "I couldn't read that image — it may be in a format I can't open (like an iPhone HEIC) or too large. Try taking the photo again, or upload a JPEG or PNG." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const blocks = [{ type: "image", source: { type: "base64", media_type: imageData.media_type, data: imageData.data } }];
       if (userMessage.trim()) blocks.push({ type: "text", text: userMessage });
       else blocks.push({ type: "text", text: "(The user shared this image without a caption — describe what you see briefly. If it's a receipt or invoice, mention what was extracted and offer to add it to accounting.)" });
