@@ -1931,6 +1931,31 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
       if (error) throw error;
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
       setSendMsg('Sent.');
+
+      // Instantly clear "owe a reply" for any recipient that maps to a contact.
+      // We write the denormalized last_outbound_at the dashboard reads, so the
+      // Next Best Action advances on send instead of waiting for the Gmail sync
+      // to round-trip the SENT message. The non-regressing recompute later
+      // reconciles this to the exact synced timestamp.
+      try {
+        const nowIso = new Date().toISOString();
+        const recipientEmails = new Set(
+          [...payload.to, ...(payload.cc || [])].map(e => String(e).toLowerCase().trim())
+        );
+        const hit = contacts.filter(c => c.email && recipientEmails.has(c.email.toLowerCase().trim()));
+        for (const c of hit) {
+          const moreRecentInbound = c.last_inbound_at && new Date(c.last_inbound_at) > new Date(nowIso);
+          await supabase.from('contacts').update({
+            last_outbound_at: nowIso,
+            last_contact_at: nowIso,
+            last_communication_channel: 'email',
+            last_communication_direction: moreRecentInbound ? 'inbound' : 'outbound',
+          }).eq('id', c.id);
+        }
+        // Refresh shared app state so the Dashboard NBA reflects it right away.
+        if (hit.length && typeof reloadData === 'function') reloadData();
+      } catch (_) { /* non-fatal — sync recompute will reconcile */ }
+
       setShowCompose(false);
       setComposeTo(''); setComposeCc(''); setComposeBcc(''); setShowCcBcc(false); setComposeSubject(''); setComposeBody(''); setComposeFrom(''); setComposeReplyMeta(null);
       // Trigger a sync so the sent message shows up
