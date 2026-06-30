@@ -16,7 +16,7 @@
     <title>PrismOS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/static/js/main.CYT96A5I.js"></script>
+    <script type="module" crossorigin src="/static/js/main.CoKUGQFr.js"></script>
     <link rel="modulepreload" crossorigin href="/static/js/vendor-react.C37I3Hs7.chunk.js">
     <link rel="modulepreload" crossorigin href="/static/js/vendor-react-dom.DpoMkUgU.chunk.js">
     <link rel="modulepreload" crossorigin href="/static/js/vendor.Cgi6DKmr.chunk.js">
@@ -27,13 +27,91 @@
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <script>
-      if ('serviceWorker' in navigator) {
+      (function () {
+        if (!('serviceWorker' in navigator)) return;
+
+        var reloading = false;
+        // When the new SW takes control (after the user taps Refresh), reload
+        // once so the page swaps to the new bundle. Guarded against loops.
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (reloading) return;
+          reloading = true;
+          window.location.reload();
+        });
+
+        function showUpdatePrompt(worker) {
+          if (document.getElementById('prismos-update-bar')) return;
+          var bar = document.createElement('div');
+          bar.id = 'prismos-update-bar';
+          bar.setAttribute('role', 'status');
+          bar.style.cssText = [
+            'position:fixed', 'left:50%', 'transform:translateX(-50%)',
+            'bottom:calc(16px + env(safe-area-inset-bottom,0px))', 'z-index:99999',
+            'display:flex', 'align-items:center', 'gap:12px',
+            'padding:10px 12px 10px 16px', 'border-radius:14px',
+            'background:#161921', 'border:1px solid #C5A95E',
+            'box-shadow:0 8px 30px rgba(0,0,0,.45)',
+            'font-family:Inter,system-ui,sans-serif', 'color:#e8eaf0',
+            'font-size:13.5px', 'max-width:calc(100vw - 24px)'
+          ].join(';');
+
+          var label = document.createElement('span');
+          label.textContent = 'New version available';
+          label.style.cssText = 'font-weight:600;white-space:nowrap';
+
+          var btn = document.createElement('button');
+          btn.textContent = 'Refresh';
+          btn.style.cssText = [
+            'background:#C5A95E', 'color:#111', 'border:none', 'border-radius:10px',
+            'padding:7px 16px', 'font-size:13px', 'font-weight:700', 'cursor:pointer',
+            'font-family:inherit', 'white-space:nowrap'
+          ].join(';');
+          btn.addEventListener('click', function () {
+            btn.disabled = true; btn.textContent = 'Updating…';
+            if (worker) worker.postMessage({ type: 'SKIP_WAITING' });
+            else window.location.reload();
+          });
+
+          var dismiss = document.createElement('button');
+          dismiss.setAttribute('aria-label', 'Dismiss');
+          dismiss.textContent = '✕';
+          dismiss.style.cssText = [
+            'background:none', 'border:none', 'color:#9499b0', 'cursor:pointer',
+            'font-size:14px', 'padding:4px 6px', 'font-family:inherit'
+          ].join(';');
+          dismiss.addEventListener('click', function () { bar.remove(); });
+
+          bar.appendChild(label); bar.appendChild(btn); bar.appendChild(dismiss);
+          document.body.appendChild(bar);
+        }
+
         window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/sw.js').catch(function (err) {
+          navigator.serviceWorker.register('/sw.js').then(function (reg) {
+            // A new version was already downloaded and is waiting.
+            if (reg.waiting && navigator.serviceWorker.controller) {
+              showUpdatePrompt(reg.waiting);
+            }
+            // A new version starts installing while the app is open.
+            reg.addEventListener('updatefound', function () {
+              var nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener('statechange', function () {
+                // "installed" + an existing controller == an update (not first install).
+                if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                  showUpdatePrompt(reg.waiting || nw);
+                }
+              });
+            });
+            // Resumed/backgrounded PWAs don't navigate, so poll for a new SW
+            // whenever the app comes back to the foreground.
+            document.addEventListener('visibilitychange', function () {
+              if (document.visibilityState === 'visible') { reg.update().catch(function () {}); }
+            });
+          }).catch(function (err) {
             console.warn('SW registration failed:', err);
           });
         });
-      }
+      })();
     </script>
   </body>
 </html>
