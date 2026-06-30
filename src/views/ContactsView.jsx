@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone } from '../App';
-import { BulkDiscComposer } from './BulkDiscComposer';
+import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
 
 const CONTACT_TYPES = [
   // Clients & Leads
@@ -805,6 +805,13 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const exitTag = ()=>{ setTagMode(false); setSelIds(new Set()); setTagSysId(''); };
   const applyTag = async ()=>{ if(!tagSysId || selIds.size===0) return; setApplyingTag(true); const ids=[...selIds]; const { error } = await supabase.from('contacts').update({ lead_gen_system_id: tagSysId }).in('id', ids); if(error){ if(window.__notify) window.__notify('Could not tag contacts.','error'); setApplyingTag(false); return; } setContacts(prev=>prev.map(c=> selIds.has(c.id) ? { ...c, lead_gen_system_id: tagSysId } : c)); if(window.__notify) window.__notify(ids.length+' contact'+(ids.length===1?'':'s')+' tagged.','success'); setApplyingTag(false); exitTag(); };
   const [typeFilter, setTypeFilter] = useState('all');
+  // Rich filtering (pairs with multi-select: filter → Select all → message/tag)
+  const [showFilters, setShowFilters] = useState(false);
+  const [discFilter, setDiscFilter] = useState(() => new Set());       // 'D','I','S','C','none'
+  const [leadSourceFilter, setLeadSourceFilter] = useState('');         // '' all · system id · 'unassigned'
+  const [priorityFilter, setPriorityFilter] = useState(() => new Set()); // 'urgent','high','normal','low'
+  const [reachFilter, setReachFilter] = useState('any');                // any · has_phone · has_email
+  const [recencyFilter, setRecencyFilter] = useState('any');            // any · never · 30 · 60 · 90
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added' | 'cadence_due'
   const [dueOnly, setDueOnly] = useState(false);
   const [search, setSearch] = useState('');
@@ -812,7 +819,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   // page paints and scrolls fast on mobile; "Show more" extends it. The window
   // resets whenever the filter/search/sort changes so results start from the top.
   const [visibleCount, setVisibleCount] = useState(60);
-  useEffect(() => { setVisibleCount(60); }, [search, typeFilter, dueOnly, sortBy]);
+  useEffect(() => { setVisibleCount(60); }, [search, typeFilter, dueOnly, sortBy, discFilter, leadSourceFilter, priorityFilter, reachFilter, recencyFilter]);
 
   // Email-to-contact linking state
   const [linkSummary, setLinkSummary] = useState(null);  // { suggestions_count, auto_filled, auto_linked } or null when never scanned
@@ -989,6 +996,19 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const filtered = contacts.filter(c => {
     if (typeFilter !== 'all' && c.type !== typeFilter) return false;
     if (dueOnly) { const s = cadenceDue(c); if (!s || !s.due) return false; }
+    if (discFilter.size) { const dl = dominantDiscLetter(profileByContact.get(c.id)) || 'none'; if (!discFilter.has(dl)) return false; }
+    if (leadSourceFilter) {
+      if (leadSourceFilter === 'unassigned') { if (c.lead_gen_system_id) return false; }
+      else if (c.lead_gen_system_id !== leadSourceFilter) return false;
+    }
+    if (priorityFilter.size) { if (!priorityFilter.has(c.priority || 'normal')) return false; }
+    if (reachFilter === 'has_phone' && !c.phone) return false;
+    if (reachFilter === 'has_email' && !c.email) return false;
+    if (recencyFilter !== 'any') {
+      const ds = daysSinceTouch(c);
+      if (recencyFilter === 'never') { if (ds !== null) return false; }
+      else { const min = parseInt(recencyFilter, 10); if (ds !== null && ds < min) return false; }
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       return (c.name||'').toLowerCase().includes(q) ||
@@ -1029,6 +1049,24 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     }
     return 0;
   });
+
+  // Counts for filter chips (across the whole book so the user sees the universe)
+  const discCounts = useMemo(() => {
+    const m = { D:0, I:0, S:0, C:0, none:0 };
+    contacts.forEach(c => { const k = dominantDiscLetter(profileByContact.get(c.id)) || 'none'; m[k] = (m[k]||0)+1; });
+    return m;
+  }, [contacts, profileByContact]);
+  const priorityCounts = useMemo(() => {
+    const m = { urgent:0, high:0, normal:0, low:0 };
+    contacts.forEach(c => { const k = c.priority || 'normal'; if (m[k]!=null) m[k]++; });
+    return m;
+  }, [contacts]);
+  const activeFilterCount = (typeFilter!=='all'?1:0) + (dueOnly?1:0) + (discFilter.size?1:0) + (leadSourceFilter?1:0) + (priorityFilter.size?1:0) + (reachFilter!=='any'?1:0) + (recencyFilter!=='any'?1:0);
+  const clearAllFilters = () => { setTypeFilter('all'); setDueOnly(false); setDiscFilter(new Set()); setLeadSourceFilter(''); setPriorityFilter(new Set()); setReachFilter('any'); setRecencyFilter('any'); };
+  const selectAllFiltered = () => setSelIds(new Set(sorted.map(c => c.id)));
+  const toggleSetVal = (setter, val) => setter(prev => { const nx = new Set(prev); nx.has(val) ? nx.delete(val) : nx.add(val); return nx; });
+  const FLABEL = { fontSize:'10px', color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:600, marginBottom:'6px' };
+  const chipBtn = (on, color) => ({ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 11px', borderRadius:999, fontSize:12, fontWeight:700, cursor:'pointer', border:`1px solid ${on?color:'var(--border)'}`, background:on?color+'22':'transparent', color:on?color:'var(--text-2)' });
 
   async function handleSave(data) {
     let savedRow = null;
@@ -1081,6 +1119,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:60,background:'var(--bg-card)',borderTop:'1px solid var(--accent)',padding:'12px 16px calc(12px + env(safe-area-inset-bottom,0px))',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 20px rgba(0,0,0,0.45)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,width:'100%',flexWrap:'wrap'}}>
             <span style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{selIds.size} selected</span>
+            <button className="btn btn-ghost btn-sm" onClick={selectAllFiltered} title="Select every contact that matches your current filters">Select all ({sorted.length})</button>
+            {selIds.size>0 && <button className="btn btn-ghost btn-sm" onClick={()=>setSelIds(new Set())}>Clear</button>}
             <div style={{display:'flex',gap:8,marginLeft:'auto'}}>
               <button className="btn btn-primary btn-sm" disabled={selIds.size===0} onClick={()=>setBulkChannel('text')} style={{display:'inline-flex',alignItems:'center',gap:6}}><Icon name="message" size={14}/> Text</button>
               <button className="btn btn-primary btn-sm" disabled={selIds.size===0} onClick={()=>setBulkChannel('email')} style={{display:'inline-flex',alignItems:'center',gap:6}}><Icon name="mail" size={14}/> Email</button>
@@ -1105,6 +1145,69 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         onClose={() => {}}
         autoFocus={false}
       />
+
+      {/* Filters — pairs with multi-select: narrow the list, then Select all */}
+      <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom: showFilters?'10px':'14px'}}>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setShowFilters(v=>!v)} style={activeFilterCount?{borderColor:'var(--accent)',color:'var(--accent)',fontWeight:700}:{}}>
+          ⚲ Filters{activeFilterCount?` · ${activeFilterCount}`:''} {showFilters?'▲':'▾'}
+        </button>
+        {activeFilterCount>0 && <button className="btn btn-ghost btn-sm" onClick={clearAllFilters} style={{color:'var(--text-3)'}}>Clear all</button>}
+        <span style={{marginLeft:'auto',fontSize:'12px',color:'var(--text-3)'}}>{sorted.length} match{sorted.length===1?'':'es'}</span>
+      </div>
+
+      {showFilters && (
+        <div className="panel" style={{marginBottom:'14px',padding:'14px',display:'flex',flexDirection:'column',gap:'14px'}}>
+          <div>
+            <div style={FLABEL}>Behavioral style (DISC)</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {['D','I','S','C'].map(k=>{ const m=DISC_STYLE_META[k]; return (
+                <button key={k} onClick={()=>toggleSetVal(setDiscFilter,k)} style={chipBtn(discFilter.has(k),m.color)} title={m.name}>{k} · {discCounts[k]}</button>
+              ); })}
+              <button onClick={()=>toggleSetVal(setDiscFilter,'none')} style={chipBtn(discFilter.has('none'),'#9499b0')}>No DISC · {discCounts.none}</button>
+            </div>
+          </div>
+          <div>
+            <div style={FLABEL}>Priority</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {[['urgent','#ef4444','Urgent'],['high','#f59e0b','High'],['normal','#9499b0','Normal'],['low','#6b7280','Low']].map(([v,col,lab])=>(
+                <button key={v} onClick={()=>toggleSetVal(setPriorityFilter,v)} style={chipBtn(priorityFilter.has(v),col)}>{lab} · {priorityCounts[v]}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            <div style={{flex:'1 1 180px',minWidth:160}}>
+              <div style={FLABEL}>Lead source</div>
+              <select className="form-select" value={leadSourceFilter} onChange={e=>setLeadSourceFilter(e.target.value)} style={{margin:0}}>
+                <option value="">Any source</option>
+                <option value="unassigned">— Unassigned —</option>
+                {tagSystems.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div style={{flex:'1 1 150px',minWidth:140}}>
+              <div style={FLABEL}>Reachable by</div>
+              <select className="form-select" value={reachFilter} onChange={e=>setReachFilter(e.target.value)} style={{margin:0}}>
+                <option value="any">Any</option>
+                <option value="has_phone">Has phone</option>
+                <option value="has_email">Has email</option>
+              </select>
+            </div>
+            <div style={{flex:'1 1 160px',minWidth:150}}>
+              <div style={FLABEL}>Last contacted</div>
+              <select className="form-select" value={recencyFilter} onChange={e=>setRecencyFilter(e.target.value)} style={{margin:0}}>
+                <option value="any">Any time</option>
+                <option value="never">Never contacted</option>
+                <option value="30">30+ days ago</option>
+                <option value="60">60+ days ago</option>
+                <option value="90">90+ days ago</option>
+              </select>
+            </div>
+          </div>
+          <button className="btn btn-primary btn-sm" disabled={sorted.length===0} onClick={()=>{ setTagMode(true); selectAllFiltered(); }} style={{alignSelf:'flex-start',display:'inline-flex',alignItems:'center',gap:6}}>
+            <Icon name="users" size={14} /> Select all {sorted.length} & act
+          </button>
+        </div>
+      )}
+
       <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
         <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
           title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">

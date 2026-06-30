@@ -10,7 +10,7 @@ import { useBackClose, Icon, notify, quoCall, quoNormPhone } from '../App';
 // {first_name} in a draft is replaced with each recipient's first name at send.
 // ─────────────────────────────────────────
 const DISC_LETTERS = ['D', 'I', 'S', 'C'];
-const DISC_STYLE_META = {
+export const DISC_STYLE_META = {
   D: { name: 'Dominance',         color: '#ef4444', tip: 'Direct & results-driven' },
   I: { name: 'Influence',         color: '#f59e0b', tip: 'Warm & expressive' },
   S: { name: 'Steadiness',        color: '#22c55e', tip: 'Steady & supportive' },
