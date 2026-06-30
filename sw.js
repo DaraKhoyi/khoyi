@@ -10,7 +10,7 @@
 //   - New versions of the SW skip-waiting + claim clients immediately so a
 //     deploy is picked up on next page load without an extra refresh
 
-const VERSION = 'prismos-v155-20260630-contacts-search-always'
+const VERSION = 'prismos-v156-20260630-composer-clears-reply'
 const APP_SHELL = [
   '/',
   '/index.html',
