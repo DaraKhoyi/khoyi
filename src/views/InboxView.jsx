@@ -671,7 +671,46 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
     ((a.purposes || []).includes('email') || (a.scopes || []).some(s => s.includes('gmail'))) && a.refresh_token
   );
   const [selectedId, setSelectedId] = useState(null);
+  const [pendingOpenThreadId, setPendingOpenThreadId] = useState(null);
   const account = mailAccounts.find(a => a.id === selectedId) || mailAccounts[0] || null;
+
+  // Dashboard "Reply to…" deep-link. The person's thread can be on EITHER
+  // connected account and thousands deep, so we resolve it against the whole
+  // mailbox here (the wrapper controls which account is active), switch to the
+  // owning account, and hand the exact thread id to the inbox to open.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.__inboxOpenEmail) return;
+    const email = String(window.__inboxOpenEmail).toLowerCase();
+    window.__inboxOpenEmail = null;
+    let alive = true;
+    (async () => {
+      let row = null;
+      try {
+        const { data } = await supabase.from('email_threads').select('id, account_id, last_message_at')
+          .contains('participants', [{ email }])
+          .order('last_message_at', { ascending: false }).limit(1);
+        if (data && data.length) row = data[0];
+      } catch (_) {}
+      if (!row) {
+        try {
+          const { data } = await supabase.from('email_messages').select('thread_id, internal_date')
+            .ilike('from_address', `%${email}%`).order('internal_date', { ascending: false }).limit(1);
+          if (data && data.length && data[0].thread_id) {
+            const { data: tr } = await supabase.from('email_threads').select('id, account_id').eq('id', data[0].thread_id).limit(1);
+            if (tr && tr.length) row = tr[0];
+          }
+        } catch (_) {}
+      }
+      if (!alive) return;
+      if (row) {
+        if (row.account_id) setSelectedId(row.account_id);
+        setPendingOpenThreadId(row.id);
+      } else {
+        try { if (window.__notify) window.__notify("Couldn't find that email conversation.", 'info'); } catch (_) {}
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line
 
   if (!account) return <InboxConnectScreen setView={setView} reloadData={reloadData} />;
 
@@ -697,7 +736,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
           })}
         </div>
       )}
-      <GmailInboxView key={account.id} account={account} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} reloadData={reloadData} />
+      <GmailInboxView key={account.id} account={account} openThreadId={pendingOpenThreadId} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} reloadData={reloadData} />
     </div>
   );
 }
@@ -925,7 +964,7 @@ function PlainTextBody({ text }) {
 }
 
 
-function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData }) {
+function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData }) {
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [tab, setTab] = useState('inbox');
@@ -1246,45 +1285,27 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     }, 50);
   }
 
-  // Dashboard "Reply to…" deep-link: open the actual thread with that person.
-  // The loaded list is only a recent page, and the person's thread may be
-  // thousands of messages deep — so we query the whole mailbox by participant,
-  // not just what's in memory. Runs on mount regardless of whether the page
-  // has loaded yet.
+  // Deep-link: the wrapper has already switched to the correct account and
+  // handed us the exact thread id. Open it by id (from the loaded list if
+  // present, otherwise fetch it directly) — reliable regardless of how deep
+  // the thread is. autoOpenedRef guards against reopening on re-render.
+  const autoOpenedRef = useRef(null);
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.__inboxOpenEmail) return;
-    const email = String(window.__inboxOpenEmail).toLowerCase();
-    window.__inboxOpenEmail = null;
+    if (!openThreadId || autoOpenedRef.current === openThreadId) return;
+    autoOpenedRef.current = openThreadId;
     let alive = true;
     (async () => {
-      // 1) Fast path: already in the loaded page.
-      let match = (threads || []).find(t => JSON.stringify(t.participants || '').toLowerCase().includes(email));
-      // 2) Authoritative: newest thread anywhere whose participants include this email.
-      if (!match) {
+      let th = (threads || []).find(t => t.id === openThreadId);
+      if (!th) {
         try {
-          const { data } = await supabase.from('email_threads').select('*')
-            .contains('participants', [{ email }])
-            .order('last_message_at', { ascending: false }).limit(1);
-          if (data && data.length) match = data[0];
+          const { data } = await supabase.from('email_threads').select('*').eq('id', openThreadId).limit(1);
+          if (data && data.length) th = data[0];
         } catch (_) {}
       }
-      // 3) Case-insensitive fallback: find a message they sent us, open its thread.
-      if (!match) {
-        try {
-          const { data } = await supabase.from('email_messages').select('thread_id, internal_date')
-            .ilike('from_address', `%${email}%`)
-            .order('internal_date', { ascending: false }).limit(1);
-          if (data && data.length && data[0].thread_id) {
-            const { data: tr } = await supabase.from('email_threads').select('*').eq('id', data[0].thread_id).limit(1);
-            if (tr && tr.length) match = tr[0];
-          }
-        } catch (_) {}
-      }
-      if (alive && match) openThread(match);
-      else if (alive) { try { if (window.__notify) window.__notify("Couldn't find that conversation — showing your inbox.", 'info'); } catch (_) {} }
+      if (alive && th) openThread(th);
     })();
     return () => { alive = false; };
-  }, [threads]); // eslint-disable-line
+  }, [openThreadId, threads]); // eslint-disable-line
 
   // Pass 4 Batch D: load any cached triage rows for current threads so the
   // inbox list can show category dots immediately. Re-runs when threads change.
