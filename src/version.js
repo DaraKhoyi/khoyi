@@ -1,3 +1,3 @@
 // Cache bust: forces a new bundle hash so browsers re-download after deploys.
 // Bump this whenever you need to force-refresh clients.
-export const BUILD_VERSION = 'v167 · 2026-06-30 · inbox-attachments';
+export const BUILD_VERSION = 'v168 · 2026-06-30 · followup-ari-rewrite';

@@ -4826,6 +4826,18 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
   const [sending, setSending] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [showInstruction, setShowInstruction] = useState(false);
+  const [discHint, setDiscHint] = useState(null); // {p, s} recipient DISC letters, for the "adapted to X style" hint
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!recipient?.id) { setDiscHint(null); return; }
+      try {
+        const { data } = await supabase.from('profiles').select('primary_letter,secondary_letter').eq('contact_id', recipient.id).eq('subject_kind', 'contact').maybeSingle();
+        if (alive) setDiscHint(data?.primary_letter ? { p: data.primary_letter, s: data.secondary_letter } : null);
+      } catch (_) { if (alive) setDiscHint(null); }
+    })();
+    return () => { alive = false; };
+  }, [recipientId]); // eslint-disable-line
   const [attachments, setAttachments] = useState([]); // [{filename, mime_type, content_base64, size}]
   const attachInputRef = React.useRef(null);
   const MAX_ATTACH_BYTES = 20 * 1024 * 1024; // ~20MB Gmail-safe budget across files
@@ -5001,6 +5013,12 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
               {channel === 'email' && (
                 <input className="form-input" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} style={{ fontSize: '13px', padding: '8px 10px', margin: 0, marginBottom: '8px', fontWeight: 600 }} />
               )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                {discHint
+                  ? <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>adapted to <strong style={{ color: 'var(--accent)' }}>{discHint.p}{discHint.s ? '/' + discHint.s : ''}</strong> style</span>
+                  : <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>no DISC profile yet · neutral tone</span>}
+                <span style={{ marginLeft: 'auto' }}><AriRewriteButton text={bodyText} onRewrite={setBodyText} contactName={recipient?.name} contactId={recipient?.id} discLabel={discHint ? `${discHint.p}${discHint.s ? '/' + discHint.s : ''}` : ''} /></span>
+              </div>
               <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
                 style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
               {channel === 'email' && (
