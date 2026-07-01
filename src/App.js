@@ -4826,6 +4826,26 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
   const [sending, setSending] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [showInstruction, setShowInstruction] = useState(false);
+  const [attachments, setAttachments] = useState([]); // [{filename, mime_type, content_base64, size}]
+  const attachInputRef = React.useRef(null);
+  const MAX_ATTACH_BYTES = 20 * 1024 * 1024; // ~20MB Gmail-safe budget across files
+  async function onPickAttachments(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-picking the same file
+    if (!files.length) return;
+    let total = attachments.reduce((n, a) => n + (a.size || 0), 0);
+    for (const f of files) {
+      if (total + f.size > MAX_ATTACH_BYTES) { notify(`"${f.name}" skipped — attachments over ~20MB won't send by email.`, 'error'); continue; }
+      try {
+        const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('read failed')); r.readAsDataURL(f); });
+        if (!b64) { notify(`Couldn't read "${f.name}".`, 'error'); continue; }
+        total += f.size;
+        setAttachments(prev => [...prev, { filename: f.name, mime_type: f.type || 'application/octet-stream', content_base64: b64, size: f.size }]);
+      } catch (_) { notify(`Couldn't read "${f.name}".`, 'error'); }
+    }
+  }
+  const removeAttachment = (i) => setAttachments(prev => prev.filter((_, idx) => idx !== i));
+  const fmtBytes = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 
   async function draft() {
     setDrafting(true);
@@ -4900,7 +4920,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
       const acc = accs && accs[0];
       if (!acc) { notify('No email account is connected to send from. Connect Gmail in Settings.', 'error'); setSending(false); return; }
       const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', {
-        body: { account_id: acc.id, to: recipient.email, subject: subject || '(no subject)', body_text: bodyText },
+        body: { account_id: acc.id, to: recipient.email, subject: subject || '(no subject)', body_text: bodyText, attachments: attachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 })) },
       });
       if (se) throw se;
       if (sr?.error) throw new Error(sr.error);
@@ -4983,6 +5003,23 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
               )}
               <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
                 style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
+              {channel === 'email' && (
+                <div style={{ marginTop: '8px' }}>
+                  <input ref={attachInputRef} type="file" multiple onChange={onPickAttachments} style={{ display: 'none' }} />
+                  <button className="btn btn-ghost btn-sm" onClick={() => attachInputRef.current && attachInputRef.current.click()} style={{ fontSize: '11px' }}>📎 Attach file</button>
+                  {attachments.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                      {attachments.map((a, i) => (
+                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(197,169,94,0.45)', background: 'rgba(197,169,94,0.10)', fontSize: '11px', color: 'var(--text-1)' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>📄 {a.filename}</span>
+                          <span style={{ color: 'var(--text-3)' }}>{fmtBytes(a.size)}</span>
+                          <button onClick={() => removeAttachment(i)} title="Remove attachment" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', lineHeight: 1, padding: 0 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {showInstruction ? (
                 <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                   <input className="form-input" placeholder="e.g. make it warmer, shorter, mention the inspection…" value={instruction} onChange={e => setInstruction(e.target.value)}
