@@ -355,6 +355,26 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   const filter = taskFilter || 'today';
   const [isDragging, setIsDragging] = useState(false);
   const [datePickerTask, setDatePickerTask] = useState(null);
+  // ── Multi-select bulk edit ──────────────────────────────────
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSel, setBulkSel] = useState(() => new Set());
+  const [bulkDatePick, setBulkDatePick] = useState(false);
+  const toggleBulk = (id) => setBulkSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const exitBulk = () => { setBulkMode(false); setBulkSel(new Set()); };
+  async function bulkSetDate(iso) {
+    const ids = Array.from(bulkSel); if (!ids.length) return;
+    setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, due_date: iso } : t));
+    const { error } = await supabase.from('tasks').update({ due_date: iso }).in('id', ids);
+    if (error) notify("Couldn't update due dates. Try again.", 'error');
+    else notify(`${ids.length} task${ids.length === 1 ? '' : 's'} ${iso ? 'due ' + formatDueShort(iso) : 'due date cleared'}.`, 'success');
+  }
+  async function bulkSetQuadrant(letter) {
+    const ids = Array.from(bulkSel); if (!ids.length) return;
+    setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, eisenhower_quadrant: letter, priority_system: 'eisenhower' } : t));
+    const { error } = await supabase.from('tasks').update({ eisenhower_quadrant: letter, priority_system: 'eisenhower' }).in('id', ids);
+    if (error) notify("Couldn't update priority. Try again.", 'error');
+    else notify(`${ids.length} task${ids.length === 1 ? '' : 's'} set to priority ${letter}.`, 'success');
+  }
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
   // Search bar collapses into a header icon. Open it on demand.
@@ -689,6 +709,10 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
                   style={pillStyle(moreActive)}>
                   {moreLabel} <span style={{fontSize:'9px',opacity:0.7}}>▾</span>
                 </button>
+                <button onClick={() => { if (bulkMode) exitBulk(); else { setBulkMode(true); setBulkSel(new Set()); } }}
+                  style={pillStyle(bulkMode)} title="Select multiple tasks to set due date or priority">
+                  {bulkMode ? '✕ Done' : '☑ Select'}
+                </button>
               </>
             );
           })()}
@@ -770,7 +794,38 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           );
         })()}
 
-        {viewMode === 'sequence' ? (
+        {bulkMode ? (
+          <div style={{ paddingBottom: bulkSel.size > 0 ? '96px' : '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '2px 0 10px' }}>
+              <button onClick={() => setBulkSel(new Set(visibleTasks.map(t => t.id)))}
+                style={{ padding: '6px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer' }}>
+                Select all ({visibleTasks.length})
+              </button>
+              <button onClick={() => setBulkSel(new Set())}
+                style={{ padding: '6px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>
+                Clear
+              </button>
+              <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-3)' }}>{bulkSel.size} selected</span>
+            </div>
+            {visibleTasks.length === 0 && <p style={{ color: 'var(--text-3)', fontSize: '13px', padding: '12px 2px' }}>No tasks in this filter.</p>}
+            {visibleTasks.map(t => {
+              const sel = bulkSel.has(t.id);
+              const q = t.eisenhower_quadrant;
+              return (
+                <button key={t.id} onClick={() => toggleBulk(t.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left',
+                    padding: '10px 12px', marginBottom: '6px', borderRadius: '8px', cursor: 'pointer',
+                    border: `1px solid ${sel ? 'var(--accent)' : 'var(--border)'}`,
+                    background: sel ? 'rgba(197,169,94,0.12)' : 'var(--bg-card)' }}>
+                  <span style={{ fontSize: '16px', color: sel ? 'var(--accent)' : 'var(--text-3)', lineHeight: 1 }}>{sel ? '☑' : '☐'}</span>
+                  <span style={{ flexShrink: 0, width: '20px', height: '20px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800, color: '#000', background: QUAD_COLORS[q] || 'var(--text-3)' }}>{q || '–'}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: '13.5px', color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+                  <span style={{ flexShrink: 0, fontSize: '11px', color: t.due_date && t.due_date < todayISO() ? 'var(--red)' : 'var(--text-3)' }}>{formatDueShort(t.due_date)}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : viewMode === 'sequence' ? (
           <SequenceView
             buckets={sequenceGroups.buckets}
             unranked={sequenceGroups.unranked}
@@ -800,6 +855,37 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             if (task) setDatePickerTask(task);
           }}
         />
+
+        {bulkMode && bulkSel.size > 0 && createPortal(
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 9997,
+            background: 'var(--bg-card)', borderTop: '1px solid var(--border)', padding: '10px 14px calc(10px + env(safe-area-inset-bottom))',
+            display: 'flex', flexWrap: 'wrap', gap: '10px 14px', alignItems: 'center', boxShadow: '0 -6px 20px rgba(0,0,0,0.35)' }}>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)' }}>{bulkSel.size} selected</span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Due</span>
+              {[{ l: 'Today', v: todayISO() }, { l: 'Tomorrow', v: addDaysISO(1) }].map(o => (
+                <button key={o.l} onClick={() => bulkSetDate(o.v)} style={{ padding: '6px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-1)', cursor: 'pointer' }}>{o.l}</button>
+              ))}
+              <button onClick={() => setBulkDatePick(true)} style={{ padding: '6px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-1)', cursor: 'pointer' }}>Pick…</button>
+              <button onClick={() => bulkSetDate(null)} style={{ padding: '6px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer' }}>Clear</button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Priority</span>
+              {['A', 'B', 'C', 'D'].map(L => (
+                <button key={L} onClick={() => bulkSetQuadrant(L)} title={QUAD_LABELS[L]}
+                  style={{ width: '30px', height: '30px', borderRadius: '7px', fontSize: '13px', fontWeight: 800, color: '#000', background: QUAD_COLORS[L], border: 'none', cursor: 'pointer' }}>{L}</button>
+              ))}
+            </div>
+          </div>, document.body
+        )}
+
+        {bulkDatePick && (
+          <DatePickerModal
+            initial={todayISO()}
+            onCancel={() => setBulkDatePick(false)}
+            onPick={async (iso) => { await bulkSetDate(iso); setBulkDatePick(false); }}
+          />
+        )}
 
         {datePickerTask && (
           <DatePickerModal
