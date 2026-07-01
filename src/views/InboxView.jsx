@@ -1072,6 +1072,27 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
+  const [composeAttachments, setComposeAttachments] = useState([]); // [{filename, mime_type, content_base64, size}]
+  const composeAttachRef = useRef(null);
+  const COMPOSE_MAX_ATTACH_BYTES = 20 * 1024 * 1024; // ~20MB Gmail-safe budget
+  useEffect(() => { if (!showCompose) setComposeAttachments([]); }, [showCompose]); // clear on close so next open is clean
+  async function onPickComposeAttachments(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    let total = composeAttachments.reduce((n, a) => n + (a.size || 0), 0);
+    for (const f of files) {
+      if (total + f.size > COMPOSE_MAX_ATTACH_BYTES) { notifyError(`"${f.name}" skipped — attachments over ~20MB won't send by email.`); continue; }
+      try {
+        const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('read failed')); r.readAsDataURL(f); });
+        if (!b64) { notifyError(`Couldn't read "${f.name}".`); continue; }
+        total += f.size;
+        setComposeAttachments(prev => [...prev, { filename: f.name, mime_type: f.type || 'application/octet-stream', content_base64: b64, size: f.size }]);
+      } catch (_) { notifyError(`Couldn't read "${f.name}".`); }
+    }
+  }
+  const removeComposeAttachment = (i) => setComposeAttachments(prev => prev.filter((_, idx) => idx !== i));
+  const fmtAttachBytes = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
   const [composeFrom, setComposeFrom] = useState('');  // resolved sender address
   const [composeReplyMeta, setComposeReplyMeta] = useState(null);  // { message_id, thread_id } when replying
   const [replyCtx, setReplyCtx] = useState(null);   // original email context for the AI reply drafter
@@ -1926,6 +1947,7 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
         subject: composeSubject,
         body_text: composeBody,
       };
+      if (composeAttachments.length) payload.attachments = composeAttachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 }));
       const ccArr = composeCc.split(',').map(s => s.trim()).filter(Boolean);
       const bccArr = composeBcc.split(',').map(s => s.trim()).filter(Boolean);
       if (ccArr.length) payload.cc = ccArr;
@@ -2903,6 +2925,21 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
                   <span style={{marginLeft:'auto'}}><AriRewriteButton text={composeBody} onRewrite={setComposeBody} contactName={composeTo} /></span>
                 </div>
                 <textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required />
+              </div>
+              <div style={{ marginTop: '8px' }}>
+                <input ref={composeAttachRef} type="file" multiple onChange={onPickComposeAttachments} style={{ display: 'none' }} />
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => composeAttachRef.current && composeAttachRef.current.click()} style={{ fontSize: '11px' }}>📎 Attach file</button>
+                {composeAttachments.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                    {composeAttachments.map((a, i) => (
+                      <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(197,169,94,0.45)', background: 'rgba(197,169,94,0.10)', fontSize: '11px', color: 'var(--text-1)' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>📄 {a.filename}</span>
+                        <span style={{ color: 'var(--text-3)' }}>{fmtAttachBytes(a.size)}</span>
+                        <button type="button" onClick={() => removeComposeAttachment(i)} title="Remove attachment" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', lineHeight: 1, padding: 0 }}>✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               {sendMsg && <p style={{fontSize:'13px',color: sendMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',margin:'4px 0'}}>{sendMsg}</p>}
               <div className="modal-actions">
