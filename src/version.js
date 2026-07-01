@@ -1,3 +1,3 @@
 // Cache bust: forces a new bundle hash so browsers re-download after deploys.
 // Bump this whenever you need to force-refresh clients.
-export const BUILD_VERSION = 'v169 · 2026-07-01 · tasks-multiselect';
+export const BUILD_VERSION = 'v170 · 2026-07-01 · nba-open-real-thread';

@@ -1246,14 +1246,44 @@ function GmailInboxView({ account, setEmailAccounts, emailAliases, setEmailAlias
     }, 50);
   }
 
-  // Dashboard "Reply to…" deep-link: when an email address is staged, open the
-  // most recent thread with that person once threads are loaded.
+  // Dashboard "Reply to…" deep-link: open the actual thread with that person.
+  // The loaded list is only a recent page, and the person's thread may be
+  // thousands of messages deep — so we query the whole mailbox by participant,
+  // not just what's in memory. Runs on mount regardless of whether the page
+  // has loaded yet.
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.__inboxOpenEmail || !threads || !threads.length) return;
+    if (typeof window === 'undefined' || !window.__inboxOpenEmail) return;
     const email = String(window.__inboxOpenEmail).toLowerCase();
     window.__inboxOpenEmail = null;
-    const match = threads.find(t => JSON.stringify(t.participants || '').toLowerCase().includes(email));
-    if (match) openThread(match);
+    let alive = true;
+    (async () => {
+      // 1) Fast path: already in the loaded page.
+      let match = (threads || []).find(t => JSON.stringify(t.participants || '').toLowerCase().includes(email));
+      // 2) Authoritative: newest thread anywhere whose participants include this email.
+      if (!match) {
+        try {
+          const { data } = await supabase.from('email_threads').select('*')
+            .contains('participants', [{ email }])
+            .order('last_message_at', { ascending: false }).limit(1);
+          if (data && data.length) match = data[0];
+        } catch (_) {}
+      }
+      // 3) Case-insensitive fallback: find a message they sent us, open its thread.
+      if (!match) {
+        try {
+          const { data } = await supabase.from('email_messages').select('thread_id, internal_date')
+            .ilike('from_address', `%${email}%`)
+            .order('internal_date', { ascending: false }).limit(1);
+          if (data && data.length && data[0].thread_id) {
+            const { data: tr } = await supabase.from('email_threads').select('*').eq('id', data[0].thread_id).limit(1);
+            if (tr && tr.length) match = tr[0];
+          }
+        } catch (_) {}
+      }
+      if (alive && match) openThread(match);
+      else if (alive) { try { if (window.__notify) window.__notify("Couldn't find that conversation — showing your inbox.", 'info'); } catch (_) {} }
+    })();
+    return () => { alive = false; };
   }, [threads]); // eslint-disable-line
 
   // Pass 4 Batch D: load any cached triage rows for current threads so the
