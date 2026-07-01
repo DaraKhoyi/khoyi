@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v169-20260701-tasks-multiselect'
+const VERSION = 'prismos-v170-20260701-nba-open-real-thread'
 const APP_SHELL = [
   '/',
   '/index.html',
