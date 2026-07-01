@@ -79,6 +79,7 @@ function sourceWeight(kind: string): number {
     case "note":
     case "contact_note": return 2.0;
     case "recording_transcript": return 2.5;   // spoken word > written, very high signal
+    case "call_transcript": return 2.5;         // Quo phone call — spoken word, very high signal
     case "email_incoming": return 1.5;
     case "email_outgoing": return 0.5;
     case "calendar_event":
@@ -215,6 +216,34 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
       });
     }
   } catch (_) { /* recordings optional */ }
+
+  // 7) Quo (OpenPhone) call transcripts — the contact's spoken segments only.
+  //    Spoken word is our highest-signal DISC evidence. In an OpenPhone
+  //    transcript, our workspace side always carries a userId; the external
+  //    party (the contact) has a null userId — so that's how we isolate them.
+  try {
+    const { data: calls } = await supabase.from("quo_calls")
+      .select("id, transcript, completed_at, op_created_at, duration")
+      .eq("user_id", userId).eq("contact_id", contact.id)
+      .not("transcript", "is", null)
+      .order("completed_at", { ascending: false }).limit(10);
+    for (const c of calls || []) {
+      if (!Array.isArray(c.transcript) || c.transcript.length === 0) continue;
+      const contactText = c.transcript
+        .filter((s: any) => s && (s.userId === null || s.userId === undefined) && s.content)
+        .map((s: any) => String(s.content).trim())
+        .filter((line: string) => line && !/^call recording is on/i.test(line))
+        .join(" ")
+        .slice(0, 3000);
+      if (!contactText.trim()) continue;
+      evidence.push({
+        ref: `quo_call:${c.id}`,
+        kind: "call_transcript",
+        excerpt: `Phone call — the contact's own words:\n${contactText}`,
+        dated_at: c.completed_at || c.op_created_at,
+      });
+    }
+  } catch (_) { /* quo calls optional */ }
 
   // 5) Research read (web-derived behavioral prior) — low weight
   // We pull the contact's research_summary + key insights, not the full report
