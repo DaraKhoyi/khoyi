@@ -74,11 +74,19 @@ serve(async (req) => {
         transcript: o.dialogue ?? null,
         updated_at: new Date().toISOString(),
       }).eq("op_id", o.callId);
-      const { data: exists } = await supabase.from("quo_calls").select("id").eq("op_id", o.callId).maybeSingle();
+      const { data: exists } = await supabase.from("quo_calls").select("id, contact_id, processed_at").eq("op_id", o.callId).maybeSingle();
       if (!exists) {
         await supabase.from("quo_calls").upsert({
           user_id: owner, op_id: o.callId, transcript: o.dialogue ?? null, raw: o,
         }, { onConflict: "op_id" });
+      } else if (exists.contact_id && exists.processed_at) {
+        // The call was already processed (e.g. from its summary) before this
+        // transcript arrived — quo-call-process won't revisit it, so queue a
+        // DISC refresh now so the spoken-word signal isn't lost.
+        try {
+          const { data: pend } = await supabase.from("disc_analysis_queue").select("id").eq("contact_id", exists.contact_id).eq("status", "pending").limit(1);
+          if (!pend || !pend.length) await supabase.from("disc_analysis_queue").insert({ user_id: owner, contact_id: exists.contact_id, reason: "call_transcript", priority: 3, status: "pending", queued_at: new Date().toISOString() });
+        } catch (_e) { /* best-effort */ }
       }
     } else if (type.startsWith("call.")) {
       const parts = Array.isArray(o.participants) ? o.participants : [];

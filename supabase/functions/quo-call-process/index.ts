@@ -248,11 +248,31 @@ serve(async (req) => {
         processed_at: new Date().toISOString(),
       }).eq("id", call.id);
       processed++;
-      // A call is rich DISC signal — queue the contact for re-analysis (nightly batch picks it up). Guard against dup pending rows.
+      // A call is rich DISC signal. If we captured a transcript (spoken word =
+      // the highest-value behavioral signal), refresh the contact's profile
+      // right now instead of waiting for the nightly batch. Fall back to the
+      // queue if the live refresh can't run.
       if (contact) {
+        let refreshedNow = false;
+        if (transcript) {
+          try {
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/disc-analyze`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SERVICE}` },
+              body: JSON.stringify({ user_id: call.user_id, contact_id: contact.id, force: true }),
+            });
+            refreshedNow = res.ok;
+          } catch (_e) { /* fall through to the queue */ }
+        }
         try {
-          const { data: pend } = await admin.from("disc_analysis_queue").select("id").eq("contact_id", contact.id).eq("status", "pending").limit(1);
-          if (!pend || !pend.length) await admin.from("disc_analysis_queue").insert({ user_id: call.user_id, contact_id: contact.id, reason: "call", priority: 3, status: "pending", queued_at: new Date().toISOString() });
+          if (refreshedNow) {
+            // Already refreshed live — clear any pending queue row so the batch doesn't redo it.
+            await admin.from("disc_analysis_queue").update({ status: "done", processed_at: new Date().toISOString() })
+              .eq("contact_id", contact.id).eq("status", "pending");
+          } else {
+            const { data: pend } = await admin.from("disc_analysis_queue").select("id").eq("contact_id", contact.id).eq("status", "pending").limit(1);
+            if (!pend || !pend.length) await admin.from("disc_analysis_queue").insert({ user_id: call.user_id, contact_id: contact.id, reason: "call", priority: 3, status: "pending", queued_at: new Date().toISOString() });
+          }
         } catch (_e) { /* DISC enqueue is best-effort */ }
       }
     }
