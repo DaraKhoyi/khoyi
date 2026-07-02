@@ -494,22 +494,36 @@ function AnnouncementModal({ userId }) {
 }
 
 // Owner/admin surface to post and manage announcements.
-function AnnouncementsAdmin({ userId }) {
+function AnnouncementsAdmin({ userId, isAdmin = false }) {
   const [title, setTitle] = React.useState('');
   const [body, setBody] = React.useState('');
   const [list, setList] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState('');
+  const [audiences, setAudiences] = React.useState([]);
+  const [audience, setAudience] = React.useState(isAdmin ? '' : '__none__');
 
   const load = React.useCallback(async () => {
     try { const { data } = await supabase.rpc('announcement_stats'); setList(Array.isArray(data) ? data : []); } catch (_) { setList([]); }
   }, []);
   React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('my_announce_audiences');
+        const auds = Array.isArray(data) ? data : [];
+        setAudiences(auds);
+        if (!isAdmin) setAudience(auds.length ? auds[0].team_id : '__none__');
+      } catch (_) { setAudiences([]); }
+    })();
+  }, [isAdmin]);
 
   async function post() {
     if (!body.trim()) { setMsg('Message body is required.'); return; }
     setBusy(true); setMsg('');
-    const { error } = await supabase.from('announcements').insert({ title: title.trim() || null, body: body.trim(), created_by: userId });
+    const team_id = (audience && audience !== '' && audience !== '__none__') ? audience : null;
+    if (!isAdmin && !team_id) { setMsg('Please choose a team to post to.'); setBusy(false); return; }
+    const { error } = await supabase.from('announcements').insert({ title: title.trim() || null, body: body.trim(), created_by: userId, team_id });
     if (error) { setMsg('Error: ' + error.message); setBusy(false); return; }
     setTitle(''); setBody(''); setMsg('Posted. Every agent will see it next time they open the app.'); setBusy(false); load();
   }
@@ -526,6 +540,14 @@ function AnnouncementsAdmin({ userId }) {
           <div className="panel-header"><h3>New announcement</h3></div>
           <div className="panel-body">
             <div className="form-group"><label className="form-label">Title (optional)</label><input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Office closed Friday" maxLength={120} /></div>
+            <div className="form-group"><label className="form-label">Audience</label>
+              <select className="form-input" value={audience} onChange={e => setAudience(e.target.value)}>
+                {isAdmin && <option value="">Everyone (system-wide)</option>}
+                {audiences.map(a => <option key={a.team_id} value={a.team_id}>{a.team_name}</option>)}
+                {!isAdmin && audiences.length === 0 && <option value="__none__">No team assigned to you yet</option>}
+              </select>
+              <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>{isAdmin ? 'Post to everyone, or narrow to a single team.' : 'You can post to your team.'}</div>
+            </div>
             <div className="form-group"><label className="form-label">Message</label><textarea className="form-input" value={body} onChange={e => setBody(e.target.value)} rows={4} placeholder="What do you want every agent to see?" /></div>
             {msg && <div style={{ fontSize: '12.5px', marginBottom: '10px', color: msg.startsWith('Error') ? 'var(--red)' : 'var(--green)' }}>{msg}</div>}
             <button className="btn btn-primary" disabled={busy} onClick={post}>{busy ? 'Posting…' : 'Post announcement'}</button>
@@ -539,6 +561,7 @@ function AnnouncementsAdmin({ userId }) {
               <div key={a.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontWeight: 700, color: 'var(--text-1)', fontSize: '14px' }}>{a.title || '(no title)'}</span>
+                  <span style={{ fontSize: '10px', color: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px' }}>{a.team_name || 'Everyone'}</span>
                   {!a.is_active && <span style={{ fontSize: '10px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px' }}>inactive</span>}
                   <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--accent)' }}>✓ {a.ack_count} acknowledged</span>
                 </div>
@@ -14312,7 +14335,7 @@ function AppMain() {
     { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
     { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
     { id: 'systems',     icon: '🩺', label: 'Systems',     badge: null },
-    ...(isAdmin ? [{ id: 'announcements', icon: '📣', label: 'Announcements', badge: null }] : []),
+    ...((isAdmin || isTeamLeader) ? [{ id: 'announcements', icon: '📣', label: 'Announcements', badge: null }] : []),
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
 
@@ -14520,7 +14543,7 @@ function AppMain() {
               : view==='voice_roster'? <VoiceRosterView/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
-              : view==='announcements' ? <AnnouncementsAdmin userId={user.id} />
+              : view==='announcements' ? <AnnouncementsAdmin userId={user.id} isAdmin={isAdmin} />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin}/>
               : null}
                 </React.Suspense>
