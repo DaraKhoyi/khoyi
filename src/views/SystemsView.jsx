@@ -106,10 +106,14 @@ function SystemsView({ contacts = [], userId }) {
       return;
     }
     try {
-      const res = await sys.check();
+      const res = await Promise.race([
+        sys.check(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Check timed out')), 12000)),
+      ]);
       setResults(r => ({ ...r, [sys.id]: { ...res, checkedAt: Date.now(), running: false } }));
     } catch (e) {
-      setResults(r => ({ ...r, [sys.id]: { status: 'down', detail: e?.message || 'Check threw an error', checkedAt: Date.now(), running: false } }));
+      const timedOut = e?.message === 'Check timed out';
+      setResults(r => ({ ...r, [sys.id]: { status: timedOut ? 'degraded' : 'down', detail: e?.message || 'Check threw an error', checkedAt: Date.now(), running: false } }));
     }
   }
 

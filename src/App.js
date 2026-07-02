@@ -43,8 +43,17 @@ function lazyWithReload(factory) {
           window.location.reload();
           return new Promise(() => {});
         }
+        // Already reloaded once recently — don't crash to a blank/frozen screen.
+        // Give the user a clear way to pick up the new version.
+        return { default: function ChunkNeedsRefresh() {
+          return React.createElement('div', { style: { padding: '32px 20px', textAlign: 'center', color: 'var(--text-2)' } },
+            React.createElement('div', { style: { fontSize: '15px', fontWeight: 600, color: 'var(--text-1)', marginBottom: '6px' } }, 'A new version was just deployed'),
+            React.createElement('div', { style: { fontSize: '13px', marginBottom: '16px' } }, 'Tap refresh to load the latest.'),
+            React.createElement('button', { className: 'btn btn-primary', onClick: () => { try { sessionStorage.removeItem('__chunkReloadAt'); } catch (_) {} window.location.reload(); } }, 'Refresh to update')
+          );
+        } };
       }
-      throw err; // already reloaded recently — let the error boundary show it
+      throw err;
     })
   );
 }
@@ -438,6 +447,112 @@ function AuthScreen() {
 // Blocking modal that surfaces unacknowledged announcements one at a time
 // (oldest first). Each must be checked off before the next appears; they
 // persist across sessions until acknowledged.
+
+// Brokerage-level team builder (owner/broker_admin). Create teams, name a leader, add members.
+function TeamsAdmin({ userId }) {
+  const [teams, setTeams] = React.useState([]);
+  const [candidates, setCandidates] = React.useState([]);
+  const [newName, setNewName] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+  const [addSel, setAddSel] = React.useState({});
+
+  const load = React.useCallback(async () => {
+    try {
+      const [{ data: rows }, { data: cands }] = await Promise.all([
+        supabase.rpc('admin_teams'),
+        supabase.rpc('admin_agent_candidates'),
+      ]);
+      const byTeam = {};
+      (rows || []).forEach(r => {
+        if (!byTeam[r.team_id]) byTeam[r.team_id] = { id: r.team_id, name: r.team_name, members: [] };
+        if (r.member_user_id) byTeam[r.team_id].members.push({ user_id: r.member_user_id, name: r.member_name, email: r.member_email, role: r.member_role });
+      });
+      setTeams(Object.values(byTeam));
+      setCandidates(Array.isArray(cands) ? cands : []);
+    } catch (_) { setTeams([]); }
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  async function createTeam() {
+    if (!newName.trim()) { setMsg('Enter a team name.'); return; }
+    setBusy(true); setMsg('');
+    const { error } = await supabase.rpc('admin_create_team', { p_name: newName.trim() });
+    if (error) { setMsg('Error: ' + error.message); setBusy(false); return; }
+    setNewName(''); setBusy(false); load();
+  }
+  async function renameTeam(t) { const name = window.prompt('Rename team', t.name); if (name == null) return; try { await supabase.rpc('admin_rename_team', { p_team: t.id, p_name: name }); } catch (_) {} load(); }
+  async function deleteTeam(t) { if (!window.confirm('Delete "' + t.name + '"? Members are removed and any announcements sent only to this team are deleted.')) return; try { await supabase.rpc('admin_delete_team', { p_team: t.id }); } catch (_) {} load(); }
+  async function addMember(t) { const sel = addSel[t.id] || {}; if (!sel.user) { setMsg('Pick someone to add.'); return; } try { await supabase.rpc('admin_add_member', { p_team: t.id, p_user: sel.user, p_role: sel.role || 'member' }); } catch (_) {} setAddSel(s => ({ ...s, [t.id]: { user: '', role: 'member' } })); load(); }
+  async function setRole(t, m, role) { try { await supabase.rpc('admin_set_member_role', { p_team: t.id, p_user: m.user_id, p_role: role }); } catch (_) {} load(); }
+  async function removeMember(t, m) { try { await supabase.rpc('admin_remove_member', { p_team: t.id, p_user: m.user_id }); } catch (_) {} load(); }
+
+  const sbtn = { fontSize: '12px', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' };
+
+  return (
+    <div>
+      <div className="page-header"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span>👥</span>Teams</h2><p>Create teams, name a leader, and add members. Team leaders can post announcements to their team; owners/admins can target any team.</p></div>
+      <div style={{ maxWidth: '680px' }}>
+        <div className="panel" style={{ marginBottom: '18px' }}>
+          <div className="panel-header"><h3>New team</h3></div>
+          <div className="panel-body">
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input className="form-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Team name (e.g., Downtown Team)" style={{ flex: 1 }} />
+              <button className="btn btn-primary" disabled={busy} onClick={createTeam}>{busy ? '…' : 'Create'}</button>
+            </div>
+            {msg && <div style={{ fontSize: '12.5px', marginTop: '8px', color: msg.startsWith('Error') ? 'var(--red)' : 'var(--text-2)' }}>{msg}</div>}
+          </div>
+        </div>
+        {teams.length === 0 && <div className="panel"><div className="panel-body"><div style={{ fontSize: '13px', color: 'var(--text-3)' }}>No teams yet. Create one above.</div></div></div>}
+        {teams.map(t => {
+          const memberIds = new Set(t.members.map(m => m.user_id));
+          const avail = candidates.filter(c => !memberIds.has(c.user_id));
+          const sel = addSel[t.id] || { user: '', role: 'member' };
+          return (
+            <div key={t.id} className="panel" style={{ marginBottom: '14px' }}>
+              <div className="panel-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={{ margin: 0 }}>{t.name}</h3>
+                <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{t.members.length} member{t.members.length === 1 ? '' : 's'}</span>
+                <button onClick={() => renameTeam(t)} style={{ ...sbtn, marginLeft: 'auto' }}>Rename</button>
+                <button onClick={() => deleteTeam(t)} style={{ ...sbtn, color: 'var(--red)' }}>Delete</button>
+              </div>
+              <div className="panel-body">
+                {t.members.length === 0 && <div style={{ fontSize: '12.5px', color: 'var(--text-3)', marginBottom: '10px' }}>No members yet.</div>}
+                {t.members.map(m => (
+                  <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: '13.5px', color: 'var(--text-1)', fontWeight: 600 }}>{m.name}</div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-3)' }}>{m.email}</div>
+                    </div>
+                    <select className="form-input" value={m.role} onChange={e => setRole(t, m, e.target.value)} style={{ width: 'auto', padding: '4px 8px', fontSize: '12px' }}>
+                      <option value="leader">Leader</option>
+                      <option value="member">Member</option>
+                      {m.role === 'admin' && <option value="admin">Admin</option>}
+                      {m.role === 'owner' && <option value="owner">Owner</option>}
+                    </select>
+                    <button onClick={() => removeMember(t, m)} style={{ ...sbtn, color: 'var(--red)' }}>Remove</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <select className="form-input" value={sel.user} onChange={e => setAddSel(s => ({ ...s, [t.id]: { ...sel, user: e.target.value } }))} style={{ flex: '1 1 180px', padding: '6px 8px', fontSize: '13px' }}>
+                    <option value="">Add a person…</option>
+                    {avail.map(c => <option key={c.user_id} value={c.user_id}>{c.name}{c.email ? ' (' + c.email + ')' : ''}</option>)}
+                  </select>
+                  <select className="form-input" value={sel.role || 'member'} onChange={e => setAddSel(s => ({ ...s, [t.id]: { ...sel, role: e.target.value } }))} style={{ width: 'auto', padding: '6px 8px', fontSize: '13px' }}>
+                    <option value="member">Member</option>
+                    <option value="leader">Leader</option>
+                  </select>
+                  <button className="btn btn-primary btn-sm" onClick={() => addMember(t)} disabled={!sel.user}>Add</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AnnouncementModal({ userId }) {
   const [queue, setQueue] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -14335,6 +14450,7 @@ function AppMain() {
     { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
     { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
     { id: 'systems',     icon: '🩺', label: 'Systems',     badge: null },
+    ...(isAdmin ? [{ id: 'teams', icon: '👥', label: 'Teams', badge: null }] : []),
     ...((isAdmin || isTeamLeader) ? [{ id: 'announcements', icon: '📣', label: 'Announcements', badge: null }] : []),
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
@@ -14345,7 +14461,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'announcements', 'settings'];
+  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'teams', 'announcements', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -14543,6 +14659,7 @@ function AppMain() {
               : view==='voice_roster'? <VoiceRosterView/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
+              : view==='teams' ? <TeamsAdmin userId={user.id} />
               : view==='announcements' ? <AnnouncementsAdmin userId={user.id} isAdmin={isAdmin} />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin}/>
               : null}
