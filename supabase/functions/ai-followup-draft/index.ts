@@ -70,6 +70,42 @@ async function loadVoice(req: Request): Promise<{ body: string; name: string | n
   } catch (_) { return null; }
 }
 
+// -- BYOK + metering helpers --
+async function aesKey() {
+  const secret = Deno.env.get("AI_KEY_ENC_SECRET") || "";
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return crypto.subtle.importKey("raw", hash, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+async function decryptKey(stored) {
+  try {
+    const [ivB, ctB] = stored.split(":");
+    const iv = Uint8Array.from(atob(ivB), (c) => c.charCodeAt(0));
+    const ct = Uint8Array.from(atob(ctB), (c) => c.charCodeAt(0));
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, await aesKey(), ct);
+    return new TextDecoder().decode(pt);
+  } catch (_) { return null; }
+}
+async function resolveKey(supabase, userId, platformKey) {
+  if (userId) {
+    const { data } = await supabase.from("user_ai_keys").select("key_ciphertext, status").eq("user_id", userId).maybeSingle();
+    if (data && data.status === "active" && data.key_ciphertext) {
+      const k = await decryptKey(data.key_ciphertext);
+      if (k) return { key: k, usedOwn: true };
+    }
+  }
+  return { key: platformKey, usedOwn: false };
+}
+const AI_RATES = { "claude-opus-4-8": [5, 25], "claude-opus-4-7": [5, 25], "claude-sonnet-4-6": [3, 15], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
+async function logUsage(supabase, { userId, fn, model, usage, usedOwn }) {
+  try {
+    const inTok = usage?.input_tokens || 0, outTok = usage?.output_tokens || 0;
+    const searches = usage?.server_tool_use?.web_search_requests || 0;
+    const [ri, ro] = AI_RATES[model] || [3, 15];
+    const cost = (inTok / 1e6) * ri + (outTok / 1e6) * ro + searches * 0.01;
+    await supabase.from("ai_usage_log").insert({ user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok, web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn });
+  } catch (_) {}
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -116,10 +152,11 @@ Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "
 
 "${b.entryBody || "(no details recorded)"}"${ctx}${intel}${b.instruction ? `\n\nExtra instruction for this draft: ${b.instruction}` : ""}`;
 
+    const { key: __k, usedOwn: __own } = await resolveKey(supabase, user?.id, ANTHROPIC_API_KEY);
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
+        "x-api-key": __k,
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
@@ -137,6 +174,7 @@ Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "
       });
     }
     const j = await r.json();
+    logUsage(supabase, { userId: user?.id, fn: "ai-followup-draft", model: MODEL, usage: j.usage, usedOwn: __own });
     let raw = (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
     raw = raw.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
     let subject = "", body = raw;
