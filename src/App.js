@@ -2704,11 +2704,12 @@ function PlanTimeline({ steps = [], events = [], onTapStep, isDone, saved }) {
 // ── Next Best Action engine: answers "what do I do next?" across all signals ──
 function nbaLastTouch(c){ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(t=>new Date(t).getTime()); return a.length?Math.max(...a):null; }
 function nbaAge(d){ d=Math.max(0,Math.floor(d)); if(d<=0) return 'today'; if(d===1) return '1 day'; if(d<7) return d+' days'; if(d<14) return '1 week'; if(d<60) return Math.floor(d/7)+' weeks'; return Math.floor(d/30)+' months'; }
-function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date.now() }){
+function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date.now(), myUserId=null }){
   const out=[]; const today=new Date(now); const todayISO=today.toISOString().slice(0,10);
   const startToday=new Date(new Date(now).setHours(0,0,0,0)).getTime();
   contacts.forEach(c=>{
     if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
+    if(myUserId && c.user_id !== myUserId) return; // owe-a-reply belongs to the recipient (owner), not other share-group viewers
     if(c.last_communication_direction!=='inbound' || !c.last_inbound_at) return;
     const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0;
     if(lin<=lout) return; const days=Math.floor((now-lin)/86400000);
@@ -2740,9 +2741,9 @@ function buildGrowthMoves({ contacts=[], deals=[], gciGoal=0, now=Date.now() }){
   moves.push({ key:'oh', icon:'target', title:'Line up an open house', why:'One listing becomes many buyer leads — plan an open house this week', cta:{ label:'My pipeline', kind:'view', payload:'pipeline' } });
   return moves;
 }
-function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan }){
+function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan, myUserId=null }){
   const now=Date.now();
-  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now}),[contacts,tasks,events,deals]);
+  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now,myUserId}),[contacts,tasks,events,deals,myUserId]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
   const urgent=actions.length>0; const list=urgent?actions:growth;
@@ -2839,7 +2840,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       const nowMs = Date.now();
       const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
       const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
-      const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
+      const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (userId && c.user_id !== userId) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
       const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
       const reachSource = [
         ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
@@ -3957,7 +3958,7 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   const overdue=pending.filter(t=>t.due_date && t.due_date<todayISO);
   const topTasks=pending.filter(t=>t.priority==='high');
   const lastTouch=(c)=>{ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(x=>new Date(x).getTime()); return a.length?Math.max(...a):null; };
-  const oweReplyN=contacts.filter(c=>{ if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; if(c.last_communication_direction!=='inbound'||!c.last_inbound_at)return false; const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0; return lin>lout; }).length;
+  const oweReplyN=contacts.filter(c=>{ if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; if(userId&&c.user_id!==userId)return false; if(c.last_communication_direction!=='inbound'||!c.last_inbound_at)return false; const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0; return lin>lout; }).length;
   const reachN=contacts.filter(c=>{ const cad=c.cadence_days; if(!cad)return false; if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; const ts=lastTouch(c); const ds=ts===null?null:Math.floor((now-ts)/86400000); return ds===null?true:ds>=cad; }).length;
   const dueOrOverdue=pending.filter(t=>t.due_date&&t.due_date<=todayISO).length;
   const needsNow=oweReplyN+reachN+dueOrOverdue;
@@ -4153,7 +4154,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
         </div>
       </div>
 
-      <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} />
+      <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} myUserId={user?.id} />
 
       {/* At-a-glance pulse — full metrics live in My numbers */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>

@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v177-20260702-research-sonnet-field-seed'
+const VERSION = 'prismos-v178-20260702-share-attribution'
 const APP_SHELL = [
   '/',
   '/index.html',
