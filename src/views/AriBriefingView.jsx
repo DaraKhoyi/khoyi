@@ -439,7 +439,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
 }
 
 
-function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [], contacts = [], properties = [], events = [], brain = [], defaultSystem = 'eisenhower', tasks = [], setTasks, onOpenPlan }) {
+function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventId, profiles = [], contacts = [], properties = [], events = [], brain = [], defaultSystem = 'eisenhower', tasks = [], setTasks, onOpenPlan, needsReviewCount = 0 }) {
   const [loading, setLoading] = useState(true);
   const [briefing, setBriefing] = useState(null);
   const [err, setErr] = useState(null);
@@ -725,6 +725,12 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
         {onOpenPlan && <button className="btn btn-primary" onClick={onOpenPlan} style={{width:'100%',justifyContent:'center',marginTop:'12px',borderRadius:'11px',padding:'12px',fontSize:'14px',boxShadow:'0 4px 14px rgba(197,169,94,0.3)'}}>✦ Plan my day → turn this into your ordered to-do</button>}
       </div>
 
+      {needsReviewCount > 0 && (
+        <button onClick={()=>setView('email_review')} className="panel" style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',cursor:'pointer',textAlign:'left',border:'1px solid rgba(197,169,94,0.45)',background:'linear-gradient(90deg, rgba(197,169,94,0.16), rgba(197,169,94,0.06))'}}>
+          <span style={{fontSize:'13.5px',fontWeight:700,color:'var(--text-1)'}}>📩 <b style={{color:'var(--accent)'}}>{needsReviewCount}</b> email{needsReviewCount>1?'s':''} flagged for your review overnight</span>
+          <span style={{fontSize:'12.5px',fontWeight:800,color:'var(--accent)',whiteSpace:'nowrap'}}>Review →</span>
+        </button>
+      )}
       <NorthStarStrip userId={userId} onOpen={()=>setView('growth')} />
       {err && <div style={{padding:'8px 12px',margin:'12px 0',background:'rgba(239,68,68,.1)',border:'1px solid var(--red)',borderRadius:'8px',color:'var(--red)',fontSize:'12px'}}>{err}</div>}
 

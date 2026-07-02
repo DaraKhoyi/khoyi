@@ -833,7 +833,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             onEdit={openEdit}
             onToggleComplete={toggleComplete}
             onMoveTask={moveTaskToQuadrant}
-            showRanking={filter === 'today'}
+            showRanking={filter === 'today'} hideTodayDue={filter === 'today'}
           />
         ) : (
           <MatrixView
@@ -842,7 +842,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             onEdit={openEdit}
             onToggleComplete={toggleComplete}
             onMoveTask={moveTaskToQuadrant}
-            showRanking={filter === 'today'}
+            showRanking={filter === 'today'} hideTodayDue={filter === 'today'}
           />
         )}
 
@@ -920,7 +920,7 @@ const QUAD_COLORS = {
 };
 
 
-function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onMoveTask, showRanking }) {
+function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onMoveTask, showRanking, hideTodayDue }) {
   const allEmpty = quads.every(q => (buckets[q] || []).length === 0) && unranked.length === 0;
   return (
     <div>
@@ -932,7 +932,7 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onMo
           onEdit={onEdit}
           onToggleComplete={onToggleComplete}
           onMoveTask={onMoveTask}
-          showRanking={showRanking}
+          showRanking={showRanking} hideTodayDue={hideTodayDue}
         />
       ))}
       {unranked.length > 0 && (
@@ -943,7 +943,7 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onMo
           onEdit={onEdit}
           onToggleComplete={onToggleComplete}
           onMoveTask={onMoveTask}
-          showRanking={showRanking}
+          showRanking={showRanking} hideTodayDue={hideTodayDue}
         />
       )}
       {allEmpty && (
@@ -957,7 +957,7 @@ function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onMo
 }
 
 
-function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onMoveTask, showRanking }) {
+function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onMoveTask, showRanking, hideTodayDue }) {
   const onDrop = useCallback((drag, point) => {
     if (!quadrant) return; // can't drop into unranked
     // Hit-test which row the pointer is over to find insertion index
@@ -1012,7 +1012,7 @@ function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onMov
             quadrant={quadrant}
             onEdit={onEdit}
             onToggleComplete={onToggleComplete}
-            showRanking={showRanking}
+            showRanking={showRanking} hideTodayDue={hideTodayDue}
           />
         ))}
         {tasks.length === 0 && (
@@ -1026,7 +1026,7 @@ function QuadrantGroup({ quadrant, label, tasks, onEdit, onToggleComplete, onMov
 }
 
 
-function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, showRanking }) {
+function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, showRanking, hideTodayDue }) {
   const q = quadrant || task.eisenhower_quadrant;
   const badgeLabel = q
     ? (showRanking ? `${q}${rankNumber}` : q)
@@ -1049,7 +1049,7 @@ function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, show
       }}
       style={{
         display:'flex', alignItems:'center', gap:'6px',
-        padding:'8px 10px',
+        padding:'8.8px 10px',
         borderBottom:'1px solid var(--border)',
         cursor:'pointer',
         background: isDone ? 'var(--bg-base)' : 'transparent',
@@ -1058,7 +1058,7 @@ function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, show
       <input type="checkbox" checked={isDone} className="tasks-pro-check"
         onChange={(e) => onToggleComplete(task, e)}
         onClick={e => e.stopPropagation()}
-        style={{flexShrink:0,width:'16px',height:'16px',accentColor:'var(--accent)',cursor:'pointer'}}/>
+        style={{flexShrink:0,width:'17px',height:'17px',accentColor:'var(--accent)',cursor:'pointer'}}/>
       <div className="tasks-pro-anchor"
         onPointerDown={dragHandlers.onPointerDown}
         style={{
@@ -1066,7 +1066,7 @@ function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, show
           padding:'3px 8px',
           background: badgeColor,
           color:'#fff',
-          fontSize:'10px', fontWeight:900,
+          fontSize:'10.5px', fontWeight:900,
           borderRadius:'4px',
           cursor:'grab',
           touchAction:'none',
@@ -1079,7 +1079,7 @@ function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, show
       </div>
       <span style={{
         flex:1, minWidth:0,
-        fontSize:'13px',
+        fontSize:'13.7px',
         color: isDone ? 'var(--text-3)' : 'var(--text-1)',
         textDecoration: isDone ? 'line-through' : 'none',
         fontStyle: task.recurring ? 'italic' : 'normal',
@@ -1087,7 +1087,7 @@ function TaskProRow({ task, rankNumber, quadrant, onEdit, onToggleComplete, show
       }}>
         {task.title}
       </span>
-      {task.due_date && (
+      {task.due_date && !(hideTodayDue && task.due_date === todayISO()) && (
         <span style={{
           flexShrink:0,
           fontSize:'10px', fontWeight:600,
@@ -1114,7 +1114,7 @@ function formatDueShort(iso) {
 }
 
 
-function MatrixView({ groups, quads, onEdit, onToggleComplete, onMoveTask, showRanking }) {
+function MatrixView({ groups, quads, onEdit, onToggleComplete, onMoveTask, showRanking, hideTodayDue }) {
   return (
     <div style={{
       display:'grid',
@@ -1131,7 +1131,7 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onMoveTask, showR
           onEdit={onEdit}
           onToggleComplete={onToggleComplete}
           onMoveTask={onMoveTask}
-          showRanking={showRanking}
+          showRanking={showRanking} hideTodayDue={hideTodayDue}
         />
       ))}
     </div>
@@ -1139,7 +1139,7 @@ function MatrixView({ groups, quads, onEdit, onToggleComplete, onMoveTask, showR
 }
 
 
-function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onMoveTask, showRanking }) {
+function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onMoveTask, showRanking, hideTodayDue }) {
   const onDrop = useCallback((drag, point) => {
     const container = elRef.current;
     if (!container) {
@@ -1190,7 +1190,7 @@ function MatrixQuadrant({ quadrant, label, tasks, onEdit, onToggleComplete, onMo
             headerColor={headerColor}
             onEdit={onEdit}
             onToggleComplete={onToggleComplete}
-            showRanking={showRanking}
+            showRanking={showRanking} hideTodayDue={hideTodayDue}
           />
         ))}
         {tasks.length === 0 && (
