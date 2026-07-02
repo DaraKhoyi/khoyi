@@ -2763,8 +2763,8 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
       <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
         <div style={{width:38,height:38,borderRadius:11,flexShrink:0,background:'var(--bg-base)',border:'1px solid '+tagColor,display:'inline-flex',alignItems:'center',justifyContent:'center'}}><Icon name={cur.icon||'target'} size={18} style={{color:tagColor}}/></div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:16.5,fontWeight:800,color:'var(--text-1)',lineHeight:1.2}}>{cur.title}</div>
-          <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:3,lineHeight:1.4}}>{cur.why}</div>
+          <div style={{fontSize:16.5,fontWeight:800,color:'var(--text-1)',lineHeight:1.2,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.title}</div>
+          <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:3,lineHeight:1.4,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.why}</div>
         </div>
       </div>
       <div style={{display:'flex',gap:8,marginTop:13,flexWrap:'wrap',alignItems:'center'}}>
