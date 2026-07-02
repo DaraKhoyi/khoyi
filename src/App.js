@@ -2704,15 +2704,14 @@ function PlanTimeline({ steps = [], events = [], onTapStep, isDone, saved }) {
 // ── Next Best Action engine: answers "what do I do next?" across all signals ──
 function nbaLastTouch(c){ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(t=>new Date(t).getTime()); return a.length?Math.max(...a):null; }
 function nbaAge(d){ d=Math.max(0,Math.floor(d)); if(d<=0) return 'today'; if(d===1) return '1 day'; if(d<7) return d+' days'; if(d<14) return '1 week'; if(d<60) return Math.floor(d/7)+' weeks'; return Math.floor(d/30)+' months'; }
-function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date.now(), myUserId=null }){
+function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date.now(), oweReplyMap={} }){
   const out=[]; const today=new Date(now); const todayISO=today.toISOString().slice(0,10);
   const startToday=new Date(new Date(now).setHours(0,0,0,0)).getTime();
   contacts.forEach(c=>{
     if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
-    if(myUserId && c.user_id !== myUserId) return; // owe-a-reply belongs to the recipient (owner), not other share-group viewers
-    if(c.last_communication_direction!=='inbound' || !c.last_inbound_at) return;
-    const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0;
-    if(lin<=lout) return; const days=Math.floor((now-lin)/86400000);
+    const owedAt = oweReplyMap && oweReplyMap[c.id];
+    if(!owedAt) return; // per-recipient: surface only if THIS user actually owes a reply
+    const lin=new Date(owedAt).getTime(); const days=Math.floor((now-lin)/86400000);
     out.push({ key:'reply:'+c.id, score:100+Math.min(days*4,48), tag:'reply', icon:'reply', contactId:c.id, title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'open_reply', channel:(c.last_communication_channel||'').toLowerCase(), phone:c.phone||null, email:c.email||null, name:c.name||null } });
   });
   events.forEach(e=>{ if(!e.start_at||e.all_day) return; const st=new Date(e.start_at).getTime(); const dh=(st-now)/3600000;
@@ -2741,9 +2740,9 @@ function buildGrowthMoves({ contacts=[], deals=[], gciGoal=0, now=Date.now() }){
   moves.push({ key:'oh', icon:'target', title:'Line up an open house', why:'One listing becomes many buyer leads — plan an open house this week', cta:{ label:'My pipeline', kind:'view', payload:'pipeline' } });
   return moves;
 }
-function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan, myUserId=null }){
+function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan, myUserId=null, oweReplyMap={}, setOweReplyMap }){
   const now=Date.now();
-  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now,myUserId}),[contacts,tasks,events,deals,myUserId]);
+  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now,oweReplyMap}),[contacts,tasks,events,deals,oweReplyMap]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
   const urgent=actions.length>0; const list=urgent?actions:growth;
@@ -2752,7 +2751,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   // "I already replied" — clears an owe-a-reply instantly by bumping the field the
   // engine reads (last_outbound_at past last_inbound_at), independent of email/text
   // sync timing. Updates local state so the card drops immediately.
-  const markReplied=(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString(); try{ supabase.from('contacts').update({ last_outbound_at:nowIso, last_contact_at:nowIso, last_communication_direction:'outbound' }).eq('id',contactId).then(()=>{},()=>{}); }catch(_){} setContacts&&setContacts(pr=>pr.map(x=>x.id===contactId?{...x,last_outbound_at:nowIso,last_contact_at:nowIso,last_communication_direction:'outbound'}:x)); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
+  const markReplied=(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString(); try{ supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction:'outbound', channel:'manual', occurred_at: nowIso, brief:'Marked replied' }).then(()=>{},()=>{}); }catch(_){} setOweReplyMap && setOweReplyMap(m=>{ const n={...m}; delete n[contactId]; return n; }); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
   if(!cur) return null;
   const tagColor=cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
   return (
@@ -2787,7 +2786,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   );
 }
 
-function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose }) {
+function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose, oweReplyMap = {} }) {
 
   useBackClose(onClose);
   const [state, setState] = useState({ loading: true });
@@ -2840,7 +2839,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       const nowMs = Date.now();
       const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
       const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
-      const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (userId && c.user_id !== userId) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
+      const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; return !!(oweReplyMap && oweReplyMap[c.id]); }).sort((a, b) => new Date(oweReplyMap[a.id]||0) - new Date(oweReplyMap[b.id]||0));
       const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
       const reachSource = [
         ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
@@ -3950,7 +3949,7 @@ function SphereDonut({ contacts=[], setView }){
   </div>);
 }
 
-function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmailCount=0, setView, userId }){
+function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmailCount=0, setView, userId, oweReplyMap={} }){
   const [gciGoal,setGciGoal]=useState(0);
   useEffect(()=>{ (async()=>{ try{ const { data } = await supabase.from('finance_settings').select('annual_gci_goal').eq('user_id',userId).maybeSingle(); setGciGoal(Number(data?.annual_gci_goal)||0); }catch(_e){} })(); },[userId]);
   const now=Date.now(); const todayISO=new Date(now).toISOString().slice(0,10);
@@ -3958,7 +3957,7 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   const overdue=pending.filter(t=>t.due_date && t.due_date<todayISO);
   const topTasks=pending.filter(t=>t.priority==='high');
   const lastTouch=(c)=>{ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(x=>new Date(x).getTime()); return a.length?Math.max(...a):null; };
-  const oweReplyN=contacts.filter(c=>{ if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; if(userId&&c.user_id!==userId)return false; if(c.last_communication_direction!=='inbound'||!c.last_inbound_at)return false; const lin=new Date(c.last_inbound_at).getTime(); const lout=c.last_outbound_at?new Date(c.last_outbound_at).getTime():0; return lin>lout; }).length;
+  const oweReplyN=contacts.filter(c=>{ if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; return !!(oweReplyMap && oweReplyMap[c.id]); }).length;
   const reachN=contacts.filter(c=>{ const cad=c.cadence_days; if(!cad)return false; if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; const ts=lastTouch(c); const ds=ts===null?null:Math.floor((now-ts)/86400000); return ds===null?true:ds>=cad; }).length;
   const dueOrOverdue=pending.filter(t=>t.due_date&&t.due_date<=todayISO).length;
   const needsNow=oweReplyN+reachN+dueOrOverdue;
@@ -3981,7 +3980,7 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   </div>);
 }
 
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [] }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [], oweReplyMap = {}, setOweReplyMap }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
 
@@ -4154,7 +4153,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
         </div>
       </div>
 
-      <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} myUserId={user?.id} />
+      <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} myUserId={user?.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} />
 
       {/* At-a-glance pulse — full metrics live in My numbers */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
@@ -13820,6 +13819,7 @@ function AppMain() {
   // Dashboard "Unread Email" tile — count of unread inbox threads (excludes snoozed)
   const [unreadEmailCount, setUnreadEmailCount] = useState(0);
   const [needsReviewCount, setNeedsReviewCount] = useState(0);
+  const [oweReplyMap, setOweReplyMap] = useState({});
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Live badge for the nightly email-review queue (open items needing action).
@@ -13933,6 +13933,7 @@ function AppMain() {
       // fetching any rows (just the count).
       ['unreadEmailCount', supabase.from('email_threads').select('id', { count: 'exact', head: true })
                               .eq('has_unread', true).contains('labels', ['INBOX']).is('snoozed_until', null)],
+      ['oweReply',       supabase.rpc('my_owe_reply')],
     ];
 
     // Two-phase load: Phase 1 (small, first-paint-critical) reveals the UI fast;
@@ -13968,6 +13969,7 @@ function AppMain() {
     take('emailAliases',  res => setEmailAliases(res.data || []));
     take('userSettings',  res => setUserSettings(res.data || null));
     take('unreadEmailCount', res => setUnreadEmailCount(typeof res.count === 'number' ? res.count : 0));
+    take('oweReply', res => { const m = {}; (res.data || []).forEach(r => { if (r && r.contact_id) m[r.contact_id] = r.last_inbound_at; }); setOweReplyMap(m); });
       return failed;
     };
 
@@ -14066,6 +14068,7 @@ function AppMain() {
     setUserSettings(null);
     setUnreadEmailCount(0);
     setNeedsReviewCount(0);
+    setOweReplyMap({});
     setDataLoaded(false);
   }
 
@@ -14284,8 +14287,8 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
-                : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} />
+                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
+                : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
@@ -14332,7 +14335,7 @@ function AppMain() {
         <PlanMyDayModal
           tasks={tasks} events={events} contacts={contacts} properties={properties}
           userId={user.id} name={(robots && robots[0] && robots[0].name) || 'Ari'}
-          setView={setView}
+          setView={setView} oweReplyMap={oweReplyMap}
           onOpenTask={(t)=>{ if (setFocusTaskId) setFocusTaskId(t.id); setView('tasks'); }}
           setTasks={setTasks}
           onClose={()=>setPlanOpen(false)}
