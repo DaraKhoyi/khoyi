@@ -6381,7 +6381,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
       const { data, error } = await supabase.functions.invoke('contact-identify', {
         body: { contact_id: contact.id },
       });
-      if (error) throw error;
+      if (error) {
+        let m = error.message || 'Identity lookup failed';
+        try { const b = await error.context.json(); if (b && b.error) m = b.error; } catch (_) {}
+        throw new Error(m);
+      }
       if (data.error) throw new Error(data.error);
       setResearchCandidates(data.candidates || []);
       if (data.confidence === 'insufficient') {
@@ -6419,7 +6423,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           matched_by: matchedBy,
         },
       });
-      if (error) throw error;
+      if (error) {
+        let m = error.message || 'Research failed';
+        try { const b = await error.context.json(); if (b && b.error) m = b.error; } catch (_) {}
+        throw new Error(m);
+      }
       if (data.error) throw new Error(data.error);
       // Refresh profile to pick up the new research_* fields
       const { data: freshProfile } = await supabase.from('profiles')

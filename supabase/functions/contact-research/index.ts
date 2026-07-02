@@ -160,16 +160,33 @@ serve(async (req) => {
     // Background drip uses a faster, leaner config so it reliably finishes inside
     // the function time limit; the interactive button keeps full Opus depth.
     const fast = !!body.fast;
-    const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: fast ? "claude-sonnet-4-6" : "claude-opus-4-7",
-        max_tokens: fast ? 6000 : 10000,
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: fast ? 6 : 14 }],
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    // Deep web research is bounded so it reliably finishes inside the edge
+    // function wall-clock limit. Sonnet + a capped search budget + capped output
+    // keeps the interactive call well under the ceiling; a hard abort guard
+    // returns a helpful, user-facing message instead of a generic gateway error.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 150000);
+    let apiResp;
+    try {
+      apiResp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: fast ? 5000 : 6000,
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: fast ? 5 : 6 }],
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e && e.name === "AbortError") {
+        return J({ error: "The web research took longer than expected and was stopped. Please try again — or set the scope to Business-only or Personal-only, which is faster than Both." }, 504);
+      }
+      return J({ error: "Research request failed: " + String(e).slice(0, 200) }, 502);
+    }
+    clearTimeout(timer);
     if (!apiResp.ok) {
       const t = await apiResp.text();
       return J({ error: `Anthropic API error: ${apiResp.status}`, detail: t.slice(0, 500) }, 500);
