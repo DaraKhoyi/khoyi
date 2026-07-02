@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v172-20260701-contact-type-save-fix'
+const VERSION = 'prismos-v173-20260702-menu-advantage-align'
 const APP_SHELL = [
   '/',
   '/index.html',
