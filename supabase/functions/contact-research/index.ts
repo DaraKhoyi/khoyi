@@ -126,6 +126,42 @@ function extractJson(text) {
   return null;
 }
 
+// ── BYOK + metering helpers ──
+async function aesKey() {
+  const secret = Deno.env.get("AI_KEY_ENC_SECRET") || "";
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return crypto.subtle.importKey("raw", hash, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+async function decryptKey(stored) {
+  try {
+    const [ivB, ctB] = stored.split(":");
+    const iv = Uint8Array.from(atob(ivB), (c) => c.charCodeAt(0));
+    const ct = Uint8Array.from(atob(ctB), (c) => c.charCodeAt(0));
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, await aesKey(), ct);
+    return new TextDecoder().decode(pt);
+  } catch (_) { return null; }
+}
+async function resolveKey(supabase, userId, platformKey) {
+  if (userId) {
+    const { data } = await supabase.from("user_ai_keys").select("key_ciphertext, status").eq("user_id", userId).maybeSingle();
+    if (data && data.status === "active" && data.key_ciphertext) {
+      const k = await decryptKey(data.key_ciphertext);
+      if (k) return { key: k, usedOwn: true };
+    }
+  }
+  return { key: platformKey, usedOwn: false };
+}
+const AI_RATES = { "claude-opus-4-8": [5, 25], "claude-opus-4-7": [5, 25], "claude-sonnet-4-6": [3, 15], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
+async function logUsage(supabase, { userId, fn, model, usage, usedOwn }) {
+  try {
+    const inTok = usage?.input_tokens || 0, outTok = usage?.output_tokens || 0;
+    const searches = usage?.server_tool_use?.web_search_requests || 0;
+    const [ri, ro] = AI_RATES[model] || [3, 15];
+    const cost = (inTok / 1e6) * ri + (outTok / 1e6) * ro + searches * 0.01;
+    await supabase.from("ai_usage_log").insert({ user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok, web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn });
+  } catch (_) {}
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const J = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -167,6 +203,9 @@ serve(async (req) => {
       }
     }
     const isOpus = model.startsWith("claude-opus");
+    // Resolve which Anthropic key to bill: the caller's own (BYOK) or the platform key.
+    const billUserId = user?.id || contact.user_id;
+    const { key: useKey, usedOwn } = await resolveKey(supabase, billUserId, apiKey);
     const maxTokens = isOpus ? 8000 : (fast ? 5000 : 6000);
     const maxUses = isOpus ? 10 : (fast ? 5 : 6);
 
@@ -188,7 +227,7 @@ serve(async (req) => {
         try {
           apiResp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+            headers: { "Content-Type": "application/json", "x-api-key": useKey, "anthropic-version": "2023-06-01" },
             signal: controller.signal,
             body: JSON.stringify({ model, max_tokens: maxTokens, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }], messages: [{ role: "user", content: prompt }] }),
           });
@@ -200,6 +239,7 @@ serve(async (req) => {
           return;
         }
         const apiData = await apiResp.json();
+        await logUsage(supabase, { userId: billUserId, fn: "contact-research", model, usage: apiData.usage, usedOwn });
         const fullReport = (apiData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
         const data = extractJson(fullReport) || {};
         const disc2 = data.disc || {};

@@ -10110,10 +10110,65 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
     setModelMsg(val === 'opus' ? 'Your deep research now uses Claude Opus 4.8 (deeper, more tokens).' : 'Your deep research now uses Claude Sonnet 4.6 (fast, economical).');
     setSavingModel(false);
   }
+  // ── Bring-your-own Claude key (BYOK) ──
+  const [aiKey, setAiKey] = React.useState(null);
+  const [aiKeyInput, setAiKeyInput] = React.useState('');
+  const [aiKeyBusy, setAiKeyBusy] = React.useState(false);
+  const [aiKeyMsg, setAiKeyMsg] = React.useState('');
+  React.useEffect(() => { (async () => {
+    try { const { data } = await supabase.functions.invoke('ai-key-manage', { body: { action: 'status' } }); if (data && data.key) setAiKey(data.key); } catch (_) {}
+  })(); }, []);
+  async function saveAiKey() {
+    if (!aiKeyInput.trim()) return;
+    setAiKeyBusy(true); setAiKeyMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-key-manage', { body: { action: 'set', key: aiKeyInput.trim() } });
+      let msg = error ? (error.message || 'Failed') : null;
+      if (error) { try { const b = await error.context.json(); if (b && b.error) msg = b.error; } catch (_) {} }
+      if (msg) { setAiKeyMsg(msg); setAiKeyBusy(false); return; }
+      setAiKey({ last4: data.last4, status: 'active' }); setAiKeyInput(''); setAiKeyMsg('Saved — your AI now runs on your own Anthropic key.');
+    } catch (e) { setAiKeyMsg(String(e.message || e)); }
+    setAiKeyBusy(false);
+  }
+  async function removeAiKey() {
+    setAiKeyBusy(true); setAiKeyMsg('');
+    try { await supabase.functions.invoke('ai-key-manage', { body: { action: 'remove' } }); setAiKey(null); setAiKeyMsg('Removed — your AI now runs on the brokerage account.'); } catch (_) {}
+    setAiKeyBusy(false);
+  }
+  // ── Owner: per-agent AI usage this month (EST billing window) ──
+  const [usageRows, setUsageRows] = React.useState(null);
+  React.useEffect(() => { if (!isAdmin) return; (async () => {
+    try {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+      const { data } = await supabase.rpc('ai_usage_rollup', { p_start: start, p_end: end });
+      setUsageRows(data || []);
+    } catch (_) { setUsageRows([]); }
+  })(); }, [isAdmin]);
   return (
     <div>
       <div className="page-header"><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="settings" size={26} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div>
       <div style={{maxWidth:'480px'}}>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Your Claude API key</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Optional. Add your own Anthropic <b>API</b> key and your AI features run on your account — you pay Anthropic directly. Leave it empty to use the brokerage account. (An API key from console.anthropic.com — not a Claude.ai chat subscription.)</p>
+            {aiKey && aiKey.status === 'active' ? (
+              <div style={{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'}}>
+                <span style={{fontSize:'13px', color:'var(--text-1)'}}>Connected: <b>sk-ant-…{aiKey.last4}</b></span>
+                <span style={{fontSize:'11px', fontWeight:700, color:'#22c55e', border:'1px solid #22c55e55', borderRadius:999, padding:'2px 8px'}}>Active</span>
+                <button className="btn btn-ghost btn-sm" disabled={aiKeyBusy} onClick={removeAiKey}>Remove</button>
+              </div>
+            ) : (
+              <div style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
+                <input className="form-input" type="password" value={aiKeyInput} onChange={e=>setAiKeyInput(e.target.value)} placeholder="sk-ant-…" style={{flex:'1 1 240px'}} />
+                <button className="btn btn-primary" disabled={aiKeyBusy || !aiKeyInput.trim()} onClick={saveAiKey}>{aiKeyBusy?'Checking…':'Test & Save'}</button>
+              </div>
+            )}
+            {aiKeyMsg && <div style={{marginTop:'10px', fontSize:'12px', color: /error|reject|failed|doesn|Anthropic rejected/i.test(aiKeyMsg)?'var(--red)':'var(--text-2)'}}>{aiKeyMsg}</div>}
+          </div>
+        </div>
         {isAdmin && (
         <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
           <div className="panel-header"><h3>AI model for deep research</h3></div>
@@ -10127,6 +10182,24 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
                 </button>); })}
             </div>
             {modelMsg && <div style={{marginTop:'10px', fontSize:'12px', color: modelMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{modelMsg}</div>}
+          </div>
+        </div>
+        )}
+        {isAdmin && (
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>AI usage & cost — this month</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Per-agent Claude usage on the <b>brokerage account</b> (what you could bill back). Agents on their own key are billed by Anthropic and shown separately.</p>
+            {usageRows === null ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>Loading…</div> : usageRows.length === 0 ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>No AI usage yet this month.</div> : (
+              <div style={{display:'flex', flexDirection:'column', gap:'2px'}}>
+                {usageRows.map((r,i)=>(
+                  <div key={i} style={{display:'flex', justifyContent:'space-between', gap:'10px', fontSize:'12.5px', padding:'7px 0', borderBottom:'1px solid var(--border)'}}>
+                    <span style={{color:'var(--text-1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.email || 'Unknown'}</span>
+                    <span style={{flexShrink:0}}><span style={{color:'var(--accent)', fontWeight:700}}>${Number(r.platform_cost_usd||0).toFixed(2)}</span>{Number(r.own_key_cost_usd||0)>0 ? <span style={{color:'var(--text-3)'}}> (+${Number(r.own_key_cost_usd).toFixed(2)} own key)</span> : null}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         )}
