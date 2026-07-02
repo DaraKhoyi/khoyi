@@ -4242,6 +4242,72 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   </div>);
 }
 
+// Read-only announcements history for the Dashboard — lets anyone revisit past
+// announcements (not just see them once at acknowledgement). RLS scopes rows to
+// brokerage-wide + the viewer's own team; unacked ones are badged "new".
+function DashboardAnnouncements({ userId }) {
+  const [items, setItems] = useState([]);
+  const [newIds, setNewIds] = useState(() => new Set());
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('announcements')
+          .select('id,title,body,created_at,team_id')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(8);
+        if (alive) setItems(Array.isArray(data) ? data : []);
+      } catch (_) { if (alive) setItems([]); }
+      try {
+        const { data } = await supabase.rpc('my_unacked_announcements');
+        if (alive && Array.isArray(data)) setNewIds(new Set(data.map(a => a.id)));
+      } catch (_) {}
+    })();
+    return () => { alive = false; };
+  }, [userId]);
+  if (!items.length) return null;
+  const when = (iso) => {
+    const d = new Date(iso), now = new Date(), s = Math.floor((now - d) / 1000);
+    if (s < 60) return 'Just now';
+    const m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+    const days = Math.floor(h / 24); if (days === 1) return 'Yesterday';
+    if (days < 7) return days + 'd ago';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+  };
+  const shown = expanded ? items : items.slice(0, 3);
+  return (
+    <div className="dash-card" style={{ marginBottom: 22 }}>
+      <div className="panel-header" style={{ borderRadius: '16px 16px 0 0' }}>
+        <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="megaphone" size={15} style={{ color: 'var(--accent)' }} /> Announcements</h3>
+        {newIds.size > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)' }}>{newIds.size} new</span>}
+      </div>
+      <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {shown.map((a, i) => {
+          const isNew = newIds.has(a.id);
+          const last = i === shown.length - 1;
+          return (
+            <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 0', borderBottom: last ? 'none' : '1px solid var(--border)' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 6, flexShrink: 0, background: isNew ? 'var(--accent)' : 'var(--border)' }} title={isNew ? 'New' : 'Seen'} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)' }}>{a.title || 'Announcement'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', whiteSpace: 'nowrap', flexShrink: 0 }}>{when(a.created_at)}</div>
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{a.body}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{a.team_id ? 'Team' : 'Brokerage'}</div>
+              </div>
+            </div>
+          );
+        })}
+        {items.length > 3 && <button className="btn btn-ghost btn-sm" onClick={() => setExpanded(e => !e)} style={{ alignSelf: 'flex-start', marginTop: 8 }}>{expanded ? 'Show less' : `Show ${items.length - 3} more`}</button>}
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [], oweReplyMap = {}, setOweReplyMap }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
@@ -4416,6 +4482,8 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
       </div>
 
       <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} myUserId={user?.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} />
+
+      <DashboardAnnouncements userId={user?.id} />
 
       {/* At-a-glance pulse — full metrics live in My numbers */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
