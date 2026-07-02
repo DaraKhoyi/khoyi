@@ -6429,12 +6429,21 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         try { const b = await error.context.json(); if (b && b.error) m = b.error; } catch (_) {}
         throw new Error(m);
       }
-      if (data.error) throw new Error(data.error);
-      // Refresh profile to pick up the new research_* fields
-      const { data: freshProfile } = await supabase.from('profiles')
-        .select('*').eq('contact_id', contact.id).maybeSingle();
-      if (freshProfile) onProfileUpdate(freshProfile);
-      setResearchStage('done');
+      if (data && data.error) throw new Error(data.error);
+      // Research now runs in the background (no more edge-timeout). Poll the
+      // profile until it finishes so the button never dead-ends.
+      const started = Date.now();
+      const poll = async () => {
+        try {
+          const { data: p } = await supabase.from('profiles')
+            .select('*').eq('contact_id', contact.id).maybeSingle();
+          if (p && p.research_status === 'done') { onProfileUpdate(p); setResearchStage('done'); return; }
+          if (p && p.research_status === 'error') { setResearchError(p.research_error || 'Research failed. Please try again.'); setResearchStage('error'); return; }
+          if (Date.now() - started > 240000) { setResearchError('This is taking longer than usual — it will keep running in the background. Reopen this contact in a minute to see the result.'); setResearchStage('error'); return; }
+          setTimeout(poll, 6000);
+        } catch (_e) { setTimeout(poll, 6000); }
+      };
+      poll();
     } catch (err) {
       setResearchError(err.message || String(err));
       setResearchStage('error');
@@ -9942,7 +9951,7 @@ function CubeACRPanel({ userId, emailAccounts }) {
   );
 }
 
-function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings }) {
+function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -10089,10 +10098,39 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
     if (data) setUserSettings?.(data);
   }
 
+  const researchModel = userSettings?.ai_research_model || 'sonnet';
+  const [savingModel, setSavingModel] = React.useState(false);
+  const [modelMsg, setModelMsg] = React.useState('');
+  async function saveResearchModel(val) {
+    setSavingModel(true); setModelMsg('');
+    const { data, error } = await supabase.from('user_settings')
+      .upsert({ user_id: userId, ai_research_model: val, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .select().maybeSingle();
+    if (error) { setModelMsg('Error: ' + error.message); setSavingModel(false); return; }
+    if (data) setUserSettings && setUserSettings(data);
+    setModelMsg(val === 'opus' ? 'Your deep research now uses Claude Opus 4.8 (deeper, more tokens).' : 'Your deep research now uses Claude Sonnet 4.6 (fast, economical).');
+    setSavingModel(false);
+  }
   return (
     <div>
       <div className="page-header"><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="settings" size={26} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div>
       <div style={{maxWidth:'480px'}}>
+        {isAdmin && (
+        <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
+          <div className="panel-header"><h3>AI model for deep research</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Contact web-research runs in the background. Pick the engine for <b>your</b> research — agents always use Sonnet.</p>
+            <div style={{display:'flex', gap:'10px', flexWrap:'wrap'}}>
+              {[{v:'sonnet', t:'Sonnet 4.6', d:'Fast · economical · default'}, {v:'opus', t:'Opus 4.8', d:'Deepest · more tokens'}].map(o=>{ const on = researchModel===o.v; return (
+                <button key={o.v} disabled={savingModel} onClick={()=>saveResearchModel(o.v)} style={{flex:'1 1 170px', textAlign:'left', padding:'12px 14px', borderRadius:'12px', cursor:'pointer', border:`1px solid ${on?'var(--accent)':'var(--border)'}`, background: on?'rgba(197,169,94,0.12)':'transparent'}}>
+                  <div style={{fontSize:'14px', fontWeight:800, color: on?'var(--accent)':'var(--text-1)'}}>{o.t}{on?' \u2713':''}</div>
+                  <div style={{fontSize:'11.5px', color:'var(--text-3)', marginTop:'2px'}}>{o.d}</div>
+                </button>); })}
+            </div>
+            {modelMsg && <div style={{marginTop:'10px', fontSize:'12px', color: modelMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{modelMsg}</div>}
+          </div>
+        </div>
+        )}
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Profile</h3></div>
           <div className="panel-body">
@@ -14281,7 +14319,7 @@ function AppMain() {
               : view==='voice_roster'? <VoiceRosterView/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
-              : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings}/>
+              : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin}/>
               : null}
                 </React.Suspense>
               </ViewErrorBoundary>

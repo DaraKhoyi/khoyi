@@ -152,80 +152,98 @@ serve(async (req) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return J({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
+    // ── Model selection: Opus only for a privileged owner/admin who opted in
+    //    (user_settings.ai_research_model='opus'). Agents & the background drip
+    //    always get the efficient Sonnet. ──
+    const fast = !!body.fast;
+    let model = "claude-sonnet-4-6";
+    if (user && !fast) {
+      const { data: st } = await supabase.from("user_settings").select("ai_research_model").eq("user_id", user.id).maybeSingle();
+      if (st?.ai_research_model === "opus") {
+        const { data: ag } = await supabase.from("agents").select("role").eq("auth_user_id", user.id).maybeSingle();
+        const { data: tms } = await supabase.from("team_members").select("role").eq("auth_user_id", user.id);
+        const priv = (ag && ["owner", "broker_admin", "team_leader"].includes(ag.role)) || (tms || []).some((m) => ["owner", "admin"].includes(m.role));
+        if (priv) model = "claude-opus-4-8";
+      }
+    }
+    const isOpus = model.startsWith("claude-opus");
+    const maxTokens = isOpus ? 8000 : (fast ? 5000 : 6000);
+    const maxUses = isOpus ? 10 : (fast ? 5 : 6);
+
     const { data: prof } = await supabase.from("profiles").select("*").eq("contact_id", contact_id).maybeSingle();
     const disc = prof ? { primary: prof.baseline_primary || prof.primary_letter || prof.research_primary, secondary: prof.baseline_secondary || prof.secondary_letter || prof.research_secondary, confidence: prof.confidence || prof.research_confidence } : null;
-
     const prompt = buildResearchPrompt(candidate, contact, scope, me, disc);
 
-    // Background drip uses a faster, leaner config so it reliably finishes inside
-    // the function time limit; the interactive button keeps full Opus depth.
-    const fast = !!body.fast;
-    // Deep web research is bounded so it reliably finishes inside the edge
-    // function wall-clock limit. Sonnet + a capped search budget + capped output
-    // keeps the interactive call well under the ceiling; a hard abort guard
-    // returns a helpful, user-facing message instead of a generic gateway error.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 150000);
-    let apiResp;
-    try {
-      apiResp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: fast ? 5000 : 6000,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: fast ? 5 : 6 }],
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-    } catch (e) {
-      clearTimeout(timer);
-      if (e && e.name === "AbortError") {
-        return J({ error: "The web research took longer than expected and was stopped. Please try again — or set the scope to Business-only or Personal-only, which is faster than Both." }, 504);
-      }
-      return J({ error: "Research request failed: " + String(e).slice(0, 200) }, 502);
-    }
-    clearTimeout(timer);
-    if (!apiResp.ok) {
-      const t = await apiResp.text();
-      return J({ error: `Anthropic API error: ${apiResp.status}`, detail: t.slice(0, 500) }, 500);
-    }
-    const apiData = await apiResp.json();
-    const fullReport = (apiData.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-    const data = extractJson(fullReport) || {};
-    const disc2 = data.disc || {};
-    const cleanReport = fullReport.replace(/```json\s*[\s\S]*?```/g, "").trim();
-    const shortSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
-
-    const profileUpdate = {
-      contact_id, user_id: contact.user_id, subject_kind: "contact",
-      research_headline: data.headline ?? null,
-      research_identity_confidence: data.identity_confidence ?? null,
-      research_profile: { background_education: data.background_education ?? null, career: data.career ?? null, expertise: data.expertise ?? [], community_media: data.community_media ?? [], interests_values: data.interests_values ?? [], causes: data.causes ?? [] },
-      research_personal: data.personal ?? null,
-      research_connection_plan: data.connection_plan ?? null,
-      research_overlaps: data.overlaps_with_me ?? [],
-      research_sources: data.sources ?? [],
-      research_d_score: disc2.d_score ?? null,
-      research_i_score: disc2.i_score ?? null,
-      research_s_score: disc2.s_score ?? null,
-      research_c_score: disc2.c_score ?? null,
-      research_primary: disc2.primary ?? null,
-      research_secondary: disc2.secondary ?? null,
-      research_confidence: disc2.confidence ?? null,
-      research_taken_at: new Date().toISOString(),
-      research_summary: shortSummary,
-      research_full_report: cleanReport,
-      research_scope: scope,
-      research_matched_by: matched_by || "manual",
+    const writeProfile = async (fields) => {
+      const { data: existing } = await supabase.from("profiles").select("id").eq("contact_id", contact_id).maybeSingle();
+      if (existing) await supabase.from("profiles").update(fields).eq("id", existing.id);
+      else await supabase.from("profiles").insert({ contact_id, user_id: contact.user_id, subject_kind: "contact", ...fields });
     };
 
-    const { data: existing } = await supabase.from("profiles").select("id").eq("contact_id", contact_id).maybeSingle();
-    if (existing) await supabase.from("profiles").update(profileUpdate).eq("id", existing.id);
-    else await supabase.from("profiles").insert(profileUpdate);
+    const runResearch = async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 280000);
+        let apiResp;
+        try {
+          apiResp = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+            signal: controller.signal,
+            body: JSON.stringify({ model, max_tokens: maxTokens, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }], messages: [{ role: "user", content: prompt }] }),
+          });
+        } finally { clearTimeout(timer); }
+        if (!apiResp.ok) {
+          const t = await apiResp.text();
+          console.error("anthropic", apiResp.status, t.slice(0, 300));
+          await writeProfile({ research_status: "error", research_error: `Research service error ${apiResp.status}. Please try again.` });
+          return;
+        }
+        const apiData = await apiResp.json();
+        const fullReport = (apiData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        const data = extractJson(fullReport) || {};
+        const disc2 = data.disc || {};
+        const cleanReport = fullReport.replace(/```json\s*[\s\S]*?```/g, "").trim();
+        const shortSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
+        await writeProfile({
+          user_id: contact.user_id, subject_kind: "contact",
+          research_headline: data.headline ?? null,
+          research_identity_confidence: data.identity_confidence ?? null,
+          research_profile: { background_education: data.background_education ?? null, career: data.career ?? null, expertise: data.expertise ?? [], community_media: data.community_media ?? [], interests_values: data.interests_values ?? [], causes: data.causes ?? [] },
+          research_personal: data.personal ?? null,
+          research_connection_plan: data.connection_plan ?? null,
+          research_overlaps: data.overlaps_with_me ?? [],
+          research_sources: data.sources ?? [],
+          research_d_score: disc2.d_score ?? null, research_i_score: disc2.i_score ?? null,
+          research_s_score: disc2.s_score ?? null, research_c_score: disc2.c_score ?? null,
+          research_primary: disc2.primary ?? null, research_secondary: disc2.secondary ?? null,
+          research_confidence: disc2.confidence ?? null,
+          research_taken_at: new Date().toISOString(),
+          research_summary: shortSummary, research_full_report: cleanReport,
+          research_scope: scope, research_matched_by: matched_by || "manual",
+          research_status: "done", research_error: null,
+        });
+      } catch (e) {
+        const msg = (e && e.name === "AbortError")
+          ? "The research took longer than expected. Try again, or set the scope to Business-only or Personal-only."
+          : ("Research failed: " + String(e).slice(0, 160));
+        try { await writeProfile({ research_status: "error", research_error: msg }); } catch (_) {}
+      }
+    };
 
-    return J({ ok: true, ...data, full_report: cleanReport, search_count: apiData.usage?.server_tool_use?.web_search_requests ?? null });
+    await writeProfile({ research_status: "running", research_started_at: new Date().toISOString(), research_error: null });
+
+    // Background drip keeps synchronous behavior; interactive users get an
+    // immediate 202 and poll the profile while it finishes in the background.
+    if (isInternal) {
+      await runResearch();
+      const { data: f } = await supabase.from("profiles").select("research_status, research_error").eq("contact_id", contact_id).maybeSingle();
+      return J({ ok: f?.research_status === "done", status: f?.research_status, error: f?.research_error || null });
+    }
+    // @ts-ignore EdgeRuntime is provided by the Supabase edge runtime
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(runResearch());
+    else runResearch();
+    return J({ status: "running", model }, 202);
   } catch (err) {
     return J({ error: String(err) }, 500);
   }

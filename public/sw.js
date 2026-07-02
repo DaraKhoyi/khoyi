@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v178-20260702-share-attribution'
+const VERSION = 'prismos-v179-20260702-async-research-model-toggle'
 const APP_SHELL = [
   '/',
   '/index.html',
