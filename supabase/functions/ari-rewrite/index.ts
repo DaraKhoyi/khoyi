@@ -168,7 +168,9 @@ Return ONLY the rewritten message text — no preamble, no quotation marks, no e
 
     const userMsg = `DRAFT to rewrite:\n"""${draft}"""${sourceLine}${intel}`;
 
-    const { key: __k, usedOwn: __own } = await resolveKey(supabase, user?.id, ANTHROPIC_API_KEY);
+    const __sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    let __uid = null; try { const __t = (req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim(); const { data: { user: __u } } = await __sb.auth.getUser(__t); __uid = __u?.id || null; } catch(_){}
+    const { key: __k, usedOwn: __own } = await resolveKey(__sb, __uid, ANTHROPIC_API_KEY);
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": __k, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
@@ -179,7 +181,7 @@ Return ONLY the rewritten message text — no preamble, no quotation marks, no e
       return J({ error: `Anthropic ${r.status}: ${t.slice(0, 200)}` }, 502);
     }
     const j = await r.json();
-    logUsage(supabase, { userId: user?.id, fn: "ari-rewrite", model: MODEL, usage: j.usage, usedOwn: __own });
+    logUsage(__sb, { userId: __uid, fn: "ari-rewrite", model: MODEL, usage: j.usage, usedOwn: __own });
     let message = (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
     // Strip any accidental wrapping quotes/fences.
     message = message.replace(/^```[a-z]*\s*/i, "").replace(/```$/i, "").trim();

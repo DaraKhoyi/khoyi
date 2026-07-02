@@ -104,14 +104,16 @@ serve(async (req) => {
 
     const userMsg = `Recipient: ${recipient}\n${discLine}\n\nThe email ${senderName} received (from ${b.from_name || recipient}), subject "${subject}":\n---\n${body || "(no body)"}\n---\n\nWrite ${senderName}'s reply now.`;
 
-    const { key: __k, usedOwn: __own } = await resolveKey(supabase, user?.id, ANTHROPIC_API_KEY);
+    const __sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    let __uid = null; try { const __t = (req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim(); const { data: { user: __u } } = await __sb.auth.getUser(__t); __uid = __u?.id || null; } catch(_){}
+    const { key: __k, usedOwn: __own } = await resolveKey(__sb, __uid, ANTHROPIC_API_KEY);
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": __k, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({ model: MODEL, max_tokens: 700, system, messages: [{ role: "user", content: userMsg }] }),
     });
     const data = await r.json();
-    logUsage(supabase, { userId: user?.id, fn: "email-reply-draft", model: MODEL, usage: data.usage, usedOwn: __own });
+    logUsage(__sb, { userId: __uid, fn: "email-reply-draft", model: MODEL, usage: data.usage, usedOwn: __own });
     const draft = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
     return new Response(JSON.stringify({ draft, disc: dp || null }), { headers: { ...cors, "content-type": "application/json" } });
   } catch (e) {

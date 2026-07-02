@@ -447,7 +447,9 @@ serve(async (req) => {
     // Build corpus and call Claude
     const corpus = buildCorpus(contact, baseline, evidence);
 
-    const { key: __k, usedOwn: __own } = await resolveKey(supabase, user_id, ANTHROPIC_API_KEY);
+    const __sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    let __uid = null; try { const __t = (req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim(); const { data: { user: __u } } = await __sb.auth.getUser(__t); __uid = __u?.id || null; } catch(_){}
+    const { key: __k, usedOwn: __own } = await resolveKey(__sb, __uid, ANTHROPIC_API_KEY);
     const claudeResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -464,7 +466,7 @@ serve(async (req) => {
     });
     if (!claudeResp.ok) throw new Error(`Claude error: ${claudeResp.status} ${(await claudeResp.text()).slice(0,300)}`);
     const claudeData = await claudeResp.json();
-    logUsage(supabase, { userId: user_id, fn: "disc-analyze", model: "claude-sonnet-4-6", usage: claudeData.usage, usedOwn: __own });
+    logUsage(__sb, { userId: __uid, fn: "disc-analyze", model: "claude-sonnet-4-6", usage: claudeData.usage, usedOwn: __own });
     const responseText = claudeData.content?.[0]?.text || "";
     const cleaned = responseText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
     const start = cleaned.indexOf("{");

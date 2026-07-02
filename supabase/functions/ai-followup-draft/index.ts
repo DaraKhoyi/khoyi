@@ -152,7 +152,9 @@ Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "
 
 "${b.entryBody || "(no details recorded)"}"${ctx}${intel}${b.instruction ? `\n\nExtra instruction for this draft: ${b.instruction}` : ""}`;
 
-    const { key: __k, usedOwn: __own } = await resolveKey(supabase, user?.id, ANTHROPIC_API_KEY);
+    const __sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    let __uid = null; try { const __t = (req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim(); const { data: { user: __u } } = await __sb.auth.getUser(__t); __uid = __u?.id || null; } catch(_){}
+    const { key: __k, usedOwn: __own } = await resolveKey(__sb, __uid, ANTHROPIC_API_KEY);
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -174,7 +176,7 @@ Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "
       });
     }
     const j = await r.json();
-    logUsage(supabase, { userId: user?.id, fn: "ai-followup-draft", model: MODEL, usage: j.usage, usedOwn: __own });
+    logUsage(__sb, { userId: __uid, fn: "ai-followup-draft", model: MODEL, usage: j.usage, usedOwn: __own });
     let raw = (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
     raw = raw.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
     let subject = "", body = raw;
