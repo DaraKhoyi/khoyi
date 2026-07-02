@@ -77,6 +77,24 @@ async function createCustomType(userId, label, icon){
   return data;
 }
 
+// Turn a Supabase/Postgres error into a specific, human-readable reason so save
+// failures aren't hidden behind a generic toast. Full error is also logged.
+function describeSaveError(error, verb = 'save') {
+  const base = `Couldn't ${verb} contact`;
+  if (!error) return `${base}. Try again.`;
+  const code = error.code || '';
+  const map = {
+    '23514': 'a field has a value that isn’t allowed.',
+    '23503': 'a selected option no longer exists — refresh and try again.',
+    '23505': 'a contact with that value already exists.',
+    '23502': 'a required field is missing.',
+    '22P02': 'a field has an invalid value.',
+    '42501': 'you don’t have permission to change this contact.',
+  };
+  const reason = map[code] || (error.message ? error.message : 'please try again.');
+  return `${base}: ${reason}`;
+}
+
 // ─────────────────────────────────────────
 // AUTH SCREEN
 // ─────────────────────────────────────────
@@ -1073,7 +1091,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     if (editContact) {
       const { data: updated, error } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
       if (error) {
-        notify("Couldn't save contact. Try again.", 'error');
+        console.error('[contacts.update] save failed', { error, id: editContact.id, data });
+        notify(describeSaveError(error, 'save'), 'error');
         return;
       }
       savedRow = updated;
@@ -1081,7 +1100,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     } else {
       const { data: created, error } = await supabase.from('contacts').insert({ ...data, user_id: userId }).select().single();
       if (error) {
-        notify("Couldn't create contact. Try again.", 'error');
+        console.error('[contacts.insert] create failed', { error, data });
+        notify(describeSaveError(error, 'create'), 'error');
         return;
       }
       savedRow = created;
