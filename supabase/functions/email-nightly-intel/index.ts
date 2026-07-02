@@ -117,7 +117,7 @@ serve(async (req) => {
   const dryRun = !!body.dry_run;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
-  let acctQ = supabase.from("email_accounts").select("*").eq("is_active", true).eq("provider", "google");
+  let acctQ = supabase.from("email_accounts").select("*").eq("is_active", true).eq("provider", "google").eq("intel_enabled", true);
   if (body.account_id) acctQ = acctQ.eq("id", body.account_id);
   const { data: accounts, error: acctErr } = await acctQ;
   if (acctErr) return j({ error: acctErr.message }, 500);

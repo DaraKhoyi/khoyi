@@ -74,6 +74,7 @@ const MyVoiceView = lazyWithReload(() => import('./views/MyVoiceView'));
 const VoiceRosterView = lazyWithReload(() => import('./views/VoiceRosterView'));
 
 const NotesView = lazyWithReload(() => import('./views/NotesView'));
+const EmailReviewView = lazyWithReload(() => import('./views/EmailReviewView'));
 
 // ── Hierarchical sidebar menu helpers ───────────────────────────────
 function assignMenuKeys(nodes, prefix) {
@@ -3979,7 +3980,7 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   </div>);
 }
 
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [] }) {
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [] }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
 
@@ -4104,6 +4105,12 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, user, setView, r
 
   return (
     <div>
+      {needsReviewCount > 0 && (
+        <button onClick={()=>setView('email_review')} style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, padding:'11px 15px', marginBottom:12, borderRadius:12, cursor:'pointer', background:'linear-gradient(90deg, rgba(197,169,94,0.16), rgba(197,169,94,0.06))', border:'1px solid rgba(197,169,94,0.45)', color:'var(--text-1)' }}>
+          <span style={{ fontSize:13.5, fontWeight:700 }}>📩 <b style={{ color:'var(--accent)' }}>{needsReviewCount}</b> email{needsReviewCount>1?'s':''} flagged for your review</span>
+          <span style={{ fontSize:12.5, fontWeight:800, color:'var(--accent)', whiteSpace:'nowrap' }}>Review →</span>
+        </button>
+      )}
       {/* Hero */}
       <div className="dash-hero">
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
@@ -13765,8 +13772,17 @@ function AppMain() {
   const [userSettings, setUserSettings] = useState(null);
   // Dashboard "Unread Email" tile — count of unread inbox threads (excludes snoozed)
   const [unreadEmailCount, setUnreadEmailCount] = useState(0);
+  const [needsReviewCount, setNeedsReviewCount] = useState(0);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Live badge for the nightly email-review queue (open items needing action).
+  useEffect(() => {
+    if (!dataLoaded) return; let alive = true;
+    supabase.from('email_review_items').select('id', { count: 'exact', head: true })
+      .eq('status', 'open').eq('needs_review', true)
+      .then(({ count }) => { if (alive) setNeedsReviewCount(count || 0); }).catch(() => {});
+    return () => { alive = false; };
+  }, [dataLoaded]);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
   const [taskFilter, setTaskFilter] = useState('today');
   const [taskViewMode, setTaskViewMode] = useState('sequence');
@@ -14002,6 +14018,7 @@ function AppMain() {
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
     setUserSettings(null);
     setUnreadEmailCount(0);
+    setNeedsReviewCount(0);
     setDataLoaded(false);
   }
 
@@ -14029,6 +14046,7 @@ function AppMain() {
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
+    { id: 'email_review', icon: '🕵️', label: 'Email review', badge: needsReviewCount || null },
     { id: 'quo',         icon: '☎️', label: 'Quo',         badge: null },
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
@@ -14110,6 +14128,7 @@ function AppMain() {
     { label: 'Clients & outreach', icon: 'users', children: [
       { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
       { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
+      { label: 'Email review', view: 'email_review', icon: 'mail', ai: true },
       { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
       ...((isAdmin || isTeamLeader) ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
     ] },
@@ -14218,7 +14237,7 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
+                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals}/>
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
@@ -14226,6 +14245,7 @@ function AppMain() {
               : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
+              : view==='email_review' ? <EmailReviewView userId={user.id} emailAccounts={emailAccounts} setView={setView} onCount={setNeedsReviewCount}/>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
               : view==='quo'         ? <QuoView contacts={contacts} userId={user.id}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles} canSeeRestricted={isAdmin || !!(appCtx&&appCtx.is_team_leader) || (appCtx&&appCtx.role==='owner')}/>
