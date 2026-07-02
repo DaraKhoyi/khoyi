@@ -14474,6 +14474,7 @@ function AppMain() {
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
   const brokerageGroup = { label: 'Brokerage', icon: 'building', children: [
+    { label: 'Announcements', view: 'announcements', icon: 'megaphone' },
     { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
     { label: 'Team & sharing', view: 'team', icon: 'users' },
     { label: 'Contact types', view: 'contact_types', icon: 'clipboard' },
@@ -14492,6 +14493,7 @@ function AppMain() {
     { label: 'Brokerage finance', view: 'finance', icon: 'finance' },
   ] };
   const teamGroup = { label: 'Team', icon: 'users', children: [
+    { label: 'Announcements', view: 'announcements', icon: 'megaphone' },
     { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
     { label: 'Team roster', view: 'agents', icon: 'users', children: [
       { label: 'Commission earned · on track?', built: false, icon: 'chart' },
