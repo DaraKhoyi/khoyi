@@ -267,15 +267,34 @@ function RogLogo() {
       if (!wm || !e || !adv) return;
       const wmR = wm.getBoundingClientRect(), eR = e.getBoundingClientRect();
       if (!wmR.width || !eR.width) return;
-      const eCenter = (eR.left - wmR.left) + eR.width / 2;
       const advW = adv.getBoundingClientRect().width;
-      adv.style.marginLeft = Math.max(0, Math.round(eCenter - advW / 2)) + 'px';
+      // In the mobile menu only, start "Advantage" between the N and the E of ONE
+      // (its left edge at the N|E boundary). Everywhere else — laptop, tablet, and
+      // the login lockup — keep it centered under the E, unchanged.
+      const inMenu = !!wm.closest('.sidebar-logo');
+      const mobile = window.matchMedia('(max-width: 768px)').matches;
+      if (inMenu && mobile) {
+        const neBoundary = eR.left - wmR.left;            // left edge of E = N|E boundary
+        const maxLeft = Math.max(0, wmR.width - advW);    // never overflow the wordmark
+        adv.style.marginLeft = Math.max(0, Math.min(Math.round(neBoundary), Math.round(maxLeft))) + 'px';
+      } else {
+        const eCenter = (eR.left - wmR.left) + eR.width / 2;
+        adv.style.marginLeft = Math.max(0, Math.round(eCenter - advW / 2)) + 'px';
+      }
     };
     center();
     const t = setTimeout(center, 150);
     window.addEventListener('resize', center);
+    const mq = window.matchMedia('(max-width: 768px)');
+    if (mq.addEventListener) mq.addEventListener('change', center);
+    else if (mq.addListener) mq.addListener(center);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(center).catch(() => {});
-    return () => { clearTimeout(t); window.removeEventListener('resize', center); };
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', center);
+      if (mq.removeEventListener) mq.removeEventListener('change', center);
+      else if (mq.removeListener) mq.removeListener(center);
+    };
   }, []);
   return (
     <>
