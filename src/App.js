@@ -433,6 +433,130 @@ function AuthScreen() {
 // fields (name, profession, timezone, assistant context) and we upsert
 // user_settings + flip onboarding_complete=true.
 // ─────────────────────────────────────────
+
+// ── System-wide announcements ────────────────────────────────
+// Blocking modal that surfaces unacknowledged announcements one at a time
+// (oldest first). Each must be checked off before the next appears; they
+// persist across sessions until acknowledged.
+function AnnouncementModal({ userId }) {
+  const [queue, setQueue] = React.useState([]);
+  const [loaded, setLoaded] = React.useState(false);
+  const [checked, setChecked] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { const { data } = await supabase.rpc('my_unacked_announcements'); if (alive) setQueue(Array.isArray(data) ? data : []); }
+      catch (_) { if (alive) setQueue([]); }
+      if (alive) setLoaded(true);
+    })();
+    return () => { alive = false; };
+  }, []);
+  React.useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') e.preventDefault(); };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
+
+  if (!loaded || queue.length === 0) return null;
+  const current = queue[0];
+  const remaining = queue.length - 1;
+
+  async function acknowledge() {
+    if (!checked || busy) return;
+    setBusy(true);
+    try { await supabase.from('announcement_acks').insert({ announcement_id: current.id, user_id: userId }); } catch (_) {}
+    setBusy(false); setChecked(false);
+    setQueue(q => q.slice(1));
+  }
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 3000, padding: '16px' }}>
+      <div className="modal" style={{ maxWidth: '480px', width: '100%', maxHeight: '92vh', overflowY: 'auto', borderTop: '3px solid var(--accent)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <span style={{ fontSize: '20px' }}>📣</span>
+          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)' }}>Announcement</span>
+          {remaining > 0 && <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-3)' }}>{remaining} more after this</span>}
+        </div>
+        {current.title && <h2 style={{ margin: '4px 0 10px', fontSize: '19px', fontWeight: 700, color: 'var(--text-1)' }}>{current.title}</h2>}
+        <div style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--text-1)', whiteSpace: 'pre-wrap', marginBottom: '18px' }}>{current.body}</div>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', padding: '12px', borderRadius: '10px', background: 'var(--bg-hover)', border: '1px solid ' + (checked ? 'var(--accent)' : 'var(--border)') }}>
+          <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} style={{ marginTop: '2px', width: '18px', height: '18px', accentColor: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ fontSize: '13.5px', color: 'var(--text-1)' }}>I have read and understood this message.</span>
+        </label>
+        <button className="btn btn-primary" disabled={!checked || busy} onClick={acknowledge} style={{ width: '100%', marginTop: '14px', opacity: (!checked || busy) ? 0.5 : 1 }}>
+          {busy ? 'Saving…' : (remaining > 0 ? 'Acknowledge & see next' : 'Acknowledge')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Owner/admin surface to post and manage announcements.
+function AnnouncementsAdmin({ userId }) {
+  const [title, setTitle] = React.useState('');
+  const [body, setBody] = React.useState('');
+  const [list, setList] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+
+  const load = React.useCallback(async () => {
+    try { const { data } = await supabase.rpc('announcement_stats'); setList(Array.isArray(data) ? data : []); } catch (_) { setList([]); }
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  async function post() {
+    if (!body.trim()) { setMsg('Message body is required.'); return; }
+    setBusy(true); setMsg('');
+    const { error } = await supabase.from('announcements').insert({ title: title.trim() || null, body: body.trim(), created_by: userId });
+    if (error) { setMsg('Error: ' + error.message); setBusy(false); return; }
+    setTitle(''); setBody(''); setMsg('Posted. Every agent will see it next time they open the app.'); setBusy(false); load();
+  }
+  async function toggleActive(a) { try { await supabase.from('announcements').update({ is_active: !a.is_active }).eq('id', a.id); } catch (_) {} load(); }
+  async function remove(a) { if (!window.confirm('Delete this announcement? This also removes its acknowledgements.')) return; try { await supabase.from('announcements').delete().eq('id', a.id); } catch (_) {} load(); }
+
+  const sbtn = { fontSize: '12px', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' };
+
+  return (
+    <div>
+      <div className="page-header"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span>📣</span>Announcements</h2><p>Post a message that pops up on every agent's dashboard until they acknowledge it.</p></div>
+      <div style={{ maxWidth: '640px' }}>
+        <div className="panel" style={{ marginBottom: '18px' }}>
+          <div className="panel-header"><h3>New announcement</h3></div>
+          <div className="panel-body">
+            <div className="form-group"><label className="form-label">Title (optional)</label><input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Office closed Friday" maxLength={120} /></div>
+            <div className="form-group"><label className="form-label">Message</label><textarea className="form-input" value={body} onChange={e => setBody(e.target.value)} rows={4} placeholder="What do you want every agent to see?" /></div>
+            {msg && <div style={{ fontSize: '12.5px', marginBottom: '10px', color: msg.startsWith('Error') ? 'var(--red)' : 'var(--green)' }}>{msg}</div>}
+            <button className="btn btn-primary" disabled={busy} onClick={post}>{busy ? 'Posting…' : 'Post announcement'}</button>
+          </div>
+        </div>
+        <div className="panel">
+          <div className="panel-header"><h3>Posted announcements</h3></div>
+          <div className="panel-body">
+            {list.length === 0 && <div style={{ fontSize: '13px', color: 'var(--text-3)' }}>No announcements yet.</div>}
+            {list.map(a => (
+              <div key={a.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--text-1)', fontSize: '14px' }}>{a.title || '(no title)'}</span>
+                  {!a.is_active && <span style={{ fontSize: '10px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px' }}>inactive</span>}
+                  <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--accent)' }}>✓ {a.ack_count} acknowledged</span>
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--text-2)', whiteSpace: 'pre-wrap', margin: '4px 0 8px' }}>{a.body}</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{new Date(a.created_at).toLocaleDateString()}</span>
+                  <button onClick={() => toggleActive(a)} style={{ ...sbtn, marginLeft: 'auto' }}>{a.is_active ? 'Deactivate' : 'Reactivate'}</button>
+                  <button onClick={() => remove(a)} style={{ ...sbtn, color: 'var(--red)' }}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OnboardingModal({ userId, userEmail, onComplete }) {
   const [displayName, setDisplayName] = useState('');
   const [profession, setProfession] = useState('');
@@ -14188,6 +14312,7 @@ function AppMain() {
     { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
     { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
     { id: 'systems',     icon: '🩺', label: 'Systems',     badge: null },
+    ...(isAdmin ? [{ id: 'announcements', icon: '📣', label: 'Announcements', badge: null }] : []),
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
 
@@ -14197,7 +14322,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'settings'];
+  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'announcements', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -14395,6 +14520,7 @@ function AppMain() {
               : view==='voice_roster'? <VoiceRosterView/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
+              : view==='announcements' ? <AnnouncementsAdmin userId={user.id} />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin}/>
               : null}
                 </React.Suspense>
@@ -14423,6 +14549,9 @@ function AppMain() {
           userEmail={user.email}
           onComplete={() => { loadData(); }}
         />
+      )}
+      {dataLoaded && user && userSettings && userSettings.onboarding_complete !== false && (
+        <AnnouncementModal userId={user.id} />
       )}
     </div>
   );
