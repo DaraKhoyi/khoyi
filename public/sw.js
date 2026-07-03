@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v185-20260703-loader-retry'
+const VERSION = 'prismos-v186-20260703-act-as-user'
 const APP_SHELL = [
   '/',
   '/index.html',

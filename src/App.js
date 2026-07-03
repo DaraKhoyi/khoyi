@@ -553,6 +553,78 @@ function TeamsAdmin({ userId }) {
   );
 }
 
+
+// ── "Act as user" (impersonation) ────────────────────────────
+// Persistent banner shown whenever the current session is an impersonated one.
+function ImpersonationBanner() {
+  const [imp] = React.useState(() => { try { return JSON.parse(localStorage.getItem('__impersonating') || 'null'); } catch (_) { return null; } });
+  const [leaving, setLeaving] = React.useState(false);
+  if (!imp) return null;
+  async function exit() {
+    setLeaving(true);
+    let real = null;
+    try { real = JSON.parse(localStorage.getItem('__realSession') || 'null'); } catch (_) {}
+    try {
+      if (real && real.access_token) await supabase.auth.setSession(real);
+      try { await supabase.functions.invoke('impersonate', { body: { action: 'end', log_id: imp.log_id } }); } catch (_) {}
+    } catch (_) {}
+    try { localStorage.removeItem('__impersonating'); localStorage.removeItem('__realSession'); } catch (_) {}
+    if (!real || !real.access_token) { try { await supabase.auth.signOut(); } catch (_) {} }
+    window.location.reload();
+  }
+  return (
+    <div style={{ background: 'linear-gradient(90deg,#7a1f1f,#a83232)', color: '#fff', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', fontWeight: 600 }}>
+      <span style={{ fontSize: '15px' }}>🎭</span>
+      <span style={{ flex: 1, minWidth: 0 }}>You're acting as <b>{imp.name}</b>. Everything you do is recorded as them.</span>
+      <button onClick={exit} disabled={leaving} style={{ background: '#fff', color: '#7a1f1f', border: 'none', borderRadius: '8px', padding: '5px 12px', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{leaving ? 'Returning…' : 'Return to my account'}</button>
+    </div>
+  );
+}
+
+// Picker to choose who to act as (server re-verifies permission).
+function ActAsPicker({ userId }) {
+  const [cands, setCands] = React.useState(null);
+  const [busy, setBusy] = React.useState('');
+  const [msg, setMsg] = React.useState('');
+  React.useEffect(() => { (async () => { try { const { data } = await supabase.rpc('impersonation_candidates'); setCands(Array.isArray(data) ? data : []); } catch (_) { setCands([]); } })(); }, []);
+  async function actAs(c) {
+    setBusy(c.user_id); setMsg('');
+    try {
+      const { data: { session: real } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('impersonate', { body: { target_user_id: c.user_id } });
+      if (error || !data || !data.access_token) { setMsg('Could not switch: ' + (error?.message || data?.error || 'unknown error')); setBusy(''); return; }
+      try {
+        localStorage.setItem('__realSession', JSON.stringify({ access_token: real.access_token, refresh_token: real.refresh_token }));
+        localStorage.setItem('__impersonating', JSON.stringify({ name: c.name, log_id: data.log_id, at: Date.now() }));
+      } catch (_) {}
+      await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+      window.location.reload();
+    } catch (e) { setMsg(String(e)); setBusy(''); }
+  }
+  return (
+    <div>
+      <div className="page-header"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span>🎭</span>Act as another user</h2><p>Open the app as one of your users to see exactly what they see. Your real identity is recorded the whole time.</p></div>
+      <div style={{ maxWidth: '560px' }}>
+        {cands === null && <div style={{ color: 'var(--text-3)', fontSize: '13px' }}>Loading…</div>}
+        {cands && cands.length === 0 && <div className="panel"><div className="panel-body"><div style={{ fontSize: '13px', color: 'var(--text-3)' }}>There's no one you can act as.</div></div></div>}
+        {cands && cands.map(c => (
+          <div key={c.user_id} className="panel" style={{ marginBottom: '10px' }}>
+            <div className="panel-body" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>{(c.name || c.email || '?').slice(0, 2).toUpperCase()}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-1)', fontSize: '14px' }}>{c.name}{c.is_admin && <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px' }}>{c.role}</span>}</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-3)' }}>{c.email}</div>
+              </div>
+              <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => actAs(c)}>{busy === c.user_id ? 'Switching…' : 'Act as'}</button>
+            </div>
+          </div>
+        ))}
+        {msg && <div style={{ fontSize: '12.5px', color: 'var(--red)', marginTop: '8px' }}>{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
 function AnnouncementModal({ userId }) {
   const [queue, setQueue] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -14492,6 +14564,7 @@ function AppMain() {
   const emailAdmin = ((user?.email)||'').toLowerCase()==='khoyi1234@gmail.com';
   const isAdmin = appCtx ? !!appCtx.is_admin : emailAdmin;
   const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
+  const isImpersonating = (() => { try { return !!localStorage.getItem('__impersonating'); } catch (_) { return false; } })();
   const openTaskCount = tasks.filter(t=>!t.completed).length;
 
   const NAV_ALL = [
@@ -14527,6 +14600,7 @@ function AppMain() {
     { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
     { id: 'systems',     icon: '🩺', label: 'Systems',     badge: null },
     ...(isAdmin ? [{ id: 'teams', icon: '👥', label: 'Teams', badge: null }] : []),
+    ...((isAdmin || isTeamLeader) && !isImpersonating ? [{ id: 'actas', icon: '🎭', label: 'Act as user', badge: null }] : []),
     ...((isAdmin || isTeamLeader) ? [{ id: 'announcements', icon: '📣', label: 'Announcements', badge: null }] : []),
     { id: 'settings',    icon: '⚙️',  label: 'Settings' },
   ];
@@ -14537,7 +14611,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'teams', 'announcements', 'settings'];
+  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'teams', 'actas', 'announcements', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -14650,6 +14724,7 @@ function AppMain() {
     <div className="app-shell" style={{flexDirection:'column'}}>
       <InstallPwaPrompt />
       <UpdateBanner />
+      <ImpersonationBanner />
       <QuickLog userId={user.id} onNavigate={navigate} />
       {/* Mobile header */}
       <div className="mobile-header">
@@ -14738,6 +14813,7 @@ function AppMain() {
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
               : view==='teams' ? <TeamsAdmin userId={user.id} />
+              : view==='actas' ? <ActAsPicker userId={user.id} />
               : view==='announcements' ? <AnnouncementsAdmin userId={user.id} isAdmin={isAdmin} />
               : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin}/>
               : null}
