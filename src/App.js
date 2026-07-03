@@ -14296,7 +14296,7 @@ function AppMain() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isRetry = false) => {
     if (!session) return;
     // Pass 1 Batch D — Findings #10 + #12 + #16:
     // - Removed: legacy emails, drawings, fin_accounts, fin_assets (per Q2 decision)
@@ -14382,11 +14382,19 @@ function AppMain() {
     setDataLoaded(true);
 
     // Phase 2 — heavier/secondary datasets load in the background and populate as they arrive.
-    Promise.allSettled(q2.map(([_, q]) => q)).then(r2 => {
+    Promise.allSettled(q2.map(([_, q]) => q)).then(async r2 => {
       const failed = [...failed1, ...apply(q2, r2)];
-      if (failed.length > 0) {
-        console.warn('loadData: queries failed:', failed);
-        notify(`Couldn't load: ${failed.join(', ')}. Some screens may be stale.`, 'error');
+      if (failed.length === 0) return;
+      console.warn('loadData: queries failed:', failed);
+      if (!isRetry) {
+        // Transient blips (a 5G drop or an auth-token refresh the moment the app
+        // resumes) tend to fail the whole parallel batch at once. Nudge the
+        // session and retry once, silently, before bothering the user.
+        try { await supabase.auth.getSession(); } catch (_) {}
+        setTimeout(() => { loadData(true); }, 1500);
+      } else {
+        // Still failing after a retry — this is a real problem worth surfacing.
+        notify(`Couldn't load: ${failed.join(', ')}. Pull to refresh, or check your connection.`, 'error');
       }
     });
   }, [session]);
