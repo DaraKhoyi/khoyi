@@ -5620,6 +5620,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
     return () => { alive = false; };
   }, [recipientId]); // eslint-disable-line
   const [attachments, setAttachments] = useState([]); // [{filename, mime_type, content_base64, size}]
+  const [trackOpens, setTrackOpens] = useState(false); // opt-in open tracking, OFF by default
   const attachInputRef = React.useRef(null);
   const MAX_ATTACH_BYTES = 20 * 1024 * 1024; // ~20MB Gmail-safe budget across files
   async function onPickAttachments(e) {
@@ -5713,7 +5714,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
       const acc = accs && accs[0];
       if (!acc) { notify('No email account is connected to send from. Connect Gmail in Settings.', 'error'); setSending(false); return; }
       const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', {
-        body: { account_id: acc.id, to: recipient.email, subject: subject || '(no subject)', body_text: bodyText, attachments: attachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 })) },
+        body: { account_id: acc.id, to: recipient.email, subject: subject || '(no subject)', body_text: bodyText, attachments: attachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 })), track: trackOpens, contact_id: recipient?.id || null },
       });
       if (se) throw se;
       if (sr?.error) throw new Error(sr.error);
@@ -5806,6 +5807,10 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
                 <div style={{ marginTop: '8px' }}>
                   <input ref={attachInputRef} type="file" multiple onChange={onPickAttachments} style={{ display: 'none' }} />
                   <button className="btn btn-ghost btn-sm" onClick={() => attachInputRef.current && attachInputRef.current.click()} style={{ fontSize: '11px' }}>📎 Attach file</button>
+                  <button onClick={() => setTrackOpens(v => !v)} title="Get a 'Likely seen' read signal. Off by default." style={{ marginLeft: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: trackOpens ? 'var(--accent)' : 'var(--text-3)' }}>
+                    <span style={{ width: '15px', height: '15px', borderRadius: '4px', border: `2px solid ${trackOpens ? 'var(--accent)' : 'var(--text-3)'}`, background: trackOpens ? 'var(--accent)' : 'transparent', color: '#1a1300', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, fontSize: '11px' }}>{trackOpens ? '✓' : ''}</span>
+                    Track opens
+                  </button>
                   {attachments.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                       {attachments.map((a, i) => (

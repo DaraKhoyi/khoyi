@@ -111,7 +111,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { account_id, to, cc, bcc, subject, body_text, body_html, reply_to_message_id, in_reply_to_thread_id, from_address, from_name, attachments } = body || {};
+    const { account_id, to, cc, bcc, subject, body_text, body_html, reply_to_message_id, in_reply_to_thread_id, from_address, from_name, attachments, track, contact_id, variant, batch_id } = body || {};
     if (!account_id || !to || !subject) {
       return new Response(
         JSON.stringify({ error: "Missing account_id, to, or subject" }),
@@ -204,6 +204,32 @@ serve(async (req) => {
       } catch { /* non-fatal */ }
     }
 
+    // --- Open tracking (opt-in) ------------------------------------------
+    // Only when track === true. Adds an invisible pixel to an HTML part and
+    // records a tracking row. Never blocks the send.
+    let trackedBodyHtml = body_html || null;
+    if (track) {
+      const token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, "").slice(0, 40);
+      const base = Deno.env.get("TRACK_BASE_URL") || `${Deno.env.get("SUPABASE_URL")}/functions/v1/track-open`;
+      const pixelTag = `<img src="${base}?t=${token}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px;max-height:1px;overflow:hidden;">`;
+      let html = trackedBodyHtml;
+      if (!html) {
+        const esc = String(body_text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
+        html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#1f1f1f;">${esc}</div>`;
+      }
+      html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, pixelTag + "</body>") : (html + pixelTag);
+      trackedBodyHtml = html;
+      try {
+        await supabase.from("email_tracking").insert({
+          user_id: user.id, token, account_id,
+          contact_id: contact_id || null,
+          to_address: Array.isArray(to) ? to[0] : to,
+          subject, variant: variant || null, batch_id: batch_id || null,
+          sent_at: new Date().toISOString(), status: "sent",
+        });
+      } catch (_e) { /* tracking is best-effort — never fail the send */ }
+    }
+
     const rfc822 = buildRfc822({
       from: resolvedFromName
         ? `"${resolvedFromName}" <${resolvedFromEmail}>`
@@ -213,7 +239,7 @@ serve(async (req) => {
       bcc: arrayify(bcc),
       subject,
       bodyText: body_text || null,
-      bodyHtml: body_html || null,
+      bodyHtml: trackedBodyHtml,
       headers: extraHeaders,
       attachments,
     });

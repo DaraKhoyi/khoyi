@@ -1112,9 +1112,10 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [composeAttachments, setComposeAttachments] = useState([]); // [{filename, mime_type, content_base64, size}]
+  const [composeTrack, setComposeTrack] = useState(false); // opt-in open tracking, OFF by default
   const composeAttachRef = useRef(null);
   const COMPOSE_MAX_ATTACH_BYTES = 20 * 1024 * 1024; // ~20MB Gmail-safe budget
-  useEffect(() => { if (!showCompose) setComposeAttachments([]); }, [showCompose]); // clear on close so next open is clean
+  useEffect(() => { if (!showCompose) { setComposeAttachments([]); setComposeTrack(false); } }, [showCompose]); // clear on close so next open is clean
   async function onPickComposeAttachments(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
@@ -2010,6 +2011,12 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         body_text: composeBody,
       };
       if (composeAttachments.length) payload.attachments = composeAttachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 }));
+      if (composeTrack) {
+        payload.track = true;
+        const firstTo = (composeTo.split(',')[0] || '').trim().toLowerCase();
+        const cm = (contacts || []).find(c => (c.email || '').toLowerCase() === firstTo);
+        if (cm) payload.contact_id = cm.id;
+      }
       const ccArr = composeCc.split(',').map(s => s.trim()).filter(Boolean);
       const bccArr = composeBcc.split(',').map(s => s.trim()).filter(Boolean);
       if (ccArr.length) payload.cc = ccArr;
@@ -2998,6 +3005,10 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               <div style={{ marginTop: '8px' }}>
                 <input ref={composeAttachRef} type="file" multiple onChange={onPickComposeAttachments} style={{ display: 'none' }} />
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => composeAttachRef.current && composeAttachRef.current.click()} style={{ fontSize: '11px' }}>📎 Attach file</button>
+                <button type="button" onClick={() => setComposeTrack(v => !v)} title="Get a 'Likely seen' read signal. Off by default." style={{ marginLeft: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: composeTrack ? 'var(--accent)' : 'var(--text-3)' }}>
+                  <span style={{ width: '15px', height: '15px', borderRadius: '4px', border: `2px solid ${composeTrack ? 'var(--accent)' : 'var(--text-3)'}`, background: composeTrack ? 'var(--accent)' : 'transparent', color: '#1a1300', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, fontSize: '11px' }}>{composeTrack ? '✓' : ''}</span>
+                  Track opens
+                </button>
                 {composeAttachments.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                     {composeAttachments.map((a, i) => (

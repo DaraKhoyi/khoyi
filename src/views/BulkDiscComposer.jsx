@@ -60,6 +60,16 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
   const [expandList, setExpandList] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
+  const [trackBlast, setTrackBlast] = useState(false); // opt-in open tracking for the blast, OFF by default
+  const [batchId, setBatchId] = useState(null);
+  const [batchRows, setBatchRows] = useState([]);
+  async function loadBatch(bId) {
+    if (!bId) return;
+    try {
+      const { data } = await supabase.from('email_tracking').select('contact_id,to_address,variant,status,confident_open_at,open_count,apple_mpp').eq('batch_id', bId);
+      setBatchRows(data || []);
+    } catch (_) {}
+  }
   const touchX = useRef(null);
 
   const firstName = c => ((c.name || '').trim().split(/\s+/)[0]) || 'there';
@@ -101,7 +111,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
 
   async function sendAll() {
     const jobs = [];
-    cards.forEach(k => { const d = drafts[k]; if (!d || !(d.body || '').trim()) return; buckets[k].forEach(c => jobs.push({ c, d })); });
+    cards.forEach(k => { const d = drafts[k]; if (!d || !(d.body || '').trim()) return; buckets[k].forEach(c => jobs.push({ c, d, k })); });
     if (!jobs.length) { notify('No drafts with recipients to send.', 'error'); return; }
 
     let acc = null, from = null;
@@ -114,13 +124,16 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
     } catch (e) { notify(String(e.message || e), 'error'); return; }
 
     setStep('sending'); setProgress({ done: 0, total: jobs.length });
+    const bId = (trackBlast && isEmail) ? crypto.randomUUID() : null;
+    setBatchId(bId);
     let sent = 0, failed = 0;
-    for (const { c, d } of jobs) {
+    for (const { c, d, k } of jobs) {
       try {
         const body = personalize(d.body, c);
         if (isEmail) {
           const subject = personalize(d.subject, c) || '(no subject)';
-          const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', { body: { account_id: acc.id, to: c.email, subject, body_text: body } });
+          const extra = bId ? { track: true, variant: k, batch_id: bId, contact_id: c.id } : {};
+          const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', { body: { account_id: acc.id, to: c.email, subject, body_text: body, ...extra } });
           if (se) throw se; if (sr?.error) throw new Error(sr.error);
           await logSent(c, 'email', body, subject);
         } else {
@@ -133,6 +146,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
     }
     setResult({ sent, failed, skipped: skipped.length });
     setStep('done');
+    if (bId) loadBatch(bId);
     if (onSent) onSent();
   }
 
@@ -224,6 +238,12 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
                 <button className="btn btn-ghost btn-sm" onClick={() => setStep('compose')}>Edit message</button>
                 <button className="btn btn-ghost btn-sm" disabled={idx === cards.length - 1} onClick={() => { setIdx(idx + 1); setExpandList(false); }}>Next ›</button>
               </div>
+              {isEmail && (
+                <button onClick={() => setTrackBlast(v => !v)} title="Get a per-recipient 'Likely seen' read signal. Off by default." style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: trackBlast ? 'var(--accent)' : 'var(--text-3)', marginTop: 12 }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${trackBlast ? 'var(--accent)' : 'var(--text-3)'}`, background: trackBlast ? 'var(--accent)' : 'transparent', color: '#1a1300', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, fontSize: 12 }}>{trackBlast ? '✓' : ''}</span>
+                  Track opens — per-recipient "Likely seen"
+                </button>
+              )}
               <button className="btn btn-primary" disabled={totalToSend === 0} onClick={sendAll} style={{ width: '100%', marginTop: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
                 <Icon name={isEmail ? 'mail' : 'quo'} size={15} /> Send all ({totalToSend})
               </button>
@@ -247,6 +267,29 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
                 {result.failed > 0 && <div style={{ color: 'var(--red)' }}>{result.failed} failed to send.</div>}
                 {result.skipped > 0 && <div>{result.skipped} skipped (no {isEmail ? 'email' : 'phone'} on file).</div>}
               </div>
+              {batchId && (
+                <div style={{ marginTop: 16, textAlign: 'left', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 12px', maxHeight: 260, overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Read tracking</span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => loadBatch(batchId)} style={{ fontSize: 11 }}>↻ Refresh</button>
+                  </div>
+                  {batchRows.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-3)' }}>Sending… tap Refresh in a moment to see who's opened.</div>}
+                  {batchRows.map((r, i) => {
+                    const seen = r.status === 'likely_seen';
+                    const machine = r.status === 'opened_machine';
+                    const label = seen ? 'Likely seen' : machine ? 'Loaded (unconfirmed)' : 'Sent';
+                    const col = seen ? 'var(--accent)' : machine ? 'var(--text-2)' : 'var(--text-3)';
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                        <span style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 4, background: (DISC_STYLE_META[r.variant] || DISC_STYLE_META.neutral).color, color: '#000', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{r.variant && r.variant !== 'neutral' ? r.variant : '–'}</span>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.to_address}</span>
+                        <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: col }}>{seen ? '👁 ' : ''}{label}{r.open_count > 1 ? ` ·${r.open_count}×` : ''}</span>
+                      </div>
+                    );
+                  })}
+                  <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.4 }}>Times in EST. "Likely seen" filters out scanners &amp; Apple auto-loads. Apple Mail users may show as Loaded/unconfirmed.</div>
+                </div>
+              )}
               <button className="btn btn-primary" onClick={onClose} style={{ marginTop: 16 }}>Done</button>
             </div>
           )}
