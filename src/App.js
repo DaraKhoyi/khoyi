@@ -4898,7 +4898,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
             <h2 style={{ margin:0, fontSize:25, fontWeight:800, letterSpacing:'-0.01em', color:'var(--text-1)' }}>{gr}, {name}</h2>
             <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--text-2)', fontWeight:500 }}>{today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
           </div>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', flex:'1 1 100%', justifyContent:'center' }}>
             <span title={`Best streak: ${bestStreak} days`} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'7px 12px', borderRadius:999, background:'rgba(245,158,11,0.12)', border:'1px solid rgba(245,158,11,0.4)', color:'#f5b34a', fontSize:12.5, fontWeight:800 }}>🔥 {streak}-day streak</span>
             <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'7px 12px', borderRadius:999, background:'rgba(34,197,94,0.12)', border:'1px solid rgba(34,197,94,0.35)', color:'#4ade80', fontSize:12.5, fontWeight:800 }}>✓ {doneToday} done today</span>
           </div>
@@ -4917,7 +4917,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
               {gciGoal>0 && <div style={{ fontSize:11.5, color:'var(--text-3)', marginTop:5, display:'inline-flex', alignItems:'center', gap:5 }}><Icon name="target" size={12} style={{ color:'var(--accent)' }} /> {money0(gciGoal)} GCI goal</div>}
             </div>
           </div>
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', flex:'1 1 100%', justifyContent:'center' }}>
             <button className="btn btn-primary" onClick={()=>setView('chat')} style={{ borderRadius:11, padding:'11px 18px', fontSize:14, boxShadow:'0 4px 14px rgba(197,169,94,0.35)' }}>✦ Ask {robot?.name||'Ari'}</button>
             <button className="quick-chip" onClick={onOpenPlan} style={{ padding:'11px 16px' }}>✦ Plan my day</button>
           </div>
