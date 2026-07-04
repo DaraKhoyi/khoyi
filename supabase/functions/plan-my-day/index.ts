@@ -15,6 +15,7 @@
 // reading email bodies and cross-referencing live deals/properties for context.
 // Stateless; no DB access.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-sonnet-4-6";
@@ -110,10 +111,19 @@ Respond ONLY with strict JSON, no markdown:
 
     const user = `WORKING HOURS: ${String(wh.start).padStart(2, "0")}:00–${String(wh.end).padStart(2, "0")}:00 (24h). Schedule all timed work inside this window.\n\nCONSTRAINTS FOR TODAY: ${con || "(none — use the full working window)"}\n\nLIGHT DAY: ${lightDay ? "YES — load is thin; proactively protect the pipeline using the PIPELINE list below." : "no — the day has enough real work; do not add pipeline filler."}\n\nOPEN TASKS:\n${taskLines || "(none)"}\n\nPEOPLE TO REACH OUT TO:\n${reachLines || "(none)"}\n\nUNREAD EMAILS:\n${emailLines || "(none)"}\n\nPIPELINE (nurture/sphere people to get ahead on, and active lead-gen systems — use ONLY on a LIGHT DAY):\nContacts:\n${pipeContactLines || "(none)"}\nActive lead-gen systems:\n${pipeSystemLines || "(none)"}\n\nLIVE DEALS (context):\n${dealLines || "(none)"}\n\nPROPERTIES (context):\n${propLines || "(none)"}\n\nRECENT JOURNAL NOTES (context):\n${journalLines || "(none)"}\n\nBRAIN NOTES (context):\n${brainLines || "(none)"}\n\nGCI PACE:\n${gciLine}\n\nHABITS / FOLLOW-THROUGH:\n${habitsLine}\n\nFIXED CALENDAR TODAY:\n${eventLines || "(nothing scheduled)"}`;
 
+    let kbBlock = "";
+    try {
+      const __tok = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+      if (__tok) {
+        const __uc = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_ANON_KEY"), { global: { headers: { Authorization: `Bearer ${__tok}` } } });
+        const { data: kd } = await __uc.rpc("my_upcoming_knowledge_dates", { days_ahead: 30 });
+        if (kd && kd.length) kbBlock = "\n\nUPCOMING DEADLINES FROM THE BROKER'S KNOWLEDGE BASE (treat any due today or in the next few days as high-priority — add a block or a clear reminder, and name the item):\n" + kd.map((k) => `- ${k.value_date}: ${k.fact_key} \u2014 ${k.value_text} (from: ${k.source_title})`).join("\n");
+      }
+    } catch (_) {}
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 2000, system: sys, messages: [{ role: "user", content: user }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 2000, system: sys, messages: [{ role: "user", content: user + kbBlock }] }),
     });
     if (!resp.ok) return J({ error: `AI error ${resp.status}` }, 502);
     const data = await resp.json();

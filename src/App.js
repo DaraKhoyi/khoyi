@@ -646,10 +646,28 @@ function KnowledgeView({ userId, isAdmin = false }) {
   const [addMsg, setAddMsg] = React.useState('');
   // Library
   const [sources, setSources] = React.useState([]);
+  const [factsBySource, setFactsBySource] = React.useState({});
+  const [linksBySource, setLinksBySource] = React.useState({});
+  const [feedback, setFeedback] = React.useState(null);
 
   const loadLib = React.useCallback(async () => {
-    try { const { data } = await supabase.from('knowledge_sources').select('*').order('created_at', { ascending: false }).limit(200); setSources(Array.isArray(data) ? data : []); } catch (_) {}
+    try {
+      const [{ data: srcs }, { data: facts }, { data: links }] = await Promise.all([
+        supabase.from('knowledge_sources').select('*').order('created_at', { ascending: false }).limit(200),
+        supabase.rpc('my_knowledge_facts'),
+        supabase.rpc('my_knowledge_links'),
+      ]);
+      setSources(Array.isArray(srcs) ? srcs : []);
+      const fb = {}; (facts || []).forEach(x => { (fb[x.source_id] = fb[x.source_id] || []).push(x); }); setFactsBySource(fb);
+      const lb = {}; (links || []).forEach(x => { (lb[x.source_id] = lb[x.source_id] || []).push(x); }); setLinksBySource(lb);
+    } catch (_) {}
   }, []);
+  async function sendFeedback(helpful) {
+    setFeedback(helpful ? 'up' : 'down');
+    try { await supabase.from('knowledge_usage').insert({ user_id: userId, surface: 'search', query: q.slice(0, 500), helpful, source_id: (ans && ans.citations && ans.citations[0] && ans.citations[0].source_id) || null }); } catch (_) {}
+  }
+  async function confirmLink(l) { try { await supabase.from('knowledge_links').update({ confirmed: true }).eq('id', l.id); } catch (_) {} loadLib(); }
+  async function removeLink(l) { try { await supabase.from('knowledge_links').delete().eq('id', l.id); } catch (_) {} loadLib(); }
   React.useEffect(() => { loadLib(); (async () => { try { const { data } = await supabase.rpc('my_teams'); setMyTeams(Array.isArray(data) ? data : []); } catch (_) {} })(); }, [loadLib]);
   // poll while anything is processing
   React.useEffect(() => {
@@ -659,7 +677,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
 
   async function runAsk() {
     if (!q.trim()) return;
-    setAsking(true); setAns(null);
+    setAsking(true); setAns(null); setFeedback(null);
     try {
       const { data, error } = await supabase.functions.invoke('knowledge-ask', { body: { query: q, surface: 'search' } });
       if (error || !data) { setAns({ answer: 'Something went wrong: ' + (error?.message || 'unknown'), citations: [] }); }
@@ -730,6 +748,12 @@ function KnowledgeView({ userId, isAdmin = false }) {
                       ))}
                     </div>
                   )}
+                  <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Helpful?</span>
+                    <button onClick={() => sendFeedback(true)} style={{ background: feedback === 'up' ? 'rgba(197,169,94,0.2)' : 'transparent', border: '1px solid var(--border)', borderRadius: '7px', padding: '2px 9px', cursor: 'pointer', fontSize: '13px' }}>👍</button>
+                    <button onClick={() => sendFeedback(false)} style={{ background: feedback === 'down' ? 'rgba(197,169,94,0.2)' : 'transparent', border: '1px solid var(--border)', borderRadius: '7px', padding: '2px 9px', cursor: 'pointer', fontSize: '13px' }}>👎</button>
+                    {feedback && <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Thanks — noted.</span>}
+                  </div>
                 </div>
               </div>
             )}
@@ -782,6 +806,29 @@ function KnowledgeView({ userId, isAdmin = false }) {
                 {s.summary && <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '5px' }}>{s.summary}</div>}
                 {s.error && <div style={{ fontSize: '12px', color: 'var(--red)', marginTop: '4px' }}>{s.error}</div>}
                 {s.tags && s.tags.length > 0 && <div style={{ marginTop: '6px', display: 'flex', gap: '5px', flexWrap: 'wrap' }}>{s.tags.map((t, i) => <span key={i} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-hover)', borderRadius: '6px', padding: '1px 7px' }}>{t}</span>)}</div>}
+                {(factsBySource[s.id] || []).length > 0 && (
+                  <div style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Extracted facts</div>
+                    {(factsBySource[s.id] || []).map(fx => (
+                      <div key={fx.id} style={{ fontSize: '12px', color: 'var(--text-2)', marginBottom: '2px' }}><span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{fx.fact_key}:</span> {fx.value_text}{fx.value_date ? <span style={{ color: 'var(--accent)' }}> ({fx.value_date})</span> : ''}</div>
+                    ))}
+                  </div>
+                )}
+                {(linksBySource[s.id] || []).length > 0 && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Linked records</div>
+                    {(linksBySource[s.id] || []).map(l => (
+                      <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                        <span style={{ color: 'var(--text-1)' }}>{l.target_type}: {l.target_name || '(record)'}</span>
+                        {l.confirmed ? <span style={{ fontSize: '10px', color: 'var(--green)' }}>✓ linked</span> : (<>
+                          <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>suggested</span>
+                          <button onClick={() => confirmLink(l)} style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--green)', cursor: 'pointer' }}>Confirm</button>
+                          <button onClick={() => removeLink(l)} style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Remove</button>
+                        </>)}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div></div>
             ); })}
           </div>
