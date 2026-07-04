@@ -7361,7 +7361,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
         </div>
 
-        <div style={{flex:1,minHeight:0,overflowY:'auto',paddingRight:'4px'}}>
+        <div style={{flex:1,minHeight:0,overflowY:'auto',overflowX:'hidden',paddingRight:'4px',paddingBottom:'120px'}}>
           {tab==='overview' && (<>
           <ContactKnowledge contactId={contact.id} />
           {profile && (profile.primary_letter || hasBaseline) && (() => {
@@ -7492,7 +7492,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 {hdrKeyFacts.map((kf,i)=>(
                   <div key={i} style={{display:'flex',justifyContent:'space-between',gap:'12px',padding:'6px 0',fontSize:'12.5px',borderTop: i ? '1px solid rgba(255,255,255,0.04)' : 'none'}}>
                     <span style={{color:'var(--text-3)',flexShrink:0}}>{kf.k}</span>
-                    <span style={{color:'var(--text-1)',fontWeight:500,textAlign:'right'}}>{kf.v}</span>
+                    <span style={{color:'var(--text-1)',fontWeight:500,textAlign:'right',minWidth:0,overflowWrap:'anywhere'}}>{kf.v}</span>
                   </div>
                 ))}
               </div>
