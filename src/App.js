@@ -3391,7 +3391,7 @@ function PlanTimeline({ steps = [], events = [], onTapStep, isDone, saved }) {
 // ── Next Best Action engine: answers "what do I do next?" across all signals ──
 function nbaLastTouch(c){ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(t=>new Date(t).getTime()); return a.length?Math.max(...a):null; }
 function nbaAge(d){ d=Math.max(0,Math.floor(d)); if(d<=0) return 'today'; if(d===1) return '1 day'; if(d<7) return d+' days'; if(d<14) return '1 week'; if(d<60) return Math.floor(d/7)+' weeks'; return Math.floor(d/30)+' months'; }
-function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date.now(), oweReplyMap={} }){
+function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date.now(), oweReplyMap={}, openSignals={} }){
   const out=[]; const today=new Date(now); const todayISO=today.toISOString().slice(0,10);
   const startToday=new Date(new Date(now).setHours(0,0,0,0)).getTime();
   contacts.forEach(c=>{
@@ -3400,6 +3400,20 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
     if(!owedAt) return; // per-recipient: surface only if THIS user actually owes a reply
     const lin=new Date(owedAt).getTime(); const days=Math.floor((now-lin)/86400000);
     out.push({ key:'reply:'+c.id, score:100+Math.min(days*4,48), tag:'reply', icon:'reply', contactId:c.id, title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'open_reply', channel:(c.last_communication_channel||'').toLowerCase(), phone:c.phone||null, email:c.email||null, name:c.name||null } });
+  });
+  // Opened-your-email-no-reply: a warm follow-up window. Only when they opened
+  // (confidently) more recently than their last reply, and we don't already owe
+  // them a reply (that card wins).
+  contacts.forEach(c=>{
+    const sig = openSignals && openSignals[c.id];
+    if(!sig || !sig.confident_open_at) return;
+    if(oweReplyMap && oweReplyMap[c.id]) return;
+    if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
+    const openedMs = new Date(sig.confident_open_at).getTime();
+    const linMs = c.last_inbound_at ? new Date(c.last_inbound_at).getTime() : 0;
+    if(linMs >= openedMs) return; // they've replied since opening
+    const days=Math.floor((now-openedMs)/86400000); const oc=sig.open_count||1;
+    out.push({ key:'opened:'+c.id, score:92+Math.min(oc*2,10), tag:'opened', icon:'mail', contactId:c.id, title:'Follow up with '+(c.name||'a contact'), why:'Opened your email'+(oc>1?(' '+oc+'\u00d7'):'')+' '+nbaAge(days)+(days<=0?'':' ago')+" and hasn't replied \u2014 strike while it's warm", cta:{ label:'Open', kind:'open_reply', channel:'email', email:c.email||null, phone:c.phone||null, name:c.name||null } });
   });
   events.forEach(e=>{ if(!e.start_at||e.all_day) return; const st=new Date(e.start_at).getTime(); const dh=(st-now)/3600000;
     if(dh>=-1 && dh<=24){ out.push({ key:'appt:'+(e.id||e.start_at), score:96+(dh<2?6:0), tag:'appt', icon:'calendar', title:'Prep for: '+(e.title||'appointment'), why:'Starts '+(dh<1?'soon':'in about '+Math.round(dh)+'h')+' — confirm details and prepare', cta:{ label:'Calendar', kind:'view', payload:'calendar' } }); } });
@@ -3429,7 +3443,20 @@ function buildGrowthMoves({ contacts=[], deals=[], gciGoal=0, now=Date.now() }){
 }
 function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan, myUserId=null, oweReplyMap={}, setOweReplyMap }){
   const now=Date.now();
-  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now,oweReplyMap}),[contacts,tasks,events,deals,oweReplyMap]);
+  const [openSignals,setOpenSignals]=useState({});
+  useEffect(()=>{ let alive=true; (async()=>{
+    try{
+      const since=new Date(Date.now()-30*86400000).toISOString();
+      const { data } = await supabase.from('email_tracking')
+        .select('contact_id,confident_open_at,open_count')
+        .not('contact_id','is',null).not('confident_open_at','is',null)
+        .gte('confident_open_at',since).order('confident_open_at',{ascending:false}).limit(300);
+      if(!alive) return;
+      const m={}; for(const r of (data||[])){ if(!m[r.contact_id]) m[r.contact_id]=r; } // newest per contact
+      setOpenSignals(m);
+    }catch(_){}
+  })(); return ()=>{alive=false;}; },[]);
+  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}),[contacts,tasks,events,deals,oweReplyMap,openSignals]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
   const urgent=actions.length>0; const list=urgent?actions:growth;

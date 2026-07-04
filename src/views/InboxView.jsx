@@ -969,6 +969,24 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [tab, setTab] = useState('inbox');
   const [selectedThread, setSelectedThread] = useState(null);
+  // Open-tracking status for the currently open thread (shown as a "Likely seen" chip).
+  const [threadTracking, setThreadTracking] = useState(null);
+  useEffect(() => {
+    setThreadTracking(null);
+    if (!selectedThread) return;
+    const emails = (selectedThread.participants || []).map(p => String((p && (p.email || p.address)) || '').toLowerCase()).filter(Boolean);
+    if (!emails.length) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('email_tracking')
+          .select('status,confident_open_at,last_open_at,open_count,apple_mpp,sent_at')
+          .in('to_address', emails).order('sent_at', { ascending: false }).limit(1);
+        if (alive && data && data.length) setThreadTracking(data[0]);
+      } catch (_) {}
+    })();
+    return () => { alive = false; };
+  }, [selectedThread]);
   const [selectedMessages, setSelectedMessages] = useState([]);
   // Rapid delete/archive: after acting we advance to the next email and show a
   // brief Undo affordance instead of bouncing back to the list.
@@ -2742,6 +2760,19 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               <h3 style={{margin:0,fontSize:'17px',fontWeight:600,color:'var(--text-1)',lineHeight:1.35,wordBreak:'break-word'}}>
                 {selectedThread.subject || '(no subject)'}
               </h3>
+              {threadTracking && (() => {
+                const seen = threadTracking.status === 'likely_seen';
+                const machine = threadTracking.status === 'opened_machine';
+                const when = seen ? threadTracking.confident_open_at : threadTracking.last_open_at;
+                const est = when ? new Date(when).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+                if (!seen && !machine) return <div style={{marginTop:7,fontSize:'11px',color:'var(--text-3)',fontWeight:600}}>✓ Delivered · not yet loaded</div>;
+                return (
+                  <div title={seen ? 'A genuine open (scanners & Apple auto-loads filtered out).' : 'Image was auto-loaded (Apple Mail or a scanner) — likely not a confirmed human open.'}
+                    style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:6,background:seen?'rgba(197,169,94,0.12)':'var(--bg-base)',border:'1px solid '+(seen?'rgba(197,169,94,0.45)':'var(--border)'),color:seen?'var(--accent)':'var(--text-2)',fontSize:'11px',fontWeight:700,borderRadius:8,padding:'5px 9px'}}>
+                    {seen ? '👁 Likely seen · ' : '◐ Loaded (unconfirmed) · '}{est} EST{threadTracking.open_count>1 ? ' · '+threadTracking.open_count+'×' : ''}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Pass 4 Batch D: AI triage card */}
