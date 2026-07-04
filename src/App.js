@@ -10761,6 +10761,26 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [profession, setProfession] = useState(userSettings?.profession || '');
   const [assistantContext, setAssistantContext] = useState(userSettings?.assistant_context || '');
   const [timezone, setTimezone] = useState(userSettings?.timezone || '');
+  const [officeAddress, setOfficeAddress] = useState(userSettings?.office_address || '');
+  const [zoomLink, setZoomLink] = useState(userSettings?.zoom_link || '');
+  const [savingBooking, setSavingBooking] = useState(false);
+  const [bookingMsg, setBookingMsg] = useState('');
+  const bookingSlug = userSettings?.booking_slug || '';
+  const bookingEnabled = userSettings?.booking_enabled === true;
+  const bookingUrl = bookingSlug ? `https://darasapp.com/book.html?u=${bookingSlug}` : '';
+  async function toggleBooking() {
+    if (savingBooking) return; setSavingBooking(true); setBookingMsg('');
+    const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, booking_enabled: !bookingEnabled, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
+    if (error) setBookingMsg('Error: ' + error.message); else if (data) setUserSettings?.(data);
+    setSavingBooking(false);
+  }
+  async function saveBookingSettings() {
+    if (savingBooking) return; setSavingBooking(true); setBookingMsg('');
+    const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, zoom_link: zoomLink.trim() || null, office_address: officeAddress.trim() || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
+    if (error) setBookingMsg('Error: ' + error.message); else { if (data) setUserSettings?.(data); setBookingMsg('Saved.'); }
+    setSavingBooking(false);
+  }
+  function copyBookingUrl() { try { navigator.clipboard.writeText(bookingUrl); if (window.__notify) window.__notify('Link copied', 'success'); } catch (_) {} }
   const [savingAbout, setSavingAbout] = useState(false);
   const [aboutMsg, setAboutMsg] = useState('');
 
@@ -10777,6 +10797,8 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       setProfession(userSettings.profession || '');
       setAssistantContext(userSettings.assistant_context || '');
       setTimezone(userSettings.timezone || '');
+      setOfficeAddress(userSettings.office_address || '');
+      setZoomLink(userSettings.zoom_link || '');
     }
   }, [userSettings]);
 
@@ -10849,6 +10871,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       profession: profession.trim() || null,
       assistant_context: assistantContext.trim() || null,
       timezone: timezone.trim() || null,
+      office_address: officeAddress.trim() || null,
       updated_at: new Date().toISOString(),
     };
     const { data, error } = await supabase
@@ -10974,6 +10997,35 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               </div>
             )}
             {aiKeyMsg && <div style={{marginTop:'10px', fontSize:'12px', color: /error|reject|failed|doesn|Anthropic rejected/i.test(aiKeyMsg)?'var(--red)':'var(--text-2)'}}>{aiKeyMsg}</div>}
+          </div>
+        </div>
+        <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
+          <div className="panel-header"><h3>Booking page</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Let clients book meetings on your calendar from a shareable link. Open times come from your <b>Work Hours</b> minus your Google Calendar and buffers. Google Meet links are created automatically per booking.</p>
+            <div style={{display:'flex', alignItems:'center', gap:'14px', margin:'6px 0 14px'}}>
+              <div style={{flex:1, minWidth:0}}><b style={{fontSize:'13.5px'}}>Enable my booking page</b></div>
+              <button onClick={toggleBooking} role="switch" aria-checked={bookingEnabled} disabled={savingBooking} style={{flexShrink:0, width:48, height:28, borderRadius:999, border:'none', cursor: savingBooking?'wait':'pointer', background: bookingEnabled?'var(--accent)':'var(--border-strong)', position:'relative', transition:'background .15s'}}>
+                <span style={{position:'absolute', top:3, left: bookingEnabled?23:3, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .15s'}} />
+              </button>
+            </div>
+            {bookingEnabled && bookingUrl && (
+              <div style={{marginBottom:'14px'}}>
+                <label className="form-label">Your shareable link</label>
+                <div style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
+                  <input className="form-input" readOnly value={bookingUrl} style={{flex:'1 1 180px'}} onFocus={e=>e.target.select()} />
+                  <button className="btn btn-ghost" onClick={copyBookingUrl}>Copy</button>
+                  <a className="btn btn-ghost" href={bookingUrl} target="_blank" rel="noopener noreferrer">Open</a>
+                </div>
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Zoom personal link <span style={{color:'var(--text-3)', fontWeight:400}}>(used for Zoom meetings)</span></label>
+              <input className="form-input" value={zoomLink} onChange={e=>setZoomLink(e.target.value)} placeholder="https://zoom.us/j/your-personal-room" />
+            </div>
+            <div style={{fontSize:'11.5px', color:'var(--text-3)', marginBottom:'10px', lineHeight:1.5}}>Your <b>office address</b> (for office meetings) is set under “About you” above. Google Meet links are generated automatically.</div>
+            <button className="btn btn-primary" disabled={savingBooking} onClick={saveBookingSettings}>{savingBooking?'Saving…':'Save booking settings'}</button>
+            {bookingMsg && <div style={{marginTop:'10px', fontSize:'12px', color: bookingMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{bookingMsg}</div>}
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>
@@ -11122,6 +11174,15 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
                   onChange={e=>setAssistantContext(e.target.value)}
                   placeholder="A few sentences about your work, priorities, who you serve, what matters."
                   style={{resize:'vertical',fontFamily:'inherit',minHeight:'110px'}}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Office address</label>
+                <input
+                  className="form-input"
+                  value={officeAddress}
+                  onChange={e=>setOfficeAddress(e.target.value)}
+                  placeholder="e.g. 123 Main St, Suite 200, Lutz, FL 33549"
                 />
               </div>
               <button className="btn btn-primary" disabled={savingAbout}>{savingAbout?'Saving…':'Save'}</button>
