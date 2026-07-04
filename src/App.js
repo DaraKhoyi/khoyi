@@ -625,6 +625,172 @@ function ActAsPicker({ userId }) {
   );
 }
 
+function KnowledgeView({ userId, isAdmin = false }) {
+  const [tab, setTab] = React.useState('ask');
+  // Ask
+  const [q, setQ] = React.useState('');
+  const [asking, setAsking] = React.useState(false);
+  const [ans, setAns] = React.useState(null);
+  // Add
+  const [kind, setKind] = React.useState('text');
+  const [title, setTitle] = React.useState('');
+  const [text, setText] = React.useState('');
+  const [url, setUrl] = React.useState('');
+  const [file, setFile] = React.useState(null);
+  const [scope, setScope] = React.useState('private');
+  const [teamId, setTeamId] = React.useState('');
+  const [myTeams, setMyTeams] = React.useState([]);
+  const [tagsStr, setTagsStr] = React.useState('');
+  const [trust, setTrust] = React.useState('standard');
+  const [adding, setAdding] = React.useState(false);
+  const [addMsg, setAddMsg] = React.useState('');
+  // Library
+  const [sources, setSources] = React.useState([]);
+
+  const loadLib = React.useCallback(async () => {
+    try { const { data } = await supabase.from('knowledge_sources').select('*').order('created_at', { ascending: false }).limit(200); setSources(Array.isArray(data) ? data : []); } catch (_) {}
+  }, []);
+  React.useEffect(() => { loadLib(); (async () => { try { const { data } = await supabase.rpc('my_teams'); setMyTeams(Array.isArray(data) ? data : []); } catch (_) {} })(); }, [loadLib]);
+  // poll while anything is processing
+  React.useEffect(() => {
+    if (!sources.some(s => s.status === 'processing' || s.status === 'pending')) return;
+    const t = setInterval(loadLib, 4000); return () => clearInterval(t);
+  }, [sources, loadLib]);
+
+  async function runAsk() {
+    if (!q.trim()) return;
+    setAsking(true); setAns(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('knowledge-ask', { body: { query: q, surface: 'search' } });
+      if (error || !data) { setAns({ answer: 'Something went wrong: ' + (error?.message || 'unknown'), citations: [] }); }
+      else setAns(data);
+    } catch (e) { setAns({ answer: String(e), citations: [] }); }
+    setAsking(false);
+  }
+
+  async function addKnowledge() {
+    setAddMsg('');
+    if (kind === 'text' && !text.trim()) { setAddMsg('Paste some text first.'); return; }
+    if (kind === 'url' && !url.trim()) { setAddMsg('Enter a link first.'); return; }
+    if (kind === 'file' && !file) { setAddMsg('Choose a file first.'); return; }
+    setAdding(true);
+    try {
+      const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
+      const base = { scope, team_id: scope === 'team' ? (teamId || null) : null, tags, trust_level: trust, title: title.trim() || undefined };
+      let body;
+      if (kind === 'file') {
+        const path = `${userId}/${(crypto.randomUUID ? crypto.randomUUID() : Date.now())}/${file.name}`;
+        const { error: upErr } = await supabase.storage.from('knowledge').upload(path, file, { contentType: file.type, upsert: false });
+        if (upErr) { setAddMsg('Upload failed: ' + upErr.message); setAdding(false); return; }
+        body = { ...base, kind: 'file', storage_path: path, mime_type: file.type, filename: file.name };
+      } else if (kind === 'url') body = { ...base, kind: 'url', url: url.trim() };
+      else body = { ...base, kind: 'text', text };
+      const { data, error } = await supabase.functions.invoke('knowledge-ingest', { body });
+      if (error || !data?.source_id) { setAddMsg('Could not add: ' + (error?.message || data?.error || 'unknown')); setAdding(false); return; }
+      setTitle(''); setText(''); setUrl(''); setFile(null); setTagsStr('');
+      setAddMsg('Added — processing now. It\u2019ll be searchable in a moment.');
+      setTab('library'); loadLib();
+    } catch (e) { setAddMsg(String(e)); }
+    setAdding(false);
+  }
+
+  async function del(s) {
+    if (!window.confirm('Delete "' + (s.title || 'this item') + '" from your knowledge?')) return;
+    try { await supabase.from('knowledge_sources').delete().eq('id', s.id); } catch (_) {}
+    loadLib();
+  }
+
+  const STAT = { ready: ['var(--green)', 'Ready'], processing: ['var(--yellow)', 'Processing\u2026'], pending: ['var(--yellow)', 'Queued'], error: ['var(--red)', 'Error'] };
+  const TABBTN = (id, label) => (
+    <button onClick={() => setTab(id)} style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid ' + (tab === id ? 'var(--accent)' : 'var(--border)'), background: tab === id ? 'rgba(197,169,94,0.12)' : 'transparent', color: tab === id ? 'var(--accent)' : 'var(--text-2)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>{label}</button>
+  );
+
+  return (
+    <div>
+      <div className="page-header"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span>📚</span>Knowledge</h2><p>Feed the app what you know — notes, links, files — then ask it anything. Answers cite their source and stay within your scope.</p></div>
+      <div style={{ maxWidth: '680px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>{TABBTN('ask', 'Ask')}{TABBTN('add', 'Add')}{TABBTN('library', 'Library')}</div>
+
+        {tab === 'ask' && (
+          <div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input className="form-input" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') runAsk(); }} placeholder="Ask your knowledge anything\u2026" style={{ flex: 1 }} />
+              <button className="btn btn-primary" disabled={asking} onClick={runAsk}>{asking ? '\u2026' : 'Ask'}</button>
+            </div>
+            {asking && <div style={{ marginTop: '14px', color: 'var(--text-3)', fontSize: '13px' }}>Searching your knowledge\u2026</div>}
+            {ans && (
+              <div className="panel" style={{ marginTop: '14px' }}>
+                <div className="panel-body">
+                  <div style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--text-1)', whiteSpace: 'pre-wrap' }}>{ans.answer}</div>
+                  {ans.citations && ans.citations.length > 0 && (
+                    <div style={{ marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' }}>Sources</div>
+                      {ans.citations.map(c => (
+                        <div key={c.n} style={{ fontSize: '12px', color: 'var(--text-2)', marginBottom: '6px' }}><b style={{ color: 'var(--accent)' }}>[{c.n}]</b> {c.title} <span style={{ color: 'var(--text-3)' }}>— {c.snippet}\u2026</span></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'add' && (
+          <div className="panel"><div className="panel-body">
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              {[['text', 'Note'], ['url', 'Link'], ['file', 'File']].map(([k, l]) => (
+                <button key={k} onClick={() => setKind(k)} style={{ flex: 1, padding: '8px', borderRadius: '9px', border: '1px solid ' + (kind === k ? 'var(--accent)' : 'var(--border)'), background: kind === k ? 'rgba(197,169,94,0.12)' : 'transparent', color: kind === k ? 'var(--accent)' : 'var(--text-2)', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>{l}</button>
+              ))}
+            </div>
+            <div className="form-group"><label className="form-label">Title (optional)</label><input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., WV Ave project notes" /></div>
+            {kind === 'text' && <div className="form-group"><label className="form-label">Text</label><textarea className="form-input" rows={6} value={text} onChange={e => setText(e.target.value)} placeholder="Paste notes, facts, anything worth remembering\u2026" /></div>}
+            {kind === 'url' && <div className="form-group"><label className="form-label">Link</label><input className="form-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://\u2026" /></div>}
+            {kind === 'file' && <div className="form-group"><label className="form-label">File (PDF or image)</label><input type="file" accept=".pdf,image/*" onChange={e => setFile(e.target.files && e.target.files[0])} style={{ fontSize: '13px', color: 'var(--text-2)' }} /></div>}
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ flex: '1 1 150px' }}><label className="form-label">Who can see it</label>
+                <select className="form-input" value={scope} onChange={e => setScope(e.target.value)}>
+                  <option value="private">Private (only me)</option>
+                  {myTeams.length > 0 && <option value="team">A team</option>}
+                  {isAdmin && <option value="brokerage">Whole brokerage</option>}
+                </select>
+              </div>
+              {scope === 'team' && <div className="form-group" style={{ flex: '1 1 150px' }}><label className="form-label">Team</label>
+                <select className="form-input" value={teamId} onChange={e => setTeamId(e.target.value)}><option value="">Choose\u2026</option>{myTeams.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}</select>
+              </div>}
+              <div className="form-group" style={{ flex: '1 1 150px' }}><label className="form-label">Trust</label>
+                <select className="form-input" value={trust} onChange={e => setTrust(e.target.value)}><option value="standard">Standard</option><option value="authoritative">Authoritative</option><option value="draft">Draft</option></select>
+              </div>
+            </div>
+            <div className="form-group"><label className="form-label">Tags (comma-separated)</label><input className="form-input" value={tagsStr} onChange={e => setTagsStr(e.target.value)} placeholder="west virginia ave, zoning" /></div>
+            {addMsg && <div style={{ fontSize: '12.5px', marginBottom: '10px', color: addMsg.startsWith('Added') ? 'var(--green)' : 'var(--red)' }}>{addMsg}</div>}
+            <button className="btn btn-primary" disabled={adding} onClick={addKnowledge}>{adding ? 'Adding\u2026' : 'Add to knowledge'}</button>
+          </div></div>
+        )}
+
+        {tab === 'library' && (
+          <div>
+            {sources.length === 0 && <div className="panel"><div className="panel-body"><div style={{ fontSize: '13px', color: 'var(--text-3)' }}>Nothing yet. Add a note, link, or file to get started.</div></div></div>}
+            {sources.map(s => { const st = STAT[s.status] || ['var(--text-3)', s.status]; return (
+              <div key={s.id} className="panel" style={{ marginBottom: '10px' }}><div className="panel-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--text-1)', fontSize: '14px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '(untitled)'}</span>
+                  <span style={{ fontSize: '10px', color: st[0], border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px', whiteSpace: 'nowrap' }}>{st[1]}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-3)' }}>{s.scope}{s.scope !== 'private' ? '' : ''}</span>
+                  <button onClick={() => del(s)} style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Delete</button>
+                </div>
+                {s.summary && <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '5px' }}>{s.summary}</div>}
+                {s.error && <div style={{ fontSize: '12px', color: 'var(--red)', marginTop: '4px' }}>{s.error}</div>}
+                {s.tags && s.tags.length > 0 && <div style={{ marginTop: '6px', display: 'flex', gap: '5px', flexWrap: 'wrap' }}>{s.tags.map((t, i) => <span key={i} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-hover)', borderRadius: '6px', padding: '1px 7px' }}>{t}</span>)}</div>}
+              </div></div>
+            ); })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AnnouncementModal({ userId }) {
   const [queue, setQueue] = React.useState([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -14599,6 +14765,7 @@ function AppMain() {
     { id: 'prism',       icon: '✦',  label: 'Prism Profile', badge: null },
     { id: 'tracker',     icon: '🗂️', label: 'Projects',    badge: null },
     { id: 'systems',     icon: '🩺', label: 'Systems',     badge: null },
+    { id: 'knowledge', icon: '📚', label: 'Knowledge', badge: null },
     ...(isAdmin ? [{ id: 'teams', icon: '👥', label: 'Teams', badge: null }] : []),
     ...((isAdmin || isTeamLeader) && !isImpersonating ? [{ id: 'actas', icon: '🎭', label: 'Act as user', badge: null }] : []),
     ...((isAdmin || isTeamLeader) ? [{ id: 'announcements', icon: '📣', label: 'Announcements', badge: null }] : []),
@@ -14611,7 +14778,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'teams', 'actas', 'announcements', 'settings'];
+  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'knowledge', 'teams', 'actas', 'announcements', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -14812,6 +14979,7 @@ function AppMain() {
               : view==='voice_roster'? <VoiceRosterView/>
               : view==='tracker'     ? <TrackerView userId={user.id} defaultSystem={priorityPref} contacts={contacts}/>
               : view==='systems'     ? <SystemsView contacts={contacts} userId={user.id} />
+              : view==='knowledge' ? <KnowledgeView userId={user.id} isAdmin={isAdmin} />
               : view==='teams' ? <TeamsAdmin userId={user.id} />
               : view==='actas' ? <ActAsPicker userId={user.id} />
               : view==='announcements' ? <AnnouncementsAdmin userId={user.id} isAdmin={isAdmin} />
