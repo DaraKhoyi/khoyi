@@ -43,6 +43,7 @@
   .err{color:#ef4444;font-size:12.5px;margin:2px 0 8px;font-weight:600}
   .foot{padding:13px 20px;background:#f6f3ec;border-top:1px solid #eee;font-size:11px;color:#9a9a9a;text-align:center}.foot .o{color:var(--deep);font-weight:700}
   .link{color:var(--deep);font-weight:700;text-decoration:underline;cursor:pointer;background:none;border:none;font-size:14px}
+  .hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;opacity:0;pointer-events:none}
 </style></head>
 <body><div class="card" id="app"><div class="big"><p>Loading…</p></div></div>
 <script>
@@ -53,6 +54,10 @@ const qs=new URLSearchParams(location.search);
 const SLUG=(qs.get("u")||"").toLowerCase();
 const CANCEL=qs.get("cancel");
 const app=document.getElementById("app");
+const CTZ=(Intl.DateTimeFormat().resolvedOptions().timeZone)||"America/New_York";
+const IS_ET=/New_York|Eastern/.test(CTZ);
+const TZSHORT=(()=>{try{return new Intl.DateTimeFormat("en-US",{timeZone:CTZ,timeZoneName:"short"}).formatToParts(new Date()).find(p=>p.type==="timeZoneName").value;}catch(e){return CTZ;}})();
+const tlabel=(iso,tz)=>new Date(iso).toLocaleTimeString("en-US",{timeZone:tz||CTZ,hour:"numeric",minute:"2-digit"});
 const esc=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const S={duration:30,type:"phone",weekStart:null,days:[],selDate:null,selIso:null,agent:null,types:[],durations:[30,60,90,120],addr:""};
 
@@ -96,8 +101,8 @@ function render(){
       <button class="arrow" id="next">›</button>
     </div>
     <div class="lbl" style="margin-top:16px">${dayLabel} · available times</div>
-    ${day.slots.length?`<div class="slots">${day.slots.map(s=>`<div class="slot ${s.iso===S.selIso?"sel":""}" data-iso="${s.iso}">${esc(s.label).replace(/\u202f/g," ")}</div>`).join("")}</div>`:`<div class="empty">No open times this day — try another.</div>`}
-    <div class="tz">Google busy-times &amp; buffers already removed · times in Eastern (ET)</div>
+    ${day.slots.length?`<div class="slots">${day.slots.map(s=>`<div class="slot ${s.iso===S.selIso?"sel":""}" data-iso="${s.iso}">${tlabel(s.iso)}</div>`).join("")}</div>`:`<div class="empty">No open times this day — try another.</div>`}
+    <div class="tz">Google busy-times &amp; buffers already removed · ${IS_ET?`times in Eastern (ET)`:`times shown in your local time (${esc(TZSHORT)})`}</div>
   </div>
   <div class="sect" style="border-bottom:none">
     <div class="lbl">Your details</div>
@@ -105,6 +110,7 @@ function render(){
     <label class="flabel req">Email address</label><input id="f_email" type="email" autocomplete="email">
     <label class="flabel req">Phone number</label><input id="f_phone" type="tel" autocomplete="tel">
     <label class="flabel">Notes</label><textarea id="f_notes" placeholder="Anything I should know before we meet?"></textarea>
+    <input class="hp" id="f_hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
     <div class="err" id="err" style="display:none"></div>
     <button class="cta" id="confirm">Confirm booking</button>
     <div class="note">You'll get a <b>confirmation email</b> with a calendar invite and a link to <b>cancel or reschedule</b>.</div>
@@ -136,12 +142,14 @@ async function submit(){
   if(!phone)return show("Please enter your phone number.");
   if(t.needsAddress&&!address)return show("Please enter the meeting address.");
   const btn=document.getElementById("confirm");btn.disabled=true;btn.textContent="Booking…";
-  const res=await api("booking-create",{slug:SLUG,start_at:S.selIso,duration:S.duration,meeting_type:S.type,address,name,email,phone,notes});
+  const res=await api("booking-create",{slug:SLUG,start_at:S.selIso,duration:S.duration,meeting_type:S.type,address,name,email,phone,notes,hp:(document.getElementById("f_hp")||{}).value||""});
   if(!res||!res.ok){btn.disabled=false;btn.textContent="Confirm booking";return show(res&&res.error==="slot_taken"?"Sorry, that time was just taken. Pick another.":"Something went wrong. Please try again.");}
-  const when=new Date(res.when).toLocaleString("en-US",{timeZone:"America/New_York",weekday:"long",month:"long",day:"numeric",hour:"numeric",minute:"2-digit"});
+  const whenLocal=new Date(res.when).toLocaleString("en-US",{timeZone:CTZ,weekday:"long",month:"long",day:"numeric",hour:"numeric",minute:"2-digit"});
+  const whenET=new Date(res.when).toLocaleString("en-US",{timeZone:"America/New_York",weekday:"long",month:"long",day:"numeric",hour:"numeric",minute:"2-digit"});
+  const whenLine=IS_ET?`${esc(whenET)} (ET)`:`${esc(whenLocal)} (${esc(TZSHORT)})<br><span style="color:#9a9a9a;font-size:12px">${esc(whenET)} Eastern</span>`;
   app.innerHTML=`<div class="hdr"><div class="wm">REALTY <span class="o">ONE</span> GROUP <span class="a">Advantage</span></div></div>
   <div class="big"><div class="chk">✓</div><h2>You're booked!</h2>
-  <p><b>${esc(when)} (ET)</b><br>${esc(res.location||"")}</p>
+  <p><b>${whenLine}</b><br>${esc(res.location||"")}</p>
   <p style="margin-top:12px">A confirmation${res.emailed?" and calendar invite have":" has"} been sent to <b>${esc(email)}</b>.</p></div>
   <div class="foot">powered by <span class="o">Prism</span></div>`;
 }
