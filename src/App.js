@@ -649,15 +649,18 @@ function KnowledgeView({ userId, isAdmin = false }) {
   const [factsBySource, setFactsBySource] = React.useState({});
   const [linksBySource, setLinksBySource] = React.useState({});
   const [feedback, setFeedback] = React.useState(null);
+  const [conflicts, setConflicts] = React.useState([]);
 
   const loadLib = React.useCallback(async () => {
     try {
-      const [{ data: srcs }, { data: facts }, { data: links }] = await Promise.all([
+      const [{ data: srcs }, { data: facts }, { data: links }, { data: conf }] = await Promise.all([
         supabase.from('knowledge_sources').select('*').order('created_at', { ascending: false }).limit(200),
         supabase.rpc('my_knowledge_facts'),
         supabase.rpc('my_knowledge_links'),
+        supabase.rpc('my_knowledge_conflicts'),
       ]);
       setSources(Array.isArray(srcs) ? srcs : []);
+      setConflicts(Array.isArray(conf) ? conf : []);
       const fb = {}; (facts || []).forEach(x => { (fb[x.source_id] = fb[x.source_id] || []).push(x); }); setFactsBySource(fb);
       const lb = {}; (links || []).forEach(x => { (lb[x.source_id] = lb[x.source_id] || []).push(x); }); setLinksBySource(lb);
     } catch (_) {}
@@ -668,6 +671,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
   }
   async function confirmLink(l) { try { await supabase.from('knowledge_links').update({ confirmed: true }).eq('id', l.id); } catch (_) {} loadLib(); }
   async function removeLink(l) { try { await supabase.from('knowledge_links').delete().eq('id', l.id); } catch (_) {} loadLib(); }
+  async function resolveConflict(id) { try { await supabase.from('knowledge_conflicts').update({ resolved: true }).eq('id', id); } catch (_) {} loadLib(); }
   React.useEffect(() => { loadLib(); (async () => { try { const { data } = await supabase.rpc('my_teams'); setMyTeams(Array.isArray(data) ? data : []); } catch (_) {} })(); }, [loadLib]);
   // poll while anything is processing
   React.useEffect(() => {
@@ -770,7 +774,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
             <div className="form-group"><label className="form-label">Title (optional)</label><input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., WV Ave project notes" /></div>
             {kind === 'text' && <div className="form-group"><label className="form-label">Text</label><textarea className="form-input" rows={6} value={text} onChange={e => setText(e.target.value)} placeholder="Paste notes, facts, anything worth remembering\u2026" /></div>}
             {kind === 'url' && <div className="form-group"><label className="form-label">Link</label><input className="form-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://\u2026" /></div>}
-            {kind === 'file' && <div className="form-group"><label className="form-label">File (PDF or image)</label><input type="file" accept=".pdf,image/*" onChange={e => setFile(e.target.files && e.target.files[0])} style={{ fontSize: '13px', color: 'var(--text-2)' }} /></div>}
+            {kind === 'file' && <div className="form-group"><label className="form-label">File (PDF, image, or audio)</label><input type="file" accept=".pdf,image/*,audio/*,.m4a,.mp3,.wav" onChange={e => setFile(e.target.files && e.target.files[0])} style={{ fontSize: '13px', color: 'var(--text-2)' }} /><div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>Audio gets transcribed automatically, then mined for facts like everything else.</div></div>}
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <div className="form-group" style={{ flex: '1 1 150px' }}><label className="form-label">Who can see it</label>
                 <select className="form-input" value={scope} onChange={e => setScope(e.target.value)}>
@@ -794,6 +798,21 @@ function KnowledgeView({ userId, isAdmin = false }) {
 
         {tab === 'library' && (
           <div>
+            {conflicts.length > 0 && (
+              <div className="panel" style={{ marginBottom: '12px', border: '1px solid var(--yellow)' }}>
+                <div className="panel-body">
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--yellow)', marginBottom: '8px' }}>⚠ {conflicts.length} possible conflict{conflicts.length > 1 ? 's' : ''} in your knowledge</div>
+                  {conflicts.map(c => (
+                    <div key={c.id} style={{ fontSize: '12.5px', color: 'var(--text-2)', marginBottom: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+                      <div style={{ color: 'var(--text-1)', fontWeight: 600 }}>{c.fact_key}</div>
+                      <div>Now: <b>{c.new_value}</b> <span style={{ color: 'var(--text-3)' }}>({c.new_title})</span></div>
+                      <div>Was: {c.old_value} <span style={{ color: 'var(--text-3)' }}>({c.old_title})</span></div>
+                      <button onClick={() => resolveConflict(c.id)} style={{ marginTop: '4px', fontSize: '10px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>Dismiss</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {sources.length === 0 && <div className="panel"><div className="panel-body"><div style={{ fontSize: '13px', color: 'var(--text-3)' }}>Nothing yet. Add a note, link, or file to get started.</div></div></div>}
             {sources.map(s => { const st = STAT[s.status] || ['var(--text-3)', s.status]; return (
               <div key={s.id} className="panel" style={{ marginBottom: '10px' }}><div className="panel-body">
