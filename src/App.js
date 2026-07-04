@@ -6507,6 +6507,25 @@ function RelationshipIntel({ profile }) {
   );
 }
 
+function ContactKnowledge({ contactId }) {
+  const [rows, setRows] = React.useState(null);
+  React.useEffect(() => { let alive = true; (async () => { try { const { data } = await supabase.rpc('contact_knowledge', { p_contact_id: contactId }); if (alive) setRows(Array.isArray(data) ? data : []); } catch (_) { if (alive) setRows([]); } })(); return () => { alive = false; }; }, [contactId]);
+  if (rows === null || rows.length === 0) return null;
+  const facts = rows.filter(r => r.kind === 'fact');
+  const sources = rows.filter(r => r.kind === 'source');
+  return (
+    <div className="panel" style={{ marginBottom: '12px', border: '1px solid var(--accent)' }}>
+      <div className="panel-body">
+        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}><span>📚</span>What you know</div>
+        {facts.map((fx, i) => (
+          <div key={'f' + i} style={{ fontSize: '12.5px', color: 'var(--text-2)', marginBottom: '3px' }}><span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{fx.label}:</span> {fx.detail}{fx.value_date ? <span style={{ color: 'var(--accent)' }}> ({fx.value_date})</span> : ''}</div>
+        ))}
+        {sources.length > 0 && <div style={{ marginTop: facts.length ? '8px' : 0, fontSize: '11px', color: 'var(--text-3)' }}>From: {sources.map(x => x.label).filter(Boolean).join(' · ')}</div>}
+      </div>
+    </div>
+  );
+}
+
 function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [], setContacts }) {
 
   useBackClose(onClose);
@@ -7209,6 +7228,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
 
         <div style={{flex:1,minHeight:0,overflowY:'auto',paddingRight:'4px'}}>
           {tab==='overview' && (<>
+          <ContactKnowledge contactId={contact.id} />
           {profile && (profile.primary_letter || hasBaseline) && (() => {
             const NAMES = { D:'Dominance', I:'Influence', S:'Steadiness', C:'Conscientiousness' };
             const TIPS = { D:'Direct and results-driven — be brief, lead with the bottom line, respect their time.', I:'Outgoing and relationship-driven — be warm and personal, keep the energy up.', S:'Steady and loyal — be patient and supportive; give time to decide, never pressure.', C:'Precise and analytical — lead with the facts and the detail; be accurate and thorough.' };
@@ -11535,6 +11555,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks }) {
   const recheck = async () => {
     if (busy) return; setBusy(true);
     try { await supabase.functions.invoke('quo-call-process', { body: {} }); } catch (e) {}
+    try { await supabase.functions.invoke('calls-to-knowledge', { body: {} }); } catch (e) {}
     await load(); setBusy(false);
   };
 
