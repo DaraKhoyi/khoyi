@@ -10886,7 +10886,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
     if (data) setUserSettings?.(data);
   }
 
-  const autoScheduleOn = userSettings?.auto_schedule_tasks !== false; // default ON
+  const autoScheduleOn = userSettings?.auto_schedule_tasks === true; // default OFF
   const [savingAuto, setSavingAuto] = React.useState(false);
   const [autoMsg, setAutoMsg] = React.useState('');
   async function toggleAutoSchedule() {

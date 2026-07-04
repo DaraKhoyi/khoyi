@@ -193,7 +193,7 @@ async function scheduleUser(userId, now) {
   // When OFF, clear any existing auto-scheduled blocks and do nothing else.
   try {
     const { data: us } = await admin.from("user_settings").select("auto_schedule_tasks").eq("user_id", userId).maybeSingle();
-    if (us && us.auto_schedule_tasks === false) {
+    if (!us || us.auto_schedule_tasks !== true) {
       await admin.from("events").delete().eq("user_id", userId).eq("event_kind", "task_block");
       return { user_id: userId, scheduled_tasks: 0, blocks_written: 0, skipped: "auto_schedule_off" };
     }

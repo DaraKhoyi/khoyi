@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v198-20260704-autoschedule-toggle'
+const VERSION = 'prismos-v199-20260704-autoschedule-default-off'
 const APP_SHELL = [
   '/',
   '/index.html',
