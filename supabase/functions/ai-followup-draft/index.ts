@@ -106,6 +106,26 @@ async function logUsage(supabase, { userId, fn, model, usage, usedOwn }) {
   } catch (_) {}
 }
 
+async function retrieveKnowledge(queryText: string, userToken: string) {
+  try {
+    const vk = Deno.env.get("VOYAGE_API_KEY");
+    const URL = Deno.env.get("SUPABASE_URL")!, ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
+    if (!vk || !queryText || !queryText.trim()) return [] as any[];
+    const er = await fetch("https://api.voyageai.com/v1/embeddings", { method: "POST", headers: { Authorization: `Bearer ${vk}`, "Content-Type": "application/json" }, body: JSON.stringify({ input: [queryText.slice(0, 2000)], model: "voyage-3.5", input_type: "query", output_dimension: 1024 }) });
+    if (!er.ok) return [];
+    const emb = "[" + (await er.json()).data[0].embedding.join(",") + "]";
+    const uc = createClient(URL, ANON, { global: { headers: { Authorization: `Bearer ${userToken}` } } });
+    const { data: hits } = await uc.rpc("knowledge_search", { query_embedding: emb, query_text: queryText.slice(0, 500), match_count: 12 });
+    if (!hits || !hits.length) return [];
+    let order = hits.slice(0, 4);
+    try {
+      const rr = await fetch("https://api.voyageai.com/v1/rerank", { method: "POST", headers: { Authorization: `Bearer ${vk}`, "Content-Type": "application/json" }, body: JSON.stringify({ query: queryText.slice(0, 2000), documents: hits.map((h: any) => h.content), model: "rerank-2.5", top_k: Math.min(4, hits.length) }) });
+      if (rr.ok) { const rj = await rr.json(); order = rj.data.map((d: any) => hits[d.index]); }
+    } catch (_) {}
+    return order.map((h: any) => ({ title: h.title, content: h.content }));
+  } catch (_) { return []; }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -155,6 +175,8 @@ Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "
     const __sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     let __uid = null; try { const __t = (req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim(); const { data: { user: __u } } = await __sb.auth.getUser(__t); __uid = __u?.id || null; } catch(_){}
     const { key: __k, usedOwn: __own } = await resolveKey(__sb, __uid, ANTHROPIC_API_KEY);
+    let __kb = "";
+    try { const __tok = (req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim(); const __p = await retrieveKnowledge(`${who} ${b.purpose||""} ${b.notes||""}`.trim(), __tok); if (__p.length) __kb = "\n\nRelevant background from the user\u2019s saved knowledge (weave in naturally ONLY where it genuinely helps; do not force it, list it, or invent beyond it):\n" + __p.map((x:any)=>`- ${x.title}: ${x.content}`).join("\n"); } catch(_){}
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -166,7 +188,7 @@ Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "
         model: MODEL,
         max_tokens: 900,
         system,
-        messages: [{ role: "user", content: userMsg }],
+        messages: [{ role: "user", content: userMsg + __kb }],
       }),
     });
     if (!r.ok) {

@@ -210,6 +210,11 @@ async function execTool(name, input, ctx) {
   input = input || {};
   try {
     switch (name) {
+      case "search_knowledge": {
+        const passages = await retrieveKnowledge(input.query || "", token);
+        if (!passages.length) return { results: "Nothing relevant found in the user's saved knowledge." };
+        return { results: passages.map((p, i) => `[${i + 1}] ${p.title || "untitled"}: ${p.content}`).join("\n\n") };
+      }
       case "list_tasks": {
         const filter = input.filter || "open";
         const lim = Math.min(50, input.limit || 25);
@@ -487,6 +492,27 @@ async function execTool(name, input, ctx) {
   }
 }
 
+// Retrieve the user's own knowledge (Voyage embed -> RLS-scoped hybrid search -> rerank).
+async function retrieveKnowledge(queryText, userToken) {
+  try {
+    const vk = Deno.env.get("VOYAGE_API_KEY");
+    const URL = Deno.env.get("SUPABASE_URL"), ANON = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!vk || !queryText || !queryText.trim()) return [];
+    const er = await fetch("https://api.voyageai.com/v1/embeddings", { method: "POST", headers: { Authorization: `Bearer ${vk}`, "Content-Type": "application/json" }, body: JSON.stringify({ input: [queryText.slice(0, 2000)], model: "voyage-3.5", input_type: "query", output_dimension: 1024 }) });
+    if (!er.ok) return [];
+    const emb = "[" + (await er.json()).data[0].embedding.join(",") + "]";
+    const uc = createClient(URL, ANON, { global: { headers: { Authorization: `Bearer ${userToken}` } } });
+    const { data: hits } = await uc.rpc("knowledge_search", { query_embedding: emb, query_text: queryText.slice(0, 500), match_count: 15 });
+    if (!hits || !hits.length) return [];
+    let order = hits.slice(0, 5);
+    try {
+      const rr = await fetch("https://api.voyageai.com/v1/rerank", { method: "POST", headers: { Authorization: `Bearer ${vk}`, "Content-Type": "application/json" }, body: JSON.stringify({ query: queryText.slice(0, 2000), documents: hits.map((h) => h.content), model: "rerank-2.5", top_k: Math.min(5, hits.length) }) });
+      if (rr.ok) { const rj = await rr.json(); order = rj.data.map((d) => hits[d.index]); }
+    } catch (_) {}
+    return order.map((h) => ({ title: h.title, content: h.content, source_id: h.source_id }));
+  } catch (_) { return []; }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -531,6 +557,7 @@ serve(async (req) => {
     // ── Permissions → tools + capability description ──
     const perms = robot.permissions || {};
     const specs = buildToolSpecs().filter((s) => perms[s.perm] === true);
+    specs.push({ perm: "knowledge_read", confirm: false, def: { name: "search_knowledge", description: "Search the user's own saved Knowledge base — their notes, documents, files, and links about their projects and know-how. Use this whenever they ask about their projects, properties, deals, clients, or anything they may have saved. Returns relevant passages with source titles.", input_schema: { type: "object", properties: { query: { type: "string", description: "what to look up" } }, required: ["query"] } } });
     const tools = specs.map((s) => s.def);
     const confirmByName = {};
     specs.forEach((s) => { if (s.confirm) confirmByName[s.def.name] = true; });
@@ -547,6 +574,7 @@ serve(async (req) => {
       "You can see and discuss images the user attaches.",
       "When the user sends a photo of a receipt/invoice, the app extracts it and shows a 'Push to accounting' button under your reply — just acknowledge what was found.",
     ];
+    capLines.push("You can search the user's own saved Knowledge with search_knowledge (their notes, documents, files, links about their projects and know-how). Use it whenever they ask about their projects, properties, deals, or anything they might have saved; answer from what it returns, cite sources inline as [Knowledge: <title>], and never invent details it does not contain.");
     if (tools.length) {
       capLines.push("You have live tools to act inside PrismOS on the user's behalf — all scoped to this user only. Use them to fetch real data and take actions rather than guessing.");
       capLines.push("CONFIRMATIONS: If a tool returns needs_confirmation, the action did NOT happen. Tell the user in plain language exactly what you'll do and ask them to confirm; only re-call that tool with confirm:true after they explicitly agree.");
