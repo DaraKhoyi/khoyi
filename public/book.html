@@ -29,6 +29,16 @@
   .circ.none{cursor:default}.circ.none .cc{color:#d2d2d2;border-color:#f2f2f2;background:#fafafa}
   .cw{font-size:9.5px;color:var(--gray);font-weight:700}
   .mon{text-align:center;font-size:12px;font-weight:800;color:#555;margin-bottom:10px}
+  .wknav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+  .navbtn{border:1px solid var(--line);background:#fff;color:var(--deep);border-radius:999px;padding:9px 14px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .navbtn:disabled{opacity:.3;cursor:default;visibility:hidden}
+  .wkrange{font-size:13.5px;font-weight:800;color:#333}
+  .wkrow{display:flex;gap:6px;justify-content:space-between}
+  .wkrow.wend{justify-content:center;gap:34px;margin-top:4px}
+  .wkendlbl{text-align:center;font-size:9.5px;font-weight:800;letter-spacing:1.5px;color:#c1baa8;text-transform:uppercase;margin:14px 0 6px}
+  .circ.past{cursor:default}.circ.past .cc{color:#dcdcdc;border-color:#f3f3f3;background:#fbfbfb}
+  .roinfo{border:1px solid var(--line);background:#faf8f2;border-radius:11px;padding:12px 13px;font-size:13.5px;color:#333;margin-bottom:10px}
+  .roinfo .muted{color:#a9a293}
   .slots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .slot{border:1.5px solid var(--gold);color:var(--ink);background:var(--fill);border-radius:10px;padding:11px 0;text-align:center;font-size:14px;font-weight:700;cursor:pointer}
   .slot.sel{background:var(--gold)}
@@ -63,6 +73,9 @@ const S={duration:30,type:"phone",weekStart:null,days:[],selDate:null,selIso:nul
 
 function initials(n){return (n||"").split(" ").map(x=>x[0]).filter(Boolean).slice(0,2).join("").toUpperCase()||"•";}
 function ymd(d){return d.toISOString().slice(0,10);}
+function mondayOf(ymdStr){const d=new Date(ymdStr+"T12:00:00");const wd=(d.getDay()+6)%7;d.setDate(d.getDate()-wd);return ymd(d);}
+function addDaysYmd(ymdStr,n){const d=new Date(ymdStr+"T12:00:00");d.setDate(d.getDate()+n);return ymd(d);}
+function rangeLabel(ws){const a=new Date(ws+"T12:00:00");const b=new Date(addDaysYmd(ws,6)+"T12:00:00");const mo=x=>x.toLocaleDateString("en-US",{month:"short"});const sameMo=a.getMonth()===b.getMonth();return sameMo?`${mo(a)} ${a.getDate()} – ${b.getDate()}`:`${mo(a)} ${a.getDate()} – ${mo(b)} ${b.getDate()}`;}
 function todayLocalYMD(){return new Date().toISOString().slice(0,10);}
 
 async function loadWeek(){
@@ -84,6 +97,10 @@ function render(){
   const monLabel=new Date(S.selDate+"T12:00:00").toLocaleDateString("en-US",{month:"long",year:"numeric"});
   const dayLabel=new Date(S.selDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   const needAddr=t.needsAddress;
+  const today=todayLocalYMD();
+  const prevDisabled=S.weekStart<=mondayOf(today);
+  const nextDisabled=addDaysYmd(S.weekStart,7)>addDaysYmd(today,(S.horizon||21));
+  const dayCirc=(d)=>{const dd=new Date(d.date+"T12:00:00");const past=d.date<today;const has=d.slots.length>0&&!past;const cls=past?"past":(has?"":"none");return `<div class="circ ${d.date===S.selDate?"on":""} ${cls}" data-d="${(has)?d.date:""}"><div class="cc">${dd.getDate()}</div><div class="cw">${dd.toLocaleDateString("en-US",{weekday:"short"})}</div></div>`;};
   app.innerHTML=`
   <div class="hdr"><div class="wm">REALTY <span class="o">ONE</span> GROUP <span class="a">Advantage</span></div></div>
   <div class="agent"><div class="av">${initials(a.name)}</div><div><div class="an">${S.reschedToken?"Reschedule with "+esc(a.name):"Book with "+esc(a.name)}</div><div class="at">Realty ONE Group Advantage</div></div></div>
@@ -96,21 +113,25 @@ function render(){
       <div style="flex:1"><label class="flabel">Meeting type</label>
       <select id="type">${S.types.map(x=>`<option value="${x.id}" ${x.id===S.type?"selected":""}>${esc(x.label)}</option>`).join("")}</select></div>
     </div>
-    ${needAddr?`<label class="flabel">${t.office?"Office address":"Address"}</label><input id="addr" placeholder="${t.office?"Office address":"Enter the address"}" value="${esc(S.addr||(t.office?(a.office_address||""):""))}">`:""}
+    ${needAddr?(t.office
+      ? `<label class="flabel">Office location</label><div class="roinfo">${a.office_address?esc(a.office_address):`<span class="muted">The office address will be confirmed with your booking.</span>`}</div>`
+      : `<label class="flabel">Address</label><input id="addr" placeholder="Enter the address" value="${esc(S.addr||"")}">`):""}
   </div>
   <div class="sect">
     <div class="lbl">Select a day</div>
-    <div class="mon">${monLabel}</div>
-    <div class="daynav">
-      <button class="arrow" id="prev" ${S.weekStart<=todayLocalYMD()?"disabled":""}>‹</button>
-      <div class="circs">${S.days.map(d=>{const dd=new Date(d.date+"T12:00:00");const has=d.slots.length>0;return `<div class="circ ${d.date===S.selDate?"on":""} ${has?"":"none"}" data-d="${d.date}"><div class="cc">${dd.getDate()}</div><div class="cw">${dd.toLocaleDateString("en-US",{weekday:"short"})}</div></div>`;}).join("")}</div>
-      <button class="arrow" id="next" ${(()=>{const d=new Date(S.weekStart+"T12:00:00");d.setDate(d.getDate()+7);const lim=new Date();lim.setDate(lim.getDate()+(S.horizon||21));return d>lim?"disabled":"";})()}>›</button>
+    <div class="wknav">
+      <button class="navbtn" id="prev" ${prevDisabled?"disabled":""}>‹ Prev</button>
+      <div class="wkrange">${rangeLabel(S.weekStart)}</div>
+      <button class="navbtn" id="next" ${nextDisabled?"disabled":""}>Next ›</button>
     </div>
+    <div class="wkrow">${S.days.slice(0,5).map(dayCirc).join("")}</div>
+    <div class="wkendlbl">Weekend</div>
+    <div class="wkrow wend">${S.days.slice(5,7).map(dayCirc).join("")}</div>
     <div class="lbl" style="margin-top:16px">${dayLabel} · available times</div>
     ${day.slots.length?`<div class="slots">${day.slots.map(s=>`<div class="slot ${s.iso===S.selIso?"sel":""}" data-iso="${s.iso}">${tlabel(s.iso)}</div>`).join("")}</div>`:`<div class="empty">No open times this day — try another.</div>`}
     <div class="tz">Google busy-times &amp; buffers already removed · ${IS_ET?`times in Eastern (ET)`:`times shown in your local time (${esc(TZSHORT)})`}</div>
   </div>
-  <div class="sect" style="border-bottom:none">
+  <div class="sect" id="details" style="border-bottom:none">
     <div class="lbl">Your details</div>
     <label class="flabel req">Full name</label><input id="f_name" autocomplete="name" value="${esc(S.prefill.name)}">
     <label class="flabel req">Email address</label><input id="f_email" type="email" autocomplete="email" value="${esc(S.prefill.email)}">
@@ -128,10 +149,10 @@ function wire(){
   document.getElementById("dur").onchange=async e=>{S.duration=+e.target.value;S.selIso=null;await loadWeek();render();};
   document.getElementById("type").onchange=e=>{S.type=e.target.value;S.addr="";render();};
   const addr=document.getElementById("addr"); if(addr) addr.oninput=e=>{S.addr=e.target.value;};
-  document.querySelectorAll(".circ").forEach(c=>{if(!c.classList.contains("none"))c.onclick=()=>{S.selDate=c.dataset.d;S.selIso=null;render();};});
-  document.querySelectorAll(".slot").forEach(s=>s.onclick=()=>{S.selIso=s.dataset.iso;render();});
-  document.getElementById("prev").onclick=async()=>{const d=new Date(S.weekStart+"T12:00:00");d.setDate(d.getDate()-7);S.weekStart=ymd(d);if(S.weekStart<todayLocalYMD())S.weekStart=todayLocalYMD();S.selDate=null;await loadWeek();render();};
-  document.getElementById("next").onclick=async()=>{const d=new Date(S.weekStart+"T12:00:00");d.setDate(d.getDate()+7);S.weekStart=ymd(d);S.selDate=null;await loadWeek();render();};
+  document.querySelectorAll(".circ").forEach(c=>{if(!c.classList.contains("none")&&!c.classList.contains("past")&&c.dataset.d)c.onclick=()=>{S.selDate=c.dataset.d;S.selIso=null;render();};});
+  document.querySelectorAll(".slot").forEach(s=>s.onclick=()=>{S.selIso=s.dataset.iso;render();const el=document.getElementById("details");if(el)el.scrollIntoView({behavior:"smooth",block:"start"});});
+  document.getElementById("prev").onclick=async()=>{S.weekStart=addDaysYmd(S.weekStart,-7);const tm=mondayOf(todayLocalYMD());if(S.weekStart<tm)S.weekStart=tm;S.selDate=null;await loadWeek();render();};
+  document.getElementById("next").onclick=async()=>{S.weekStart=addDaysYmd(S.weekStart,7);S.selDate=null;await loadWeek();render();};
   document.getElementById("confirm").onclick=submit;
 }
 async function submit(){
@@ -178,7 +199,7 @@ async function cancelFlow(){
     S.duration=bk.duration_minutes||30;S.type=bk.meeting_type||"phone";
     S.prefill={name:bk.client_name||"",email:bk.client_email||"",phone:bk.client_phone||"",notes:bk.notes||""};
     S.addr=(bk.meeting_type==="property"||bk.meeting_type==="other")?(bk.location||""):"";
-    S.reschedToken=CANCEL;S.weekStart=todayLocalYMD();S.selDate=null;S.selIso=null;
+    S.reschedToken=CANCEL;S.weekStart=mondayOf(todayLocalYMD());S.selDate=null;S.selIso=null;
     const res=await loadWeek();if(res)render();
   };
   document.getElementById("doCancel").onclick=async()=>{
@@ -192,7 +213,7 @@ async function cancelFlow(){
 
 async function start(){
   if(!SLUG){app.innerHTML=`<div class="big"><h2>Invalid link</h2><p>This booking link is missing an agent.</p></div>`;return;}
-  S.weekStart=todayLocalYMD();
+  S.weekStart=mondayOf(todayLocalYMD());
   const res=await loadWeek(); if(res) render();
 }
 if(CANCEL)cancelFlow(); else start();
