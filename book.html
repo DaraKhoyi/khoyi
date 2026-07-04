@@ -69,14 +69,17 @@ async function loadWeek(){
   const res=await api("booking-availability",{slug:SLUG,from:S.weekStart,days:7,duration:S.duration});
   if(!res||!res.ok){app.innerHTML=`<div class="big"><h2>Not available</h2><p>This booking link isn't active.</p></div>`;return null;}
   if(res.enabled===false){app.innerHTML=`<div class="big"><h2>Booking is turned off</h2><p>${esc(res.agent&&res.agent.name||"This agent")} hasn't enabled their booking page yet.</p></div>`;return null;}
-  S.agent=res.agent;S.types=res.meeting_types;S.durations=res.durations;S.days=res.days;
+  S.agent=res.agent;S.types=res.meeting_types;S.durations=res.durations;S.days=res.days;S.horizon=res.horizon_days||21;
+  if(S.durations&&S.durations.length&&!S.durations.includes(S.duration))S.duration=S.durations[0];
+  if(S.types&&S.types.length&&!S.types.find(t=>t.id===S.type))S.type=S.types[0].id;
   if(!S.selDate||!S.days.find(d=>d.date===S.selDate)){const first=S.days.find(d=>d.slots.length);S.selDate=first?first.date:S.days[0].date;S.selIso=null;}
   return res;
 }
 function typeObj(){return S.types.find(t=>t.id===S.type)||{};}
 function render(){
   const a=S.agent,t=typeObj();
-  const dur=[["30","30 minutes"],["60","1 hour"],["90","90 minutes"],["120","2 hours"]];
+  const durAll=[["30","30 minutes"],["60","1 hour"],["90","90 minutes"],["120","2 hours"]];
+  const dur=durAll.filter(([v])=>(S.durations||[30,60,90,120]).includes(+v));
   const day=S.days.find(d=>d.date===S.selDate)||{slots:[]};
   const monLabel=new Date(S.selDate+"T12:00:00").toLocaleDateString("en-US",{month:"long",year:"numeric"});
   const dayLabel=new Date(S.selDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
@@ -101,7 +104,7 @@ function render(){
     <div class="daynav">
       <button class="arrow" id="prev" ${S.weekStart<=todayLocalYMD()?"disabled":""}>‹</button>
       <div class="circs">${S.days.map(d=>{const dd=new Date(d.date+"T12:00:00");const has=d.slots.length>0;return `<div class="circ ${d.date===S.selDate?"on":""} ${has?"":"none"}" data-d="${d.date}"><div class="cc">${dd.getDate()}</div><div class="cw">${dd.toLocaleDateString("en-US",{weekday:"short"})}</div></div>`;}).join("")}</div>
-      <button class="arrow" id="next">›</button>
+      <button class="arrow" id="next" ${(()=>{const d=new Date(S.weekStart+"T12:00:00");d.setDate(d.getDate()+7);const lim=new Date();lim.setDate(lim.getDate()+(S.horizon||21));return d>lim?"disabled":"";})()}>›</button>
     </div>
     <div class="lbl" style="margin-top:16px">${dayLabel} · available times</div>
     ${day.slots.length?`<div class="slots">${day.slots.map(s=>`<div class="slot ${s.iso===S.selIso?"sel":""}" data-iso="${s.iso}">${tlabel(s.iso)}</div>`).join("")}</div>`:`<div class="empty">No open times this day — try another.</div>`}
