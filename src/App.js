@@ -10763,6 +10763,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [timezone, setTimezone] = useState(userSettings?.timezone || '');
   const [officeAddress, setOfficeAddress] = useState(userSettings?.office_address || '');
   const [zoomLink, setZoomLink] = useState(userSettings?.zoom_link || '');
+  const [bookingPhone, setBookingPhone] = useState(userSettings?.booking_phone || '');
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingMsg, setBookingMsg] = useState('');
   const bookingSlug = userSettings?.booking_slug || '';
@@ -10776,7 +10777,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   }
   async function saveBookingSettings() {
     if (savingBooking) return; setSavingBooking(true); setBookingMsg('');
-    const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, zoom_link: zoomLink.trim() || null, office_address: officeAddress.trim() || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
+    const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, zoom_link: zoomLink.trim() || null, booking_phone: bookingPhone.trim() || null, office_address: officeAddress.trim() || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
     if (error) setBookingMsg('Error: ' + error.message); else { if (data) setUserSettings?.(data); setBookingMsg('Saved.'); }
     setSavingBooking(false);
   }
@@ -10799,6 +10800,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       setTimezone(userSettings.timezone || '');
       setOfficeAddress(userSettings.office_address || '');
       setZoomLink(userSettings.zoom_link || '');
+      setBookingPhone(userSettings.booking_phone || '');
     }
   }, [userSettings]);
 
@@ -11022,6 +11024,10 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             <div className="form-group">
               <label className="form-label">Zoom personal link <span style={{color:'var(--text-3)', fontWeight:400}}>(used for Zoom meetings)</span></label>
               <input className="form-input" value={zoomLink} onChange={e=>setZoomLink(e.target.value)} placeholder="https://zoom.us/j/your-personal-room" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Callback number <span style={{color:'var(--text-3)', fontWeight:400}}>(for phone meetings)</span></label>
+              <input className="form-input" value={bookingPhone} onChange={e=>setBookingPhone(e.target.value)} placeholder="e.g. (813) 555-0123" />
             </div>
             <div style={{fontSize:'11.5px', color:'var(--text-3)', marginBottom:'10px', lineHeight:1.5}}>Your <b>office address</b> (for office meetings) is set under “About you” above. Google Meet links are generated automatically.</div>
             <button className="btn btn-primary" disabled={savingBooking} onClick={saveBookingSettings}>{savingBooking?'Saving…':'Save booking settings'}</button>

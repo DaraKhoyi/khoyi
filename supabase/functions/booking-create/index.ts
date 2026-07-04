@@ -74,6 +74,9 @@ serve(async (req) => {
     const duration = [30, 60, 90, 120].includes(+b.duration) ? +b.duration : 30;
     const startIso = String(b.start_at || "");
     const type = TYPES[meeting_type];
+    // honeypot — bots fill hidden fields; pretend success, create nothing
+    if (b.hp || b.website) return json({ ok: true, cancel_token: "", emailed: false });
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "";
     if (!slug || !name || !email || !phone || !startIso || !type) return json({ ok: false, error: "missing_fields" }, 400);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ ok: false, error: "bad_email" }, 400);
 
@@ -82,11 +85,18 @@ serve(async (req) => {
     const endIso = new Date(startMs + duration * 60000).toISOString();
 
     // agent
-    const { data: us } = await admin.from("user_settings").select("user_id, display_name, office_address, zoom_link, booking_enabled, timezone")
+    const { data: us } = await admin.from("user_settings").select("user_id, display_name, office_address, zoom_link, booking_phone, booking_enabled, timezone")
       .eq("booking_slug", slug).maybeSingle();
     if (!us || !us.booking_enabled) return json({ ok: false, error: "not_available" }, 404);
     const userId = us.user_id;
     const tz = us.timezone || "America/New_York";
+    const whenLabel = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(startIso));
+    // rate limit — max 6 bookings per IP per hour
+    if (ip) {
+      const since = new Date(Date.now() - 3600000).toISOString();
+      const { count } = await admin.from("bookings").select("id", { count: "exact", head: true }).eq("ip", ip).gte("created_at", since);
+      if ((count || 0) >= 6) return json({ ok: false, error: "rate_limited" }, 429);
+    }
 
     // location / join info
     const meetingLabel = type.label;
@@ -129,7 +139,7 @@ serve(async (req) => {
     let whereLine = location;
     if (meeting_type === "google_meet") whereLine = meetLink || "Google Meet link will be emailed shortly";
     else if (meeting_type === "zoom") whereLine = us.zoom_link || "Zoom link will be emailed shortly";
-    else if (meeting_type === "phone") whereLine = "Phone call";
+    else if (meeting_type === "phone") whereLine = us.booking_phone ? `Phone call — reach ${us.display_name || "your agent"} at ${us.booking_phone}` : `Phone call — ${us.display_name || "your agent"} will call you`;
 
     // 2) contact — find by email or phone, else create + review task
     let contactId: string | null = null; let contactIsNew = false;
@@ -165,13 +175,24 @@ serve(async (req) => {
     }
     if (eventId && contactId) await admin.from("events").update({ contact_id: contactId }).eq("id", eventId);
 
+    // heads-up task on EVERY booking (new contacts already got a review task above)
+    if (!contactIsNew) {
+      const todayStr2 = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      await admin.from("tasks").insert({
+        user_id: userId, title: `New booking — ${meetingLabel} with ${name}`,
+        notes: `${whenLabel}\nEmail: ${email}\nPhone: ${phone}` + (notes ? `\nNotes: ${notes}` : ""),
+        priority: "high", priority_system: "eisenhower", eisenhower_quadrant: "A",
+        due_date: todayStr2, completed: false, contact_id: contactId,
+      });
+    }
+
     // 3) booking row
     const cancelToken = rand();
     await admin.from("bookings").insert({
       user_id: userId, slug, client_name: name, client_email: email, client_phone: phone,
       notes, meeting_type, location, duration_minutes: duration,
       start_at: startIso, end_at: endIso, status: "confirmed",
-      event_id: eventId, contact_id: contactId, cancel_token: cancelToken,
+      event_id: eventId, contact_id: contactId, cancel_token: cancelToken, ip: ip || null,
     });
 
     // 4) confirmation email to the client (from the agent's Gmail) w/ .ics + cancel link
@@ -180,7 +201,6 @@ serve(async (req) => {
       const { data: acct } = await admin.from("email_accounts").select("id").eq("user_id", userId).eq("is_active", true).order("created_at").limit(1);
       const accountId = acct && acct[0]?.id;
       if (accountId) {
-        const whenLabel = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(startIso));
         const cancelUrl = `${PUBLIC_BASE}/book.html?u=${encodeURIComponent(slug)}&cancel=${cancelToken}`;
         const agentName = us.display_name || "your agent";
         const ics = [
