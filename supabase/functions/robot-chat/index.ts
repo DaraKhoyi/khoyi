@@ -47,20 +47,24 @@ function sanitizeMessages(messages) {
   });
 }
 
-async function callClaude(system, messages, tools, maxAttempts = 3) {
+async function callClaude(system, messages, tools, maxAttempts = 4) {
   messages = sanitizeMessages(messages);
   let lastErr = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let r = null;
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 45000); // don't let a hung call kill the whole turn — abort & retry
     try {
       const payload = { model: MODEL, max_tokens: MAX_TOKENS, system, messages };
       if (tools && tools.length) payload.tools = tools;
       r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
       });
     } catch (e) { lastErr = e; }
+    finally { clearTimeout(to); }
     if (r) {
       if (r.ok) {
         const j = await r.json();
