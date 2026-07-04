@@ -652,6 +652,10 @@ function KnowledgeView({ userId, isAdmin = false }) {
   const [conflicts, setConflicts] = React.useState([]);
   const [recording, setRecording] = React.useState(false);
   const [audit, setAudit] = React.useState(null);
+  const [evals, setEvals] = React.useState(null);
+  const [evalQ, setEvalQ] = React.useState('');
+  const [evalExp, setEvalExp] = React.useState('');
+  const [evalRunning, setEvalRunning] = React.useState(false);
   const mediaRef = React.useRef(null);
   const chunksRef = React.useRef([]);
 
@@ -715,6 +719,18 @@ function KnowledgeView({ userId, isAdmin = false }) {
   }
   const loadAudit = React.useCallback(async () => { try { const { data } = await supabase.rpc('knowledge_access_audit', { days_back: 30 }); setAudit(Array.isArray(data) ? data : []); } catch (_) { setAudit([]); } }, []);
   React.useEffect(() => { if (tab === 'audit' && audit === null) loadAudit(); }, [tab, audit, loadAudit]);
+  async function reprocess(sc) { try { await supabase.functions.invoke('knowledge-ingest', { body: { reprocess: true, source_id: sc.id } }); if (window.__notify) window.__notify('Reprocessing\u2026', 'success'); } catch (_) {} loadLib(); }
+  const loadEvals = React.useCallback(async () => { try { const { data } = await supabase.from('knowledge_evals').select('*').order('created_at'); setEvals(Array.isArray(data) ? data : []); } catch (_) { setEvals([]); } }, []);
+  React.useEffect(() => { if (tab === 'evals' && evals === null) loadEvals(); }, [tab, evals, loadEvals]);
+  async function addEval() { if (!evalQ.trim()) return; try { await supabase.from('knowledge_evals').insert({ user_id: userId, question: evalQ.trim(), expected: evalExp.trim() || null }); } catch (_) {} setEvalQ(''); setEvalExp(''); loadEvals(); }
+  async function delEval(id) { try { await supabase.from('knowledge_evals').delete().eq('id', id); } catch (_) {} loadEvals(); }
+  async function runEvals() {
+    if (!evals || !evals.length) return; setEvalRunning(true);
+    for (const ev of evals) {
+      try { const { data } = await supabase.functions.invoke('knowledge-ask', { body: { query: ev.question, surface: 'search' } }); const ans = (data && data.answer) || ''; const pass = ev.expected ? ans.toLowerCase().includes(ev.expected.toLowerCase()) : null; await supabase.from('knowledge_evals').update({ last_answer: ans.slice(0, 2000), last_pass: pass, last_run_at: new Date().toISOString() }).eq('id', ev.id); } catch (_) {}
+    }
+    setEvalRunning(false); loadEvals();
+  }
   React.useEffect(() => { loadLib(); (async () => { try { const { data } = await supabase.rpc('my_teams'); setMyTeams(Array.isArray(data) ? data : []); } catch (_) {} })(); }, [loadLib]);
   // poll while anything is processing
   React.useEffect(() => {
@@ -774,7 +790,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
     <div>
       <div className="page-header"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span>📚</span>Knowledge</h2><p>Feed the app what you know — notes, links, files — then ask it anything. Answers cite their source and stay within your scope.</p></div>
       <div style={{ maxWidth: '680px' }}>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>{TABBTN('ask', 'Ask')}{TABBTN('add', 'Add')}{TABBTN('library', 'Library')}{isAdmin && TABBTN('audit', 'Audit')}</div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>{TABBTN('ask', 'Ask')}{TABBTN('add', 'Add')}{TABBTN('library', 'Library')}{isAdmin && TABBTN('audit', 'Audit')}{isAdmin && TABBTN('evals', 'Evals')}</div>
 
         {tab === 'ask' && (
           <div>
@@ -817,7 +833,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
             <div className="form-group"><label className="form-label">Title (optional)</label><input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., WV Ave project notes" /></div>
             {kind === 'text' && <div className="form-group"><label className="form-label">Text</label><textarea className="form-input" rows={6} value={text} onChange={e => setText(e.target.value)} placeholder="Paste notes, facts, anything worth remembering\u2026" /></div>}
             {kind === 'url' && <div className="form-group"><label className="form-label">Link</label><input className="form-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://\u2026" /></div>}
-            {kind === 'file' && <div className="form-group"><label className="form-label">File (PDF, image, or audio)</label><input type="file" accept=".pdf,image/*,audio/*,.m4a,.mp3,.wav" onChange={e => setFile(e.target.files && e.target.files[0])} style={{ fontSize: '13px', color: 'var(--text-2)' }} /><div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>Audio gets transcribed automatically, then mined for facts like everything else.</div></div>}
+            {kind === 'file' && <div className="form-group"><label className="form-label">File (PDF, image, audio, Word, or Excel)</label><input type="file" accept=".pdf,image/*,audio/*,.m4a,.mp3,.wav,.docx,.xlsx,.xls" onChange={e => setFile(e.target.files && e.target.files[0])} style={{ fontSize: '13px', color: 'var(--text-2)' }} /><div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>Audio gets transcribed automatically, then mined for facts like everything else.</div></div>}
             {kind === 'dictate' && (
               <div className="form-group"><label className="form-label">Voice note</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -876,6 +892,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
                   <span style={{ fontWeight: 700, color: 'var(--text-1)', fontSize: '14px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '(untitled)'}</span>
                   <span style={{ fontSize: '10px', color: st[0], border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px', whiteSpace: 'nowrap' }}>{st[1]}</span>
                   <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-3)' }}>{s.scope}{s.scope !== 'private' ? '' : ''}</span>
+                  <button onClick={() => reprocess(s)} style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>Reprocess</button>
                   <button onClick={() => del(s)} style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Delete</button>
                 </div>
                 {s.summary && <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '5px' }}>{s.summary}</div>}
@@ -923,6 +940,35 @@ function KnowledgeView({ userId, isAdmin = false }) {
                 </div>
                 {r.query && <div style={{ fontSize: '12px', color: 'var(--text-2)', marginTop: '3px' }}>“{r.query}”</div>}
                 {r.source_title && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>{r.source_scope} · {r.source_title}</div>}
+              </div></div>
+            ))}
+          </div>
+        )}
+
+        {tab === 'evals' && (
+          <div style={{ maxWidth: '680px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '10px' }}>Save real questions with an expected keyword, then Run all to measure retrieval quality as your knowledge grows.</div>
+            <div className="panel" style={{ marginBottom: '12px' }}><div className="panel-body">
+              <div className="form-group"><label className="form-label">Question</label><input className="form-input" value={evalQ} onChange={e => setEvalQ(e.target.value)} placeholder="When is the WV base drawing due?" /></div>
+              <div className="form-group"><label className="form-label">Expected answer contains</label><input className="form-input" value={evalExp} onChange={e => setEvalExp(e.target.value)} placeholder="July 3" /></div>
+              <button className="btn btn-primary btn-sm" onClick={addEval}>Add test</button>
+            </div></div>
+            {evals && evals.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>{evals.filter(e => e.last_pass === true).length} passing of {evals.filter(e => e.last_pass === true || e.last_pass === false).length} run</span>
+                <button className="btn btn-primary btn-sm" disabled={evalRunning} onClick={runEvals}>{evalRunning ? 'Running\u2026' : 'Run all'}</button>
+              </div>
+            )}
+            {evals && evals.map(ev => (
+              <div key={ev.id} className="panel" style={{ marginBottom: '8px' }}><div className="panel-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {ev.last_pass === true && <span style={{ color: 'var(--green)' }}>✓</span>}
+                  {ev.last_pass === false && <span style={{ color: 'var(--red)' }}>✕</span>}
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)', flex: 1 }}>{ev.question}</span>
+                  <button onClick={() => delEval(ev.id)} style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Remove</button>
+                </div>
+                {ev.expected && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>Expect: {ev.expected}</div>}
+                {ev.last_answer && <div style={{ fontSize: '12px', color: 'var(--text-2)', marginTop: '4px', whiteSpace: 'pre-wrap' }}>{ev.last_answer.slice(0, 300)}</div>}
               </div></div>
             ))}
           </div>
