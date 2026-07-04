@@ -10886,6 +10886,24 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
     if (data) setUserSettings?.(data);
   }
 
+  const autoScheduleOn = userSettings?.auto_schedule_tasks !== false; // default ON
+  const [savingAuto, setSavingAuto] = React.useState(false);
+  const [autoMsg, setAutoMsg] = React.useState('');
+  async function toggleAutoSchedule() {
+    if (savingAuto) return;
+    const next = !autoScheduleOn;
+    setSavingAuto(true); setAutoMsg('');
+    const { data, error } = await supabase.from('user_settings')
+      .upsert({ user_id: userId, auto_schedule_tasks: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .select().maybeSingle();
+    if (error) { setAutoMsg('Error: ' + error.message); setSavingAuto(false); return; }
+    if (data) setUserSettings?.(data);
+    // Apply right away so the calendar reflects it without waiting for the cron.
+    try { await supabase.functions.invoke('task-autoschedule', { body: {} }); } catch (_) {}
+    setAutoMsg(next ? 'On — your tasks will be scheduled onto your calendar.' : 'Off — auto-scheduled blocks removed from your calendar.');
+    setSavingAuto(false);
+  }
+
   const researchModel = userSettings?.ai_research_model || 'sonnet';
   const [savingModel, setSavingModel] = React.useState(false);
   const [modelMsg, setModelMsg] = React.useState('');
@@ -10956,6 +10974,18 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               </div>
             )}
             {aiKeyMsg && <div style={{marginTop:'10px', fontSize:'12px', color: /error|reject|failed|doesn|Anthropic rejected/i.test(aiKeyMsg)?'var(--red)':'var(--text-2)'}}>{aiKeyMsg}</div>}
+          </div>
+        </div>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Auto-schedule tasks on calendar</h3></div>
+          <div className="panel-body">
+            <div style={{display:'flex', alignItems:'center', gap:'14px'}}>
+              <p style={{flex:1, minWidth:0, fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, margin:0}}>When on, Prism automatically places tasks that have an estimated duration into open blocks on your calendar. Turn it off to keep those blocks off your calendar — your tasks stay in your task list either way.</p>
+              <button onClick={toggleAutoSchedule} role="switch" aria-checked={autoScheduleOn} disabled={savingAuto} title={autoScheduleOn ? 'On' : 'Off'} style={{flexShrink:0, width:48, height:28, borderRadius:999, border:'none', cursor: savingAuto?'wait':'pointer', background: autoScheduleOn ? 'var(--accent)' : 'var(--border-strong)', position:'relative', transition:'background .15s'}}>
+                <span style={{position:'absolute', top:3, left: autoScheduleOn?23:3, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .15s'}} />
+              </button>
+            </div>
+            {autoMsg && <div style={{marginTop:'10px', fontSize:'12px', color: autoMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{autoMsg}</div>}
           </div>
         </div>
         {isAdmin && (
