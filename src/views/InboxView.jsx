@@ -1552,6 +1552,17 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
   }
 
   // Forward a message: empty recipients, prefilled with "Forwarded message" preamble
+  async function addEmailToKnowledge(msg) {
+    const subject = msg.subject || selectedThread?.subject || 'Email';
+    const body = msg.body_text || msg.snippet || '';
+    const from = msg.from_name || msg.from_address || '';
+    const text = `Email${from ? ' from ' + from : ''}\nSubject: ${subject}\n\n${body}`;
+    try {
+      const { error } = await supabase.functions.invoke('knowledge-ingest', { body: { kind: 'text', title: subject, text, scope: 'private', tags: ['email'] } });
+      if (window.__notify) window.__notify(error ? 'Could not add to Knowledge' : 'Added to your Knowledge \u2014 transcribing & filing now', error ? 'error' : 'success');
+    } catch (e) { if (window.__notify) window.__notify('Could not add to Knowledge', 'error'); }
+  }
+
   function openForward(msg) {
     if (!msg) return;
     const subj = (msg.subject || '').match(/^fwd?:/i) ? msg.subject : `Fwd: ${msg.subject || ''}`;
@@ -2635,6 +2646,13 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                             onClick={() => { openForward(latest); setShowMoreMenu(false); }}
                             style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
                             <Icon name="forward" size={14} /> Forward
+                          </button>
+
+                          {/* Add to Knowledge */}
+                          <button
+                            onClick={() => { addEmailToKnowledge(latest); setShowMoreMenu(false); }}
+                            style={{width:'100%',textAlign:'left',padding:'10px 12px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',display:'flex',alignItems:'center',gap:'8px'}}>
+                            <span style={{fontSize:'14px'}}>📚</span> Add to Knowledge
                           </button>
 
                           {/* Add sender to contacts */}

@@ -650,6 +650,10 @@ function KnowledgeView({ userId, isAdmin = false }) {
   const [linksBySource, setLinksBySource] = React.useState({});
   const [feedback, setFeedback] = React.useState(null);
   const [conflicts, setConflicts] = React.useState([]);
+  const [recording, setRecording] = React.useState(false);
+  const [audit, setAudit] = React.useState(null);
+  const mediaRef = React.useRef(null);
+  const chunksRef = React.useRef([]);
 
   const loadLib = React.useCallback(async () => {
     try {
@@ -672,6 +676,45 @@ function KnowledgeView({ userId, isAdmin = false }) {
   async function confirmLink(l) { try { await supabase.from('knowledge_links').update({ confirmed: true }).eq('id', l.id); } catch (_) {} loadLib(); }
   async function removeLink(l) { try { await supabase.from('knowledge_links').delete().eq('id', l.id); } catch (_) {} loadLib(); }
   async function resolveConflict(id) { try { await supabase.from('knowledge_conflicts').update({ resolved: true }).eq('id', id); } catch (_) {} loadLib(); }
+  async function startRec() {
+    setAddMsg('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
+      mr.onstop = async () => { try { stream.getTracks().forEach(t => t.stop()); } catch (_) {} const mime = mr.mimeType || 'audio/webm'; const blob = new Blob(chunksRef.current, { type: mime }); await uploadAudio(blob, mime); };
+      mediaRef.current = mr; mr.start(); setRecording(true);
+    } catch (e) { setAddMsg('Microphone unavailable or permission denied.'); }
+  }
+  function stopRec() { try { mediaRef.current && mediaRef.current.stop(); } catch (_) {} setRecording(false); }
+  async function uploadAudio(blob, mime) {
+    setAdding(true); setAddMsg('Uploading & transcribing your voice note\u2026');
+    try {
+      const ext = mime.includes('mp4') ? 'm4a' : mime.includes('mpeg') ? 'mp3' : mime.includes('wav') ? 'wav' : 'webm';
+      const path = `${userId}/${(crypto.randomUUID ? crypto.randomUUID() : Date.now())}/dictation.${ext}`;
+      const { error: upErr } = await supabase.storage.from('knowledge').upload(path, blob, { contentType: mime });
+      if (upErr) { setAddMsg('Upload failed: ' + upErr.message); setAdding(false); return; }
+      const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
+      const { data, error } = await supabase.functions.invoke('knowledge-ingest', { body: { kind: 'file', storage_path: path, mime_type: mime, filename: 'dictation.' + ext, title: title.trim() || 'Voice note', scope, team_id: scope === 'team' ? (teamId || null) : null, tags, trust_level: trust } });
+      if (error || !data?.source_id) { setAddMsg('Could not add: ' + (error?.message || data?.error || 'unknown')); setAdding(false); return; }
+      setTitle(''); setTagsStr(''); setAddMsg('Voice note saved \u2014 transcribing now.'); setTab('library'); loadLib();
+    } catch (e) { setAddMsg(String(e)); }
+    setAdding(false);
+  }
+  async function exportKnowledge() {
+    try {
+      const [{ data: srcs }, { data: facts }] = await Promise.all([
+        supabase.from('knowledge_sources').select('title,scope,source_type,trust_level,tags,summary,created_at').order('created_at'),
+        supabase.rpc('my_knowledge_facts'),
+      ]);
+      const payload = { exported_at: new Date().toISOString(), sources: srcs || [], facts: facts || [] };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'prismos-knowledge-export.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { if (window.__notify) window.__notify('Export failed', 'error'); }
+  }
+  const loadAudit = React.useCallback(async () => { try { const { data } = await supabase.rpc('knowledge_access_audit', { days_back: 30 }); setAudit(Array.isArray(data) ? data : []); } catch (_) { setAudit([]); } }, []);
+  React.useEffect(() => { if (tab === 'audit' && audit === null) loadAudit(); }, [tab, audit, loadAudit]);
   React.useEffect(() => { loadLib(); (async () => { try { const { data } = await supabase.rpc('my_teams'); setMyTeams(Array.isArray(data) ? data : []); } catch (_) {} })(); }, [loadLib]);
   // poll while anything is processing
   React.useEffect(() => {
@@ -731,7 +774,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
     <div>
       <div className="page-header"><h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span>📚</span>Knowledge</h2><p>Feed the app what you know — notes, links, files — then ask it anything. Answers cite their source and stay within your scope.</p></div>
       <div style={{ maxWidth: '680px' }}>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>{TABBTN('ask', 'Ask')}{TABBTN('add', 'Add')}{TABBTN('library', 'Library')}</div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>{TABBTN('ask', 'Ask')}{TABBTN('add', 'Add')}{TABBTN('library', 'Library')}{isAdmin && TABBTN('audit', 'Audit')}</div>
 
         {tab === 'ask' && (
           <div>
@@ -767,7 +810,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
         {tab === 'add' && (
           <div className="panel"><div className="panel-body">
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              {[['text', 'Note'], ['url', 'Link'], ['file', 'File']].map(([k, l]) => (
+              {[['text', 'Note'], ['url', 'Link'], ['file', 'File'], ['dictate', 'Dictate']].map(([k, l]) => (
                 <button key={k} onClick={() => setKind(k)} style={{ flex: 1, padding: '8px', borderRadius: '9px', border: '1px solid ' + (kind === k ? 'var(--accent)' : 'var(--border)'), background: kind === k ? 'rgba(197,169,94,0.12)' : 'transparent', color: kind === k ? 'var(--accent)' : 'var(--text-2)', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>{l}</button>
               ))}
             </div>
@@ -775,6 +818,16 @@ function KnowledgeView({ userId, isAdmin = false }) {
             {kind === 'text' && <div className="form-group"><label className="form-label">Text</label><textarea className="form-input" rows={6} value={text} onChange={e => setText(e.target.value)} placeholder="Paste notes, facts, anything worth remembering\u2026" /></div>}
             {kind === 'url' && <div className="form-group"><label className="form-label">Link</label><input className="form-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://\u2026" /></div>}
             {kind === 'file' && <div className="form-group"><label className="form-label">File (PDF, image, or audio)</label><input type="file" accept=".pdf,image/*,audio/*,.m4a,.mp3,.wav" onChange={e => setFile(e.target.files && e.target.files[0])} style={{ fontSize: '13px', color: 'var(--text-2)' }} /><div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>Audio gets transcribed automatically, then mined for facts like everything else.</div></div>}
+            {kind === 'dictate' && (
+              <div className="form-group"><label className="form-label">Voice note</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {!recording ? <button type="button" className="btn btn-primary" onClick={startRec} disabled={adding}>● Start recording</button>
+                              : <button type="button" className="btn" onClick={stopRec} style={{ background: 'var(--red)', color: '#fff' }}>■ Stop & save</button>}
+                  {recording && <span style={{ fontSize: '12px', color: 'var(--red)' }}>Recording…</span>}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>Speak your note; on stop it's transcribed and mined for facts. Set the title/tags/scope above first.</div>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <div className="form-group" style={{ flex: '1 1 150px' }}><label className="form-label">Who can see it</label>
                 <select className="form-input" value={scope} onChange={e => setScope(e.target.value)}>
@@ -792,12 +845,15 @@ function KnowledgeView({ userId, isAdmin = false }) {
             </div>
             <div className="form-group"><label className="form-label">Tags (comma-separated)</label><input className="form-input" value={tagsStr} onChange={e => setTagsStr(e.target.value)} placeholder="west virginia ave, zoning" /></div>
             {addMsg && <div style={{ fontSize: '12.5px', marginBottom: '10px', color: addMsg.startsWith('Added') ? 'var(--green)' : 'var(--red)' }}>{addMsg}</div>}
-            <button className="btn btn-primary" disabled={adding} onClick={addKnowledge}>{adding ? 'Adding\u2026' : 'Add to knowledge'}</button>
+            {kind !== 'dictate' && <button className="btn btn-primary" disabled={adding} onClick={addKnowledge}>{adding ? 'Adding\u2026' : 'Add to knowledge'}</button>}
           </div></div>
         )}
 
         {tab === 'library' && (
           <div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
+              <button onClick={exportKnowledge} style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>⬇ Export</button>
+            </div>
             {conflicts.length > 0 && (
               <div className="panel" style={{ marginBottom: '12px', border: '1px solid var(--yellow)' }}>
                 <div className="panel-body">
@@ -850,6 +906,25 @@ function KnowledgeView({ userId, isAdmin = false }) {
                 )}
               </div></div>
             ); })}
+          </div>
+        )}
+
+        {tab === 'audit' && (
+          <div style={{ maxWidth: '680px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '10px' }}>Who used shared (team / brokerage) knowledge in the last 30 days. Private items are never shown here.</div>
+            {audit === null && <div style={{ color: 'var(--text-3)', fontSize: '13px' }}>Loading…</div>}
+            {audit && audit.length === 0 && <div className="panel"><div className="panel-body"><div style={{ fontSize: '13px', color: 'var(--text-3)' }}>No shared-knowledge access recorded yet.</div></div></div>}
+            {audit && audit.map((r, i) => (
+              <div key={i} className="panel" style={{ marginBottom: '8px' }}><div className="panel-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)' }}>{r.actor_name}</span>
+                  <span style={{ fontSize: '10px', color: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px' }}>{r.surface}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-3)' }}>{new Date(r.used_at).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                </div>
+                {r.query && <div style={{ fontSize: '12px', color: 'var(--text-2)', marginTop: '3px' }}>“{r.query}”</div>}
+                {r.source_title && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>{r.source_scope} · {r.source_title}</div>}
+              </div></div>
+            ))}
           </div>
         )}
       </div>
