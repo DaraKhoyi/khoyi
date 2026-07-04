@@ -4935,8 +4935,6 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
 
       <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} myUserId={user?.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} />
 
-      <DashboardAnnouncements userId={user?.id} />
-
       {/* At-a-glance pulse — full metrics live in My numbers */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
         <span style={{ fontSize:10.5, fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)' }}>At a glance</span>
@@ -4977,28 +4975,12 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
           </div>
         </div>
 
-        {/* Today's schedule */}
-        <div className="dash-card" style={{ marginBottom:20 }}>
-          <div className="panel-header" style={{ borderRadius:'16px 16px 0 0' }}><h3 style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={15} style={{ color:'var(--accent)' }} /> What's next</h3><button className="btn btn-ghost btn-sm" onClick={()=>setView('calendar')}>Calendar</button></div>
-          <div className="panel-body">
-            {upcoming.length===0
-              ? <div className="empty-state" style={{padding:'20px 0'}}><p>Nothing on the calendar yet.</p></div>
-              : <div style={{ display:'flex', flexDirection:'column', gap:8 }}>{upcoming.map((e,i)=>(
-                  <div key={i} className="dash-row" onClick={()=>setView('calendar')} style={{ cursor:'pointer' }}>
-                    <span style={{ width:8, height:8, borderRadius:'50%', background:'var(--accent)', flexShrink:0 }} />
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:13, fontWeight:600, color:'var(--text-1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title || 'Untitled event'}</div>
-                      <div style={{ fontSize:11, color:'var(--text-3)', marginTop:1 }}>{e.all_day ? 'All day' : fmtEvent(e.start_at)}</div>
-                    </div>
-                  </div>
-                ))}</div>
-            }
-          </div>
-        </div>
         {editTask && (
           <TaskModal onClose={() => setEditTask(null)} onSave={handleTaskSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts} properties={properties} events={events} userId={user.id} />
         )}
       </div>
+
+      <DashboardAnnouncements userId={user?.id} />
 
       {/* Lead-Gen ROI */}
     </div>
