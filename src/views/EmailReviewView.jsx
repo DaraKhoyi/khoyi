@@ -71,6 +71,32 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
     if (onCount) onCount(prev.filter(r => r.id !== row.id && r.needs_review).length);
     notify(status === 'done' ? 'Marked done' : 'Dismissed');
   };
+  // Delete: move the email to Gmail Trash (recoverable ~30 days) and clear it
+  // from review. Falls back to just resolving if no provider id is on file.
+  const deleteItem = async (row) => {
+    setBusy(b => ({ ...b, [row.id]: true }));
+    const prev = items;
+    setItems(list => list.filter(r => r.id !== row.id));
+    try {
+      if (row.provider_thread_id || row.provider_message_id) {
+        const { data, error } = await supabase.functions.invoke('gmail-trash', {
+          body: row.provider_thread_id
+            ? { account_id: row.account_id, thread_id: row.provider_thread_id }
+            : { account_id: row.account_id, message_id: row.provider_message_id },
+        });
+        if (error) throw error;
+        if (data && data.error) throw new Error(data.error);
+      }
+      await supabase.from('email_review_items').update({ status: 'deleted' }).eq('id', row.id);
+      setBusy(b => { const n = { ...b }; delete n[row.id]; return n; });
+      if (onCount) onCount(prev.filter(r => r.id !== row.id && r.needs_review).length);
+      notify('Deleted · moved to Gmail Trash');
+    } catch (e) {
+      setItems(prev);
+      setBusy(b => { const n = { ...b }; delete n[row.id]; return n; });
+      notify("Couldn't delete — try again.", 'error');
+    }
+  };
   const setSenderStatus = async (row, status, openUrl) => {
     setBusy(b => ({ ...b, [row.id]: true }));
     if (openUrl && row.list_unsubscribe) { try { window.open(row.list_unsubscribe, '_blank', 'noopener'); } catch (_) {} }
@@ -102,6 +128,7 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
     border: `1px solid ${primary ? 'var(--accent)' : 'var(--border)'}`, background: primary ? 'var(--accent)' : 'transparent', color: primary ? 'var(--bg-base)' : 'var(--text-2)' });
   const tabBtn = (on) => ({ padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 800, cursor: 'pointer', border: 'none',
     background: on ? 'var(--accent)' : 'var(--bg-hover)', color: on ? 'var(--bg-base)' : 'var(--text-2)' });
+  const delBtn = { padding: '7px 13px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: '1px solid rgba(239,68,68,0.5)', background: 'transparent', color: '#ef4444' };
 
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', padding: '4px 2px 40px' }}>
@@ -145,6 +172,7 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
                   <button style={btn(true)} disabled={busy[row.id]} onClick={() => openInGmail(row)}>Open</button>
                   <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'done')}>✓ Done</button>
                   <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'dismissed')}>Dismiss</button>
+                  <button style={delBtn} disabled={busy[row.id]} onClick={() => deleteItem(row)}>🗑 Delete</button>
                 </div>
               </div>
             );
@@ -168,6 +196,7 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => openInGmail(row)}>Open</button>
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'done')}>✓ Done</button>
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'dismissed')}>Dismiss</button>
+                      <button style={delBtn} disabled={busy[row.id]} onClick={() => deleteItem(row)}>🗑 Delete</button>
                     </div>
                   </div>
                 );

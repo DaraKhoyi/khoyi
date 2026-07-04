@@ -393,11 +393,17 @@ function QuoView({ contacts = [], userId }) {
                 <div key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <div onClick={() => setOpenCall(open ? null : c.id)} style={{ display: 'flex', gap: 10, padding: '11px 14px', cursor: 'pointer', alignItems: 'center' }}>
                     <span style={{ fontSize: 16 }}>{missed ? <Icon name="ban" size={15} /> : <Icon name="quo" size={15} />}</span>
-                    <div style={{ flex: 1 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{nameFor(c.participant)}</div><div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{missed ? 'Missed' : `${out ? 'Outgoing' : 'Incoming'}`}{c.duration ? ` · ${quoFmtDur(c.duration)}` : ''}{c.summary ? ' · 📝 summary' : ''}{c.transcript ? ' · 📄 transcript' : ''}</div></div>
+                    <div style={{ flex: 1 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{nameFor(c.participant)}</div><div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{missed ? 'Missed' : `${out ? 'Outgoing' : 'Incoming'}`}{c.duration ? ` · ${quoFmtDur(c.duration)}` : ''}{c.summary ? ' · 📝 summary' : ''}{c.transcript ? ' · 📄 transcript' : ''}{c.recording_url ? ' · 🔊 recording' : ''}</div></div>
                     <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{quoFmtWhen(c.op_created_at)}</span>
                     <span style={{ fontSize: 11, color: 'var(--accent)' }}>{open ? '▲' : '▼'}</span>
                   </div>
                   {open && <div style={{ padding: '0 14px 14px 40px' }}>
+                    {c.recording_url && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>▶ RECORDING</div>
+                        <audio controls preload="none" src={c.recording_url} style={{ width: '100%', height: 36 }} />
+                      </div>
+                    )}
                     {(c.summary || (c.transcript && c.transcript.length)) ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {c.summary && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>SUMMARY</div>{Array.isArray(c.summary) ? <ul style={{ margin: '2px 0 0 16px', fontSize: 13 }}>{c.summary.map((s, i) => <li key={i}>{s}</li>)}</ul> : <div style={{ fontSize: 13 }}>{c.summary}</div>}</div>}
