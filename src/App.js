@@ -10768,7 +10768,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [bookingMsg, setBookingMsg] = useState('');
   const bookingSlug = userSettings?.booking_slug || '';
   const bookingEnabled = userSettings?.booking_enabled === true;
-  const bookingUrl = bookingSlug ? `https://darasapp.com/book.html?u=${bookingSlug}` : '';
+  const bookingUrl = bookingSlug ? `https://darasapp.com/book/${bookingSlug}` : '';
   async function toggleBooking() {
     if (savingBooking) return; setSavingBooking(true); setBookingMsg('');
     const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, booking_enabled: !bookingEnabled, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
