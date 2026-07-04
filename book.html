@@ -37,6 +37,9 @@
   .wkrow.wend{justify-content:center;gap:34px;margin-top:4px}
   .wkendlbl{text-align:center;font-size:9.5px;font-weight:800;letter-spacing:1.5px;color:#c1baa8;text-transform:uppercase;margin:14px 0 6px}
   .circ.past{cursor:default}.circ.past .cc{color:#dcdcdc;border-color:#f3f3f3;background:#fbfbfb}
+  .wkline{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px}
+  .wkline .circ{flex:0 0 auto}
+  .wknavc{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding-top:7px}
   .roinfo{border:1px solid var(--line);background:#faf8f2;border-radius:11px;padding:12px 13px;font-size:13.5px;color:#333;margin-bottom:10px}
   .roinfo .muted{color:#a9a293}
   .slots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -119,14 +122,16 @@ function render(){
   </div>
   <div class="sect">
     <div class="lbl">Select a day</div>
-    <div class="wknav">
-      <button class="navbtn" id="prev" ${prevDisabled?"disabled":""}>‹ Prev</button>
-      <div class="wkrange">${rangeLabel(S.weekStart)}</div>
-      <button class="navbtn" id="next" ${nextDisabled?"disabled":""}>Next ›</button>
+    <div class="wkrange" style="text-align:center;margin-bottom:10px">${rangeLabel(S.weekStart)}</div>
+    <div class="wkline">
+      ${dayCirc(S.days[6])}
+      <div class="wknavc">
+        <button class="navbtn" id="prev" ${prevDisabled?"disabled":""}>‹ Prev</button>
+        <button class="navbtn" id="next" ${nextDisabled?"disabled":""}>Next week ›</button>
+      </div>
+      ${dayCirc(S.days[5])}
     </div>
     <div class="wkrow">${S.days.slice(0,5).map(dayCirc).join("")}</div>
-    <div class="wkendlbl">Weekend</div>
-    <div class="wkrow wend">${S.days.slice(5,7).map(dayCirc).join("")}</div>
     <div class="lbl" style="margin-top:16px">${dayLabel} · available times</div>
     ${day.slots.length?`<div class="slots">${day.slots.map(s=>`<div class="slot ${s.iso===S.selIso?"sel":""}" data-iso="${s.iso}">${tlabel(s.iso)}</div>`).join("")}</div>`:`<div class="empty">No open times this day — try another.</div>`}
     <div class="tz">Google busy-times &amp; buffers already removed · ${IS_ET?`times in Eastern (ET)`:`times shown in your local time (${esc(TZSHORT)})`}</div>
