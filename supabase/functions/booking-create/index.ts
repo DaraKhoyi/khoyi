@@ -85,10 +85,17 @@ serve(async (req) => {
     const endIso = new Date(startMs + duration * 60000).toISOString();
 
     // agent
-    const { data: us } = await admin.from("user_settings").select("user_id, display_name, office_address, zoom_link, booking_phone, booking_enabled, timezone")
+    const { data: us } = await admin.from("user_settings").select("user_id, display_name, office_address, zoom_link, booking_phone, booking_enabled, timezone, booking_types, booking_durations, booking_min_notice_min, booking_horizon_days")
       .eq("booking_slug", slug).maybeSingle();
     if (!us || !us.booking_enabled) return json({ ok: false, error: "not_available" }, 404);
     const userId = us.user_id;
+    // per-agent controls
+    const enDur = (Array.isArray(us.booking_durations) && us.booking_durations.length) ? us.booking_durations : [30, 60, 90, 120];
+    if (!enDur.includes(duration)) return json({ ok: false, error: "duration_unavailable" }, 400);
+    const enTypes = (Array.isArray(us.booking_types) && us.booking_types.length) ? us.booking_types : ["phone", "zoom", "google_meet", "office", "property", "other"];
+    if (!enTypes.includes(meeting_type)) return json({ ok: false, error: "type_unavailable" }, 400);
+    if (startMs < Date.now() + ((us.booking_min_notice_min ?? 120)) * 60000) return json({ ok: false, error: "too_soon" }, 400);
+    if (startMs > Date.now() + ((us.booking_horizon_days ?? 21)) * 86400000) return json({ ok: false, error: "too_far" }, 400);
     const tz = us.timezone || "America/New_York";
     const whenLabel = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(startIso));
     // rate limit — max 6 bookings per IP per hour

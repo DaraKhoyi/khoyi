@@ -10739,6 +10739,57 @@ function CubeACRPanel({ userId, emailAccounts }) {
   );
 }
 
+function BookingsManagerModal({ userId, slug, onClose }) {
+  const [rows, setRows] = React.useState(null);
+  const [busy, setBusy] = React.useState({});
+  const MT = { phone:'Phone call', zoom:'Zoom', google_meet:'Google Meet', office:'Office meeting', property:'Property showing', other:'Other location' };
+  const load = React.useCallback(async () => {
+    try {
+      const { data } = await supabase.from('bookings').select('*').eq('user_id', userId).eq('status', 'confirmed')
+        .gte('start_at', new Date().toISOString()).order('start_at').limit(100);
+      setRows(data || []);
+    } catch (_) { setRows([]); }
+  }, [userId]);
+  React.useEffect(() => { load(); }, [load]);
+  const cancelOne = async (bk) => {
+    setBusy(b => ({ ...b, [bk.id]: true }));
+    try { await supabase.functions.invoke('booking-cancel', { body: { cancel_token: bk.cancel_token } }); } catch (_) {}
+    setBusy(b => { const n = { ...b }; delete n[bk.id]; return n; });
+    if (window.__notify) window.__notify('Booking cancelled', 'success');
+    load();
+  };
+  const copyResched = (bk) => { try { navigator.clipboard.writeText(`https://darasapp.com/book/${bk.slug || slug}?cancel=${bk.cancel_token}`); if (window.__notify) window.__notify('Reschedule link copied — send it to the client', 'success'); } catch (_) {} };
+  const fmt = (iso) => new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto', border: '1px solid var(--border)' }}>
+        <div style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-1)' }}>Upcoming bookings</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: '12px 18px 24px' }}>
+          {rows === null ? <div style={{ color: 'var(--text-3)', fontSize: 13, padding: '18px 0' }}>Loading…</div>
+            : rows.length === 0 ? <div style={{ color: 'var(--text-3)', fontSize: 13, padding: '18px 0' }}>No upcoming bookings.</div>
+            : rows.map(bk => (
+              <div key={bk.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{bk.client_name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>{fmt(bk.start_at)}</div>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 3 }}>{MT[bk.meeting_type] || bk.meeting_type} · {bk.duration_minutes} min{bk.location ? ` · ${bk.location}` : ''}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{bk.client_email} · {bk.client_phone}</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                  <button onClick={() => copyResched(bk)} className="btn btn-ghost btn-sm" style={{ fontSize: 11.5 }}>Copy reschedule link</button>
+                  <button onClick={() => cancelOne(bk)} disabled={busy[bk.id]} style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 8, padding: '6px 12px', border: '1px solid rgba(239,68,68,0.5)', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>{busy[bk.id] ? 'Cancelling…' : 'Cancel'}</button>
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -10764,6 +10815,14 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [officeAddress, setOfficeAddress] = useState(userSettings?.office_address || '');
   const [zoomLink, setZoomLink] = useState(userSettings?.zoom_link || '');
   const [bookingPhone, setBookingPhone] = useState(userSettings?.booking_phone || '');
+  const ALL_MTYPES = [['phone','Phone call'],['zoom','Zoom'],['google_meet','Google Meet'],['office','Office meeting'],['property','Property showing'],['other','Other location']];
+  const ALL_DUR = [[30,'30 min'],[60,'1 hour'],[90,'90 min'],[120,'2 hours']];
+  const [bkTypes, setBkTypes] = useState(Array.isArray(userSettings?.booking_types) ? userSettings.booking_types : ['phone','zoom','google_meet','office','property','other']);
+  const [bkDur, setBkDur] = useState(Array.isArray(userSettings?.booking_durations) ? userSettings.booking_durations : [30,60,90,120]);
+  const [minNoticeH, setMinNoticeH] = useState(String(Math.round((userSettings?.booking_min_notice_min ?? 120)/60)));
+  const [horizonD, setHorizonD] = useState(String(userSettings?.booking_horizon_days ?? 21));
+  const [showBookings, setShowBookings] = useState(false);
+  const toggleIn = (arr, val, set) => set(arr.includes(val) ? arr.filter(x=>x!==val) : [...arr, val]);
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingMsg, setBookingMsg] = useState('');
   const bookingSlug = userSettings?.booking_slug || '';
@@ -10777,7 +10836,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   }
   async function saveBookingSettings() {
     if (savingBooking) return; setSavingBooking(true); setBookingMsg('');
-    const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, zoom_link: zoomLink.trim() || null, booking_phone: bookingPhone.trim() || null, office_address: officeAddress.trim() || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
+    const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, zoom_link: zoomLink.trim() || null, booking_phone: bookingPhone.trim() || null, office_address: officeAddress.trim() || null, booking_types: (bkTypes.length?bkTypes:['phone']), booking_durations: (bkDur.length?bkDur:[30]), booking_min_notice_min: Math.max(0, Math.round((parseFloat(minNoticeH)||2)*60)), booking_horizon_days: Math.max(1, Math.min(365, parseInt(horizonD)||21)), updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
     if (error) setBookingMsg('Error: ' + error.message); else { if (data) setUserSettings?.(data); setBookingMsg('Saved.'); }
     setSavingBooking(false);
   }
@@ -10801,6 +10860,10 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       setOfficeAddress(userSettings.office_address || '');
       setZoomLink(userSettings.zoom_link || '');
       setBookingPhone(userSettings.booking_phone || '');
+      setBkTypes(Array.isArray(userSettings.booking_types) ? userSettings.booking_types : ['phone','zoom','google_meet','office','property','other']);
+      setBkDur(Array.isArray(userSettings.booking_durations) ? userSettings.booking_durations : [30,60,90,120]);
+      setMinNoticeH(String(Math.round((userSettings.booking_min_notice_min ?? 120)/60)));
+      setHorizonD(String(userSettings.booking_horizon_days ?? 21));
     }
   }, [userSettings]);
 
@@ -11029,9 +11092,31 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               <label className="form-label">Callback number <span style={{color:'var(--text-3)', fontWeight:400}}>(for phone meetings)</span></label>
               <input className="form-input" value={bookingPhone} onChange={e=>setBookingPhone(e.target.value)} placeholder="e.g. (813) 555-0123" />
             </div>
-            <div style={{fontSize:'11.5px', color:'var(--text-3)', marginBottom:'10px', lineHeight:1.5}}>Your <b>office address</b> (for office meetings) is set under “About you” above. Google Meet links are generated automatically.</div>
-            <button className="btn btn-primary" disabled={savingBooking} onClick={saveBookingSettings}>{savingBooking?'Saving…':'Save booking settings'}</button>
+            <div style={{fontSize:'11.5px', color:'var(--text-3)', marginBottom:'14px', lineHeight:1.5}}>Your <b>office address</b> (for office meetings) is set under “About you” above. Google Meet links are generated automatically.</div>
+
+            <div style={{height:1, background:'var(--border)', margin:'4px 0 14px'}} />
+            <label className="form-label">Meeting types you offer</label>
+            <div style={{display:'flex', flexWrap:'wrap', gap:'8px', marginBottom:'14px'}}>
+              {ALL_MTYPES.map(([id,label])=>{ const on=bkTypes.includes(id); return (
+                <button key={id} onClick={()=>toggleIn(bkTypes,id,setBkTypes)} style={{padding:'8px 12px', borderRadius:999, fontSize:12.5, fontWeight:700, cursor:'pointer', border:`1px solid ${on?'var(--accent)':'var(--border)'}`, background:on?'rgba(197,169,94,0.14)':'transparent', color:on?'var(--accent)':'var(--text-3)'}}>{on?'✓ ':''}{label}</button>
+              );})}
+            </div>
+            <label className="form-label">Durations you offer</label>
+            <div style={{display:'flex', flexWrap:'wrap', gap:'8px', marginBottom:'14px'}}>
+              {ALL_DUR.map(([v,label])=>{ const on=bkDur.includes(v); return (
+                <button key={v} onClick={()=>toggleIn(bkDur,v,setBkDur)} style={{padding:'8px 12px', borderRadius:999, fontSize:12.5, fontWeight:700, cursor:'pointer', border:`1px solid ${on?'var(--accent)':'var(--border)'}`, background:on?'rgba(197,169,94,0.14)':'transparent', color:on?'var(--accent)':'var(--text-3)'}}>{on?'✓ ':''}{label}</button>
+              );})}
+            </div>
+            <div style={{display:'flex', gap:'10px', marginBottom:'14px'}}>
+              <div style={{flex:1}}><label className="form-label">Min notice (hours)</label><input className="form-input" type="number" min="0" value={minNoticeH} onChange={e=>setMinNoticeH(e.target.value)} /></div>
+              <div style={{flex:1}}><label className="form-label">Bookable out (days)</label><input className="form-input" type="number" min="1" value={horizonD} onChange={e=>setHorizonD(e.target.value)} /></div>
+            </div>
+            <div style={{display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap'}}>
+              <button className="btn btn-primary" disabled={savingBooking} onClick={saveBookingSettings}>{savingBooking?'Saving…':'Save booking settings'}</button>
+              <button className="btn btn-ghost" onClick={()=>setShowBookings(true)}>Manage bookings</button>
+            </div>
             {bookingMsg && <div style={{marginTop:'10px', fontSize:'12px', color: bookingMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{bookingMsg}</div>}
+            {showBookings && <BookingsManagerModal userId={userId} slug={bookingSlug} onClose={()=>setShowBookings(false)} />}
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>

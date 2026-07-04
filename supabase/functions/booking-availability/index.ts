@@ -43,7 +43,7 @@ serve(async (req) => {
     if (!slug) return json({ ok: false, error: "missing slug" }, 400);
 
     // resolve agent
-    const { data: us } = await admin.from("user_settings").select("user_id, display_name, booking_enabled, office_address, booking_slug")
+    const { data: us } = await admin.from("user_settings").select("user_id, display_name, booking_enabled, office_address, booking_slug, booking_types, booking_durations, booking_min_notice_min, booking_horizon_days")
       .eq("booking_slug", slug).maybeSingle();
     if (!us) return json({ ok: false, error: "not_found" }, 404);
     if (!us.booking_enabled) return json({ ok: true, enabled: false, agent: { name: us.display_name || "" } });
@@ -55,7 +55,12 @@ serve(async (req) => {
     const tz = sched?.timezone || "America/New_York";
     const hours = sched?.hours || {};
     const buffer = (sched?.buffer_minutes ?? 0) * 60000;
-    const minNotice = 120 * 60000; // 2 hours
+    const minNotice = ((us.booking_min_notice_min ?? 120)) * 60000;
+    const horizonMs = Date.now() + ((us.booking_horizon_days ?? 21)) * 86400000;
+    const enabledDurations = (Array.isArray(us.booking_durations) && us.booking_durations.length ? us.booking_durations : DURATIONS).filter((d: number) => DURATIONS.includes(d));
+    const dur2 = enabledDurations.includes(duration) ? duration : (enabledDurations[0] || 30);
+    const enabledTypeIds = (Array.isArray(us.booking_types) && us.booking_types.length) ? us.booking_types : MEETING_TYPES.map(t => t.id);
+    const enabledTypes = MEETING_TYPES.filter(t => enabledTypeIds.includes(t.id));
     const nowMs = Date.now();
 
     // date range (start from `from` or today, in agent tz)
@@ -113,12 +118,12 @@ serve(async (req) => {
         free = subtract(free, { s: wallToUtc(py, pm, pd, a.h, a.m, tz), e: wallToUtc(py, pm, pd, b.h, b.m, tz) });
       }
       for (const b of busy) free = subtract(free, b);
-      // enforce min-notice / not-in-past
+      // enforce min-notice, horizon, not-in-past
       const earliest = nowMs + minNotice;
-      free = free.map(iv => ({ s: Math.max(iv.s, earliest), e: iv.e })).filter(iv => iv.e > iv.s);
+      free = free.map(iv => ({ s: Math.max(iv.s, earliest), e: Math.min(iv.e, horizonMs) })).filter(iv => iv.e > iv.s);
 
       // slice into slots (30-min steps), duration must fit
-      const step = 30 * 60000, dur = duration * 60000, slots: any[] = [];
+      const step = 30 * 60000, dur = dur2 * 60000, slots: any[] = [];
       for (const iv of free) {
         // align start up to next :00/:30 in agent tz
         let t = iv.s;
@@ -133,7 +138,7 @@ serve(async (req) => {
     return json({
       ok: true, enabled: true,
       agent: { name: us.display_name || "", office_address: us.office_address || "", timezone: tz, slug },
-      durations: DURATIONS, meeting_types: MEETING_TYPES, duration, days: out,
+      durations: enabledDurations, meeting_types: enabledTypes, duration: dur2, horizon_days: (us.booking_horizon_days ?? 21), days: out,
     });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
