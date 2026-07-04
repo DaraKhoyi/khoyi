@@ -39,7 +39,10 @@
   .circ.past{cursor:default}.circ.past .cc{color:#dcdcdc;border-color:#f3f3f3;background:#fbfbfb}
   .wgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;align-items:center;justify-items:center}
   .wtop{margin-bottom:8px}
-  .wmid{grid-column:2 / 5;display:flex;align-items:center;justify-content:center;gap:8px}
+  .wmid{grid-column:2 / 5;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .weekof{font-size:9.5px;font-weight:800;letter-spacing:1.5px;color:#9A8038;text-transform:uppercase}
+  .wnavrow{display:flex;align-items:center;justify-content:center;gap:12px}
+  .arrowbtn.flip{transform:scaleX(-1)}
   .arrowbtn{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--deep);font-size:19px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;flex:0 0 auto}
   .arrowbtn:disabled{opacity:.28;cursor:default}
   .wkrange2{font-size:13px;font-weight:800;color:#333;text-align:center;white-space:nowrap}
@@ -63,7 +66,7 @@
 </style></head>
 <body><div class="card" id="app"><div class="big"><p>Loading…</p></div></div>
 <script>
-const VER="v208";
+const VER="v209";
 const SUPA="https://xlgfspnojjgvkuitcoaf.supabase.co";
 const ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsZ2ZzcG5vampndmt1aXRjb2FmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTk1NzksImV4cCI6MjA5NDk3NTU3OX0.t6stnTptCp6T7YC-ogUKA9OP5YXhCf5Zm-0-WLkEnm0";
 async function api(fn,payload){const r=await fetch(`${SUPA}/functions/v1/${fn}`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${ANON}`,"apikey":ANON},body:JSON.stringify(payload)});return await r.json();}
@@ -131,9 +134,12 @@ function render(){
     <div class="wgrid wtop">
       ${dayCirc(S.days[0])}
       <div class="wmid">
-        <button class="arrowbtn" id="prev" ${prevDisabled?"disabled":""}>←</button>
-        <div class="wkrange2">${rangeLabel(S.weekStart)}</div>
-        <button class="arrowbtn" id="next" ${nextDisabled?"disabled":""}>→</button>
+        <div class="weekof">Week of:</div>
+        <div class="wnavrow">
+          <button class="arrowbtn flip" id="prev" ${prevDisabled?"disabled":""}>→</button>
+          <div class="wkrange2">${rangeLabel(S.weekStart)}</div>
+          <button class="arrowbtn" id="next" ${nextDisabled?"disabled":""}>→</button>
+        </div>
       </div>
       ${dayCirc(S.days[6])}
     </div>
