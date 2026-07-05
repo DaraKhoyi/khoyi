@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v210-20260704-contact-overflow-fix'
+const VERSION = 'prismos-v193-20260705-chief-of-staff'
 const APP_SHELL = [
   '/',
   '/index.html',
