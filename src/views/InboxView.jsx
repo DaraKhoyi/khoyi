@@ -712,6 +712,22 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
     return () => { alive = false; };
   }, []); // eslint-disable-line
 
+  // Open a specific conversation by internal thread id (used by the Email Review "Open" button)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.__inboxOpenThreadId) return;
+    const tid = window.__inboxOpenThreadId;
+    window.__inboxOpenThreadId = null;
+    let alive = true;
+    (async () => {
+      let row = null;
+      try { const { data } = await supabase.from('email_threads').select('id, account_id').eq('id', tid).limit(1); if (data && data.length) row = data[0]; } catch (_) {}
+      if (!alive) return;
+      if (row) { if (row.account_id) setSelectedId(row.account_id); setPendingOpenThreadId(row.id); }
+      else { try { if (window.__notify) window.__notify("Couldn't find that email conversation.", 'info'); } catch (_) {} }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line
+
   if (!account) return <InboxConnectScreen setView={setView} reloadData={reloadData} />;
 
   return (

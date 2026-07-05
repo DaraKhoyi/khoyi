@@ -112,9 +112,19 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
     if (error) { setSenders(prev); notify("Couldn't update — try again.", 'error'); return; }
     notify(status === 'unsubscribed' ? 'Opened unsubscribe · marked done' : status === 'kept' ? 'Kept' : 'Ignored');
   };
-  const openInGmail = (row) => {
+  const openEmail = (row) => {
+    // Prefer opening the exact conversation inside PrismOS (reliable; no Gmail link-routing quirks).
+    if (row.thread_id) {
+      try { window.__inboxOpenThreadId = row.thread_id; } catch (_) {}
+      if (setView) setView('inbox');
+      return;
+    }
+    // Fallback: deep-link Gmail straight to the exact thread/message (not a sender search).
     const em = acctEmail[row.account_id] || '';
-    const url = `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(em)}#search/from%3A${encodeURIComponent(row.from_address || '')}`;
+    const anchor = row.provider_thread_id ? `#all/${row.provider_thread_id}`
+      : row.provider_message_id ? `#all/${row.provider_message_id}`
+      : `#search/from%3A${encodeURIComponent(row.from_address || '')}`;
+    const url = `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(em)}${anchor}`;
     try { window.open(url, '_blank', 'noopener'); } catch (_) {}
   };
 
@@ -169,7 +179,7 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
                 </div>
                 {row.summary && <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45, marginBottom: 10 }}>{row.summary}</div>}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button style={btn(true)} disabled={busy[row.id]} onClick={() => openInGmail(row)}>Open</button>
+                  <button style={btn(true)} disabled={busy[row.id]} onClick={() => openEmail(row)}>Open</button>
                   <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'done')}>✓ Done</button>
                   <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'dismissed')}>Dismiss</button>
                   <button style={delBtn} disabled={busy[row.id]} onClick={() => deleteItem(row)}>🗑 Delete</button>
@@ -193,7 +203,7 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
                       <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)', flexShrink: 0 }}>{relTime(row.received_at)}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <button style={btn(false)} disabled={busy[row.id]} onClick={() => openInGmail(row)}>Open</button>
+                      <button style={btn(false)} disabled={busy[row.id]} onClick={() => openEmail(row)}>Open</button>
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'done')}>✓ Done</button>
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'dismissed')}>Dismiss</button>
                       <button style={delBtn} disabled={busy[row.id]} onClick={() => deleteItem(row)}>🗑 Delete</button>
