@@ -442,6 +442,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
   const [newContactSuggestions, setNewContactSuggestions] = useState(null);
   const [busy, setBusy] = useState({});
   const [openSrc, setOpenSrc] = useState({});  // sender_email -> action label
+  const [scanErr, setScanErr] = useState('');
   const [pickerFor, setPickerFor] = useState(null);  // sender_email when picking different contact
   const [pickerQuery, setPickerQuery] = useState('');
   // For "Add" on a new-contact suggestion
@@ -452,19 +453,22 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
   const loadSuggestions = useCallback(async () => {
     setSuggestions(null);
     setNewContactSuggestions(null);
-    const { data } = await supabase.functions.invoke('contact-link-emails', {
-      body: { user_id: userId, apply_auto: false },
-    });
-    if (data?.ok) {
-      setSuggestions(data.suggestions || []);
-      setNewContactSuggestions(data.new_contact_suggestions || []);
-      onChanged?.({
-        link: data.suggestions_count || 0,
-        new: data.new_contact_suggestions_count || 0,
-      });
-    } else {
-      setSuggestions([]);
-      setNewContactSuggestions([]);
+    setScanErr('');
+    try {
+      const invoke = supabase.functions.invoke('contact-link-emails', { body: { user_id: userId, apply_auto: false } });
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000));
+      const { data, error } = await Promise.race([invoke, timeout]);
+      if (error) throw error;
+      if (data?.ok) {
+        setSuggestions(data.suggestions || []);
+        setNewContactSuggestions(data.new_contact_suggestions || []);
+        onChanged?.({ link: data.suggestions_count || 0, new: data.new_contact_suggestions_count || 0 });
+      } else {
+        setSuggestions([]); setNewContactSuggestions([]);
+      }
+    } catch (e) {
+      setSuggestions([]); setNewContactSuggestions([]);
+      setScanErr("Couldn't finish the scan — tap Refresh to try again.");
     }
   }, [userId, onChanged]);
 
@@ -624,7 +628,8 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
         </div>
 
         <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1}}>
-          {suggestions === null && <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Scanning…</div>}
+          {suggestions === null && !scanErr && <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Scanning…</div>}
+          {scanErr && <div style={{padding:'28px 16px',textAlign:'center',color:'var(--yellow)',fontSize:'13px'}}>{scanErr}</div>}
 
           {suggestions && suggestions.length === 0 && (newContactSuggestions || []).length === 0 && (
             <div style={{padding:'40px 20px',textAlign:'center'}}>

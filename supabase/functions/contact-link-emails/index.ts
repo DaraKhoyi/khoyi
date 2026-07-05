@@ -291,48 +291,13 @@ serve(async (req) => {
       }
     }
 
-    // Load distinct senders with their max date and count
-    let mq = supabase
-      .from("email_messages")
-      .select("from_name, from_address, internal_date, subject")
-      .eq("user_id", user_id)
-      .eq("direction", "inbound")
-      .not("from_address", "is", null)
-      .order("internal_date", { ascending: false })
-      .limit(5000);
-    if (account_id) mq = mq.eq("account_id", account_id);
-    const { data: msgs, error: mErr } = await mq;
+// Aggregate senders in the database (one GROUP BY over all inbound mail) instead of
+    // pulling thousands of rows and churning them in JS — keeps the scan under ~1s.
+    const { data: digest, error: mErr } = await supabase.rpc("email_sender_digest", { p_user: user_id, p_account: account_id || null, p_limit: 4000 });
     if (mErr) throw mErr;
-
-    // Aggregate by sender
-    const bySender = new Map();
-    for (const m of msgs || []) {
-      const addr = (m.from_address || "").toLowerCase();
-      if (!addr) continue;
-      if (ownAddresses.has(addr)) continue;  // skip the user's own addresses
-      const existing = bySender.get(addr);
-      if (existing) {
-        existing.count++;
-        if (!existing.name && m.from_name) existing.name = m.from_name;
-        // min_date is the OLDEST date we've seen (results come newest-first, so we overwrite)
-        existing.min_date = m.internal_date;
-        // Collect up to 3 subject samples (oldest sampled by overwriting)
-        if (m.subject && existing.subject_samples.length < 3) {
-          existing.subject_samples.push(m.subject);
-        }
-      } else {
-        bySender.set(addr, {
-          email: addr,
-          name: m.from_name || null,
-          count: 1,
-          max_date: m.internal_date,
-          min_date: m.internal_date,
-          subject_samples: m.subject ? [m.subject] : [],
-        });
-      }
-    }
-
-    const senders = Array.from(bySender.values());
+    const senders = (digest || [])
+      .filter((d: any) => d.email && !ownAddresses.has(String(d.email).toLowerCase()))
+      .map((d: any) => ({ email: String(d.email).toLowerCase(), name: d.name || null, count: Number(d.cnt) || 0, max_date: d.max_date, min_date: d.min_date, subject_samples: [] }));
 
     // Index contacts by lowercase email
     const byContactEmail = new Map();
