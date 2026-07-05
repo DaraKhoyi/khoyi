@@ -905,9 +905,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     setExtractingPhones(true);
     setPhoneMsg(null);
     try {
-      const { data } = await supabase.functions.invoke('contact-extract-phones', {
-        body: { user_id: userId, apply: true },
-      });
+      const invoke = supabase.functions.invoke('contact-extract-phones', { body: { user_id: userId, apply: true } });
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 60000));
+      const { data } = await Promise.race([invoke, timeout]);
       if (data?.ok) {
         const { data: fresh } = await supabase.from('contacts').select('*').order('name');
         if (fresh) setContacts(fresh);
@@ -920,7 +920,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         setPhoneMsg({ type: 'error', text: data?.error || 'Extraction failed.' });
       }
     } catch (err) {
-      setPhoneMsg({ type: 'error', text: 'Extraction failed: ' + (err.message || err) });
+      setPhoneMsg({ type: 'error', text: err?.message === 'timeout' ? 'Phone extraction is taking too long — tap Extract phones to try again.' : 'Extraction failed: ' + (err.message || err) });
     } finally {
       setExtractingPhones(false);
       setTimeout(() => setPhoneMsg(null), 6000);
