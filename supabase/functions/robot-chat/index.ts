@@ -185,7 +185,6 @@ function buildToolSpecs() {
     { perm: "finance_read", def: { name: "read_finance", description: "Read the user's finance snapshot: GCI goal, hourly rate, YTD income/expense/net, and per-system spend.", input_schema: { type: "object", properties: {} } } },
     { perm: "transactions_write", confirm: true, def: { name: "add_transaction", description: "Record a transaction. Requires confirm:true.", input_schema: { type: "object", properties: { amount: { type: "number", description: "positive dollar amount" }, type: { type: "string", enum: ["expense", "income"] }, scope: { type: "string", enum: ["business", "personal"] }, date: { type: "string", description: "YYYY-MM-DD" }, payee: { type: "string" }, description: { type: "string" }, confirm: { type: "boolean" } }, required: ["amount", "type"] } } },
     { perm: "portfolio_read", def: { name: "read_portfolio", description: "Read deals, properties, investments, or mileage entries.", input_schema: { type: "object", properties: { kind: { type: "string", enum: ["deals", "properties", "investments", "mileage"] }, limit: { type: "integer" } }, required: ["kind"] } } },
-    { perm: "knowledge_search", def: { name: "search_knowledge", description: "Search the user's Brain / Notes / Playbooks for relevant saved knowledge.", input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] } } },
     { perm: "memory", def: { name: "remember", description: "Save a durable fact about the user for future conversations.", input_schema: { type: "object", properties: { content: { type: "string" } }, required: ["content"] } } },
     { perm: "journal", def: { name: "read_journal", description: "Read the user's daily journal entries. Use scope 'today', 'day' (with date), or 'range' (with start+end YYYY-MM-DD). Returns timestamped entries and what each is linked to.", input_schema: { type: "object", properties: { scope: { type: "string", enum: ["today", "day", "range"] }, date: { type: "string", description: "YYYY-MM-DD for scope=day" }, start: { type: "string", description: "YYYY-MM-DD for scope=range" }, end: { type: "string", description: "YYYY-MM-DD for scope=range" }, query: { type: "string", description: "optional keyword filter" } } } } },
     { perm: "journal", def: { name: "add_journal_entry", description: "Append a timestamped entry to TODAY's journal on the user's behalf. It will be auto-linked to people/projects/deals and may surface action items. Use when the user asks you to log/note something.", input_schema: { type: "object", properties: { content: { type: "string" } }, required: ["content"] } } },
@@ -435,11 +434,6 @@ async function execTool(name, input, ctx) {
         if (k === "mileage") { const { data } = await supabase.from("mileage_entries").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(lim); return { mileage: data || [] }; }
         return { error: "Unknown kind" };
       }
-      case "search_knowledge": {
-        const lim = Math.min(15, input.limit || 8);
-        const { data } = await supabase.from("brain").select("title,type,content,event_date").eq("user_id", userId).or(`title.ilike.%${input.query}%,content.ilike.%${input.query}%`).limit(lim);
-        return { results: (data || []).map((b) => ({ ...b, content: (b.content || "").slice(0, 500) })) };
-      }
       case "remember": {
         if (!input.content) return { error: "Nothing to remember" };
         await supabase.from("ari_memory").insert({ user_id: userId, robot_id: robotId, content: input.content });
@@ -562,8 +556,8 @@ serve(async (req) => {
     const perms = robot.permissions || {};
     const specs = buildToolSpecs().filter((s) => perms[s.perm] === true);
     specs.push({ perm: "knowledge_read", confirm: false, def: { name: "search_knowledge", description: "Search the user's own saved Knowledge base — their notes, documents, files, and links about their projects and know-how. Use this whenever they ask about their projects, properties, deals, clients, or anything they may have saved. Returns relevant passages with source titles.", input_schema: { type: "object", properties: { query: { type: "string", description: "what to look up" } }, required: ["query"] } } });
-    // Dedupe tools by name — Anthropic rejects duplicate tool names with a hard 400.
-    // (search_knowledge is defined both under the knowledge_search perm and always-added below.)
+    // Safety net: Anthropic rejects any request containing duplicate tool names with a
+    // hard 400, which silently kills the entire turn. Guarantee unique names before sending.
     const _seenToolNames = new Set();
     const tools = specs.map((s) => s.def).filter((d) => {
       if (!d || !d.name) return true;
