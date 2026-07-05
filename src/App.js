@@ -15140,9 +15140,8 @@ function AppMain() {
 
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
-    { id: 'numbers',     icon: '📊', label: 'My numbers' },
-    { id: 'briefing',    icon: '📋', label: 'Daily briefing' },
     { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
+    { id: 'numbers',     icon: '📊', label: 'My numbers' },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
     { id: 'pipeline',    icon: '🎯', label: 'My pipeline', badge: null },
@@ -15352,7 +15351,7 @@ function AppMain() {
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
-              : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId}/>
+              : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
