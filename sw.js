@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v1.02.16'
+const VERSION = 'prismos-v1.02.17'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -30,10 +30,13 @@ self.addEventListener('install', (event) => {
         // If any shell URL 404s, we still install — Chrome just needs the SW to exist
       }))
   );
-  // NOTE: intentionally NOT calling self.skipWaiting() here. A freshly deployed
-  // SW stays in the "waiting" state so the running app can show a "New version —
-  // Refresh" prompt instead of swapping the bundle out from under the user
-  // mid-task. The page triggers activation by posting { type: 'SKIP_WAITING' }.
+  // Take control as soon as installed. The running page has a 'controllerchange'
+  // listener that reloads once, so a freshly deployed version applies automatically
+  // on the next app open — no manual "Refresh" tap needed. This is deliberate for
+  // an actively-iterated beta: users kept getting stranded on stale bundles because
+  // the update prompt was easy to miss on a resumed mobile PWA. The app autosaves,
+  // so the reload is safe. (The "New version" prompt below still works as a backup.)
+  self.skipWaiting();
 });
 
 // The app posts this when the user taps "Refresh" on the update prompt.
