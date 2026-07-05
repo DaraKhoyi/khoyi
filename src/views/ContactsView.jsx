@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
 import { useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone } from '../App';
 import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
@@ -450,6 +450,14 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
   const [newContactType, setNewContactType] = useState('lead');
   const [newContactName, setNewContactName] = useState('');
 
+  // Keep onChanged in a ref so loadSuggestions stays stable. The parent passes a
+  // fresh inline onChanged every render; if it were a dependency, loadSuggestions
+  // (and its mount effect) would re-run on every render, resetting the modal to
+  // "Scanning…" forever. The ref lets us always call the latest onChanged without
+  // destabilizing the callback.
+  const onChangedRef = useRef(onChanged);
+  useEffect(() => { onChangedRef.current = onChanged; });
+
   const loadSuggestions = useCallback(async () => {
     setSuggestions(null);
     setNewContactSuggestions(null);
@@ -462,7 +470,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
       if (data?.ok) {
         setSuggestions(data.suggestions || []);
         setNewContactSuggestions(data.new_contact_suggestions || []);
-        onChanged?.({ link: data.suggestions_count || 0, new: data.new_contact_suggestions_count || 0 });
+        onChangedRef.current?.({ link: data.suggestions_count || 0, new: data.new_contact_suggestions_count || 0 });
       } else {
         setSuggestions([]); setNewContactSuggestions([]);
       }
@@ -470,7 +478,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
       setSuggestions([]); setNewContactSuggestions([]);
       setScanErr("Couldn't finish the scan — tap Refresh to try again.");
     }
-  }, [userId, onChanged]);
+  }, [userId]);
 
   useEffect(() => { loadSuggestions(); }, [loadSuggestions]);
 
