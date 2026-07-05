@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../App';
 
-const KIND_LABEL = { task: 'Task', call: 'Call follow-up', deadline: 'Deadline', deal: 'Deal', appointment: 'Appointment', reply: 'Reply', reengage: 'Reconnect', review_ask: 'Review & referral', recruit: 'Recruiting', agent_plan: 'New-lead plan' };
-const ACT_LABEL = { open_task: 'Open', create_task: 'Add task', review_call: 'Review', review_deal: 'Open deal', open_event: 'View', review: 'Open', open_agentruns: 'Review' };
+const KIND_LABEL = { task: 'Task', call: 'Call follow-up', deadline: 'Deadline', deal: 'Deal', appointment: 'Appointment', reply: 'Reply', reengage: 'Reconnect', review_ask: 'Review & referral', recruit: 'Recruiting', agent_plan: 'New-lead plan', owe_reply: 'Owe a reply' };
+const ACT_LABEL = { open_task: 'Open', create_task: 'Add task', review_call: 'Review', review_deal: 'Open deal', open_event: 'View', review: 'Open', open_agentruns: 'Review', reply_contact: 'Reply' };
 const PRI = { 1: { c: 'var(--red)', t: 'Urgent' }, 2: { c: 'var(--accent)', t: 'Important' }, 3: { c: 'var(--text-3)', t: 'When you can' } };
 
 export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setFocusEventId, onOpenPlan }) {
@@ -46,6 +46,10 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
     else if (a.action_type === 'review_deal') { setView && setView('pipeline'); }
     else if (a.action_type === 'open_event' && p.event_id) { setFocusEventId && setFocusEventId(p.event_id); setView && setView('calendar'); }
     else if (a.action_type === 'open_agentruns') { setView && setView('agentruns'); }
+    else if (a.action_type === 'reply_contact') {
+      if (p.email) { try { window.__inboxOpenEmail = p.email; } catch (_) {} setView && setView('inbox'); }
+      else { try { await supabase.from('tasks').insert({ user_id: userId, title: 'Reply to ' + (p.name || a.title), priority: 'high', completed: false, list: 'inbox', notes: 'They reached out and are waiting on you.' }); } catch (_) {} await mark(a.id, 'done'); }
+    }
   }
 
   const pending = (rows || []).filter(r => r.status === 'pending');
