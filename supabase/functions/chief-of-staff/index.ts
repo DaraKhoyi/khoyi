@@ -68,7 +68,7 @@ async function generateForUser(sb: any, uid: string): Promise<number> {
   // Prepared agent plans awaiting approval (e.g., New-Lead Orchestrator)
   try {
     const { data } = await sb.from("agent_runs").select("id,summary,agent").eq("user_id", uid).eq("status", "prepared").order("created_at", { ascending: false }).limit(6);
-    for (const r of (data || [])) obligations.push({ idx: idx++, bucket: "obligation", kind: "agent_plan", title: ({ post_close: "Post-close plan ready — review & approve", new_listing: "New-listing plan ready — review & approve" }[r.agent] || "New-lead plan ready — review & approve"), context: (r.summary || "a prepared plan is waiting for your approval").slice(0, 140), action_type: "open_agentruns", source_ref: "run:" + r.id, payload: { run_id: r.id }, base: 2 });
+    for (const r of (data || [])) obligations.push({ idx: idx++, bucket: "obligation", kind: "agent_plan", title: ({ post_close: "Post-close plan ready — review & approve", new_listing: "New-listing plan ready — review & approve", listing_presentation: "Listing presentation ready — review & approve" }[r.agent] || "New-lead plan ready — review & approve"), context: (r.summary || "a prepared plan is waiting for your approval").slice(0, 140), action_type: "open_agentruns", source_ref: "run:" + r.id, payload: { run_id: r.id }, base: 2 });
   } catch (_) {}
 
   // ===== OPPORTUNITIES (growth) =====

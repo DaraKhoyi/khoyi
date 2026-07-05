@@ -3,8 +3,8 @@ import { supabase } from '../dataService';
 import { Icon } from '../App';
 
 const DISC = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6', '?': 'var(--text-3)' };
-const PLAN_LABEL = { new_lead: 'New-lead plan', post_close: 'Post-close plan', new_listing: 'New-listing plan' };
-const TOUCH_LABEL = { new_lead: 'First touch', post_close: 'Thank-you', new_listing: 'Just-listed announcement' };
+const PLAN_LABEL = { new_lead: 'New-lead plan', post_close: 'Post-close plan', new_listing: 'New-listing plan', listing_presentation: 'Listing presentation' };
+const TOUCH_LABEL = { new_lead: 'First touch', post_close: 'Thank-you', new_listing: 'Just-listed announcement', listing_presentation: 'Pre-appointment note' };
 function estDate(offset) { const d = new Date(Date.now() + (offset || 0) * 86400000); return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); }
 
 export default function AgentRunsView({ userId, setView }) {
@@ -61,7 +61,7 @@ export default function AgentRunsView({ userId, setView }) {
         const o = run.output || {};
         const ft = o.first_touch || {};
         const disc = (o.disc_hint || {}).letter;
-        const who = run.agent === 'new_listing' ? (o.address || 'New listing') : (run.target_name || o.client_name || (run.agent === 'post_close' ? 'Recent client' : 'New lead'));
+        const who = (run.agent === 'new_listing' || run.agent === 'listing_presentation') ? (o.address || (run.agent === 'listing_presentation' ? 'Listing opportunity' : 'New listing')) : (run.target_name || o.client_name || (run.agent === 'post_close' ? 'Recent client' : 'New lead'));
         return (
           <div key={run.id} className="panel" style={{ marginTop: '12px' }}>
             <div className="panel-body">
@@ -89,9 +89,18 @@ export default function AgentRunsView({ userId, setView }) {
                 </div>
               )}
 
+              {run.agent === 'listing_presentation' && o.marketing_plan && (
+                <div style={{ marginTop: '10px', background: 'var(--bg-hover)', borderRadius: '10px', padding: '10px 12px' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Marketing plan to present</div>
+                  <div style={{ fontSize: '12.5px', color: 'var(--text-2)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{o.marketing_plan}</div>
+                  {o.why_me && <div style={{ fontSize: '11.5px', color: 'var(--text-3)', marginTop: '8px', lineHeight: 1.45 }}><strong style={{ color: 'var(--text-2)' }}>Why me:</strong> {o.why_me}</div>}
+                  {o.pricing_note && <div style={{ fontSize: '11.5px', color: 'var(--text-3)', marginTop: '6px', lineHeight: 1.45 }}><strong style={{ color: 'var(--text-2)' }}>Pricing:</strong> {o.pricing_note}</div>}
+                </div>
+              )}
+
               {Array.isArray(o.cadence) && o.cadence.length > 0 && (
                 <div style={{ marginTop: '10px' }}>
-                  <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>{run.agent === 'new_listing' ? 'Launch checklist' : 'Follow-up cadence'} ({o.cadence.length} {run.agent === 'new_listing' ? 'steps' : 'touches'})</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>{run.agent === 'new_listing' ? 'Launch checklist' : run.agent === 'listing_presentation' ? 'Presentation checklist' : 'Follow-up cadence'} ({o.cadence.length} {(run.agent === 'new_listing' || run.agent === 'listing_presentation') ? 'steps' : 'touches'})</div>
                   {o.cadence.map((s, i) => (
                     <div key={i} style={{ fontSize: '12px', color: 'var(--text-2)', marginBottom: '2px' }}><span style={{ color: 'var(--accent)', fontWeight: 600 }}>Day {s.day_offset}</span> · {s.action} <span style={{ color: 'var(--text-3)' }}>[{s.channel}]</span></div>
                   ))}
