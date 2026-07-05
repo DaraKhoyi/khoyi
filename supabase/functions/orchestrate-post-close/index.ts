@@ -71,8 +71,11 @@ serve(async (req) => {
     // Sweep: recently closed deals with no post-close run yet
     const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
     const { data: agents } = await sb.from("agents").select("auth_user_id").not("auth_user_id", "is", null);
+    const { data: pausedRows } = await sb.from("agent_controls").select("user_id").eq("paused", true);
+    const paused = new Set((pausedRows || []).map((r: any) => r.user_id));
     let prepared = 0;
     for (const a of (agents || [])) {
+      if (paused.has(a.auth_user_id)) continue;
       try { const uid = a.auth_user_id; const { data: deals } = await sb.from("deals").select("id").eq("user_id", uid).eq("status", "closed").gte("close_date", since).limit(15);
         for (const d of (deals || [])) { const id = await runForDeal(sb, uid, d.id); if (id) prepared++; }
       } catch (_) {}

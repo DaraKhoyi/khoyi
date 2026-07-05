@@ -58,8 +58,10 @@ serve(async (req) => {
     const { data: { user } } = await sb.auth.getUser(token);
     if (user) return J({ ok: true, ...(await runForUser(sb, user.id)) });
     const { data: agents } = await sb.from("agents").select("auth_user_id").not("auth_user_id", "is", null);
+    const { data: pausedRows } = await sb.from("agent_controls").select("user_id").eq("paused", true);
+    const paused = new Set((pausedRows || []).map((r: any) => r.user_id));
     const totals: Record<string, number> = {};
-    for (const a of (agents || [])) { try { const c = await runForUser(sb, a.auth_user_id); for (const k in c) totals[k] = (totals[k] || 0) + c[k]; } catch (_) {} }
+    for (const a of (agents || [])) { if (paused.has(a.auth_user_id)) continue; try { const c = await runForUser(sb, a.auth_user_id); for (const k in c) totals[k] = (totals[k] || 0) + c[k]; } catch (_) {} }
     return J({ ok: true, ...totals });
   } catch (e) { return J({ error: String(e) }, 500); }
 });

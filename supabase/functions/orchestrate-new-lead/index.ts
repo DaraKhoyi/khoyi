@@ -87,8 +87,11 @@ serve(async (req) => {
     // Sweep mode (cron/service-role): prep recently-created leads with no prepared run yet
     const since = new Date(Date.now() - 3 * 864e5).toISOString();
     const { data: agents } = await sb.from("agents").select("auth_user_id").not("auth_user_id", "is", null);
+    const { data: pausedRows } = await sb.from("agent_controls").select("user_id").eq("paused", true);
+    const paused = new Set((pausedRows || []).map((r: any) => r.user_id));
     let prepared = 0;
     for (const a of (agents || [])) {
+      if (paused.has(a.auth_user_id)) continue;
       try {
         const uid = a.auth_user_id;
         const { data: leads } = await sb.from("contacts").select("id").eq("user_id", uid).ilike("type", "%lead%").gte("created_at", since).limit(10);

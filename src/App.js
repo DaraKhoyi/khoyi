@@ -63,6 +63,7 @@ const TasksView = lazyWithReload(() => import('./views/TasksView'));
 const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
 const ChiefOfStaffView = lazyWithReload(() => import('./views/ChiefOfStaffView'));
 const AgentRunsView = lazyWithReload(() => import('./views/AgentRunsView'));
+const AgentActivityView = lazyWithReload(() => import('./views/AgentActivityView'));
 const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m => ({ default: m.GrowthView })));
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
@@ -15156,6 +15157,7 @@ function AppMain() {
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
     { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
+    { id: 'agent_activity', icon: '🛡️', label: 'Agent activity' },
     { id: 'numbers',     icon: '📊', label: 'My numbers' },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
@@ -15244,6 +15246,11 @@ function AppMain() {
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
     { label: 'My numbers', view: 'numbers', icon: 'chart' },
     { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
+    { label: 'AI agents', icon: 'sparkles', ai: true, children: [
+      { label: 'Chief of Staff', view: 'chief', icon: 'briefing' },
+      { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
+      { label: 'Agent activity', view: 'agent_activity', icon: 'brain' },
+    ] },
     // Today
     { label: 'My day', icon: 'clock', children: [
       { label: 'Tasks', view: 'tasks', icon: 'tasks' },
@@ -15368,6 +15375,7 @@ function AppMain() {
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
               : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='agentruns'   ? <AgentRunsView userId={user.id} setView={setView}/>
+              : view==='agent_activity' ? <AgentActivityView userId={user.id}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>

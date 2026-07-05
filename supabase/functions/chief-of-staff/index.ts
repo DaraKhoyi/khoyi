@@ -115,8 +115,10 @@ serve(async (req) => {
     const { data: { user } } = await sb.auth.getUser(token);
     if (user) { const n = await generateForUser(sb, user.id); return J({ ok: true, generated: n }); }
     const { data: agents } = await sb.from("agents").select("auth_user_id").not("auth_user_id", "is", null);
+    const { data: pausedRows } = await sb.from("agent_controls").select("user_id").eq("paused", true);
+    const paused = new Set((pausedRows || []).map((r: any) => r.user_id));
     let total = 0;
-    for (const a of (agents || [])) { try { total += await generateForUser(sb, a.auth_user_id); } catch (_) {} }
+    for (const a of (agents || [])) { if (paused.has(a.auth_user_id)) continue; try { total += await generateForUser(sb, a.auth_user_id); } catch (_) {} }
     return J({ ok: true, agents: (agents || []).length, generated: total });
   } catch (e) { return J({ error: String(e) }, 500); }
 });
