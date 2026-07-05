@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../App';
 
-const KIND_LABEL = { task: 'Task', call: 'Call follow-up', deadline: 'Deadline', deal: 'Deal', appointment: 'Appointment', reply: 'Reply', reengage: 'Reconnect', review_ask: 'Review & referral', recruit: 'Recruiting' };
-const ACT_LABEL = { open_task: 'Open', create_task: 'Add task', review_call: 'Review', review_deal: 'Open deal', open_event: 'View', review: 'Open' };
+const KIND_LABEL = { task: 'Task', call: 'Call follow-up', deadline: 'Deadline', deal: 'Deal', appointment: 'Appointment', reply: 'Reply', reengage: 'Reconnect', review_ask: 'Review & referral', recruit: 'Recruiting', agent_plan: 'New-lead plan' };
+const ACT_LABEL = { open_task: 'Open', create_task: 'Add task', review_call: 'Review', review_deal: 'Open deal', open_event: 'View', review: 'Open', open_agentruns: 'Review' };
 const PRI = { 1: { c: 'var(--red)', t: 'Urgent' }, 2: { c: 'var(--accent)', t: 'Important' }, 3: { c: 'var(--text-3)', t: 'When you can' } };
 
 export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setFocusEventId, onOpenPlan }) {
@@ -38,13 +38,14 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
   async function mark(id, status) { try { await supabase.from('cos_actions').update({ status, acted_at: new Date().toISOString() }).eq('id', id); } catch (_) {} load(); }
   async function act(a) {
     const p = a.action_payload || {};
-    if (a.action_type === 'create_task') { try { await supabase.from('tasks').insert({ user_id: userId, title: p.title || a.title, due_date: p.due_date || null, priority: p.priority || 'medium', completed: false, list: 'inbox', notes: 'Added by your Chief of Staff' }); } catch (_) {} }
-    await mark(a.id, 'done');
+    if (a.action_type === 'create_task') { try { await supabase.from('tasks').insert({ user_id: userId, title: p.title || a.title, due_date: p.due_date || null, priority: p.priority || 'medium', completed: false, list: 'inbox', notes: 'Added by your Chief of Staff' }); } catch (_) {} await mark(a.id, 'done'); return; }
+    // navigation actions: go there and leave the item in the queue until you actually finish it
     if (a.action_type === 'open_task' && p.task_id) { setFocusTaskId && setFocusTaskId(p.task_id); setView && setView('tasks'); }
     else if (a.action_type === 'open_task') { setView && setView('tasks'); }
     else if (a.action_type === 'review_call') { setView && setView('tasks'); }
     else if (a.action_type === 'review_deal') { setView && setView('pipeline'); }
     else if (a.action_type === 'open_event' && p.event_id) { setFocusEventId && setFocusEventId(p.event_id); setView && setView('calendar'); }
+    else if (a.action_type === 'open_agentruns') { setView && setView('agentruns'); }
   }
 
   const pending = (rows || []).filter(r => r.status === 'pending');

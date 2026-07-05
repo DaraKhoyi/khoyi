@@ -65,6 +65,12 @@ async function generateForUser(sb: any, uid: string): Promise<number> {
     for (const e of (data || [])) { if (etDateOf(e.start_at) !== today) continue; obligations.push({ idx: idx++, bucket: "obligation", kind: "appointment", title: `${e.title || "Appointment"} at ${etTime(e.start_at)}`, context: `on your calendar today${e.location ? " — " + e.location : ""}`, action_type: "open_event", source_ref: "evt:" + e.id, payload: { event_id: e.id }, base: 2 }); }
   } catch (_) {}
 
+  // Prepared agent plans awaiting approval (e.g., New-Lead Orchestrator)
+  try {
+    const { data } = await sb.from("agent_runs").select("id,summary").eq("user_id", uid).eq("status", "prepared").order("created_at", { ascending: false }).limit(6);
+    for (const r of (data || [])) obligations.push({ idx: idx++, bucket: "obligation", kind: "agent_plan", title: "New-lead plan ready — review & approve", context: (r.summary || "a prepared first-contact plan is waiting for your approval").slice(0, 140), action_type: "open_agentruns", source_ref: "run:" + r.id, payload: { run_id: r.id }, base: 2 });
+  } catch (_) {}
+
   // ===== OPPORTUNITIES (growth) =====
   try {
     const { data } = await sb.from("contacts").select("id,name,type,last_contact_at").eq("user_id", uid).lt("last_contact_at", daysAgo(90)).order("last_contact_at", { ascending: true }).limit(12);

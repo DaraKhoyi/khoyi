@@ -62,6 +62,7 @@ const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').t
 const TasksView = lazyWithReload(() => import('./views/TasksView'));
 const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
 const ChiefOfStaffView = lazyWithReload(() => import('./views/ChiefOfStaffView'));
+const AgentRunsView = lazyWithReload(() => import('./views/AgentRunsView'));
 const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m => ({ default: m.GrowthView })));
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
@@ -6643,6 +6644,18 @@ function RelationshipIntel({ profile }) {
   );
 }
 
+function PrepLeadButton({ contactId }) {
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  async function run() {
+    setBusy(true);
+    try { await supabase.functions.invoke('orchestrate-new-lead', { body: { contact_id: contactId } }); setDone(true); if (window.__notify) window.__notify('First-contact plan prepared \u2014 see "Prepared by AI"', 'success'); }
+    catch (_) { if (window.__notify) window.__notify('Could not prepare a plan right now', 'error'); }
+    setBusy(false);
+  }
+  return <button className="btn btn-ghost btn-sm" disabled={busy || done} onClick={run} style={{ marginBottom: '10px' }}>{busy ? 'Preparing plan\u2026' : done ? '\u2713 Plan prepared' : '\uD83E\uDD16 Prep new-lead plan'}</button>;
+}
+
 function ContactKnowledge({ contactId }) {
   const [rows, setRows] = React.useState(null);
   React.useEffect(() => { let alive = true; (async () => { try { const { data } = await supabase.rpc('contact_knowledge', { p_contact_id: contactId }); if (alive) setRows(Array.isArray(data) ? data : []); } catch (_) { if (alive) setRows([]); } })(); return () => { alive = false; }; }, [contactId]);
@@ -7365,6 +7378,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         <div style={{flex:1,minHeight:0,overflowY:'auto',overflowX:'hidden',paddingRight:'4px',paddingBottom:'120px'}}>
           {tab==='overview' && (<>
           <ContactKnowledge contactId={contact.id} />
+          <PrepLeadButton contactId={contact.id} />
           {profile && (profile.primary_letter || hasBaseline) && (() => {
             const NAMES = { D:'Dominance', I:'Influence', S:'Steadiness', C:'Conscientiousness' };
             const TIPS = { D:'Direct and results-driven — be brief, lead with the bottom line, respect their time.', I:'Outgoing and relationship-driven — be warm and personal, keep the energy up.', S:'Steady and loyal — be patient and supportive; give time to decide, never pressure.', C:'Precise and analytical — lead with the facts and the detail; be accurate and thorough.' };
@@ -15141,6 +15155,7 @@ function AppMain() {
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
+    { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
     { id: 'numbers',     icon: '📊', label: 'My numbers' },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
@@ -15352,6 +15367,7 @@ function AppMain() {
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
               : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>
+              : view==='agentruns'   ? <AgentRunsView userId={user.id} setView={setView}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
