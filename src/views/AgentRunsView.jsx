@@ -31,7 +31,7 @@ export default function AgentRunsView({ userId, setView }) {
         const isFirst = (step.day_offset || 0) === 0;
         let notes = `[${step.channel || 'touch'}]`;
         if (isFirst && o.first_touch) notes += `\n\n${o.first_touch.subject ? 'Subject: ' + o.first_touch.subject + '\n\n' : ''}${o.first_touch.body || ''}`;
-        await supabase.from('tasks').insert({ user_id: userId, title: step.action || 'Follow up', due_date: estDate(step.day_offset), priority: 'medium', completed: false, list: 'inbox', contact_id: cid || null, notes });
+        await supabase.from('tasks').insert({ user_id: userId, title: step.action || 'Follow up', due_date: estDate(step.day_offset), priority: 'medium', completed: false, list: 'inbox', contact_id: cid || null, source_url: 'cadence:' + run.id, notes });
       }
       await supabase.from('agent_runs').update({ status: 'approved', decided_at: new Date().toISOString() }).eq('id', run.id);
     } catch (_) {}
@@ -98,9 +98,10 @@ export default function AgentRunsView({ userId, setView }) {
       {done.length > 0 && (
         <div style={{ marginTop: '18px' }}>
           <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '6px' }}>Recent</div>
-          {done.map(r => (
-            <div key={r.id} style={{ fontSize: '12.5px', color: 'var(--text-3)', padding: '4px 2px' }}>{r.status === 'approved' ? '✓ Approved' : '— Dismissed'} · {r.target_name || 'lead'} plan</div>
-          ))}
+          {done.map(r => {
+            const L = { approved: '✓ Approved · cadence running', engaged: '↩ Replied · handed off to pipeline', converted: '★ Converted', nurture: '🌱 No response · in quarterly nurture', dismissed: '— Dismissed', closed: '— Closed' };
+            return <div key={r.id} style={{ fontSize: '12.5px', color: 'var(--text-3)', padding: '4px 2px' }}>{L[r.status] || r.status} · {r.target_name || 'lead'}</div>;
+          })}
         </div>
       )}
     </div>

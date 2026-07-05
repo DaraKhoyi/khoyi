@@ -54,7 +54,11 @@ ${voiceBlock}`;
   const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   let plan: any = {};
   try { const m = raw.match(/\{[\s\S]*\}/); plan = JSON.parse(m ? m[0] : raw); } catch (_) { plan = { summary: "Could not generate a plan.", cadence: [] }; }
-  steps.push({ step: "plan", detail: "Drafted first touch + cadence" });
+  // Close the loop: every cadence ends with an explicit outcome decision (the watcher usually resolves this automatically first)
+  if (!Array.isArray(plan.cadence)) plan.cadence = [];
+  const lastDay = plan.cadence.reduce((m: number, st: any) => Math.max(m, Number(st.day_offset) || 0), 0);
+  plan.cadence.push({ day_offset: lastDay + 3, action: `Decide ${contact.name}'s outcome \u2014 replied? respond & move to pipeline \u00B7 converted? open a deal \u00B7 no response? enroll in long-term nurture`, channel: "decision", is_outcome: true });
+  steps.push({ step: "plan", detail: `Drafted first touch + ${plan.cadence.length}-step cadence ending in an outcome decision` });
   return { plan, steps };
 }
 
