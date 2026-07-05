@@ -562,7 +562,15 @@ serve(async (req) => {
     const perms = robot.permissions || {};
     const specs = buildToolSpecs().filter((s) => perms[s.perm] === true);
     specs.push({ perm: "knowledge_read", confirm: false, def: { name: "search_knowledge", description: "Search the user's own saved Knowledge base — their notes, documents, files, and links about their projects and know-how. Use this whenever they ask about their projects, properties, deals, clients, or anything they may have saved. Returns relevant passages with source titles.", input_schema: { type: "object", properties: { query: { type: "string", description: "what to look up" } }, required: ["query"] } } });
-    const tools = specs.map((s) => s.def);
+    // Dedupe tools by name — Anthropic rejects duplicate tool names with a hard 400.
+    // (search_knowledge is defined both under the knowledge_search perm and always-added below.)
+    const _seenToolNames = new Set();
+    const tools = specs.map((s) => s.def).filter((d) => {
+      if (!d || !d.name) return true;
+      if (_seenToolNames.has(d.name)) return false;
+      _seenToolNames.add(d.name);
+      return true;
+    });
     const confirmByName = {};
     specs.forEach((s) => { if (s.confirm) confirmByName[s.def.name] = true; });
 
