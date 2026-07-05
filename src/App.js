@@ -313,7 +313,7 @@ function RogLogo() {
         <span className="rog-realty">REALTY</span><span className="rog-one">ON<span ref={eRef}>E</span></span><span className="rog-group">GROUP</span>
         <span className="rog-adv" ref={advRef}>Advantage</span>
       </div>
-      <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></div>
+      <div className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /><span className="rog-pb" style={{ fontStyle: 'normal', marginLeft: '10px' }}>Ver. {BUILD_VERSION}</span></div>
     </>
   );
 }
