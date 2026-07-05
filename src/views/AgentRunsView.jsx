@@ -3,6 +3,8 @@ import { supabase } from '../dataService';
 import { Icon } from '../App';
 
 const DISC = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6', '?': 'var(--text-3)' };
+const PLAN_LABEL = { new_lead: 'New-lead plan', post_close: 'Post-close plan' };
+const TOUCH_LABEL = { new_lead: 'First touch', post_close: 'Thank-you' };
 function estDate(offset) { const d = new Date(Date.now() + (offset || 0) * 86400000); return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); }
 
 export default function AgentRunsView({ userId, setView }) {
@@ -31,6 +33,7 @@ export default function AgentRunsView({ userId, setView }) {
         const isFirst = (step.day_offset || 0) === 0;
         let notes = `[${step.channel || 'touch'}]`;
         if (isFirst && o.first_touch) notes += `\n\n${o.first_touch.subject ? 'Subject: ' + o.first_touch.subject + '\n\n' : ''}${o.first_touch.body || ''}`;
+        else if (step.body) notes += `\n\n${step.body}`;
         await supabase.from('tasks').insert({ user_id: userId, title: step.action || 'Follow up', due_date: estDate(step.day_offset), priority: 'medium', completed: false, list: 'inbox', contact_id: cid || null, source_url: 'cadence:' + run.id, notes });
       }
       await supabase.from('agent_runs').update({ status: 'approved', decided_at: new Date().toISOString() }).eq('id', run.id);
@@ -50,27 +53,29 @@ export default function AgentRunsView({ userId, setView }) {
       {runs && runs.length === 0 && (
         <div className="panel" style={{ marginTop: '14px' }}><div className="panel-body" style={{ textAlign: 'center', padding: '26px 16px' }}>
           <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-1)' }}>Nothing waiting on you. ✨</div>
-          <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '6px' }}>When a new lead comes in, your New-Lead agent will research them and prepare a first-contact plan here — ready for one tap.</div>
+          <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '6px' }}>When a new lead comes in or a deal closes, your agents will prepare a plan here — ready for one tap.</div>
         </div></div>
       )}
 
       {runs && runs.map(run => {
         const o = run.output || {};
         const ft = o.first_touch || {};
-        const disc = (o.disc_hint || {}).letter || '?';
+        const disc = (o.disc_hint || {}).letter;
+        const who = run.target_name || o.client_name || (run.agent === 'post_close' ? 'Recent client' : 'New lead');
         return (
           <div key={run.id} className="panel" style={{ marginTop: '12px' }}>
             <div className="panel-body">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.04em' }}>New-lead plan</span>
-                <span style={{ fontSize: '10px', color: '#fff', background: DISC[disc] || DISC['?'], borderRadius: '6px', padding: '1px 7px', fontWeight: 700 }}>DISC {disc}</span>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{PLAN_LABEL[run.agent] || 'Plan'}</span>
+                {disc && <span style={{ fontSize: '10px', color: '#fff', background: DISC[disc] || DISC['?'], borderRadius: '6px', padding: '1px 7px', fontWeight: 700 }}>DISC {disc}</span>}
+                {run.agent === 'post_close' && o.address && <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-hover)', borderRadius: '6px', padding: '1px 7px' }}>{o.address}</span>}
               </div>
-              <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-1)' }}>{run.target_name || 'New lead'}</div>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-1)' }}>{who}</div>
               {run.summary && <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '4px', lineHeight: 1.5 }}>{run.summary}</div>}
 
               {(ft.body) && (
                 <div style={{ marginTop: '10px', background: 'var(--bg-hover)', borderRadius: '10px', padding: '10px 12px' }}>
-                  <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>First touch · {ft.channel || 'message'}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>{TOUCH_LABEL[run.agent] || 'First touch'} · {ft.channel || 'message'}</div>
                   {ft.subject && <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-1)', marginBottom: '4px' }}>{ft.subject}</div>}
                   <div style={{ fontSize: '12.5px', color: 'var(--text-2)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{ft.body}</div>
                 </div>

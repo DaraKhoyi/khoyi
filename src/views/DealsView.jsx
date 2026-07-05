@@ -2,6 +2,18 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { useBackClose, ActivityTimeline, Icon, MileageView, RecruitingKpiTile, SingleContactPicker, confirmDialog, lbl, modal, money, stageMeta } from '../App';
 
+function PostCloseButton({ dealId }) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  async function run() {
+    setBusy(true);
+    try { await supabase.functions.invoke('orchestrate-post-close', { body: { deal_id: dealId } }); setDone(true); if (window.__notify) window.__notify('Post-close plan prepared \u2014 see "Prepared by AI"', 'success'); }
+    catch (_) { if (window.__notify) window.__notify('Could not prepare a plan right now', 'error'); }
+    setBusy(false);
+  }
+  return <button className="btn btn-ghost btn-sm" disabled={busy || done} onClick={run} style={{ marginBottom: '12px' }}>{busy ? 'Preparing plan\u2026' : done ? '\u2713 Plan prepared' : '\uD83E\uDD1D Prep post-close plan'}</button>;
+}
+
 function cleanDateInput(v) {
   if (!v) return '';
   const s = String(v).slice(0, 10);
@@ -523,6 +535,8 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
           <button onClick={onClose}
             style={{background:'none',border:'none',fontSize:'20px',color:'var(--text-3)',cursor:'pointer',padding:'0 4px'}}>×</button>
         </div>
+
+        {deal.status === 'closed' && <PostCloseButton dealId={deal.id} />}
 
         {/* Stage pill row */}
         <div style={{marginBottom:'14px'}}>
