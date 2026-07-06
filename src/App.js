@@ -64,6 +64,7 @@ const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
 const ChiefOfStaffView = lazyWithReload(() => import('./views/ChiefOfStaffView'));
 const AgentRunsView = lazyWithReload(() => import('./views/AgentRunsView'));
 const AgentActivityView = lazyWithReload(() => import('./views/AgentActivityView'));
+const GroupMessageView = lazyWithReload(() => import('./views/GroupMessageView'));
 const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m => ({ default: m.GrowthView })));
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
@@ -15281,6 +15282,7 @@ function AppMain() {
     { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
     { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
     { id: 'agent_activity', icon: '🛡️', label: 'Agent activity' },
+    { id: 'group_message', icon: '✨', label: 'Group message' },
     { id: 'numbers',     icon: '📊', label: 'My numbers' },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
@@ -15386,6 +15388,7 @@ function AppMain() {
       { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
       { label: 'Email review', view: 'email_review', icon: 'mail', ai: true },
       { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
+      { label: 'Group message', view: 'group_message', icon: 'message', ai: true },
       ...((isAdmin || isTeamLeader) ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
     ] },
     { label: 'Grow my pipeline', icon: 'target', children: [
@@ -15499,6 +15502,7 @@ function AppMain() {
               : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='agentruns'   ? <AgentRunsView userId={user.id} setView={setView}/>
               : view==='agent_activity' ? <AgentActivityView userId={user.id}/>
+              : view==='group_message' ? <GroupMessageView contacts={contacts} profiles={profiles} userId={user.id}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
