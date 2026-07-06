@@ -107,14 +107,23 @@ serve(async (req) => {
       try { access = await freshToken(admin, account); } catch { continue; }
 
       // ================= PASS A: discover new files =================
-      const q = `'${s.folder_id}' in parents and trashed = false and mimeType contains 'audio'`;
-      const params = new URLSearchParams({
-        q, fields: "files(id,name,createdTime,size,mimeType)", pageSize: "30",
-        orderBy: "createdTime desc", spaces: "drive", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
-      });
-      const lr = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: { Authorization: `Bearer ${access}` } });
-      if (lr.ok) {
-        const files = (await lr.json()).files || [];
+      // Cube ACR stores recordings in date-named SUBFOLDERS inside the chosen folder,
+      // so scan the folder itself PLUS its recent date subfolders (bounded to ~15 days
+      // so a first run doesn't backfill months of history in one shot).
+      const listAudio = async (folderId: string): Promise<any[]> => {
+        const p = new URLSearchParams({ q: `'${folderId}' in parents and trashed = false and mimeType contains 'audio'`, fields: "files(id,name,createdTime,size,mimeType)", pageSize: "50", orderBy: "createdTime desc", spaces: "drive", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+        const r = await fetch(`https://www.googleapis.com/drive/v3/files?${p}`, { headers: { Authorization: `Bearer ${access}` } });
+        return r.ok ? (((await r.json()).files) || []) : [];
+      };
+      const subP = new URLSearchParams({ q: `'${s.folder_id}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`, fields: "files(id,name,createdTime)", pageSize: "100", orderBy: "createdTime desc", spaces: "drive", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+      const subR = await fetch(`https://www.googleapis.com/drive/v3/files?${subP}`, { headers: { Authorization: `Bearer ${access}` } });
+      const subs: any[] = subR.ok ? (((await subR.json()).files) || []) : [];
+      const cutoff = Date.now() - 15 * 864e5;
+      const recentSubs = subs.filter((d: any) => { const t = Date.parse(d.name); return isNaN(t) ? true : t >= cutoff; }).slice(0, 10);
+      let files: any[] = [];
+      for (const fid of [s.folder_id, ...recentSubs.map((d: any) => d.id)]) { const got = await listAudio(fid); if (got.length) files = files.concat(got); if (files.length >= 80) break; }
+      files.sort((a: any, b: any) => String(b.createdTime || "").localeCompare(String(a.createdTime || "")));
+      {
         if (files.length) {
           const ids = files.map((f: any) => `cube:${f.id}`);
           const { data: existing } = await admin.from("quo_calls").select("op_id").eq("user_id", s.user_id).in("op_id", ids);
@@ -184,6 +193,8 @@ serve(async (req) => {
           // queued/processing -> leave for next run
         } catch { /* transient */ }
       }
+
+      try { await admin.from("cube_acr_settings").update({ last_checked_at: new Date().toISOString() }).eq("user_id", s.user_id); } catch (_) {}
     }
 
     return J({ submitted, ingested, failed });
