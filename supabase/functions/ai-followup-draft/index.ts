@@ -55,18 +55,21 @@ function buildIntel(profile: any): string {
 
 // Loads the calling agent's ACTIVE personal voice card (MyVoice). Returns null for
 // users without one, preserving default behavior.
-async function loadVoice(req: Request): Promise<{ body: string; name: string | null } | null> {
+async function loadVoice(req: Request): Promise<{ body: string | null; name: string | null; emailSig: string | null; textSig: string | null } | null> {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return null;
     const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) return null;
-    const { data: vc } = await supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1);
-    if (!vc || !vc[0] || !vc[0].body) return null;
-    let name: string | null = null;
-    try { const { data: ag } = await supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(); if (ag && ag.name) name = ag.name; } catch (_) {}
-    return { body: vc[0].body as string, name };
+    const [{ data: vc }, { data: ag }, { data: us }] = await Promise.all([
+      supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1),
+      supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(),
+      supabase.from("user_settings").select("display_name, email_signature, text_signature").eq("user_id", user.id).maybeSingle(),
+    ]);
+    const meta: any = (user as any).user_metadata || {};
+    const name = (ag && ag.name) || (us && (us as any).display_name) || meta.full_name || meta.display_name || (user.email ? String(user.email).split("@")[0] : null);
+    return { body: (vc && vc[0] && vc[0].body) || null, name, emailSig: (us && (us as any).email_signature) || null, textSig: (us && (us as any).text_signature) || null };
   } catch (_) { return null; }
 }
 
@@ -133,12 +136,12 @@ serve(async (req) => {
     const channel = b.channel === "text" ? "text" : "email";
     const isText = channel === "text";
     const who = b.contactName || "the contact";
-    const sender = b.senderName || "Dara";
-    const voice = await loadVoice(req);
-    const senderName = (voice && voice.name) || sender;
+    const info = await loadVoice(req);
+    const senderName = (b.senderName && String(b.senderName).trim()) || (info && info.name) || "there";
+    const voice = (info && info.body) ? { body: info.body, name: senderName } : null;
     const voiceIntro = voice
-      ? `You draft follow-up messages for ${senderName}, a real-estate agent. Write in ${senderName}'s own voice, captured here and authoritative on tone, phrasing, rhythm, word choice, and sign-off:\n"""${voice.body}"""\nThe brokerage house voice — warm, savvy, lead with the answer, plain language, no clichés, one concrete next step, never salesy or AI-sounding — is the floor; ${senderName}'s voice above rides on top and wins wherever they differ.`
-      : `You draft follow-up messages for ${senderName}, a Tampa Bay real-estate broker and investor. Voice: professional but warm, relationship-forward, concise, and confident — never stiff, never generic filler.`;
+      ? `You draft follow-up messages for ${senderName}, a real-estate agent. Write in ${senderName}'s own voice, captured here and authoritative on tone, phrasing, rhythm, and word choice:\n"""${voice.body}"""\nThe brokerage house voice — warm, savvy, lead with the answer, plain language, no clichés, one concrete next step, never salesy or AI-sounding — is the floor; ${senderName}'s voice above rides on top and wins wherever they differ.`
+      : `You draft follow-up messages for ${senderName}, a real-estate agent. Voice: professional but warm, relationship-forward, concise, and confident — never stiff, never generic filler.`;
     const recent: string[] = Array.isArray(b.recentNotes) ? b.recentNotes.filter(Boolean).slice(0, 6) : [];
     const ctx = recent.length ? `\n\nRecent history with this person (most recent first):\n${recent.map((n) => `- ${n}`).join("\n")}` : "";
 
@@ -162,8 +165,9 @@ serve(async (req) => {
 
     const system = `${voiceIntro}
 Write a ${isText
-      ? "short SMS text message: 1-3 sentences, casual but professional, no subject line, no formal signature block."
-      : `follow-up email: include a clear subject line, keep the body tight (2-4 short paragraphs), and sign off simply as "${senderName}".`}
+      ? "short SMS text message: 1-3 sentences, casual but professional, no subject line."
+      : "follow-up email: include a clear subject line, keep the body tight (2-4 short paragraphs)."}
+Do NOT add a name, sign-off, or signature block at the end — the sender's signature is appended automatically. End with a brief natural closing line at most, but never a name.
 ${intel ? "Adapt the tone and pick your angle using the recipient knowledge provided in the user message. The goal is a message that feels personally written for THIS person — mirror how they communicate, and lean on something they genuinely care about when it fits naturally. Subtlety wins; do not stuff in facts about them." : ""}
 Ground the message in the activity being followed up. Do NOT invent facts, figures, dollar amounts, commitments, or dates that aren't supported by the provided details. If a next step was implied, reinforce it concretely.
 Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "<subject, or empty string for a text>", "body": "<the message>"}`;
@@ -209,6 +213,10 @@ Respond with ONLY a JSON object (no markdown fences, no preamble): {"subject": "
     } catch (_) {
       // Model didn't return clean JSON — treat whole output as the body.
     }
+    // Sign with the sender's chosen signature — never a hardcoded name.
+    const __sig = ((isText ? (info && info.textSig) : (info && info.emailSig)) || "").trim();
+    const __finalSig = __sig || (isText ? ("– " + String(senderName).split(/\s+/)[0]) : String(senderName));
+    if (body && __finalSig) body = body.replace(/\s+$/, "") + "\n\n" + __finalSig;
     return new Response(JSON.stringify({ subject, body, intel_used: !!intel }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

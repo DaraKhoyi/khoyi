@@ -10867,6 +10867,19 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   const [savingAbout, setSavingAbout] = useState(false);
   const [aboutMsg, setAboutMsg] = useState('');
 
+  // Email/text signatures — how PrismOS signs the messages it drafts for THIS user.
+  const [emailSig, setEmailSig] = useState(userSettings?.email_signature ?? '');
+  const [textSig, setTextSig] = useState(userSettings?.text_signature ?? '');
+  const [savingSig, setSavingSig] = useState(false);
+  const [sigMsg, setSigMsg] = useState('');
+  const sigNameDefault = displayName || user?.user_metadata?.full_name || (user?.email ? user.email.split('@')[0] : 'your name');
+  async function saveSignatures() {
+    if (savingSig) return; setSavingSig(true); setSigMsg('');
+    const { data, error } = await supabase.from('user_settings').upsert({ user_id: userId, email_signature: emailSig.trim() || null, text_signature: textSig.trim() || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().maybeSingle();
+    if (error) setSigMsg('Error: ' + error.message); else { if (data) setUserSettings?.(data); setSigMsg('Saved — new drafts will use this.'); }
+    setSavingSig(false);
+  }
+
   // Module visibility — both default visible if missing
   const mv = userSettings?.module_visibility || {};
   const propsVisible = mv.properties !== false;
@@ -11085,6 +11098,26 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               </div>
             )}
             {aiKeyMsg && <div style={{marginTop:'10px', fontSize:'12px', color: /error|reject|failed|doesn|Anthropic rejected/i.test(aiKeyMsg)?'var(--red)':'var(--text-2)'}}>{aiKeyMsg}</div>}
+          </div>
+        </div>
+        <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
+          <div className="panel-header"><h3>Email &amp; text signatures</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>How PrismOS signs the emails and texts it drafts <b>for you</b>. Every draft is signed with <i>your</i> signature — never anyone else's.</p>
+            <div className="form-group" style={{marginBottom:'14px'}}>
+              <label className="form-label">Email signature</label>
+              <textarea className="form-input" rows={4} value={emailSig} onChange={e=>setEmailSig(e.target.value)} placeholder={`${sigNameDefault}\nRealty ONE Group Advantage\n(813) 555-0123`} style={{resize:'vertical', fontFamily:'inherit'}} />
+              <div style={{fontSize:'11px', color:'var(--text-3)', marginTop:'4px'}}>Appears at the end of drafted emails. Leave blank to sign with just your name (<b>{sigNameDefault}</b>).</div>
+            </div>
+            <div className="form-group" style={{marginBottom:'12px'}}>
+              <label className="form-label">Text signature</label>
+              <input className="form-input" value={textSig} onChange={e=>setTextSig(e.target.value)} placeholder={`\u2013 ${(sigNameDefault||'').split(/\s+/)[0]}`} />
+              <div style={{fontSize:'11px', color:'var(--text-3)', marginTop:'4px'}}>Short sign-off for texts. Leave blank to sign with just your first name.</div>
+            </div>
+            <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+              <button className="btn btn-primary btn-sm" disabled={savingSig} onClick={saveSignatures}>{savingSig ? 'Saving\u2026' : 'Save signatures'}</button>
+              {sigMsg && <span style={{fontSize:'12px', color: /error/i.test(sigMsg)?'var(--red)':'var(--green)'}}>{sigMsg}</span>}
+            </div>
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>

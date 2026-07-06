@@ -46,11 +46,14 @@ async function loadVoice(req: Request): Promise<{ body: string; name: string | n
     if (!token) return null;
     const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) return null;
-    const { data: vc } = await supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1);
-    if (!vc || !vc[0] || !vc[0].body) return null;
-    let name: string | null = null;
-    try { const { data: ag } = await supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(); if (ag && ag.name) name = ag.name; } catch (_) {}
-    return { body: vc[0].body as string, name };
+    const [{ data: vc }, { data: ag }, { data: us }] = await Promise.all([
+      supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1),
+      supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(),
+      supabase.from("user_settings").select("display_name, email_signature, text_signature").eq("user_id", user.id).maybeSingle(),
+    ]);
+    const meta: any = (user as any).user_metadata || {};
+    const name = (ag && ag.name) || (us && (us as any).display_name) || meta.full_name || meta.display_name || (user.email ? String(user.email).split("@")[0] : null);
+    return { body: (vc && vc[0] && vc[0].body) || null, name, emailSig: (us && (us as any).email_signature) || null, textSig: (us && (us as any).text_signature) || null };
   } catch (_) { return null; }
 }
 
@@ -66,11 +69,12 @@ serve(async (req) => {
     const includeNeutral = !!b.include_neutral;
     const baseSubject = (b.base_subject || "").toString().trim();
 
-    const voice = await loadVoice(req);
-    const senderName = (voice && voice.name) || "Dara";
+    const info = await loadVoice(req);
+    const senderName = (info && info.name) || "there";
+    const voice = (info && info.body) ? { body: info.body, name: senderName } : null;
     const personaIntro = voice
       ? `You are Ari, preparing a message that ${senderName} — a real-estate agent — is about to send. Write in ${senderName}'s own voice, captured here and authoritative on tone, phrasing, rhythm, and word choice:\n"""${voice.body}"""\nThe brokerage house voice — warm, savvy, lead with the answer, plain language, no clichés, one concrete next step, never salesy or AI-sounding — is the floor; ${senderName}'s voice rides on top and wins where they differ.`
-      : `You are Ari, preparing a message that Dara — a Tampa Bay real-estate broker — is about to send. Write in Dara's voice: professional but warm, relationship-forward, concise, confident; never stiff, generic, or salesy.`;
+      : `You are Ari, preparing a message that ${senderName} — a real-estate agent — is about to send. Write in ${senderName}'s voice: professional but warm, relationship-forward, concise, confident; never stiff, generic, or salesy.`;
 
     const wanted: string[] = [...styles];
     const styleSpec = wanted.map((s) => `"${s}" — ${DISC_STYLE[s]}`).join("\n");
@@ -120,11 +124,13 @@ ${shape}`;
     let parsed: any;
     try { parsed = JSON.parse(raw); } catch (_) { return J({ error: "Could not parse drafts. Try again." }, 502); }
 
+    const __sig = ((isText ? (info && info.textSig) : (info && info.emailSig)) || "").trim() || (isText ? ("– " + String(senderName).split(/\s+/)[0]) : String(senderName));
     const drafts: Record<string, { subject: string; body: string }> = {};
     for (const k of keys) {
       const v = parsed[k] || {};
-      const body = (v.body || "").toString().trim();
+      let body = (v.body || "").toString().trim();
       if (!body) continue;
+      if (__sig) body = body.replace(/\s+$/, "") + "\n\n" + __sig;
       drafts[k] = { subject: (v.subject || "").toString().trim(), body };
     }
     if (!Object.keys(drafts).length) return J({ error: "No drafts produced. Try again." }, 502);

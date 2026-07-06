@@ -26,18 +26,21 @@ const DISC_GUIDE: Record<string, string> = {
 
 // Loads the calling agent's ACTIVE personal voice card (MyVoice). Returns null for
 // users without one, preserving default behavior.
-async function loadVoice(req: Request): Promise<{ body: string; name: string | null } | null> {
+async function loadVoice(req: Request): Promise<{ body: string | null; name: string | null; emailSig: string | null } | null> {
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return null;
     const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) return null;
-    const { data: vc } = await supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1);
-    if (!vc || !vc[0] || !vc[0].body) return null;
-    let name: string | null = null;
-    try { const { data: ag } = await supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(); if (ag && ag.name) name = ag.name; } catch (_) {}
-    return { body: vc[0].body as string, name };
+    const [{ data: vc }, { data: ag }, { data: us }] = await Promise.all([
+      supabase.from("voice_cards").select("body").eq("user_id", user.id).eq("kind", "agent").eq("is_active", true).order("updated_at", { ascending: false }).limit(1),
+      supabase.from("agents").select("name").eq("auth_user_id", user.id).maybeSingle(),
+      supabase.from("user_settings").select("display_name, email_signature").eq("user_id", user.id).maybeSingle(),
+    ]);
+    const meta: any = (user as any).user_metadata || {};
+    const name = (ag && ag.name) || (us && (us as any).display_name) || meta.full_name || meta.display_name || (user.email ? String(user.email).split("@")[0] : null);
+    return { body: (vc && vc[0] && vc[0].body) || null, name, emailSig: (us && (us as any).email_signature) || null };
   } catch (_) { return null; }
 }
 
@@ -101,7 +104,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const b = await req.json().catch(() => ({}));
-    const sender = (b.sender_name || "Dara").toString();
+    const sender = (b.sender_name || "").toString().trim();
     const recipient = (b.recipient_name || b.from_name || "there").toString();
     const subject = (b.original_subject || "").toString().slice(0, 300);
     const body = (b.original_body || "").toString().slice(0, 6000);
@@ -116,11 +119,13 @@ serve(async (req) => {
       if (rationale) discLine += ` Context on them: ${rationale}`;
     }
 
-    const voice = await loadVoice(req);
-    const senderName = (voice && voice.name) || sender;
+    const info = await loadVoice(req);
+    const senderName = sender || (info && info.name) || "there";
+    const voice = (info && info.body) ? { body: info.body, name: senderName } : null;
+    const noSig = `Do NOT add a name, sign-off, or signature at the end — the sender's signature is appended automatically. Write ONLY the reply body as plain text, ready to send: no subject line, no "Re:", no quoted original, no email headers. Keep it appropriately brief and genuinely responsive to what the email actually asks. Adapt to the recipient's DISC communication style. Output ONLY the reply text.`;
     const system = voice
-      ? `You draft an email reply on behalf of ${senderName}, a real-estate agent, in their OWN voice — captured here and authoritative on tone, phrasing, rhythm, word choice, and sign-off:\n"""${voice.body}"""\nThe brokerage house voice (warm, clear, professional, concise, human, no clichés) is the floor; ${senderName}'s voice above rides on top and wins wherever they differ. Write ONLY the reply body as plain text, ready to send: no subject line, no "Re:", no quoted original, no email headers. Keep it appropriately brief and genuinely responsive to what the email actually asks. Adapt to the recipient's DISC communication style. Output ONLY the reply text.`
-      : `You draft an email reply on behalf of ${senderName}, a Tampa Bay real-estate broker, in their voice: warm, clear, professional, concise, and human — no corporate fluff, no clichés. Write ONLY the reply body as plain text, ready to send: no subject line, no "Re:", no quoted original, no email headers. A short natural sign-off like "Best,\n${senderName}" is fine. Keep it appropriately brief and genuinely responsive to what the email actually asks. Adapt the tone to the recipient's DISC communication style. Output ONLY the reply text.`;
+      ? `You draft an email reply on behalf of ${senderName}, a real-estate agent, in their OWN voice — captured here and authoritative on tone, phrasing, rhythm, and word choice:\n"""${voice.body}"""\nThe brokerage house voice (warm, clear, professional, concise, human, no clichés) is the floor; ${senderName}'s voice above rides on top and wins wherever they differ. ${noSig}`
+      : `You draft an email reply on behalf of ${senderName}, a real-estate agent, in their voice: warm, clear, professional, concise, and human — no corporate fluff, no clichés. ${noSig}`;
 
     const userMsg = `Recipient: ${recipient}\n${discLine}\n\nThe email ${senderName} received (from ${b.from_name || recipient}), subject "${subject}":\n---\n${body || "(no body)"}\n---\n\nWrite ${senderName}'s reply now.`;
 
@@ -136,7 +141,9 @@ serve(async (req) => {
     });
     const data = await r.json();
     logUsage(__sb, { userId: __uid, fn: "email-reply-draft", model: MODEL, usage: data.usage, usedOwn: __own });
-    const draft = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
+    let draft = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
+    const __sig = ((info && info.emailSig) || "").trim() || String(senderName);
+    if (draft && __sig) draft = draft.replace(/\s+$/, "") + "\n\n" + __sig;
     return new Response(JSON.stringify({ draft, disc: dp || null }), { headers: { ...cors, "content-type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ error: String((e as any)?.message || e) }), { status: 200, headers: { ...cors, "content-type": "application/json" } });
