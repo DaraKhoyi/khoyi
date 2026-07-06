@@ -1390,7 +1390,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
                             <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}}>
                               {c.phone && <a href={`tel:${tel}`} onClick={e=>e.stopPropagation()} title="Call" style={chip}><Icon name="quo" size={12} style={{color:'var(--accent)'}} />&nbsp;{c.phone}</a>}
                               {c.phone && <button onClick={e=>{e.stopPropagation(); setTextTo({ contact: c, phone: c.phone });}} title="Text via Quo" style={{...iconBtn, cursor:'pointer'}}><Icon name="message" size={13} /></button>}
-                              {c.email && <a href={`mailto:${c.email}`} onClick={e=>e.stopPropagation()} title="Email" style={{...chip, maxWidth:'100%', overflow:'hidden'}}><Icon name="mail" size={12} style={{color:'var(--accent)'}} />&nbsp;<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email}</span></a>}
+                              {c.email && <a href="#" onClick={e=>{e.stopPropagation(); e.preventDefault(); if(window.__composeEmail) window.__composeEmail(c.email);}} title="Email" style={{...chip, maxWidth:'100%', overflow:'hidden', cursor:'pointer'}}><Icon name="mail" size={12} style={{color:'var(--accent)'}} />&nbsp;<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email}</span></a>}
                             </div>
                           );
                         })()}

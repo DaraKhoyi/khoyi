@@ -7474,7 +7474,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 {contact.emails.filter(e => e?.value).map((e, idx) => (
                   <div key={idx} style={{display:'flex',alignItems:'center',gap:'8px',padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
                     <span style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,minWidth:'52px'}}>{e.label || 'Email'}</span>
-                    <a href={`mailto:${e.value}`} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    <a href="#" onClick={(ev)=>{ev.preventDefault(); if(window.__composeEmail) window.__composeEmail(e.value);}} style={{color:'var(--text-2)',textDecoration:'none',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer'}}>
                       <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> {e.value}</span>
                     </a>
                     {e.is_default && <span title="Default" style={{color:'var(--accent)',fontSize:'12px'}}>★</span>}
@@ -7498,7 +7498,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             )}
             {(!Array.isArray(contact.emails) || contact.emails.length === 0) && contact.email && (
               <div style={{padding:'4px 0',fontSize:'12.5px',color:'var(--text-2)'}}>
-                <a href={`mailto:${contact.email}`} style={{color:'var(--text-2)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={12} /> {contact.email}</a>
+                <a href="#" onClick={(ev)=>{ev.preventDefault(); if(window.__composeEmail) window.__composeEmail(contact.email);}} style={{color:'var(--text-2)',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:'5px',cursor:'pointer'}}><Icon name="mail" size={12} /> {contact.email}</a>
               </div>
             )}
             {(!Array.isArray(contact.phones) || contact.phones.length === 0) && contact.phone && (
@@ -9443,7 +9443,7 @@ function MultiValueField({ values, onChange, kind, addLabel }) {
               {(v.value || '').trim() && (() => {
                 const actBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0, width:'38px', height:'34px', cursor:'pointer', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', borderRadius:'6px', color:'var(--accent)', fontSize:'14px', lineHeight:1, textDecoration:'none' };
                 if (kind === 'email') {
-                  return <a href={`mailto:${v.value.trim()}`} title="Send email" style={actBtn}><Icon name="mail" size={14} /></a>;
+                  return <a href="#" onClick={(ev)=>{ev.preventDefault(); if(window.__composeEmail) window.__composeEmail(v.value.trim());}} title="Send email" style={actBtn}><Icon name="mail" size={14} /></a>;
                 }
                 const tel = (v.value || '').replace(/[^\d+]/g, '');
                 return (
@@ -15266,6 +15266,11 @@ function AppMain() {
   }
 
   const navigate = (id, sub = null) => { setView(id); if (sub) setDeepLink(d => ({ view: id, sub, n: d.n + 1 })); setSidebarOpen(false); };
+  // Global "compose an email in-app" helper: any Email affordance can call
+  // window.__composeEmail(address) to open the PrismOS composer instead of the OS/Gmail app.
+  useEffect(() => {
+    window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
+  }); // eslint-disable-line
 
   if (loading) return <div className="loading-screen"><div className="spinner"/><p>Loading…</p></div>;
   if (!session) return <AuthScreen />;

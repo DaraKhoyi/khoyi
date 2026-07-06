@@ -712,6 +712,20 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
     return () => { alive = false; };
   }, []); // eslint-disable-line
 
+  // Open a fresh compose pre-addressed to a contact. Used by every "Email"
+  // affordance across the app (contact cards, detail, Ari) so they open the
+  // in-app composer instead of handing off to the OS / Gmail app.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.__inboxComposeTo || !account) return;
+    const to = String(window.__inboxComposeTo).trim();
+    window.__inboxComposeTo = null;
+    setComposeTo(to); setComposeSubject(''); setComposeBody('');
+    setComposeCc(''); setComposeBcc(''); setShowCcBcc(false);
+    setComposeFrom(defaultAlias?.email_address || account.email_address || '');
+    setComposeReplyMeta(null); setSendMsg('');
+    setShowCompose(true);
+  }, [account, defaultAlias]); // eslint-disable-line
+
   // Open a specific conversation by internal thread id (used by the Email Review "Open" button)
   useEffect(() => {
     if (typeof window === 'undefined' || !window.__inboxOpenThreadId) return;
