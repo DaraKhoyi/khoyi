@@ -9981,7 +9981,8 @@ function useDictation(onFinal) {
 }
 
 // Textarea that grows with its content (no inner scroll until maxHeight).
-function QuickLog({ userId, onNavigate }) {
+function QuickLog({ userId, onNavigate, onUploadRecording }) {
+  const recRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
   const [text, setText] = useState('');
@@ -10011,10 +10012,13 @@ function QuickLog({ userId, onNavigate }) {
     { key: 'text',    label: 'Text',           icon: 'message',   run: () => goQuo('messages') },
     { key: 'email',   label: 'Email',          icon: 'mail',      run: () => go('inbox') },
     { key: 'call',    label: 'Call · Quo',     icon: 'quo',       run: () => goQuo('calls') },
+    { key: 'recording', label: 'Recording',    icon: 'mic',       run: () => { setMenuOpen(false); if (recRef.current) recRef.current.click(); } },
   ];
 
   return (
     <>
+      <input ref={recRef} type="file" accept="audio/*,.amr,.m4a,.mp3,.wav,.aac,.ogg,.opus,.webm,.3gp" style={{ display: 'none' }}
+        onChange={(e) => { const file = e.target.files && e.target.files[0]; e.target.value = ''; if (file && onUploadRecording) onUploadRecording(file); }} />
       {/* Floating quick-create menu */}
       {menuOpen && (
         <>
@@ -15438,7 +15442,7 @@ function AppMain() {
       <InstallPwaPrompt />
       <UpdateBanner />
       <ImpersonationBanner />
-      <QuickLog userId={user.id} onNavigate={navigate} />
+      <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />
       {/* Mobile header */}
       <div className="mobile-header">
         <div className="mobile-header-logo"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div>
