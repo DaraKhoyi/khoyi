@@ -65,6 +65,7 @@ const ChiefOfStaffView = lazyWithReload(() => import('./views/ChiefOfStaffView')
 const AgentRunsView = lazyWithReload(() => import('./views/AgentRunsView'));
 const AgentActivityView = lazyWithReload(() => import('./views/AgentActivityView'));
 const GroupMessageView = lazyWithReload(() => import('./views/GroupMessageView'));
+const AppHealthView = lazyWithReload(() => import('./views/AppHealthView'));
 const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m => ({ default: m.GrowthView })));
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
@@ -2784,6 +2785,55 @@ function ToastHost() {
   );
 }
 
+// ── Client error monitoring ───────────────────────────────────────────────
+// Captures crashes (error boundaries) and uncaught errors/rejections into
+// public.client_errors so we SEE failures the moment a user hits one — with
+// user, view, app version and stack — instead of chasing screenshots.
+const __errThrottle = new Map();
+function __shouldLogErr(key) {
+  const now = Date.now();
+  if (now - (__errThrottle.get(key) || 0) < 30000) return false;
+  __errThrottle.set(key, now);
+  if (__errThrottle.size > 80) { for (const [k, t] of __errThrottle) if (now - t > 120000) __errThrottle.delete(k); }
+  return true;
+}
+function __isNoise(msg) {
+  const m = String(msg || '');
+  return !m || /ResizeObserver loop|^Script error\.?$|Load failed|NetworkError|Failed to fetch|AbortError|The operation was aborted/i.test(m);
+}
+async function logClientError(payload) {
+  try {
+    const message = String((payload && payload.message) || '').slice(0, 2000);
+    if (__isNoise(message)) return;
+    const key = `${payload.kind || 'boundary'}|${payload.view || ''}|${message}`;
+    if (!__shouldLogErr(key)) return;
+    let user_id = null, email = null;
+    try { const { data } = await supabase.auth.getUser(); if (data && data.user) { user_id = data.user.id; email = data.user.email || null; } } catch (_) {}
+    await supabase.from('client_errors').insert({
+      user_id, email,
+      view: payload.view || (typeof window !== 'undefined' ? window.__currentView : null) || null,
+      message,
+      stack: payload.stack ? String(payload.stack).slice(0, 6000) : null,
+      component_stack: payload.componentStack ? String(payload.componentStack).slice(0, 6000) : null,
+      app_version: BUILD_VERSION,
+      user_agent: (typeof navigator !== 'undefined' ? navigator.userAgent : '').slice(0, 500),
+      url: (typeof location !== 'undefined' ? location.href : '').slice(0, 500),
+      kind: payload.kind || 'boundary',
+    });
+  } catch (_) { /* logging must never throw */ }
+}
+if (typeof window !== 'undefined' && !window.__prismErrHooked) {
+  window.__prismErrHooked = true;
+  window.addEventListener('error', (e) => {
+    if (!e || !e.error) return; // skip resource-load noise (no Error object)
+    logClientError({ message: (e.error && e.error.message) || e.message, stack: e.error && e.error.stack, kind: 'window' });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason;
+    logClientError({ message: (r && r.message) || (typeof r === 'string' ? r : 'Unhandled promise rejection'), stack: r && r.stack, kind: 'promise' });
+  });
+}
+
 // Pass 5 Batch A: ViewErrorBoundary.
 // Wraps the view router only — sidebar stays outside so the user can always
 // navigate away from a crashed view (per Q2=C). Reset by keying on the view
@@ -2797,11 +2847,18 @@ class ViewErrorBoundary extends React.Component {
     return { error };
   }
   componentDidCatch(error, info) {
-    // Surface to the console for debugging. We deliberately don't ship to a
-    // third-party crash service yet.
     // eslint-disable-next-line no-console
     console.error('View crashed:', error, info);
     this.setState({ info });
+    try {
+      logClientError({
+        view: this.props.viewName,
+        message: (error && error.message) || String(error),
+        stack: error && error.stack,
+        componentStack: info && info.componentStack,
+        kind: 'boundary',
+      });
+    } catch (_) {}
   }
   copyDetails = () => {
     const { error, info } = this.state;
@@ -15344,6 +15401,8 @@ function AppMain() {
   useEffect(() => {
     window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
   }); // eslint-disable-line
+  // Stamp the active view so uncaught errors/rejections are attributed correctly.
+  useEffect(() => { if (typeof window !== 'undefined') window.__currentView = view; }, [view]);
 
   if (loading) return <div className="loading-screen"><div className="spinner"/><p>Loading…</p></div>;
   if (!session) return <AuthScreen />;
@@ -15361,6 +15420,7 @@ function AppMain() {
     { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
     { id: 'agent_activity', icon: '🛡️', label: 'Agent activity' },
     { id: 'group_message', icon: '✨', label: 'Group message' },
+    { id: 'app_health', icon: '🩺', label: 'App health' },
     { id: 'numbers',     icon: '📊', label: 'My numbers' },
     { id: 'growth',      icon: '📈', label: 'Growth',      badge: null },
     { id: 'prospecting', icon: '🎯', label: 'Prospecting', badge: null },
@@ -15453,6 +15513,7 @@ function AppMain() {
       { label: 'Chief of Staff', view: 'chief', icon: 'briefing' },
       { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
       { label: 'Agent activity', view: 'agent_activity', icon: 'brain' },
+      ...(isAdmin ? [{ label: 'App health', view: 'app_health', icon: 'brain' }] : []),
     ] },
     // Today
     { label: 'My day', icon: 'clock', children: [
@@ -15581,6 +15642,7 @@ function AppMain() {
               : view==='agentruns'   ? <AgentRunsView userId={user.id} setView={setView}/>
               : view==='agent_activity' ? <AgentActivityView userId={user.id}/>
               : view==='group_message' ? <GroupMessageView contacts={contacts} profiles={profiles} userId={user.id}/>
+              : view==='app_health' ? <AppHealthView/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
