@@ -1,0 +1,102 @@
+// recording-process — gives Cube ACR recordings the same treatment Quo calls get:
+// reads transcribed recordings, generates a call summary + action items (Claude),
+// writes a contact timeline entry (contact_interactions, channel 'call'), and stores
+// proposed_tasks (review_status='pending') for the user to approve. Idempotent via processed_at.
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-token", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const MODELS = ["claude-sonnet-4-6", "claude-3-5-sonnet-20241022"];
+function estToday(){ return new Date(Date.now()-4*3600e3).toISOString().slice(0,10); }
+function toText(v: any): string { if (!v) return ""; if (typeof v === "string") return v; if (Array.isArray(v)) return v.join("\n"); if (typeof v === "object") return JSON.stringify(v); return String(v); }
+
+const SYSTEM = `You extract concrete follow-up commitments from a phone call transcript for a real estate broker named Dara ("me"). Output STRICT JSON only — no prose, no markdown.
+Shape:
+{ "call_summary": "one or two sentence summary of what the call was about and where it landed",
+  "action_items": [ { "owner": "me" | "them", "title": "short imperative task", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
+Rules:
+- Only include real commitments or clearly-implied next steps. If nothing was committed, return "action_items": [].
+- "owner":"me" = something Dara agreed to do. "owner":"them" = the other person's commitment (Dara should track/expect it).
+- Resolve relative dates to an absolute YYYY-MM-DD using the provided current date; else null.
+- Keep titles short and actionable. Do not invent commitments that were not discussed.`;
+
+async function callClaude(transcript: string): Promise<any> {
+  const key = Deno.env.get("ANTHROPIC_API_KEY");
+  let lastErr = "";
+  for (const model of MODELS) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 1200, system: SYSTEM, messages: [{ role: "user", content: `Current date: ${estToday()}.\n\nTranscript:\n${transcript.slice(0, 14000)}` }] }) });
+      if (!r.ok) { lastErr = `${model}: ${r.status}`; continue; }
+      const data = await r.json();
+      const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
+      if (txt) { const m = txt.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : txt); }
+    } catch (e) { lastErr = `${model}: ${e}`; }
+  }
+  throw new Error(lastErr || "Claude failed");
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const J = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
+  try {
+    const admin = createClient(SUPABASE_URL, SERVICE);
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    const internalTok = req.headers.get("x-internal-token") || "";
+    const INTERNAL = Deno.env.get("QCP_TOKEN") || "";
+    let scopedUser: string | null = null;
+    if (!(INTERNAL && internalTok === INTERNAL)) {
+      if (!token) return J({ error: "Not authenticated" }, 401);
+      const { data: { user } } = await admin.auth.getUser(token);
+      if (!user) return J({ error: "Not authenticated" }, 401);
+      scopedUser = user.id;
+    }
+    const body = await req.json().catch(() => ({}));
+    const limit = Math.min(Number(body.limit) || 20, 40);
+
+    let q = admin.from("recordings").select("*").is("processed_at", null).not("transcript_text", "is", null).in("transcription_status", ["ready", "done", "completed"]).order("recorded_at", { ascending: false, nullsFirst: false }).limit(limit);
+    if (body.recording_id) q = admin.from("recordings").select("*").eq("id", body.recording_id).limit(1);
+    if (scopedUser) q = q.eq("user_id", scopedUser);
+    else if (body.user_id) q = q.eq("user_id", body.user_id);
+    const { data: recs, error: recErr } = await q;
+    if (recErr) throw recErr;
+
+    let processed = 0, timelined = 0, actions = 0;
+    for (const rec of (recs || [])) {
+      const transcript = toText(rec.transcript_text);
+      if (!transcript.trim()) { await admin.from("recordings").update({ processed_at: new Date().toISOString() }).eq("id", rec.id); continue; }
+
+      let plan: any = { call_summary: "", action_items: [] };
+      try { plan = await callClaude(transcript); } catch (_) { continue; } // leave unprocessed to retry next run
+      const summary = String(plan.call_summary || "").trim();
+      const items = Array.isArray(plan.action_items) ? plan.action_items : [];
+
+      const occurredAt = rec.recorded_at || rec.created_at || new Date().toISOString();
+      const durMin = rec.duration_seconds ? Math.max(1, Math.round(rec.duration_seconds / 60)) : null;
+
+      // timeline entry (only if linked to a contact + not already created)
+      let interactionId = rec.interaction_id || null;
+      if (rec.contact_id && !interactionId) {
+        const briefLine = (summary || transcript).split("\n").map((s) => s.trim()).filter(Boolean)[0]?.slice(0, 180) || "Recorded call";
+        const bodyText = [summary ? `Summary:\n${summary}` : "", `Transcript:\n${transcript}`].filter(Boolean).join("\n\n");
+        const { data: ins } = await admin.from("contact_interactions").insert({
+          user_id: rec.user_id, contact_id: rec.contact_id, channel: "call", direction: "inbound",
+          kind: "call", occurred_at: occurredAt, duration_minutes: durMin,
+          brief: `Call (${durMin ? durMin + "m" : "recorded"}) — ${briefLine}`, body: bodyText,
+          entity_type: "recording", entity_id: rec.id,
+        }).select("id").single();
+        interactionId = ins?.id || null;
+        if (interactionId) timelined++;
+      }
+
+      const proposed = items.map((a: any) => ({ title: String(a.title || "").slice(0, 200), owner: a.owner === "them" ? "them" : "me", due_date: a.due_date || null, priority: ["high", "medium", "low"].includes(a.priority) ? a.priority : "medium", note: String(a.note || "").slice(0, 300), status: "pending" }));
+      actions += proposed.length;
+      await admin.from("recordings").update({
+        summary: summary ? [summary] : null, proposed_tasks: proposed,
+        review_status: proposed.length ? "pending" : "done", interaction_id: interactionId, processed_at: new Date().toISOString(),
+      }).eq("id", rec.id);
+      processed++;
+    }
+    return J({ ok: true, processed, timelined, actions });
+  } catch (e) { return J({ error: String(e) }, 500); }
+});
