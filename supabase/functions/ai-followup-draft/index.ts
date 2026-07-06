@@ -137,7 +137,7 @@ serve(async (req) => {
     const isText = channel === "text";
     const who = b.contactName || "the contact";
     const info = await loadVoice(req);
-    const senderName = (b.senderName && String(b.senderName).trim()) || (info && info.name) || "there";
+    const senderName = (info && info.name) || "there"; // identity comes from the signed-in user, never the client
     const voice = (info && info.body) ? { body: info.body, name: senderName } : null;
     const voiceIntro = voice
       ? `You draft follow-up messages for ${senderName}, a real-estate agent. Write in ${senderName}'s own voice, captured here and authoritative on tone, phrasing, rhythm, and word choice:\n"""${voice.body}"""\nThe brokerage house voice — warm, savvy, lead with the answer, plain language, no clichés, one concrete next step, never salesy or AI-sounding — is the floor; ${senderName}'s voice above rides on top and wins wherever they differ.`

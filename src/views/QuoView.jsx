@@ -264,7 +264,6 @@ function QuoView({ contacts = [], userId }) {
           kind: 'text conversation',
           entryBody: lastIn?.body || recent[0] || '',
           recentNotes: recent,
-          senderName: 'Dara',
         },
       });
       if (error) throw error;

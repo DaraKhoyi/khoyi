@@ -120,7 +120,7 @@ serve(async (req) => {
     }
 
     const info = await loadVoice(req);
-    const senderName = sender || (info && info.name) || "there";
+    const senderName = (info && info.name) || "there"; // identity from signed-in user only
     const voice = (info && info.body) ? { body: info.body, name: senderName } : null;
     const noSig = `Do NOT add a name, sign-off, or signature at the end — the sender's signature is appended automatically. Write ONLY the reply body as plain text, ready to send: no subject line, no "Re:", no quoted original, no email headers. Keep it appropriately brief and genuinely responsive to what the email actually asks. Adapt to the recipient's DISC communication style. Output ONLY the reply text.`;
     const system = voice

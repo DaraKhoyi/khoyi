@@ -2135,7 +2135,6 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           disc_primary: prof?.primary_letter || null,
           disc_secondary: prof?.secondary_letter || null,
           disc_rationale: prof?.rationale || prof?.research_summary || '',
-          sender_name: 'Dara',
         },
       });
       if (error) throw error;

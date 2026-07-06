@@ -5669,7 +5669,6 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
           occurredAt: entry.occurred_at ? new Date(entry.occurred_at).toLocaleString() : null,
           instruction: instruction || null,
           recentNotes: (recentNotes || []).slice(0, 6),
-          senderName: 'Dara',
         },
       });
       if (error) throw error;
@@ -5680,8 +5679,8 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
       notify("Couldn't draft follow-up: " + (e.message || e), 'error');
     } finally { setDrafting(false); }
   }
-  // Auto-draft on open and whenever channel changes
-  useEffect(() => { if (recipient) draft(); /* eslint-disable-next-line */ }, [channel]);
+  // No auto-draft: open blank so the user writes their own message and only spends AI
+  // tokens when they choose to (Ari rewrite / Regenerate). Saves tokens across the team.
 
   // Templates
   const [templates, setTemplates] = useState([]);
@@ -5815,6 +5814,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
                 <span style={{ marginLeft: 'auto' }}><AriRewriteButton text={bodyText} onRewrite={setBodyText} contactName={recipient?.name} contactId={recipient?.id} discLabel={discHint ? `${discHint.p}${discHint.s ? '/' + discHint.s : ''}` : ''} /></span>
               </div>
               <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
+                placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}\u2026\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you\u2019ve written \u2014 adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
                 style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
               {channel === 'email' && (
                 <div style={{ marginTop: '8px' }}>
