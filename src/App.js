@@ -15400,6 +15400,7 @@ function AppMain() {
   // window.__composeEmail(address) to open the PrismOS composer instead of the OS/Gmail app.
   useEffect(() => {
     window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
+    window.__setView = (v) => { try { navigate(v); } catch (_) {} };  // used by the automated smoke-check harness
   }); // eslint-disable-line
   // Stamp the active view so uncaught errors/rejections are attributed correctly.
   useEffect(() => { if (typeof window !== 'undefined') window.__currentView = view; }, [view]);
