@@ -14813,6 +14813,101 @@ function FileDetailModal({ file, onClose, onChange, onDelete, contacts, properti
   );
 }
 
+function ShareRecordingModal({ file, userId, contacts = [], onClose }) {
+  const [title, setTitle] = useState('');
+  const [contactId, setContactId] = useState('');
+  const [search, setSearch] = useState('');
+  const [firstSpeaker, setFirstSpeaker] = useState('me');
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    const base = (file && file.name || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+    setTitle(base || `Shared recording ${new Date().toLocaleDateString()}`);
+  }, [file]);
+
+  const matches = search.trim() ? contacts.filter(c => (c.name || '').toLowerCase().includes(search.toLowerCase())).slice(0, 6) : [];
+  const selectedName = contactId ? (contacts.find(c => c.id === contactId) || {}).name : '';
+  const sizeMB = file ? (file.size / 1024 / 1024).toFixed(1) : '0';
+
+  async function process() {
+    if (!file) return;
+    setBusy(true); setErr(''); setProgress(5); setPhase('Preparing…');
+    try {
+      let up = file;
+      if (audioNeedsConversion(file)) {
+        setPhase('Compressing audio…');
+        up = await transcodeAudioToMp3(file, (pct) => setProgress(Math.max(5, Math.round(pct * 0.5))));
+      }
+      if (up.size > 50 * 1024 * 1024) throw new Error(`Still ${(up.size / 1024 / 1024).toFixed(0)} MB after compression (max 50). Try a shorter clip or split it.`);
+      setProgress(55); setPhase('Saving…');
+      const { data: rec, error: insErr } = await supabase.from('recordings').insert({
+        user_id: userId, contact_id: contactId || null, title: title.trim() || 'Shared recording',
+        mime_type: up.type || 'audio/mpeg', size_bytes: up.size, recorded_at: new Date().toISOString(),
+        first_speaker: firstSpeaker, transcription_status: 'pending',
+      }).select().single();
+      if (insErr) throw new Error(insErr.message);
+      const safe = (up.name || 'audio.mp3').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${userId}/${rec.id}/${safe}`;
+      const { error: upErr } = await supabase.storage.from('recordings').upload(path, up, { contentType: up.type || 'audio/mpeg', upsert: false });
+      if (upErr) { await supabase.from('recordings').delete().eq('id', rec.id); throw new Error(upErr.message); }
+      await supabase.from('recordings').update({ storage_path: path }).eq('id', rec.id);
+      setProgress(85); setPhase('Transcribing…');
+      supabase.functions.invoke('recording-transcribe', { body: { recording_id: rec.id, user_id: userId } }).catch(() => {});
+      setProgress(100);
+      if (window.__notify) window.__notify('Recording received — transcribing now. The summary and tasks will appear shortly.', 'success');
+      onClose(true);
+    } catch (e) {
+      setErr((e && e.message) || String(e)); setBusy(false); setProgress(0); setPhase('');
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.62)', zIndex: 1100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => !busy && onClose(false)}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', borderTopLeftRadius: 16, borderTopRightRadius: 16, width: '100%', maxWidth: 560, maxHeight: '92vh', overflowY: 'auto', padding: '18px 16px 24px', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <Icon name="quo" size={16} />
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-1)' }}>Share a recording</div>
+          <button onClick={() => !busy && onClose(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>&times;</button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 14, wordBreak: 'break-word' }}>{file && file.name} · {sizeMB} MB — we&rsquo;ll transcribe it, summarize it, and pull out tasks.</div>
+
+        <label className="form-label">Title</label>
+        <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} disabled={busy} />
+
+        <label className="form-label" style={{ marginTop: 10 }}>Link to a contact (optional)</label>
+        {selectedName ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--bg-hover)', borderRadius: 8 }}>
+            <span style={{ fontSize: 13, color: 'var(--text-1)' }}>{selectedName}</span>
+            <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => { setContactId(''); setSearch(''); }}>Change</button>
+          </div>
+        ) : (
+          <>
+            <input className="form-input" placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)} disabled={busy} />
+            {matches.map(c => (
+              <button key={c.id} onClick={() => { setContactId(c.id); setSearch(''); }} disabled={busy} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-1)', fontSize: 13, marginTop: 4, cursor: 'pointer' }}>{c.name}</button>
+            ))}
+          </>
+        )}
+
+        <label className="form-label" style={{ marginTop: 10 }}>Who speaks first?</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[['me', 'Me'], ['them', 'The other person']].map(([v, lbl]) => (
+            <button key={v} onClick={() => setFirstSpeaker(v)} disabled={busy} style={{ flex: 1, padding: '8px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${firstSpeaker === v ? 'var(--accent)' : 'var(--border)'}`, background: firstSpeaker === v ? 'var(--bg-hover)' : 'transparent', color: 'var(--text-1)', fontSize: 13 }}>{lbl}</button>
+          ))}
+        </div>
+
+        {err && <div style={{ marginTop: 12, padding: '8px 10px', background: 'rgba(239,68,68,.1)', border: '1px solid var(--red)', borderRadius: 8, color: 'var(--red)', fontSize: 12 }}>{err}</div>}
+        {busy && <div style={{ marginTop: 14 }}><div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 5 }}>{phase}</div><div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 99, overflow: 'hidden' }}><div style={{ height: '100%', width: `${progress}%`, background: 'var(--accent)', transition: 'width .3s' }} /></div></div>}
+
+        <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} disabled={busy || !file} onClick={process}>{busy ? 'Working…' : 'Transcribe & summarize'}</button>
+      </div>
+    </div>
+  );
+}
+
 function AppMain() {
   const [session, setSession] = useState(null);
   const [appCtx, setAppCtx] = useState(null);
@@ -14875,6 +14970,28 @@ function AppMain() {
   const [profiles, setProfiles] = useState([]);
   const [voiceCards, setVoiceCards] = useState([]);
   const [emailAccounts, setEmailAccounts] = useState([]);
+  const [sharedAudio, setSharedAudio] = useState(null);
+  // Web Share Target: another app shared an audio file to PrismOS. The service
+  // worker stashed it in the 'prismos-shared' cache and redirected here with
+  // ?shared=audio; pull it out and open the "Share a recording" flow.
+  useEffect(() => {
+    let params;
+    try { params = new URLSearchParams(window.location.search); } catch (_) { return; }
+    if (params.get('shared') !== 'audio') return;
+    (async () => {
+      try {
+        const cache = await caches.open('prismos-shared');
+        const resp = await cache.match('/__shared_audio');
+        if (resp) {
+          const blob = await resp.blob();
+          const fn = decodeURIComponent(resp.headers.get('x-filename') || 'shared-recording');
+          setSharedAudio(new File([blob], fn, { type: blob.type || 'audio/mpeg' }));
+          await cache.delete('/__shared_audio');
+        }
+      } catch (_) {}
+      try { window.history.replaceState({}, '', '/'); } catch (_) {}
+    })();
+  }, []);
   // Pass 2 Batch C — user_settings: drives the onboarding modal + future Settings.
   const [userSettings, setUserSettings] = useState(null);
   // Dashboard "Unread Email" tile — count of unread inbox threads (excludes snoozed)
@@ -15444,6 +15561,14 @@ function AppMain() {
       )}
       {dataLoaded && user && userSettings && userSettings.onboarding_complete !== false && (
         <AnnouncementModal userId={user.id} />
+      )}
+      {sharedAudio && user && (
+        <ShareRecordingModal
+          file={sharedAudio}
+          userId={user.id}
+          contacts={contacts}
+          onClose={(done) => { setSharedAudio(null); if (done) { try { loadData(); } catch (_) {} } }}
+        />
       )}
     </div>
   );
