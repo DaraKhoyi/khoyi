@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v1.02.23'
+const VERSION = 'prismos-v1.02.24'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -55,6 +55,30 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+
+  // ── Web Share Target ──────────────────────────────────────
+  // Receive an audio file shared from another app (voice recorder, files,
+  // etc.). Stash it in the cache and redirect into the app, which picks it up
+  // and runs it through the transcription pipeline. Must run before the GET
+  // guard below, since the share is a POST.
+  if (req.method === 'POST' && new URL(req.url).pathname === '/share-target') {
+    event.respondWith((async () => {
+      try {
+        const form = await req.formData();
+        const file = form.get('audio') || (form.getAll && form.getAll('audio')[0]);
+        if (file && file.size) {
+          const headers = new Headers();
+          headers.set('content-type', file.type || 'audio/mpeg');
+          headers.set('x-filename', encodeURIComponent(file.name || 'shared-recording'));
+          const cache = await caches.open('prismos-shared');
+          await cache.put('/__shared_audio', new Response(file, { headers }));
+        }
+      } catch (e) { /* fall through to redirect regardless */ }
+      return Response.redirect('/?shared=audio', 303);
+    })());
+    return;
+  }
+
   // Only handle GET — never cache auth/POST/PATCH calls
   if (req.method !== 'GET') return;
 
