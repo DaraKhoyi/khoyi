@@ -712,20 +712,6 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
     return () => { alive = false; };
   }, []); // eslint-disable-line
 
-  // Open a fresh compose pre-addressed to a contact. Used by every "Email"
-  // affordance across the app (contact cards, detail, Ari) so they open the
-  // in-app composer instead of handing off to the OS / Gmail app.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.__inboxComposeTo || !account) return;
-    const to = String(window.__inboxComposeTo).trim();
-    window.__inboxComposeTo = null;
-    setComposeTo(to); setComposeSubject(''); setComposeBody('');
-    setComposeCc(''); setComposeBcc(''); setShowCcBcc(false);
-    setComposeFrom(defaultAlias?.email_address || account.email_address || '');
-    setComposeReplyMeta(null); setSendMsg('');
-    setShowCompose(true);
-  }, [account, defaultAlias]); // eslint-disable-line
-
   // Open a specific conversation by internal thread id (used by the Email Review "Open" button)
   useEffect(() => {
     if (typeof window === 'undefined' || !window.__inboxOpenThreadId) return;
@@ -1204,6 +1190,21 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Open a fresh compose pre-addressed to a contact when another part of the app
+  // requests it (window.__inboxComposeTo) — so "Email" affordances across the app
+  // land in the in-app composer instead of the OS / Gmail app.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.__inboxComposeTo || !account) return;
+    const to = String(window.__inboxComposeTo).trim();
+    window.__inboxComposeTo = null;
+    setComposeTo(to); setComposeSubject(''); setComposeBody('');
+    setComposeCc(''); setComposeBcc(''); setShowCcBcc(false);
+    setComposeFrom(defaultAlias?.email_address || account.email_address || '');
+    setComposeReplyMeta(null); setSendMsg('');
+    setShowCompose(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, defaultAlias]);
 
   async function runAliasesSync(silent = false) {
     setSyncingAliases(true);
