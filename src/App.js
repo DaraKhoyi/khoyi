@@ -9966,18 +9966,58 @@ const today_ymd = () => new Date().toISOString().slice(0, 10);
 function useDictation(onFinal) {
   const [recording, setRecording] = useState(false);
   const [interim, setInterim] = useState('');
-  const ref = useRef(null);
-  const supported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
-  const start = useCallback(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recRef = useRef(null);
+  const wantRef = useRef(false);      // does the user still want to be listening?
+  const timerRef = useRef(null);      // pending auto-restart
+  const startedAtRef = useRef(0);
+  const failsRef = useRef(0);         // consecutive fast failures (runaway guard)
+  const onFinalRef = useRef(onFinal);
+  useEffect(() => { onFinalRef.current = onFinal; });
+  const supported = typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const teardown = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    const r = recRef.current; recRef.current = null;
+    if (r) { try { r.onresult = r.onerror = r.onend = null; } catch (_) {} try { r.abort(); } catch (_) {} }
+  }, []);
+
+  const launch = useCallback(() => {
+    const SR = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
     if (!SR) return;
-    const rec = new SR(); rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
-    rec.onresult = (ev) => { let f = '', it = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) f += r[0].transcript; else it += r[0].transcript; } if (f) onFinal(f); setInterim(it); };
-    rec.onerror = () => {}; rec.onend = () => { setRecording(false); setInterim(''); };
-    ref.current = rec; try { rec.start(); setRecording(true); } catch (_) {}
-  }, [onFinal]);
-  const stop = useCallback(() => { try { ref.current && ref.current.stop(); } catch (_) {} setRecording(false); setInterim(''); }, []);
-  useEffect(() => () => { try { ref.current && ref.current.abort(); } catch (_) {} }, []);
+    teardown(); // never leave a previous recognizer holding the mic
+    let rec; try { rec = new SR(); } catch (_) { return; }
+    rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = (ev) => {
+      let f = '', it = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) f += r[0].transcript; else it += r[0].transcript; }
+      if (f) { failsRef.current = 0; if (onFinalRef.current) onFinalRef.current(f); }
+      setInterim(it);
+    };
+    rec.onerror = (e) => {
+      const err = e && e.error;
+      // Fatal — stop for good. (no-speech / aborted / network are transient; let onend auto-restart.)
+      if (err === 'not-allowed' || err === 'service-not-allowed' || err === 'audio-capture') {
+        wantRef.current = false; setRecording(false); setInterim('');
+      }
+    };
+    rec.onend = () => {
+      setInterim('');
+      if (!wantRef.current) { setRecording(false); return; }
+      // Mobile speech engines quietly end after a pause even with continuous=true.
+      // Restart so dictation keeps going — but bail out if it's failing rapidly.
+      const quick = (Date.now() - startedAtRef.current) < 600;
+      failsRef.current = quick ? failsRef.current + 1 : 0;
+      if (failsRef.current >= 5) { wantRef.current = false; setRecording(false); return; }
+      timerRef.current = setTimeout(() => { if (wantRef.current) launch(); }, 300);
+    };
+    recRef.current = rec;
+    startedAtRef.current = Date.now();
+    try { rec.start(); setRecording(true); } catch (_) { /* already starting / busy */ }
+  }, [teardown]);
+
+  const start = useCallback(() => { wantRef.current = true; failsRef.current = 0; launch(); }, [launch]);
+  const stop = useCallback(() => { wantRef.current = false; teardown(); setRecording(false); setInterim(''); }, [teardown]);
+  useEffect(() => () => { wantRef.current = false; teardown(); }, [teardown]);
   return { recording, interim, start, stop, supported };
 }
 
