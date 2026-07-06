@@ -313,75 +313,183 @@ function GoalEngine({ userId, onBack }) {
 // then create the tasks (linked to the contact). Renders nothing when empty.
 // ─────────────────────────────────────────
 
+const RELN = { same: { t: 'Likely the same task', c: '#ef4444' }, update: { t: 'Looks like an update', c: '#C5A95E' }, variant: { t: 'A related variant', c: '#3b82f6' }, unclear: { t: 'Might overlap', c: '#9499b0' } };
+
+function ResolveModal({ resolve, contacts, fmt, onAddNew, onUpdate, onSkip, onCancel }) {
+  const cur = resolve.queue[resolve.idx];
+  const [p, setP] = React.useState(cur.item);
+  const [selId, setSelId] = React.useState(cur.candidates[0]?.id || null);
+  const [cEdits, setCEdits] = React.useState({});
+  React.useEffect(() => { const it = resolve.queue[resolve.idx].item; setP(it); setSelId(resolve.queue[resolve.idx].candidates[0]?.id || null); setCEdits({}); }, [resolve.idx]); // eslint-disable-line
+  const cand = cur.candidates.find(c => c.id === selId) || null;
+  const ce = (c) => ({ title: cEdits[c.id]?.title ?? c.title, priority: cEdits[c.id]?.priority ?? (c.priority || 'medium'), due_date: cEdits[c.id]?.due_date ?? (c.due_date || '') });
+  const setCe = (id, k, v) => setCEdits(s => ({ ...s, [id]: { ...(s[id] || {}), [k]: v } }));
+  const nm = (contacts.find(x => x.id === resolve.call.contact_id) || {}).name;
+  const rel = cand ? (RELN[cand.relation] || RELN.unclear) : null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.62)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', borderTopLeftRadius: 16, borderTopRightRadius: 16, width: '100%', maxWidth: 560, maxHeight: '94vh', overflowY: 'auto', padding: '16px 16px 22px', border: '1px solid var(--border)', borderBottom: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)' }}>Is this new, or already on your list?</div>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)', fontWeight: 700 }}>{resolve.idx + 1} of {resolve.queue.length}</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 12 }}>From your call{nm ? ' with ' + nm : ''} on {fmt(resolve.call.when)} — we found a possible match, so you don&rsquo;t double-book yourself.</div>
+
+        {/* Proposed */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: '#C5A95E', marginBottom: 5 }}>New, from this call</div>
+        <div style={{ border: '1.5px solid #C5A95E', borderRadius: 11, padding: 10, marginBottom: 16, background: 'rgba(197,169,94,.06)' }}>
+          <input className="form-input" style={{ margin: '0 0 7px', fontSize: 13.5, padding: '7px 9px' }} value={p.title} onChange={e => setP(s => ({ ...s, title: e.target.value }))} />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <input type="date" className="form-input" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '1 1 130px' }} value={p.due_date || ''} onChange={e => setP(s => ({ ...s, due_date: e.target.value }))} />
+            <select className="form-select" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '0 0 105px' }} value={p.priority} onChange={e => setP(s => ({ ...s, priority: e.target.value }))}>
+              <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Candidates */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 6 }}>Already on your list</div>
+        {cur.candidates.length > 1 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            {cur.candidates.map(c => (
+              <button key={c.id} onClick={() => setSelId(c.id)} style={{ fontSize: 11.5, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${selId === c.id ? (RELN[c.relation] || RELN.unclear).c : 'var(--border)'}`, background: selId === c.id ? 'var(--bg-hover)' : 'transparent', color: 'var(--text-1)', maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</button>
+            ))}
+          </div>
+        )}
+        {cand && (
+          <div style={{ border: `1px solid ${rel.c}55`, borderRadius: 11, padding: 10, marginBottom: 16, background: 'var(--bg-hover)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: '#fff', background: rel.c, borderRadius: 5, padding: '2px 7px' }}>{rel.t}</span>
+              {cand.why && <span style={{ fontSize: 11, color: 'var(--text-3)', fontStyle: 'italic' }}>{cand.why}</span>}
+            </div>
+            <input className="form-input" style={{ margin: '0 0 7px', fontSize: 13.5, padding: '7px 9px' }} value={ce(cand).title} onChange={e => setCe(cand.id, 'title', e.target.value)} />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input type="date" className="form-input" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '1 1 130px' }} value={ce(cand).due_date || ''} onChange={e => setCe(cand.id, 'due_date', e.target.value)} />
+              <select className="form-select" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '0 0 105px' }} value={ce(cand).priority} onChange={e => setCe(cand.id, 'priority', e.target.value)}>
+                <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+              </select>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10.5, padding: '4px 8px' }} onClick={() => setCe(cand.id, 'title', p.title)} title="Copy the new wording into this task">← use new wording</button>
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {cand && <button className="btn btn-primary" onClick={() => onUpdate(cand, ce(cand))}>Update this existing task</button>}
+          <button className="btn btn-ghost" onClick={() => onAddNew(p)}>Add as a separate new task</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" style={{ flex: 1, color: 'var(--text-3)' }} onClick={onSkip}>Skip — don&rsquo;t add</button>
+            <button className="btn btn-ghost btn-sm" style={{ flex: 1, color: 'var(--text-3)' }} onClick={onCancel}>Cancel review</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = 'eisenhower' }) {
   const [calls, setCalls] = useState(null);
-  const [edits, setEdits] = useState({});       // `${callId}:${idx}` -> {title,due_date,priority,owner}
-  const [checked, setChecked] = useState({});   // `${callId}:${idx}` -> bool
+  const [edits, setEdits] = useState({});
+  const [checked, setChecked] = useState({});
   const [busy, setBusy] = useState({});
   const [checking, setChecking] = useState(false);
   const [err, setErr] = useState(null);
+  const [resolve, setResolve] = useState(null);
 
   const load = async () => {
-    const { data } = await supabase.from('quo_calls')
-      .select('id,contact_id,proposed_tasks,summary,direction,participant,from_number,to_number,completed_at,op_created_at,recording_url')
-      .eq('review_status', 'pending').order('op_created_at', { ascending: false }).limit(50);
-    const rows = (data || []).filter(c => Array.isArray(c.proposed_tasks) && c.proposed_tasks.length);
+    const [{ data: qc }, { data: rec }] = await Promise.all([
+      supabase.from('quo_calls').select('id,contact_id,proposed_tasks,summary,direction,participant,from_number,to_number,completed_at,op_created_at,recording_url').eq('review_status', 'pending').order('op_created_at', { ascending: false }).limit(50),
+      supabase.from('recordings').select('id,contact_id,proposed_tasks,summary,recorded_at,duration_seconds,title').eq('review_status', 'pending').order('recorded_at', { ascending: false }).limit(50),
+    ]);
+    const qcRows = (qc || []).filter(c => Array.isArray(c.proposed_tasks) && c.proposed_tasks.length).map(c => ({ ...c, source: 'quo', when: c.completed_at || c.op_created_at }));
+    const recRows = (rec || []).filter(c => Array.isArray(c.proposed_tasks) && c.proposed_tasks.length).map(c => ({ ...c, source: 'recording', when: c.recorded_at }));
+    const rows = [...qcRows, ...recRows].sort((a, b) => new Date(b.when || 0) - new Date(a.when || 0));
     setCalls(rows);
     const ck = {};
-    rows.forEach(c => (c.proposed_tasks || []).forEach((t, i) => { ck[`${c.id}:${i}`] = true; }));
+    rows.forEach(c => (c.proposed_tasks || []).forEach((t, i) => { ck[`${c.source}:${c.id}:${i}`] = true; }));
     setChecked(ck);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line
 
   const checkNow = async () => {
     setChecking(true); setErr(null);
-    try { await supabase.functions.invoke('quo-call-process', { body: {} }); await load(); }
+    try { await Promise.all([supabase.functions.invoke('quo-call-process', { body: {} }), supabase.functions.invoke('recording-process', { body: {} })]); await load(); }
     catch (e) { setErr('Could not check calls.'); }
     setChecking(false);
   };
 
-  const tv = (id, i, key, fb) => { const e = edits[`${id}:${i}`] || {}; return e[key] !== undefined ? e[key] : fb; };
-  const setTv = (id, i, key, val) => setEdits(s => ({ ...s, [`${id}:${i}`]: { ...(s[`${id}:${i}`] || {}), [key]: val } }));
+  const keyOf = (call, i) => `${call.source}:${call.id}:${i}`;
+  const tv = (call, i, key, fb) => { const e = edits[keyOf(call, i)] || {}; return e[key] !== undefined ? e[key] : fb; };
+  const setTv = (call, i, key, val) => setEdits(s => ({ ...s, [keyOf(call, i)]: { ...(s[keyOf(call, i)] || {}), [key]: val } }));
   const nameOf = (cid) => { const c = contacts.find(x => x.id === cid); return c ? c.name : null; };
   const phoneOf = (c) => c.participant || c.to_number || c.from_number || '';
   const quad = (p) => p === 'high' ? 'A' : p === 'low' ? 'C' : 'B';
   const fmt = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
   const summaryText = (s) => { if (!s) return ''; if (typeof s === 'string') return s; if (Array.isArray(s)) return s.join(' '); if (typeof s === 'object') return s.summary || ''; return String(s); };
+  const ctxNote = (call) => { const nm = nameOf(call.contact_id); return `From your ${call.source === 'recording' ? 'recorded call' : 'call'}${nm ? ' with ' + nm : ''} on ${fmt(call.when)}.`; };
+
+  const createTaskFromItem = async (item, call) => {
+    const note = [ctxNote(call), item.note].filter(Boolean).join(' ');
+    try {
+      const { data: t, error } = await supabase.from('tasks').insert({
+        user_id: userId, title: item.title, due_date: item.due_date || null, priority: item.priority || 'medium', notes: note,
+        priority_system: defaultSystem || 'eisenhower', eisenhower_quadrant: quad(item.priority || 'medium'), completed: false,
+      }).select().single();
+      if (!error && t) {
+        if (setTasks) setTasks(prev => [t, ...prev]);
+        if (call.contact_id) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [call.contact_id] }); } catch (_) {} }
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  };
+
+  const updateExistingTask = async (existing, fields, call) => {
+    const appended = [(existing.notes || '').trim(), `[Updated ${ctxNote(call).replace(/^From your /, '').replace(/\.$/, '')}]`].filter(Boolean).join('\n');
+    try {
+      const { data: t } = await supabase.from('tasks').update({ title: fields.title, priority: fields.priority, eisenhower_quadrant: quad(fields.priority), due_date: fields.due_date || null, notes: appended }).eq('id', existing.id).select().single();
+      if (t && setTasks) setTasks(prev => prev.map(x => x.id === t.id ? t : x));
+      if (call.contact_id) { try { await supabase.rpc('set_task_contacts', { p_task_id: existing.id, p_contact_ids: [call.contact_id] }); } catch (_) {} }
+      return true;
+    } catch (_) { return false; }
+  };
+
+  const finalizeCall = async (call, created) => {
+    const table = call.source === 'recording' ? 'recordings' : 'quo_calls';
+    await supabase.from(table).update({ review_status: 'done' }).eq('id', call.id);
+    setCalls(cs => (cs || []).filter(c => !(c.id === call.id && c.source === call.source)));
+    if (window.__notify) window.__notify(`Saved ${created} task${created === 1 ? '' : 's'} from the call.`, 'success');
+  };
 
   const approve = async (call) => {
     setBusy(b => ({ ...b, [call.id]: true })); setErr(null);
-    const items = call.proposed_tasks || [];
-    let created = 0;
-    for (let i = 0; i < items.length; i++) {
-      if (!checked[`${call.id}:${i}`]) continue;
-      const owner = tv(call.id, i, 'owner', items[i].owner);
-      const t0 = tv(call.id, i, 'title', items[i].title);
-      const title = owner === 'them' ? `Follow up: ${t0}` : t0;
-      const due = tv(call.id, i, 'due_date', items[i].due_date) || null;
-      const priority = tv(call.id, i, 'priority', items[i].priority) || 'medium';
-      try {
-        const { data: t, error } = await supabase.from('tasks').insert({
-          user_id: userId, title, due_date: due, priority,
-          priority_system: defaultSystem || 'eisenhower', eisenhower_quadrant: quad(priority), completed: false,
-        }).select().single();
-        if (!error && t) {
-          created++;
-          if (setTasks) setTasks(prev => [t, ...prev]);
-          if (call.contact_id) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [call.contact_id] }); } catch (_) {} }
-        }
-      } catch (_) {}
+    const items = (call.proposed_tasks || []).map((it, i) => {
+      const owner = tv(call, i, 'owner', it.owner);
+      const t0 = tv(call, i, 'title', it.title);
+      return { owner, title: owner === 'them' ? `Follow up: ${t0}` : t0, due_date: tv(call, i, 'due_date', it.due_date) || null, priority: tv(call, i, 'priority', it.priority) || 'medium', note: it.note || '', _checked: !!checked[keyOf(call, i)] };
+    }).filter(x => x._checked && x.title.trim());
+    let created = 0; const ambiguous = [];
+    for (const item of items) {
+      let candidates = [];
+      try { const { data } = await supabase.functions.invoke('task-dedupe', { body: { proposed: { title: item.title, note: item.note }, contact_id: call.contact_id || null } }); candidates = (data && data.candidates) || []; } catch (_) {}
+      if (candidates.length) ambiguous.push({ item, candidates });
+      else if (await createTaskFromItem(item, call)) created++;
     }
-    await supabase.from('quo_calls').update({ review_status: 'done' }).eq('id', call.id);
     setBusy(b => ({ ...b, [call.id]: false }));
-    setCalls(cs => cs.filter(c => c.id !== call.id));
-    if (window.__notify) window.__notify(`Created ${created} task${created === 1 ? '' : 's'} from the call.`, 'success');
-  };
-  const dismiss = async (call) => {
-    await supabase.from('quo_calls').update({ review_status: 'dismissed' }).eq('id', call.id);
-    setCalls(cs => cs.filter(c => c.id !== call.id));
+    if (ambiguous.length) setResolve({ call, queue: ambiguous, idx: 0, created });
+    else await finalizeCall(call, created);
   };
 
-  if (calls === null || !calls.length) return null; // quiet until there's something to review
+  const dismiss = async (call) => {
+    const table = call.source === 'recording' ? 'recordings' : 'quo_calls';
+    await supabase.from(table).update({ review_status: 'dismissed' }).eq('id', call.id);
+    setCalls(cs => (cs || []).filter(c => !(c.id === call.id && c.source === call.source)));
+  };
+
+  const resolveNext = (added) => setResolve(r => { if (!r) return null; const created = r.created + (added || 0); if (r.idx + 1 < r.queue.length) return { ...r, idx: r.idx + 1, created }; finalizeCall(r.call, created); return null; });
+
+  if (calls === null || !calls.length) return null;
 
   return (
     <div className="panel">
@@ -389,22 +497,23 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
         <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icon name="quo" size={15} /> Call follow-ups</h3>
         <span className="nav-badge">{calls.length}</span>
       </div>
-      <div style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '10px' }}>Commitments Ari pulled from your recorded calls. The call is already on the contact&rsquo;s timeline — review and create the tasks.</div>
+      <div style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '10px' }}>Commitments pulled from your recorded &amp; Quo calls. The call is already on the contact&rsquo;s timeline — review, and we&rsquo;ll flag anything that looks like it&rsquo;s already on your list.</div>
       {err && <div style={{ padding: '8px 12px', marginBottom: '10px', background: 'rgba(239,68,68,.1)', border: '1px solid var(--red)', borderRadius: '8px', color: 'var(--red)', fontSize: '12px' }}>{err}</div>}
       {calls.map(call => {
         const nm = nameOf(call.contact_id);
         const items = call.proposed_tasks || [];
         return (
-          <div key={call.id} style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
+          <div key={`${call.source}:${call.id}`} style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
               <span style={{ fontWeight: 700, fontSize: '14px' }}>{nm || phoneOf(call) || 'Unknown caller'}</span>
+              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', padding: '1px 6px', borderRadius: '5px', color: 'var(--text-3)', border: '1px solid var(--border)' }}>{call.source === 'recording' ? 'Recorded' : 'Quo'}</span>
               {!nm && <span style={{ fontSize: '10px', color: 'var(--yellow)' }}>unmatched — no contact link</span>}
-              <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-3)' }}>{fmt(call.completed_at || call.op_created_at)} · on timeline ✓</span>
+              <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-3)' }}>{fmt(call.when)} · on timeline ✓</span>
             </div>
             {summaryText(call.summary) && <div style={{ fontSize: '12px', color: 'var(--text-2)', marginBottom: '10px', lineHeight: 1.5 }}>{summaryText(call.summary)}</div>}
             {items.map((it, i) => {
-              const k = `${call.id}:${i}`;
-              const owner = tv(call.id, i, 'owner', it.owner);
+              const k = keyOf(call, i);
+              const owner = tv(call, i, 'owner', it.owner);
               return (
                 <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '8px', borderRadius: '8px', background: 'var(--bg-hover)', marginBottom: '6px' }}>
                   <input type="checkbox" checked={!!checked[k]} onChange={e => setChecked(s => ({ ...s, [k]: e.target.checked }))} style={{ marginTop: '6px' }} />
@@ -413,10 +522,10 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
                       <span style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', padding: '1px 6px', borderRadius: '5px', color: owner === 'them' ? '#f59e0b' : 'var(--accent)', border: `1px solid ${owner === 'them' ? '#f59e0b' : 'var(--accent-dim)'}` }}>{owner === 'them' ? 'Track (them)' : 'You'}</span>
                       {it.note && <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{it.note}</span>}
                     </div>
-                    <input className="form-input" style={{ margin: '0 0 6px', fontSize: '13px', padding: '6px 8px' }} value={tv(call.id, i, 'title', it.title)} onChange={e => setTv(call.id, i, 'title', e.target.value)} />
+                    <input className="form-input" style={{ margin: '0 0 6px', fontSize: '13px', padding: '6px 8px' }} value={tv(call, i, 'title', it.title)} onChange={e => setTv(call, i, 'title', e.target.value)} />
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      <input type="date" className="form-input" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '1 1 130px' }} value={tv(call.id, i, 'due_date', it.due_date) || ''} onChange={e => setTv(call.id, i, 'due_date', e.target.value)} />
-                      <select className="form-select" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '0 0 105px' }} value={tv(call.id, i, 'priority', it.priority)} onChange={e => setTv(call.id, i, 'priority', e.target.value)}>
+                      <input type="date" className="form-input" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '1 1 130px' }} value={tv(call, i, 'due_date', it.due_date) || ''} onChange={e => setTv(call, i, 'due_date', e.target.value)} />
+                      <select className="form-select" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '0 0 105px' }} value={tv(call, i, 'priority', it.priority)} onChange={e => setTv(call, i, 'priority', e.target.value)}>
                         <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
                       </select>
                     </div>
@@ -425,7 +534,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
               );
             })}
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-              <button className="btn btn-primary btn-sm" disabled={busy[call.id]} onClick={() => approve(call)}>{busy[call.id] ? 'Creating…' : 'Create selected tasks'}</button>
+              <button className="btn btn-primary btn-sm" disabled={busy[call.id]} onClick={() => approve(call)}>{busy[call.id] ? 'Checking for dupes…' : 'Create selected tasks'}</button>
               <button className="btn btn-ghost btn-sm" disabled={busy[call.id]} onClick={() => dismiss(call)}>Dismiss</button>
             </div>
           </div>
@@ -434,6 +543,11 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
       <div style={{ textAlign: 'center', marginTop: '4px' }}>
         <button className="btn btn-ghost btn-sm" disabled={checking} onClick={checkNow}>{checking ? 'Checking…' : '↻ Check for new calls'}</button>
       </div>
+      {resolve && <ResolveModal resolve={resolve} contacts={contacts} fmt={fmt}
+        onAddNew={async (item) => { const ok = await createTaskFromItem(item, resolve.call); resolveNext(ok ? 1 : 0); }}
+        onUpdate={async (existing, fields) => { await updateExistingTask(existing, fields, resolve.call); resolveNext(0); }}
+        onSkip={() => resolveNext(0)}
+        onCancel={() => setResolve(null)} />}
     </div>
   );
 }
