@@ -5976,9 +5976,11 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
       setLoading(true);
       let query = supabase.from('contact_interactions').select('*');
       if (isContact) {
-        // A contact's timeline includes entries logged on it AND entries logged
-        // elsewhere (property, investment, another contact) that @mention it.
-        query = query.or(`and(entity_type.eq.contact,entity_id.eq.${entityId}),mentions.cs.{${entityId}}`);
+        // A contact's timeline includes entries logged on it, entries whose
+        // contact_id points at it (Quo calls, Cube/shared recordings — linked via
+        // the contact_id column rather than entity_type/entity_id), AND entries
+        // logged elsewhere (property, investment, another contact) that @mention it.
+        query = query.or(`and(entity_type.eq.contact,entity_id.eq.${entityId}),contact_id.eq.${entityId},mentions.cs.{${entityId}}`);
       } else {
         query = query.eq('entity_type', entityType).eq('entity_id', entityId);
       }
