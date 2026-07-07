@@ -4,8 +4,10 @@ import { supabase } from '../dataService';
 const GOLD = '#C5A95E';
 const KIND_LABEL = { boundary: 'View crash', window: 'Uncaught error', promise: 'Promise rejection' };
 const KIND_COLOR = { boundary: '#ef4444', window: '#f59e0b', promise: '#3b82f6' };
+const STATUS = { new: { t: 'New', c: '#ef4444' }, notified: { t: 'Diagnosed', c: '#f59e0b' }, investigating: { t: 'Investigating', c: '#3b82f6' }, resolved: { t: 'Resolved', c: '#22c55e' } };
 
 function rel(ts) {
+  if (!ts) return '';
   const d = (Date.now() - new Date(ts).getTime()) / 1000;
   if (d < 60) return 'just now';
   if (d < 3600) return Math.floor(d / 60) + 'm ago';
@@ -16,6 +18,7 @@ function rel(ts) {
 export default function AppHealthView() {
   const [rows, setRows] = useState(null);
   const [win, setWin] = useState('7d');
+  const [showResolved, setShowResolved] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [err, setErr] = useState('');
 
@@ -23,27 +26,20 @@ export default function AppHealthView() {
     setErr(''); setRows(null);
     const days = win === '24h' ? 1 : win === '30d' ? 30 : 7;
     const since = new Date(Date.now() - days * 86400000).toISOString();
-    const { data, error } = await supabase.from('client_errors').select('*').gte('created_at', since).order('created_at', { ascending: false }).limit(1000);
+    const { data, error } = await supabase.from('crash_signatures').select('*').gte('last_seen', since).order('last_seen', { ascending: false }).limit(500);
     if (error) { setErr(error.message); setRows([]); return; }
     setRows(data || []);
   }, [win]);
   useEffect(() => { load(); }, [load]);
 
-  const groups = useMemo(() => {
-    const m = new Map();
-    (rows || []).forEach(r => {
-      const key = `${r.view || '?'}|${(r.message || '').slice(0, 160)}`;
-      if (!m.has(key)) m.set(key, { key, view: r.view, message: r.message, kind: r.kind, count: 0, last: r.created_at, users: new Set(), versions: new Set(), sample: r });
-      const g = m.get(key);
-      g.count++;
-      if (new Date(r.created_at) > new Date(g.last)) g.last = r.created_at;
-      if (r.email) g.users.add(r.email);
-      if (r.app_version) g.versions.add(r.app_version);
-    });
-    return Array.from(m.values()).sort((a, b) => new Date(b.last) - new Date(a.last));
-  }, [rows]);
+  const resolve = async (id, toResolved) => {
+    setRows(rs => (rs || []).map(r => r.id === id ? { ...r, status: toResolved ? 'resolved' : 'notified' } : r));
+    await supabase.from('crash_signatures').update({ status: toResolved ? 'resolved' : 'notified', updated_at: new Date().toISOString() }).eq('id', id);
+  };
 
-  const totalUsers = useMemo(() => { const s = new Set(); (rows || []).forEach(r => r.email && s.add(r.email)); return s.size; }, [rows]);
+  const visible = useMemo(() => (rows || []).filter(r => showResolved || r.status !== 'resolved'), [rows, showResolved]);
+  const openCount = useMemo(() => (rows || []).filter(r => r.status !== 'resolved').length, [rows]);
+  const usersAffected = useMemo(() => (rows || []).filter(r => r.status !== 'resolved').reduce((a, r) => a + (r.users_affected || 0), 0), [rows]);
 
   const seg = (v, l) => <button onClick={() => setWin(v)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, background: win === v ? GOLD : 'transparent', color: win === v ? '#0d0f14' : 'var(--text-2)' }}>{l}</button>;
 
@@ -53,47 +49,65 @@ export default function AppHealthView() {
         <h2 style={{ margin: 0 }}>🩺 App health</h2>
         <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={load}>↻ Refresh</button>
       </div>
-      <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 12, lineHeight: 1.5 }}>Crashes and errors your agents hit, captured automatically the instant they happen — with the user, view, app version and stack. See problems before your agents have to tell you.</div>
-      <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 14, width: 'fit-content' }}>
-        {seg('24h', '24 hours')}{seg('7d', '7 days')}{seg('30d', '30 days')}
+      <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 12, lineHeight: 1.5 }}>Crashes your agents hit, captured the instant they happen and diagnosed automatically by the crash-monitor agent — likely cause, where in the code, and a suggested fix. You&rsquo;ll see a problem here (and get a push) before an agent has to tell you.</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
+          {seg('24h', '24 hours')}{seg('7d', '7 days')}{seg('30d', '30 days')}
+        </div>
+        <label style={{ fontSize: 12, color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)} /> show resolved
+        </label>
       </div>
 
-      {err && <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,.1)', border: '1px solid var(--red)', borderRadius: 8, color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>Couldn't load errors: {err}</div>}
+      {err && <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,.1)', border: '1px solid var(--red)', borderRadius: 8, color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>Couldn't load: {err}</div>}
 
       {rows === null ? <div style={{ color: 'var(--text-3)', padding: 20 }}>Loading…</div>
-        : groups.length === 0 ? (
+        : visible.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '44px 20px', border: '1px dashed var(--border)', borderRadius: 14 }}>
             <div style={{ fontSize: 34 }}>✅</div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', marginTop: 6 }}>No errors in this window</div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 3 }}>Everything's running clean. Anything that breaks will appear here the instant a user hits it.</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', marginTop: 6 }}>All clear</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 3 }}>No open crashes in this window. Anything new will appear here — diagnosed — the instant a user hits it.</div>
           </div>
         ) : (
           <>
             <div style={{ display: 'flex', gap: 18, marginBottom: 14, fontSize: 13 }}>
-              <span><b style={{ color: 'var(--text-1)', fontSize: 19 }}>{groups.length}</b> <span style={{ color: 'var(--text-3)' }}>issue{groups.length === 1 ? '' : 's'}</span></span>
-              <span><b style={{ color: 'var(--text-1)', fontSize: 19 }}>{rows.length}</b> <span style={{ color: 'var(--text-3)' }}>total hits</span></span>
-              <span><b style={{ color: totalUsers ? '#ef4444' : 'var(--text-1)', fontSize: 19 }}>{totalUsers}</b> <span style={{ color: 'var(--text-3)' }}>user{totalUsers === 1 ? '' : 's'} affected</span></span>
+              <span><b style={{ color: openCount ? '#ef4444' : 'var(--text-1)', fontSize: 19 }}>{openCount}</b> <span style={{ color: 'var(--text-3)' }}>open issue{openCount === 1 ? '' : 's'}</span></span>
+              <span><b style={{ color: usersAffected ? '#ef4444' : 'var(--text-1)', fontSize: 19 }}>{usersAffected}</b> <span style={{ color: 'var(--text-3)' }}>user-hits</span></span>
             </div>
-            {groups.map(g => {
-              const open = expanded[g.key];
+            {visible.map(g => {
+              const open = expanded[g.id];
+              const st = STATUS[g.status] || STATUS.notified;
+              const resolved = g.status === 'resolved';
               return (
-                <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, marginBottom: 10, background: 'var(--bg-card)' }}>
+                <div key={g.id} style={{ border: `1px solid ${resolved ? 'var(--border)' : (KIND_COLOR[g.kind] || '#6b7280') + '44'}`, borderRadius: 12, padding: 12, marginBottom: 10, background: 'var(--bg-card)', opacity: resolved ? 0.6 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                     <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: '#fff', background: KIND_COLOR[g.kind] || '#6b7280', borderRadius: 5, padding: '2px 7px' }}>{KIND_LABEL[g.kind] || g.kind}</span>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: GOLD }}>{g.view || 'unknown view'}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{rel(g.last)}</span>
+                    <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', color: '#fff', background: st.c, borderRadius: 5, padding: '2px 7px' }}>{st.t}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{rel(g.last_seen)}</span>
                   </div>
                   <div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600, wordBreak: 'break-word', marginBottom: 8 }}>{g.message || '(no message)'}</div>
+
+                  {g.ai_diagnosis && (
+                    <div style={{ background: 'rgba(197,169,94,.07)', border: `1px solid ${GOLD}33`, borderRadius: 9, padding: 10, marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: GOLD, marginBottom: 4 }}>&#10024; AI diagnosis</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-1)', lineHeight: 1.5 }}>{g.ai_diagnosis}</div>
+                      {g.ai_area && <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 5 }}><b style={{ color: 'var(--text-3)' }}>Where:</b> {g.ai_area}</div>}
+                      {g.ai_suggested_fix && <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 3 }}><b style={{ color: 'var(--text-3)' }}>Suggested fix:</b> {g.ai_suggested_fix}</div>}
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-3)', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span><b style={{ color: 'var(--text-2)' }}>{g.count}×</b></span>
-                    <span>{g.users.size} user{g.users.size === 1 ? '' : 's'}{g.users.size ? ': ' + Array.from(g.users).slice(0, 3).join(', ') + (g.users.size > 3 ? '…' : '') : ''}</span>
-                    <span>v{Array.from(g.versions).join(', ')}</span>
-                    <button onClick={() => setExpanded(s => ({ ...s, [g.key]: !s[g.key] }))} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: GOLD, cursor: 'pointer', fontSize: 11.5, fontWeight: 700 }}>{open ? 'Hide details' : 'Show stack'}</button>
+                    <span><b style={{ color: 'var(--text-2)' }}>{g.hit_count}&times;</b></span>
+                    <span>{g.users_affected} user{g.users_affected === 1 ? '' : 's'}</span>
+                    <span>v{(g.app_versions || []).join(', ')}</span>
+                    <button onClick={() => setExpanded(s => ({ ...s, [g.id]: !s[g.id] }))} style={{ background: 'none', border: 'none', color: GOLD, cursor: 'pointer', fontSize: 11.5, fontWeight: 700 }}>{open ? 'Hide' : 'Details'}</button>
+                    <button onClick={() => resolve(g.id, !resolved)} style={{ marginLeft: 'auto', background: 'none', border: `1px solid ${resolved ? 'var(--border)' : '#22c55e'}`, color: resolved ? 'var(--text-3)' : '#22c55e', cursor: 'pointer', fontSize: 11, fontWeight: 700, borderRadius: 7, padding: '3px 9px' }}>{resolved ? 'Reopen' : '\u2713 Mark resolved'}</button>
                   </div>
                   {open && (
-                    <pre style={{ marginTop: 10, padding: 10, background: 'var(--bg-hover)', borderRadius: 8, fontSize: 10.5, color: 'var(--text-2)', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 280, overflowY: 'auto', margin: '10px 0 0' }}>
-{(g.sample.stack || '(no stack)')}{g.sample.component_stack ? '\n\n— Component stack —\n' + g.sample.component_stack : ''}{'\n\n— Device —\n' + (g.sample.user_agent || '')}
-                    </pre>
+                    <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-3)' }}>
+                      First seen {rel(g.first_seen)} &middot; <code style={{ fontSize: 10 }}>{g.signature}</code>
+                    </div>
                   )}
                 </div>
               );
