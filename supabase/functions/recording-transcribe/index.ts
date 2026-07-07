@@ -101,57 +101,43 @@ serve(async (req) => {
     if (!rec.storage_path) throw new Error("No storage path on recording");
     if (rec.audio_purged) throw new Error("Audio has been purged");
 
-    // Mark as transcribing
+    // Mark as transcribing. AssemblyAI has no 25MB cap and handles multi-hour audio.
     await supabase.from("recordings").update({
       transcription_status: "transcribing",
       transcription_error: null,
+      transcription_provider: "assemblyai",
     }).eq("id", recordingId);
 
-    // Download the audio file from storage
-    const { data: fileData, error: dlErr } = await supabase.storage
-      .from("recordings").download(rec.storage_path);
-    if (dlErr || !fileData) throw new Error(`Download failed: ${dlErr?.message || "unknown"}`);
+    const AAI_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") || "";
+    if (!AAI_KEY) throw new Error("ASSEMBLYAI_API_KEY not configured");
 
-    // Send to Whisper with verbose_json to get segments
-    const form = new FormData();
-    form.append("file", fileData, rec.storage_path.split("/").pop() || "audio.mp3");
-    form.append("model", "whisper-1");
-    form.append("response_format", "verbose_json");
-    form.append("timestamp_granularities[]", "segment");
+    // Submit via a signed URL so AssemblyAI fetches the audio directly — no size
+    // limit and no streaming large files through this function.
+    const { data: signed, error: sErr } = await supabase.storage
+      .from("recordings").createSignedUrl(rec.storage_path, 60 * 60 * 3);
+    if (sErr || !signed?.signedUrl) throw new Error(`Signed URL failed: ${sErr?.message || "unknown"}`);
 
-    const wResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    const sub = await fetch("https://api.assemblyai.com/v2/transcript", {
       method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
-      body: form,
+      headers: { authorization: AAI_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ audio_url: signed.signedUrl, speaker_labels: true }),
     });
-    if (!wResp.ok) {
-      const t = await wResp.text();
-      throw new Error(`Whisper error: ${wResp.status} ${t.slice(0, 400)}`);
+    if (!sub.ok) {
+      const t = await sub.text();
+      throw new Error(`AssemblyAI submit error: ${sub.status} ${t.slice(0, 400)}`);
     }
-    const whisperData = await wResp.json();
-    const rawSegments = whisperData.segments || [{ start: 0, end: 0, text: whisperData.text || "" }];
+    const subData = await sub.json();
+    if (!subData.id) throw new Error("AssemblyAI did not return a transcript id");
 
-    // Apply speaker labels
-    const labeledSegments = applySpeakerLabels(rawSegments, rec.first_speaker || "me");
-    const transcriptText = segmentsToPlainText(labeledSegments);
-    const duration = whisperData.duration || (rawSegments.length ? rawSegments[rawSegments.length - 1].end : null);
-
-    // Save back to the recording (this triggers the DISC queue via DB trigger)
-    const { error: upErr } = await supabase.from("recordings").update({
-      transcription_status: "ready",
-      transcript_text: transcriptText,
-      transcript_segments: labeledSegments,
-      duration_seconds: duration,
-      transcription_error: null,
+    await supabase.from("recordings").update({
+      aai_transcript_id: subData.id,
+      transcription_status: "transcribing",
     }).eq("id", recordingId);
-    if (upErr) throw new Error(`Save failed: ${upErr.message}`);
 
-    return new Response(JSON.stringify({
-      ok: true,
-      duration_seconds: duration,
-      segment_count: labeledSegments.length,
-      transcript_chars: transcriptText.length,
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // recording-transcribe-poll (cron) finishes it: fetches the transcript when ready.
+    return new Response(JSON.stringify({ ok: true, status: "transcribing", transcript_id: subData.id }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
 
   } catch (err) {
     // Best-effort: mark the recording as errored so the UI can show it
