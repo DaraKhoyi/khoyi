@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './dataService';
+import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 
 // --- Hardware/gesture BACK button closes the top modal instead of leaving the PWA ---
 // A modal calls useBackClose(onClose) to register its close handler in a shared LIFO
@@ -7758,6 +7759,9 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           {/* Recordings section */}
           <ContactRecordingsSection contact={contact} userId={userId} onTranscribed={reanalyze} />
 
+          {/* Documents section */}
+          <ContactDocuments contactId={contact.id} userId={userId} />
+
           {/* Evidence trail — collapsed by default; tap header to expand */}
           {hasInference && (
             <div>
@@ -15451,6 +15455,7 @@ function AppMain() {
     { id: 'email_review', icon: '🕵️', label: 'Email review', badge: needsReviewCount || null },
     { id: 'quo',         icon: '☎️', label: 'Quo',         badge: null },
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
+    { id: 'documents',   icon: '📁', label: 'Documents',   badge: null },
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
     { id: 'deals',       icon: '🤝', label: 'Files',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
     { id: 'files',       icon: '📁', label: 'Files',       badge: files.filter(f=>f.side==='buyer' && !['closed','paid','cancelled'].includes(f.status)).length || null },
@@ -15541,6 +15546,7 @@ function AppMain() {
     // My business
     { label: 'Clients & outreach', icon: 'users', children: [
       { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
+      { label: 'Documents', view: 'documents', icon: 'contacts' },
       { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
       { label: 'Email review', view: 'email_review', icon: 'mail', ai: true },
       { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
@@ -15660,6 +15666,7 @@ function AppMain() {
               : view==='agent_activity' ? <AgentActivityView userId={user.id}/>
               : view==='group_message' ? <GroupMessageView contacts={contacts} profiles={profiles} userId={user.id}/>
               : view==='app_health' ? <AppHealthView/>
+              : view==='documents' ? <DocumentsView userId={user.id}/>
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
