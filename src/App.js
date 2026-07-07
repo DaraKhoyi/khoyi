@@ -1955,6 +1955,24 @@ const QUADRANTS = [
   { letter:'C', label:'C — Urgent, Not Important',  short:'Delegate' },
   { letter:'D', label:'D — Neither',                short:'Drop' },
 ];
+// Priority dropdown that shows the user's chosen style: A/B/C for Eisenhower,
+// High/Medium/Low otherwise. It stores/emits a simple priority (high/medium/low)
+// either way, mapping A↔high, B↔medium, C↔low, so callers don't change.
+const PRIO_TO_QUAD = { high: 'A', medium: 'B', low: 'C' };
+const QUAD_TO_PRIO = { A: 'high', B: 'medium', C: 'low' };
+export function PriorityField({ system, priority, onChange, style, className = 'form-select', disabled }) {
+  const eis = (system || 'eisenhower') === 'eisenhower';
+  const val = eis ? (PRIO_TO_QUAD[priority] || 'B') : (priority || 'medium');
+  const opts = eis
+    ? [['A', 'A · Do now'], ['B', 'B · Schedule'], ['C', 'C · Delegate']]
+    : [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']];
+  return (
+    <select className={className} style={style} disabled={disabled} value={val}
+      onChange={e => onChange(eis ? (QUAD_TO_PRIO[e.target.value] || 'medium') : e.target.value)}>
+      {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
+}
 function taskSortKey(t) {
   if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
     const qIdx = { A:0, B:1, C:2, D:3 }[t.eisenhower_quadrant] ?? 4;
@@ -11921,7 +11939,7 @@ function EmailRepliesPanel() {
 // edits/approves them into real tasks (linked to the matched contact) or
 // dismisses them. Renders nothing when there's nothing to review.
 // ─────────────────────────────────────────
-function CallFollowupsPanel({ userId, contacts = [], setTasks }) {
+function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = 'eisenhower' }) {
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -11995,7 +12013,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks }) {
         user_id: userId, title: it.title.trim(), notes,
         due_date: it.due_date || null,
         priority: it.priority || 'medium', list: 'inbox', status: 'todo',
-        priority_system: 'eisenhower', eisenhower_quadrant: qmap[it.priority] || 'B', eisenhower_rank: 1,
+        priority_system: defaultSystem, eisenhower_quadrant: defaultSystem === 'eisenhower' ? (qmap[it.priority] || 'B') : null, eisenhower_rank: defaultSystem === 'eisenhower' ? 1 : null,
         contact_id: call.contact_id || null,
         waiting_on: it.owner === 'them' ? (contact ? contact.name : 'the other party') : null,
       };
@@ -12070,10 +12088,8 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks }) {
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: it.note ? '6px' : '8px' }}>
                   <input type="date" value={it.due_date || ''} onChange={e => setItem(call.id, idx, { due_date: e.target.value })}
                     style={{ padding: '6px 8px', fontSize: '12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)', colorScheme: 'dark' }} />
-                  <select value={it.priority || 'medium'} onChange={e => setItem(call.id, idx, { priority: e.target.value })}
-                    style={{ padding: '6px 8px', fontSize: '12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)' }}>
-                    <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-                  </select>
+                  <PriorityField system={defaultSystem} priority={it.priority || 'medium'} onChange={v => setItem(call.id, idx, { priority: v })} className=""
+                    style={{ padding: '6px 8px', fontSize: '12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-1)' }} />
                 </div>
                 {it.note && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '8px' }}>{it.note}</div>}
                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -15649,10 +15665,10 @@ function AppMain() {
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
               : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
-              : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
+              : view==='tasks'       ? <>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks} defaultSystem={priorityPref}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></>
               : view==='email_review' ? <EmailReviewView userId={user.id} emailAccounts={emailAccounts} setView={setView} onCount={setNeedsReviewCount}/>
               : view==='inbox'       ? <InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData}/>
-              : view==='quo'         ? <QuoView contacts={contacts} userId={user.id}/>
+              : view==='quo'         ? <QuoView contacts={contacts} userId={user.id} defaultSystem={priorityPref}/>
               : view==='contacts'    ? <ContactsView contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles} canSeeRestricted={isAdmin || !!(appCtx&&appCtx.is_team_leader) || (appCtx&&appCtx.role==='owner')}/>
               : view==='recruiting'  ? <RecruitingView contacts={contacts} setContacts={setContacts} userId={user.id}/>
               : view==='deals'       ? <DealsView deals={deals} setDeals={setDeals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>

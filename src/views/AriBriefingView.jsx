@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, Icon, QuoTextModal, TaskModal, money } from '../App';
+import { useBackClose, Icon, QuoTextModal, TaskModal, PriorityField, money } from '../App';
 
 function ActionHubModal({ contactId, userId, onClose }) {
 
@@ -315,7 +315,7 @@ function GoalEngine({ userId, onBack }) {
 
 const RELN = { same: { t: 'Likely the same task', c: '#ef4444' }, update: { t: 'Looks like an update', c: '#C5A95E' }, variant: { t: 'A related variant', c: '#3b82f6' }, unclear: { t: 'Might overlap', c: '#9499b0' } };
 
-function ResolveModal({ resolve, contacts, fmt, onAddNew, onUpdate, onSkip, onCancel }) {
+function ResolveModal({ resolve, contacts, fmt, defaultSystem, onAddNew, onUpdate, onSkip, onCancel }) {
   const cur = resolve.queue[resolve.idx];
   const [p, setP] = React.useState(cur.item);
   const [selId, setSelId] = React.useState(cur.candidates[0]?.id || null);
@@ -342,9 +342,7 @@ function ResolveModal({ resolve, contacts, fmt, onAddNew, onUpdate, onSkip, onCa
           <input className="form-input" style={{ margin: '0 0 7px', fontSize: 13.5, padding: '7px 9px' }} value={p.title} onChange={e => setP(s => ({ ...s, title: e.target.value }))} />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <input type="date" className="form-input" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '1 1 130px' }} value={p.due_date || ''} onChange={e => setP(s => ({ ...s, due_date: e.target.value }))} />
-            <select className="form-select" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '0 0 105px' }} value={p.priority} onChange={e => setP(s => ({ ...s, priority: e.target.value }))}>
-              <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-            </select>
+            <PriorityField system={defaultSystem} style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '0 0 105px' }} priority={p.priority} onChange={v => setP(s => ({ ...s, priority: v }))} />
           </div>
         </div>
 
@@ -366,9 +364,7 @@ function ResolveModal({ resolve, contacts, fmt, onAddNew, onUpdate, onSkip, onCa
             <input className="form-input" style={{ margin: '0 0 7px', fontSize: 13.5, padding: '7px 9px' }} value={ce(cand).title} onChange={e => setCe(cand.id, 'title', e.target.value)} />
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <input type="date" className="form-input" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '1 1 130px' }} value={ce(cand).due_date || ''} onChange={e => setCe(cand.id, 'due_date', e.target.value)} />
-              <select className="form-select" style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '0 0 105px' }} value={ce(cand).priority} onChange={e => setCe(cand.id, 'priority', e.target.value)}>
-                <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-              </select>
+              <PriorityField system={defaultSystem} style={{ margin: 0, fontSize: 12, padding: '5px 8px', flex: '0 0 105px' }} priority={ce(cand).priority} onChange={v => setCe(cand.id, 'priority', v)} />
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10.5, padding: '4px 8px' }} onClick={() => setCe(cand.id, 'title', p.title)} title="Copy the new wording into this task">← use new wording</button>
             </div>
           </div>
@@ -525,9 +521,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
                     <input className="form-input" style={{ margin: '0 0 6px', fontSize: '13px', padding: '6px 8px' }} value={tv(call, i, 'title', it.title)} onChange={e => setTv(call, i, 'title', e.target.value)} />
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       <input type="date" className="form-input" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '1 1 130px' }} value={tv(call, i, 'due_date', it.due_date) || ''} onChange={e => setTv(call, i, 'due_date', e.target.value)} />
-                      <select className="form-select" style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '0 0 105px' }} value={tv(call, i, 'priority', it.priority)} onChange={e => setTv(call, i, 'priority', e.target.value)}>
-                        <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-                      </select>
+                      <PriorityField system={defaultSystem} style={{ margin: 0, fontSize: '12px', padding: '5px 8px', flex: '0 0 105px' }} priority={tv(call, i, 'priority', it.priority)} onChange={v => setTv(call, i, 'priority', v)} />
                     </div>
                   </div>
                 </div>
@@ -543,7 +537,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
       <div style={{ textAlign: 'center', marginTop: '4px' }}>
         <button className="btn btn-ghost btn-sm" disabled={checking} onClick={checkNow}>{checking ? 'Checking…' : '↻ Check for new calls'}</button>
       </div>
-      {resolve && <ResolveModal resolve={resolve} contacts={contacts} fmt={fmt}
+      {resolve && <ResolveModal resolve={resolve} contacts={contacts} fmt={fmt} defaultSystem={defaultSystem}
         onAddNew={async (item) => { const ok = await createTaskFromItem(item, resolve.call); resolveNext(ok ? 1 : 0); }}
         onUpdate={async (existing, fields) => { await updateExistingTask(existing, fields, resolve.call); resolveNext(0); }}
         onSkip={() => resolveNext(0)}

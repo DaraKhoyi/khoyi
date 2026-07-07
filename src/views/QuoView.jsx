@@ -86,7 +86,7 @@ function QuoStatusPanel({ msgs = [], calls = [], activeNumber }) {
   );
 }
 
-function QuoView({ contacts = [], userId }) {
+function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   const [tab, setTab] = useState('feed');               // feed | messages | calls
   const [numbers, setNumbers] = useState([]);
   const [fromId, setFromId] = useState('');
@@ -314,7 +314,7 @@ function QuoView({ contacts = [], userId }) {
       </div>
 
       <QuoStatusPanel msgs={msgs} calls={calls} activeNumber={fromNumber?.number} />
-      <CallFollowupsPanel userId={userId} contacts={contacts} />
+      <CallFollowupsPanel userId={userId} contacts={contacts} defaultSystem={defaultSystem} />
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
         {TABS.map(t => <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}>{t.icon} {t.label}</button>)}
