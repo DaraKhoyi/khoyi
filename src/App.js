@@ -15536,8 +15536,14 @@ function AppMain() {
     ] },
   ] };
   const MENU = [
-    // Quick access — the daily drivers
+    // Quick access — the daily drivers, promoted to the top level
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
+    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
+    { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
+    { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
+    { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
+    { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
+    { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
     { label: 'My numbers', view: 'numbers', icon: 'chart' },
     { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
     { label: 'AI agents', icon: 'sparkles', ai: true, children: [
@@ -15546,19 +15552,10 @@ function AppMain() {
       { label: 'Agent activity', view: 'agent_activity', icon: 'brain' },
       ...(isAdmin ? [{ label: 'App health', view: 'app_health', icon: 'brain' }] : []),
     ] },
-    // Today
-    { label: 'My day', icon: 'clock', children: [
-      { label: 'Tasks', view: 'tasks', icon: 'tasks' },
-      { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
-      { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
-    ] },
     // My business
     { label: 'Clients & outreach', icon: 'users', children: [
-      { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
       { label: 'Documents', view: 'documents', icon: 'contacts' },
-      { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
       { label: 'Email review', view: 'email_review', icon: 'mail', ai: true },
-      { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
       { label: 'Group message', view: 'group_message', icon: 'message', ai: true },
       ...((isAdmin || isTeamLeader) ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
     ] },
