@@ -3524,6 +3524,7 @@ function buildGrowthMoves({ contacts=[], deals=[], gciGoal=0, now=Date.now() }){
 function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan, myUserId=null, oweReplyMap={}, setOweReplyMap }){
   const now=Date.now();
   const [openSignals,setOpenSignals]=useState({});
+  const [docActions,setDocActions]=useState([]);
   useEffect(()=>{ let alive=true; (async()=>{
     try{
       const since=new Date(Date.now()-30*86400000).toISOString();
@@ -3536,7 +3537,15 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
       setOpenSignals(m);
     }catch(_){}
   })(); return ()=>{alive=false;}; },[]);
-  const actions=React.useMemo(()=>buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}),[contacts,tasks,events,deals,oweReplyMap,openSignals]);
+  useEffect(()=>{ let alive=true; (async()=>{
+    try{
+      const { data } = await supabase.from('documents').select('id, title, doc_type, summary, action_label, signed_state, document_contacts(contact_id)').eq('action_needed',true).eq('status','ready').order('created_at',{ascending:false}).limit(20);
+      if(!alive) return;
+      const sigs=(data||[]).map(d=>{ const cid=d.document_contacts&&d.document_contacts[0]?d.document_contacts[0].contact_id:null; const cn=cid?((contacts.find(c=>c.id===cid)||{}).name||''):''; return { key:'doc:'+d.id, score:86+(d.signed_state==='unsigned'?6:0), tag:'document', icon:'target', contactId:cid, title:d.action_label||('Handle '+(d.title||'a document')), why:((cn?cn+' \u00b7 ':'')+(d.doc_type&&d.doc_type!=='other'?d.doc_type+' \u00b7 ':'')+(d.signed_state==='unsigned'?'unsigned \u2014 needs signature':(d.summary||'needs attention'))).slice(0,130), cta:{ label:'Open', kind:'view', payload:'documents' } }; });
+      setDocActions(sigs);
+    }catch(_){}
+  })(); return ()=>{alive=false;}; },[contacts]);
+  const actions=React.useMemo(()=>{ const base=buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}); return [...base,...docActions].sort((a,b)=>b.score-a.score); },[contacts,tasks,events,deals,oweReplyMap,openSignals,docActions]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
   const urgent=actions.length>0; const list=urgent?actions:growth;

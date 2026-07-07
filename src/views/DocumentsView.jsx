@@ -55,6 +55,7 @@ function DocCard({ doc, onOpen, snippet }) {
         <span style={{ fontSize: 16 }}>{ICON[k]}</span>
         <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)', flex: 1, wordBreak: 'break-word' }}>{doc.title || 'Untitled'}</span>
         {doc.doc_type && <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: '#fff', background: TYPE_COLOR[doc.doc_type] || '#6b7280', borderRadius: 5, padding: '2px 6px' }}>{doc.doc_type}</span>}
+        {doc.action_needed && <span title="needs action" style={{ fontSize: 11, color: '#ef4444' }}>⚑</span>}
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.45, marginBottom: 6 }}>{snippet || doc.summary || (doc.status === 'ready' ? '' : 'Extracting text…')}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10.5, color: 'var(--text-3)' }}>
@@ -85,6 +86,7 @@ function ViewerModal({ doc, userId, onClose, onDeleted }) {
     await supabase.from('documents').delete().eq('id', full.id);
     setBusy(false); onDeleted && onDeleted(full.id); onClose();
   };
+  const markHandled = async () => { setFull(f => ({ ...f, action_needed: false })); try { await supabase.from('documents').update({ action_needed: false }).eq('id', full.id); } catch (_) {} };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base)', borderTop: `2px solid ${GOLD}`, borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 680, maxHeight: '88vh', overflowY: 'auto', padding: 18 }}>
@@ -100,6 +102,13 @@ function ViewerModal({ doc, userId, onClose, onDeleted }) {
           <div style={{ background: 'rgba(197,169,94,.07)', border: `1px solid ${GOLD}33`, borderRadius: 9, padding: 11, marginBottom: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: GOLD, marginBottom: 4 }}>✨ Summary</div>
             <div style={{ fontSize: 12.5, color: 'var(--text-1)', lineHeight: 1.5 }}>{full.summary}</div>
+          </div>
+        )}
+        {full.action_needed && (
+          <div style={{ background: 'rgba(239,68,68,.08)', border: '1px solid #ef444455', borderRadius: 9, padding: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: '#ef4444', marginBottom: 4 }}>⚑ Needs action</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-1)', marginBottom: 8 }}>{full.action_label || 'This document needs a next step.'}</div>
+            <button onClick={markHandled} className="btn btn-ghost btn-sm">✓ Mark handled</button>
           </div>
         )}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>

@@ -33,15 +33,17 @@ async function claudeMedia(base64: string, mediaType: string, isPdf: boolean): P
   return (d.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
 }
 
-async function claudeSummarize(text: string): Promise<{ summary: string; doc_type: string }> {
+async function claudeSummarize(text: string): Promise<{ summary: string; doc_type: string; signed_state: string; action_needed: boolean; action_label: string }> {
+  const fb = { summary: "", doc_type: "other", signed_state: "na", action_needed: false, action_label: "" };
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST", headers: { "x-api-key": ANTHROPIC, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 400, messages: [{ role: "user", content: `Document text:\n"""${text.slice(0, 14000)}"""\n\nReturn STRICT JSON only: { "summary": "2-3 sentence summary of what this document is and its key points", "doc_type": "one of: contract, disclosure, lease, agreement, id, invoice, statement, letter, report, flyer, note, other" }` }] }),
+      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 500, messages: [{ role: "user", content: `Document text:\n"""${text.slice(0, 14000)}"""\n\nReturn STRICT JSON only:\n{ "summary": "2-3 sentence summary of what this document is and its key points",\n  "doc_type": "one of: contract, disclosure, lease, agreement, id, invoice, statement, letter, report, flyer, note, other",\n  "signed_state": "signed | unsigned | na",\n  "action_needed": true or false,\n  "action_label": "a short imperative next step for the agent, or empty" }\nGuidance: signed_state='na' for non-signable docs (notes, flyers, statements, IDs). Set action_needed=true mainly when a contract/disclosure/lease/agreement appears UNSIGNED, or the document clearly implies a follow-up; otherwise false. Keep action_label short, specific, imperative (e.g. "Send the disclosure for signature").` }] }),
     });
     const d = await r.json(); const t = (d.content || []).map((c: any) => c.text || "").join("");
-    return JSON.parse(t.match(/\{[\s\S]*\}/)[0]);
-  } catch (_) { return { summary: "", doc_type: "other" }; }
+    const p = JSON.parse(t.match(/\{[\s\S]*\}/)[0]);
+    return { summary: p.summary || "", doc_type: p.doc_type || "other", signed_state: p.signed_state || "na", action_needed: !!p.action_needed, action_label: p.action_label || "" };
+  } catch (_) { return fb; }
 }
 
 async function embed(text: string): Promise<string | null> {
@@ -93,15 +95,29 @@ serve(async (req) => {
     }
 
     text = (text || "").trim();
-    const { summary, doc_type } = text ? await claudeSummarize(text) : { summary: "", doc_type: "other" };
-    const embedding = await embed(`${doc.title || ""}\n${summary}\n${text}`);
+    const meta = text ? await claudeSummarize(text) : { summary: "", doc_type: "other", signed_state: "na", action_needed: false, action_label: "" };
+    const embedding = await embed(`${doc.title || ""}\n${meta.summary}\n${text}`);
 
     await admin.from("documents").update({
-      extracted_text: text, summary, doc_type,
+      extracted_text: text, summary: meta.summary, doc_type: meta.doc_type,
+      signed_state: meta.signed_state, action_needed: meta.action_needed, action_label: meta.action_label,
       embedding, status: "ready", extraction_error: null, updated_at: new Date().toISOString(),
     }).eq("id", docId);
 
-    return J({ ok: true, chars: text.length, doc_type, summarized: !!summary, embedded: !!embedding });
+    // Timeline: a note on each linked contact so the document shows in their history.
+    try {
+      const { data: links } = await admin.from("document_contacts").select("contact_id").eq("document_id", docId);
+      for (const l of (links || [])) {
+        await admin.from("contact_interactions").insert({
+          user_id: user.id, contact_id: l.contact_id, channel: "document", kind: "note",
+          occurred_at: new Date().toISOString(),
+          brief: `\uD83D\uDCCE Document: ${doc.title || "file"}${meta.doc_type && meta.doc_type !== "other" ? " (" + meta.doc_type + ")" : ""}`,
+          body: meta.summary || "", entity_type: "document", entity_id: docId,
+        });
+      }
+    } catch (_) { /* timeline is best-effort */ }
+
+    return J({ ok: true, chars: text.length, doc_type: meta.doc_type, action_needed: meta.action_needed, embedded: !!embedding });
   } catch (e) {
     if (docId) { try { await admin.from("documents").update({ status: "error", extraction_error: String(e).slice(0, 600) }).eq("id", docId); } catch (_) {} }
     return J({ error: String(e) }, 500);
