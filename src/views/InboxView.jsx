@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { AriRewriteButton, HeaderSearchIcon, HeaderSearchInput, Icon, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
+import { AriRewriteButton, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
 
 const TRIAGE_CATEGORIES = {
   urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },
@@ -665,7 +665,7 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
 // fake-email LegacyInboxView and the underlying `emails` table.)
 // ─────────────────────────────────────────
 
-function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData }) {
+function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData, defaultSystem }) {
   // All connected email-capable Google accounts (locked-in once OAuth'd for email).
   const mailAccounts = emailAccounts.filter(a =>
     ((a.purposes || []).includes('email') || (a.scopes || []).some(s => s.includes('gmail'))) && a.refresh_token
@@ -752,7 +752,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
           })}
         </div>
       )}
-      <GmailInboxView key={account.id} account={account} openThreadId={pendingOpenThreadId} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} reloadData={reloadData} />
+      <GmailInboxView key={account.id} account={account} openThreadId={pendingOpenThreadId} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} reloadData={reloadData} defaultSystem={defaultSystem} />
     </div>
   );
 }
@@ -980,7 +980,7 @@ function PlainTextBody({ text }) {
 }
 
 
-function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData }) {
+function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData, defaultSystem = 'eisenhower' }) {
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [tab, setTab] = useState('inbox');
@@ -1017,6 +1017,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
   const [taskTitle, setTaskTitle] = useState('');
   const [taskNotes, setTaskNotes] = useState('');
   const [taskDue, setTaskDue] = useState('');
+  const [taskPriority, setTaskPriority] = useState('medium');
   const [taskContact, setTaskContact] = useState(null);
   const [taskSrc, setTaskSrc] = useState({});
 
@@ -1723,6 +1724,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     setTaskTitle(subject || 'Follow up on email');
     setTaskNotes(body);
     setTaskDue('');
+    setTaskPriority('medium');
     setTaskContact(match);
     setTaskSrc({
       thread_id: msg.provider_thread_id || selectedThread?.provider_thread_id || null,
@@ -1746,8 +1748,8 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         user_id: userId, title,
         notes: taskNotes.trim() || null,
         due_date: taskDue || null,
-        priority: 'medium', list: 'inbox', status: 'todo',
-        priority_system: 'eisenhower', eisenhower_quadrant: 'B', eisenhower_rank: 1,
+        priority: taskPriority, list: 'inbox', status: 'todo',
+        priority_system: defaultSystem, eisenhower_quadrant: defaultSystem === 'eisenhower' ? ({ high: 'A', medium: 'B', low: 'C' }[taskPriority] || 'B') : null, eisenhower_rank: defaultSystem === 'eisenhower' ? 1 : null,
         contact_id: taskContact?.id || null,
         email_thread_id: taskSrc.thread_id || null,
         email_message_id: taskSrc.message_id || null,
@@ -2358,6 +2360,13 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                 <input type="date" value={taskDue} onChange={e => setTaskDue(e.target.value)}
                   style={{width:'100%',boxSizing:'border-box',padding:'10px 12px',fontSize:'14px',
                     background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text-1)',colorScheme:'dark'}} />
+              </div>
+
+              {/* priority */}
+              <div>
+                <label style={{display:'block',fontSize:'11px',fontWeight:700,letterSpacing:'0.04em',textTransform:'uppercase',color:'var(--text-3)',marginBottom:'8px'}}>Priority</label>
+                <PriorityField system={defaultSystem} priority={taskPriority} onChange={setTaskPriority} className=""
+                  style={{width:'100%',boxSizing:'border-box',padding:'10px 12px',fontSize:'14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'10px',color:'var(--text-1)',colorScheme:'dark'}} />
               </div>
 
               {/* notes (email contents) */}
