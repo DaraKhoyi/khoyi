@@ -1964,7 +1964,7 @@ export function PriorityField({ system, priority, onChange, style, className = '
   const eis = (system || 'eisenhower') === 'eisenhower';
   const val = eis ? (PRIO_TO_QUAD[priority] || 'B') : (priority || 'medium');
   const opts = eis
-    ? [['A', 'A · Do now'], ['B', 'B · Schedule'], ['C', 'C · Delegate']]
+    ? [['A', 'A'], ['B', 'B'], ['C', 'C']]
     : [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']];
   return (
     <select className={className} style={style} disabled={disabled} value={val}
