@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase } from './dataService';
+import { supabase, SUPABASE_URL } from './dataService';
+import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 
 // --- Hardware/gesture BACK button closes the top modal instead of leaving the PWA ---
@@ -2804,6 +2805,30 @@ function ToastHost() {
   );
 }
 
+// ── Resumable upload ──────────────────────────────────────────────────────
+// Chunked, auto-retrying upload to Supabase Storage — reliable for large files
+// (long meetings) over mobile networks where a single POST would time out.
+async function resumableUpload({ bucket, path, file, onProgress }) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session && session.access_token;
+  if (!accessToken) throw new Error('Not signed in');
+  await new Promise((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
+      retryDelays: [0, 2000, 4000, 8000, 16000, 30000],
+      headers: { authorization: `Bearer ${accessToken}`, 'x-upsert': 'false' },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      chunkSize: 6 * 1024 * 1024,
+      metadata: { bucketName: bucket, objectName: path, contentType: file.type || 'application/octet-stream' },
+      onError: (e) => reject(e),
+      onProgress: (sent, total) => { if (onProgress && total) onProgress(sent / total); },
+      onSuccess: () => resolve(),
+    });
+    upload.start();
+  });
+}
+
 // ── Client error monitoring ───────────────────────────────────────────────
 // Captures crashes (error boundaries) and uncaught errors/rejections into
 // public.client_errors so we SEE failures the moment a user hits one — with
@@ -5242,13 +5267,17 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
 
       const safeFilename = fileToUpload.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = `${userId}/${rec.id}/${safeFilename}`;
-      const { error: upErr } = await supabase.storage.from('recordings').upload(path, fileToUpload, {
-        contentType: fileToUpload.type || 'audio/mpeg',
-        upsert: false,
-      });
-      if (upErr) {
+      try {
+        if (fileToUpload.size > 25 * 1024 * 1024) {
+          // Large file — resumable/chunked upload survives mobile network drops.
+          await resumableUpload({ bucket: 'recordings', path, file: fileToUpload, onProgress: (frac) => setUploadProgress(15 + Math.round(frac * 58)) });
+        } else {
+          const { error: upErr } = await supabase.storage.from('recordings').upload(path, fileToUpload, { contentType: fileToUpload.type || 'audio/mpeg', upsert: false });
+          if (upErr) throw upErr;
+        }
+      } catch (upErr) {
         await supabase.from('recordings').delete().eq('id', rec.id);
-        throw new Error(`Upload failed: ${upErr.message}`);
+        throw new Error(`Upload failed: ${(upErr && upErr.message) || upErr}`);
       }
 
       setUploadProgress(60);
