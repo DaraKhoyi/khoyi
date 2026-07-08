@@ -118,13 +118,15 @@ function MenuNode({ node, depth, ctx }) {
   const { view, navigate, builtSet, byNavId, openPath, toggle } = ctx;
   const hasChildren = !!(node.children && node.children.length);
   const leafView = node.view || null;
+  const isAction = typeof node.action === 'function';
   const built = node.built === false ? false
     : hasChildren ? menuDescendantBuilt(node, builtSet)
-    : (leafView ? builtSet.has(leafView) : false);
+    : (leafView ? builtSet.has(leafView) : isAction ? true : false);
   const open = hasChildren && openPath[depth] === node._key;
   const active = leafView === view && !hasChildren && !node.sub;
-  const clickable = (built && leafView) || hasChildren;
+  const clickable = (built && leafView) || hasChildren || isAction;
   const handleClick = () => {
+    if (isAction) { node.action(); return; }
     if (built && leafView) navigate(leafView, node.sub || null);
     if (hasChildren) toggle(depth, node._key);
   };
@@ -1127,23 +1129,24 @@ function AnnouncementsAdmin({ userId, isAdmin = false }) {
   );
 }
 
-function OnboardingModal({ userId, userEmail, onComplete }) {
-  const [displayName, setDisplayName] = useState('');
-  const [profession, setProfession] = useState('');
+function OnboardingModal({ userId, userEmail, onComplete, onClose, initial }) {
+  const [displayName, setDisplayName] = useState(initial?.display_name || '');
+  const [profession, setProfession] = useState(initial?.profession || '');
   const [timezone, setTimezone] = useState(() => {
+    if (initial?.timezone) return initial.timezone;
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
     catch (_) { return ''; }
   });
-  const [assistantContext, setAssistantContext] = useState('');
+  const [assistantContext, setAssistantContext] = useState(initial?.assistant_context || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Block ESC dismissal.
+  // Block ESC dismissal on first-run; allow it to close when re-opened manually.
   useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') e.preventDefault(); };
+    const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); if (onClose) onClose(); } };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, []);
+  }, [onClose]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -1185,13 +1188,16 @@ function OnboardingModal({ userId, userEmail, onComplete }) {
   return (
     <div className="modal-overlay" style={{zIndex: 2000, padding: '16px'}}>
       <div className="modal" style={{maxWidth: '520px', width: '100%', maxHeight: '92vh', overflowY: 'auto'}}>
-        <div className="modal-header" style={{borderBottom: '1px solid var(--border)', paddingBottom: '12px', marginBottom: '16px'}}>
+        <div className="modal-header" style={{borderBottom: '1px solid var(--border)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px'}}>
           <div>
             <h2 style={{margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-1)'}}>Welcome to Prism</h2>
             <p style={{margin: '4px 0 0', fontSize: '13px', color: 'var(--text-2)'}}>
               A few quick things so we can set up your workspace and personalize your assistant.
             </p>
           </div>
+          {onClose && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} title="Close" style={{flexShrink: 0, fontSize: '16px', lineHeight: 1, padding: '4px 8px'}}>✕</button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -7472,7 +7478,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const hdrLastAge = _hdrRelAge(_hdrLastTs);
   const hdrLastDir = contact.last_communication_direction === 'inbound' ? '↓ They' : contact.last_communication_direction === 'outbound' ? '↑ You' : (_hdrLastTs ? 'Last' : null);
   const hdrTouchDue = contact.cadence_days ? (_hdrLastTs ? (Date.now()-_hdrLastTs)/86400000 >= contact.cadence_days : true) : false;
-  const _hdrOriginMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',clickup:'ClickUp import',csv:'CSV import',import:'Import',other:'Other'};
+  const _hdrOriginMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',csv:'CSV import',import:'Import',other:'Other'};
   const _hdrReferredBy = contact.referred_by_contact_id ? ((contacts.find(c => c.id === contact.referred_by_contact_id) || {}).name) : null;
   const _hdrHome = [contact.home_address, contact.home_city, contact.home_state].filter(Boolean).join(', ');
   const _hdrBiz = [contact.business_address, contact.business_city, contact.business_state].filter(Boolean).join(', ');
@@ -15239,6 +15245,7 @@ function AppMain() {
   }, []);
   // Pass 2 Batch C — user_settings: drives the onboarding modal + future Settings.
   const [userSettings, setUserSettings] = useState(null);
+  const [onboardingReopen, setOnboardingReopen] = useState(false);
   // Dashboard "Unread Email" tile — count of unread inbox threads (excludes snoozed)
   const [unreadEmailCount, setUnreadEmailCount] = useState(0);
   const [needsReviewCount, setNeedsReviewCount] = useState(0);
@@ -15509,6 +15516,7 @@ function AppMain() {
   useEffect(() => {
     window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
     window.__setView = (v) => { try { navigate(v); } catch (_) {} };  // used by the automated smoke-check harness
+    window.__openOnboarding = () => { setOnboardingReopen(true); setSidebarOpen(false); };  // manual re-launch of the setup wizard
   }); // eslint-disable-line
   // Stamp the active view so uncaught errors/rejections are attributed correctly.
   useEffect(() => { if (typeof window !== 'undefined') window.__currentView = view; }, [view]);
@@ -15587,101 +15595,120 @@ function AppMain() {
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
   const brokerageGroup = { label: 'Brokerage', icon: 'building', children: [
     { label: 'Announcements', view: 'announcements', icon: 'megaphone' },
-    { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
-    { label: 'Team & sharing', view: 'team', icon: 'users' },
-    { label: 'Contact types', view: 'contact_types', icon: 'clipboard' },
-    { label: 'Agent DISC readouts', view: 'disc_roster', icon: 'bulb' },
-    { label: 'Agent voice cards', view: 'voice_roster', icon: 'mic' },
-    { label: 'Agent roster', view: 'agents', icon: 'users', children: [
-      { label: '+ Add agent', view: 'agents', icon: 'recruiting' },
-      { label: 'Set up agent profile', view: 'agents', icon: 'clipboard' },
-      { label: 'Commission plan & GCI goal', built: false, icon: 'target' },
-      { label: 'Commission earned · on track?', built: false, icon: 'chart' },
-      { label: 'DISC & lead systems deployed', built: false, icon: 'signal' },
-      { label: 'Company leads', built: false, icon: 'gift' },
-      { label: 'Oversight / accountability', built: false, icon: 'eye' },
+    { label: 'Team Dashboard', view: 'agents', icon: 'dashboard' },
+    { label: 'Team Sharing', view: 'team', icon: 'users' },
+    { label: 'Agent Roster', view: 'agents', icon: 'users', children: [
+      { label: 'Add Agent', view: 'agents', icon: 'recruiting' },
+      { label: 'Set Up Agent', view: 'agents', icon: 'clipboard' },
+      { label: 'Commission Plan & GCI', built: false, icon: 'target' },
+      { label: 'Commission On Track?', built: false, icon: 'chart' },
+      { label: 'DISC & Systems Deployed', built: false, icon: 'signal' },
+      { label: 'Company Leads', built: false, icon: 'gift' },
+      { label: 'Oversight Accountability', built: false, icon: 'eye' },
     ] },
-    { label: 'Contract management', view: 'files', icon: 'folder' },
-    { label: 'Brokerage finance', view: 'finance', icon: 'finance' },
+    { label: 'Agent DISC Readouts', view: 'disc_roster', icon: 'bulb' },
+    { label: 'Agent Voice Cards', view: 'voice_roster', icon: 'mic' },
+    { label: 'Contact Types', view: 'contact_types', icon: 'clipboard' },
+    { label: 'Brokerage Finance', view: 'finance', icon: 'finance' },
+    { label: 'Teams', view: 'teams', icon: 'users' },
+    ...(!isImpersonating ? [{ label: 'Act as User', view: 'actas', icon: 'users' }] : []),
   ] };
   const teamGroup = { label: 'Team', icon: 'users', children: [
     { label: 'Announcements', view: 'announcements', icon: 'megaphone' },
-    { label: 'Team dashboard', view: 'agents', icon: 'dashboard' },
-    { label: 'Team roster', view: 'agents', icon: 'users', children: [
-      { label: 'Commission earned · on track?', built: false, icon: 'chart' },
-      { label: 'DISC & lead systems deployed', built: false, icon: 'signal' },
-      { label: 'Company leads', built: false, icon: 'gift' },
-      { label: 'Oversight / accountability', built: false, icon: 'eye' },
+    { label: 'Team Dashboard', view: 'agents', icon: 'dashboard' },
+    { label: 'Recruiting', view: 'recruiting', icon: 'recruiting' },
+    { label: 'Team Roster', view: 'agents', icon: 'users', children: [
+      { label: 'Commission On Track?', built: false, icon: 'chart' },
+      { label: 'DISC & Systems Deployed', built: false, icon: 'signal' },
+      { label: 'Company Leads', built: false, icon: 'gift' },
+      { label: 'Oversight Accountability', built: false, icon: 'eye' },
     ] },
   ] };
   const MENU = [
-    // Quick access — the daily drivers, promoted to the top level
+    // ── Top level — promoted daily drivers (Dara's order) ──
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
     { label: 'Tasks', view: 'tasks', icon: 'tasks' },
+    { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
-    { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
     { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
     { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
-    { label: 'Text & Phone', view: 'quo', icon: 'quo', ai: true },
-    { label: 'My numbers', view: 'numbers', icon: 'chart' },
+    { label: 'Phone & Text', view: 'quo', icon: 'quo', ai: true },
+    { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
+    { label: 'Documents', view: 'documents', icon: 'folder' },
+    { label: 'Money', view: 'finance', icon: 'dollar' },
+    { label: 'Mileage', view: 'mileage', icon: 'car' },
     { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
-    { label: 'AI agents', icon: 'sparkles', ai: true, children: [
+    { label: 'My Stats', view: 'numbers', icon: 'chart' },
+    // ── AI Agents ──
+    { label: 'AI Agents', icon: 'sparkles', ai: true, children: [
       { label: 'Chief of Staff', view: 'chief', icon: 'briefing' },
       { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
-      { label: 'Agent activity', view: 'agent_activity', icon: 'brain' },
-      ...(isAdmin ? [{ label: 'App health', view: 'app_health', icon: 'brain' }] : []),
+      { label: 'Agent Activity', view: 'agent_activity', icon: 'brain' },
+      ...(isAdmin ? [{ label: 'App Health', view: 'app_health', icon: 'brain' }] : []),
     ] },
-    // My business
-    { label: 'Clients & outreach', icon: 'users', children: [
-      { label: 'Documents', view: 'documents', icon: 'contacts' },
-      { label: 'Email review', view: 'email_review', icon: 'mail', ai: true },
-      { label: 'Group message', view: 'group_message', icon: 'message', ai: true },
-      ...((isAdmin || isTeamLeader) ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
+    // ── Pipeline & Growth ──
+    { label: 'Pipeline & Growth', icon: 'target', children: [
+      { label: 'My Pipeline', view: 'pipeline', icon: 'chart' },
+      { label: 'Lead-Gen Systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
+      { label: "How I'm Doing", view: 'scoreboard', icon: 'target' },
+      { label: 'Growth', view: 'growth', icon: 'chart' },
+      ...(isAdmin ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
     ] },
-    { label: 'Grow my pipeline', icon: 'target', children: [
-      { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
-      { label: 'Lead-gen systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
-      { label: 'My pipeline', view: 'pipeline', icon: 'chart' },
-      { label: "How I'm doing", view: 'scoreboard', icon: 'target' },
-      { label: 'Lead-gen suggestions', built: false, ai: true, icon: 'bulb' },
+    // ── Communications ──
+    { label: 'Communications', icon: 'message', children: [
+      { label: 'Inbox', view: 'inbox', icon: 'inbox' },
+      { label: 'Email Review', view: 'email_review', icon: 'mail', ai: true },
+      { label: 'Phone & Text (Quo)', view: 'quo', icon: 'quo' },
+      { label: 'Group Message', view: 'group_message', icon: 'message', ai: true },
+      { label: 'Journal', view: 'journal', icon: 'journal' },
     ] },
-    { label: 'Deals & transactions', icon: 'briefcase', children: [
-      { label: 'Pipeline', view: 'deals', icon: 'deals' },
-      { label: 'Contract management', view: 'files', icon: 'folder', ai: true },
+    // ── Deals & Property ──
+    { label: 'Deals & Property', icon: 'briefcase', children: [
+      { label: 'Transaction Pipeline', view: 'deals', icon: 'deals' },
+      { label: 'Contract Management', view: 'files', icon: 'folder', ai: true },
+      { label: 'Documents', view: 'documents', icon: 'folder' },
       { label: 'Properties', view: 'properties', icon: 'properties' },
       { label: 'Projects', view: 'tracker', icon: 'tracker' },
+      { label: 'Commercial', built: false, icon: 'building' },
+      { label: 'Rental', built: false, icon: 'properties' },
       { label: 'Investments', view: 'investments', icon: 'investments' },
     ] },
-    { label: 'Money', icon: 'dollar', children: [
-      { label: 'Finance dashboard', view: 'finance', icon: 'finance' },
-      { label: 'Data entry / scan', view: 'finance', sub: 'ledger', icon: 'camera' },
-      { label: 'Blueprint (budget)', view: 'finance', sub: 'blueprint', icon: 'compass' },
-      { label: 'Financial reporting', view: 'finance', sub: 'reports', icon: 'chart' },
+    // ── Money Matters ──
+    { label: 'Money Matters', icon: 'dollar', children: [
+      { label: 'Money Dashboard', view: 'finance', icon: 'finance', children: [
+        { label: 'Data Entry / Scan', view: 'finance', sub: 'ledger', icon: 'camera' },
+        { label: 'Blueprint (Budget)', view: 'finance', sub: 'blueprint', icon: 'compass' },
+        { label: 'Financial Reporting', view: 'finance', sub: 'reports', icon: 'chart' },
+      ] },
       { label: 'Mileage', view: 'mileage', icon: 'car' },
     ] },
-    { label: 'Knowledge & training', icon: 'library', children: [
+    // ── Learn & Coaching ──
+    { label: 'Learn & Coaching', icon: 'library', children: [
       { label: 'Brain', view: 'brain', icon: 'brain', ai: true },
       { label: 'Playbooks', view: 'playbooks', icon: 'playbooks' },
-      { label: 'AI notes', view: 'notes', icon: 'notes', ai: true },
+      { label: 'AI Notes', view: 'notes', icon: 'notes', ai: true },
+      { label: 'Knowledge', view: 'knowledge', icon: 'library' },
       { label: 'Training', icon: 'school', children: [
-        { label: 'DISC learning', built: false, icon: 'bulb' },
+        { label: 'DISC Learning', built: false, icon: 'bulb' },
         { label: 'Coaching', built: false, icon: 'megaphone' },
-        { label: 'Accountability partner', built: false, icon: 'users' },
+        { label: 'Accountability Partner', built: false, icon: 'users' },
       ] },
     ] },
-    // Role-gated tab (admin -> Brokerage, team leader -> Team, agent -> neither)
-    ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
-    // Setup & settings — mostly one-time
-    { label: 'Get started', icon: 'star', ai: true, children: [
-      { label: 'DISC / Grit test', view: 'disc_test', icon: 'bulb' },
-      { label: 'MyVoice', view: 'myvoice', icon: 'mic' },
-      { label: 'My Prism profile', view: 'prism', icon: 'prism' },
-      { label: 'Voice card / memory', view: 'prism', icon: 'mic' },
-      { label: 'Business questionnaire', built: false, icon: 'clipboard' },
-      { label: 'Blueprint (budget)', view: 'finance', sub: 'blueprint', icon: 'compass' },
+    // ── My Prism Identity ──
+    { label: 'My Prism Identity', icon: 'prism', children: [
+      { label: 'My Prism Profile', view: 'prism', icon: 'prism' },
+      { label: 'DISC / Grit Test', view: 'disc_test', icon: 'bulb' },
+      { label: 'My Voice (Voice Card)', view: 'myvoice', icon: 'mic' },
+      { label: 'Get Started / Onboarding', icon: 'star', action: () => { try { window.__openOnboarding && window.__openOnboarding(); } catch (_) {} } },
+      { label: 'Business Questionnaire', built: false, icon: 'clipboard' },
     ] },
-    { label: 'Systems', view: 'systems', icon: 'systems' },
-    { label: 'Settings', view: 'settings', icon: 'settings' },
+    // ── Brokerage (admin -> Brokerage, team leader -> Team, agent -> neither) ──
+    ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
+    // ── Settings & Systems ──
+    { label: 'Settings & Systems', icon: 'settings', children: [
+      { label: 'Settings', view: 'settings', icon: 'settings' },
+      { label: 'System Health', view: 'systems', icon: 'systems' },
+    ] },
   ];
   assignMenuKeys(MENU, 'm');
   const menuCtx = { view, navigate, builtSet, byNavId, openPath,
@@ -15811,11 +15838,13 @@ function AppMain() {
       {/* Pass 2 Batch C: Blocking onboarding modal for new users (and existing
           users on first run after this ships). Only mounts once user_settings
           has been fetched (avoids flashing the modal before we know). */}
-      {dataLoaded && userSettings && userSettings.onboarding_complete === false && (
+      {dataLoaded && userSettings && (userSettings.onboarding_complete === false || onboardingReopen) && (
         <OnboardingModal
           userId={user.id}
           userEmail={user.email}
-          onComplete={() => { loadData(); }}
+          initial={onboardingReopen ? userSettings : null}
+          onClose={onboardingReopen && userSettings.onboarding_complete !== false ? () => setOnboardingReopen(false) : undefined}
+          onComplete={() => { setOnboardingReopen(false); loadData(); }}
         />
       )}
       {dataLoaded && user && userSettings && userSettings.onboarding_complete !== false && (

@@ -239,7 +239,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const mInitials = ((name || '').trim().split(/\s+/).map(w=>w[0]).filter(Boolean).slice(0,2).join('').toUpperCase()) || (initial ? '?' : '+');
   const homeSummary = [homeAddress,[homeCity,homeState].filter(Boolean).join(', '),homeZip].filter(Boolean).join(' · ').trim();
   const bizSummary = [businessAddress,[businessCity,businessState].filter(Boolean).join(', '),businessZip].filter(Boolean).join(' · ').trim();
-  const originLabelMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',clickup:'ClickUp import',csv:'CSV import',other:'Other'};
+  const originLabelMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',csv:'CSV import',other:'Other'};
   const referredName = referredById ? ((contacts.find(c=>c.id===referredById)||{}).name || '') : '';
 
   return (
@@ -320,7 +320,6 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                     <option value="event">Event / networking</option>
                     <option value="social">Social media</option>
                     <option value="email">From email</option>
-                    <option value="clickup">ClickUp import</option>
                     <option value="csv">CSV import</option>
                     <option value="other">Other</option>
                   </select>
