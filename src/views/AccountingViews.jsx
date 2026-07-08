@@ -882,13 +882,13 @@ function ProspectingView({ userId, initialSub = null, subNonce = 0 }) {
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{activeNonOverhead.length}/{maxSystems} systems active</span>
         </div>
-        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: '2px' }}>
+        <div style={{ display: 'flex', gap: '6px', paddingBottom: '2px' }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setSub(t.id)}
-              style={{ padding: '8px 15px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap', cursor: 'pointer',
+              style={{ flex: '1 1 0', minWidth: 0, padding: '8px 6px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap', cursor: 'pointer',
                 border: `1px solid ${sub === t.id ? 'var(--accent)' : 'var(--border)'}`,
                 background: sub === t.id ? 'var(--accent)' : 'var(--bg-card)', color: sub === t.id ? 'var(--bg-base)' : 'var(--text-2)', transition: 'all 0.15s' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icon name={t.iconName} size={13} /> {t.label}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><Icon name={t.iconName} size={13} /> {t.label}</span>
             </button>
           ))}
         </div>
@@ -4799,7 +4799,7 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
             value={search} onChange={e => setSearch(e.target.value)}
             style={{width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',fontSize:'13px',marginBottom:'8px'}}
           />
-          <div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'4px'}}>
+          <div style={{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'6px'}}>
             {[['all','All'],['digital','Digital'],['traditional','Traditional'],['niche','Niche']].map(([id, label]) => (
               <button key={id} onClick={() => setSectionFilter(id)}
                 style={{padding:'4px 10px',border:'none',borderRadius:'999px',fontSize:'11px',fontWeight:600,cursor:'pointer',
@@ -4808,8 +4808,9 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
                 {label}
               </button>
             ))}
-            <span style={{color:'var(--text-3)',fontSize:'11px',padding:'4px 4px'}}>·</span>
-            <span style={{color:'var(--text-3)',fontSize:'11px',padding:'4px 0'}}>Best fit for:</span>
+          </div>
+          <div style={{display:'flex',gap:'4px',flexWrap:'wrap',alignItems:'center',marginBottom:'4px'}}>
+            <span style={{color:'var(--text-3)',fontSize:'11px',marginRight:'2px'}}>Best fit for:</span>
             {['all','D','I','S','C'].map(d => (
               <button key={d} onClick={() => setDiscFilter(d)}
                 style={{padding:'4px 10px',border:'1px solid var(--border)',borderRadius:'999px',fontSize:'11px',fontWeight:700,cursor:'pointer',
