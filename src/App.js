@@ -5719,6 +5719,9 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
   }, [recipientId]); // eslint-disable-line
   const [attachments, setAttachments] = useState([]); // [{filename, mime_type, content_base64, size}]
   const [trackOpens, setTrackOpens] = useState(false); // opt-in open tracking, OFF by default
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState('');
+  const [scheduling, setScheduling] = useState(false);
   const attachInputRef = React.useRef(null);
   const MAX_ATTACH_BYTES = 20 * 1024 * 1024; // ~20MB Gmail-safe budget across files
   async function onPickAttachments(e) {
@@ -5821,6 +5824,30 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
     } catch (e) {
       notify("Couldn't send: " + (e.message || e), 'error');
     } finally { setSending(false); }
+  }
+  async function scheduleEmail() {
+    if (!recipient?.email) { notify('That contact has no email on file.', 'error'); return; }
+    if (!bodyText.trim()) return;
+    if (!scheduleAt) { notify('Pick a date and time first.', 'error'); return; }
+    const when = new Date(scheduleAt);
+    if (isNaN(when.getTime()) || when.getTime() < Date.now() + 60000) { notify('Pick a time at least a minute in the future.', 'error'); return; }
+    setScheduling(true);
+    try {
+      const { data: accs } = await supabase.from('email_accounts').select('id,email_address').contains('purposes', ['email']).order('created_at').limit(1);
+      const acc = accs && accs[0];
+      if (!acc) { notify('No email account is connected to send from. Connect Gmail in Settings.', 'error'); setScheduling(false); return; }
+      const { error: insErr } = await supabase.from('scheduled_emails').insert({
+        user_id: userId, account_id: acc.id, to_email: recipient.email,
+        subject: subject || '(no subject)', body_text: bodyText,
+        attachments: attachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 })),
+        track: trackOpens, contact_id: recipient?.id || null, send_at: when.toISOString(), status: 'scheduled',
+      });
+      if (insErr) throw insErr;
+      notify('Scheduled \u2014 sends ' + when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), 'success');
+      onClose();
+    } catch (e) {
+      notify("Couldn't schedule: " + (e.message || e), 'error');
+    } finally { setScheduling(false); }
   }
   async function sendText() {
     if (!recipient?.phone) { notify('That contact has no phone on file.', 'error'); return; }
@@ -5937,12 +5964,35 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
             </>
           )}
         </div>
+        {channel === 'email' && showSchedule && (
+          <div style={{ margin: '4px 0 0', padding: '12px', background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: '12px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-3)', marginBottom: '8px' }}>Schedule send</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px', marginBottom: '9px' }}>
+              {(() => {
+                const fmt = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 16); };
+                const inHour = () => { const d = new Date(); d.setHours(d.getHours() + 1); return fmt(d); };
+                const at = (addDays, h) => { const d = new Date(); d.setDate(d.getDate() + addDays); d.setHours(h, 0, 0, 0); return fmt(d); };
+                const nextMon8 = () => { const d = new Date(); const diff = ((1 - d.getDay()) + 7) % 7 || 7; d.setDate(d.getDate() + diff); d.setHours(8, 0, 0, 0); return fmt(d); };
+                const presets = [['In 1 hour', inHour()], ['Tomorrow 8 AM', at(1, 8)], ['Monday 8 AM', nextMon8()]];
+                return presets.map(([lbl, val]) => {
+                  const active = scheduleAt === val;
+                  return <button key={lbl} type="button" onClick={() => setScheduleAt(val)} style={{ padding: '7px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'rgba(197,169,94,0.14)' : 'transparent', color: active ? 'var(--accent)' : 'var(--text-2)' }}>{lbl}</button>;
+                });
+              })()}
+            </div>
+            <input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: '14px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text-1)', colorScheme: 'dark' }} />
+            <button type="button" onClick={scheduleEmail} disabled={scheduling || !scheduleAt || !bodyText.trim()} className="btn btn-primary btn-sm" style={{ marginTop: '10px', width: '100%', opacity: (scheduling || !scheduleAt || !bodyText.trim()) ? 0.55 : 1 }}>{scheduling ? 'Scheduling…' : '🕐 Schedule send'}</button>
+          </div>
+        )}
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           {channel === 'email' ? (
-            <button type="button" className="btn btn-primary" onClick={sendEmail} disabled={sending || drafting || !bodyText.trim()}>
-              {sending ? 'Sending…' : <><Icon name="mail" size={13} /> Send email</>}
-            </button>
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowSchedule(v => !v)} disabled={sending || drafting || !bodyText.trim()} title="Send at a future time">🕐 {showSchedule ? 'Hide' : 'Schedule'}</button>
+              <button type="button" className="btn btn-primary" onClick={sendEmail} disabled={sending || drafting || !bodyText.trim()}>
+                {sending ? 'Sending…' : <><Icon name="mail" size={13} /> Send email</>}
+              </button>
+            </>
           ) : (
             <button type="button" className="btn btn-primary" onClick={sendText} disabled={drafting || !bodyText.trim()}>
               <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="message" size={13} /> Open in Messages</span>
