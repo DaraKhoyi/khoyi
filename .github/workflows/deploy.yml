@@ -1,0 +1,46 @@
+name: Build & Deploy PrismOS
+
+# Runs automatically on every push to main, and can be triggered by hand.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Let the built-in token push the compiled site to the gh-pages branch.
+permissions:
+  contents: write
+
+# Never let two deploys clobber each other.
+concurrency:
+  group: prismos-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build production bundle
+        env:
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Publish build to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          publish_branch: gh-pages
+          cname: darasapp.com
