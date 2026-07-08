@@ -5205,8 +5205,8 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
     e.preventDefault();
     if (!uploadForm.file) { setError('Pick an audio file first.'); return; }
     if (!uploadForm.title.trim()) { setError('Add a title.'); return; }
-    if (uploadForm.file.size > 50 * 1024 * 1024) {
-      setError(`File too large (${(uploadForm.file.size / 1024 / 1024).toFixed(1)} MB). Max 50 MB. Try compressing or splitting.`);
+    if (uploadForm.file.size > 500 * 1024 * 1024) {
+      setError(`File too large (${(uploadForm.file.size / 1024 / 1024).toFixed(1)} MB). Max 500 MB. For anything bigger, split it.`);
       return;
     }
     setError(null);
@@ -5367,7 +5367,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
               </div>
             </div>
             <div style={{ fontSize: '10px', color: 'var(--text-3)', lineHeight: 1.5 }}>
-              Max 50 MB. Audio kept 90 days then auto-deleted; transcript stays forever. Whisper transcribes; speakers labeled by alternating-gap heuristic (you can edit later). Phone formats like .amr are auto-converted before transcription.
+              Max 500 MB — long, multi-hour meetings are fine. Audio kept 90 days then auto-deleted; transcript stays forever. Transcribed automatically with speaker labels (you can edit later). Phone formats like .amr are auto-converted before transcription.
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button type="submit" className="btn btn-primary btn-sm" disabled={uploading}>
@@ -15007,7 +15007,7 @@ function ShareRecordingModal({ file, userId, contacts = [], onClose }) {
         setPhase('Compressing audio…');
         up = await transcodeAudioToMp3(file, (pct) => setProgress(Math.max(5, Math.round(pct * 0.5))));
       }
-      if (up.size > 50 * 1024 * 1024) throw new Error(`Still ${(up.size / 1024 / 1024).toFixed(0)} MB after compression (max 50). Try a shorter clip or split it.`);
+      if (up.size > 500 * 1024 * 1024) throw new Error(`Still ${(up.size / 1024 / 1024).toFixed(0)} MB (max 500). Try splitting it.`);
       setProgress(55); setPhase('Saving…');
       const { data: rec, error: insErr } = await supabase.from('recordings').insert({
         user_id: userId, contact_id: contactId || null, title: title.trim() || 'Shared recording',
