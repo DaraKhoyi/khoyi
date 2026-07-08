@@ -4750,6 +4750,7 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
   const [search, setSearch] = useState('');
   const [sectionFilter, setSectionFilter] = useState('all');
   const [discFilter, setDiscFilter] = useState('all');  // 'all' | 'D' | 'I' | 'S' | 'C'
+  const [discSecondary, setDiscSecondary] = useState('none');  // optional blend: 'none' | 'D' | 'I' | 'S' | 'C'
 
   const SECTION_COLORS = {
     digital: '#3b82f6',
@@ -4773,12 +4774,24 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
     });
   }, [templates, search, sectionFilter, discFilter]);
 
-  // Group by section for nice display
+  // Group by section for nice display; when a blend letter is chosen, float
+  // its best-fit systems to the top of each group (refine, don't exclude).
   const grouped = useMemo(() => {
     const g = { digital: [], traditional: [], niche: [] };
     filtered.forEach(t => { if (g[t.section]) g[t.section].push(t); });
+    if (discSecondary !== 'none') {
+      const rank = { best: 0, ok: 1, hard: 2 };
+      const key = `disc_${discSecondary.toLowerCase()}`;
+      Object.keys(g).forEach(sec => {
+        g[sec].sort((a, b) => {
+          const ra = rank[a[key]] ?? 3, rb = rank[b[key]] ?? 3;
+          if (ra !== rb) return ra - rb;
+          return (a.system_number || 0) - (b.system_number || 0);
+        });
+      });
+    }
     return g;
-  }, [filtered]);
+  }, [filtered, discSecondary]);
 
   return (
     <div className={asPage ? '' : 'modal-backdrop'} onClick={asPage ? undefined : (e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -4812,7 +4825,7 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
           <div style={{display:'flex',gap:'4px',flexWrap:'wrap',alignItems:'center',marginBottom:'4px'}}>
             <span style={{color:'var(--text-3)',fontSize:'11px',marginRight:'2px'}}>Best fit for:</span>
             {['all','D','I','S','C'].map(d => (
-              <button key={d} onClick={() => setDiscFilter(d)}
+              <button key={d} onClick={() => { setDiscFilter(d); setDiscSecondary('none'); }}
                 style={{padding:'4px 10px',border:'1px solid var(--border)',borderRadius:'999px',fontSize:'11px',fontWeight:700,cursor:'pointer',
                   background: discFilter === d ? 'var(--text-1)' : 'transparent',
                   color: discFilter === d ? 'var(--bg-base)' : 'var(--text-3)'}}>
@@ -4820,6 +4833,24 @@ function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems, isCoa
               </button>
             ))}
           </div>
+          {discFilter !== 'all' && (
+            <div style={{display:'flex',gap:'4px',flexWrap:'wrap',alignItems:'center',marginBottom:'4px'}}>
+              <span style={{color:'var(--text-3)',fontSize:'11px',marginRight:'2px'}}>+ blend:</span>
+              {['none','D','I','S','C'].filter(d => d === 'none' || d !== discFilter).map(d => (
+                <button key={d} onClick={() => setDiscSecondary(d)}
+                  style={{padding:'4px 10px',border:'1px solid var(--border)',borderRadius:'999px',fontSize:'11px',fontWeight:700,cursor:'pointer',
+                    background: discSecondary === d ? 'var(--accent)' : 'transparent',
+                    color: discSecondary === d ? 'var(--bg-base)' : 'var(--text-3)'}}>
+                  {d === 'none' ? 'None' : d}
+                </button>
+              ))}
+            </div>
+          )}
+          {discFilter !== 'all' && discSecondary !== 'none' && (
+            <div style={{fontSize:'10px',color:'var(--text-3)',fontStyle:'italic',marginBottom:'4px'}}>
+              Best-fit {discFilter} systems, with {discSecondary}-friendly ones first.
+            </div>
+          )}
         </div>
 
         {/* Scrolling list */}
