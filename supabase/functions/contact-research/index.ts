@@ -119,9 +119,31 @@ DISC scores sum to ~200 (two axes). Never claim above "reasonably_confident" fro
 }
 
 function extractJson(text) {
-  const matches = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
-  for (let i = matches.length - 1; i >= 0; i--) {
-    try { return JSON.parse(matches[i][1].trim()); } catch (_) { /* try previous */ }
+  if (!text) return null;
+  // 1) Fenced ```json (or bare ```) blocks, newest first.
+  const fenced = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)];
+  for (let i = fenced.length - 1; i >= 0; i--) {
+    try { const o = JSON.parse(fenced[i][1].trim()); if (o && typeof o === "object") return o; } catch (_) { /* keep looking */ }
+  }
+  // 2) Brace-matched scan — collect every balanced {...} object in the text.
+  const cands = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+      if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") { if (--depth === 0) { cands.push(text.slice(i, j + 1)); i = j; break; } }
+    }
+  }
+  // Prefer the object that carries the real payload (headline/disc/scores).
+  for (let i = cands.length - 1; i >= 0; i--) {
+    try { const o = JSON.parse(cands[i]); if (o && typeof o === "object" && (o.disc || o.headline || o.d_score !== undefined)) return o; } catch (_) { /* keep looking */ }
+  }
+  for (let i = cands.length - 1; i >= 0; i--) {
+    try { const o = JSON.parse(cands[i]); if (o && typeof o === "object") return o; } catch (_) { /* keep looking */ }
   }
   return null;
 }
@@ -263,6 +285,12 @@ serve(async (req) => {
           research_scope: scope, research_matched_by: matched_by || "manual",
           research_status: "done", research_error: null,
         });
+        // Fold the fresh research into the behavioral evidence graph: re-run the
+        // observed analysis now that a research_read exists for this contact.
+        // Fire-and-forget — a re-analysis hiccup must never fail the research.
+        try {
+          await supabase.functions.invoke("disc-analyze", { body: { contact_id, user_id: contact.user_id, force: true } });
+        } catch (_) { /* non-fatal */ }
       } catch (e) {
         const msg = (e && e.name === "AbortError")
           ? "The research took longer than expected. Try again, or set the scope to Business-only or Personal-only."

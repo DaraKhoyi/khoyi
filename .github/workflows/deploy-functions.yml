@@ -1,0 +1,54 @@
+name: Deploy Edge Functions
+
+# Deploys ONLY the edge functions whose files changed in the push.
+# verify_jwt is taken from supabase/config.toml, so auth settings are preserved.
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'supabase/functions/**' ]
+  workflow_dispatch:
+
+concurrency:
+  group: edge-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed functions
+        id: changed
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            BEFORE="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
+          fi
+          FUNCS=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'supabase/functions/*/**' \
+            | sed -E 's#supabase/functions/([^/]+)/.*#\1#' | sort -u | grep -v '^_' || true)
+          echo "Changed functions:"; echo "$FUNCS"
+          {
+            echo "funcs<<EOF"
+            echo "$FUNCS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install Supabase CLI
+        if: steps.changed.outputs.funcs != ''
+        run: npm i supabase --no-save --no-audit --no-fund
+
+      - name: Deploy changed functions
+        if: steps.changed.outputs.funcs != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          SB=./node_modules/.bin/supabase
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
+            echo "::group::Deploy $fn"
+            "$SB" functions deploy "$fn" --project-ref xlgfspnojjgvkuitcoaf
+            echo "::endgroup::"
+          done <<< "${{ steps.changed.outputs.funcs }}"

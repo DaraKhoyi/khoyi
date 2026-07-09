@@ -31,3 +31,169 @@ verify_jwt = false
 # robot-chat, google-oauth-start, gmail-oauth-start, email-intelligence.
 # Gateway rejects requests without a valid JWT before they reach function
 # code. In-code auth (supabase.auth.getUser) remains the secondary check.
+
+# --- verify_jwt=false functions (auto-added so deploys preserve auth) ---
+[functions.admin-create-user]
+verify_jwt = false
+
+[functions.agent-research-drip]
+verify_jwt = false
+
+[functions.ai-key-manage]
+verify_jwt = false
+
+[functions.anthropic-status]
+verify_jwt = false
+
+[functions.app-whoami]
+verify_jwt = false
+
+[functions.ari-briefing]
+verify_jwt = false
+
+[functions.ari-briefing-deliver]
+verify_jwt = false
+
+[functions.ari-call-prep]
+verify_jwt = false
+
+[functions.booking-availability]
+verify_jwt = false
+
+[functions.booking-cancel]
+verify_jwt = false
+
+[functions.booking-create]
+verify_jwt = false
+
+[functions.booking-get]
+verify_jwt = false
+
+[functions.booking-reminders]
+verify_jwt = false
+
+[functions.calendar-poll]
+verify_jwt = false
+
+[functions.calendar-sync]
+verify_jwt = false
+
+[functions.calls-to-knowledge]
+verify_jwt = false
+
+[functions.chief-of-staff]
+verify_jwt = false
+
+[functions.contact-identify]
+verify_jwt = false
+
+[functions.contact-research]
+verify_jwt = false
+
+[functions.crash-monitor]
+verify_jwt = false
+
+[functions.cube-acr-sync]
+verify_jwt = false
+
+[functions.day-review]
+verify_jwt = false
+
+[functions.email-nightly-intel]
+verify_jwt = false
+
+[functions.email-reply-draft]
+verify_jwt = false
+
+[functions.email-to-task]
+verify_jwt = false
+
+[functions.files-cda-generate]
+verify_jwt = false
+
+[functions.files-doc-extract]
+verify_jwt = false
+
+[functions.files-doc-generate]
+verify_jwt = false
+
+[functions.files-intake-scan]
+verify_jwt = false
+
+[functions.gmail-push]
+verify_jwt = false
+
+[functions.gmail-send]
+verify_jwt = false
+
+[functions.impersonate]
+verify_jwt = false
+
+[functions.knowledge-ask]
+verify_jwt = false
+
+[functions.knowledge-ingest]
+verify_jwt = false
+
+[functions.lead-lifecycle]
+verify_jwt = false
+
+[functions.orchestrate-listing-presentation]
+verify_jwt = false
+
+[functions.orchestrate-new-lead]
+verify_jwt = false
+
+[functions.orchestrate-new-listing]
+verify_jwt = false
+
+[functions.orchestrate-post-close]
+verify_jwt = false
+
+[functions.parse-receipt]
+verify_jwt = false
+
+[functions.plan-my-day]
+verify_jwt = false
+
+[functions.propose-patch]
+verify_jwt = false
+
+[functions.push-send]
+verify_jwt = false
+
+[functions.quo-call-process]
+verify_jwt = false
+
+[functions.quo-webhook]
+verify_jwt = false
+
+[functions.recording-process]
+verify_jwt = false
+
+[functions.recording-transcribe-poll]
+verify_jwt = false
+
+[functions.run-recurring-transactions]
+verify_jwt = false
+
+[functions.scheduled-email-send]
+verify_jwt = false
+
+[functions.sign-portal]
+verify_jwt = false
+
+[functions.sign-reminders]
+verify_jwt = false
+
+[functions.task-autoschedule]
+verify_jwt = false
+
+[functions.task-dedupe]
+verify_jwt = false
+
+[functions.task-email-ingest]
+verify_jwt = false
+
+[functions.track-open]
+verify_jwt = false
