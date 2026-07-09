@@ -75,6 +75,46 @@ function ContactSearchSelect({ contacts = [], value, onChange, placeholder = 'Se
 }
 
 
+function TimePicker({ value, onChange }) {
+  // value is "HH:MM" (24-hour). Renders 12-hour hour/minute selects + a gold AM/PM toggle.
+  const parse = (v) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(v || '');
+    let H = m ? parseInt(m[1], 10) : 9;
+    let M = m ? parseInt(m[2], 10) : 0;
+    const ap = H >= 12 ? 'PM' : 'AM';
+    let h12 = H % 12; if (h12 === 0) h12 = 12;
+    return { h12, M, ap };
+  };
+  const { h12, M, ap } = parse(value);
+  const emit = (nh, nm, nap) => {
+    let H = nh % 12; if (nap === 'PM') H += 12;
+    onChange(`${pad2(H)}:${pad2(nm)}`);
+  };
+  const sel = { padding: '8px 6px', width: 'auto', textAlign: 'center' };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+      <select className="form-input" style={sel} value={h12} onChange={e => emit(parseInt(e.target.value, 10), M, ap)}>
+        {Array.from({ length: 12 }, (_, i) => i + 1).map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span style={{ fontWeight: 800, color: 'var(--text-2)' }}>:</span>
+      <select className="form-input" style={sel} value={M} onChange={e => emit(h12, parseInt(e.target.value, 10), ap)}>
+        {Array.from({ length: 60 }, (_, i) => i).map(mm => <option key={mm} value={mm}>{pad2(mm)}</option>)}
+      </select>
+      <div style={{ display: 'inline-flex', gap: '4px', marginLeft: '2px' }}>
+        {['AM', 'PM'].map(x => (
+          <button key={x} type="button" onClick={() => emit(h12, M, x)}
+            style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+              border: `1px solid ${ap === x ? 'var(--accent)' : 'var(--border)'}`,
+              background: ap === x ? 'var(--accent)' : 'transparent',
+              color: ap === x ? 'var(--bg-base)' : 'var(--text-2)', transition: 'all 0.15s' }}>
+            {x}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts, properties = [] }) {
 
 
@@ -139,11 +179,11 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
           </div>
           <div className="form-row">
             <div className="form-group" style={{flex:1}}><label className="form-label">Start date</label><input className="form-input" type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} required /></div>
-            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">Start time</label><input className="form-input" type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} /></div>}
+            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">Start time</label><TimePicker value={startTime} onChange={setStartTime} /></div>}
           </div>
           <div className="form-row">
             <div className="form-group" style={{flex:1}}><label className="form-label">End date</label><input className="form-input" type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} /></div>
-            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">End time</label><input className="form-input" type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} /></div>}
+            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">End time</label><TimePicker value={endTime} onChange={setEndTime} /></div>}
           </div>
           <div className="form-group"><label className="form-label">Location</label><input className="form-input" value={location} onChange={e=>setLocation(e.target.value)} placeholder="Optional" /></div>
 
