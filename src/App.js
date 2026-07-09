@@ -7345,6 +7345,72 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const hasBaseline = !!(profile && profile.baseline_d_score !== null && profile.baseline_d_score !== undefined);
   const hasInference = !!(profile && profile.last_analyzed_at);
   const hasResearch = !!(profile && profile.research_taken_at);
+  // ── Behavioral fusion / deduction layer ──────────────────────────────────
+  // Collapses the three stored layers — official test (authoritative), direct
+  // interactions (strong), public research (a capped voice) — into ONE canonical
+  // read with an honestly-capped confidence, so new intelligence actually moves
+  // the needle instead of sitting inert in a side panel.
+  function fuseBehavioralSignal(p) {
+    if (!p) return null;
+    const L = ['D', 'I', 'S', 'C'];
+    const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
+    const has = (v) => v !== null && v !== undefined;
+    const pick = (sc) => {
+      const a = L.map(k => [k, sc[k] ?? 0]).sort((x, y) => y[1] - x[1]);
+      return { primary: a[0][0], secondary: (a[1][1] >= 50 && a[0][1] - a[1][1] <= 20) ? a[1][0] : null };
+    };
+    const baseline = has(p.baseline_d_score) ? { D: p.baseline_d_score, I: p.baseline_i_score, S: p.baseline_s_score, C: p.baseline_c_score } : null;
+    const observed = p.last_analyzed_at ? { D: p.d_score ?? 50, I: p.i_score ?? 50, S: p.s_score ?? 50, C: p.c_score ?? 50 } : null;
+    const research = has(p.research_d_score) ? { D: p.research_d_score, I: p.research_i_score, S: p.research_s_score, C: p.research_c_score } : null;
+    const directMass = observed ? (p.signals_count || 0) : 0;
+    const obsConf = observed ? (p.confidence_pct || 0) : 0;
+    const observedMeaningful = !!observed && (directMass >= 2 || obsConf >= 40);
+
+    // Layer 1 — an official test on file is authoritative.
+    if (baseline && (p.baseline_locked || p.baseline_source)) {
+      const b = pick(baseline);
+      return { scores: baseline, primary: p.baseline_primary || b.primary, secondary: p.baseline_secondary || b.secondary,
+        pct: 95, tier: 'Confirmed', source: `official ${p.baseline_source || 'DISC'} test`,
+        rationale: 'Locked to the official assessment on file. The layers below are shown as context only.' };
+    }
+
+    let scores, pct, primary, secondary, source, basis, note = null;
+    if (observedMeaningful && research) {
+      // Layer 2 — blend direct interactions (heavier) with public research (a capped voice).
+      const wObs = Math.min(6, directMass) + 1, wRes = 1.2;
+      scores = {}; L.forEach(k => scores[k] = clamp((observed[k] * wObs + research[k] * wRes) / (wObs + wRes)));
+      const op = pick(observed).primary, rp = pick(research).primary;
+      note = op !== rp ? `Direct interactions read ${op} while public presentation reads ${rp} — trusting interactions, watching for context-switching.` : null;
+      ({ primary, secondary } = pick(scores));
+      pct = clamp(Math.min(88, obsConf + (note ? -8 : 8) + Math.min(10, directMass)));
+      source = 'direct interactions + public research';
+      basis = `${directMass} direct signal${directMass === 1 ? '' : 's'} blended with public research`;
+    } else if (observedMeaningful) {
+      scores = { ...observed }; ({ primary, secondary } = pick(scores));
+      primary = p.primary_letter || primary; secondary = p.secondary_letter || secondary;
+      pct = clamp(Math.min(88, obsConf));
+      source = 'direct interactions'; basis = `${directMass} direct signal${directMass === 1 ? '' : 's'} (emails, notes, calls)`;
+    } else if (research) {
+      // Layer 3 — sparse direct data but real research: move OFF the flat 50s toward the
+      // research read, at a CAPPED confidence (public self-presentation ≠ how they engage).
+      scores = { ...research };
+      const r = pick(scores);
+      primary = p.research_primary || r.primary; secondary = p.research_secondary || r.secondary;
+      const rc = String(p.research_confidence || '').toLowerCase();
+      const base = rc.includes('high') ? 66 : rc.includes('medium') ? 60 : (rc.includes('prov') || rc.includes('tent')) ? 52 : 55;
+      pct = clamp(Math.min(70, base));
+      source = 'public & professional presentation';
+      basis = 'inferred from public & professional presentation (no direct interactions yet)';
+      note = 'Public data shows how they present, not how they engage — expect this to sharpen, and possibly shift, once real interactions arrive.';
+    } else {
+      scores = observed || { D: 50, I: 50, S: 50, C: 50 }; ({ primary, secondary } = pick(scores));
+      pct = clamp(obsConf || 0); source = 'insufficient evidence'; basis = 'not enough evidence yet';
+    }
+    const tier = pct >= 90 ? 'Confirmed' : pct >= 75 ? 'High' : pct >= 55 ? 'Medium' : pct >= 35 ? 'Emerging' : 'Provisional';
+    let rationale = `Best available read, ${basis}.`; if (note) rationale += ' ' + note;
+    return { scores, primary, secondary, pct, tier, source, rationale };
+  }
+  const fused = profile ? fuseBehavioralSignal(profile) : null;
   const discBarColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
 
   // Identify candidates for this contact, then either auto-run (locked) or
@@ -7732,6 +7798,18 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 {resetting ? '⏳' : '⟲ All'}
               </button>
             </div>
+
+            {fused && (hasInference || hasBaseline || hasResearch) && (
+              <div style={{padding:'12px',marginBottom:'14px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',borderRadius:'8px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px',gap:'8px',flexWrap:'wrap'}}>
+                  <span style={{fontSize:'11px',fontWeight:800,textTransform:'uppercase',letterSpacing:'0.06em',color:'var(--accent)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="sparkles" size={13} /> Best read · {fused.primary}{fused.secondary ? '/' + fused.secondary : ''}</span>
+                  <span style={{fontSize:'10px',fontWeight:700,color:'var(--text-2)'}}>{fused.tier} · {fused.pct}%</span>
+                </div>
+                {discBars(fused.scores.D, fused.scores.I, fused.scores.S, fused.scores.C, null)}
+                <div style={{fontSize:'11px',color:'var(--text-2)',marginTop:'8px',lineHeight:1.5}}>{fused.rationale}</div>
+                <div style={{fontSize:'9px',color:'var(--text-3)',marginTop:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}}>Synthesized from: {fused.source}</div>
+              </div>
+            )}
 
             {!hasInference && !hasBaseline && (
               <div style={{fontSize:'12px',color:'var(--text-3)',padding:'10px',background:'var(--bg-card)',borderRadius:'6px',border:'1px dashed var(--border)'}}>
