@@ -15381,8 +15381,13 @@ function AppMain() {
   // screen, ask to exit with a proper confirm/cancel dialog.
   useEffect(() => {
     let allowExit = false;
-    const arm = () => { try { window.history.pushState({ __prismGuard: true }, ''); } catch (_) {} };
+    // Keep exactly ONE guard entry on top of history. Only add it when the current
+    // top isn't already ours — so repeated interactions don't stack dozens of
+    // entries (which would make "back" need many presses to escape).
+    const armed = () => !!(window.history.state && window.history.state.__prismGuard);
+    const arm = () => { try { if (!armed()) window.history.pushState({ __prismGuard: true }, ''); } catch (_) {} };
     arm();
+    const reArm = () => { if (!allowExit) arm(); };
     const onPop = async () => {
       if (allowExit) return;
       arm(); // re-guard immediately, before anything async can run
@@ -15410,7 +15415,25 @@ function AppMain() {
       // Cancel: we already re-armed at the top, so the app simply stays.
     };
     window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
+    // Robustness for mobile PWAs (especially Samsung Internet): a pushState entry
+    // added before any user gesture is frequently NOT made back-navigable, a
+    // resumed PWA can drop it, and other replaceState calls can overwrite it. So
+    // re-assert the guard on the first interaction and whenever the app regains
+    // focus / visibility. `arm()` is a no-op when a guard entry is already on top.
+    const onVis = () => { if (document.visibilityState === 'visible') reArm(); };
+    window.addEventListener('pointerdown', reArm, true);
+    window.addEventListener('touchstart', reArm, true);
+    window.addEventListener('keydown', reArm, true);
+    window.addEventListener('focus', reArm);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.removeEventListener('pointerdown', reArm, true);
+      window.removeEventListener('touchstart', reArm, true);
+      window.removeEventListener('keydown', reArm, true);
+      window.removeEventListener('focus', reArm);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, []);
 
   const loadData = useCallback(async (isRetry = false) => {

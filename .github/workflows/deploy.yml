@@ -37,7 +37,7 @@ jobs:
         run: |
           SHA=$(git rev-parse --short HEAD)
           sed -i "s#const VERSION = '[^']*'#const VERSION = 'prismos-${SHA}'#" public/sw.js
-          sed -i "s#export const BUILD_VERSION = '\([^']*\)'#export const BUILD_VERSION = '\1 · ${SHA}'#" src/version.js
+          sed -i "s#export const BUILD_VERSION = '\([^']*\)'#export const BUILD_VERSION = '\1+${SHA}'#" src/version.js
           echo "Stamped ${SHA}:"; grep "const VERSION" public/sw.js; grep BUILD_VERSION src/version.js
 
       - name: Build production bundle
