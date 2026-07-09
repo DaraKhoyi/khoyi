@@ -10364,6 +10364,53 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
   const [icsLink, setIcsLink] = useState('');
   const [icsBusy, setIcsBusy] = useState(false);
   const [icsCopied, setIcsCopied] = useState(false);
+  const [icConn, setIcConn] = useState(null);
+  const [icAppleId, setIcAppleId] = useState('');
+  const [icPw, setIcPw] = useState('');
+  const [icBusy, setIcBusy] = useState('');
+  const [icMsg, setIcMsg] = useState('');
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const { data } = await supabase.from('icloud_connections').select('apple_id, enabled, status, last_synced_at').eq('user_id', session.user.id).maybeSingle();
+        if (data) { setIcConn(data); setIcAppleId(data.apple_id || ''); }
+      } catch (_) {}
+    })();
+  }, []);
+  async function connectICloud() {
+    setIcBusy('connect'); setIcMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('icloud-connect', { body: { apple_id: icAppleId.trim(), app_password: icPw.toLowerCase().replace(/\s+/g, '') } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setIcConn({ apple_id: data.apple_id, enabled: true, status: 'connected', last_synced_at: null });
+      setIcPw(''); setIcMsg('Connected — running first sync…');
+      await syncICloud();
+    } catch (e) { setIcMsg('Error: ' + (e.message || String(e))); }
+    setIcBusy('');
+  }
+  async function syncICloud() {
+    setIcBusy('sync'); setIcMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('icloud-sync', { body: {} });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const r = (data?.results || [])[0] || {};
+      setIcMsg(`Synced — ${r.pushed || 0} out to iCloud, ${r.pulled || 0} in, ${r.deleted || 0} removed.`);
+      setIcConn(c => c ? { ...c, last_synced_at: new Date().toISOString() } : c);
+    } catch (e) { setIcMsg('Error: ' + (e.message || String(e))); }
+    setIcBusy('');
+  }
+  async function disconnectICloud() {
+    if (!(await confirmDialog('Disconnect iCloud calendar sync? Your PrismOS calendar in iCloud stays, but it will stop updating.'))) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await supabase.from('icloud_connections').delete().eq('user_id', session.user.id);
+      setIcConn(null); setIcMsg('');
+    } catch (_) {}
+  }
   const ICS_FEED_BASE = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/calendar-ics-feed';
 
   async function getIcsLink() {
@@ -10504,6 +10551,27 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
               <p style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.5,margin:'8px 0 0'}}>On the iPhone: tap the link above to subscribe in Calendar. Or paste it under <b>Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar</b>.</p>
             </div>
           )}
+        </div>
+
+        <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={14} style={{color:'var(--accent)'}} /> iCloud Calendar — two-way sync</div>
+          {!icConn ? (
+            <div>
+              <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,margin:'0 0 10px'}}>Sync your PrismOS schedule both directions with a dedicated “PrismOS” calendar in iCloud. You need an <b>app-specific password</b> (not your Apple password): create one at <span style={{color:'var(--accent)'}}>appleid.apple.com → Sign-In &amp; Security → App-Specific Passwords</span>.</p>
+              <input className="form-input" placeholder="Apple ID (you@icloud.com)" value={icAppleId} onChange={e => setIcAppleId(e.target.value)} style={{marginBottom:'8px'}} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+              <input className="form-input" placeholder="App-specific password (xxxx-xxxx-xxxx-xxxx)" value={icPw} onChange={e => setIcPw(e.target.value.toLowerCase())} style={{marginBottom:'10px'}} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+              <button className="btn btn-primary" onClick={connectICloud} disabled={icBusy === 'connect' || !icAppleId || !icPw}>{icBusy === 'connect' ? 'Connecting…' : 'Connect iCloud'}</button>
+            </div>
+          ) : (
+            <div>
+              <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,margin:'0 0 8px'}}>Connected as <b>{icConn.apple_id}</b>{icConn.last_synced_at ? ' · last synced ' + new Date(icConn.last_synced_at).toLocaleString() : ''}.</p>
+              <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+                <button className="btn btn-primary btn-sm" onClick={syncICloud} disabled={icBusy === 'sync'}>{icBusy === 'sync' ? 'Syncing…' : 'Sync now'}</button>
+                <button className="btn btn-ghost btn-sm" onClick={disconnectICloud}>Disconnect</button>
+              </div>
+            </div>
+          )}
+          {icMsg && <p style={{fontSize:'11px',color: icMsg.startsWith('Error') ? 'var(--red)' : 'var(--text-3)',margin:'8px 0 0'}}>{icMsg}</p>}
         </div>
       </div>
     </div>
