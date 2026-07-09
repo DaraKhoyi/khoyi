@@ -197,3 +197,6 @@ verify_jwt = false
 
 [functions.track-open]
 verify_jwt = false
+
+[functions.calendar-ics-feed]
+verify_jwt = false

@@ -10361,6 +10361,28 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
   const [connecting, setConnecting] = useState(false);
   const [connectingPurpose, setConnectingPurpose] = useState(null);
   const [err, setErr] = useState('');
+  const [icsLink, setIcsLink] = useState('');
+  const [icsBusy, setIcsBusy] = useState(false);
+  const [icsCopied, setIcsCopied] = useState(false);
+  const ICS_FEED_BASE = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/calendar-ics-feed';
+
+  async function getIcsLink() {
+    setIcsBusy(true); setErr('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not signed in.');
+      const uid = session.user.id;
+      const { data: row } = await supabase.from('user_settings').select('ics_token').eq('user_id', uid).maybeSingle();
+      let tok = row?.ics_token;
+      if (!tok) {
+        tok = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(36).slice(2)) + Math.random().toString(36).slice(2);
+        const { error } = await supabase.from('user_settings').upsert({ user_id: uid, ics_token: tok }, { onConflict: 'user_id' });
+        if (error) throw error;
+      }
+      setIcsLink(ICS_FEED_BASE + '?token=' + tok);
+    } catch (e) { setErr(e.message || String(e)); }
+    setIcsBusy(false);
+  }
 
   async function startConnect(purpose = 'email', loginHint = '') {
     setConnecting(true);
@@ -10466,6 +10488,22 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
           <button className="btn btn-ghost" onClick={() => startConnect('calendar')} disabled={connecting} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
             {connecting && connectingPurpose === 'calendar' ? 'Opening Google…' : '+ Connect Calendar'}
           </button>
+        </div>
+
+        <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
+          <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={14} style={{color:'var(--accent)'}} /> Sync to iPhone / Apple Calendar</div>
+          <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,margin:'0 0 10px'}}>Get a private link that shows your PrismOS schedule in the iPhone Calendar app. It refreshes automatically — no password needed. (Read-only for now; two-way sync is coming.)</p>
+          {!icsLink ? (
+            <button className="btn btn-ghost" onClick={getIcsLink} disabled={icsBusy} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>{icsBusy ? 'Generating…' : 'Get my iPhone calendar link'}</button>
+          ) : (
+            <div>
+              <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
+                <a href={icsLink.replace(/^https?:/, 'webcal:')} style={{flex:'1 1 220px',minWidth:0,fontSize:'12px',color:'var(--accent)',wordBreak:'break-all',padding:'9px 11px',border:'1px solid var(--accent-dim)',borderRadius:'8px',background:'var(--accent-glow)',textDecoration:'none'}}>{icsLink.replace(/^https?:\/\//, '')}</a>
+                <button className="btn btn-primary btn-sm" onClick={async () => { try { await navigator.clipboard.writeText(icsLink.replace(/^https?:/, 'webcal:')); setIcsCopied(true); setTimeout(() => setIcsCopied(false), 1500); } catch (_) {} }}>{icsCopied ? 'Copied ✓' : 'Copy link'}</button>
+              </div>
+              <p style={{fontSize:'11px',color:'var(--text-3)',lineHeight:1.5,margin:'8px 0 0'}}>On the iPhone: tap the link above to subscribe in Calendar. Or paste it under <b>Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar</b>.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
