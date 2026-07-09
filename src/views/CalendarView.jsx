@@ -399,6 +399,10 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   function openEditEvent(ev) {
     const realId = ev._masterId || ev.id;
     const master = (events || []).find(e => e.id === realId) || ev;
+    if (master.event_kind === 'icloud_personal') {
+      notify('Personal time from iCloud: “' + (master.title || 'Busy') + '”. Edit it in your iPhone Calendar — PrismOS keeps it here so it won\u2019t book over your personal time.');
+      return;
+    }
     setEditEvent(master);
     setModalDate(null);
     setShowModal(true);
@@ -769,7 +773,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
               {upcoming.map(ev => {
                 const s = new Date(ev.start_at);
                 return (
-                  <div key={ev.id} className="task-item" style={{cursor:'pointer'}} onClick={()=>openEditEvent(ev)}>
+                  <div key={ev.id} className={`task-item${ev.event_kind==='icloud_personal'?' icloud-personal':''}`} style={{cursor:'pointer'}} onClick={()=>openEditEvent(ev)}>
                     <div style={{minWidth:'52px',textAlign:'center'}}>
                       <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase'}}>{MONTH_NAMES[s.getMonth()].slice(0,3)}</div>
                       <div style={{fontSize:'18px',fontWeight:700,color:'var(--text-1)',lineHeight:1}}>{s.getDate()}</div>
@@ -1074,9 +1078,10 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
                 {dayEv.map(ev => {
                   const {top, height} = evPosition(ev);
                   const isBlock = ev.event_kind === 'task_block';
+                  const isPersonal = ev.event_kind === 'icloud_personal';
                   const overdue = isBlock && (ev.category === 'task_overdue' || (ev.end_at && new Date(ev.end_at) < today));
                   return (
-                    <div key={ev.id} className={`week-event-block${isBlock?' task-block':''}${overdue?' overdue':''}`}
+                    <div key={ev.id} className={`week-event-block${isBlock?' task-block':''}${isPersonal?' icloud-personal':''}${overdue?' overdue':''}`}
                       style={{top: `${top}px`, height: `${height}px`}}
                       onClick={(e)=>{e.stopPropagation(); if(isBlock && onEditTask) onEditTask(ev); else onEventClick(ev);}}
                       title={ev.title}>
@@ -1239,7 +1244,7 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
                 );
               }
               return (
-                <div key={ev.id} className="day-event-block"
+                <div key={ev.id} className={`day-event-block${ev.event_kind==='icloud_personal'?' icloud-personal':''}`}
                   style={{top: `${top}px`, height: `${height}px`}}
                   onClick={(e)=>{e.stopPropagation();onEventClick(ev);}}
                   title={ev.title}>

@@ -1295,3 +1295,12 @@ input[type="radio"], input[type="range"], select, progress {
 @media (prefers-reduced-motion: reduce){
   .nba-card { animation: none; box-shadow: 0 0 22px 2px rgba(197,169,94,0.22); }
 }
+
+/* iCloud personal (read-only, pulled) calendar blocks — muted slate + dashed edge */
+.week-event-block.icloud-personal, .day-event-block.icloud-personal {
+  background: rgba(124,131,163,0.16);
+  border-left: 3px dashed #9aa0bd;
+  color: var(--text-2);
+}
+.task-item.icloud-personal { opacity: 0.85; border-left: 3px dashed #9aa0bd; padding-left: 9px; }
+.month-event.icloud-personal, .month-day-event.icloud-personal { background: rgba(124,131,163,0.5) !important; }

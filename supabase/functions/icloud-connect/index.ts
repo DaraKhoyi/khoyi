@@ -57,32 +57,16 @@ Deno.serve(async (req) => {
       '<A:propfind xmlns:A="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><A:prop><C:calendar-home-set/></A:prop></A:propfind>', { Depth: "0" });
     const homeUrl = rx(h.text, /calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</is);
     if (!homeUrl) return new Response(JSON.stringify({ error: "Could not find your iCloud calendar home." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-    const origin = new URL(homeUrl).origin;
-
-    // Find or create the dedicated PrismOS calendar
-    const list = await dav("PROPFIND", homeUrl, auth,
-      '<A:propfind xmlns:A="DAV:"><A:prop><A:displayname/><A:resourcetype/></A:prop></A:propfind>', { Depth: "1" });
-    let prismUrl: string | null = null;
-    for (const blk of list.text.split(/<response/i).slice(1)) {
-      const nm = rx(blk, /displayname[^>]*>([^<]*)</i);
-      const href = rx(blk, /<href[^>]*>([^<]+)</i);
-      if (nm && nm.trim() === "PrismOS" && href) prismUrl = href.startsWith("http") ? href : origin + href;
-    }
-    if (!prismUrl) {
-      prismUrl = homeUrl.replace(/\/$/, "") + "/prismos-" + crypto.randomUUID().slice(0, 12) + "/";
-      const mk = await dav("MKCALENDAR", prismUrl, auth,
-        '<?xml version="1.0" encoding="utf-8"?><C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:set><D:prop><D:displayname>PrismOS</D:displayname><C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set></D:prop></D:set></C:mkcalendar>');
-      if (mk.status >= 400) return new Response(JSON.stringify({ error: "Could not create the PrismOS calendar (status " + mk.status + ")." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
+    // Pull model: no calendar is created in iCloud. We just store the validated
+    // credential + home URL; icloud-sync reads their personal calendars into PrismOS.
     const svc = createClient(SUPABASE_URL, SERVICE_ROLE);
     await svc.from("icloud_connections").upsert({
       user_id: user.id, apple_id: email, app_password_enc: await encrypt(pw),
-      principal_url: principalUrl, calendar_home_url: homeUrl, prismos_calendar_url: prismUrl,
+      principal_url: principalUrl, calendar_home_url: homeUrl, prismos_calendar_url: null,
       enabled: true, status: "connected", last_error: null, updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
 
-    return new Response(JSON.stringify({ ok: true, apple_id: email, calendar: "PrismOS" }), { headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, apple_id: email }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error)?.message || String(e) }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }

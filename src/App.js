@@ -10398,7 +10398,7 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       const r = (data?.results || [])[0] || {};
-      setIcMsg(`Synced — ${r.pushed || 0} out to iCloud, ${r.pulled || 0} in, ${r.deleted || 0} removed.`);
+      setIcMsg(`Synced — ${r.pulled || 0} personal events pulled in${r.updated ? `, ${r.updated} updated` : ''}${r.deleted ? `, ${r.deleted} removed` : ''}.`);
       setIcConn(c => c ? { ...c, last_synced_at: new Date().toISOString() } : c);
     } catch (e) { setIcMsg('Error: ' + (e.message || String(e))); }
     setIcBusy('');
@@ -10554,10 +10554,10 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
         </div>
 
         <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
-          <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={14} style={{color:'var(--accent)'}} /> iCloud Calendar — two-way sync</div>
+          <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={14} style={{color:'var(--accent)'}} /> iCloud Calendar → PrismOS</div>
           {!icConn ? (
             <div>
-              <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,margin:'0 0 10px'}}>Sync your PrismOS schedule both directions with a dedicated “PrismOS” calendar in iCloud. You need an <b>app-specific password</b> (not your Apple password): create one at <span style={{color:'var(--accent)'}}>appleid.apple.com → Sign-In &amp; Security → App-Specific Passwords</span>.</p>
+              <p style={{fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,margin:'0 0 10px'}}>Bring your iCloud calendars (Family, Home, etc.) into PrismOS as <b>read-only personal time</b>, so PrismOS sees your whole day and never books over your personal commitments. You need an <b>app-specific password</b> (not your Apple password): create one at <span style={{color:'var(--accent)'}}>appleid.apple.com → Sign-In &amp; Security → App-Specific Passwords</span>.</p>
               <input className="form-input" placeholder="Apple ID (you@icloud.com)" value={icAppleId} onChange={e => setIcAppleId(e.target.value)} style={{marginBottom:'8px'}} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
               <input className="form-input" placeholder="App-specific password (xxxx-xxxx-xxxx-xxxx)" value={icPw} onChange={e => setIcPw(e.target.value.toLowerCase())} style={{marginBottom:'10px'}} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
               <button className="btn btn-primary" onClick={connectICloud} disabled={icBusy === 'connect' || !icAppleId || !icPw}>{icBusy === 'connect' ? 'Connecting…' : 'Connect iCloud'}</button>
