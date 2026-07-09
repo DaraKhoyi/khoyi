@@ -30,6 +30,16 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Stamp build id
+        # Make sw.js unique per deploy so the browser always detects a new
+        # service worker and clients auto-update (no more stale-bundle lock-in).
+        # Also append the short SHA to the visible version for at-a-glance proof.
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          sed -i "s#const VERSION = '[^']*'#const VERSION = 'prismos-${SHA}'#" public/sw.js
+          sed -i "s#export const BUILD_VERSION = '\([^']*\)'#export const BUILD_VERSION = '\1 · ${SHA}'#" src/version.js
+          echo "Stamped ${SHA}:"; grep "const VERSION" public/sw.js; grep BUILD_VERSION src/version.js
+
       - name: Build production bundle
         env:
           REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
