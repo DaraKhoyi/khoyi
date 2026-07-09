@@ -7568,8 +7568,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
     return leadSystems.map(s => { const d = byId[s.id] || { leads:0, closed:0 }; const conv = d.leads ? Math.round((d.closed / d.leads) * 100) : 0; const budget = Number(s.monthly_budget) || 0; const cpl = d.leads ? budget / d.leads : null; return { id:s.id, name:s.name, color:s.color, leads:d.leads, closed:d.closed, conv, budget, cpl }; }).filter(x => x.leads > 0 || x.budget > 0).sort((a,b) => b.leads - a.leads);
   })();
   const leadKpiMax = Math.max(1, ...leadKpi.map(x => x.leads));
-  return (
-    <div className="modal-overlay overlay-fade" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
+  return createPortal((
+    <div className="modal-overlay overlay-fade" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center',zIndex:2500}}>
       <div className="modal sheet-rise" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{padding:'calc(14px + env(safe-area-inset-top, 0px)) 16px 12px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
           <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
@@ -8496,7 +8496,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         </div>
       )}
     </div>
-  );
+  ), document.body);
 }
 
 // ─── CustomFieldsPanel — Prism CRM custom fields ────────────────────
