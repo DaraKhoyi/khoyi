@@ -10296,16 +10296,17 @@ function QuickLog({ userId, onNavigate, onUploadRecording }) {
 
   // Listed in the user's order; rendered bottom-up (journal nearest the thumb).
   const MENU = [
-    { key: 'journal', label: 'Journal entry',  icon: 'journal',   run: openJournal },
+    { key: 'journal', label: 'Journal',        icon: 'journal',   run: openJournal },
     { key: 'task',    label: 'Task',           icon: 'tasks',     run: () => go('tasks') },
-    { key: 'event',   label: 'Calendar event', icon: 'calendar',  run: () => go('calendar') },
+    { key: 'event',   label: 'Calendar',       icon: 'calendar',  run: () => go('calendar') },
     { key: 'contact', label: 'Contact',        icon: 'contacts',  run: () => go('contacts') },
-    { key: 'ari',     label: 'Ari request',    icon: 'briefing',  run: () => go('dashboard') },
+    { key: 'ari',     label: 'Ari',            icon: 'briefing',  run: () => go('chat') },
     { key: 'text',    label: 'Text',           icon: 'message',   run: () => goQuo('messages') },
     { key: 'email',   label: 'Email',          icon: 'mail',      run: () => go('inbox') },
-    { key: 'call',    label: 'Call · Quo',     icon: 'quo',       run: () => goQuo('calls') },
+    { key: 'call',    label: 'Quo',            icon: 'quo',       run: () => goQuo('calls') },
     { key: 'recording', label: 'Recording',    icon: 'mic',       run: () => { setMenuOpen(false); if (recRef.current) recRef.current.click(); } },
   ];
+  useEffect(() => { window.__attachRecording = () => { if (recRef.current) recRef.current.click(); }; return () => { try { delete window.__attachRecording; } catch (_) {} }; }, []);
 
   return (
     <>
@@ -15825,12 +15826,12 @@ function AppMain() {
       { label: 'Company Leads', built: false, icon: 'gift' },
       { label: 'Oversight Accountability', built: false, icon: 'eye' },
     ] },
-    { label: 'Agent DISC Readouts', view: 'disc_roster', icon: 'bulb' },
+    { label: 'Agent DISC Read', view: 'disc_roster', icon: 'bulb' },
     { label: 'Agent Voice Cards', view: 'voice_roster', icon: 'mic' },
     { label: 'Contact Types', view: 'contact_types', icon: 'clipboard' },
-    { label: 'Brokerage Finance', view: 'finance', icon: 'finance' },
+    { label: 'Brokerage Financials', view: 'finance', icon: 'finance' },
     { label: 'Teams', view: 'teams', icon: 'users' },
-    ...(!isImpersonating ? [{ label: 'Act as User', view: 'actas', icon: 'users' }] : []),
+    ...(!isImpersonating ? [{ label: 'Act as a User', view: 'actas', icon: 'users' }] : []),
   ] };
   const teamGroup = { label: 'Team', icon: 'users', children: [
     { label: 'Announcements', view: 'announcements', icon: 'megaphone' },
@@ -15846,17 +15847,20 @@ function AppMain() {
   const MENU = [
     // ── Top level — promoted daily drivers (Dara's order) ──
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
-    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
+    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
     { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
     { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
     { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
     { label: 'Phone & Text', view: 'quo', icon: 'quo', ai: true },
-    { label: 'Journal', view: 'journal', icon: 'journal', ai: true },
-    { label: 'Documents', view: 'documents', icon: 'folder' },
-    { label: 'Money', view: 'finance', icon: 'dollar' },
+    { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
+    { label: 'Upload', icon: 'folder', children: [
+      { label: 'Documents', view: 'documents', icon: 'folder' },
+      { label: 'Recordings', icon: 'mic', action: () => { try { window.__attachRecording && window.__attachRecording(); } catch (_) {} } },
+    ] },
+    { label: 'Finance Dashboard', view: 'finance', icon: 'dollar' },
     { label: 'Mileage', view: 'mileage', icon: 'car' },
-    { label: 'Ask Prism', view: 'chat', icon: 'chat', ai: true },
+    { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true },
     { label: 'My Stats', view: 'numbers', icon: 'chart' },
     // ── AI Agents ──
     { label: 'AI Agents', icon: 'sparkles', ai: true, children: [
@@ -15867,7 +15871,8 @@ function AppMain() {
     ] },
     // ── Pipeline & Growth ──
     { label: 'Pipeline & Growth', icon: 'target', children: [
-      { label: 'My Pipeline', view: 'pipeline', icon: 'chart' },
+      { label: 'Transaction Pipeline', view: 'pipeline', icon: 'chart' },
+      { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
       { label: 'Lead-Gen Systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
       { label: "How I'm Doing", view: 'scoreboard', icon: 'target' },
       { label: 'Growth', view: 'growth', icon: 'chart' },
@@ -15880,24 +15885,39 @@ function AppMain() {
       { label: 'Phone & Text (Quo)', view: 'quo', icon: 'quo' },
       { label: 'Group Message', view: 'group_message', icon: 'message', ai: true },
       { label: 'Journal', view: 'journal', icon: 'journal' },
+      { label: 'Drip Campaigns', built: false, icon: 'signal' },
     ] },
     // ── Deals & Property ──
     { label: 'Deals & Property', icon: 'briefcase', children: [
       { label: 'Transaction Pipeline', view: 'deals', icon: 'deals' },
-      { label: 'Contract Management', view: 'files', icon: 'folder', ai: true },
+      { label: 'Contract Management', view: 'files', icon: 'folder', ai: true, children: [
+        { label: 'View Transactions', view: 'tracker', icon: 'tracker' },
+        { label: 'Upload Trans. Docs', built: false, icon: 'folder' },
+        { label: 'Upload Recordings', built: false, icon: 'mic' },
+      ] },
       { label: 'Documents', view: 'documents', icon: 'folder' },
-      { label: 'Properties', view: 'properties', icon: 'properties' },
-      { label: 'Projects', view: 'tracker', icon: 'tracker' },
-      { label: 'Commercial', built: false, icon: 'building' },
-      { label: 'Rental', built: false, icon: 'properties' },
-      { label: 'Investments', view: 'investments', icon: 'investments' },
+      { label: 'Residential', view: 'properties', icon: 'properties', children: [
+        { label: 'Create Trans.', built: false, icon: 'plus' },
+        { label: 'Upload Trans. Docs', built: false, icon: 'folder' },
+        { label: 'Upload Recordings', built: false, icon: 'mic' },
+      ] },
+      { label: 'Commercial', built: false, icon: 'building', children: [
+        { label: 'Create Trans.', built: false, icon: 'plus' },
+        { label: 'Upload Trans. Docs', built: false, icon: 'folder' },
+        { label: 'Upload Recordings', built: false, icon: 'mic' },
+      ] },
+      { label: 'Rentals', built: false, icon: 'properties', children: [
+        { label: 'Create Trans.', built: false, icon: 'plus' },
+      ] },
+      { label: 'My Projects', view: 'tracker', icon: 'tracker' },
+      { label: 'My Investments', view: 'investments', icon: 'investments' },
     ] },
-    // ── Money Matters ──
-    { label: 'Money Matters', icon: 'dollar', children: [
-      { label: 'Money Dashboard', view: 'finance', icon: 'finance', children: [
-        { label: 'Data Entry / Scan', view: 'finance', sub: 'ledger', icon: 'camera' },
+    // ── Finance ──
+    { label: 'Finance', icon: 'dollar', children: [
+      { label: 'Finance Dashboard', view: 'finance', icon: 'finance', children: [
+        { label: 'Data Entry', view: 'finance', sub: 'ledger', icon: 'camera' },
         { label: 'Blueprint (Budget)', view: 'finance', sub: 'blueprint', icon: 'compass' },
-        { label: 'Financial Reporting', view: 'finance', sub: 'reports', icon: 'chart' },
+        { label: 'Financial Records', view: 'finance', sub: 'reports', icon: 'chart' },
       ] },
       { label: 'Mileage', view: 'mileage', icon: 'car' },
     ] },
@@ -15919,14 +15939,14 @@ function AppMain() {
       { label: 'DISC / Grit Test', view: 'disc_test', icon: 'bulb' },
       { label: 'My Voice (Voice Card)', view: 'myvoice', icon: 'mic' },
       { label: 'Get Started / Onboarding', icon: 'star', action: () => { try { window.__openOnboarding && window.__openOnboarding(); } catch (_) {} } },
-      { label: 'Business Questionnaire', built: false, icon: 'clipboard' },
+      { label: 'Business Plan', built: false, icon: 'clipboard' },
     ] },
     // ── Brokerage (admin -> Brokerage, team leader -> Team, agent -> neither) ──
     ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
     // ── Settings & Systems ──
     { label: 'Settings & Systems', icon: 'settings', children: [
       { label: 'Settings', view: 'settings', icon: 'settings' },
-      { label: 'System Health', view: 'systems', icon: 'systems' },
+      { label: 'System Health', view: 'app_health', icon: 'systems' },
     ] },
   ];
   assignMenuKeys(MENU, 'm');
