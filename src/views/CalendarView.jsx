@@ -98,7 +98,7 @@ function TimePicker({ value, onChange }) {
       </select>
       <span style={{ fontWeight: 800, color: 'var(--text-2)' }}>:</span>
       <select className="form-input" style={sel} value={M} onChange={e => emit(h12, parseInt(e.target.value, 10), ap)}>
-        {Array.from({ length: 60 }, (_, i) => i).map(mm => <option key={mm} value={mm}>{pad2(mm)}</option>)}
+        {(() => { const base = Array.from({ length: 12 }, (_, i) => i * 5); const opts = base.includes(M) ? base : [...base, M].sort((a, b) => a - b); return opts.map(mm => <option key={mm} value={mm}>{pad2(mm)}</option>); })()}
       </select>
       <div style={{ display: 'inline-flex', gap: '4px', marginLeft: '2px' }}>
         {['AM', 'PM'].map(x => (
