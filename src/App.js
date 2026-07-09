@@ -15243,6 +15243,7 @@ function AppMain() {
   useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ try{ await supabase.rpc('claim_agent_profile'); }catch(_e){} const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
+  const viewRef = useRef(view); viewRef.current = view;
   // Dashboard-only pull-to-refresh: re-syncs data via loadData() without a page
   // reload, so in-progress work is never lost. Native pull-to-refresh is disabled
   // app-wide in CSS (overscroll-behavior), which is what used to wipe state.
@@ -15371,31 +15372,42 @@ function AppMain() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Back-button confirmation guard.
-  // Push a sentinel history state on mount. If the user presses the browser
-  // back button and would otherwise leave the app, we intercept, ask, and
-  // re-push the sentinel if they cancel. (Modal/menu-aware: if a confirm
-  // dialog or .modal-overlay is open, defer to that — close the dialog
-  // by re-pushing the sentinel.)
+  // Back-button guard. On mount we push a sentinel history entry; every hardware/
+  // browser back press pops it and fires popstate, which we intercept. Crucially we
+  // RE-ARM the sentinel *synchronously* at the top of the handler — so the app is
+  // never left unguarded during the async confirm. (That gap is exactly how a quick
+  // second back-tap used to slip through and exit the app.) Precedence on back:
+  // close the top open modal → step back to the home screen → and only on the home
+  // screen, ask to exit with a proper confirm/cancel dialog.
   useEffect(() => {
-    try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
-    const onPop = async (e) => {
-      // If any modal is open, close the top one and stay in the app.
+    let allowExit = false;
+    const arm = () => { try { window.history.pushState({ __prismGuard: true }, ''); } catch (_) {} };
+    arm();
+    const onPop = async () => {
+      if (allowExit) return;
+      arm(); // re-guard immediately, before anything async can run
+      // 1) An open modal / overlay? Close the top one and stay put.
       if (__prismModalCloseStack.length) {
         const top = __prismModalCloseStack[__prismModalCloseStack.length - 1];
-        try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
-        try { top.close(); } catch(_) {}
+        try { top.close(); } catch (_) {}
         return;
       }
-      const ok = await confirmDialog('Exit Prism? Tap Cancel to stay.');
-      if (!ok) {
-        // Restore the sentinel so the next back press triggers this again
-        try { window.history.pushState({ __prismGuard: true }, ''); } catch(_) {}
-      } else {
-        // Allow the navigation; let the browser handle it
-        window.removeEventListener('popstate', onPop);
-        window.history.back();
+      // 2) Not on the home screen? Back returns home instead of leaving the app.
+      if (viewRef.current && viewRef.current !== 'dashboard') {
+        try { setView('dashboard'); } catch (_) {}
+        return;
       }
+      // 3) On the home screen with nothing to close → confirm before leaving.
+      const ok = await confirmDialog(
+        'Exit Prism?\n\nYou are on the home screen. Do you want to close the app?',
+        { confirmLabel: 'Exit', cancelLabel: 'Stay', danger: true }
+      );
+      if (ok) {
+        allowExit = true;
+        window.removeEventListener('popstate', onPop);
+        try { window.history.go(-2); } catch (_) { try { window.history.back(); } catch (_e) {} }
+      }
+      // Cancel: we already re-armed at the top, so the app simply stays.
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
