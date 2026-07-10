@@ -226,8 +226,9 @@ function JournalView({ userId }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '80px' }}>
       {/* Header */}
       <div>
+        <div className="ww-eyebrow" style={{ marginBottom: 6 }}>Daily Journal · Realty ONE Group</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 800, margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={26} style={{color:'var(--accent)',flexShrink:0}} />Journal</h2>
+          <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} />Daily Journal</h2>
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
             style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="search" size={16} /></button>

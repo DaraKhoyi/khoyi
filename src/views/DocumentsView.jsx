@@ -210,8 +210,9 @@ export default function DocumentsView({ userId }) {
   const list = results !== null ? results : (rows || []);
   return (
     <div style={{ maxWidth: 760, margin: '0 auto' }}>
+      <div className="ww-eyebrow" style={{ marginBottom: 6 }}>Your documents · Realty ONE Group</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>📁 Documents</h2>
+        <h2 style={{ margin: 0, fontFamily: 'Fraunces, serif', fontWeight: 300, letterSpacing: '-0.02em' }}>Documents</h2>
         <div style={{ marginLeft: 'auto' }}><UploadButton userId={userId} onUploaded={() => load()} label="+ Upload document" /></div>
       </div>
       <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 12, lineHeight: 1.5 }}>Drop in PDFs, Word docs, text files, or photos/scans. Each one is read (scans included), summarized, and made searchable — by keyword or by meaning.</div>
