@@ -325,7 +325,7 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
   // Shared KPI-tile styling so the stat row reads as one clean, aligned system.
   const tile = { background: 'var(--bg-base)', borderRadius: '12px', padding: '12px', border: '1px solid var(--border)', minWidth: 0 };
   const tileLabel = { fontSize: '9.5px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-  const tileNum = { fontSize: '21px', fontWeight: 800, color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1, marginTop: '4px' };
+  const tileNum = { fontSize: '24px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.01em', color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1, marginTop: '4px' };
   const tileUnit = { fontSize: '10px', color: 'var(--text-3)', fontWeight: 600 };
   const tileSub = { fontSize: '9px', color: 'var(--text-3)', marginTop: '3px' };
 
@@ -726,7 +726,7 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
   const Metric = ({ label, value, color }) => (
     <div style={{ textAlign: 'center', minWidth: 0 }}>
       <div style={{ fontSize: '8.5px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.02em', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-      <div style={{ fontSize: '13px', fontWeight: 800, color: color || 'var(--text-1)', fontVariantNumeric: 'tabular-nums', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+      <div style={{ fontSize: '20px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.01em', color: color || 'var(--text-1)', fontVariantNumeric: 'tabular-nums', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     </div>
   );
 
@@ -1022,7 +1022,8 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
   // hover lift, and press feedback — so both controls read as a matched set.
 
   return (
-    <div className="view">
+    <div className="view ww-prism">
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .seg-track{background:#18130D;border:1px solid rgba(203,163,92,.18);} .ww-prism .seg-btn{color:#C8BFAE;} .ww-prism .seg-btn.active{background:linear-gradient(180deg,#EBCB82,#CBA35C)!important;color:#1a1409!important;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
       {readOnly && (
         <div style={{padding:'8px 12px',background:'rgba(59,130,246,0.15)',border:'1px solid rgba(59,130,246,0.4)',borderRadius:'8px',marginBottom:'10px',fontSize:'12px',color:'var(--text-1)'}}>
           <Icon name="eye" size={13} style={{verticalAlign:'-2px'}} /> <strong>Partner mode</strong> — accountability view, read-only. Switch back in the mode pills above.
@@ -1036,8 +1037,9 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
 
       <div className="view-header" style={{display:'flex',flexDirection:'column',gap:'12px',marginBottom:'14px'}}>
         <div>
+          <div className="ww-eyebrow" style={{marginBottom:6}}>Your finances · Realty ONE Group</div>
           <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-            <span style={{display:'inline-flex',alignItems:'center',gap:'9px'}}><Icon name="finance" size={22} /> Finance</span>
+            <span style={{display:'inline-flex',alignItems:'center',gap:'9px'}}><Icon name="finance" size={22} style={{color:'var(--accent)'}} /> Finance Dashboard</span>
             {settings && (
               <span className="fin-badge" style={{background:`${tier.color}1f`, color:tier.color, border:`1px solid ${tier.color}59`}}>{tier.label}</span>
             )}
@@ -1373,7 +1375,7 @@ function FinanceDashboard({
           <span style={{fontSize:'11px',color:paceStatus.color,fontWeight:600}}>{paceStatus.label}</span>
         </div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'10px'}}>
-          <span style={{fontSize:'26px',fontWeight:800,color:'var(--text-1)'}}>{fmtUSD(ytdIncome)}</span>
+          <span style={{fontSize:'38px',fontWeight:300,fontFamily:'Fraunces, serif',letterSpacing:'-0.01em',color:'var(--text-1)',lineHeight:1}}>{fmtUSD(ytdIncome)}</span>
           <span style={{fontSize:'14px',color:'var(--text-3)'}}>of {fmtUSD(goal)}{pr.active ? ' · first-yr' : ''}</span>
         </div>
         <div style={{position:'relative',height:'14px',background:'var(--bg-base)',borderRadius:'7px',overflow:'hidden',border:'1px solid var(--border)'}}>
