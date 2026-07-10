@@ -131,6 +131,14 @@ function JournalView({ userId }) {
   const [actionsByEntry, setActionsByEntry] = useState({});
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
+  // Shared-into-app (Web Share Target): a link/text shared from another app.
+  useEffect(() => {
+    const d = window.__pendingSharedText;
+    if (!d) return;
+    window.__pendingSharedText = null;
+    const parts = [d.title, d.text, d.url].filter(Boolean);
+    if (parts.length) setText(parts.join('\n'));
+  }, []);
   const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);

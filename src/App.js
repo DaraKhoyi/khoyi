@@ -15416,16 +15416,20 @@ function AppMain() {
   useEffect(() => {
     let params;
     try { params = new URLSearchParams(window.location.search); } catch (_) { return; }
-    if (params.get('shared') !== 'audio') return;
+    const shared = params.get('shared');
+    if (!shared) return;
     (async () => {
       try {
         const cache = await caches.open('prismos-shared');
-        const resp = await cache.match('/__shared_audio');
-        if (resp) {
-          const blob = await resp.blob();
-          const fn = decodeURIComponent(resp.headers.get('x-filename') || 'shared-recording');
-          setSharedAudio(new File([blob], fn, { type: blob.type || 'audio/mpeg' }));
-          await cache.delete('/__shared_audio');
+        if (shared === 'audio') {
+          const resp = await cache.match('/__shared_audio');
+          if (resp) { const blob = await resp.blob(); const fn = decodeURIComponent(resp.headers.get('x-filename') || 'shared-recording'); setSharedAudio(new File([blob], fn, { type: blob.type || 'audio/mpeg' })); await cache.delete('/__shared_audio'); }
+        } else if (shared === 'file') {
+          const resp = await cache.match('/__shared_file');
+          if (resp) { const blob = await resp.blob(); const fn = decodeURIComponent(resp.headers.get('x-filename') || 'shared-document'); window.__pendingSharedDoc = new File([blob], fn, { type: blob.type || 'application/octet-stream' }); await cache.delete('/__shared_file'); setView('documents'); }
+        } else if (shared === 'text') {
+          const resp = await cache.match('/__shared_text');
+          if (resp) { const d = await resp.json().catch(() => null); if (d) { window.__pendingSharedText = d; setView('journal'); } await cache.delete('/__shared_text'); }
         }
       } catch (_) {}
       try { window.history.replaceState({}, '', '/'); } catch (_) {}

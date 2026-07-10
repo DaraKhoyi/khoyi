@@ -194,6 +194,13 @@ export default function DocumentsView({ userId }) {
     setRows(data || []);
   }, [userId]);
   useEffect(() => { load(); }, [load]);
+  // Shared-into-app (Web Share Target): a document/photo shared from another app.
+  useEffect(() => {
+    const f = window.__pendingSharedDoc;
+    if (!f) return;
+    window.__pendingSharedDoc = null;
+    (async () => { try { await uploadDocuments([f], userId, []); await load(); } catch (_) {} })();
+  }, [userId, load]);
   useDocPolling(results ? null : rows, setRows, userId, null);
 
   const runSearch = async () => {

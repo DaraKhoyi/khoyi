@@ -26,7 +26,8 @@
       "text": "text",
       "url": "url",
       "files": [
-        { "name": "audio", "accept": ["audio/*", ".amr", ".m4a", ".mp3", ".wav", ".aac", ".ogg", ".opus", ".webm", ".3gp"] }
+        { "name": "audio", "accept": ["audio/*", ".amr", ".m4a", ".mp3", ".wav", ".aac", ".ogg", ".opus", ".webm", ".3gp"] },
+        { "name": "document", "accept": ["application/pdf", ".pdf", "image/*", ".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".doc", ".docx", "text/plain", ".txt", ".csv", ".rtf"] }
       ]
     }
   }
