@@ -1140,9 +1140,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const dueCount = useMemo(() => contacts.filter(c => { const cd = cadenceDue(c); return (cd && cd.due && !cd.snoozed) || (c.last_communication_direction==='inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date())); }).length, [contacts]);
   const reachNext = useMemo(() => {
     const owe = contacts.find(c => c.last_communication_direction==='inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date()));
-    if (owe) return { c: owe, why: 'you owe a reply \u00b7 ' + relDaysShort(Math.floor((Date.now()-new Date(owe.last_inbound_at))/86400000)) + ' ago' };
+    if (owe) return { c: owe, why: 'you owe a reply · ' + relDaysShort(Math.floor((Date.now()-new Date(owe.last_inbound_at))/86400000)) + ' ago' };
     const due = contacts.find(c => { const cd = cadenceDue(c); return cd && cd.due && !cd.snoozed; });
-    if (due) return { c: due, why: 'due for a touch \u00b7 ' + relDaysShort(daysSinceTouch(due)) + ' since last' };
+    if (due) return { c: due, why: 'due for a touch · ' + relDaysShort(daysSinceTouch(due)) + ' since last' };
     return null;
   }, [contacts]);
   return (
@@ -1187,6 +1187,16 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         .ww-touch.due{ color:#EBCB82; }
         .ww-dot{ width:7px; height:7px; border-radius:50%; background:rgba(203,163,92,.40); }
         .ww-dot.due{ background:#EBCB82; box-shadow:0 0 8px rgba(235,203,130,.6); }
+        .ww-quick{ margin:8px 0 6px; border:1px solid rgba(203,163,92,.22); border-radius:14px; overflow:hidden; background:#18130D; }
+        .ww-qrow{ display:flex; align-items:center; gap:11px; padding:12px 14px; border-bottom:1px solid rgba(203,163,92,.12); cursor:pointer; }
+        .ww-qrow:last-child{ border-bottom:none; }
+        .ww-qrow:active{ background:rgba(203,163,92,.10); }
+        .ww-qav{ width:31px; height:31px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:12px; color:#EBCB82; border:1px solid rgba(203,163,92,.40); background:#100D09; text-transform:uppercase; }
+        .ww-qn{ font-size:15.5px; font-weight:700; color:#F6F1E7; white-space:nowrap; flex:none; }
+        .ww-qm{ font-size:12.5px; color:#8C8475; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ww-qdisc{ font-family:'Fraunces',serif; font-size:14px; color:#CBA35C; flex:none; }
+        .ww-qmore{ padding:10px 14px; font-size:12px; color:#8C8475; text-align:center; }
+        .ww-qempty{ padding:16px 14px; font-size:13.5px; color:#8C8475; text-align:center; }
       `}</style>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}><div className="ww-eyebrow">Your sphere · Realty ONE Group</div><h2 style={{margin:'8px 0 6px'}}>Your people.</h2><p style={{color:'var(--text-3)',fontSize:'13px'}}>{contacts.length} contacts{dueCount>0 && <> · <b style={{color:'var(--accent-2)',fontWeight:700}}>{dueCount} due</b> for a touch</>}</p></div>
@@ -1218,14 +1228,14 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       )}
 
-      {!tagMode && reachNext && (
+      {!tagMode && !search.trim() && reachNext && (
         <div className="ww-next">
           <div className="lab">Reach out next</div>
           <div className="ww-nrow">
             <div className="ww-av">{(reachNext.c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
             <div className="nm">
               <div className="n">{reachNext.c.name}</div>
-              <div className="m">{[CONTACT_TYPE_LABELS[reachNext.c.type]||reachNext.c.type].filter(Boolean).join(' \u00b7 ')} \u00b7 <em>{reachNext.why}</em></div>
+              <div className="m">{[CONTACT_TYPE_LABELS[reachNext.c.type]||reachNext.c.type].filter(Boolean).join(' · ')} · <em>{reachNext.why}</em></div>
             </div>
             {(() => { const rp = profileByContact.get(reachNext.c.id); return rp?.primary_letter ? <span className="ww-disc" style={{fontSize:16}}>{rp.primary_letter}{rp.secondary_letter?'/'+rp.secondary_letter:''}</span> : null; })()}
           </div>
@@ -1246,6 +1256,26 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         onClose={() => {}}
         autoFocus={false}
       />
+
+      {search.trim() && (
+        <div className="ww-quick">
+          {sorted.length === 0
+            ? <div className="ww-qempty">No matches for “{search.trim()}”</div>
+            : sorted.slice(0, 12).map(c => {
+                const qp = profileByContact.get(c.id);
+                const qi = (c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+                return (
+                  <div key={c.id} className="ww-qrow" onClick={()=>{ if(tagMode){ toggleSel(c.id); } else { setDetailContact(c); } }}>
+                    <div className="ww-qav">{qi}</div>
+                    <span className="ww-qn">{c.name}</span>
+                    <span className="ww-qm">{[CONTACT_TYPE_LABELS[c.type]||c.type, c.company].filter(Boolean).join(' · ')}</span>
+                    {qp?.primary_letter && <span className="ww-qdisc">{qp.primary_letter}</span>}
+                  </div>
+                );
+              })}
+          {sorted.length > 12 && <div className="ww-qmore">+{sorted.length - 12} more — scroll for all</div>}
+        </div>
+      )}
 
       {/* Filters — pairs with multi-select: narrow the list, then Select all */}
       <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom: showFilters?'10px':'14px'}}>
@@ -1429,7 +1459,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
                       <div className="ww-av">{initials}</div>
                       <div className="ww-body">
                         <div className="ww-n">{c.name}</div>
-                        <div className="ww-m">{[CONTACT_TYPE_LABELS[c.type]||c.type, c.role, c.company].filter(Boolean).join(' \u00b7 ')}</div>
+                        <div className="ww-m">{[CONTACT_TYPE_LABELS[c.type]||c.type, c.role, c.company].filter(Boolean).join(' · ')}</div>
                       </div>
                       <div className="ww-right">
                         {p?.primary_letter && <span className="ww-disc">{p.primary_letter}{p.secondary_letter?'/'+p.secondary_letter:''}</span>}
