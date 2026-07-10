@@ -1138,7 +1138,26 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   }
 
   return (
-    <div>
+    <div className="ww-contacts">
+      <style>{`
+        .ww-contacts{
+          --bg-base:#100D09; --bg-card:#1B1610; --bg-panel:#18130D; --bg-hover:#221B10;
+          --border:rgba(203,163,92,.20); --border-strong:rgba(203,163,92,.40);
+          --accent:#CBA35C; --accent-2:#EBCB82; --accent-dim:#946F2C; --accent-glow:rgba(203,163,92,.18);
+          --text-1:#F6F1E7; --text-2:#C8BFAE; --text-3:#8C8475;
+          font-family:Manrope,sans-serif;
+          background:radial-gradient(120% 38% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;
+          min-height:100%;
+        }
+        .ww-contacts .page-header h2{ font-family:'Fraunces',serif; font-weight:300; letter-spacing:-.02em; font-size:30px; }
+        .ww-contacts .form-input, .ww-contacts .form-select, .ww-contacts .form-textarea{ background:#1B1610; border:1px solid rgba(203,163,92,.22); color:#F6F1E7; }
+        .ww-contacts .form-input::placeholder, .ww-contacts .form-textarea::placeholder{ color:#736c5f; }
+        .ww-contacts .form-input:focus, .ww-contacts .form-select:focus, .ww-contacts .form-textarea:focus{ border-color:#CBA35C; }
+        .ww-contacts .btn-primary{ background:#EBCB82; color:#1a1409; border:none; }
+        .ww-contacts .btn-ghost{ border:1px solid rgba(203,163,92,.34); color:#C8BFAE; }
+        .ww-contacts .btn-ghost:hover{ border-color:#CBA35C; color:#EBCB82; }
+        .ww-contacts .pill{ border-color:rgba(203,163,92,.24); }
+      `}</style>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="contacts" size={26} style={{color:'var(--accent)',flexShrink:0}} />Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
