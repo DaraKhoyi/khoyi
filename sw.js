@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-63020da'
+const VERSION = 'prismos-v1.02.62'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -65,16 +65,26 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const form = await req.formData();
-        const file = form.get('audio') || (form.getAll && form.getAll('audio')[0]);
-        if (file && file.size) {
-          const headers = new Headers();
-          headers.set('content-type', file.type || 'audio/mpeg');
-          headers.set('x-filename', encodeURIComponent(file.name || 'shared-recording'));
-          const cache = await caches.open('prismos-shared');
-          await cache.put('/__shared_audio', new Response(file, { headers }));
+        const cache = await caches.open('prismos-shared');
+        const audio = form.get('audio') || (form.getAll && form.getAll('audio')[0]);
+        const doc = form.get('document') || (form.getAll && form.getAll('document')[0]);
+        if (audio && audio.size) {
+          const h = new Headers(); h.set('content-type', audio.type || 'audio/mpeg'); h.set('x-filename', encodeURIComponent(audio.name || 'shared-recording'));
+          await cache.put('/__shared_audio', new Response(audio, { headers: h }));
+          return Response.redirect('/?shared=audio', 303);
         }
-      } catch (e) { /* fall through to redirect regardless */ }
-      return Response.redirect('/?shared=audio', 303);
+        if (doc && doc.size) {
+          const h = new Headers(); h.set('content-type', doc.type || 'application/octet-stream'); h.set('x-filename', encodeURIComponent(doc.name || 'shared-document'));
+          await cache.put('/__shared_file', new Response(doc, { headers: h }));
+          return Response.redirect('/?shared=file', 303);
+        }
+        const title = form.get('title') || '', text = form.get('text') || '', url = form.get('url') || '';
+        if (title || text || url) {
+          await cache.put('/__shared_text', new Response(JSON.stringify({ title, text, url }), { headers: { 'content-type': 'application/json' } }));
+          return Response.redirect('/?shared=text', 303);
+        }
+      } catch (e) { /* fall through */ }
+      return Response.redirect('/', 303);
     })());
     return;
   }
