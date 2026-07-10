@@ -618,7 +618,8 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           gap:'12px', marginBottom:'10px',
         }}>
           <div style={{minWidth:0, flex:1}}>
-            <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={26} style={{color:'var(--accent)',flexShrink:0}} />Tasks</h2>
+            <div className="ww-eyebrow">Your tasks · Realty ONE Group</div>
+            <h2 style={{margin:'6px 0 2px',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} />Tasks</h2>
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
