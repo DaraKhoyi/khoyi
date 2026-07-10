@@ -84,6 +84,7 @@ const DealsView = lazyWithReload(() => import('./views/DealsView'));
 const BrainView = lazyWithReload(() => import('./views/BrainView'));
 const TrackerView = lazyWithReload(() => import('./views/TrackerView'));
 const PrismView = lazyWithReload(() => import('./views/PrismView'));
+const MyPrismView = lazyWithReload(() => import('./views/MyPrismView'));
 const DiscAssessmentView = lazyWithReload(() => import('./views/DiscAssessmentView'));
 const DiscRosterView = lazyWithReload(() => import('./views/DiscRosterView'));
 const MyVoiceView = lazyWithReload(() => import('./views/MyVoiceView'));
@@ -15935,7 +15936,7 @@ function AppMain() {
     ] },
     // ── My Prism Identity ──
     { label: 'My Prism Identity', icon: 'prism', children: [
-      { label: 'My Prism Profile', view: 'prism', icon: 'prism' },
+      { label: 'My Prism Profile', view: 'my_prism', icon: 'prism' },
       { label: 'DISC / Grit Test', view: 'disc_test', icon: 'bulb' },
       { label: 'My Voice (Voice Card)', view: 'myvoice', icon: 'mic' },
       { label: 'Get Started / Onboarding', icon: 'star', action: () => { try { window.__openOnboarding && window.__openOnboarding(); } catch (_) {} } },
@@ -16045,6 +16046,7 @@ function AppMain() {
               : view==='journal'     ? <JournalView userId={user.id}/>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
+              : view==='my_prism'    ? <MyPrismView userId={user.id} user={user}/>
               : view==='disc_test'   ? <DiscAssessmentView userId={user.id} user={user} profiles={profiles} setProfiles={setProfiles}/>
               : view==='disc_roster' ? <DiscRosterView/>
               : view==='myvoice'     ? <MyVoiceView userId={user.id} user={user} voiceCards={voiceCards} setVoiceCards={setVoiceCards}/>
