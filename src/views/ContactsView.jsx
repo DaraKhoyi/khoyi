@@ -1137,6 +1137,14 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     }
   }
 
+  const dueCount = useMemo(() => contacts.filter(c => { const cd = cadenceDue(c); return (cd && cd.due && !cd.snoozed) || (c.last_communication_direction==='inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date())); }).length, [contacts]);
+  const reachNext = useMemo(() => {
+    const owe = contacts.find(c => c.last_communication_direction==='inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date()));
+    if (owe) return { c: owe, why: 'you owe a reply \u00b7 ' + relDaysShort(Math.floor((Date.now()-new Date(owe.last_inbound_at))/86400000)) + ' ago' };
+    const due = contacts.find(c => { const cd = cadenceDue(c); return cd && cd.due && !cd.snoozed; });
+    if (due) return { c: due, why: 'due for a touch \u00b7 ' + relDaysShort(daysSinceTouch(due)) + ' since last' };
+    return null;
+  }, [contacts]);
   return (
     <div className="ww-contacts">
       <style>{`
@@ -1157,9 +1165,31 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         .ww-contacts .btn-ghost{ border:1px solid rgba(203,163,92,.34); color:#C8BFAE; }
         .ww-contacts .btn-ghost:hover{ border-color:#CBA35C; color:#EBCB82; }
         .ww-contacts .pill{ border-color:rgba(203,163,92,.24); }
+        .ww-eyebrow{ font-size:10.5px; font-weight:700; letter-spacing:.24em; text-transform:uppercase; color:#CBA35C; }
+        .ww-next{ margin:16px 0 6px; border:1px solid rgba(203,163,92,.40); border-radius:18px; padding:15px 16px 14px; background:radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,.12), transparent 55%), linear-gradient(180deg,#1B1610,#100D09); }
+        .ww-next .lab{ font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:#CBA35C; font-weight:700; margin-bottom:12px; }
+        .ww-nrow{ display:flex; align-items:center; gap:13px; }
+        .ww-nrow .nm{ flex:1; min-width:0; }
+        .ww-nrow .nm .n{ font-size:17px; font-weight:700; color:#F6F1E7; }
+        .ww-nrow .nm .m{ font-size:12.5px; color:#C8BFAE; margin-top:2px; }
+        .ww-nrow .nm .m em{ color:#EBCB82; font-style:normal; font-weight:600; }
+        .ww-acts{ display:flex; gap:8px; margin-top:13px; }
+        .ww-acts a, .ww-acts button{ flex:1; text-align:center; background:transparent; border:1px solid rgba(203,163,92,.40); color:#C8BFAE; font-family:Manrope,sans-serif; font-size:12.5px; font-weight:600; padding:9px; border-radius:100px; cursor:pointer; text-decoration:none; }
+        .ww-acts .p{ background:#EBCB82; color:#1a1409; border:none; font-weight:700; }
+        .ww-av{ width:42px; height:42px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:15px; color:#EBCB82; border:1px solid rgba(203,163,92,.40); background:#18130D; text-transform:uppercase; }
+        .ww-row{ display:flex; align-items:center; gap:13px; padding:14px 2px; border-bottom:1px solid rgba(203,163,92,.16); }
+        .ww-row .ww-body{ flex:1; min-width:0; }
+        .ww-row .ww-n{ font-size:15.5px; font-weight:700; color:#F6F1E7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ww-row .ww-m{ font-size:12.5px; color:#8C8475; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ww-right{ text-align:right; flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:5px; }
+        .ww-disc{ font-family:'Fraunces',serif; font-size:15px; color:#CBA35C; letter-spacing:.04em; }
+        .ww-touch{ font-size:11.5px; color:#8C8475; display:flex; align-items:center; gap:6px; }
+        .ww-touch.due{ color:#EBCB82; }
+        .ww-dot{ width:7px; height:7px; border-radius:50%; background:rgba(203,163,92,.40); }
+        .ww-dot.due{ background:#EBCB82; box-shadow:0 0 8px rgba(235,203,130,.6); }
       `}</style>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
-        <div style={{flex:1,minWidth:0}}><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="contacts" size={26} style={{color:'var(--accent)',flexShrink:0}} />Contacts</h2><p>{contacts.length} total · {sorted.length} shown</p></div>
+        <div style={{flex:1,minWidth:0}}><div className="ww-eyebrow">Your sphere · Realty ONE Group</div><h2 style={{margin:'8px 0 6px'}}>Your people.</h2><p style={{color:'var(--text-3)',fontSize:'13px'}}>{contacts.length} contacts{dueCount>0 && <> · <b style={{color:'var(--accent-2)',fontWeight:700}}>{dueCount} due</b> for a touch</>}</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
           <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
           <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
@@ -1184,6 +1214,26 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
             </select>
             <button className="btn btn-ghost btn-sm" disabled={!tagSysId || selIds.size===0 || applyingTag} onClick={applyTag}>{applyingTag?'Applying…':'Apply tag'}</button>
             <button className="btn btn-ghost btn-sm" onClick={exitTag}>Done</button>
+          </div>
+        </div>
+      )}
+
+      {!tagMode && reachNext && (
+        <div className="ww-next">
+          <div className="lab">Reach out next</div>
+          <div className="ww-nrow">
+            <div className="ww-av">{(reachNext.c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+            <div className="nm">
+              <div className="n">{reachNext.c.name}</div>
+              <div className="m">{[CONTACT_TYPE_LABELS[reachNext.c.type]||reachNext.c.type].filter(Boolean).join(' \u00b7 ')} \u00b7 <em>{reachNext.why}</em></div>
+            </div>
+            {(() => { const rp = profileByContact.get(reachNext.c.id); return rp?.primary_letter ? <span className="ww-disc" style={{fontSize:16}}>{rp.primary_letter}{rp.secondary_letter?'/'+rp.secondary_letter:''}</span> : null; })()}
+          </div>
+          <div className="ww-acts">
+            {reachNext.c.phone && <a className="p" href={`tel:${(reachNext.c.phone||'').replace(/[^\d+]/g,'')}`} onClick={e=>e.stopPropagation()}>Call</a>}
+            {reachNext.c.phone && <button onClick={()=>setTextTo({ contact: reachNext.c, phone: reachNext.c.phone })}>Text</button>}
+            {reachNext.c.email && <button onClick={()=>{ if(window.__composeEmail) window.__composeEmail(reachNext.c.email); }}>Email</button>}
+            <button onClick={()=>setDetailContact(reachNext.c)}>Open</button>
           </div>
         </div>
       )}
@@ -1259,6 +1309,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       )}
 
+      {showFilters && (
       <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
         <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
           title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
@@ -1273,6 +1324,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           {findingDupes ? '↻ Scanning…' : <><Icon name="search" size={13} /> Find dupes</>}
         </button>
       </div>
+      )}
 
       {/* Phone extraction feedback */}
       {phoneMsg && (
@@ -1365,86 +1417,23 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
             : <><div className="task-list">
                 {sorted.slice(0, visibleCount).map(c => {
                   const p = profileByContact.get(c.id);
-                  const discColors = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6' };
+                  const cad = cadenceDue(c);
+                  const owe = c.last_communication_direction === 'inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date());
+                  const isDue = (cad && cad.due && !cad.snoozed) || owe;
+                  const dt = daysSinceTouch(c);
+                  const touchLabel = owe ? 'owes reply' : (cad && cad.due && !cad.snoozed) ? 'due' : (dt != null ? relDaysShort(dt)+' ago' : '');
+                  const initials = (c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
                   return (
-                    <div key={c.id} className="task-item" style={{cursor:'pointer', ...(tagMode && selIds.has(c.id) ? {background:'var(--accent-glow)',border:'1px solid var(--accent)'} : {})}} onClick={()=>{ if(tagMode){ toggleSel(c.id); } else { setDetailContact(c); } }}>
-                      {tagMode && <span style={{width:20,height:20,borderRadius:5,border:'1.5px solid '+(selIds.has(c.id)?'var(--accent)':'var(--text-3)'),background:selIds.has(c.id)?'var(--accent)':'transparent',color:'#111',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0,marginRight:8}}>{selIds.has(c.id)?'✓':''}</span>}
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontWeight:600,color:'var(--text-1)',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
-                          {c.name}
-                          <span className="task-priority" style={{background:'var(--bg-hover)',color:'var(--text-2)'}}>{CONTACT_TYPE_LABELS[c.type] || c.type}</span>
-                          {(() => {
-                            const s = cadenceDue(c);
-                            if (s && s.snoozed) return <span title={`Reach-out snoozed until ${new Date(s.snoozeUntil).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`} style={{fontSize:'10px',color:'var(--text-3)'}}>💤 snoozed</span>;
-                            if (s && s.due) return <span className="pill" title={`Reach-out cadence: every ${c.cadence_days}d · last touch ${relDaysShort(s.daysSince)} ago`} style={{fontSize:'10px',padding:'2px 7px',fontWeight:700,background:'var(--red)',color:'#fff'}}>⚠ reach out</span>;
-                            if (c.cadence_days) return <span title={`On a ${c.cadence_days}-day cadence · last touch ${relDaysShort(daysSinceTouch(c))} ago`} style={{fontSize:'10px',color:'var(--text-3)'}}>🕑 {relDaysShort(daysSinceTouch(c))}</span>;
-                            return null;
-                          })()}
-                          {p?.primary_letter && (
-                            <span title={`DISC ${p.primary_letter}${p.secondary_letter ? '/' + p.secondary_letter : ''} · ${p.confidence_pct || 0}% confidence · ${p.analysis_status || 'ready'}`}
-                              className="pill"
-                              style={{
-                                fontSize:'10px', padding:'2px 7px', fontWeight:700,
-                                background: discColors[p.primary_letter],
-                                color: '#fff',
-                                opacity: p.analysis_status === 'provisional' ? 0.6 : 1,
-                              }}>
-                              {p.primary_letter}{p.secondary_letter ? `/${p.secondary_letter}` : ''}
-                              {p.confidence_pct ? ` ${p.confidence_pct}%` : ''}
-                              {p.analysis_status === 'provisional' ? ' · prov' : ''}
-                              {p.analysis_status === 'baseline_only' ? ' · base' : ''}
-                            </span>
-                          )}
-                          {p?.drift_note && (
-                            <span title={p.drift_note} style={{fontSize:'12px',color:'#f59e0b'}}>⚠</span>
-                          )}
-                        </div>
-                        {(c.company || c.role) && <div style={{fontSize:'13px',color:'var(--text-2)',marginTop:'2px'}}>{[c.role,c.company].filter(Boolean).join(' · ')}</div>}
-                        {(c.email || c.phone) && (() => {
-                          const tel = (c.phone || '').replace(/[^\d+]/g, '');
-                          const chip = { display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px', borderRadius:'999px', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', color:'var(--text-1)', fontSize:'11.5px', textDecoration:'none', lineHeight:1.4 };
-                          const iconBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', width:'34px', height:'30px', borderRadius:'999px', background:'rgba(197,169,94,0.10)', border:'1px solid var(--border)', color:'var(--accent)', fontSize:'13px', textDecoration:'none' };
-                          return (
-                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}}>
-                              {c.phone && <a href={`tel:${tel}`} onClick={e=>e.stopPropagation()} title="Call" style={chip}><Icon name="quo" size={12} style={{color:'var(--accent)'}} />&nbsp;{c.phone}</a>}
-                              {c.phone && <button onClick={e=>{e.stopPropagation(); setTextTo({ contact: c, phone: c.phone });}} title="Text via Quo" style={{...iconBtn, cursor:'pointer'}}><Icon name="message" size={13} /></button>}
-                              {c.email && <a href="#" onClick={e=>{e.stopPropagation(); e.preventDefault(); if(window.__composeEmail) window.__composeEmail(c.email);}} title="Email" style={{...chip, maxWidth:'100%', overflow:'hidden', cursor:'pointer'}}><Icon name="mail" size={12} style={{color:'var(--accent)'}} />&nbsp;<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email}</span></a>}
-                            </div>
-                          );
-                        })()}
-                        {(() => {
-                          // Subtle communication state line
-                          if (!c.last_inbound_at && !c.last_outbound_at) return null;
-                          const lin = c.last_inbound_at;
-                          const lout = c.last_outbound_at;
-                          const dir = c.last_communication_direction;
-                          const rel = (ts) => {
-                            const d = Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
-                            if (d === 0) return 'today';
-                            if (d === 1) return '1d ago';
-                            if (d < 7) return `${d}d ago`;
-                            if (d < 30) return `${Math.floor(d/7)}w ago`;
-                            if (d < 365) return `${Math.floor(d/30)}mo ago`;
-                            return `${Math.floor(d/365)}y ago`;
-                          };
-                          if (dir === 'inbound' && lin) {
-                            const days = Math.floor((Date.now() - new Date(lin).getTime()) / 86400000);
-                            const snz = c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date();
-                            // Show owe-reply hint only if >= 1 day old and not snoozed
-                            if (days >= 1 && !snz) {
-                              return <div style={{fontSize:'11px',color:'var(--yellow)',marginTop:'3px',opacity:0.85}}>⬇ they wrote {rel(lin)} · awaiting reply</div>;
-                            }
-                            return <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'3px'}}>⬇ they wrote {rel(lin)}</div>;
-                          }
-                          if (dir === 'outbound' && lout) {
-                            return <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'3px'}}>⬆ you wrote {rel(lout)}</div>;
-                          }
-                          return null;
-                        })()}
+                    <div key={c.id} className="ww-row" style={{cursor:'pointer', ...(tagMode && selIds.has(c.id) ? {background:'var(--accent-glow)'} : {})}} onClick={()=>{ if(tagMode){ toggleSel(c.id); } else { setDetailContact(c); } }}>
+                      {tagMode && <span style={{width:20,height:20,borderRadius:5,border:'1.5px solid '+(selIds.has(c.id)?'var(--accent)':'var(--text-3)'),background:selIds.has(c.id)?'var(--accent)':'transparent',color:'#111',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0}}>{selIds.has(c.id)?'\u2713':''}</span>}
+                      <div className="ww-av">{initials}</div>
+                      <div className="ww-body">
+                        <div className="ww-n">{c.name}</div>
+                        <div className="ww-m">{[CONTACT_TYPE_LABELS[c.type]||c.type, c.role, c.company].filter(Boolean).join(' \u00b7 ')}</div>
                       </div>
-                      <div className="task-meta">
-                        <span className={`task-priority priority-${c.priority==='urgent'?'high':c.priority==='normal'?'medium':c.priority}`}>{c.priority}</span>
-                        <button className="task-delete" onClick={(e)=>{e.stopPropagation();deleteContact(c.id);}}>×</button>
+                      <div className="ww-right">
+                        {p?.primary_letter && <span className="ww-disc">{p.primary_letter}{p.secondary_letter?'/'+p.secondary_letter:''}</span>}
+                        {touchLabel && <span className={'ww-touch'+(isDue?' due':'')}>{touchLabel}<span className={'ww-dot'+(isDue?' due':'')} /></span>}
                       </div>
                     </div>
                   );
