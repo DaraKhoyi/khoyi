@@ -624,10 +624,40 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   }
 
   return (
-    <div>
+    <div className="ww-cal">
+      <style>{`
+        .ww-cal{
+          --bg-base:#100D09; --bg-card:#1B1610; --bg-hover:#221B10;
+          --border:rgba(203,163,92,.20); --border-strong:rgba(203,163,92,.40);
+          --accent:#CBA35C; --accent-2:#EBCB82; --accent-dim:rgba(203,163,92,.45); --accent-glow:rgba(203,163,92,.14);
+          --text-1:#F6F1E7; --text-2:#C8BFAE; --text-3:#8C8475;
+          font-family:Manrope,sans-serif;
+          background:radial-gradient(120% 34% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;
+          min-height:100%;
+        }
+        .ww-cal .ww-eyebrow{ font-size:10.5px; font-weight:700; letter-spacing:.24em; text-transform:uppercase; color:#CBA35C; }
+        .ww-cal .page-header h2{ font-family:'Fraunces',serif; font-weight:300; letter-spacing:-.02em; font-size:30px; }
+        .ww-cal .page-header p{ font-size:13px; color:#8C8475; }
+        .ww-cal .panel{ background:linear-gradient(180deg,#18130D,#100D09); border:1px solid rgba(203,163,92,.20); border-radius:16px; }
+        .ww-cal .panel-header h3{ font-family:'Fraunces',serif; font-weight:400; letter-spacing:-.01em; color:#F6F1E7; }
+        .ww-cal .btn-ghost{ border:1px solid rgba(203,163,92,.30); color:#C8BFAE; }
+        .ww-cal .btn-ghost:hover{ border-color:#CBA35C; color:#EBCB82; }
+        .ww-cal .btn-primary{ background:#EBCB82; color:#1a1409; border:none; }
+        .ww-cal .btn-add-circle{ background:#EBCB82; color:#1a1409; }
+        .ww-cal .cal-view-toggle{ border:1px solid rgba(203,163,92,.22); }
+        .ww-cal .cal-view-toggle button{ color:#C8BFAE; }
+        .ww-cal .cal-view-toggle button.active{ background:rgba(203,163,92,.16); color:#EBCB82; }
+        .ww-cal .cal-icon-btn{ border-color:rgba(203,163,92,.30) !important; color:#CBA35C !important; }
+        .ww-cal .task-item{ border-color:rgba(203,163,92,.14); }
+        .ww-cal .task-text{ color:#F6F1E7; }
+        .ww-cal .task-due{ color:#8C8475; }
+        .ww-cal .empty-state{ color:#8C8475; }
+        .ww-cal .empty-icon{ color:#CBA35C; }
+      `}</style>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}>
-          <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="calendar" size={26} style={{color:'var(--accent)',flexShrink:0}} />Calendar</h2>
+          <div className="ww-eyebrow">Your calendar · Realty ONE Group</div>
+          <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'6px 0 4px'}}><Icon name="calendar" size={24} style={{color:'var(--accent)',flexShrink:0}} />Calendar</h2>
           <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total{taskBlockCount>0?` · ${taskBlockCount} scheduled task block${taskBlockCount===1?'':'s'}`:''}</p>
         </div>
         <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
