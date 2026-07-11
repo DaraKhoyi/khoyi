@@ -36,14 +36,16 @@ const digits = (s: any) => String(s || "").replace(/[^0-9]/g, "");
 const last10 = (s: any) => { const d = digits(s); return d.length >= 10 ? d.slice(-10) : d; };
 
 // OpenPhone payloads vary: arrays of segments, arrays of strings, or plain text.
-function toText(v: any): string {
+function toText(v: any, contactName?: string | null): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   if (Array.isArray(v)) {
     return v.map((x) => {
       if (typeof x === "string") return x;
       if (x && typeof x === "object") {
-        const who = x.speaker || x.identifier || x.userId || x.role || x.type || "";
+        const who = contactName !== undefined
+          ? (x.userId ? "Dara" : (contactName || x.identifier || x.speaker || "Caller"))
+          : (x.speaker || x.identifier || x.userId || x.role || x.type || "");
         const txt = x.content || x.text || x.transcript || "";
         return who && txt ? `${who}: ${txt}` : (txt || JSON.stringify(x));
       }
@@ -149,11 +151,12 @@ serve(async (req) => {
     const contactCache: Record<string, any[]> = {};
 
     for (const call of (calls || [])) {
-      const transcript = toText(call.transcript);
       const summary = toText(call.summary);
       const nextSteps = toText(call.next_steps);
-      // Need at least something to work with.
-      if (!transcript && !summary) continue;
+      // Need at least something to work with. (Transcript is rebuilt with speaker
+      // names once the contact is matched, just below.)
+      const rawTranscript = toText(call.transcript);
+      if (!rawTranscript && !summary) continue;
 
       // ---- match contact by phone (last 10 digits) ----
       const other = call.participant || (String(call.direction || "").toLowerCase().includes("out") ? call.to_number : call.from_number) || call.from_number || call.to_number;
@@ -171,6 +174,11 @@ serve(async (req) => {
         const { data: pc } = await admin.from("contacts").select("id,name,phone,pronouns,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction").eq("id", call.contact_id).maybeSingle();
         if (pc) contact = pc;
       }
+
+      // Relabel transcript speakers with names: Quo tags each line by call leg
+      // (userId = the Quo teammate → "Dara"; the external number → the matched
+      // contact), so the summary reads "Dara:" / "Maria:" instead of raw numbers.
+      const transcript = toText(call.transcript, contact?.name || null);
 
       const occurredAt = call.completed_at || call.answered_at || call.op_created_at || new Date().toISOString();
       const dir = String(call.direction || "").toLowerCase().includes("out") ? "outbound" : "inbound";
