@@ -1324,3 +1324,21 @@ input[type="radio"], input[type="range"], select, progress {
 .mobile-header-logo .mh-divider { width: 1px; height: 32px; background: rgba(203,163,92,.28); margin: 0 12px; flex-shrink: 0; }
 .mobile-header-logo .mh-text { display: flex; flex-direction: column; justify-content: center; line-height: 1; }
 .mobile-header-logo .rog-adv { margin-left: 1.75px; }
+
+/* Ari Rewrite — tuning-fork "working" overlay */
+.fork-ov { position: fixed; inset: 0; z-index: 4000; display: flex; align-items: center; justify-content: center; background: rgba(16,13,9,.74); -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); animation: forkOvIn .28s ease both; }
+@keyframes forkOvIn { from { opacity: 0; } to { opacity: 1; } }
+.fork-ov-inner { text-align: center; padding: 30px 26px; }
+.fork-stage { position: relative; width: 150px; height: 150px; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; }
+.fork-glow { position: absolute; width: 128px; height: 128px; border-radius: 50%; background: radial-gradient(circle, rgba(203,163,92,.30), transparent 68%); animation: forkGlow 2.2s ease-in-out infinite; }
+@keyframes forkGlow { 0%,100% { opacity: .5; transform: scale(.9); } 50% { opacity: 1; transform: scale(1.1); } }
+.fork-ring { position: absolute; width: 58px; height: 58px; border: 1.5px solid rgba(203,163,92,.5); border-radius: 50%; opacity: 0; animation: forkEmanate 2.1s ease-out infinite; }
+.fork-ring.fr2 { animation-delay: .7s; }
+.fork-ring.fr3 { animation-delay: 1.4s; }
+@keyframes forkEmanate { 0% { transform: scale(.45); opacity: .7; } 80% { opacity: .12; } 100% { transform: scale(2.5); opacity: 0; } }
+.fork-ico { position: relative; width: 64px; height: 64px; transform-origin: 50% 92%; animation: forkWobble .66s ease-in-out infinite; filter: drop-shadow(0 0 9px rgba(203,163,92,.45)); }
+@keyframes forkWobble { 0%,100% { transform: rotate(-3.4deg); } 50% { transform: rotate(3.4deg); } }
+.fork-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .26em; text-transform: uppercase; color: #EBCB82; margin-bottom: 11px; }
+.fork-title { font-family: 'Fraunces', serif; font-weight: 300; font-size: 27px; letter-spacing: -.01em; color: #F6F1E7; margin: 0 0 8px; line-height: 1.1; }
+.fork-sub { font-size: 13px; color: #C8BFAE; max-width: 32ch; margin: 0 auto; line-height: 1.5; }
+@media (prefers-reduced-motion: reduce) { .fork-ico { animation: none; } .fork-glow { animation: none; opacity: .8; } .fork-ring { display: none; } }
