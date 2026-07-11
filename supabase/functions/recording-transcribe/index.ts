@@ -117,10 +117,20 @@ serve(async (req) => {
       .from("recordings").createSignedUrl(rec.storage_path, 60 * 60 * 3);
     if (sErr || !signed?.signedUrl) throw new Error(`Signed URL failed: ${sErr?.message || "unknown"}`);
 
+    // Speaker-count hint sharpens diarization. A recording linked to a single
+    // contact is almost always a 1:1 call (you + them = 2). This is a hint, not a
+    // hard cap, so larger meetings still resolve; it's also ignored for clips under
+    // 2 minutes. An explicit rec.expected_speakers (e.g. a "meeting" set in the app)
+    // overrides; unlinked recordings are left to auto-detect.
+    const aaiBody: Record<string, unknown> = { audio_url: signed.signedUrl, speaker_labels: true };
+    const explicitSpk = Number(rec.expected_speakers) || 0;
+    if (explicitSpk >= 1) aaiBody.speakers_expected = Math.min(Math.max(explicitSpk, 1), 20);
+    else if (rec.contact_id) aaiBody.speakers_expected = 2;
+
     const sub = await fetch("https://api.assemblyai.com/v2/transcript", {
       method: "POST",
       headers: { authorization: AAI_KEY, "content-type": "application/json" },
-      body: JSON.stringify({ audio_url: signed.signedUrl, speaker_labels: true }),
+      body: JSON.stringify(aaiBody),
     });
     if (!sub.ok) {
       const t = await sub.text();
