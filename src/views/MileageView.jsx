@@ -169,14 +169,25 @@ function MileageView({ mileageEntries, setMileageEntries, deals, contacts, setCo
   };
 
   return (
-    <div className="page-shell">
-      <div className="page-header">
-        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="mileage" size={26} style={{color:'var(--accent)',flexShrink:0}} />Mileage</h2>
+    <div className="page-shell ww-prism">
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
+      <div className="page-header" style={{alignItems:'flex-start'}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div className="ww-eyebrow" style={{marginBottom:6}}>Your mileage · Realty ONE Group</div>
+          <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0}}><Icon name="mileage" size={24} style={{color:'var(--accent)',flexShrink:0}} />Mileage</h2>
+        </div>
         {currentRate && (
           <span style={{padding:'4px 10px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'999px',fontSize:'10.5px',color:'var(--text-2)',fontWeight:600,whiteSpace:'nowrap'}}>
             IRS {currentYear}: ${Number(currentRate.business_rate).toFixed(3)}/mi
           </span>
         )}
+      </div>
+
+      {/* Hero — deduction YTD */}
+      <div style={{border:'1px solid rgba(203,163,92,.40)',borderRadius:'18px',padding:'20px 20px 18px',marginBottom:'14px',background:'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,.12), transparent 55%), linear-gradient(180deg,#1B1610,#100D09)'}}>
+        <div className="ww-eyebrow">Deduction YTD · Schedule C</div>
+        <div style={{fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'46px',letterSpacing:'-0.02em',color:'#F6F1E7',lineHeight:1.02,margin:'8px 0 4px'}}>${Math.round(kpis.ytdDeduction).toLocaleString()}</div>
+        <div style={{fontSize:'13px',color:'#C8BFAE'}}>{Math.round(kpis.ytdMiles).toLocaleString()} business miles · {kpis.count} trips</div>
       </div>
 
       {/* KPI strip */}

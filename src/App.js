@@ -1648,7 +1648,8 @@ function ChatView({ robots, userId }) {
   const canSend = (input.trim() || pendingImageFile) && !sending && !uploadingImage;
 
   return (
-    <div className="chat-wrap">
+    <div className="chat-wrap ww-prism">
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .chat-robot-name{font-family:'Fraunces',serif;color:#F6F1E7;} .ww-prism .chat-bubble.assistant{background:linear-gradient(180deg,#1B1610,#18130D);border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .chat-bubble.user{background:rgba(203,163,92,.15);border:1px solid rgba(203,163,92,.32);color:#F6F1E7;}`}</style>
       {/* Robot header */}
       <div className="chat-robot-header">
         <div className="chat-robot-avatar">{robot.avatar_emoji || '🤖'}</div>
@@ -1665,12 +1666,14 @@ function ChatView({ robots, userId }) {
           <div className="chat-empty"><div className="spinner" style={{margin:'0 auto'}} /></div>
         ) : messages.length === 0 ? (
           <div className="chat-empty">
-            <div className="chat-empty-icon">{robot.avatar_emoji || '🤖'}</div>
-            <h3>Hey, I'm {robot.name}</h3>
-            <p>{robot.role}<br/>What can I help you with today?</p>
-            <p style={{fontSize:'12px',color:'var(--text-3)',marginTop:'14px',fontStyle:'italic'}}>
-              Tip: tap 📷 to snap a receipt — I'll push it to accounting.
-            </p>
+            <div className="ww-eyebrow" style={{marginBottom:'14px'}}>Ask {robot.name} · Realty ONE Group</div>
+            <h3 style={{fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'34px',letterSpacing:'-0.02em',color:'#F6F1E7',margin:'0 0 10px',lineHeight:1.12}}>How can I help?</h3>
+            <p style={{color:'#C8BFAE',fontSize:'14px',maxWidth:'36ch',margin:'0 auto',lineHeight:1.5}}>{robot.role || 'Your assistant'} — ask me anything, or tap 📷 to snap a receipt and I\'ll push it to accounting.</p>
+            <div style={{display:'flex',flexWrap:'wrap',gap:'8px',justifyContent:'center',marginTop:'18px'}}>
+              {['What should I do next?','Draft a follow-up to my newest lead','Summarize my week'].map(s => (
+                <button key={s} onClick={() => { setInput(s); setTimeout(() => inputRef.current?.focus(), 30); }} style={{background:'transparent',border:'1px solid rgba(203,163,92,.34)',color:'#C8BFAE',fontFamily:'Manrope,sans-serif',fontSize:'12.5px',padding:'9px 14px',borderRadius:'100px',cursor:'pointer'}}>{s}</button>
+              ))}
+            </div>
           </div>
         ) : (
           messages.map((m, i) => (
@@ -9754,7 +9757,7 @@ function RecruitingKpiTile({ label, value, sub, color }) {
   return (
     <div style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px'}}>
       <div style={{fontSize:'9.5px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:700,marginBottom:'3px'}}>{label}</div>
-      <div style={{fontSize:'17px',fontWeight:800,color:color || 'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>{value}</div>
+      <div style={{fontSize:'20px',fontWeight:300,fontFamily:'Fraunces, serif',letterSpacing:'-0.01em',color:color || 'var(--text-1)',fontVariantNumeric:'tabular-nums'}}>{value}</div>
       {sub && <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{sub}</div>}
     </div>
   );
