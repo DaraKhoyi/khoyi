@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
+import { Tip } from '../App';
 
 const PRIMARY_WORD = { D: 'decisiveness', I: 'connection', S: 'steadiness', C: 'precision' };
 const PRIMARY_LINE = {
@@ -156,6 +157,8 @@ export default function MyPrismView({ userId, user }) {
             <button className="cta ghost" onClick={attachRecording}>Import a recording</button>
           </div>
         </section>
+
+        <Tip id="record" label="Record everything">Your assistant only sharpens from what it <b>hears</b>. Record every call and meeting you legally can — Quo announces it for you — because your <b>voice</b> carries tone, pacing, and instinct your typing never will. The more it hears you, the more it sounds like you at your best.</Tip>
 
         {(persona || dos.length) && (
           <section className="card reveal" style={{ animationDelay: '.2s' }}>

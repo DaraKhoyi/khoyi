@@ -686,7 +686,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       initial: {
         title: `Follow up: ${r.name}`,
         due_date: dueStr,
-        notes: `Follow-up on outreach to ${r.name}${r.reason?` \u2014 ${r.reason}`:''}.`,
+        notes: `Follow-up on outreach to ${r.name}${r.reason?` — ${r.reason}`:''}.`,
         priority_system: defaultSystem,
         _contact_ids: [r.contact_id],
       },
@@ -703,7 +703,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     try {
       const insert = { ...taskData, user_id: userId, completed: false };
       const { data: created, error } = await supabase.from('tasks').insert(insert).select().single();
-      if (error) { setErr("Couldn\u2019t create follow-up task. Try again."); return; }
+      if (error) { setErr("Couldn’t create follow-up task. Try again."); return; }
       if (created) {
         if (setTasks) setTasks(prev => [created, ...prev]);
         if (Array.isArray(_contact_ids) && _contact_ids.length) {
@@ -779,7 +779,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const speakBriefing = () => {
     try {
       const synth = window.speechSynthesis;
-      if (!synth) { setErr('Voice playback isn\u2019t supported in this browser.'); return; }
+      if (!synth) { setErr('Voice playback isn’t supported in this browser.'); return; }
       if (speaking) { synth.cancel(); setSpeaking(false); return; }
       const ro = (payload.reachouts||[]).filter(r=>r.status==='pending');
       const parts = [`${greeting}${firstName?', '+firstName:''}.`];
@@ -787,7 +787,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
       if (ro.length){ parts.push(`You have ${ro.length} ${ro.length===1?'person':'people'} to reach out to today.`); ro.slice(0,5).forEach((r,i)=>parts.push(`${i+1}. ${r.name}. ${r.reason}.`)); }
       const nt=(payload.tasks||[]).length, ne=(payload.events||[]).length;
       parts.push(`You have ${nt} task${nt===1?'':'s'} due and ${ne} event${ne===1?'':'s'} on your calendar.`);
-      parts.push('Let\u2019s make it count.');
+      parts.push('Let’s make it count.');
       const u = new SpeechSynthesisUtterance(parts.join(' '));
       u.rate=1.0; u.pitch=1.0; u.lang='en-US';
       const vs = synth.getVoices()||[];
@@ -854,7 +854,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
             ))}
           </div>
         ) : <div style={{fontSize:'12px',color:'var(--text-3)'}}>No sends yet this week. As you send from Ari, your reply, meeting, and file outcomes show up here.</div>)}
-        {showScore && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Ari learns from these outcomes \u2014 who replies, and which phrasing and timing convert \u2014 and uses it to rank and draft tomorrow\u2019s briefing.</div>}
+        {showScore && <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'8px',lineHeight:1.5}}>Ari learns from these outcomes — who replies, and which phrasing and timing convert — and uses it to rank and draft tomorrow’s briefing.</div>}
       </div>
 
       {reviewing && (()=>{ const pend = reachouts.filter(r=>r.status==='pending' && !snoozedIds.has(r.contact_id)); const cur = pend[reviewIdx]; const appdN = Object.values(approved).filter(Boolean).length;
@@ -870,18 +870,18 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
               <div style={{fontSize:'12px',color:'var(--text-3)',marginBottom:'8px'}}>{cur.reason}</div>
               <textarea className="form-input" style={{width:'100%',minHeight:'120px',fontSize:'14px',lineHeight:1.5,resize:'vertical'}} value={(edits[cur.contact_id]?.message) ?? cur.message ?? ''} onChange={e=>setEdit(cur.contact_id,'message',e.target.value,cur)} />
               <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
-                <button className="btn btn-ghost" style={{flex:1}} onClick={()=>decide(cur,'skip')}>\u23ed Skip</button>
-                <button className="btn btn-primary" style={{flex:2}} onClick={()=>decide(cur,'approve')}>\u2713 Approve to send</button>
+                <button className="btn btn-ghost" style={{flex:1}} onClick={()=>decide(cur,'skip')}>⏭ Skip</button>
+                <button className="btn btn-primary" style={{flex:2}} onClick={()=>decide(cur,'approve')}>✓ Approve to send</button>
               </div>
               <div style={{textAlign:'center',marginTop:'8px'}}><button className="btn btn-ghost btn-sm" onClick={()=>setReviewing(false)}>Exit review</button></div>
             </div>
           ) : (
             <div style={{textAlign:'center',padding:'8px 0'}}>
               <div style={{fontSize:'15px',fontWeight:700,marginBottom:'4px'}}>Ready to send</div>
-              <div style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'14px'}}>{appdN} approved{(pend.length-appdN)>0?` \u00b7 ${pend.length-appdN} skipped`:''}</div>
+              <div style={{fontSize:'13px',color:'var(--text-2)',marginBottom:'14px'}}>{appdN} approved{(pend.length-appdN)>0?` · ${pend.length-appdN} skipped`:''}</div>
               <div style={{display:'flex',gap:'8px'}}>
                 <button className="btn btn-ghost" style={{flex:1}} disabled={batchBusy} onClick={()=>setReviewing(false)}>Back</button>
-                <button className="btn btn-primary" style={{flex:2}} disabled={batchBusy||!appdN} onClick={batchSend}>{batchBusy?'Sending\u2026':`Send ${appdN} message${appdN===1?'':'s'}`}</button>
+                <button className="btn btn-primary" style={{flex:2}} disabled={batchBusy||!appdN} onClick={batchSend}>{batchBusy?'Sending…':`Send ${appdN} message${appdN===1?'':'s'}`}</button>
               </div>
             </div>
           )}
@@ -958,7 +958,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
               <button className="btn btn-ghost btn-sm" onClick={()=>doDone(r)}>Mark contacted</button>
               <button className="btn btn-ghost btn-sm" onClick={()=>doTaskOnly(r)} title="Create a follow-up task (pre-filled) without sending the email">Task</button>
               <div style={{position:'relative',display:'inline-block'}}>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setSnoozeFor(s=>s===r.contact_id?null:r.contact_id)}>Snooze <span style={{color:'var(--text-3)'}}>{snoozeFor===r.contact_id?'\u25be':'\u25b8'}</span></button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setSnoozeFor(s=>s===r.contact_id?null:r.contact_id)}>Snooze <span style={{color:'var(--text-3)'}}>{snoozeFor===r.contact_id?'▾':'▸'}</span></button>
                 {snoozeFor===r.contact_id && (<>
                   <div onClick={()=>setSnoozeFor(null)} style={{position:'fixed',inset:0,zIndex:40}}/>
                   <div style={{position:'absolute',bottom:'calc(100% + 6px)',left:0,zIndex:41,background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px',padding:'6px',minWidth:'170px',boxShadow:'0 10px 30px rgba(0,0,0,.45)'}}>
@@ -993,7 +993,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
               <span className="brief-title">{t.title}</span>
               <span className="brief-when" style={dv.color?{color:dv.color,fontWeight:600}:undefined}>{dv.label}</span>
             </div>
-          );}) : <div className="brief-empty">Nothing due — you\u2019re clear.</div>}
+          );}) : <div className="brief-empty">Nothing due — you’re clear.</div>}
         </div>
 
         <div className="brief-sec">

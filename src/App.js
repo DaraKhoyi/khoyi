@@ -7657,6 +7657,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               </div>
             );
           })()}
+          <Tip id="cadence" label="Consistency compounds">Set a <b>cadence</b> and Prism reminds you when it's time to reach out — so you stay top-of-mind on a rhythm instead of calling only when you need something. Small, steady touches are how sphere-based agents earn referrals on repeat.</Tip>
           {(() => {
             const cad = contact.cadence_days;
             if (!cad) return null;

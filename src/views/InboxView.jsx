@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { AriRewriteButton, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
+import { Tip, AriRewriteButton, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
 
 const TRIAGE_CATEGORIES = {
   urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },
@@ -2430,6 +2430,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         </div>
       </div>
 
+      <Tip id="speed" label="Speed wins"><b>Speed-to-lead</b> is the highest-ROI habit in real estate: the first agent to respond usually wins the client. Prism surfaces who's waiting on you, so a fast reply becomes automatic — not accidental.</Tip>
       {/* Search input — collapsible. Filters threads client-side by subject,
           snippet, and sender name/email. Doesn't refetch from server. */}
       {searchOpen && (
