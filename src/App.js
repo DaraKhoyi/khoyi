@@ -4801,10 +4801,12 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   const needsNow=oweReplyN+reachN+dueOrOverdue;
   const apptWeek=(events||[]).filter(e=>e.start_at&&new Date(e.start_at).getTime()>=now&&(new Date(e.start_at).getTime()-now)<=7*86400000).length;
   const weekTotal=tasks.filter(t=>t.completed&&t.completed_at&&(now-new Date(t.completed_at).getTime())<=7*86400000).length;
-  return (<div className="view">
-    <div className="panel" style={{ display:'flex', alignItems:'center', gap:12 }}>
-      <div style={{ width:42, height:42, borderRadius:12, background:'var(--accent-glow)', border:'1px solid var(--accent)', display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Icon name="chart" size={20} style={{ color:'var(--accent)' }}/></div>
-      <div><h2 style={{ margin:0 }}>My numbers</h2><div style={{ fontSize:12, color:'var(--text-2)', marginTop:2 }}>Your production, pipeline, and activity</div></div>
+  return (<div className="view ww-prism">
+    <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .form-input,.ww-prism .form-select{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
+    <div style={{ marginBottom:14 }}>
+      <div className="ww-eyebrow" style={{ marginBottom:7 }}>Your numbers · Realty ONE Group</div>
+      <h2 style={{ margin:0, fontFamily:'Fraunces, serif', fontSize:34, fontWeight:300, letterSpacing:'-0.02em', color:'#F6F1E7', lineHeight:1.05 }}>My numbers.</h2>
+      <div style={{ fontSize:13, color:'#C8BFAE', marginTop:4 }}>Your production, pipeline, and activity</div>
     </div>
     <div style={{ marginTop:14 }}>
       <GciGauge deals={deals} gciGoal={gciGoal} setView={setView} userId={userId} />
