@@ -98,6 +98,7 @@ const SYSTEM = `You extract concrete follow-up commitments from a phone call tra
 Shape:
 {
   "call_summary": "one or two sentence summary of what the call was about and where it landed",
+  "non_english": true if the transcript contains ANY non-English speech (e.g. Farsi or Spanish), otherwise false,
   "action_items": [
     {
       "owner": "me" | "them",
@@ -120,6 +121,20 @@ PRONOUNS (get these exactly right in the summary and notes):
 - Dara is male — always refer to Dara with he/him/his.
 - NEVER infer anyone's gender from voice, pitch, tone, or first name.
 - Use only the pronouns given under "Known participants" in the message. If a person's pronouns are not listed, use they/them — never guess.`;
+
+async function translateToEnglish(transcript: string): Promise<string> {
+  const SYS = "Translate this call transcript into clear, natural English. Preserve the speaker labels (e.g. 'Dara:', 'Maria:') and the line breaks exactly. Lines already in English stay unchanged. Output ONLY the translated transcript — no preamble, no notes.";
+  for (const model of [MODEL, ...FALLBACKS]) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 4000, system: SYS, messages: [{ role: "user", content: transcript.slice(0, 14000) }] }) });
+      if (!r.ok) continue;
+      const data = await r.json();
+      const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
+      if (txt) return txt;
+    } catch (_) {}
+  }
+  return "";
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -229,6 +244,7 @@ serve(async (req) => {
 
       // ---- extract commitments ----
       let proposed: any[] = [];
+      let transcriptEn: string | null = null;
       try {
         const userMsg = [
           `Current date: ${today} (America/New_York).`,
@@ -241,6 +257,7 @@ serve(async (req) => {
           transcript ? `\nTranscript:\n${transcript.slice(0, 12000)}` : "",
         ].filter(Boolean).join("\n");
         const out = safeJson(await callClaude(SYSTEM, userMsg));
+        if (out.non_english) { try { const t = await translateToEnglish(transcript); if (t) transcriptEn = t; } catch (_) {} }
         if (Array.isArray(out.action_items)) {
           proposed = out.action_items
             .filter((a: any) => a && a.title)
@@ -260,6 +277,7 @@ serve(async (req) => {
       await admin.from("quo_calls").update({
         contact_id: contact ? contact.id : null,
         interaction_id: interactionId,
+        transcript_en: transcriptEn,
         proposed_tasks: proposed,
         review_status: reviewStatus,
         processed_at: new Date().toISOString(),

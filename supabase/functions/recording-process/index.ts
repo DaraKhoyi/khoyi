@@ -14,6 +14,7 @@ function toText(v: any): string { if (!v) return ""; if (typeof v === "string") 
 const SYSTEM = `You extract concrete follow-up commitments from a phone call transcript for a real estate broker named Dara ("me"). Output STRICT JSON only — no prose, no markdown.
 Shape:
 { "call_summary": "one or two sentence summary of what the call was about and where it landed",
+  "non_english": true if the transcript contains ANY non-English speech (e.g. Farsi or Spanish), otherwise false,
   "action_items": [ { "owner": "me" | "them", "title": "short imperative task", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
 Rules:
 - Only include real commitments or clearly-implied next steps. If nothing was committed, return "action_items": [].
@@ -40,6 +41,21 @@ async function callClaude(transcript: string, participants: string): Promise<any
     } catch (e) { lastErr = `${model}: ${e}`; }
   }
   throw new Error(lastErr || "Claude failed");
+}
+
+async function translateToEnglish(transcript: string): Promise<string> {
+  const key = Deno.env.get("ANTHROPIC_API_KEY");
+  const SYS = "Translate this call transcript into clear, natural English. Preserve the speaker labels (e.g. 'Dara:', 'Maria:') and the line breaks exactly. Lines already in English stay unchanged. Output ONLY the translated transcript — no preamble, no notes.";
+  for (const model of MODELS) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 4000, system: SYS, messages: [{ role: "user", content: transcript.slice(0, 14000) }] }) });
+      if (!r.ok) continue;
+      const data = await r.json();
+      const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
+      if (txt) return txt;
+    } catch (_) {}
+  }
+  return "";
 }
 
 serve(async (req) => {
@@ -79,6 +95,8 @@ serve(async (req) => {
       }
       let plan: any = { call_summary: "", action_items: [] };
       try { plan = await callClaude(transcript, participants); } catch (_) { continue; } // leave unprocessed to retry next run
+      let transcriptEn: string | null = null;
+      if (plan.non_english) { try { const t = await translateToEnglish(transcript); if (t) transcriptEn = t; } catch (_) {} }
       const summary = String(plan.call_summary || "").trim();
       const items = Array.isArray(plan.action_items) ? plan.action_items : [];
 
@@ -103,7 +121,7 @@ serve(async (req) => {
       const proposed = items.map((a: any) => ({ title: String(a.title || "").slice(0, 200), owner: a.owner === "them" ? "them" : "me", due_date: a.due_date || null, priority: ["high", "medium", "low"].includes(a.priority) ? a.priority : "medium", note: String(a.note || "").slice(0, 300), status: "pending" }));
       actions += proposed.length;
       await admin.from("recordings").update({
-        summary: summary ? [summary] : null, proposed_tasks: proposed,
+        summary: summary ? [summary] : null, proposed_tasks: proposed, transcript_en: transcriptEn,
         review_status: proposed.length ? "pending" : "done", interaction_id: interactionId, processed_at: new Date().toISOString(),
       }).eq("id", rec.id);
       processed++;

@@ -5211,6 +5211,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [showEnglish, setShowEnglish] = useState(true);
   const [uploadForm, setUploadForm] = useState({ open: false, title: '', firstSpeaker: 'me', recordedAt: new Date().toISOString().slice(0, 16), file: null });
 
   useEffect(() => {
@@ -5454,8 +5455,16 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
                   </div>
                 )}
                 {isExpanded && r.transcript_text && (
-                  <div style={{ marginTop: '8px', padding: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '11px', color: 'var(--text-1)', lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: '320px', overflowY: 'auto' }}>
-                    {r.transcript_text}
+                  <div style={{ marginTop: '8px' }}>
+                    {r.transcript_en && (
+                      <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                        <button onClick={() => setShowEnglish(true)} className="btn btn-ghost btn-sm" style={{ padding: '2px 11px', fontSize: '10px', background: showEnglish ? 'var(--accent)' : 'transparent', color: showEnglish ? '#1a1409' : 'var(--text-2)', border: '1px solid var(--accent-dim)', fontWeight: 700 }}>English</button>
+                        <button onClick={() => setShowEnglish(false)} className="btn btn-ghost btn-sm" style={{ padding: '2px 11px', fontSize: '10px', background: !showEnglish ? 'var(--accent)' : 'transparent', color: !showEnglish ? '#1a1409' : 'var(--text-2)', border: '1px solid var(--accent-dim)', fontWeight: 700 }}>Original</button>
+                      </div>
+                    )}
+                    <div style={{ padding: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '11px', color: 'var(--text-1)', lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: '320px', overflowY: 'auto' }}>
+                      {(r.transcript_en && showEnglish) ? r.transcript_en : r.transcript_text}
+                    </div>
                   </div>
                 )}
               </div>
