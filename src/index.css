@@ -1317,6 +1317,10 @@ input[type="radio"], input[type="range"], select, progress {
 /* #10 header lockup — tuning fork + spectrum line */
 .mobile-header-logo { display: flex; flex-direction: row; align-items: center; line-height: 1; }
 .mobile-header-logo .mh-fork { flex-shrink: 0; }
+.mobile-header-logo .mh-fork-w1 { animation: mhForkPulse 2.6s ease-in-out infinite; }
+.mobile-header-logo .mh-fork-w2 { animation: mhForkPulse 2.6s ease-in-out infinite; animation-delay: .55s; }
+@keyframes mhForkPulse { 0%, 100% { opacity: .12; } 45% { opacity: .85; } }
+@media (prefers-reduced-motion: reduce) { .mobile-header-logo .mh-fork-w1, .mobile-header-logo .mh-fork-w2 { animation: none; opacity: .45; } }
 .mobile-header-logo .mh-divider { width: 1px; height: 32px; background: rgba(203,163,92,.28); margin: 0 12px; flex-shrink: 0; }
 .mobile-header-logo .mh-text { display: flex; flex-direction: column; justify-content: center; line-height: 1; }
 .mobile-header-logo .rog-adv { margin-left: 1.75px; }

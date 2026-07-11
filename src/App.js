@@ -61,6 +61,7 @@ function lazyWithReload(factory) {
 }
 const FinanceView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.FinanceView })));
 const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
+const QuarterlyTaxBanner = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.QuarterlyTaxBanner })));
 const TasksView = lazyWithReload(() => import('./views/TasksView'));
 const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
 const ChiefOfStaffView = lazyWithReload(() => import('./views/ChiefOfStaffView'));
@@ -11530,6 +11531,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       <div className="page-header"><div><div className="ww-eyebrow" style={{marginBottom:6}}>Your settings · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="settings" size={24} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div></div>
       <div style={{maxWidth:'480px'}}>
         <TipsSetting />
+        <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Your Claude API key</h3></div>
           <div className="panel-body">
@@ -16016,7 +16018,7 @@ function AppMain() {
       <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo"><svg className="mh-fork" width="19" height="30" viewBox="0 0 26 42" fill="none" stroke="#CBA35C" strokeWidth="1.7" strokeLinecap="round"><path d="M8 6 V18 a5 5 0 0 0 10 0 V6"/><path d="M13 28 V36"/><path d="M9 36 h8"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
+        <div className="mobile-header-logo"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>

@@ -1371,7 +1371,6 @@ function FinanceDashboard({
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
-      <QuarterlyTaxBanner userId={userId} />
       <div className="panel" style={{padding:'18px'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'8px',flexWrap:'wrap',gap:'8px'}}>
           <span style={{fontSize:'11px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>YTD GCI vs goal</span>
@@ -8258,4 +8257,4 @@ function ROISystemCard({ row }) {
 
 // ─────────────────────────────────────────
 
-export { FinanceView, ProspectingView };
+export { FinanceView, ProspectingView, QuarterlyTaxBanner };
