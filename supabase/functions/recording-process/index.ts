@@ -20,6 +20,8 @@ Rules:
 - "owner":"me" = something Dara agreed to do. "owner":"them" = the other person's commitment (Dara should track/expect it).
 - Resolve relative dates to an absolute YYYY-MM-DD using the provided current date; else null.
 - Keep titles short and actionable. Do not invent commitments that were not discussed.
+LANGUAGE:
+- The transcript may contain more than one language (the speaker code-switches, e.g. English with Farsi, or English with Spanish). Write ALL of your output — call_summary, every action item title, and every note — in clear, natural English, translating from the other language(s) as needed. Never leave non-English text in the summary or tasks.
 PRONOUNS (get these exactly right in the summary and notes):
 - Dara is male — always refer to Dara with he/him/his.
 - NEVER infer anyone's gender from voice, pitch, tone, or first name.

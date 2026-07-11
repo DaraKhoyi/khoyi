@@ -122,7 +122,18 @@ serve(async (req) => {
     // hard cap, so larger meetings still resolve; it's also ignored for clips under
     // 2 minutes. An explicit rec.expected_speakers (e.g. a "meeting" set in the app)
     // overrides; unlinked recordings are left to auto-detect.
-    const aaiBody: Record<string, unknown> = { audio_url: signed.signedUrl, speaker_labels: true };
+    // Code-switching / multilingual: transcribe conversations where the speaker
+    // flips languages mid-conversation (e.g. English<->Farsi, English<->Spanish).
+    // Universal-3 Pro handles the core languages natively; routing to Universal-2
+    // extends coverage to all 99 languages (Persian included). Each word is kept in
+    // the language it was spoken; the summarizer renders the output in English.
+    const aaiBody: Record<string, unknown> = {
+      audio_url: signed.signedUrl,
+      speaker_labels: true,
+      language_detection: true,
+      speech_models: ["universal-3-pro", "universal-2"],
+      prompt: "The spoken language may change throughout the audio (the speaker may code-switch, e.g. between English and Farsi, or English and Spanish). Transcribe in the original language mix, preserving each word in the language it is spoken.",
+    };
     const explicitSpk = Number(rec.expected_speakers) || 0;
     if (explicitSpk >= 1) aaiBody.speakers_expected = Math.min(Math.max(explicitSpk, 1), 20);
     else if (rec.contact_id) aaiBody.speakers_expected = 2;
