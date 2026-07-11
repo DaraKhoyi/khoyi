@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { Tip, AriRewriteButton, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
+import { Tip, AriRewriteButton, ForkTuningOverlay, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
 
 const TRIAGE_CATEGORIES = {
   urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },
@@ -3055,6 +3055,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               <div className="form-group">
                 <label className="form-label">Message</label>
                 <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'6px'}}>
+                  {aiDrafting && <ForkTuningOverlay contactName={replyCtx?.from_name || null} />}
                   {composeReplyMeta && (
                     <button type="button" className="btn btn-ghost btn-sm" disabled={aiDrafting} onClick={aiReplyDraft}
                       title="Draft a reply adapted to the recipient's DISC communication style"

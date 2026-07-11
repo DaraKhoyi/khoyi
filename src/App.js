@@ -1694,9 +1694,7 @@ function ChatView({ robots, userId }) {
         {sending && (
           <div className="chat-bubble-wrap assistant">
             <div className="chat-bubble assistant">
-              <div className="chat-typing">
-                <div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" />
-              </div>
+              <PrismThinking label="Ari is thinking" />
             </div>
           </div>
         )}
@@ -5915,6 +5913,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1200 }}>
+        {drafting && <ForkTuningOverlay contactName={recipient?.name} discLabel={recipient?.disc_primary_letter || recipient?.primary_letter || ''} />}
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px', width: '94%' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{display:'inline-flex',alignItems:'center',gap:'7px'}}><Icon name="mail" size={15} /> Draft follow-up</h3>
@@ -12444,6 +12443,24 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
 // ─────────────────────────────────────────
 // ARI DAILY BRIEFING
 // ─────────────────────────────────────────
+function PrismThinking({ label = 'Thinking' }) {
+  return (
+    <span className="prism-think-wrap">
+      <svg className="prism-think" width="36" height="26" viewBox="0 0 46 30" fill="none" aria-hidden="true">
+        <path className="pt-beam" d="M2 15 H17" stroke="#F6F1E7" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M18 6 L28 24 L18 24 Z" stroke="#CBA35C" strokeWidth="1.6" strokeLinejoin="round" fill="rgba(203,163,92,0.05)"/>
+        <g strokeWidth="1.5" strokeLinecap="round">
+          <path className="pt-ray pr1" d="M27 14 L44 8" stroke="#EBCB82"/>
+          <path className="pt-ray pr2" d="M27.5 16 L44 14" stroke="#e0b48f"/>
+          <path className="pt-ray pr3" d="M27.5 18 L44 20" stroke="#c9a6bf"/>
+          <path className="pt-ray pr4" d="M27 20 L44 26" stroke="#a6bfc9"/>
+        </g>
+      </svg>
+      {label ? <span className="prism-think-label">{label}<span className="pt-dots"><i>.</i><i>.</i><i>.</i></span></span> : null}
+    </span>
+  );
+}
+
 function ForkTuningOverlay({ contactName, discLabel }) {
   const name = (contactName && contactName !== 'the recipient') ? contactName : null;
   const d = (discLabel || '').trim();
@@ -16193,5 +16210,5 @@ export default function App() {
   return <AppMain />;
 }
 
-export { ActivityTimeline, AriRewriteButton, CallFollowupsPanel, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, QuoTextModal, RecruitingKpiTile, RecruitingView, Tip, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
+export { ActivityTimeline, AriRewriteButton, ForkTuningOverlay, PrismThinking, CallFollowupsPanel, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, QuoTextModal, RecruitingKpiTile, RecruitingView, Tip, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
 
