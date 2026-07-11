@@ -3593,15 +3593,15 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   if(!cur) return null;
   const tagColor=cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
   return (
-    <div className="nba-card" style={{position:'relative',borderRadius:18,padding:'16px 16px 14px',marginBottom:20,background:'linear-gradient(135deg, rgba(197,169,94,0.13), rgba(197,169,94,0.03))',border:'1px solid var(--accent)'}}>
+    <div className="nba-card" style={{position:'relative',borderRadius:20,padding:'20px 18px 16px',marginBottom:22,background:'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)',border:'1px solid rgba(203,163,92,0.55)',boxShadow:'0 0 40px rgba(203,163,92,0.12)'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9}}>
-        <span style={{fontSize:10.5,fontWeight:800,letterSpacing:'0.10em',textTransform:'uppercase',color:'var(--accent)'}}>{urgent?'✦ Do this next':'✦ You are caught up — consider this'}</span>
+        <span style={{fontSize:11,fontWeight:800,letterSpacing:'0.18em',textTransform:'uppercase',color:'#EBCB82'}}>{urgent?'✦ Do this next':'✦ You are caught up — consider this'}</span>
         {list.length>1 && <span style={{fontSize:10.5,color:'var(--text-3)',fontWeight:700}}>{Math.min(idx+1,list.length)} / {list.length}</span>}
       </div>
       <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
         <div style={{width:38,height:38,borderRadius:11,flexShrink:0,background:'var(--bg-base)',border:'1px solid '+tagColor,display:'inline-flex',alignItems:'center',justifyContent:'center'}}><Icon name={cur.icon||'target'} size={18} style={{color:tagColor}}/></div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:16.5,fontWeight:800,color:'var(--text-1)',lineHeight:1.2,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.title}</div>
+          <div style={{fontSize:20,fontFamily:'Fraunces, serif',fontWeight:300,letterSpacing:'-0.01em',color:'#F6F1E7',lineHeight:1.18,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.title}</div>
           <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:3,lineHeight:1.4,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.why}</div>
         </div>
       </div>
@@ -5008,7 +5008,8 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
   const fmtEvent = (iso) => { const d = new Date(iso); const sameDay = d.toDateString() === today.toDateString(); const tom = new Date(today); tom.setDate(tom.getDate()+1); const isTom = d.toDateString() === tom.toDateString(); const t = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); return sameDay ? `Today · ${t}` : isTom ? `Tomorrow · ${t}` : `${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${t}`; };
 
   return (
-    <div>
+    <div className="ww-prism">
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .dash-hero{background:linear-gradient(180deg,#1B1610,#100D09);border:1px solid rgba(203,163,92,.22);border-radius:20px;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .quick-chip{border:1px solid rgba(203,163,92,.34);color:#C8BFAE;background:transparent;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
       {needsReviewCount > 0 && (
         <button onClick={()=>setView('email_review')} style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, padding:'11px 15px', marginBottom:12, borderRadius:12, cursor:'pointer', background:'linear-gradient(90deg, rgba(197,169,94,0.16), rgba(197,169,94,0.06))', border:'1px solid rgba(197,169,94,0.45)', color:'var(--text-1)' }}>
           <span style={{ fontSize:13.5, fontWeight:700 }}>📩 <b style={{ color:'var(--accent)' }}>{needsReviewCount}</b> email{needsReviewCount>1?'s':''} flagged for your review</span>
@@ -5019,7 +5020,8 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
       <div className="dash-hero">
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
           <div style={{ minWidth:0 }}>
-            <h2 style={{ margin:0, fontSize:25, fontWeight:800, letterSpacing:'-0.01em', color:'var(--text-1)' }}>{gr}, {name}</h2>
+            <div className="ww-eyebrow" style={{ marginBottom:7 }}>Your day · Realty ONE Group</div>
+            <h2 style={{ margin:0, fontFamily:'Fraunces, serif', fontSize:34, fontWeight:300, letterSpacing:'-0.02em', color:'#F6F1E7', lineHeight:1.05 }}>{gr}, {name}.</h2>
             <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--text-2)', fontWeight:500 }}>{today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
           </div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', flex:'1 1 100%', justifyContent:'center' }}>
@@ -5032,7 +5034,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
         <div style={{ display:'flex', alignItems:'center', gap:20, marginTop:18, flexWrap:'wrap' }}>
           <div style={{ display:'flex', alignItems:'center', gap:16, flex:'1 1 260px', minWidth:240 }}>
             <Ring pct={ringPct}>
-              <CountUp value={dueToday} style={{ fontSize:26, fontWeight:800, color:'var(--text-1)', lineHeight:1 }} />
+              <CountUp value={dueToday} style={{ fontSize:30, fontWeight:300, fontFamily:'Fraunces, serif', color:'#F6F1E7', lineHeight:1 }} />
               <span style={{ fontSize:9.5, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginTop:2 }}>due today</span>
             </Ring>
             <div style={{ minWidth:0 }}>
@@ -5072,7 +5074,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
           { label: gciGoal>0?'GCI pace':'GCI', val: gciGoal>0?(gciPct+'%'):money0(gciYtd), color:'var(--accent)' },
         ].map((s,si)=>(
           <div key={si} onClick={()=>setView('numbers')} style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:13, padding:'13px 10px', cursor:'pointer', textAlign:'center' }}>
-            <div style={{ fontSize:20, fontWeight:800, color:s.color, lineHeight:1 }}>{s.val}</div>
+            <div style={{ fontSize:24, fontWeight:300, fontFamily:'Fraunces, serif', letterSpacing:'-0.01em', color:s.color, lineHeight:1 }}>{s.val}</div>
             <div style={{ fontSize:9.5, color:'var(--text-3)', marginTop:4, fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase' }}>{s.label}</div>
           </div>
         ))}
