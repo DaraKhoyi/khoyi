@@ -19,14 +19,18 @@ Rules:
 - Only include real commitments or clearly-implied next steps. If nothing was committed, return "action_items": [].
 - "owner":"me" = something Dara agreed to do. "owner":"them" = the other person's commitment (Dara should track/expect it).
 - Resolve relative dates to an absolute YYYY-MM-DD using the provided current date; else null.
-- Keep titles short and actionable. Do not invent commitments that were not discussed.`;
+- Keep titles short and actionable. Do not invent commitments that were not discussed.
+PRONOUNS (get these exactly right in the summary and notes):
+- Dara is male — always refer to Dara with he/him/his.
+- NEVER infer anyone's gender from voice, pitch, tone, or first name.
+- For other people, use only the pronouns given under "Known participants" below. If a person's pronouns are not listed there, use they/them — never guess.`;
 
-async function callClaude(transcript: string): Promise<any> {
+async function callClaude(transcript: string, participants: string): Promise<any> {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   let lastErr = "";
   for (const model of MODELS) {
     try {
-      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 1200, system: SYSTEM, messages: [{ role: "user", content: `Current date: ${estToday()}.\n\nTranscript:\n${transcript.slice(0, 14000)}` }] }) });
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 1200, system: SYSTEM, messages: [{ role: "user", content: `Current date: ${estToday()}.${participants ? "\n\n" + participants : ""}\n\nTranscript:\n${transcript.slice(0, 14000)}` }] }) });
       if (!r.ok) { lastErr = `${model}: ${r.status}`; continue; }
       const data = await r.json();
       const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
@@ -66,8 +70,13 @@ serve(async (req) => {
       const transcript = toText(rec.transcript_text);
       if (!transcript.trim()) { await admin.from("recordings").update({ processed_at: new Date().toISOString() }).eq("id", rec.id); continue; }
 
+      let participants = `Known participants and their pronouns (use these exactly):\n- Dara — he/him (this is "me")`;
+      if (rec.contact_id) {
+        const { data: pc } = await admin.from("contacts").select("name, pronouns").eq("id", rec.contact_id).maybeSingle();
+        if (pc?.name) participants += `\n- ${pc.name} — ${pc.pronouns ? pc.pronouns : "they/them (pronouns unknown — do not guess)"} (likely "them")`;
+      }
       let plan: any = { call_summary: "", action_items: [] };
-      try { plan = await callClaude(transcript); } catch (_) { continue; } // leave unprocessed to retry next run
+      try { plan = await callClaude(transcript, participants); } catch (_) { continue; } // leave unprocessed to retry next run
       const summary = String(plan.call_summary || "").trim();
       const items = Array.isArray(plan.action_items) ? plan.action_items : [];
 
