@@ -142,9 +142,20 @@ function RecruitingView({ contacts, setContacts, userId }) {
 
   return (
     <div className="page-shell">
-      <div className="page-header">
-        <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="recruiting" size={26} style={{color:'var(--accent)',flexShrink:0}} />Recruiting</h2>
+      <div className="page-header" style={{alignItems:'flex-start'}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div className="ww-eyebrow" style={{marginBottom:6}}>Grow your team · Realty ONE Group</div>
+          <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="recruiting" size={24} style={{color:'var(--accent)',flexShrink:0}} />Recruiting</h2>
+        </div>
         <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm(true)}>+ Recruit</button>
+      </div>
+
+      <div style={{border:'1px solid rgba(203,163,92,.40)',borderRadius:'18px',padding:'18px 18px 16px',marginBottom:'14px',background:'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,.12), transparent 55%), linear-gradient(180deg,#1B1610,#100D09)'}}>
+        <div className="ww-eyebrow">Signed this year</div>
+        <div style={{display:'flex',alignItems:'baseline',gap:'12px',flexWrap:'wrap',margin:'8px 0 2px'}}>
+          <span style={{fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'44px',letterSpacing:'-0.02em',color:'#F6F1E7',lineHeight:1}}>{kpis.signedYTD}</span>
+          <span style={{fontSize:'13px',color:'#C8BFAE'}}>{kpis.activeCount} in pipeline{kpis.pipelineGCI > 0 ? ` · $${Math.round(kpis.pipelineGCI).toLocaleString()} pipeline GCI` : ''}</span>
+        </div>
       </div>
 
       {/* KPI strip */}

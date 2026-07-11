@@ -395,9 +395,24 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="properties" size={26} style={{color:'var(--accent)',flexShrink:0}} />Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
+        <div><div className="ww-eyebrow" style={{marginBottom:6}}>Your portfolio · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="properties" size={24} style={{color:'var(--accent)',flexShrink:0}} />Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
         <button className="btn-add-circle" onClick={()=>{setEditProp(null);setShowModal(true);}} title="New Property" aria-label="New Property">+</button>
       </div>
+
+      {(() => {
+        const totVal = properties.reduce((s,pp)=> s + (Number(pp.current_value)||0), 0);
+        const totEq = properties.reduce((s,pp)=> s + ((pp.current_value && pp.loan_balance) ? (Number(pp.current_value)-Number(pp.loan_balance)) : (Number(pp.current_value)||0)), 0);
+        if (totVal <= 0) return null;
+        return (
+          <div style={{border:'1px solid rgba(203,163,92,.40)',borderRadius:'18px',padding:'18px 18px 16px',marginBottom:'14px',background:'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,.12), transparent 55%), linear-gradient(180deg,#1B1610,#100D09)'}}>
+            <div className="ww-eyebrow">Portfolio equity</div>
+            <div style={{display:'flex',alignItems:'baseline',gap:'12px',flexWrap:'wrap',margin:'8px 0 2px'}}>
+              <span style={{fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'42px',letterSpacing:'-0.02em',color:'#F6F1E7',lineHeight:1}}>${Math.round(totEq).toLocaleString()}</span>
+              <span style={{fontSize:'13px',color:'#C8BFAE'}}>${Math.round(totVal).toLocaleString()} total value · {properties.length} propert{properties.length===1?'y':'ies'}</span>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="panel">
         <div className="panel-header panel-header-compact">
