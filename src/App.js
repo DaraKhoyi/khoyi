@@ -265,13 +265,7 @@ function Icon({ name, size = 18, stroke = 2, fb = null, style }) {
 // Rainbow PRISM wordmark — DISC palette (D red, I amber, S green, C blue) + violet 5th
 const PRISM_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6'];
 function PrismMark() {
-  return (
-    <span className="prism-mark">
-      {['P', 'R', 'I', 'S', 'M'].map((ch, i) => (
-        <span key={i} style={{ color: PRISM_COLORS[i] }}>{ch}</span>
-      ))}
-    </span>
-  );
+  return <span className="prism-mark">Prism</span>;
 }
 
 // Brand lockup with "Advantage" on its own line, horizontally centered under
@@ -16021,7 +16015,7 @@ function AppMain() {
       <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span> <span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div>
+        <div className="mobile-header-logo"><svg className="mh-fork" width="19" height="30" viewBox="0 0 26 42" fill="none" stroke="#CBA35C" strokeWidth="1.7" strokeLinecap="round"><path d="M8 6 V18 a5 5 0 0 0 10 0 V6"/><path d="M13 28 V36"/><path d="M9 36 h8"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>

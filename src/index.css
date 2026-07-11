@@ -1093,7 +1093,8 @@ body {
 .quadrant-cell.q-B { border-top-color: var(--accent); }
 
 /* ── Mobile header gloss + safe-area awareness ─────────────────────── */
-.mobile-header { background: linear-gradient(180deg, #16171b, #111216); }
+.mobile-header { background: radial-gradient(120% 130% at 88% -30%, rgba(203,163,92,.11), transparent 55%), #100D09; position: relative; }
+.mobile-header::after { content:''; position:absolute; left:0; right:0; bottom:0; height:2.5px; background:linear-gradient(90deg,#946F2C,#CBA35C,#EBCB82,#e7b9a6,#c9a6bf,#a6bfc9,#CBA35C); }
 .mobile-header-logo { letter-spacing: -0.4px; }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1111,8 +1112,7 @@ body {
 /* Stacked lockup: Advantage drops to its own line; JS centers it under the E in ONE */
 .rog-wordmark--stack .rog-adv { display: block; width: max-content; margin-left: 0; }
 /* Rainbow PRISM wordmark — DISC palette (D/I/S/C) + violet as the 5th */
-.prism-mark { letter-spacing: 0.4px; }
-.prism-mark span { font-weight: 800; }
+.prism-mark { font-family: 'Fraunces', serif; font-style: italic; font-weight: 400; color: #EBCB82; letter-spacing: 0; }
 .rog-sub { color: var(--text-1); font-weight: 500; line-height: 1.1; white-space: nowrap; margin-top: 2px; }
 .rog-sub .rog-pb { font-style: italic; color: var(--text-1); font-size: 0.7em; font-weight: 300; }
 .rog-sub .rog-os { color: var(--accent); font-weight: 600; }
@@ -1313,3 +1313,10 @@ input[type="radio"], input[type="range"], select, progress {
 .prism-tip-got:hover{ border-color:#CBA35C; color:#EBCB82; }
 .prism-tip-txt{ font-size:13px; line-height:1.55; color:#D9CFBE; }
 .prism-tip-txt b{ color:#F6F1E7; font-weight:700; }
+
+/* #10 header lockup — tuning fork + spectrum line */
+.mobile-header-logo { display: flex; flex-direction: row; align-items: center; line-height: 1; }
+.mobile-header-logo .mh-fork { flex-shrink: 0; }
+.mobile-header-logo .mh-divider { width: 1px; height: 32px; background: rgba(203,163,92,.28); margin: 0 12px; flex-shrink: 0; }
+.mobile-header-logo .mh-text { display: flex; flex-direction: column; justify-content: center; line-height: 1; }
+.mobile-header-logo .rog-adv { margin-left: 1.75px; }
