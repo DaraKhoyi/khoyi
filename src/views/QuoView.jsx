@@ -86,6 +86,32 @@ function QuoStatusPanel({ msgs = [], calls = [], activeNumber }) {
   );
 }
 
+function QuoTranscript({ call }) {
+  const [showEng, setShowEng] = useState(true);
+  const arr = Array.isArray(call.transcript) ? call.transcript : [];
+  const hasEn = !!call.transcript_en;
+  if (!arr.length && !hasEn) return null;
+  const pill = (on) => ({ padding: '1px 9px', fontSize: 10, fontWeight: 700, borderRadius: 999, cursor: 'pointer', background: on ? 'var(--accent)' : 'transparent', color: on ? '#1a1409' : 'var(--text-2)', border: '1px solid var(--accent-dim)' });
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>TRANSCRIPT</div>
+        {hasEn && (
+          <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto' }}>
+            <button onClick={() => setShowEng(true)} style={pill(showEng)}>English</button>
+            <button onClick={() => setShowEng(false)} style={pill(!showEng)}>Original</button>
+          </div>
+        )}
+      </div>
+      <div style={{ maxHeight: 220, overflowY: 'auto', fontSize: 12.5 }}>
+        {hasEn && showEng
+          ? <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: 'var(--text-1)' }}>{call.transcript_en}</div>
+          : arr.map((d, i) => <div key={i}><b style={{ color: 'var(--text-2)' }}>{d.identifier || 'Speaker'}: </b>{d.content}</div>)}
+      </div>
+    </div>
+  );
+}
+
 function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   const [tab, setTab] = useState('feed');               // feed | messages | calls
   const [numbers, setNumbers] = useState([]);
@@ -291,7 +317,7 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   const feed = useMemo(() => {
     const rows = [];
     for (const m of msgs) rows.push({ k: 'text', id: m.id, at: m.op_created_at || m.created_at, dir: m.direction, body: m.body, who: m.direction === 'incoming' ? m.from_number : m.to_number, status: m.status });
-    for (const c of calls) rows.push({ k: 'call', id: c.id, at: c.op_created_at || c.created_at, dir: c.direction, who: c.participant, dur: c.duration, status: c.status, summary: c.summary, next_steps: c.next_steps, transcript: c.transcript, op_id: c.op_id });
+    for (const c of calls) rows.push({ k: 'call', id: c.id, at: c.op_created_at || c.created_at, dir: c.direction, who: c.participant, dur: c.duration, status: c.status, summary: c.summary, next_steps: c.next_steps, transcript: c.transcript, transcript_en: c.transcript_en, op_id: c.op_id });
     return rows.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
   }, [msgs, calls]);
 
@@ -407,7 +433,7 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {c.summary && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>SUMMARY</div>{Array.isArray(c.summary) ? <ul style={{ margin: '2px 0 0 16px', fontSize: 13 }}>{c.summary.map((s, i) => <li key={i}>{s}</li>)}</ul> : <div style={{ fontSize: 13 }}>{c.summary}</div>}</div>}
                         {Array.isArray(c.next_steps) && c.next_steps.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>NEXT STEPS</div><ul style={{ margin: '2px 0 0 16px', fontSize: 13 }}>{c.next_steps.map((s, i) => <li key={i}>{typeof s === 'string' ? s : (s.text || '')}</li>)}</ul></div>}
-                        {Array.isArray(c.transcript) && c.transcript.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>TRANSCRIPT</div><div style={{ maxHeight: 220, overflowY: 'auto', fontSize: 12.5 }}>{c.transcript.map((d, i) => <div key={i}><b style={{ color: 'var(--text-2)' }}>{d.identifier || 'Speaker'}: </b>{d.content}</div>)}</div></div>}
+                        {((Array.isArray(c.transcript) && c.transcript.length > 0) || c.transcript_en) && <QuoTranscript call={c} />}
                       </div>
                     ) : <QuoCallDetail callId={c.op_id} />}
                   </div>}
@@ -454,7 +480,7 @@ function QuoFeedRows({ feed, nameFor, openCall, setOpenCall }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {it.summary && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>SUMMARY</div>{Array.isArray(it.summary) ? <ul style={{ margin: '2px 0 0 16px', fontSize: 13 }}>{it.summary.map((s, i) => <li key={i}>{s}</li>)}</ul> : <div style={{ fontSize: 13 }}>{it.summary}</div>}</div>}
                     {Array.isArray(it.next_steps) && it.next_steps.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>NEXT STEPS</div><ul style={{ margin: '2px 0 0 16px', fontSize: 13 }}>{it.next_steps.map((s, i) => <li key={i}>{typeof s === 'string' ? s : (s.text || '')}</li>)}</ul></div>}
-                    {Array.isArray(it.transcript) && it.transcript.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>TRANSCRIPT</div><div style={{ maxHeight: 220, overflowY: 'auto', fontSize: 12.5 }}>{it.transcript.map((d, i) => <div key={i}><b style={{ color: 'var(--text-2)' }}>{d.identifier || 'Speaker'}: </b>{d.content}</div>)}</div></div>}
+                    {((Array.isArray(it.transcript) && it.transcript.length > 0) || it.transcript_en) && <QuoTranscript call={it} />}
                   </div>
                 ) : <QuoCallDetail callId={it.op_id} />}
               </div>}
