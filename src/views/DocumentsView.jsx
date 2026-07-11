@@ -57,7 +57,7 @@ function DocCard({ doc, onOpen, snippet }) {
         {doc.doc_type && <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.03em', color: '#fff', background: TYPE_COLOR[doc.doc_type] || '#6b7280', borderRadius: 5, padding: '2px 6px' }}>{doc.doc_type}</span>}
         {doc.action_needed && <span title="needs action" style={{ fontSize: 11, color: '#ef4444' }}>⚑</span>}
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.45, marginBottom: 6 }}>{snippet || doc.summary || (doc.status === 'ready' ? '' : 'Extracting text…')}</div>
+      <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.45, marginBottom: 6 }}>{snippet || doc.summary || (doc.status === 'ready' ? '' : <PrismThinking label="Extracting text" />)}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10.5, color: 'var(--text-3)' }}>
         <StatusPill status={doc.status} />
         <span>{rel(doc.created_at)}</span>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, Icon, QuoTextModal, TaskModal, PriorityField, money } from '../App';
+import { PrismThinking, useBackClose, Icon, QuoTextModal, TaskModal, PriorityField, money } from '../App';
 
 function ActionHubModal({ contactId, userId, onClose }) {
 
@@ -45,7 +45,7 @@ function ActionHubModal({ contactId, userId, onClose }) {
           <button onClick={()=>copy(c.phone||'','ph')} disabled={!c.phone} style={{flex:1,textAlign:'center',padding:'10px 6px',borderRadius:'10px',border:'1px solid var(--border)',background:c.phone?'var(--bg-hover)':'var(--bg-base)',color:c.phone?'var(--text-1)':'var(--text-3)',fontSize:'12px',fontWeight:600,cursor:c.phone?'pointer':'default',opacity:c.phone?1:.5}}><div style={{fontSize:'18px',marginBottom:'2px'}}>⧉</div>{copied==='ph'?'Copied':'Copy #'}</button>
         </div>
         {showText && <QuoTextModal contact={{ id: contactId, name: c.name, phone: c.phone }} userId={userId} defaultText={prep?.opener || ''} onClose={()=>setShowText(false)} />}
-        {loading ? <div style={{textAlign:'center',padding:'24px 0',color:'var(--text-2)',fontSize:'13px'}}><div className="spinner" style={{margin:'0 auto 10px'}}/>Ari is prepping you…</div>
+        {loading ? <div style={{display:'flex',justifyContent:'center',padding:'24px 0'}}><PrismThinking label="Ari is prepping you" /></div>
          : err ? <div style={{color:'var(--red)',fontSize:'12px'}}>{err}</div>
          : prep ? (
           <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
@@ -99,7 +99,7 @@ function OutreachReport({ userId, onBack }) {
   const Bar=({label,r,s})=>(<div style={{marginBottom:'8px'}}><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'3px'}}><span>{label}</span><span style={{color:'var(--text-3)'}}>{pct(r,s)}% · {s} sent</span></div><div style={{height:'8px',background:'var(--bg-hover)',borderRadius:'4px',overflow:'hidden'}}><div style={{height:'100%',width:pct(r,s)+'%',background:'var(--accent)'}}/></div></div>);
   const section=(title,m,minS)=>{ const ent=Object.entries(m).filter(([,v])=>v.s>=(minS||1)).sort((a,b)=>(b[1].r/b[1].s)-(a[1].r/a[1].s)); if(!ent.length) return null; return (<div style={{marginBottom:'14px'}}><div style={{fontSize:'12px',fontWeight:700,color:'var(--text-2)',marginBottom:'8px'}}>{title}</div>{ent.map(([k,v])=><Bar key={k} label={DISC_LABEL[k]||k} r={v.r} s={v.s}/>)}</div>); };
 
-  if (loading) return <div className="view"><div className="loading-screen" style={{height:'40vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Crunching your outreach results…</div></div></div>;
+  if (loading) return <div className="view"><div className="loading-screen" style={{height:'40vh',display:'flex',alignItems:'center',justifyContent:'center'}}><PrismThinking label="Crunching your outreach results" /></div></div>;
 
   return (
     <div className="view">
@@ -256,7 +256,7 @@ function GoalEngine({ userId, onBack }) {
   };
   const Tile=({label,val,sub,col})=> <div style={{background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px',textAlign:'center'}}><div style={{fontSize:'16px',fontWeight:800,color:col||'var(--accent)'}}>{val}</div><div style={{fontSize:'10px',letterSpacing:'.04em',textTransform:'uppercase',color:'var(--text-3)',marginTop:'2px'}}>{label}</div>{sub&&<div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>{sub}</div>}</div>;
   const Funnel=({label,total,per,icon})=> <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:'18px'}}>{icon}</span><div style={{flex:1}}><div style={{fontWeight:700,fontSize:'14px'}}>{total}</div><div style={{fontSize:'11px',color:'var(--text-3)'}}>{label}</div></div><div style={{textAlign:'right'}}><div style={{fontWeight:700,fontSize:'13px',color:'var(--accent)'}}>{per}/wk</div><div style={{fontSize:'10px',color:'var(--text-3)'}}>to stay on pace</div></div></div>;
-  if (loading) return <div className="view"><div className="loading-screen" style={{height:'40vh'}}><div className="spinner"/><div style={{marginTop:'12px',color:'var(--text-2)',fontSize:'13px'}}>Building your wealth engine…</div></div></div>;
+  if (loading) return <div className="view"><div className="loading-screen" style={{height:'40vh',display:'flex',alignItems:'center',justifyContent:'center'}}><PrismThinking label="Building your wealth engine" /></div></div>;
   return (
     <div className="view">
       <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}}>

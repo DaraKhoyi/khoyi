@@ -4133,12 +4133,8 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
         </div>
         <div style={{ padding: '16px 18px' }}>
           {state.loading && (
-            <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-2)' }}>
-              <div style={{ fontSize: 13 }}>{name || 'Ari'} is reading your inbox & triaging your day…</div>
-              <div style={{ marginTop: 12, display: 'flex', gap: 6, justifyContent: 'center' }}>
-                {[0, 1, 2].map(i => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', opacity: 0.4, animation: `pmd 1s ${i * 0.15}s infinite` }} />)}
-              </div>
-              <style>{`@keyframes pmd{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}`}</style>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '34px 0' }}>
+              <PrismThinking label={`${name || 'Ari'} is reading your inbox & triaging your day`} />
             </div>
           )}
           {state.error && <div style={{ color: 'var(--red)', fontSize: 13, padding: '10px 0' }}>Couldn't build a plan: {state.error}</div>}
@@ -4452,7 +4448,7 @@ function DashboardBriefing({ user, setView }) {
         </div>
       </div>
       {loading ? (
-        <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 10 }}>Reading your morning…</div>
+        <div style={{ marginTop: 12 }}><PrismThinking label="Reading your morning" /></div>
       ) : err ? (
         <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 10 }}>Your morning read isn’t ready yet. <button onClick={() => load(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, padding: 0 }}>Try again</button></div>
       ) : (
