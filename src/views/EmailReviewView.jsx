@@ -141,9 +141,11 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
   const delBtn = { padding: '7px 13px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: '1px solid rgba(239,68,68,0.5)', background: 'transparent', color: '#ef4444' };
 
   return (
-    <div style={{ maxWidth: 780, margin: '0 auto', padding: '4px 2px 40px' }}>
+    <div className="ww-prism" style={{ maxWidth: 780, margin: '0 auto', padding: '4px 2px 40px' }}>
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
       <div style={{ marginBottom: 6 }}>
-        <h1 style={{ fontSize: 21, fontWeight: 800, margin: 0, color: 'var(--text-1)' }}>Email review</h1>
+        <div className="ww-eyebrow" style={{ marginBottom: 6 }}>Email review · Realty ONE Group</div>
+        <h1 style={{ fontFamily:'Fraunces, serif', fontSize: 30, fontWeight: 300, letterSpacing:'-0.02em', margin: 0, color: '#F6F1E7' }}>Email review</h1>
         <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: '3px 0 0' }}>
           Scanned overnight. Marketing is filtered out for free — only real mail is triaged.
         </p>

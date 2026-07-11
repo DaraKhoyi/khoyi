@@ -249,9 +249,10 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
   const typeLabel = (t) => TABS.find(x => x.id === t)?.icon + ' ' + TABS.find(x => x.id === t)?.label;
 
   return (
-    <div>
+    <div className="ww-prism">
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="brain" size={26} style={{color:'var(--accent)',flexShrink:0}} />Brain</h2><p>Your operating memory · {brain.length} entries · {totalTags} unique tags</p></div>
+        <div><div className="ww-eyebrow" style={{marginBottom:6}}>Your operating memory · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="brain" size={24} style={{color:'var(--accent)',flexShrink:0}} />Brain</h2><p>{brain.length} entries · {totalTags} unique tags</p></div>
         <button className="btn-add-circle" onClick={()=>{setEditEntry(null);setShowModal(true);}} title="New Entry" aria-label="New Entry">+</button>
       </div>
 
@@ -263,7 +264,7 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
         <div style={{padding:'12px 14px',background:'linear-gradient(135deg, var(--accent-glow) 0%, transparent 100%)',border:'1px solid var(--accent-dim)',borderRadius:'10px'}}>
           <div style={{fontSize:'10px',color:'var(--accent)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'4px'}}>Capture streak</div>
           <div style={{display:'flex',alignItems:'baseline',gap:'6px'}}>
-            <span style={{fontSize:'24px',fontWeight:700,color:'var(--text-1)',fontFamily:'monospace'}}>{streak.current}</span>
+            <span style={{fontSize:'27px',fontWeight:300,color:'#F6F1E7',fontFamily:'Fraunces, serif',letterSpacing:'-0.01em'}}>{streak.current}</span>
             <span style={{fontSize:'11px',color:'var(--text-3)'}}>day{streak.current!==1?'s':''}</span>
             {streak.today && <span title="Logged today" style={{marginLeft:'auto',color:'var(--accent)',fontSize:'14px'}}>●</span>}
           </div>
@@ -271,17 +272,17 @@ function BrainView({ brain, setBrain, userId, tasks = [], events = [], contacts 
         </div>
         <div style={{padding:'12px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
           <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'4px'}}>Pinned</div>
-          <div style={{fontSize:'24px',fontWeight:700,color:'var(--text-1)',fontFamily:'monospace'}}>{pinnedCount}</div>
+          <div style={{fontSize:'27px',fontWeight:300,color:'#F6F1E7',fontFamily:'Fraunces, serif',letterSpacing:'-0.01em'}}>{pinnedCount}</div>
           <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>core references</div>
         </div>
         <div style={{padding:'12px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
           <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'4px'}}>Memory entries</div>
-          <div style={{fontSize:'24px',fontWeight:700,color:'var(--text-1)',fontFamily:'monospace'}}>{brain.filter(b=>b.type==='memory').length}</div>
+          <div style={{fontSize:'27px',fontWeight:300,color:'#F6F1E7',fontFamily:'Fraunces, serif',letterSpacing:'-0.01em'}}>{brain.filter(b=>b.type==='memory').length}</div>
           <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>facts about people, tools, decisions</div>
         </div>
         <div style={{padding:'12px 14px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'10px'}}>
           <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:'4px'}}>Playbooks</div>
-          <div style={{fontSize:'24px',fontWeight:700,color:'var(--text-1)',fontFamily:'monospace'}}>{brain.filter(b=>b.type==='playbook').length}</div>
+          <div style={{fontSize:'27px',fontWeight:300,color:'#F6F1E7',fontFamily:'Fraunces, serif',letterSpacing:'-0.01em'}}>{brain.filter(b=>b.type==='playbook').length}</div>
           <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'2px'}}>repeatable plays</div>
         </div>
       </div>
