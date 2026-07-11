@@ -712,7 +712,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
       const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
       const { data, error } = await supabase.functions.invoke('knowledge-ingest', { body: { kind: 'file', storage_path: path, mime_type: mime, filename: 'dictation.' + ext, title: title.trim() || 'Voice note', scope, team_id: scope === 'team' ? (teamId || null) : null, tags, trust_level: trust } });
       if (error || !data?.source_id) { setAddMsg('Could not add: ' + (error?.message || data?.error || 'unknown')); setAdding(false); return; }
-      setTitle(''); setTagsStr(''); setAddMsg('Voice note saved \u2014 transcribing now.'); setTab('library'); loadLib();
+      setTitle(''); setTagsStr(''); setAddMsg('Voice note saved — transcribing now.'); setTab('library'); loadLib();
     } catch (e) { setAddMsg(String(e)); }
     setAdding(false);
   }
@@ -3528,7 +3528,7 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
     const linMs = c.last_inbound_at ? new Date(c.last_inbound_at).getTime() : 0;
     if(linMs >= openedMs) return; // they've replied since opening
     const days=Math.floor((now-openedMs)/86400000); const oc=sig.open_count||1;
-    out.push({ key:'opened:'+c.id, score:92+Math.min(oc*2,10), tag:'opened', icon:'mail', contactId:c.id, title:'Follow up with '+(c.name||'a contact'), why:'Opened your email'+(oc>1?(' '+oc+'\u00d7'):'')+' '+nbaAge(days)+(days<=0?'':' ago')+" and hasn't replied \u2014 strike while it's warm", cta:{ label:'Open', kind:'open_reply', channel:'email', email:c.email||null, phone:c.phone||null, name:c.name||null } });
+    out.push({ key:'opened:'+c.id, score:92+Math.min(oc*2,10), tag:'opened', icon:'mail', contactId:c.id, title:'Follow up with '+(c.name||'a contact'), why:'Opened your email'+(oc>1?(' '+oc+'×'):'')+' '+nbaAge(days)+(days<=0?'':' ago')+" and hasn't replied — strike while it's warm", cta:{ label:'Open', kind:'open_reply', channel:'email', email:c.email||null, phone:c.phone||null, name:c.name||null } });
   });
   events.forEach(e=>{ if(!e.start_at||e.all_day) return; const st=new Date(e.start_at).getTime(); const dh=(st-now)/3600000;
     if(dh>=-1 && dh<=24){ out.push({ key:'appt:'+(e.id||e.start_at), score:96+(dh<2?6:0), tag:'appt', icon:'calendar', title:'Prep for: '+(e.title||'appointment'), why:'Starts '+(dh<1?'soon':'in about '+Math.round(dh)+'h')+' — confirm details and prepare', cta:{ label:'Calendar', kind:'view', payload:'calendar' } }); } });
@@ -3576,7 +3576,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
     try{
       const { data } = await supabase.from('documents').select('id, title, doc_type, summary, action_label, signed_state, document_contacts(contact_id)').eq('action_needed',true).eq('status','ready').order('created_at',{ascending:false}).limit(20);
       if(!alive) return;
-      const sigs=(data||[]).map(d=>{ const cid=d.document_contacts&&d.document_contacts[0]?d.document_contacts[0].contact_id:null; const cn=cid?((contacts.find(c=>c.id===cid)||{}).name||''):''; return { key:'doc:'+d.id, score:86+(d.signed_state==='unsigned'?6:0), tag:'document', icon:'target', contactId:cid, title:d.action_label||('Handle '+(d.title||'a document')), why:((cn?cn+' \u00b7 ':'')+(d.doc_type&&d.doc_type!=='other'?d.doc_type+' \u00b7 ':'')+(d.signed_state==='unsigned'?'unsigned \u2014 needs signature':(d.summary||'needs attention'))).slice(0,130), cta:{ label:'Open', kind:'view', payload:'documents' } }; });
+      const sigs=(data||[]).map(d=>{ const cid=d.document_contacts&&d.document_contacts[0]?d.document_contacts[0].contact_id:null; const cn=cid?((contacts.find(c=>c.id===cid)||{}).name||''):''; return { key:'doc:'+d.id, score:86+(d.signed_state==='unsigned'?6:0), tag:'document', icon:'target', contactId:cid, title:d.action_label||('Handle '+(d.title||'a document')), why:((cn?cn+' \u00b7 ':'')+(d.doc_type&&d.doc_type!=='other'?d.doc_type+' \u00b7 ':'')+(d.signed_state==='unsigned'?'unsigned — needs signature':(d.summary||'needs attention'))).slice(0,130), cta:{ label:'Open', kind:'view', payload:'documents' } }; });
       setDocActions(sigs);
     }catch(_){}
   })(); return ()=>{alive=false;}; },[contacts]);
@@ -5062,6 +5062,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
       </div>
 
       <NextBestAction contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} gciGoal={gciGoal} setView={setView} onOpenPlan={onOpenPlan} myUserId={user?.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} />
+      <Tip id="nba" label="Why this is first">Top producers don't do <b>more</b> — they do the <b>right thing next</b>. Prism scans every signal — your tasks, who owes you a reply, cadence, appointments, deals — and surfaces the single highest-leverage move, so you never wonder where to start.</Tip>
 
       {/* At-a-glance pulse — full metrics live in My numbers */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
@@ -5887,7 +5888,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
         track: trackOpens, contact_id: recipient?.id || null, send_at: when.toISOString(), status: 'scheduled',
       });
       if (insErr) throw insErr;
-      notify('Scheduled \u2014 sends ' + when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), 'success');
+      notify('Scheduled — sends ' + when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), 'success');
       onClose();
     } catch (e) {
       notify("Couldn't schedule: " + (e.message || e), 'error');
@@ -5970,7 +5971,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
                 <span style={{ marginLeft: 'auto' }}><AriRewriteButton text={bodyText} onRewrite={setBodyText} contactName={recipient?.name} contactId={recipient?.id} discLabel={discHint ? `${discHint.p}${discHint.s ? '/' + discHint.s : ''}` : ''} /></span>
               </div>
               <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
-                placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}\u2026\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you\u2019ve written \u2014 adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
+                placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}\u2026\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you\u2019ve written — adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
                 style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
               {channel === 'email' && (
                 <div style={{ marginTop: '8px' }}>
@@ -6832,7 +6833,7 @@ function PrepLeadButton({ contactId }) {
   const [done, setDone] = React.useState(false);
   async function run() {
     setBusy(true);
-    try { await supabase.functions.invoke('orchestrate-new-lead', { body: { contact_id: contactId } }); setDone(true); if (window.__notify) window.__notify('First-contact plan prepared \u2014 see "Prepared by AI"', 'success'); }
+    try { await supabase.functions.invoke('orchestrate-new-lead', { body: { contact_id: contactId } }); setDone(true); if (window.__notify) window.__notify('First-contact plan prepared — see "Prepared by AI"', 'success'); }
     catch (_) { if (window.__notify) window.__notify('Could not prepare a plan right now', 'error'); }
     setBusy(false);
   }
@@ -9758,6 +9759,49 @@ function MultiValueField({ values, onChange, kind, addLabel }) {
   );
 }
 
+// ── Teachable moments ──────────────────────────────────────────────
+// In-context lessons that teach the "why". Persist per-device; the off-switch
+// only unlocks once the agent has learned enough (proficiency gate) — so tips
+// aren't offered too early, but once earned they toggle freely.
+const TIPS_UNLOCK_AT = 6;
+function tipsSeenList(){ try { return JSON.parse(localStorage.getItem('prism_tips_seen')||'[]'); } catch(_){ return []; } }
+function tipsSeenCount(){ return tipsSeenList().length; }
+function tipsAreEnabled(){ try { return localStorage.getItem('prism_tips_enabled') !== '0'; } catch(_){ return true; } }
+function tipsUnlocked(){ return tipsSeenCount() >= TIPS_UNLOCK_AT; }
+function setTipsEnabled(on){ try { localStorage.setItem('prism_tips_enabled', on ? '1' : '0'); } catch(_){} }
+function Tip({ id, label = 'Why this works', children }){
+  const [gone, setGone] = useState(() => !tipsAreEnabled() || tipsSeenList().includes(id));
+  if (gone) return null;
+  const dismiss = () => { try { const s = tipsSeenList(); if (!s.includes(id)) { s.push(id); localStorage.setItem('prism_tips_seen', JSON.stringify(s)); } } catch(_){} setGone(true); };
+  return (
+    <div className="prism-tip">
+      <div className="prism-tip-top"><span className="prism-tip-eye">✦ {label}</span><button className="prism-tip-got" onClick={dismiss}>Got it</button></div>
+      <div className="prism-tip-txt">{children}</div>
+    </div>
+  );
+}
+function TipsSetting(){
+  const [enabled, setEnabled] = useState(tipsAreEnabled());
+  const unlocked = tipsUnlocked(); const seen = tipsSeenCount();
+  if (!unlocked) {
+    return (
+      <div className="panel" style={{marginBottom:'18px',display:'flex',alignItems:'center',gap:'12px'}}>
+        <span style={{fontSize:'18px',flexShrink:0}}>🔒</span>
+        <div><div style={{fontSize:'13.5px',fontWeight:700,color:'var(--text-1)'}}>Learning tips are on</div>
+        <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>You'll be able to turn these off here once you've picked up a few more of the fundamentals. ({seen}/{TIPS_UNLOCK_AT})</div></div>
+      </div>
+    );
+  }
+  return (
+    <div className="panel" style={{marginBottom:'18px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px'}}>
+      <div><div style={{fontSize:'13.5px',fontWeight:700,color:'var(--text-1)'}}>Learning tips</div>
+      <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>In-context lessons on the why behind your workflow. You've earned the switch — toggle anytime.</div></div>
+      <button onClick={()=>{ const n=!enabled; setTipsEnabled(n); setEnabled(n); }} aria-label="Toggle tips" style={{flexShrink:0,width:'52px',height:'30px',borderRadius:'100px',border:'1px solid '+(enabled?'#CBA35C':'var(--border)'),background:enabled?'linear-gradient(180deg,#EBCB82,#CBA35C)':'var(--bg-hover)',position:'relative',cursor:'pointer',transition:'all .2s',padding:0}}>
+        <span style={{position:'absolute',top:'3px',left:enabled?'25px':'3px',width:'22px',height:'22px',borderRadius:'50%',background:enabled?'#1a1409':'#C8BFAE',transition:'all .2s'}} />
+      </button>
+    </div>
+  );
+}
 function RecruitingKpiTile({ label, value, sub, color }) {
   return (
     <div style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:'8px',padding:'10px 12px'}}>
@@ -11490,6 +11534,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 24% at 50% -3%, rgba(203,163,92,.08), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .form-input,.ww-prism .form-select,.ww-prism .form-textarea{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
       <div className="page-header"><div><div className="ww-eyebrow" style={{marginBottom:6}}>Your settings · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="settings" size={24} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div></div>
       <div style={{maxWidth:'480px'}}>
+        <TipsSetting />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Your Claude API key</h3></div>
           <div className="panel-body">
@@ -16124,5 +16169,5 @@ export default function App() {
   return <AppMain />;
 }
 
-export { ActivityTimeline, AriRewriteButton, CallFollowupsPanel, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, QuoTextModal, RecruitingKpiTile, RecruitingView, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
+export { ActivityTimeline, AriRewriteButton, CallFollowupsPanel, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, QuoTextModal, RecruitingKpiTile, RecruitingView, Tip, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
 

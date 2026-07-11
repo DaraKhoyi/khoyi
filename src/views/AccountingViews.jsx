@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, HeaderSearchIcon, HeaderSearchInput, Icon, RecruitingKpiTile, confirmDialog, modal, money, num, todayISO, today_ymd, ymd } from '../App';
+import { Tip, useBackClose, HeaderSearchIcon, HeaderSearchInput, Icon, RecruitingKpiTile, confirmDialog, modal, money, num, todayISO, today_ymd, ymd } from '../App';
 
 const TIER_BANDS = [
   { id: 'rookie',       label: 'Rookie',       color: '#cd7f32' },
@@ -896,6 +896,7 @@ function ProspectingView({ userId, initialSub = null, subNonce = 0 }) {
         </div>
       </div>
 
+      <Tip id="systems" label="One system, 90 days">A "system" is a <b>repeatable daily action</b> — calls, notes, pop-bys. Working <b>one</b> consistently for 90 days beats dabbling in five. Prism tracks your streak because the <b>habit</b>, not the heroics, is what fills a pipeline.</Tip>
       {sub === 'today' && (
         <ProspectingToday userId={userId} settings={settings} setSettings={setSettings}
           systems={systems.filter(s => s.is_active)} completions={completions} setCompletions={setCompletions}
@@ -1389,6 +1390,7 @@ function FinanceDashboard({
         </div>
       </div>
 
+      <Tip id="gci" label="Know your number">Your GCI pace shows whether you're <b>ahead or behind goal</b>, prorated to the days you've actually worked. Agents who check their number <b>weekly</b> hit goals; agents who guess, hope. Glance here often — it's your scoreboard.</Tip>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:'10px'}}>
         <KpiTile label="This month net" value={fmtUSD(monthNet(transactions, 'business'))} sub="business" />
         <KpiTile label="YTD expense" value={fmtUSD(-ytdExpense)} sub="business deductions" />

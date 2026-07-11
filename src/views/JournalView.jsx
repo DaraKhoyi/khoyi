@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon, lbl, today_ymd, useDictation, ymd } from '../App';
+import { Tip, Icon, lbl, today_ymd, useDictation, ymd } from '../App';
 import { logJournalEntry, mirrorJournalToTimeline } from '../lib/journalLog';
 
 const JLINK_META = {
@@ -241,6 +241,7 @@ function JournalView({ userId }) {
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
             style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="search" size={16} /></button>
         </div>
+        <Tip id="capture" label="Capture beats recall">The best agents run on <b>captured</b> details, not remembered ones. A 20-second note today — what they said, what they want — turns a cold follow-up into a warm one next week. Everything you log trains Prism, too.</Tip>
         {!searchOpen && (
           <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
             {[['day', 'Day'], ['week', 'Week'], ['month', 'Month']].map(([m, lbl]) => (

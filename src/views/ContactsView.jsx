@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone } from '../App';
+import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone } from '../App';
 import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
 
 const CONTACT_TYPES = [
@@ -274,7 +274,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                   {!addingType
                     ? <button type="button" onClick={()=>setAddingType(true)} style={{marginTop:6,background:'none',border:'none',color:'var(--accent)',fontSize:11.5,fontWeight:600,cursor:'pointer',padding:0}}>+ New private type</button>
                     : <div style={{marginTop:8,padding:10,border:'1px solid var(--border)',borderRadius:10,background:'var(--bg-base)'}}>
-                        <div style={{fontSize:10.5,color:'var(--text-3)',marginBottom:7}}>Private to you \u2014 only you will see this type.</div>
+                        <div style={{fontSize:10.5,color:'var(--text-3)',marginBottom:7}}>Private to you — only you will see this type.</div>
                         <div style={{display:'flex',gap:6,marginBottom:7,flexWrap:'wrap'}}>{['🏷️','💎','⭐','🔥','📌','🧲','🏆','🌐'].map(em=>(<button key={em} type="button" onClick={()=>setNewTypeIcon(em)} style={{fontSize:16,lineHeight:1,padding:'4px 7px',borderRadius:8,cursor:'pointer',background:newTypeIcon===em?'var(--accent-glow)':'transparent',border:'1px solid '+(newTypeIcon===em?'var(--accent)':'var(--border)')}}>{em}</button>))}</div>
                         <div style={{display:'flex',gap:6}}>
                           <input className="form-input" value={newTypeLabel} onChange={e=>setNewTypeLabel(e.target.value)} placeholder="Type name (e.g. VIP, A-list lender)" style={{flex:1,margin:0}} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); saveCustomType(); } }} />
@@ -1228,6 +1228,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       )}
 
+      {!tagMode && !search.trim() && <Tip id="disc" label="Reading the room">That gold letter on a contact is their <b>behavioral style</b> (DISC). A <b>D</b> wants the bottom line, fast; an <b>S</b> wants warmth and reassurance. Match your delivery to how they're wired and rapport comes easy — Prism reads it for you, so you never have to be the expert.</Tip>}
       {!tagMode && !search.trim() && reachNext && (
         <div className="ww-next">
           <div className="lab">Reach out next</div>

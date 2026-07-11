@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, Icon, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd } from '../App';
+import { Tip, useBackClose, Icon, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd } from '../App';
 
 function startOfMonthGrid(year, month) {
   // month: 0-indexed. Returns the Sunday on/before the 1st.
@@ -689,6 +689,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         </div>
       </div>
 
+      <Tip id="blocking" label="Protect the money hours">Block time for prospecting <b>before</b> the day fills with everyone else's priorities. Top producers defend the one activity that grows income — put it on the calendar and it actually happens.</Tip>
       {/* View toggle — right under the title */}
       <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px',flexWrap:'wrap'}}>
         <div className="cal-view-toggle">
