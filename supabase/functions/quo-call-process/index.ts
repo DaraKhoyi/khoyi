@@ -111,7 +111,11 @@ Rules:
 - Only include real commitments or clearly-implied next steps. If nothing was committed, return "action_items": [].
 - "owner":"me" = something Dara agreed to do. "owner":"them" = something the other person agreed to do (Dara should track/expect it).
 - Resolve relative dates ("by Friday", "next week", "tomorrow") to an absolute YYYY-MM-DD using the provided current date. If no timeframe was given, use null.
-- Keep titles short and actionable. Do not invent commitments that were not discussed.`;
+- Keep titles short and actionable. Do not invent commitments that were not discussed.
+PRONOUNS (get these exactly right in the summary and notes):
+- Dara is male — always refer to Dara with he/him/his.
+- NEVER infer anyone's gender from voice, pitch, tone, or first name.
+- Use only the pronouns given under "Known participants" in the message. If a person's pronouns are not listed, use they/them — never guess.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -157,14 +161,14 @@ serve(async (req) => {
       let contact: any = null;
       if (key10) {
         if (!contactCache[call.user_id]) {
-          const { data: cs } = await admin.from("contacts").select("id,name,phone,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction").eq("user_id", call.user_id).not("phone", "is", null);
+          const { data: cs } = await admin.from("contacts").select("id,name,phone,pronouns,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction").eq("user_id", call.user_id).not("phone", "is", null);
           contactCache[call.user_id] = cs || [];
         }
         contact = (contactCache[call.user_id] || []).find((c) => last10(c.phone) === key10) || null;
       }
       // Cube ACR (and any pre-linked source) can set contact_id ahead of time when the phone isn't in the filename.
       if (!contact && call.contact_id) {
-        const { data: pc } = await admin.from("contacts").select("id,name,phone,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction").eq("id", call.contact_id).maybeSingle();
+        const { data: pc } = await admin.from("contacts").select("id,name,phone,pronouns,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction").eq("id", call.contact_id).maybeSingle();
         if (pc) contact = pc;
       }
 
@@ -218,7 +222,10 @@ serve(async (req) => {
       try {
         const userMsg = [
           `Current date: ${today} (America/New_York).`,
-          `Call direction: ${dir}. ${contact ? `Other party (contact): ${contact.name}.` : "Other party is not a known contact."}`,
+          `Call direction: ${dir}.`,
+          `Known participants and their pronouns (use these exactly; never infer gender from voice, pitch, or name):`,
+          `- Dara — he/him (this is "me")`,
+          contact ? `- ${contact.name} — ${contact.pronouns || "they/them (pronouns unknown — do not guess)"} (the other party, "them")` : `- The other party is not a saved contact — use they/them.`,
           summary ? `\nOpenPhone summary:\n${summary}` : "",
           nextSteps ? `\nOpenPhone next steps:\n${nextSteps}` : "",
           transcript ? `\nTranscript:\n${transcript.slice(0, 12000)}` : "",
