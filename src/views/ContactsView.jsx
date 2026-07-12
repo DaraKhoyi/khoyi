@@ -120,6 +120,104 @@ function EditSection({ icon, title, hint, summary, open, onToggle, children }) {
   );
 }
 
+function parseVCard(raw) {
+  if (!raw || !/BEGIN:VCARD/i.test(raw)) return null;
+  const block = (raw.match(/BEGIN:VCARD[\s\S]*?END:VCARD/i) || [raw])[0];
+  const unfolded = block.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '');
+  const lines = unfolded.split('\n').map(l => l.trim()).filter(Boolean);
+  const decodeVal = (v, params) => {
+    let str = v;
+    if (/QUOTED-PRINTABLE/i.test(params.ENCODING || '')) {
+      str = str.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+      try { str = decodeURIComponent(escape(str)); } catch (_) {}
+    }
+    return str.replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\').trim();
+  };
+  const c = { phones: [], emails: [], notes: '' };
+  let fn = '', n = null; const extra = [];
+  for (const line of lines) {
+    const ci = line.indexOf(':'); if (ci < 0) continue;
+    const left = line.slice(0, ci); const rawVal = line.slice(ci + 1);
+    const segs = left.split(';');
+    let prop = segs[0].toUpperCase();
+    if (prop.includes('.')) prop = prop.split('.').pop();
+    const params = {}; const types = [];
+    for (let i = 1; i < segs.length; i++) {
+      const seg = segs[i];
+      if (seg.includes('=')) { const idx = seg.indexOf('='); const k = seg.slice(0, idx).toUpperCase(); const vv = seg.slice(idx + 1); params[k] = vv; if (k === 'TYPE') types.push(...vv.split(',').map(x => x.toUpperCase())); }
+      else types.push(seg.toUpperCase());
+    }
+    const value = decodeVal(rawVal, params);
+    if (!value && prop !== 'N') continue;
+    switch (prop) {
+      case 'FN': fn = value; break;
+      case 'N': n = value.split(';'); break;
+      case 'TEL': { const label = (types.includes('CELL') || types.includes('MOBILE')) ? 'Mobile' : types.includes('WORK') ? 'Work' : types.includes('HOME') ? 'Home' : 'Mobile'; c.phones.push({ value, label, is_default: c.phones.length === 0 }); break; }
+      case 'EMAIL': { const label = types.includes('WORK') ? 'Work' : 'Personal'; c.emails.push({ value, label, is_default: c.emails.length === 0 }); break; }
+      case 'ORG': c.company = value.split(';')[0].trim(); break;
+      case 'TITLE': c.role = value; break;
+      case 'NOTE': c.notes = value; break;
+      case 'URL': extra.push('Website: ' + value); break;
+      case 'BDAY': extra.push('Birthday: ' + value); break;
+      case 'ADR': {
+        const a = value.split(';');
+        const street = [a[0], a[1], a[2]].filter(Boolean).join(' ').trim();
+        if (types.includes('WORK')) { c.business_address = street; c.business_city = a[3] || ''; c.business_state = a[4] || ''; c.business_zip = a[5] || ''; }
+        else { c.home_address = street; c.home_city = a[3] || ''; c.home_state = a[4] || ''; c.home_zip = a[5] || ''; }
+        break;
+      }
+      default: break;
+    }
+  }
+  if (fn) c.name = fn;
+  else if (n) c.name = [n[3], n[1], n[2], n[0], n[4]].filter(Boolean).join(' ').trim();
+  if (!c.name) c.name = ((c.emails[0] && c.emails[0].value) || (c.phones[0] && c.phones[0].value) || 'New contact');
+  if (extra.length) c.notes = (c.notes ? c.notes + '\n' : '') + extra.join('\n');
+  c.type = 'lead'; c.origin = 'manual';
+  return c;
+}
+
+function VCardImportModal({ onClose, onParsed }) {
+  useBackClose(onClose);
+  const [text, setText] = useState('');
+  const [err, setErr] = useState('');
+  const onFile = (e) => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const r = new FileReader();
+    r.onload = () => { setText(String(r.result || '')); setErr(''); };
+    r.readAsText(file);
+  };
+  const go = () => {
+    const parsed = parseVCard(text);
+    if (!parsed) { setErr("That doesn't look like a vCard. Paste text that starts with BEGIN:VCARD, or choose a .vcf file."); return; }
+    onParsed(parsed);
+  };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2400, background: 'rgba(0,0,0,.62)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ maxWidth: 460, width: '100%', maxHeight: '86vh', overflow: 'auto', background: '#100D09', border: '1px solid rgba(203,163,92,.28)', borderRadius: 16 }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(203,163,92,.2)' }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.24em', textTransform: 'uppercase', color: '#CBA35C', marginBottom: 6 }}>Import</div>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, color: '#F6F1E7' }}>New contact from a vCard</div>
+          <div style={{ fontSize: 12, color: '#8C8475', marginTop: 4 }}>Choose a .vcf file or paste the vCard text. We'll fill in a new contact for you to review and save.</div>
+        </div>
+        <div style={{ padding: '16px 18px' }}>
+          <label className="btn btn-ghost btn-sm" style={{ display: 'inline-block', cursor: 'pointer', marginBottom: 12 }}>
+            Choose .vcf file
+            <input type="file" accept=".vcf,text/vcard,text/x-vcard" onChange={onFile} style={{ display: 'none' }} />
+          </label>
+          <textarea value={text} onChange={e => { setText(e.target.value); setErr(''); }} rows={8} placeholder="...or paste vCard text here (starts with BEGIN:VCARD)"
+            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 12.5, lineHeight: 1.5, fontFamily: 'monospace', background: '#0c0a07', border: '1px solid rgba(203,163,92,.24)', borderRadius: 10, color: '#F6F1E7', resize: 'vertical' }} />
+          {err && <div style={{ fontSize: 12, color: '#e0794f', marginTop: 8 }}>{err}</div>}
+        </div>
+        <div style={{ padding: '12px 18px', borderTop: '1px solid rgba(203,163,92,.2)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={go} disabled={!text.trim()}>Create contact</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId, canSeeRestricted = false }) {
 
   useBackClose(onClose);
@@ -822,6 +920,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
   const [editFromDetail, setEditFromDetail] = useState(false);
+  const [showVCard, setShowVCard] = useState(false);
   const [detailContact, setDetailContact] = useState(null);
   // Bulk lead-source tagging
   const [tagMode, setTagMode] = useState(false);
@@ -1202,6 +1301,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         <div style={{flex:1,minWidth:0}}><div className="ww-eyebrow">Your sphere · Realty ONE Group</div><h2 style={{margin:'8px 0 6px'}}>Your people.</h2><p style={{color:'var(--text-3)',fontSize:'13px'}}>{contacts.length} contacts{dueCount>0 && <> · <b style={{color:'var(--accent-2)',fontWeight:700}}>{dueCount} due</b> for a touch</>}</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
           <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>
           <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
         </div>
       </div>
@@ -1491,6 +1591,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           onSent={()=>{ setBulkChannel(null); exitTag(); }}
         />
       )}
+      {showVCard && <VCardImportModal onClose={()=>setShowVCard(false)} onParsed={(init)=>{ setShowVCard(false); setEditContact(init); setShowModal(true); }} />}
       {showModal && <ContactModal canSeeRestricted={canSeeRestricted}
         onClose={()=>{ setShowModal(false); if (editFromDetail && editContact) setDetailContact(editContact); setEditContact(null); setEditFromDetail(false); }}
         onSave={handleSave}
