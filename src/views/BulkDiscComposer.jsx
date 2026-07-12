@@ -36,6 +36,8 @@ export function dominantDiscLetter(p) {
 export function BulkDiscComposer({ contacts, profileByContact, channel, userId, onClose, onSent }) {
   useBackClose(onClose);
   const isEmail = channel === 'email';
+  // profileByContact may be a Map (ContactsView) or a plain object (GroupMessageView) — read either.
+  const getProfile = (id) => !profileByContact ? null : (typeof profileByContact.get === 'function' ? profileByContact.get(id) : profileByContact[id]);
 
   const { eligible, skipped } = useMemo(() => {
     const e = [], s = [];
@@ -45,7 +47,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
 
   const buckets = useMemo(() => {
     const b = { D: [], I: [], S: [], C: [], neutral: [] };
-    eligible.forEach(c => { const k = dominantDiscLetter(profileByContact.get(c.id)) || 'neutral'; b[k].push(c); });
+    eligible.forEach(c => { const k = dominantDiscLetter(getProfile(c.id)) || 'neutral'; b[k].push(c); });
     return b;
   }, [eligible, profileByContact]);
   const hasNeutral = buckets.neutral.length > 0;
