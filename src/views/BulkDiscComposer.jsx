@@ -53,6 +53,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
 
   const [base, setBase] = useState('');
   const [baseSubject, setBaseSubject] = useState('');
+  const [lockedLines, setLockedLines] = useState('');
   const [step, setStep] = useState('compose'); // compose | review | sending | done
   const [gen, setGen] = useState(false);
   const [drafts, setDrafts] = useState({});
@@ -126,10 +127,13 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
     setStep('sending'); setProgress({ done: 0, total: jobs.length });
     const bId = (trackBlast && isEmail) ? crypto.randomUUID() : null;
     setBatchId(bId);
-    let sent = 0, failed = 0;
+    let sent = 0, failed = 0, first = true;
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     for (const { c, d, k } of jobs) {
+      if (!first) await sleep(1200 + Math.floor(Math.random() * 1400)); // pace sends to protect sender reputation + dodge rate limits
+      first = false;
       try {
-        const body = personalize(d.body, c);
+        const body = personalize(d.body + (lockedLines.trim() ? '\n\n' + lockedLines : ''), c);
         if (isEmail) {
           const subject = personalize(d.subject, c) || '(no subject)';
           const extra = bId ? { track: true, variant: k, batch_id: bId, contact_id: c.id } : {};
@@ -189,6 +193,11 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
             )}
             <textarea value={base} onChange={e => setBase(e.target.value)} autoFocus rows={6} placeholder="What do you want to say? (e.g. Just checking in — let me know if you'd like an updated home value for your place.)"
               style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 14, lineHeight: 1.5, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-2)', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>🔒 Locked lines <span style={{ fontWeight: 400, color: 'var(--text-3)' }}>— added to every version, exactly as written</span></div>
+              <textarea value={lockedLines} onChange={e => setLockedLines(e.target.value)} rows={3} placeholder={"Your sign-off, a P.S. — Ari won't touch these.\ne.g. Thanks for being in this with me,\nDara"}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 13, lineHeight: 1.5, background: 'var(--bg-base)', border: '1px solid rgba(203,163,92,.3)', borderRadius: 10, color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
               <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
               <button className="btn btn-primary" disabled={!base.trim() || gen || eligible.length === 0} onClick={generate} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
@@ -225,6 +234,12 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
               <textarea value={drafts[cardKey]?.body || ''} onChange={e => setField(cardKey, 'body', e.target.value)} rows={isEmail ? 8 : 6}
                 style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 14, lineHeight: 1.5, background: 'var(--bg-base)', border: `1px solid ${meta.color}55`, borderRadius: 10, color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
               <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 5 }}>{!isEmail && `${(drafts[cardKey]?.body || '').length} chars · `}<code style={{ color: 'var(--accent)' }}>{'{first_name}'}</code> becomes each person’s first name on send.</div>
+              {lockedLines.trim() && (
+                <div style={{ marginTop: 8, padding: '9px 12px', borderRadius: 9, background: 'rgba(203,163,92,.07)', border: '1px dashed rgba(203,163,92,.4)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 4 }}>🔒 Locked · same on every version</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{lockedLines}</div>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'center', gap: 7, margin: '14px 0 4px' }}>
                 {cards.map((k, i) => (
