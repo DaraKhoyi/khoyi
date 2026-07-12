@@ -11705,6 +11705,7 @@ function CloudStorageSettings({ userId }) {
 }
 
 function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false }) {
+  const [settingsTab, setSettingsTab] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -11973,29 +11974,30 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 24% at 50% -3%, rgba(203,163,92,.08), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .form-input,.ww-prism .form-select,.ww-prism .form-textarea{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
       <div className="page-header"><div><div className="ww-eyebrow" style={{marginBottom:6}}>Your settings · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="settings" size={24} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div></div>
       <div style={{maxWidth:'480px'}}>
-        <TipsSetting />
+        {settingsTab === null ? (
+          <div>
+            {[
+              { id:'setup', icon:'🔌', label:'App Setup', desc:'Cloud storage, iPhone sharing, email, booking, modules' },
+              { id:'prefs', icon:'⚙️', label:'Preferences', desc:'Profile, learning pace, tasks, briefings, tax' },
+              { id:'ai', icon:'✦', label:'AI & Usage', desc:'Claude API key, research model, monthly cost' },
+              { id:'account', icon:'👤', label:'Account', desc:'Sign-in, password, about' },
+            ].map(cat => (
+              <button key={cat.id} onClick={()=>setSettingsTab(cat.id)} className="panel" style={{display:'flex',alignItems:'center',gap:'14px',width:'100%',textAlign:'left',padding:'16px 18px',marginBottom:'12px',cursor:'pointer',background:'linear-gradient(180deg,#18130D,#100D09)'}}>
+                <span style={{fontSize:'22px'}}>{cat.icon}</span>
+                <span style={{flex:1,minWidth:0}}>
+                  <span style={{display:'block',fontSize:'15px',fontWeight:700,color:'var(--text-1)',fontFamily:'Fraunces, serif'}}>{cat.label}</span>
+                  <span style={{display:'block',fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>{cat.desc}</span>
+                </span>
+                <span style={{color:'var(--accent)',fontSize:'20px'}}>→</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div>
+            <button onClick={()=>setSettingsTab(null)} className="btn btn-ghost btn-sm" style={{marginBottom:'14px'}}>← All settings</button>
+            {settingsTab==='setup' && <>
         <CloudStorageSettings userId={userId} />
         <IosSharingSettings userId={userId} />
-        <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
-        <div className="panel" style={{marginBottom:'18px'}}>
-          <div className="panel-header"><h3>Your Claude API key</h3></div>
-          <div className="panel-body">
-            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Optional. Add your own Anthropic <b>API</b> key and your AI features run on your account — you pay Anthropic directly. Leave it empty to use the brokerage account. (An API key from console.anthropic.com — not a Claude.ai chat subscription.)</p>
-            {aiKey && aiKey.status === 'active' ? (
-              <div style={{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'}}>
-                <span style={{fontSize:'13px', color:'var(--text-1)'}}>Connected: <b>sk-ant-…{aiKey.last4}</b></span>
-                <span style={{fontSize:'11px', fontWeight:700, color:'#22c55e', border:'1px solid #22c55e55', borderRadius:999, padding:'2px 8px'}}>Active</span>
-                <button className="btn btn-ghost btn-sm" disabled={aiKeyBusy} onClick={removeAiKey}>Remove</button>
-              </div>
-            ) : (
-              <div style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
-                <input className="form-input" type="password" value={aiKeyInput} onChange={e=>setAiKeyInput(e.target.value)} placeholder="sk-ant-…" style={{flex:'1 1 240px'}} />
-                <button className="btn btn-primary" disabled={aiKeyBusy || !aiKeyInput.trim()} onClick={saveAiKey}>{aiKeyBusy?'Checking…':'Test & Save'}</button>
-              </div>
-            )}
-            {aiKeyMsg && <div style={{marginTop:'10px', fontSize:'12px', color: /error|reject|failed|doesn|Anthropic rejected/i.test(aiKeyMsg)?'var(--red)':'var(--text-2)'}}>{aiKeyMsg}</div>}
-          </div>
-        </div>
         <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
           <div className="panel-header"><h3>Email &amp; text signatures</h3></div>
           <div className="panel-body">
@@ -12072,6 +12074,72 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Module visibility</h3></div>
+          <div className="panel-body">
+            {moduleMsg && <div className={moduleMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{moduleMsg}</div>}
+            <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
+              Hide modules from your sidebar if you don't use them. Your data stays — you can re-enable any time.
+            </p>
+            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                <div>
+                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="properties" size={14} style={{verticalAlign:'-2px'}} /> Properties</div>
+                  <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Real estate tracking module</div>
+                </div>
+                <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
+                  <input
+                    type="checkbox"
+                    checked={propsVisible}
+                    onChange={e => toggleModule('properties', e.target.checked)}
+                    style={{opacity:0,width:0,height:0}}
+                  />
+                  <span style={{
+                    position:'absolute',top:0,left:0,right:0,bottom:0,
+                    background: propsVisible ? 'var(--accent)' : 'var(--border)',
+                    borderRadius:'24px',transition:'background 0.15s',
+                  }} />
+                  <span style={{
+                    position:'absolute',top:'3px',left: propsVisible ? '24px' : '3px',
+                    width:'18px',height:'18px',background:'#fff',borderRadius:'50%',
+                    transition:'left 0.15s',
+                  }} />
+                </label>
+              </div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                <div>
+                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="dollar" size={14} style={{verticalAlign:'-2px'}} /> Investments</div>
+                  <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Investment portfolio module</div>
+                </div>
+                <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
+                  <input
+                    type="checkbox"
+                    checked={invVisible}
+                    onChange={e => toggleModule('investments', e.target.checked)}
+                    style={{opacity:0,width:0,height:0}}
+                  />
+                  <span style={{
+                    position:'absolute',top:0,left:0,right:0,bottom:0,
+                    background: invVisible ? 'var(--accent)' : 'var(--border)',
+                    borderRadius:'24px',transition:'background 0.15s',
+                  }} />
+                  <span style={{
+                    position:'absolute',top:'3px',left: invVisible ? '24px' : '3px',
+                    width:'18px',height:'18px',background:'#fff',borderRadius:'50%',
+                    transition:'left 0.15s',
+                  }} />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
+        <CubeACRPanel userId={userId} emailAccounts={emailAccounts || []} />
+        <EmailAliasesPanel emailAliases={emailAliases || []} setEmailAliases={setEmailAliases} emailAccounts={emailAccounts || []} userId={userId} />
+            </>}
+            {settingsTab==='prefs' && <>
+        <TipsSetting />
+        <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
+        <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Auto-schedule tasks on calendar</h3></div>
           <div className="panel-body">
             <div style={{display:'flex', alignItems:'center', gap:'14px'}}>
@@ -12083,40 +12151,6 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             {autoMsg && <div style={{marginTop:'10px', fontSize:'12px', color: autoMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{autoMsg}</div>}
           </div>
         </div>
-        {isAdmin && (
-        <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
-          <div className="panel-header"><h3>AI model for deep research</h3></div>
-          <div className="panel-body">
-            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Contact web-research runs in the background. Pick the engine for <b>your</b> research — agents always use Sonnet.</p>
-            <div style={{display:'flex', gap:'10px', flexWrap:'wrap'}}>
-              {[{v:'sonnet', t:'Sonnet 4.6', d:'Fast · economical · default'}, {v:'opus', t:'Opus 4.8', d:'Deepest · more tokens'}].map(o=>{ const on = researchModel===o.v; return (
-                <button key={o.v} disabled={savingModel} onClick={()=>saveResearchModel(o.v)} style={{flex:'1 1 170px', textAlign:'left', padding:'12px 14px', borderRadius:'12px', cursor:'pointer', border:`1px solid ${on?'var(--accent)':'var(--border)'}`, background: on?'rgba(197,169,94,0.12)':'transparent'}}>
-                  <div style={{fontSize:'14px', fontWeight:800, color: on?'var(--accent)':'var(--text-1)'}}>{o.t}{on?' ✓':''}</div>
-                  <div style={{fontSize:'11.5px', color:'var(--text-3)', marginTop:'2px'}}>{o.d}</div>
-                </button>); })}
-            </div>
-            {modelMsg && <div style={{marginTop:'10px', fontSize:'12px', color: modelMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{modelMsg}</div>}
-          </div>
-        </div>
-        )}
-        {isAdmin && (
-        <div className="panel" style={{marginBottom:'18px'}}>
-          <div className="panel-header"><h3>AI usage & cost — this month</h3></div>
-          <div className="panel-body">
-            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Per-agent Claude usage on the <b>brokerage account</b> (what you could bill back). Agents on their own key are billed by Anthropic and shown separately.</p>
-            {usageRows === null ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>Loading…</div> : usageRows.length === 0 ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>No AI usage yet this month.</div> : (
-              <div style={{display:'flex', flexDirection:'column', gap:'2px'}}>
-                {usageRows.map((r,i)=>(
-                  <div key={i} style={{display:'flex', justifyContent:'space-between', gap:'10px', fontSize:'12.5px', padding:'7px 0', borderBottom:'1px solid var(--border)'}}>
-                    <span style={{color:'var(--text-1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.email || 'Unknown'}</span>
-                    <span style={{flexShrink:0}}><span style={{color:'var(--accent)', fontWeight:700}}>${Number(r.platform_cost_usd||0).toFixed(2)}</span>{Number(r.own_key_cost_usd||0)>0 ? <span style={{color:'var(--text-3)'}}> (+${Number(r.own_key_cost_usd).toFixed(2)} own key)</span> : null}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        )}
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Profile</h3></div>
           <div className="panel-body">
@@ -12232,68 +12266,63 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             </form>
           </div>
         </div>
+            </>}
+            {settingsTab==='ai' && <>
         <div className="panel" style={{marginBottom:'18px'}}>
-          <div className="panel-header"><h3>Module visibility</h3></div>
+          <div className="panel-header"><h3>Your Claude API key</h3></div>
           <div className="panel-body">
-            {moduleMsg && <div className={moduleMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{moduleMsg}</div>}
-            <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
-              Hide modules from your sidebar if you don't use them. Your data stays — you can re-enable any time.
-            </p>
-            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-                <div>
-                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="properties" size={14} style={{verticalAlign:'-2px'}} /> Properties</div>
-                  <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Real estate tracking module</div>
-                </div>
-                <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
-                  <input
-                    type="checkbox"
-                    checked={propsVisible}
-                    onChange={e => toggleModule('properties', e.target.checked)}
-                    style={{opacity:0,width:0,height:0}}
-                  />
-                  <span style={{
-                    position:'absolute',top:0,left:0,right:0,bottom:0,
-                    background: propsVisible ? 'var(--accent)' : 'var(--border)',
-                    borderRadius:'24px',transition:'background 0.15s',
-                  }} />
-                  <span style={{
-                    position:'absolute',top:'3px',left: propsVisible ? '24px' : '3px',
-                    width:'18px',height:'18px',background:'#fff',borderRadius:'50%',
-                    transition:'left 0.15s',
-                  }} />
-                </label>
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Optional. Add your own Anthropic <b>API</b> key and your AI features run on your account — you pay Anthropic directly. Leave it empty to use the brokerage account. (An API key from console.anthropic.com — not a Claude.ai chat subscription.)</p>
+            {aiKey && aiKey.status === 'active' ? (
+              <div style={{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap'}}>
+                <span style={{fontSize:'13px', color:'var(--text-1)'}}>Connected: <b>sk-ant-…{aiKey.last4}</b></span>
+                <span style={{fontSize:'11px', fontWeight:700, color:'#22c55e', border:'1px solid #22c55e55', borderRadius:999, padding:'2px 8px'}}>Active</span>
+                <button className="btn btn-ghost btn-sm" disabled={aiKeyBusy} onClick={removeAiKey}>Remove</button>
               </div>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-                <div>
-                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="dollar" size={14} style={{verticalAlign:'-2px'}} /> Investments</div>
-                  <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Investment portfolio module</div>
-                </div>
-                <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
-                  <input
-                    type="checkbox"
-                    checked={invVisible}
-                    onChange={e => toggleModule('investments', e.target.checked)}
-                    style={{opacity:0,width:0,height:0}}
-                  />
-                  <span style={{
-                    position:'absolute',top:0,left:0,right:0,bottom:0,
-                    background: invVisible ? 'var(--accent)' : 'var(--border)',
-                    borderRadius:'24px',transition:'background 0.15s',
-                  }} />
-                  <span style={{
-                    position:'absolute',top:'3px',left: invVisible ? '24px' : '3px',
-                    width:'18px',height:'18px',background:'#fff',borderRadius:'50%',
-                    transition:'left 0.15s',
-                  }} />
-                </label>
+            ) : (
+              <div style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
+                <input className="form-input" type="password" value={aiKeyInput} onChange={e=>setAiKeyInput(e.target.value)} placeholder="sk-ant-…" style={{flex:'1 1 240px'}} />
+                <button className="btn btn-primary" disabled={aiKeyBusy || !aiKeyInput.trim()} onClick={saveAiKey}>{aiKeyBusy?'Checking…':'Test & Save'}</button>
               </div>
-            </div>
+            )}
+            {aiKeyMsg && <div style={{marginTop:'10px', fontSize:'12px', color: /error|reject|failed|doesn|Anthropic rejected/i.test(aiKeyMsg)?'var(--red)':'var(--text-2)'}}>{aiKeyMsg}</div>}
           </div>
         </div>
-        <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
-        <CubeACRPanel userId={userId} emailAccounts={emailAccounts || []} />
-        <EmailAliasesPanel emailAliases={emailAliases || []} setEmailAliases={setEmailAliases} emailAccounts={emailAccounts || []} userId={userId} />
+        {isAdmin && (
+        <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
+          <div className="panel-header"><h3>AI model for deep research</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Contact web-research runs in the background. Pick the engine for <b>your</b> research — agents always use Sonnet.</p>
+            <div style={{display:'flex', gap:'10px', flexWrap:'wrap'}}>
+              {[{v:'sonnet', t:'Sonnet 4.6', d:'Fast · economical · default'}, {v:'opus', t:'Opus 4.8', d:'Deepest · more tokens'}].map(o=>{ const on = researchModel===o.v; return (
+                <button key={o.v} disabled={savingModel} onClick={()=>saveResearchModel(o.v)} style={{flex:'1 1 170px', textAlign:'left', padding:'12px 14px', borderRadius:'12px', cursor:'pointer', border:`1px solid ${on?'var(--accent)':'var(--border)'}`, background: on?'rgba(197,169,94,0.12)':'transparent'}}>
+                  <div style={{fontSize:'14px', fontWeight:800, color: on?'var(--accent)':'var(--text-1)'}}>{o.t}{on?' ✓':''}</div>
+                  <div style={{fontSize:'11.5px', color:'var(--text-3)', marginTop:'2px'}}>{o.d}</div>
+                </button>); })}
+            </div>
+            {modelMsg && <div style={{marginTop:'10px', fontSize:'12px', color: modelMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{modelMsg}</div>}
+          </div>
+        </div>
+        )}
+        {isAdmin && (
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>AI usage & cost — this month</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Per-agent Claude usage on the <b>brokerage account</b> (what you could bill back). Agents on their own key are billed by Anthropic and shown separately.</p>
+            {usageRows === null ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>Loading…</div> : usageRows.length === 0 ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>No AI usage yet this month.</div> : (
+              <div style={{display:'flex', flexDirection:'column', gap:'2px'}}>
+                {usageRows.map((r,i)=>(
+                  <div key={i} style={{display:'flex', justifyContent:'space-between', gap:'10px', fontSize:'12.5px', padding:'7px 0', borderBottom:'1px solid var(--border)'}}>
+                    <span style={{color:'var(--text-1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.email || 'Unknown'}</span>
+                    <span style={{flexShrink:0}}><span style={{color:'var(--accent)', fontWeight:700}}>${Number(r.platform_cost_usd||0).toFixed(2)}</span>{Number(r.own_key_cost_usd||0)>0 ? <span style={{color:'var(--text-3)'}}> (+${Number(r.own_key_cost_usd).toFixed(2)} own key)</span> : null}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        )}
+            </>}
+            {settingsTab==='account' && <>
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Account</h3></div>
           <div className="panel-body">
@@ -12333,6 +12362,9 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             </div>
           </div>
         </div>
+            </>}
+          </div>
+        )}
       </div>
     </div>
   );
