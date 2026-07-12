@@ -11337,7 +11337,7 @@ function CloudStorageSettings({ userId }) {
   };
   const disconnect = async (id) => {
     if (!window.confirm('Disconnect this account? Its watched folders and pending recordings will stop syncing.')) return;
-    try { await supabase.from('cloud_connections').delete().eq('id', id); } catch (_) {}
+    try { await supabase.functions.invoke('dropbox-disconnect', { body: { connection_id: id } }); } catch (_) { try { await supabase.from('cloud_connections').delete().eq('id', id); } catch (_2) {} }
     load();
   };
   const addFolder = async (connId, path) => {
