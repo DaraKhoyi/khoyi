@@ -11265,14 +11265,66 @@ function BookingsManagerModal({ userId, slug, onClose }) {
   );
 }
 
+function DropboxFolderBrowser({ connectionId, onClose, onPick }) {
+  const [path, setPath] = useState('');
+  const [folders, setFolders] = useState([]);
+  const [audioCount, setAudioCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const browse = React.useCallback(async (p) => {
+    setLoading(true); setErr('');
+    try {
+      const { data, error } = await supabase.functions.invoke('dropbox-browse', { body: { connection_id: connectionId, path: p } });
+      if (error || (data && data.error)) { setErr((data && data.error) || 'Could not list folders'); setFolders([]); }
+      else { setFolders(data.folders || []); setAudioCount(data.audioCount || 0); setPath(p); }
+    } catch (e) { setErr(String(e)); }
+    setLoading(false);
+  }, [connectionId]);
+  React.useEffect(() => { browse(''); }, [browse]);
+  const parent = () => { const parts = path.split('/').filter(Boolean); parts.pop(); browse(parts.length ? '/' + parts.join('/') : ''); };
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 2600 }}>
+      <div className="modal ww-prism" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, width: '94%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: '#100D09' }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ marginBottom: 6, color: '#CBA35C', fontSize: 10, letterSpacing: '.24em', fontWeight: 700 }}>PICK A FOLDER TO WATCH</div>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, color: '#F6F1E7' }}>Dropbox</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4, wordBreak: 'break-all' }}>{path || '/ (root)'}</div>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
+          {path && <button onClick={parent} className="btn btn-ghost btn-sm" style={{ width: '100%', textAlign: 'left', marginBottom: 4 }}>⬑ Up a level</button>}
+          {loading ? <div style={{ padding: 20, textAlign: 'center' }}><PrismThinking label="Reading Dropbox" /></div>
+            : err ? <div style={{ padding: 16, color: 'var(--red)', fontSize: 12 }}>{err}</div>
+            : folders.length === 0 ? <div style={{ padding: 16, color: 'var(--text-3)', fontSize: 12.5 }}>No subfolders here.{audioCount > 0 ? ` ${audioCount} audio file(s) in this folder.` : ''}</div>
+            : folders.map(fd => (
+              <button key={fd.path} onClick={() => browse(fd.path)} className="btn btn-ghost btn-sm" style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span>📁</span><span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{fd.name}</span><span style={{ color: 'var(--text-3)' }}>›</span>
+              </button>
+            ))}
+        </div>
+        <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ flex: 1, fontSize: 11.5, color: 'var(--text-3)' }}>{audioCount > 0 ? `${audioCount} recording(s) here now` : 'Watch the folder your recorder syncs to'}</div>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
+          <button onClick={() => onPick(path)} className="btn btn-primary btn-sm" disabled={!path}>Watch this folder</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function CloudStorageSettings({ userId }) {
   const [conns, setConns] = useState([]);
+  const [folders, setFolders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [browseConn, setBrowseConn] = useState(null);
   const load = React.useCallback(async () => {
     try {
-      const { data } = await supabase.from('cloud_connections').select('id, provider, account_label, status, created_at').eq('user_id', userId).order('created_at', { ascending: false });
-      setConns(Array.isArray(data) ? data : []);
-    } catch (_) { setConns([]); }
+      const [{ data: c }, { data: fl }] = await Promise.all([
+        supabase.from('cloud_connections').select('id, provider, account_label, status, created_at').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabase.from('watched_folders').select('id, connection_id, path, label, enabled, personal').eq('user_id', userId),
+      ]);
+      setConns(Array.isArray(c) ? c : []); setFolders(Array.isArray(fl) ? fl : []);
+    } catch (_) {}
     setLoading(false);
   }, [userId]);
   React.useEffect(() => { load(); }, [load]);
@@ -11285,28 +11337,55 @@ function CloudStorageSettings({ userId }) {
   };
   const disconnect = async (id) => {
     if (!window.confirm('Disconnect this account? Its watched folders and pending recordings will stop syncing.')) return;
-    try { await supabase.from('cloud_connections').delete().eq('id', id); setConns(c => c.filter(x => x.id !== id)); } catch (_) {}
+    try { await supabase.from('cloud_connections').delete().eq('id', id); } catch (_) {}
+    load();
   };
+  const addFolder = async (connId, path) => {
+    setBrowseConn(null);
+    const label = path.split('/').filter(Boolean).pop() || 'Root';
+    try { await supabase.from('watched_folders').insert({ user_id: userId, connection_id: connId, path, label }); } catch (_) {}
+    load();
+    if (window.__notify) window.__notify('Now watching ' + label, 'success');
+  };
+  const removeFolder = async (id) => { try { await supabase.from('watched_folders').delete().eq('id', id); setFolders(fs => fs.filter(x => x.id !== id)); } catch (_) {} };
+  const togglePersonal = async (fld) => { try { await supabase.from('watched_folders').update({ personal: !fld.personal }).eq('id', fld.id); setFolders(fs => fs.map(x => x.id === fld.id ? { ...x, personal: !x.personal } : x)); } catch (_) {} };
   return (
     <div className="panel" style={{ marginBottom: 18 }}>
       <h3 style={{ margin: '0 0 4px' }}>Cloud storage</h3>
       <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px' }}>Connect the cloud your voice recorder backs up to, then choose the folder PrismOS watches for new meeting recordings.</p>
       {loading ? <PrismThinking label="Loading" /> : (
         <>
-          {conns.map(c => (
-            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 18 }}>🗂️</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', textTransform: 'capitalize' }}>{c.provider} <span style={{ color: c.status === 'connected' ? 'var(--green)' : 'var(--red)', fontSize: 11, fontWeight: 600 }}>● {c.status}</span></div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.account_label}</div>
+          {conns.map(c => {
+            const cf = folders.filter(fd => fd.connection_id === c.id);
+            return (
+              <div key={c.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>🗂️</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', textTransform: 'capitalize' }}>{c.provider} <span style={{ color: c.status === 'connected' ? 'var(--green)' : 'var(--red)', fontSize: 11 }}>● {c.status}</span></div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{c.account_label}</div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => disconnect(c.id)} style={{ fontSize: 11 }}>Disconnect</button>
+                </div>
+                <div style={{ marginLeft: 28, marginTop: 6 }}>
+                  {cf.map(fd => (
+                    <div key={fd.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', fontSize: 12 }}>
+                      <span>📁</span>
+                      <span style={{ flex: 1, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}>{fd.path}</span>
+                      <button onClick={() => togglePersonal(fd)} className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 8px', color: fd.personal ? '#EBCB82' : 'var(--text-3)' }} title="Personal folders are never enriched">{fd.personal ? '🔒 Personal' : 'Enrich'}</button>
+                      <button onClick={() => removeFolder(fd.id)} className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 8px' }}>Remove</button>
+                    </div>
+                  ))}
+                  <button className="btn btn-ghost btn-sm" onClick={() => setBrowseConn(c.id)} style={{ fontSize: 11, marginTop: 4 }}>+ Choose folder to watch</button>
+                </div>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => disconnect(c.id)} style={{ fontSize: 11 }}>Disconnect</button>
-            </div>
-          ))}
-          <button className="btn btn-primary btn-sm" onClick={connectDropbox} style={{ marginTop: conns.length ? 12 : 4 }}>+ Connect Dropbox</button>
+            );
+          })}
+          <button className="btn btn-primary btn-sm" onClick={connectDropbox} style={{ marginTop: 12 }}>+ Connect Dropbox</button>
           <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 8 }}>OneDrive and Google Drive can slot in later — the connector is provider-agnostic.</div>
         </>
       )}
+      {browseConn && <DropboxFolderBrowser connectionId={browseConn} onClose={() => setBrowseConn(null)} onPick={(path) => addFolder(browseConn, path)} />}
     </div>
   );
 }
