@@ -9937,16 +9937,20 @@ function MultiValueField({ values, onChange, kind, addLabel }) {
 const TIPS_UNLOCK_AT = 6;
 function tipsSeenList(){ try { return JSON.parse(localStorage.getItem('prism_tips_seen')||'[]'); } catch(_){ return []; } }
 function tipsSeenCount(){ return tipsSeenList().length; }
-function tipsAreEnabled(){ try { return localStorage.getItem('prism_tips_enabled') !== '0'; } catch(_){ return true; } }
+const TIP_PACE_COOLDOWN = { thorough: 30 * 60 * 1000, balanced: 12 * 60 * 60 * 1000, light: 48 * 60 * 60 * 1000, off: Infinity };
+function tipsPace(){ try { return localStorage.getItem('prism_tips_pace') || ''; } catch(_){ return ''; } }
+function setTipsPace(p){ try { localStorage.setItem('prism_tips_pace', p); } catch(_){} }
+function effectivePace(){ const p = tipsPace(); return (p === 'thorough' || p === 'balanced' || p === 'light' || p === 'off') ? p : 'balanced'; }
+function tipCooldownMs(){ return TIP_PACE_COOLDOWN[effectivePace()] || TIP_PACE_COOLDOWN.balanced; }
+function tipsAreEnabled(){ try { if (localStorage.getItem('prism_tips_enabled') === '0') return false; } catch(_){} return effectivePace() !== 'off'; }
 function tipsUnlocked(){ return tipsSeenCount() >= TIPS_UNLOCK_AT; }
 function setTipsEnabled(on){ try { localStorage.setItem('prism_tips_enabled', on ? '1' : '0'); } catch(_){} }
-const TIP_COOLDOWN_MS = 12 * 60 * 60 * 1000; // up to ~2 tips/day, gated on when a tip was last SHOWN (no backlog after time away)
 function tipsLastShown(){ try { return parseInt(localStorage.getItem('prism_tips_last_shown')||'0', 10) || 0; } catch(_){ return 0; } }
 function Tip({ id, label = 'Why this works', children }){
   const [gone, setGone] = useState(() => {
     if (!tipsAreEnabled() || tipsSeenList().includes(id)) return true;
     const last = tipsLastShown();
-    if (last && (Date.now() - last) < TIP_COOLDOWN_MS) return true; // a tip was shown recently — hold the next one
+    if (last && (Date.now() - last) < tipCooldownMs()) return true; // a tip was shown recently — hold the next one
     return false;
   });
   React.useEffect(() => { if (!gone) { try { localStorage.setItem('prism_tips_last_shown', String(Date.now())); } catch(_){} } }, [gone]);
@@ -9960,24 +9964,36 @@ function Tip({ id, label = 'Why this works', children }){
   );
 }
 function TipsSetting(){
-  const [enabled, setEnabled] = useState(tipsAreEnabled());
+  const [pace, setPace] = useState(effectivePace());
   const unlocked = tipsUnlocked(); const seen = tipsSeenCount();
-  if (!unlocked) {
-    return (
-      <div className="panel" style={{marginBottom:'18px',display:'flex',alignItems:'center',gap:'12px'}}>
-        <span style={{fontSize:'18px',flexShrink:0}}>🔒</span>
-        <div><div style={{fontSize:'13.5px',fontWeight:700,color:'var(--text-1)'}}>Learning tips are on</div>
-        <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>You'll be able to turn these off here once you've picked up a few more of the fundamentals. ({seen}/{TIPS_UNLOCK_AT})</div></div>
-      </div>
-    );
-  }
+  const choose = (p) => { if (p === 'off' && !unlocked) return; setTipsPace(p); setTipsEnabled(p !== 'off'); setPace(p); };
+  const opts = [
+    { id:'thorough', label:'Thorough', desc:'Teach me everything, often' },
+    { id:'balanced', label:'Balanced', desc:'A couple a day' },
+    { id:'light', label:'Light', desc:'Just the essentials' },
+    { id:'off', label:'Off', desc:'No tips' },
+  ];
   return (
-    <div className="panel" style={{marginBottom:'18px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px'}}>
-      <div><div style={{fontSize:'13.5px',fontWeight:700,color:'var(--text-1)'}}>Learning tips</div>
-      <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'2px'}}>In-context lessons on the why behind your workflow. You've earned the switch — toggle anytime.</div></div>
-      <button onClick={()=>{ const n=!enabled; setTipsEnabled(n); setEnabled(n); }} aria-label="Toggle tips" style={{flexShrink:0,width:'52px',height:'30px',borderRadius:'100px',border:'1px solid '+(enabled?'#CBA35C':'var(--border)'),background:enabled?'linear-gradient(180deg,#EBCB82,#CBA35C)':'var(--bg-hover)',position:'relative',cursor:'pointer',transition:'all .2s',padding:0}}>
-        <span style={{position:'absolute',top:'3px',left:enabled?'25px':'3px',width:'22px',height:'22px',borderRadius:'50%',background:enabled?'#1a1409':'#C8BFAE',transition:'all .2s'}} />
-      </button>
+    <div className="panel" style={{ marginBottom:'18px' }}>
+      <div style={{ fontSize:'13.5px', fontWeight:700, color:'var(--text-1)' }}>Learning pace</div>
+      <div style={{ fontSize:'12px', color:'var(--text-3)', margin:'2px 0 12px' }}>How often PrismOS teaches you as you work — set to match your DISC style, change it anytime.</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+        {opts.map(o => {
+          const locked = o.id === 'off' && !unlocked;
+          const active = pace === o.id;
+          return (
+            <button key={o.id} onClick={() => choose(o.id)} disabled={locked} style={{ display:'flex', alignItems:'center', gap:'11px', padding:'11px 14px', borderRadius:'12px', textAlign:'left', width:'100%', cursor: locked?'not-allowed':'pointer', opacity: locked?0.55:1, border:'1px solid '+(active?'#CBA35C':'var(--border)'), background: active?'rgba(203,163,92,.14)':'transparent' }}>
+              <span style={{ width:'16px', height:'16px', borderRadius:'50%', flexShrink:0, border:'2px solid '+(active?'#CBA35C':'var(--text-3)'), background: active?'#CBA35C':'transparent' }} />
+              <span style={{ flex:1, minWidth:0 }}>
+                <span style={{ fontSize:'13.5px', fontWeight:700, color: active?'#EBCB82':'var(--text-1)' }}>{o.label}</span>
+                <span style={{ fontSize:'11.5px', color:'var(--text-3)', marginLeft:'8px' }}>{o.desc}</span>
+              </span>
+              {locked && <span style={{ fontSize:'11px', color:'var(--text-3)', flexShrink:0 }}>🔒 {seen}/{TIPS_UNLOCK_AT}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {!unlocked && <div style={{ fontSize:'11px', color:'var(--text-3)', marginTop:'10px' }}>Turning tips fully off unlocks once you've picked up a few fundamentals ({seen}/{TIPS_UNLOCK_AT}).</div>}
     </div>
   );
 }
@@ -16173,6 +16189,18 @@ function AppMain() {
   const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
   const isImpersonating = (() => { try { return !!localStorage.getItem('__impersonating'); } catch (_) { return false; } })();
   const openTaskCount = tasks.filter(t=>!t.completed).length;
+  React.useEffect(() => {
+    if (!user?.id) return;
+    try { if (localStorage.getItem('prism_tips_pace')) return; } catch(_){ return; }
+    (async () => {
+      try {
+        const { data } = await supabase.from('profiles').select('primary_letter').eq('user_id', user.id).eq('subject_kind', 'owner').maybeSingle();
+        const L = ((data && data.primary_letter) || '').toUpperCase();
+        const def = L === 'C' ? 'thorough' : (L === 'D' || L === 'I') ? 'light' : 'balanced';
+        try { localStorage.setItem('prism_tips_pace', def); } catch(_){}
+      } catch(_) { try { localStorage.setItem('prism_tips_pace', 'balanced'); } catch(_2){} }
+    })();
+  }, [user?.id]);
   const [reviewCount, setReviewCount] = useState(0);
   React.useEffect(() => {
     if (!user?.id) return; let alive = true;
