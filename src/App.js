@@ -2869,6 +2869,7 @@ async function logClientError(payload) {
     });
   } catch (_) { /* logging must never throw */ }
 }
+if (typeof window !== 'undefined') { window.__logClientError = logClientError; }
 if (typeof window !== 'undefined' && !window.__prismErrHooked) {
   window.__prismErrHooked = true;
   window.addEventListener('error', (e) => {

@@ -8,6 +8,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Static guard: no React hooks after the App-shell guards (React #310 protection)
+echo "→ static hooks-order check"
+python3 smoke/hooks_check.py
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 

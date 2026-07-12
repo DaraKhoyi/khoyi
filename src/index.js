@@ -9,7 +9,10 @@ import reportWebVitals from './reportWebVitals';
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
-  componentDidCatch(err, info) { try { this.setState({ stack: (info && info.componentStack) || '' }); } catch (_) {} }
+  componentDidCatch(err, info) {
+    try { this.setState({ stack: (info && info.componentStack) || '' }); } catch (_) {}
+    try { if (window.__logClientError) window.__logClientError({ message: (err && err.message) || String(err), stack: err && err.stack, componentStack: info && info.componentStack, kind: 'boundary_top' }); } catch (_) {}
+  }
   render() {
     if (this.state.err) {
       const e = this.state.err;
@@ -24,7 +27,7 @@ class ErrorBoundary extends React.Component {
               <button onClick={() => { this.setState({ err: null }); window.location.reload(); }} style={{ background: '#C5A95E', color: '#111', border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Reload the app</button>
               <button onClick={() => { try { localStorage.clear(); } catch (_) {} window.location.reload(); }} style={{ background: 'transparent', color: '#9499b0', border: '1px solid #2a2d3a', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Reset &amp; reload</button>
             </div>
-            <details style={{ textAlign: 'left' }} open>
+            <details style={{ textAlign: "left" }}>
               <summary style={{ fontSize: 11, color: '#555b70', cursor: 'pointer', marginBottom: 6 }}>Technical details (screenshot this)</summary>
               <pre style={{ fontSize: 10, color: '#7a7f95', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 240, overflow: 'auto', background: '#111318', padding: 12, borderRadius: 8, lineHeight: 1.4, margin: 0 }}>{detail}</pre>
             </details>
