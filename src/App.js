@@ -11265,6 +11265,52 @@ function BookingsManagerModal({ userId, slug, onClose }) {
   );
 }
 
+function CloudStorageSettings({ userId }) {
+  const [conns, setConns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = React.useCallback(async () => {
+    try {
+      const { data } = await supabase.from('cloud_connections').select('id, provider, account_label, status, created_at').eq('user_id', userId).order('created_at', { ascending: false });
+      setConns(Array.isArray(data) ? data : []);
+    } catch (_) { setConns([]); }
+    setLoading(false);
+  }, [userId]);
+  React.useEffect(() => { load(); }, [load]);
+  const connectDropbox = async () => {
+    const nonce = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Math.random()).slice(2) + Date.now());
+    try { await supabase.from('oauth_states').insert({ nonce, user_id: userId, provider: 'dropbox' }); } catch (_) {}
+    const REDIRECT = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/dropbox-oauth-callback';
+    const scope = 'files.metadata.read files.content.read account_info.read';
+    window.location.href = `https://www.dropbox.com/oauth2/authorize?client_id=5nl3icnh0wjoyyn&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&token_access_type=offline&scope=${encodeURIComponent(scope)}&state=${nonce}`;
+  };
+  const disconnect = async (id) => {
+    if (!window.confirm('Disconnect this account? Its watched folders and pending recordings will stop syncing.')) return;
+    try { await supabase.from('cloud_connections').delete().eq('id', id); setConns(c => c.filter(x => x.id !== id)); } catch (_) {}
+  };
+  return (
+    <div className="panel" style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: '0 0 4px' }}>Cloud storage</h3>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px' }}>Connect the cloud your voice recorder backs up to, then choose the folder PrismOS watches for new meeting recordings.</p>
+      {loading ? <PrismThinking label="Loading" /> : (
+        <>
+          {conns.map(c => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 18 }}>🗂️</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', textTransform: 'capitalize' }}>{c.provider} <span style={{ color: c.status === 'connected' ? 'var(--green)' : 'var(--red)', fontSize: 11, fontWeight: 600 }}>● {c.status}</span></div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.account_label}</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => disconnect(c.id)} style={{ fontSize: 11 }}>Disconnect</button>
+            </div>
+          ))}
+          <button className="btn btn-primary btn-sm" onClick={connectDropbox} style={{ marginTop: conns.length ? 12 : 4 }}>+ Connect Dropbox</button>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 8 }}>OneDrive and Google Drive can slot in later — the connector is provider-agnostic.</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false }) {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -11535,6 +11581,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
       <div className="page-header"><div><div className="ww-eyebrow" style={{marginBottom:6}}>Your settings · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="settings" size={24} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div></div>
       <div style={{maxWidth:'480px'}}>
         <TipsSetting />
+        <CloudStorageSettings userId={userId} />
         <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Your Claude API key</h3></div>
@@ -15452,6 +15499,16 @@ function AppMain() {
   useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ try{ await supabase.rpc('claim_agent_profile'); }catch(_e){} const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
+  React.useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search).get('dropbox');
+      if (p) {
+        if (p === 'connected') { if (window.__notify) window.__notify('Dropbox connected', 'success'); setView('settings'); }
+        else if (window.__notify) window.__notify('Dropbox connection failed', 'error');
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch (_) {}
+  }, []);
   const viewRef = useRef(view); viewRef.current = view;
   // Dashboard-only pull-to-refresh: re-syncs data via loadData() without a page
   // reload, so in-progress work is never lost. Native pull-to-refresh is disabled
