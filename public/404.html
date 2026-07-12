@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PrismOS</title>
+  <style>body{background:#100D09;color:#C8BFAE;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style>
+</head>
+<body>
+  <div>Loading…</div>
+  <script>
+    (function () {
+      var p = location.pathname, s = location.search, h = location.hash;
+      // Public booking links: /book/{slug}  ->  /book.html?u={slug}
+      var bm = p.match(/^\/book\/([^\/?#]+)/);
+      if (bm) {
+        location.replace('/book.html?u=' + encodeURIComponent(bm[1]) + (s ? '&' + s.slice(1) : ''));
+        return;
+      }
+      // Everything else (e.g. /sign/{token}): hand back to the SPA, preserving the path.
+      location.replace('/?__spa=' + encodeURIComponent(p + s + h));
+    })();
+  </script>
+</body>
+</html>
