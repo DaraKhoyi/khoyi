@@ -5041,29 +5041,44 @@ function ReviewView({ userId, contacts = [], events = [], setTasks, priorityPref
 }
 
 const LESSONS = [
-  { id:'nba', cat:'Your day', title:'Do this next', body:'Top producers don\'t do more — they do the right thing next. Prism scans every signal (tasks, who owes you a reply, cadence, appointments, deals) and surfaces the single highest-leverage move, so you never open the app wondering where to start.' },
-  { id:'review', cat:'Your day', title:'Decide here, do in Tasks', body:'Review is Prism\'s inbox to you — a recording to label, a to-do it heard on a call. Confirm what\'s real and it graduates into Tasks with a priority; dismiss the rest. Your task list stays only what you chose to do, so it never gets noisy.' },
-  { id:'eisenhower', cat:'Your day', title:'Urgent vs. important', body:'A/B/C/D sorts work by urgency and importance. The trap is living in "urgent." The important-but-not-urgent work — prospecting, follow-up, your database — is where your future income is built, so protect it before the day fills up.' },
-  { id:'blocking', cat:'Your day', title:'Protect the money hours', body:'Block your prospecting and follow-up time on the calendar like a listing appointment you can\'t move. The agents who hit their number treat lead-gen as a standing appointment with their business, not something they get to only if there\'s time left over.' },
-  { id:'disc', cat:'Your people', title:'Reading the room (DISC)', body:'People decide in four styles — D (fast, results), I (social, enthusiastic), S (steady, relationship-first), C (analytical, detail). Match how you communicate to how they\'re wired and everything gets easier. Prism reads each contact\'s style and tunes your messages to it.' },
-  { id:'cadence', cat:'Your people', title:'Consistency compounds', body:'Set a cadence and Prism reminds you when it\'s time to reach out — so you stay top-of-mind on a rhythm instead of calling only when you need something. Small, steady touches are how sphere-based agents earn referrals on repeat.' },
-  { id:'speed', cat:'Your people', title:'Speed wins', body:'The first agent to respond usually wins the deal — a lead\'s value drops by the minute. Prism surfaces who\'s waiting on you and helps you reply fast and well, so speed never costs you quality.' },
-  { id:'gci', cat:'Your business', title:'Know your number', body:'Work backward from the income you want: GCI to deals to appointments to conversations. Once you know how many conversations a week hit your goal, prospecting stops being vague pressure and becomes a countable habit.' },
-  { id:'systems', cat:'Your business', title:'One system, 90 days', body:'Pick one lead-gen system and run it for 90 days before you judge it. Most agents quit a system right before it works, chasing the next shiny object. Consistency in one channel beats dabbling in five.' },
-  { id:'record', cat:'Your memory', title:'Record everything', body:'The more real conversations Prism hears, the sharper its read on each person — their DISC, what they care about, what you promised. Recording your meetings and calls turns every conversation into lasting intelligence instead of a memory that fades by dinner.' },
-  { id:'capture', cat:'Your memory', title:'Capture beats recall', body:'Your mind is for having ideas, not holding them. Jot it in the Journal the moment it happens — a client detail, a follow-up, a thought — and Prism files it against the right person and pulls it back when it matters.' },
-  { id:'cloud_recordings', cat:'Your memory', title:'How recordings flow in', body:'Record a meeting on your voice recorder — it backs up to Dropbox, and PrismOS watches the folder you pick. New recordings appear in Review to label who you met with; then Prism transcribes them and researches each person for you, hands-free.' },
+  { id:'nba', cat:'Your day', title:'Do this next', body:'Top producers don\'t do more — they do the right thing next. Prism scans every signal (tasks, who owes you a reply, cadence, appointments, deals) and surfaces the single highest-leverage move, so you never open the app wondering where to start.', deeper:'The hardest part of this business isn\'t effort, it\'s decision fatigue — a hundred small "what should I do now?" moments that quietly burn your day. The one-tap next action removes that friction: when nothing is urgent, it pivots to the highest-value growth move instead of leaving you at a dead end. Trust it for a week and notice how much less you drift.' },
+  { id:'review', cat:'Your day', title:'Decide here, do in Tasks', body:'Review is Prism\'s inbox to you — a recording to label, a to-do it heard on a call. Confirm what\'s real and it graduates into Tasks with a priority; dismiss the rest. Your task list stays only what you chose to do, so it never gets noisy.', deeper:'Two mental modes, two places: Review is for deciding, Tasks is for doing. Mixing them is why most task lists rot — half the items were never really commitments. Clear Review daily (it takes two minutes) and your task list becomes something you actually trust, which is the whole point of having one.' },
+  { id:'plan_ahead', cat:'Your day', title:'Plan tomorrow tonight', body:'Spend two minutes at the end of the day setting up the next one — confirm your top three, protect your prospecting block, clear Review. You start tomorrow already in motion instead of deciding what to do while the day slips.', deeper:'Willpower is highest in the morning — don\'t spend it deciding, spend it executing. A plan made the night before turns the first hour from "what now?" into "go." Prism\'s Plan My Day and briefing are built for exactly this handoff between today-you and tomorrow-you.' },
+  { id:'eisenhower', cat:'Your day', title:'Urgent vs. important', body:'A/B/C/D sorts work by urgency and importance. The trap is living in "urgent." The important-but-not-urgent work — prospecting, follow-up, your database — is where your future income is built, so protect it before the day fills up.', deeper:'Urgent things announce themselves; important things wait quietly. That\'s why prospecting always loses to a ringing phone unless you defend it. The discipline is simple but rare: do one important-not-urgent thing before you touch the urgent pile, every day.' },
+  { id:'blocking', cat:'Your day', title:'Protect the money hours', body:'Block your prospecting and follow-up time on the calendar like a listing appointment you can\'t move. The agents who hit their number treat lead-gen as a standing appointment with their business, not something they get to only if there\'s time left over.', deeper:'If it\'s not on the calendar, it\'s a wish, not a plan. Put your money hours in the same slot every day so it becomes a reflex, not a decision. Guard that block ruthlessly — the deals two months out are being made or missed right there.' },
+  { id:'disc', cat:'Your people', title:'Reading the room (DISC)', body:'People decide in four styles — D (fast, results), I (social, enthusiastic), S (steady, relationship-first), C (analytical, detail). Match how you communicate to how they\'re wired and everything gets easier. Prism reads each contact\'s style and tunes your messages to it.', deeper:'You naturally sell the way YOU like to buy — that\'s why you click with some clients and grind with others. The skill is flexing: bottom-line and fast for a D, warm and social for an I, patient and reassuring for an S, thorough and proof-driven for a C. Prism does the first read for you; your job is to notice it and adjust your tone.' },
+  { id:'cadence', cat:'Your people', title:'Consistency compounds', body:'Set a cadence and Prism reminds you when it\'s time to reach out — so you stay top-of-mind on a rhythm instead of calling only when you need something. Small, steady touches are how sphere-based agents earn referrals on repeat.', deeper:'Referrals go to whoever is top-of-mind at the moment someone says "we\'re thinking of moving" — not to the best agent, the remembered one. A light, genuine touch every 60–90 days beats a heavy push once a year. Set the rhythm once and let Prism keep the beat.' },
+  { id:'database', cat:'Your people', title:'Everyone goes in', body:'The single highest-ROI habit in real estate: add every person you meet to your database, then work it. Your next ten deals are already hiding in the people you already know — you just have to stay in front of them.', deeper:'Agents chase cold leads while a goldmine of warm relationships goes cold from neglect. A name in your phone isn\'t a database — a name with a cadence and notes is. Share a contact into PrismOS or add them on the spot, and they\'re in the system that keeps them warm.' },
+  { id:'speed', cat:'Your people', title:'Speed wins', body:'The first agent to respond usually wins the deal — a lead\'s value drops by the minute. Prism surfaces who\'s waiting on you and helps you reply fast and well, so speed never costs you quality.', deeper:'Studies put it starkly: responding in five minutes versus thirty can multiply your odds of connecting many times over. Most agents lose deals not to a better pitch but to a faster one. Let Prism flag who\'s owed a reply so nobody waits long enough to call someone else.' },
+  { id:'gci', cat:'Your business', title:'Know your number', body:'Work backward from the income you want: GCI to deals to appointments to conversations. Once you know how many conversations a week hit your goal, prospecting stops being vague pressure and becomes a countable habit.', deeper:'"Make more money" is not a plan; "have 20 conversations a week" is. When you know your conversion — conversations to appointments to deals — the whole year becomes arithmetic you can actually run. Track the leading number (conversations), because it\'s the only one you fully control.' },
+  { id:'systems', cat:'Your business', title:'One system, 90 days', body:'Pick one lead-gen system and run it for 90 days before you judge it. Most agents quit a system right before it works, chasing the next shiny object. Consistency in one channel beats dabbling in five.', deeper:'Every lead source has a lag between effort and payoff — quit early and you eat all the cost with none of the return. Ninety days of honest, daily reps is enough to know if a channel is yours. Master one before you add a second; five half-run systems produce less than one run well.' },
+  { id:'followup', cat:'Your business', title:'The fortune is in the follow-up', body:'Most sales happen after the fifth contact — and most agents quit after the second. The lead who "went quiet" usually just wasn\'t ready yet. A patient, systematic follow-up is the cheapest deal flow you\'ll ever build.', deeper:'"Not now" is not "no" — it\'s "later," and later is where the money is. The agent who\'s still gently there in month six wins the deal the agent who gave up in week two walked away from. Put every promising lead on a follow-up cadence so persistence runs on autopilot instead of willpower.' },
+  { id:'record', cat:'Your memory', title:'Record everything', body:'The more real conversations Prism hears, the sharper its read on each person — their DISC, what they care about, what you promised. Recording your meetings and calls turns every conversation into lasting intelligence instead of a memory that fades by dinner.', deeper:'You forget 80% of a conversation within a day — including the small personal details that build real relationships. Recorded and transcribed, every meeting becomes searchable memory: what they said, what you committed to, who else was in the room. That\'s the difference between "I think we talked about..." and knowing.' },
+  { id:'capture', cat:'Your memory', title:'Capture beats recall', body:'Your mind is for having ideas, not holding them. Jot it in the Journal the moment it happens — a client detail, a follow-up, a thought — and Prism files it against the right person and pulls it back when it matters.', deeper:'Every open loop you\'re holding in your head is a tax on your attention. Write it down and your mind is free to be present with the person in front of you. Capture in the moment, trust the system to resurface it — that\'s how the calmest top producers run so much without dropping things.' },
+  { id:'prep', cat:'Your memory', title:'Let Prism prep you', body:'Before a call or showing, Prism can surface what it already knows — their DISC style, your last conversation, what you promised, the research it pulled. Walk in prepared without spending an hour digging.', deeper:'Preparation is the cheapest edge in this business, and the one most agents skip because it\'s tedious. When the notes, history, and behavioral read are one tap away, "winging it" stops being your only option on a busy day. Two minutes of prep is what makes a client feel like they\'re your only client.' },
+  { id:'cloud_recordings', cat:'Your memory', title:'How recordings flow in', body:'Record a meeting on your voice recorder — it backs up to Dropbox, and PrismOS watches the folder you pick. New recordings appear in Review to label who you met with; then Prism transcribes them and researches each person for you, hands-free.', deeper:'The magic is that it\'s automatic: once the folder is connected, you just record and forget. On iPhone, the Save to PrismOS shortcut does the same from any share sheet. The less friction between "we talked" and "it\'s in the system," the more of your real work actually gets captured.' },
+];
+
+const MILESTONES = [
+  { id:'first',  icon:'✦', label:'First light',   desc:'Learned your first lesson',           need:(s)=> s.filter(id=>LESSONS.some(l=>l.id===id)).length >= 1 },
+  { id:'day',    icon:'☀️', label:'Day master',    desc:'Learned everything in Your day',      need:(s)=> LESSONS.filter(l=>l.cat==='Your day').every(l=>s.includes(l.id)) },
+  { id:'people', icon:'👥', label:'People reader',  desc:'Learned everything in Your people',   need:(s)=> LESSONS.filter(l=>l.cat==='Your people').every(l=>s.includes(l.id)) },
+  { id:'biz',    icon:'📈', label:'Numbers person', desc:'Learned everything in Your business', need:(s)=> LESSONS.filter(l=>l.cat==='Your business').every(l=>s.includes(l.id)) },
+  { id:'memory', icon:'🧠', label:'Total recall',   desc:'Learned everything in Your memory',   need:(s)=> LESSONS.filter(l=>l.cat==='Your memory').every(l=>s.includes(l.id)) },
+  { id:'pro',    icon:'🏆', label:'PrismOS Pro',    desc:'Learned every fundamental',           need:(s)=> LESSONS.every(l=>s.includes(l.id)) },
 ];
 
 function LearnView({ setView }){
   const [seen, setSeen] = useState(() => tipsSeenList());
   const [open, setOpen] = useState(null);
+  const [deepId, setDeepId] = useState(null);
   const total = LESSONS.length;
   const learned = LESSONS.filter(l => seen.includes(l.id)).length;
   const cats = [];
   LESSONS.forEach(l => { if (!cats.includes(l.cat)) cats.push(l.cat); });
+  const earnedCount = MILESTONES.filter(m => m.need(seen)).length;
   const toggle = (id) => {
-    setOpen(o => o === id ? null : id);
+    setOpen(o => o === id ? null : id); setDeepId(null);
     if (!seen.includes(id)) { try { const arr = tipsSeenList(); arr.push(id); localStorage.setItem('prism_tips_seen', JSON.stringify(arr)); } catch(_){} setSeen(tipsSeenList()); }
   };
   return (
@@ -5072,12 +5087,23 @@ function LearnView({ setView }){
       <div className="ww-eyebrow" style={{ marginBottom:4 }}>✦ The self-teaching app</div>
       <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:30, letterSpacing:'-.02em', margin:'0 0 4px', color:'#F6F1E7' }}>Learn</h2>
       <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 16px' }}>Short lessons on the why behind your workflow. Read them here anytime, or let them surface as you work.</p>
-      <div style={{ background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.28)', borderRadius:16, padding:'14px 16px', marginBottom:22 }}>
+      <div style={{ background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.28)', borderRadius:16, padding:'14px 16px', marginBottom:18 }}>
         <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8 }}>
           <span style={{ fontFamily:'Fraunces, serif', fontSize:26, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{learned}</span>
           <span style={{ fontSize:12.5, color:'#C8BFAE' }}>of {total} fundamentals learned</span>
         </div>
         <div style={{ height:6, borderRadius:100, background:'rgba(203,163,92,.15)', overflow:'hidden' }}><div style={{ height:'100%', width:(total? Math.round(learned/total*100):0)+'%', background:'linear-gradient(90deg,#CBA35C,#EBCB82)', borderRadius:100, transition:'width .4s' }} /></div>
+      </div>
+      <div style={{ marginBottom:22 }}>
+        <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>Milestones · {earnedCount}/{MILESTONES.length}</div>
+        <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4 }}>
+          {MILESTONES.map(m => { const got = m.need(seen); return (
+            <div key={m.id} title={m.desc} style={{ flexShrink:0, width:96, textAlign:'center', padding:'12px 8px', borderRadius:12, border:'1px solid '+(got?'#CBA35C':'rgba(203,163,92,.16)'), background: got?'rgba(203,163,92,.1)':'transparent' }}>
+              <div style={{ fontSize:22, marginBottom:4, filter: got?'none':'grayscale(1)', opacity: got?1:0.4 }}>{m.icon}</div>
+              <div style={{ fontSize:10.5, fontWeight:700, color: got?'#EBCB82':'#8C8475', lineHeight:1.2 }}>{m.label}</div>
+            </div>
+          ); })}
+        </div>
       </div>
       {cats.map(cat => (
         <div key={cat} style={{ marginBottom:20 }}>
@@ -5091,7 +5117,15 @@ function LearnView({ setView }){
                   <span style={{ flex:1, fontSize:13.5, fontWeight:700, color:'#F6F1E7' }}>{l.title}</span>
                   <span style={{ fontSize:18, color:'#8C8475' }}>{isOpen ? '−' : '+'}</span>
                 </button>
-                {isOpen && <div style={{ padding:'0 14px 14px 43px', fontSize:13, lineHeight:1.6, color:'#C8BFAE' }}>{l.body}</div>}
+                {isOpen && (
+                  <div style={{ padding:'0 14px 14px 43px' }}>
+                    <div style={{ fontSize:13, lineHeight:1.6, color:'#C8BFAE' }}>{l.body}</div>
+                    {l.deeper && (<>
+                      <button onClick={() => setDeepId(d => d === l.id ? null : l.id)} style={{ marginTop:10, background:'transparent', border:'none', color:'#CBA35C', fontSize:12, fontWeight:700, cursor:'pointer', padding:0 }}>{deepId === l.id ? 'Show less' : 'Go deeper ↓'}</button>
+                      {deepId === l.id && <div style={{ marginTop:8, fontSize:13, lineHeight:1.65, color:'#C8BFAE', paddingLeft:12, borderLeft:'2px solid rgba(203,163,92,.4)' }}>{l.deeper}</div>}
+                    </>)}
+                  </div>
+                )}
               </div>
             );
           })}
