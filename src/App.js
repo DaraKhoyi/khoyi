@@ -5039,6 +5039,68 @@ function ReviewView({ userId, contacts = [], events = [], setTasks, priorityPref
   );
 }
 
+const LESSONS = [
+  { id:'nba', cat:'Your day', title:'Do this next', body:'Top producers don\'t do more — they do the right thing next. Prism scans every signal (tasks, who owes you a reply, cadence, appointments, deals) and surfaces the single highest-leverage move, so you never open the app wondering where to start.' },
+  { id:'review', cat:'Your day', title:'Decide here, do in Tasks', body:'Review is Prism\'s inbox to you — a recording to label, a to-do it heard on a call. Confirm what\'s real and it graduates into Tasks with a priority; dismiss the rest. Your task list stays only what you chose to do, so it never gets noisy.' },
+  { id:'eisenhower', cat:'Your day', title:'Urgent vs. important', body:'A/B/C/D sorts work by urgency and importance. The trap is living in "urgent." The important-but-not-urgent work — prospecting, follow-up, your database — is where your future income is built, so protect it before the day fills up.' },
+  { id:'blocking', cat:'Your day', title:'Protect the money hours', body:'Block your prospecting and follow-up time on the calendar like a listing appointment you can\'t move. The agents who hit their number treat lead-gen as a standing appointment with their business, not something they get to only if there\'s time left over.' },
+  { id:'disc', cat:'Your people', title:'Reading the room (DISC)', body:'People decide in four styles — D (fast, results), I (social, enthusiastic), S (steady, relationship-first), C (analytical, detail). Match how you communicate to how they\'re wired and everything gets easier. Prism reads each contact\'s style and tunes your messages to it.' },
+  { id:'cadence', cat:'Your people', title:'Consistency compounds', body:'Set a cadence and Prism reminds you when it\'s time to reach out — so you stay top-of-mind on a rhythm instead of calling only when you need something. Small, steady touches are how sphere-based agents earn referrals on repeat.' },
+  { id:'speed', cat:'Your people', title:'Speed wins', body:'The first agent to respond usually wins the deal — a lead\'s value drops by the minute. Prism surfaces who\'s waiting on you and helps you reply fast and well, so speed never costs you quality.' },
+  { id:'gci', cat:'Your business', title:'Know your number', body:'Work backward from the income you want: GCI to deals to appointments to conversations. Once you know how many conversations a week hit your goal, prospecting stops being vague pressure and becomes a countable habit.' },
+  { id:'systems', cat:'Your business', title:'One system, 90 days', body:'Pick one lead-gen system and run it for 90 days before you judge it. Most agents quit a system right before it works, chasing the next shiny object. Consistency in one channel beats dabbling in five.' },
+  { id:'record', cat:'Your memory', title:'Record everything', body:'The more real conversations Prism hears, the sharper its read on each person — their DISC, what they care about, what you promised. Recording your meetings and calls turns every conversation into lasting intelligence instead of a memory that fades by dinner.' },
+  { id:'capture', cat:'Your memory', title:'Capture beats recall', body:'Your mind is for having ideas, not holding them. Jot it in the Journal the moment it happens — a client detail, a follow-up, a thought — and Prism files it against the right person and pulls it back when it matters.' },
+  { id:'cloud_recordings', cat:'Your memory', title:'How recordings flow in', body:'Record a meeting on your voice recorder — it backs up to Dropbox, and PrismOS watches the folder you pick. New recordings appear in Review to label who you met with; then Prism transcribes them and researches each person for you, hands-free.' },
+];
+
+function LearnView({ setView }){
+  const [seen, setSeen] = useState(() => tipsSeenList());
+  const [open, setOpen] = useState(null);
+  const total = LESSONS.length;
+  const learned = LESSONS.filter(l => seen.includes(l.id)).length;
+  const cats = [];
+  LESSONS.forEach(l => { if (!cats.includes(l.cat)) cats.push(l.cat); });
+  const toggle = (id) => {
+    setOpen(o => o === id ? null : id);
+    if (!seen.includes(id)) { try { const arr = tipsSeenList(); arr.push(id); localStorage.setItem('prism_tips_seen', JSON.stringify(arr)); } catch(_){} setSeen(tipsSeenList()); }
+  };
+  return (
+    <div className="ww-prism">
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--border:rgba(203,163,92,.20);--accent:#CBA35C;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;}`}</style>
+      <div className="ww-eyebrow" style={{ marginBottom:4 }}>✦ The self-teaching app</div>
+      <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:30, letterSpacing:'-.02em', margin:'0 0 4px', color:'#F6F1E7' }}>Learn</h2>
+      <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 16px' }}>Short lessons on the why behind your workflow. Read them here anytime, or let them surface as you work.</p>
+      <div style={{ background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.28)', borderRadius:16, padding:'14px 16px', marginBottom:22 }}>
+        <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8 }}>
+          <span style={{ fontFamily:'Fraunces, serif', fontSize:26, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{learned}</span>
+          <span style={{ fontSize:12.5, color:'#C8BFAE' }}>of {total} fundamentals learned</span>
+        </div>
+        <div style={{ height:6, borderRadius:100, background:'rgba(203,163,92,.15)', overflow:'hidden' }}><div style={{ height:'100%', width:(total? Math.round(learned/total*100):0)+'%', background:'linear-gradient(90deg,#CBA35C,#EBCB82)', borderRadius:100, transition:'width .4s' }} /></div>
+      </div>
+      {cats.map(cat => (
+        <div key={cat} style={{ marginBottom:20 }}>
+          <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>{cat}</div>
+          {LESSONS.filter(l => l.cat === cat).map(l => {
+            const isSeen = seen.includes(l.id); const isOpen = open === l.id;
+            return (
+              <div key={l.id} style={{ border:'1px solid '+(isOpen?'rgba(203,163,92,.4)':'rgba(203,163,92,.16)'), borderRadius:12, marginBottom:8, background: isOpen?'rgba(203,163,92,.06)':'transparent', overflow:'hidden' }}>
+                <button onClick={() => toggle(l.id)} style={{ display:'flex', alignItems:'center', gap:11, width:'100%', textAlign:'left', padding:'12px 14px', background:'transparent', border:'none', cursor:'pointer' }}>
+                  <span style={{ width:18, height:18, flexShrink:0, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800, border:'1.5px solid '+(isSeen?'#CBA35C':'#5a5348'), background:isSeen?'#CBA35C':'transparent', color:isSeen?'#1a1409':'transparent' }}>✓</span>
+                  <span style={{ flex:1, fontSize:13.5, fontWeight:700, color:'#F6F1E7' }}>{l.title}</span>
+                  <span style={{ fontSize:18, color:'#8C8475' }}>{isOpen ? '−' : '+'}</span>
+                </button>
+                {isOpen && <div style={{ padding:'0 14px 14px 43px', fontSize:13, lineHeight:1.6, color:'#C8BFAE' }}>{l.body}</div>}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      <div style={{ fontSize:11.5, color:'#8C8475', marginTop:4 }}>Set how often lessons surface as you work in Settings → Learning pace.</div>
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, reviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [], oweReplyMap = {}, setOweReplyMap }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
@@ -7007,7 +7069,7 @@ function PrepLeadButton({ contactId }) {
     catch (_) { if (window.__notify) window.__notify('Could not prepare a plan right now', 'error'); }
     setBusy(false);
   }
-  return <button className="btn btn-ghost btn-sm" disabled={busy || done} onClick={run} style={{ marginBottom: '10px' }}>{busy ? 'Preparing plan…' : done ? '\u2713 Plan prepared' : '\uD83E\uDD16 Prep new-lead plan'}</button>;
+  return <button className="btn btn-ghost btn-sm" disabled={busy || done} onClick={run} style={{ marginBottom: '10px' }}>{busy ? 'Preparing plan…' : done ? '✓ Plan prepared' : '\uD83E\uDD16 Prep new-lead plan'}</button>;
 }
 
 function ContactKnowledge({ contactId }) {
@@ -11973,7 +12035,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             <div style={{display:'flex', gap:'10px', flexWrap:'wrap'}}>
               {[{v:'sonnet', t:'Sonnet 4.6', d:'Fast · economical · default'}, {v:'opus', t:'Opus 4.8', d:'Deepest · more tokens'}].map(o=>{ const on = researchModel===o.v; return (
                 <button key={o.v} disabled={savingModel} onClick={()=>saveResearchModel(o.v)} style={{flex:'1 1 170px', textAlign:'left', padding:'12px 14px', borderRadius:'12px', cursor:'pointer', border:`1px solid ${on?'var(--accent)':'var(--border)'}`, background: on?'rgba(197,169,94,0.12)':'transparent'}}>
-                  <div style={{fontSize:'14px', fontWeight:800, color: on?'var(--accent)':'var(--text-1)'}}>{o.t}{on?' \u2713':''}</div>
+                  <div style={{fontSize:'14px', fontWeight:800, color: on?'var(--accent)':'var(--text-1)'}}>{o.t}{on?' ✓':''}</div>
                   <div style={{fontSize:'11.5px', color:'var(--text-3)', marginTop:'2px'}}>{o.d}</div>
                 </button>); })}
             </div>
@@ -16220,6 +16282,7 @@ function AppMain() {
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'review',      icon: '📥', label: 'Review',      badge: reviewCount || null },
+    { id: 'learn',       icon: '🎓', label: 'Learn' },
     { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
     { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
     { id: 'agent_activity', icon: '🛡️', label: 'Agent activity' },
@@ -16487,6 +16550,7 @@ function AppMain() {
               : view==='app_health' ? <AppHealthView/>
               : view==='documents' ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><DocumentsView userId={user.id}/></div>
               : view==='review'      ? <ReviewView userId={user.id} contacts={contacts} events={events} setTasks={setTasks} priorityPref={priorityPref} setView={setView} />
+              : view==='learn'       ? <LearnView setView={setView} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
