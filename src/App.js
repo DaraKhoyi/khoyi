@@ -4935,11 +4935,11 @@ function PendingRecordings({ userId, contacts = [], events = [], onCount, inRevi
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const load = React.useCallback(async () => {
-    try { const { data } = await supabase.from('pending_recordings').select('*').eq('user_id', userId).eq('status', 'pending').order('recorded_at', { ascending: false }); setPending(Array.isArray(data) ? data : []); } catch (_) {}
+    try { const { data } = await supabase.from('pending_recordings').select('*').eq('user_id', userId).in('status', ['pending', 'error']).order('recorded_at', { ascending: false }); setPending(Array.isArray(data) ? data : []); } catch (_) {}
     setLoading(false);
   }, [userId]);
   React.useEffect(() => { load(); }, [load]);
-  React.useEffect(() => { if (onCount) onCount(pending.length); }, [pending.length, onCount]);
+  React.useEffect(() => { if (onCount) onCount(pending.filter(p => p.status === 'pending').length); }, [pending, onCount]);
   const checkNow = async () => {
     setSyncing(true);
     try { const { data } = await supabase.functions.invoke('dropbox-sync', { body: {} }); if (window.__notify) window.__notify(((data && data.created) || 0) + ' new recording(s) found', 'success'); } catch (_) { if (window.__notify) window.__notify('Sync failed', 'error'); }
@@ -4971,8 +4971,12 @@ function PendingRecordings({ userId, contacts = [], events = [], onCount, inRevi
   };
   const personal = async (rec) => { try { await supabase.from('pending_recordings').update({ status: 'personal' }).eq('id', rec.id); } catch (_) {} setPending(p => p.filter(x => x.id !== rec.id)); };
   const ignore = async (rec) => { try { await supabase.from('pending_recordings').update({ status: 'ignored' }).eq('id', rec.id); } catch (_) {} setPending(p => p.filter(x => x.id !== rec.id)); };
+  const retry = async (rec) => { try { await supabase.from('pending_recordings').update({ status: 'confirmed' }).eq('id', rec.id); } catch (_) {} if (window.__notify) window.__notify('Retrying…', 'success'); setPending(p => p.filter(x => x.id !== rec.id)); };
+  const dismissErr = async (rec) => { try { await supabase.from('pending_recordings').update({ status: 'ignored' }).eq('id', rec.id); } catch (_) {} setPending(p => p.filter(x => x.id !== rec.id)); };
+  const pendingItems = pending.filter(p => p.status === 'pending');
+  const errored = pending.filter(p => p.status === 'error');
   if (loading) return null;
-  if (!inReview && pending.length === 0) return null;
+  if (!inReview && pendingItems.length === 0 && errored.length === 0) return null;
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
@@ -4980,9 +4984,25 @@ function PendingRecordings({ userId, contacts = [], events = [], onCount, inRevi
         <div style={{ flex:1 }} />
         <button onClick={checkNow} disabled={syncing} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>{syncing ? 'Checking…' : '↻ Check now'}</button>
       </div>
-      {pending.length === 0
+      {pendingItems.length === 0
         ? <div style={{ fontSize:13, color:'#8C8475', padding:'6px 0 4px' }}>Nothing waiting. New meeting recordings show up here to label.</div>
-        : pending.map(rec => <PendingCard key={rec.id} rec={rec} contacts={contacts} candidates={candidatesFor(rec)} onConfirm={confirm} onPersonal={personal} onIgnore={ignore} />)}
+        : pendingItems.map(rec => <PendingCard key={rec.id} rec={rec} contacts={contacts} candidates={candidatesFor(rec)} onConfirm={confirm} onPersonal={personal} onIgnore={ignore} />)}
+      {errored.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:'#e0a86f', marginBottom:8 }}>⚠ Needs attention</div>
+          {errored.map(rec => (
+            <div key={rec.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', marginBottom:8, borderRadius:12, background:'rgba(224,168,111,.08)', border:'1px solid rgba(224,168,111,.34)' }}>
+              <span style={{ fontSize:16 }}>⚠️</span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:12.5, color:'#F6F1E7', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{rec.file_name}</div>
+                <div style={{ fontSize:11, color:'#8C8475' }}>Couldn't process — the file may still be uploading to Dropbox.</div>
+              </div>
+              <button onClick={() => retry(rec)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>Retry</button>
+              <button onClick={() => dismissErr(rec)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>Dismiss</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
