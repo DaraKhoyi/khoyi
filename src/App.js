@@ -698,7 +698,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
   }
   function stopRec() { try { mediaRef.current && mediaRef.current.stop(); } catch (_) {} setRecording(false); }
   async function uploadAudio(blob, mime) {
-    setAdding(true); setAddMsg('Uploading & transcribing your voice note\u2026');
+    setAdding(true); setAddMsg('Uploading & transcribing your voice note…');
     try {
       const ext = mime.includes('mp4') ? 'm4a' : mime.includes('mpeg') ? 'mp3' : mime.includes('wav') ? 'wav' : 'webm';
       const path = `${userId}/${(crypto.randomUUID ? crypto.randomUUID() : Date.now())}/dictation.${ext}`;
@@ -724,7 +724,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
   }
   const loadAudit = React.useCallback(async () => { try { const { data } = await supabase.rpc('knowledge_access_audit', { days_back: 30 }); setAudit(Array.isArray(data) ? data : []); } catch (_) { setAudit([]); } }, []);
   React.useEffect(() => { if (tab === 'audit' && audit === null) loadAudit(); }, [tab, audit, loadAudit]);
-  async function reprocess(sc) { try { await supabase.functions.invoke('knowledge-ingest', { body: { reprocess: true, source_id: sc.id } }); if (window.__notify) window.__notify('Reprocessing\u2026', 'success'); } catch (_) {} loadLib(); }
+  async function reprocess(sc) { try { await supabase.functions.invoke('knowledge-ingest', { body: { reprocess: true, source_id: sc.id } }); if (window.__notify) window.__notify('Reprocessing…', 'success'); } catch (_) {} loadLib(); }
   const loadEvals = React.useCallback(async () => { try { const { data } = await supabase.from('knowledge_evals').select('*').order('created_at'); setEvals(Array.isArray(data) ? data : []); } catch (_) { setEvals([]); } }, []);
   React.useEffect(() => { if (tab === 'evals' && evals === null) loadEvals(); }, [tab, evals, loadEvals]);
   async function addEval() { if (!evalQ.trim()) return; try { await supabase.from('knowledge_evals').insert({ user_id: userId, question: evalQ.trim(), expected: evalExp.trim() || null }); } catch (_) {} setEvalQ(''); setEvalExp(''); loadEvals(); }
@@ -786,7 +786,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
     loadLib();
   }
 
-  const STAT = { ready: ['var(--green)', 'Ready'], processing: ['var(--yellow)', 'Processing\u2026'], pending: ['var(--yellow)', 'Queued'], error: ['var(--red)', 'Error'] };
+  const STAT = { ready: ['var(--green)', 'Ready'], processing: ['var(--yellow)', 'Processing…'], pending: ['var(--yellow)', 'Queued'], error: ['var(--red)', 'Error'] };
   const TABBTN = (id, label) => (
     <button onClick={() => setTab(id)} style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid ' + (tab === id ? 'var(--accent)' : 'var(--border)'), background: tab === id ? 'rgba(197,169,94,0.12)' : 'transparent', color: tab === id ? 'var(--accent)' : 'var(--text-2)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>{label}</button>
   );
@@ -800,10 +800,10 @@ function KnowledgeView({ userId, isAdmin = false }) {
         {tab === 'ask' && (
           <div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input className="form-input" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') runAsk(); }} placeholder="Ask your knowledge anything\u2026" style={{ flex: 1 }} />
-              <button className="btn btn-primary" disabled={asking} onClick={runAsk}>{asking ? '\u2026' : 'Ask'}</button>
+              <input className="form-input" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') runAsk(); }} placeholder="Ask your knowledge anything…" style={{ flex: 1 }} />
+              <button className="btn btn-primary" disabled={asking} onClick={runAsk}>{asking ? '…' : 'Ask'}</button>
             </div>
-            {asking && <div style={{ marginTop: '14px', color: 'var(--text-3)', fontSize: '13px' }}>Searching your knowledge\u2026</div>}
+            {asking && <div style={{ marginTop: '14px', color: 'var(--text-3)', fontSize: '13px' }}>Searching your knowledge…</div>}
             {ans && (
               <div className="panel" style={{ marginTop: '14px' }}>
                 <div className="panel-body">
@@ -812,7 +812,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
                     <div style={{ marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
                       <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' }}>Sources</div>
                       {ans.citations.map(c => (
-                        <div key={c.n} style={{ fontSize: '12px', color: 'var(--text-2)', marginBottom: '6px' }}><b style={{ color: 'var(--accent)' }}>[{c.n}]</b> {c.title} <span style={{ color: 'var(--text-3)' }}>— {c.snippet}\u2026</span></div>
+                        <div key={c.n} style={{ fontSize: '12px', color: 'var(--text-2)', marginBottom: '6px' }}><b style={{ color: 'var(--accent)' }}>[{c.n}]</b> {c.title} <span style={{ color: 'var(--text-3)' }}>— {c.snippet}…</span></div>
                       ))}
                     </div>
                   )}
@@ -836,8 +836,8 @@ function KnowledgeView({ userId, isAdmin = false }) {
               ))}
             </div>
             <div className="form-group"><label className="form-label">Title (optional)</label><input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., WV Ave project notes" /></div>
-            {kind === 'text' && <div className="form-group"><label className="form-label">Text</label><textarea className="form-input" rows={6} value={text} onChange={e => setText(e.target.value)} placeholder="Paste notes, facts, anything worth remembering\u2026" /></div>}
-            {kind === 'url' && <div className="form-group"><label className="form-label">Link</label><input className="form-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://\u2026" /></div>}
+            {kind === 'text' && <div className="form-group"><label className="form-label">Text</label><textarea className="form-input" rows={6} value={text} onChange={e => setText(e.target.value)} placeholder="Paste notes, facts, anything worth remembering…" /></div>}
+            {kind === 'url' && <div className="form-group"><label className="form-label">Link</label><input className="form-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" /></div>}
             {kind === 'file' && <div className="form-group"><label className="form-label">File (PDF, image, audio, Word, or Excel)</label><input type="file" accept=".pdf,image/*,audio/*,.m4a,.mp3,.wav,.docx,.xlsx,.xls" onChange={e => setFile(e.target.files && e.target.files[0])} style={{ fontSize: '13px', color: 'var(--text-2)' }} /><div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>Audio gets transcribed automatically, then mined for facts like everything else.</div></div>}
             {kind === 'dictate' && (
               <div className="form-group"><label className="form-label">Voice note</label>
@@ -858,7 +858,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
                 </select>
               </div>
               {scope === 'team' && <div className="form-group" style={{ flex: '1 1 150px' }}><label className="form-label">Team</label>
-                <select className="form-input" value={teamId} onChange={e => setTeamId(e.target.value)}><option value="">Choose\u2026</option>{myTeams.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}</select>
+                <select className="form-input" value={teamId} onChange={e => setTeamId(e.target.value)}><option value="">Choose…</option>{myTeams.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}</select>
               </div>}
               <div className="form-group" style={{ flex: '1 1 150px' }}><label className="form-label">Trust</label>
                 <select className="form-input" value={trust} onChange={e => setTrust(e.target.value)}><option value="standard">Standard</option><option value="authoritative">Authoritative</option><option value="draft">Draft</option></select>
@@ -866,7 +866,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
             </div>
             <div className="form-group"><label className="form-label">Tags (comma-separated)</label><input className="form-input" value={tagsStr} onChange={e => setTagsStr(e.target.value)} placeholder="west virginia ave, zoning" /></div>
             {addMsg && <div style={{ fontSize: '12.5px', marginBottom: '10px', color: addMsg.startsWith('Added') ? 'var(--green)' : 'var(--red)' }}>{addMsg}</div>}
-            {kind !== 'dictate' && <button className="btn btn-primary" disabled={adding} onClick={addKnowledge}>{adding ? 'Adding\u2026' : 'Add to knowledge'}</button>}
+            {kind !== 'dictate' && <button className="btn btn-primary" disabled={adding} onClick={addKnowledge}>{adding ? 'Adding…' : 'Add to knowledge'}</button>}
           </div></div>
         )}
 
@@ -961,7 +961,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
             {evals && evals.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>{evals.filter(e => e.last_pass === true).length} passing of {evals.filter(e => e.last_pass === true || e.last_pass === false).length} run</span>
-                <button className="btn btn-primary btn-sm" disabled={evalRunning} onClick={runEvals}>{evalRunning ? 'Running\u2026' : 'Run all'}</button>
+                <button className="btn btn-primary btn-sm" disabled={evalRunning} onClick={runEvals}>{evalRunning ? 'Running…' : 'Run all'}</button>
               </div>
             )}
             {evals && evals.map(ev => (
@@ -3569,7 +3569,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
     try{
       const { data } = await supabase.from('documents').select('id, title, doc_type, summary, action_label, signed_state, document_contacts(contact_id)').eq('action_needed',true).eq('status','ready').order('created_at',{ascending:false}).limit(20);
       if(!alive) return;
-      const sigs=(data||[]).map(d=>{ const cid=d.document_contacts&&d.document_contacts[0]?d.document_contacts[0].contact_id:null; const cn=cid?((contacts.find(c=>c.id===cid)||{}).name||''):''; return { key:'doc:'+d.id, score:86+(d.signed_state==='unsigned'?6:0), tag:'document', icon:'target', contactId:cid, title:d.action_label||('Handle '+(d.title||'a document')), why:((cn?cn+' \u00b7 ':'')+(d.doc_type&&d.doc_type!=='other'?d.doc_type+' \u00b7 ':'')+(d.signed_state==='unsigned'?'unsigned — needs signature':(d.summary||'needs attention'))).slice(0,130), cta:{ label:'Open', kind:'view', payload:'documents' } }; });
+      const sigs=(data||[]).map(d=>{ const cid=d.document_contacts&&d.document_contacts[0]?d.document_contacts[0].contact_id:null; const cn=cid?((contacts.find(c=>c.id===cid)||{}).name||''):''; return { key:'doc:'+d.id, score:86+(d.signed_state==='unsigned'?6:0), tag:'document', icon:'target', contactId:cid, title:d.action_label||('Handle '+(d.title||'a document')), why:((cn?cn+' · ':'')+(d.doc_type&&d.doc_type!=='other'?d.doc_type+' · ':'')+(d.signed_state==='unsigned'?'unsigned — needs signature':(d.summary||'needs attention'))).slice(0,130), cta:{ label:'Open', kind:'view', payload:'documents' } }; });
       setDocActions(sigs);
     }catch(_){}
   })(); return ()=>{alive=false;}; },[contacts]);
@@ -4875,7 +4875,151 @@ function DashboardAnnouncements({ userId }) {
   );
 }
 
-function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [], oweReplyMap = {}, setOweReplyMap }) {
+function PendingCard({ rec, contacts, candidates, onConfirm, onPersonal, onIgnore }) {
+  const [selected, setSelected] = useState(() => new Set());
+  const [depth, setDepth] = useState('deep');
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toggle = (id) => setSelected(sset => { const n = new Set(sset); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const searchResults = q.trim().length >= 2 ? contacts.filter(c => c.name && c.name.toLowerCase().includes(q.toLowerCase()) && !selected.has(c.id)).slice(0, 6) : [];
+  const selExtras = [...selected].map(id => contacts.find(c => c.id === id)).filter(c => c && !candidates.find(cd => cd.contact_id === c.id));
+  const when = rec.recorded_at ? new Date(rec.recorded_at) : null;
+  const whenStr = when ? when.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Unknown time';
+  const sizeStr = rec.size_bytes ? (rec.size_bytes > 1e6 ? (rec.size_bytes/1e6).toFixed(1)+' MB' : Math.round(rec.size_bytes/1e3)+' KB') : '';
+  const pill = (on) => ({ padding:'6px 12px', borderRadius:100, fontSize:12.5, fontWeight:600, cursor:'pointer', border:'1px solid '+(on?'#CBA35C':'rgba(203,163,92,.22)'), background:on?'rgba(203,163,92,.16)':'transparent', color:on?'#EBCB82':'#C8BFAE' });
+  return (
+    <div style={{ border:'1px solid rgba(203,163,92,.34)', borderRadius:16, padding:'16px', marginBottom:12, background:'linear-gradient(180deg,#1B1610,#100D09)' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+        <span style={{ fontSize:22 }}>🎙️</span>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:13.5, fontWeight:700, color:'#F6F1E7', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{rec.file_name}</div>
+          <div style={{ fontSize:11.5, color:'#8C8475' }}>{whenStr}{sizeStr?' · '+sizeStr:''}</div>
+        </div>
+      </div>
+      <div style={{ fontFamily:'Fraunces, serif', fontSize:17, color:'#F6F1E7', marginBottom:10 }}>Who did you meet with?</div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginBottom:8 }}>
+        {candidates.map(cd => (
+          <button key={cd.contact_id} onClick={() => toggle(cd.contact_id)} style={pill(selected.has(cd.contact_id))} title={cd.reason || ''}>{cd.name}{cd.reason && !selected.has(cd.contact_id) ? <span style={{ color:'#8C8475', fontWeight:400, fontSize:10, marginLeft:5 }}>{cd.reason}</span> : null}</button>
+        ))}
+        {candidates.length === 0 && <span style={{ fontSize:12, color:'#8C8475' }}>No calendar match — search below.</span>}
+      </div>
+      {selExtras.length > 0 && (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginBottom:8 }}>
+          {selExtras.map(c => (<button key={c.id} onClick={() => toggle(c.id)} style={pill(true)}>{c.name} ✕</button>))}
+        </div>
+      )}
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search to add someone else…" className="form-input" style={{ fontSize:13, width:'100%', marginBottom: searchResults.length?4:8 }} />
+      {searchResults.length > 0 && (
+        <div style={{ marginBottom:8 }}>
+          {searchResults.map(c => <button key={c.id} onClick={() => { toggle(c.id); setQ(''); }} className="btn btn-ghost btn-sm" style={{ display:'block', width:'100%', textAlign:'left', marginBottom:2 }}>+ {c.name}</button>)}
+        </div>
+      )}
+      {selected.size > 0 && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12, fontSize:12, color:'#8C8475', flexWrap:'wrap' }}>
+          <span>Research:</span>
+          <button onClick={() => setDepth('deep')} style={{ ...pill(depth==='deep'), padding:'3px 10px', fontSize:11 }}>Deep · research + DISC</button>
+          <button onClick={() => setDepth('quick')} style={{ ...pill(depth==='quick'), padding:'3px 10px', fontSize:11 }}>Quick</button>
+        </div>
+      )}
+      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+        <button onClick={async () => { setBusy(true); await onConfirm(rec, [...selected], depth); }} disabled={busy || selected.size === 0} className="btn btn-primary btn-sm" style={{ flex:1, opacity:(selected.size===0?0.5:1) }}>{busy ? 'Starting…' : 'Confirm & run'}</button>
+        <button onClick={() => onPersonal(rec)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }} title="File it privately — no research or DISC">Personal</button>
+        <button onClick={() => onIgnore(rec)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>Ignore</button>
+      </div>
+    </div>
+  );
+}
+
+function PendingRecordings({ userId, contacts = [], events = [], onCount, inReview }) {
+  const [pending, setPending] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const load = React.useCallback(async () => {
+    try { const { data } = await supabase.from('pending_recordings').select('*').eq('user_id', userId).eq('status', 'pending').order('recorded_at', { ascending: false }); setPending(Array.isArray(data) ? data : []); } catch (_) {}
+    setLoading(false);
+  }, [userId]);
+  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { if (onCount) onCount(pending.length); }, [pending.length, onCount]);
+  const checkNow = async () => {
+    setSyncing(true);
+    try { const { data } = await supabase.functions.invoke('dropbox-sync', { body: {} }); if (window.__notify) window.__notify(((data && data.created) || 0) + ' new recording(s) found', 'success'); } catch (_) { if (window.__notify) window.__notify('Sync failed', 'error'); }
+    await load(); setSyncing(false);
+  };
+  const candidatesFor = (rec) => {
+    const t = rec.recorded_at ? new Date(rec.recorded_at).getTime() : 0;
+    const scored = new Map();
+    const add = (id, name, score, reason) => { if (!id) return; const cur = scored.get(id); if (!cur || cur.score < score) scored.set(id, { contact_id: id, name, score, reason }); };
+    if (t) {
+      for (const ev of (events || [])) {
+        const sRaw = ev.start_time || ev.start || ev.starts_at; const eRaw = ev.end_time || ev.end || ev.ends_at;
+        const es = sRaw ? new Date(sRaw).getTime() : 0; const ee = eRaw ? new Date(eRaw).getTime() : (es ? es + 3600000 : 0);
+        if (es && t >= es - 1800000 && t <= (ee || es) + 1800000) {
+          if (ev.contact_id) { const c = contacts.find(x => x.id === ev.contact_id); add(ev.contact_id, (c && c.name) || 'Contact', 100, 'On your calendar then'); }
+          const title = (ev.title || ev.summary || '').toLowerCase();
+          if (title) for (const c of contacts) { if (c.name && c.name.length > 3 && title.includes(c.name.toLowerCase())) add(c.id, c.name, 90, 'Named in the meeting'); }
+        }
+      }
+    }
+    const recent = [...contacts].filter(c => c.last_contact_at).sort((a, b) => new Date(b.last_contact_at) - new Date(a.last_contact_at)).slice(0, 3);
+    for (const c of recent) add(c.id, c.name, 20, 'Recently in touch');
+    return [...scored.values()].sort((a, b) => b.score - a.score).slice(0, 4);
+  };
+  const confirm = async (rec, ids, depth) => {
+    try { await supabase.from('pending_recordings').update({ status: 'confirmed', confirmed_contact_ids: ids, research_depth: depth }).eq('id', rec.id); } catch (_) {}
+    if (window.__notify) window.__notify('Queued — transcription + research starting', 'success');
+    setPending(p => p.filter(x => x.id !== rec.id));
+  };
+  const personal = async (rec) => { try { await supabase.from('pending_recordings').update({ status: 'personal' }).eq('id', rec.id); } catch (_) {} setPending(p => p.filter(x => x.id !== rec.id)); };
+  const ignore = async (rec) => { try { await supabase.from('pending_recordings').update({ status: 'ignored' }).eq('id', rec.id); } catch (_) {} setPending(p => p.filter(x => x.id !== rec.id)); };
+  if (loading) return null;
+  if (!inReview && pending.length === 0) return null;
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+        <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.24em', textTransform:'uppercase', color:'#CBA35C' }}>Recordings to label</div>
+        <div style={{ flex:1 }} />
+        <button onClick={checkNow} disabled={syncing} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>{syncing ? 'Checking…' : '↻ Check now'}</button>
+      </div>
+      {pending.length === 0
+        ? <div style={{ fontSize:13, color:'#8C8475', padding:'6px 0 4px' }}>Nothing waiting. New meeting recordings show up here to label.</div>
+        : pending.map(rec => <PendingCard key={rec.id} rec={rec} contacts={contacts} candidates={candidatesFor(rec)} onConfirm={confirm} onPersonal={personal} onIgnore={ignore} />)}
+    </div>
+  );
+}
+
+function ReviewView({ userId, contacts = [], events = [], setTasks, priorityPref, setView }) {
+  const [recCount, setRecCount] = useState(0);
+  const [taskCount, setTaskCount] = useState(0);
+  React.useEffect(() => {
+    (async () => {
+      try { const { data: calls } = await supabase.from('quo_calls').select('proposed_tasks').eq('user_id', userId).eq('review_status', 'pending'); setTaskCount((calls || []).reduce((a, c) => a + (Array.isArray(c.proposed_tasks) ? c.proposed_tasks.length : 0), 0)); } catch (_) {}
+    })();
+  }, [userId]);
+  const box = (n, label, icon) => (
+    <div style={{ flex:1, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.28)', borderRadius:16, padding:'15px 16px' }}>
+      <div style={{ fontSize:34, fontFamily:'Fraunces, serif', fontWeight:300, color: n>0?'#EBCB82':'#8C8475', lineHeight:1 }}>{n}</div>
+      <div style={{ fontSize:11.5, color:'#C8BFAE', marginTop:6 }}>{icon} {label}</div>
+    </div>
+  );
+  return (
+    <div className="ww-prism">
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--border:rgba(203,163,92,.20);--accent:#CBA35C;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .form-input{background:#100D09;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;}`}</style>
+      <div className="ww-eyebrow" style={{ marginBottom:4 }}>✦ Your review inbox</div>
+      <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:30, letterSpacing:'-.02em', margin:'0 0 4px', color:'#F6F1E7' }}>Review</h2>
+      <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 14px' }}>Quick decisions Prism is waiting on. Clear these and your task list stays only what you chose to do.</p>
+      <Tip id="review" label="Decide here, do in Tasks">This is Prism's inbox to you — a recording to label, a to-do it heard on a call. Confirm what's real and it graduates into <b>Tasks</b> with a priority; dismiss the rest. Your A/B/C/D list stays clean because nothing lands there until you say yes.</Tip>
+      <div style={{ display:'flex', gap:12, margin:'14px 0 20px' }}>
+        {box(taskCount, 'tasks to review', '📝')}
+        {box(recCount, 'recordings to label', '🎙️')}
+      </div>
+      <div style={{ marginBottom:24 }}><PendingRecordings userId={userId} contacts={contacts} events={events} onCount={setRecCount} inReview /></div>
+      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.24em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>Suggested tasks</div>
+      <CallFollowupsPanel userId={userId} contacts={contacts} setTasks={setTasks} defaultSystem={priorityPref} />
+    </div>
+  );
+}
+
+function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, reviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [], oweReplyMap = {}, setOweReplyMap }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
 
@@ -5001,6 +5145,13 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
   return (
     <div className="ww-prism">
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .dash-hero{background:linear-gradient(180deg,#1B1610,#100D09);border:1px solid rgba(203,163,92,.22);border-radius:20px;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .quick-chip{border:1px solid rgba(203,163,92,.34);color:#C8BFAE;background:transparent;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
+      {reviewCount > 0 && (
+        <button onClick={()=>setView('review')} style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'12px 16px', marginBottom:12, borderRadius:14, cursor:'pointer', textAlign:'left', background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.34)' }}>
+          <span style={{ fontSize:18 }}>✦</span>
+          <span style={{ flex:1, fontSize:13.5, fontWeight:600, color:'#F6F1E7' }}>{reviewCount} thing{reviewCount>1?'s':''} waiting for you to review</span>
+          <span style={{ color:'#CBA35C', fontSize:18 }}>→</span>
+        </button>
+      )}
       {needsReviewCount > 0 && (
         <button onClick={()=>setView('email_review')} style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, padding:'11px 15px', marginBottom:12, borderRadius:12, cursor:'pointer', background:'linear-gradient(90deg, rgba(197,169,94,0.16), rgba(197,169,94,0.06))', border:'1px solid rgba(197,169,94,0.45)', color:'var(--text-1)' }}>
           <span style={{ fontSize:13.5, fontWeight:700 }}>📩 <b style={{ color:'var(--accent)' }}>{needsReviewCount}</b> email{needsReviewCount>1?'s':''} flagged for your review</span>
@@ -5970,7 +6121,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
                 <span style={{ marginLeft: 'auto' }}><AriRewriteButton text={bodyText} onRewrite={setBodyText} contactName={recipient?.name} contactId={recipient?.id} discLabel={discHint ? `${discHint.p}${discHint.s ? '/' + discHint.s : ''}` : ''} /></span>
               </div>
               <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
-                placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}\u2026\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you\u2019ve written — adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
+                placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}…\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you\u2019ve written — adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
                 style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
               {channel === 'email' && (
                 <div style={{ marginTop: '8px' }}>
@@ -6836,7 +6987,7 @@ function PrepLeadButton({ contactId }) {
     catch (_) { if (window.__notify) window.__notify('Could not prepare a plan right now', 'error'); }
     setBusy(false);
   }
-  return <button className="btn btn-ghost btn-sm" disabled={busy || done} onClick={run} style={{ marginBottom: '10px' }}>{busy ? 'Preparing plan\u2026' : done ? '\u2713 Plan prepared' : '\uD83E\uDD16 Prep new-lead plan'}</button>;
+  return <button className="btn btn-ghost btn-sm" disabled={busy || done} onClick={run} style={{ marginBottom: '10px' }}>{busy ? 'Preparing plan…' : done ? '\u2713 Plan prepared' : '\uD83E\uDD16 Prep new-lead plan'}</button>;
 }
 
 function ContactKnowledge({ contactId }) {
@@ -11697,7 +11848,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
               <div style={{fontSize:'11px', color:'var(--text-3)', marginTop:'4px'}}>Short sign-off for texts. Leave blank to sign with just your first name.</div>
             </div>
             <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-              <button className="btn btn-primary btn-sm" disabled={savingSig} onClick={saveSignatures}>{savingSig ? 'Saving\u2026' : 'Save signatures'}</button>
+              <button className="btn btn-primary btn-sm" disabled={savingSig} onClick={saveSignatures}>{savingSig ? 'Saving…' : 'Save signatures'}</button>
               {sigMsg && <span style={{fontSize:'12px', color: /error/i.test(sigMsg)?'var(--red)':'var(--green)'}}>{sigMsg}</span>}
             </div>
           </div>
@@ -15993,9 +16144,25 @@ function AppMain() {
   const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
   const isImpersonating = (() => { try { return !!localStorage.getItem('__impersonating'); } catch (_) { return false; } })();
   const openTaskCount = tasks.filter(t=>!t.completed).length;
+  const [reviewCount, setReviewCount] = useState(0);
+  React.useEffect(() => {
+    if (!user?.id) return; let alive = true;
+    (async () => {
+      try {
+        const [{ count: recN }, { data: calls }] = await Promise.all([
+          supabase.from('pending_recordings').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'pending'),
+          supabase.from('quo_calls').select('proposed_tasks').eq('user_id', user.id).eq('review_status', 'pending'),
+        ]);
+        const taskN = (calls || []).reduce((a, c) => a + (Array.isArray(c.proposed_tasks) ? c.proposed_tasks.length : 0), 0);
+        if (alive) setReviewCount((recN || 0) + taskN);
+      } catch (_) {}
+    })();
+    return () => { alive = false; };
+  }, [user?.id, view]);
 
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
+    { id: 'review',      icon: '📥', label: 'Review',      badge: reviewCount || null },
     { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
     { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
     { id: 'agent_activity', icon: '🛡️', label: 'Agent activity' },
@@ -16254,7 +16421,7 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
+                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} reviewCount={reviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
               : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='agentruns'   ? <AgentRunsView userId={user.id} setView={setView}/>
@@ -16262,12 +16429,13 @@ function AppMain() {
               : view==='group_message' ? <GroupMessageView contacts={contacts} profiles={profiles} userId={user.id}/>
               : view==='app_health' ? <AppHealthView/>
               : view==='documents' ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><DocumentsView userId={user.id}/></div>
+              : view==='review'      ? <ReviewView userId={user.id} contacts={contacts} events={events} setTasks={setTasks} priorityPref={priorityPref} setView={setView} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
               : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n}/>
-              : view==='tasks'       ? <div className="ww-tasks"><style>{`.ww-tasks{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-tasks .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-tasks .view-header h2,.ww-tasks .page-header h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;font-size:30px;} .ww-tasks .panel-header h3{font-family:'Fraunces',serif;font-weight:400;letter-spacing:-.01em;color:#F6F1E7;} .ww-tasks .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-tasks .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-tasks .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-tasks .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-tasks .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-tasks .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-tasks .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-tasks .task-item{border-color:rgba(203,163,92,.14);} .ww-tasks .task-text{color:#F6F1E7;} .ww-tasks .empty-state{color:#8C8475;} .ww-tasks .empty-icon{color:#CBA35C;}`}</style>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/><CallFollowupsPanel userId={user.id} contacts={contacts} setTasks={setTasks} defaultSystem={priorityPref}/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></div>
+              : view==='tasks'       ? <div className="ww-tasks"><style>{`.ww-tasks{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-tasks .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-tasks .view-header h2,.ww-tasks .page-header h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;font-size:30px;} .ww-tasks .panel-header h3{font-family:'Fraunces',serif;font-weight:400;letter-spacing:-.01em;color:#F6F1E7;} .ww-tasks .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-tasks .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-tasks .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-tasks .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-tasks .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-tasks .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-tasks .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-tasks .task-item{border-color:rgba(203,163,92,.14);} .ww-tasks .task-text{color:#F6F1E7;} .ww-tasks .empty-state{color:#8C8475;} .ww-tasks .empty-icon{color:#CBA35C;}`}</style>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}<TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/></div>
               : view==='email_review' ? <EmailReviewView userId={user.id} emailAccounts={emailAccounts} setView={setView} onCount={setNeedsReviewCount}/>
               : view==='inbox'       ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3,.ww-prism h3.mv-h2{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-prism .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-prism .task-item{border-color:rgba(203,163,92,.14);} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData} defaultSystem={priorityPref}/></div>
               : view==='quo'         ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3,.ww-prism h3.mv-h2{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-prism .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-prism .task-item{border-color:rgba(203,163,92,.14);} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><QuoView contacts={contacts} userId={user.id} defaultSystem={priorityPref}/></div>
