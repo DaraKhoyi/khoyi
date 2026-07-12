@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v1.02.97'
+const VERSION = 'prismos-v1.02.98'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -68,6 +68,16 @@ self.addEventListener('fetch', (event) => {
         const cache = await caches.open('prismos-shared');
         const audio = form.get('audio') || (form.getAll && form.getAll('audio')[0]);
         const doc = form.get('document') || (form.getAll && form.getAll('document')[0]);
+        const contact = form.get('contact') || (form.getAll && form.getAll('contact')[0]);
+        // A shared contact can arrive as the contact param, or as a .vcf "document"
+        const vcardFile = (contact && contact.size) ? contact
+          : (doc && doc.size && (/\.vcf$/i.test(doc.name || '') || /vcard|x-vcard|directory/i.test(doc.type || ''))) ? doc
+          : null;
+        if (vcardFile) {
+          const txt = await vcardFile.text();
+          await cache.put('/__shared_vcard', new Response(txt, { headers: { 'content-type': 'text/vcard' } }));
+          return Response.redirect('/?shared=vcard', 303);
+        }
         if (audio && audio.size) {
           const h = new Headers(); h.set('content-type', audio.type || 'audio/mpeg'); h.set('x-filename', encodeURIComponent(audio.name || 'shared-recording'));
           await cache.put('/__shared_audio', new Response(audio, { headers: h }));
@@ -79,6 +89,10 @@ self.addEventListener('fetch', (event) => {
           return Response.redirect('/?shared=file', 303);
         }
         const title = form.get('title') || '', text = form.get('text') || '', url = form.get('url') || '';
+        if (text && /BEGIN:VCARD/i.test(text)) {
+          await cache.put('/__shared_vcard', new Response(text, { headers: { 'content-type': 'text/vcard' } }));
+          return Response.redirect('/?shared=vcard', 303);
+        }
         if (title || text || url) {
           await cache.put('/__shared_text', new Response(JSON.stringify({ title, text, url }), { headers: { 'content-type': 'application/json' } }));
           return Response.redirect('/?shared=text', 303);

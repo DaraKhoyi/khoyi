@@ -921,6 +921,12 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [editContact, setEditContact] = useState(null);
   const [editFromDetail, setEditFromDetail] = useState(false);
   const [showVCard, setShowVCard] = useState(false);
+  React.useEffect(() => {
+    try {
+      const v = window.__pendingSharedVCard;
+      if (v) { window.__pendingSharedVCard = null; const parsed = parseVCard(v); if (parsed) { setEditContact(parsed); setShowModal(true); } }
+    } catch (_) {}
+  }, []);
   const [detailContact, setDetailContact] = useState(null);
   // Bulk lead-source tagging
   const [tagMode, setTagMode] = useState(false);

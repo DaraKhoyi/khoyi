@@ -15926,6 +15926,9 @@ function AppMain() {
         } else if (shared === 'text') {
           const resp = await cache.match('/__shared_text');
           if (resp) { const d = await resp.json().catch(() => null); if (d) { window.__pendingSharedText = d; setView('journal'); } await cache.delete('/__shared_text'); }
+        } else if (shared === 'vcard') {
+          const resp = await cache.match('/__shared_vcard');
+          if (resp) { const txt = await resp.text().catch(() => ''); if (txt) { window.__pendingSharedVCard = txt; setView('contacts'); } await cache.delete('/__shared_vcard'); }
         }
       } catch (_) {}
       try { window.history.replaceState({}, '', '/'); } catch (_) {}
