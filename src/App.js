@@ -9940,10 +9940,17 @@ function tipsSeenCount(){ return tipsSeenList().length; }
 function tipsAreEnabled(){ try { return localStorage.getItem('prism_tips_enabled') !== '0'; } catch(_){ return true; } }
 function tipsUnlocked(){ return tipsSeenCount() >= TIPS_UNLOCK_AT; }
 function setTipsEnabled(on){ try { localStorage.setItem('prism_tips_enabled', on ? '1' : '0'); } catch(_){} }
+const TIP_COOLDOWN_MS = 24 * 60 * 60 * 1000; // pace new tips ~a day apart after each dismissal
+function tipsLastDismissed(){ try { return parseInt(localStorage.getItem('prism_tips_last_dismissed')||'0', 10) || 0; } catch(_){ return 0; } }
 function Tip({ id, label = 'Why this works', children }){
-  const [gone, setGone] = useState(() => !tipsAreEnabled() || tipsSeenList().includes(id));
+  const [gone, setGone] = useState(() => {
+    if (!tipsAreEnabled() || tipsSeenList().includes(id)) return true;
+    const last = tipsLastDismissed();
+    if (last && (Date.now() - last) < TIP_COOLDOWN_MS) return true; // one new tip at a time, ~a day apart
+    return false;
+  });
   if (gone) return null;
-  const dismiss = () => { try { const s = tipsSeenList(); if (!s.includes(id)) { s.push(id); localStorage.setItem('prism_tips_seen', JSON.stringify(s)); } } catch(_){} setGone(true); };
+  const dismiss = () => { try { const s = tipsSeenList(); if (!s.includes(id)) { s.push(id); localStorage.setItem('prism_tips_seen', JSON.stringify(s)); } localStorage.setItem('prism_tips_last_dismissed', String(Date.now())); } catch(_){} setGone(true); };
   return (
     <div className="prism-tip">
       <div className="prism-tip-top"><span className="prism-tip-eye">✦ {label}</span><button className="prism-tip-got" onClick={dismiss}>Got it</button></div>
@@ -11524,6 +11531,7 @@ function CloudStorageSettings({ userId }) {
     <div className="panel" style={{ marginBottom: 18 }}>
       <h3 style={{ margin: '0 0 4px' }}>Cloud storage</h3>
       <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px' }}>Connect the cloud your voice recorder backs up to, then choose the folder PrismOS watches for new meeting recordings.</p>
+      <Tip id="cloud_recordings" label="How recordings flow in">Record a meeting on your voice recorder — it backs up to Dropbox, and PrismOS watches the folder you pick here. New recordings appear in <b>Review</b> to label who you met with; then Prism transcribes them and researches each person for you.</Tip>
       {loading ? <PrismThinking label="Loading" /> : (
         <>
           {conns.map(c => {
