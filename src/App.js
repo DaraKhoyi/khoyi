@@ -11333,7 +11333,7 @@ function CloudStorageSettings({ userId }) {
     try { await supabase.from('oauth_states').insert({ nonce, user_id: userId, provider: 'dropbox' }); } catch (_) {}
     const REDIRECT = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/dropbox-oauth-callback';
     const scope = 'files.metadata.read files.content.read account_info.read';
-    window.location.href = `https://www.dropbox.com/oauth2/authorize?client_id=5nl3icnh0wjoyyn&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&token_access_type=offline&scope=${encodeURIComponent(scope)}&state=${nonce}`;
+    window.location.href = `https://www.dropbox.com/oauth2/authorize?client_id=5nl3icnh0wjoyyn&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&token_access_type=offline&force_reauthentication=true&scope=${encodeURIComponent(scope)}&state=${nonce}`;
   };
   const disconnect = async (id) => {
     if (!window.confirm('Disconnect this account? Its watched folders and pending recordings will stop syncing.')) return;
@@ -11381,7 +11381,8 @@ function CloudStorageSettings({ userId }) {
               </div>
             );
           })}
-          <button className="btn btn-primary btn-sm" onClick={connectDropbox} style={{ marginTop: 12 }}>+ Connect Dropbox</button>
+          <button className="btn btn-primary btn-sm" onClick={connectDropbox} style={{ marginTop: 12 }}>+ {conns.length ? 'Connect a different Dropbox account' : 'Connect Dropbox'}</button>
+          {conns.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 6 }}>Dropbox will ask you to sign in — choose or switch to the account you want, then disconnect the old one above.</div>}
           <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 8 }}>OneDrive and Google Drive can slot in later — the connector is provider-agnostic.</div>
         </>
       )}
