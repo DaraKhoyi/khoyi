@@ -16242,6 +16242,35 @@ function AppMain() {
   // Stamp the active view so uncaught errors/rejections are attributed correctly.
   useEffect(() => { if (typeof window !== 'undefined') window.__currentView = view; }, [view]);
 
+  const uidForReview = session?.user?.id || null;
+  const [reviewCount, setReviewCount] = useState(0);
+  React.useEffect(() => {
+    if (!uidForReview) return;
+    try { if (localStorage.getItem('prism_tips_pace')) return; } catch(_){ return; }
+    (async () => {
+      try {
+        const { data } = await supabase.from('profiles').select('primary_letter').eq('user_id', uidForReview).eq('subject_kind', 'owner').maybeSingle();
+        const L = ((data && data.primary_letter) || '').toUpperCase();
+        const def = L === 'C' ? 'thorough' : (L === 'D' || L === 'I') ? 'light' : 'balanced';
+        try { localStorage.setItem('prism_tips_pace', def); } catch(_){}
+      } catch(_) { try { localStorage.setItem('prism_tips_pace', 'balanced'); } catch(_2){} }
+    })();
+  }, [uidForReview]);
+  React.useEffect(() => {
+    if (!uidForReview) return; let alive = true;
+    (async () => {
+      try {
+        const [{ count: recN }, { data: calls }] = await Promise.all([
+          supabase.from('pending_recordings').select('id', { count: 'exact', head: true }).eq('user_id', uidForReview).eq('status', 'pending'),
+          supabase.from('quo_calls').select('proposed_tasks').eq('user_id', uidForReview).eq('review_status', 'pending'),
+        ]);
+        const taskN = (calls || []).reduce((a, c) => a + (Array.isArray(c.proposed_tasks) ? c.proposed_tasks.length : 0), 0);
+        if (alive) setReviewCount((recN || 0) + taskN);
+      } catch (_) {}
+    })();
+    return () => { alive = false; };
+  }, [uidForReview, view]);
+
   if (loading) return <div className="loading-screen"><div className="spinner"/><p>Loading…</p></div>;
   if (!session) return <AuthScreen />;
 
@@ -16251,33 +16280,6 @@ function AppMain() {
   const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
   const isImpersonating = (() => { try { return !!localStorage.getItem('__impersonating'); } catch (_) { return false; } })();
   const openTaskCount = tasks.filter(t=>!t.completed).length;
-  React.useEffect(() => {
-    if (!user?.id) return;
-    try { if (localStorage.getItem('prism_tips_pace')) return; } catch(_){ return; }
-    (async () => {
-      try {
-        const { data } = await supabase.from('profiles').select('primary_letter').eq('user_id', user.id).eq('subject_kind', 'owner').maybeSingle();
-        const L = ((data && data.primary_letter) || '').toUpperCase();
-        const def = L === 'C' ? 'thorough' : (L === 'D' || L === 'I') ? 'light' : 'balanced';
-        try { localStorage.setItem('prism_tips_pace', def); } catch(_){}
-      } catch(_) { try { localStorage.setItem('prism_tips_pace', 'balanced'); } catch(_2){} }
-    })();
-  }, [user?.id]);
-  const [reviewCount, setReviewCount] = useState(0);
-  React.useEffect(() => {
-    if (!user?.id) return; let alive = true;
-    (async () => {
-      try {
-        const [{ count: recN }, { data: calls }] = await Promise.all([
-          supabase.from('pending_recordings').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'pending'),
-          supabase.from('quo_calls').select('proposed_tasks').eq('user_id', user.id).eq('review_status', 'pending'),
-        ]);
-        const taskN = (calls || []).reduce((a, c) => a + (Array.isArray(c.proposed_tasks) ? c.proposed_tasks.length : 0), 0);
-        if (alive) setReviewCount((recN || 0) + taskN);
-      } catch (_) {}
-    })();
-    return () => { alive = false; };
-  }, [user?.id, view]);
 
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
