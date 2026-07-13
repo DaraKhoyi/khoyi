@@ -52,7 +52,9 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const message = String(body.message || "").slice(0, 2000);
     const pace = body.pace || null;
-    if (!message) return J({ error: "empty" }, 400);
+    const mode = String(body.mode || "chat");
+    const win = body.window || null;
+    if (!message && mode === "chat") return J({ error: "empty" }, 400);
 
     const [{ data: settings }, { data: goal }, { data: profs }, { data: checkins }] = await Promise.all([
       admin.from("coach_settings").select("*").eq("user_id", uid).maybeSingle(),
@@ -74,10 +76,14 @@ serve(async (req) => {
       ? `The agent's Blueprint (their goal expressed as a causal chain): GOAL = $${bp.gci.toLocaleString()} GCI. The chain: ${bp.convos.toLocaleString()} conversations -> ${bp.appts.toLocaleString()} appointments -> ${bp.deals} closings -> $${bp.gci.toLocaleString()} GCI. THE LEADING DOMINO is conversations: ${bp.perDay}/day, ${bp.perWeek}/week. This is the one number that makes the rest fall. Anchor your coaching to it.`
       : `The agent has NOT set a Blueprint yet. Your first priority is to warmly get them to set their goal (income target) so you can build their chain backward to a daily number. Nudge them to tap "Adjust goal".`;
 
+    let modeDirective = "";
+    if (mode === "morning") modeDirective = `\n\nMODE — MORNING KICKOFF: Write a short, energizing good-morning kickoff. Greet them, state today's leading number, name ONE focus for today, end with a clear go. 3-4 sentences, warm and punchy.`;
+    else if (mode === "evening") modeDirective = `\n\nMODE — EVENING REFLECTION: Write a short, caring evening check-in. Acknowledge the day, then ask 2-3 gentle questions: did they hit their block, one win, one thing that got in the way. Warm, human, never clinical or guilt-inducing.`;
+    else if (mode === "weekly") modeDirective = `\n\nMODE — WEEKLY REVIEW (your flagship coaching moment). ${win ? `This week they logged: ${win.convos} conversations, ${win.appts} appointments, ${win.closings} closings.` : ""} Deliver a real weekly review in 4 short beats: (1) celebrate one SPECIFIC win warmly, (2) name the gap honestly and kindly, (3) call out the weakest link and why, (4) set next week's leading number and ONE focus. Substantial but tight — like a great coach's weekly session, not an essay. Compassion first: if the week was rough, lead with care.`;
     const system = `You are ${coachName}, a real estate accountability coach living inside PrismOS. You are not a generic chatbot — you are this agent's personal coach who knows their real business.
 
 THE BLUEPRINT IS YOUR SPINE. A goal is never just a number; it is a causal chain of activities that produce it: conversations -> appointments -> closings -> GCI. You coach the ONE leading activity (conversations) that makes the whole chain fall, and you speak in this language: "your chain", "today's leading number", "the next domino".
-${blueprintCtx}${paceCtx}
+${blueprintCtx}${paceCtx}${modeDirective}
 
 HOW YOU COACH:
 - Ground every reply in their real numbers above. Never give generic advice like "prospect more" — say "you need ${bp ? bp.perDay : "your daily number of"} conversations today."
@@ -91,7 +97,8 @@ HOW YOU COACH:
 STYLE: Talk like a sharp, caring human coach texting their agent. Concise — a few sentences, not an essay. No headers, no bullet lists unless truly needed. Warm, direct, real.`;
 
     const history = (checkins || []).reverse().map((c: any) => ({ role: c.role === "agent" ? "user" : "assistant", content: c.content }));
-    const messages = [...history, { role: "user", content: message }];
+    const userTurn = mode === "chat" ? message : (message || `[Generate my ${mode} check-in]`);
+    const messages = [...history, { role: "user", content: userTurn }];
 
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -101,10 +108,11 @@ STYLE: Talk like a sharp, caring human coach texting their agent. Concise — a 
     const data = await resp.json();
     const reply = (data.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim() || "I'm here — say that again?";
 
-    await admin.from("coach_checkins").insert([
-      { user_id: uid, kind: "adhoc", role: "agent", content: message },
-      { user_id: uid, kind: "adhoc", role: "coach", content: reply },
-    ]);
+    const logKind = mode === "chat" ? "adhoc" : mode;
+    const rows: any[] = [];
+    if (mode === "chat") rows.push({ user_id: uid, kind: "adhoc", role: "agent", content: message });
+    rows.push({ user_id: uid, kind: logKind, role: "coach", content: reply, data: win || null });
+    await admin.from("coach_checkins").insert(rows);
     return J({ reply });
   } catch (e) {
     return J({ error: String(e) }, 500);

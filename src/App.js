@@ -5522,15 +5522,33 @@ function CoachView({ userId, setView }){
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
   const [pace, setPace] = useState(null);
+  const [rhythmMsg, setRhythmMsg] = useState(null);
+  const [rhythmBusy, setRhythmBusy] = useState(false);
+  const [moment, setMoment] = useState(null);
+  const [celebrate, setCelebrate] = useState(null);
   const load = React.useCallback(async () => {
     try {
       const [{ data: s }, { data: g }, { data: ch }] = await Promise.all([
         supabase.from('coach_settings').select('*').eq('user_id', userId).maybeSingle(),
         supabase.from('coach_goals').select('*').eq('user_id', userId).eq('active', true).order('created_at', { ascending:false }).limit(1).maybeSingle(),
-        supabase.from('coach_checkins').select('role,content,created_at').eq('user_id', userId).in('role', ['coach','agent']).order('created_at', { ascending:false }).limit(12),
+        supabase.from('coach_checkins').select('role,content,created_at,kind').eq('user_id', userId).order('created_at', { ascending:false }).limit(40),
       ]);
       setSettings(s || { coach_name:'John' }); setGoal(g || null);
-      setMsgs(((ch || []).reverse()).map(c => ({ role:c.role, content:c.content })));
+      const all = ch || [];
+      setMsgs(all.filter(c => (c.kind === 'adhoc' || !c.kind) && (c.role === 'coach' || c.role === 'agent')).reverse().map(c => ({ role:c.role, content:c.content })));
+      const todayStr = new Date().toDateString();
+      const isToday = (t) => new Date(t).toDateString() === todayStr;
+      const recentRhythm = all.find(c => ['morning','evening','weekly'].includes(c.kind));
+      if (recentRhythm && (isToday(recentRhythm.created_at) || (recentRhythm.kind === 'weekly' && (Date.now() - new Date(recentRhythm.created_at).getTime()) < 2 * 86400000))) setRhythmMsg({ mode: recentRhythm.kind, content: recentRhythm.content });
+      const rhythmSetting = (s && s.rhythm) || 'weekly';
+      if (rhythmSetting !== 'light') {
+        const doneToday = (k) => all.some(c => c.kind === k && isToday(c.created_at));
+        const lastWeekly = all.find(c => c.kind === 'weekly');
+        const daysSinceWeekly = lastWeekly ? (Date.now() - new Date(lastWeekly.created_at).getTime()) / 86400000 : 999;
+        const hr = new Date().getHours();
+        if (daysSinceWeekly >= 7) setMoment('weekly');
+        else if (rhythmSetting === 'daily') { if (hr < 12 && !doneToday('morning')) setMoment('morning'); else if (hr >= 17 && !doneToday('evening')) setMoment('evening'); }
+      }
       if (!g) { setEditing(true); }
       else {
         try {
@@ -5545,6 +5563,7 @@ function CoachView({ userId, setView }){
           const closings = cl.data || [];
           const actuals = { convos: cv.count || 0, appts: ap.count || 0, closings: closings.length, gciActual: closings.reduce((s2,d)=> s2 + (Number(d.gross_commission)||0), 0) };
           setPace(computePace(g, bpp, actuals));
+          try { const prev = parseInt(localStorage.getItem('coach_last_closings') || '-1', 10); if (prev >= 0 && actuals.closings > prev) setCelebrate(actuals.closings); localStorage.setItem('coach_last_closings', String(actuals.closings)); } catch(_){}
         } catch(_){}
       }
     } catch(_){}
@@ -5563,6 +5582,28 @@ function CoachView({ userId, setView }){
     } catch (_) { setMsgs(m => [...m, { role:'coach', content:'I’m having trouble connecting right now — try again in a moment.' }]); }
     setThinking(false);
   };
+  const computeWeekWindow = async () => {
+    try {
+      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+      const nowIso = new Date().toISOString();
+      const [cv, ap, cl] = await Promise.all([
+        supabase.from('contact_interactions').select('id', { count:'exact', head:true }).eq('user_id', userId).in('kind', ['call','meeting']).gte('occurred_at', weekAgo),
+        supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).gte('start_at', weekAgo).lte('start_at', nowIso),
+        supabase.from('deals').select('id', { count:'exact', head:true }).eq('user_id', userId).eq('status', 'closed').gte('close_date', weekAgo),
+      ]);
+      return { convos: cv.count || 0, appts: ap.count || 0, closings: cl.count || 0 };
+    } catch(_){ return null; }
+  };
+  const paceSummary = () => pace ? { onTrack:pace.onTrack, projectedGci:pace.projectedGci, neededPerDay:pace.neededPerDay, elapsedDays:pace.elapsedDays, totalDays:pace.totalDays, weakest:{ key:pace.weakest.key, label:pace.weakest.label, actual:pace.weakest.actual, needed:pace.weakest.needed }, links:pace.links.map(l => ({ label:l.label, actual:l.actual, needed:l.needed, expected:l.expected })) } : null;
+  const triggerRhythm = async (mode) => {
+    setRhythmBusy(true); setMoment(null);
+    try {
+      const win = mode === 'weekly' ? await computeWeekWindow() : null;
+      const { data } = await supabase.functions.invoke('coach-chat', { body: { message:'', mode, window: win, pace: paceSummary() } });
+      setRhythmMsg({ mode, content: (data && data.reply) || '' });
+    } catch(_){ setRhythmBusy(false); }
+    setRhythmBusy(false);
+  };
   if (loading) return <div className="ww-prism" style={{ padding:20 }}><PrismThinking label="Loading your Blueprint" /></div>;
   if (editing) return <GoalSetup userId={userId} coachName={coachName} existing={goal} onSaved={() => { setEditing(false); load(); }} onCancel={goal ? () => setEditing(false) : null} />;
   const bp = buildBlueprint(goal);
@@ -5576,6 +5617,27 @@ function CoachView({ userId, setView }){
         </div>
         <button onClick={() => setEditing(true)} className="btn btn-ghost btn-sm" style={{ flexShrink:0, marginTop:6, fontSize:11 }}>Adjust goal</button>
       </div>
+      {celebrate != null && (
+        <div style={{ marginBottom:14, padding:'14px 16px', borderRadius:14, background:'rgba(120,180,120,.1)', border:'1px solid rgba(120,180,120,.45)' }}>
+          <div style={{ fontSize:20, marginBottom:2 }}>🎉</div>
+          <div style={{ fontFamily:'Fraunces, serif', fontSize:18, color:'#F6F1E7', marginBottom:4 }}>That’s a closing — {celebrate} this period!</div>
+          <div style={{ fontSize:12.5, color:'#C8BFAE' }}>Real progress on your chain. Take the win — then let’s line up the next one.</div>
+          <button onClick={() => { setCelebrate(null); send('I just closed a deal!'); }} className="btn btn-primary btn-sm" style={{ marginTop:10 }}>Tell {coachName}</button>
+        </div>
+      )}
+      {(moment || rhythmMsg || rhythmBusy) && (
+        <div style={{ marginBottom:14, padding:'14px 16px', borderRadius:14, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.4)' }}>
+          {rhythmBusy ? <PrismThinking label={coachName + ' is writing'} /> : rhythmMsg ? (<>
+            <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:'#CBA35C', marginBottom:6 }}>{rhythmMsg.mode === 'weekly' ? '📋 Weekly review' : rhythmMsg.mode === 'morning' ? '☀️ Morning kickoff' : '🌙 Evening reflection'} · {coachName}</div>
+            <div style={{ fontSize:13.5, color:'#F6F1E7', lineHeight:1.55, whiteSpace:'pre-wrap' }}>{rhythmMsg.content}</div>
+            {rhythmMsg.mode === 'evening' && <input className="form-input" placeholder={'Reply to ' + coachName + '…'} onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { send(e.target.value.trim()); setRhythmMsg(null); } }} style={{ marginTop:10 }} />}
+          </>) : (<>
+            <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:'#CBA35C', marginBottom:6 }}>{moment === 'weekly' ? '📋 Weekly review' : moment === 'morning' ? '☀️ Morning kickoff' : '🌙 Evening reflection'}</div>
+            <div style={{ fontSize:13.5, color:'#F6F1E7', marginBottom:10 }}>{moment === 'weekly' ? 'Ready for your weekly review with ' + coachName + '?' : moment === 'morning' ? 'Ready to start the day with ' + coachName + '?' : 'Let’s reflect on today with ' + coachName + '.'}</div>
+            <button onClick={() => triggerRhythm(moment)} className="btn btn-primary btn-sm">Start</button>
+          </>)}
+        </div>
+      )}
       <div style={{ margin:'12px 0 14px', padding:'18px', borderRadius:16, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.34)' }}>
         <div style={{ fontSize:11.5, color:'#C8BFAE', marginBottom:4 }}>Today’s leading number — the one domino that makes the rest fall</div>
         <div style={{ fontFamily:'Fraunces, serif', fontSize:44, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{pace && !pace.onTrack ? pace.neededPerDay : bp.leading.perDay}</div>
