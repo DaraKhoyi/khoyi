@@ -5526,6 +5526,10 @@ function CoachView({ userId, setView }){
   const [rhythmBusy, setRhythmBusy] = useState(false);
   const [moment, setMoment] = useState(null);
   const [celebrate, setCelebrate] = useState(null);
+  const [recList, setRecList] = useState([]);
+  const [recBusy, setRecBusy] = useState(false);
+  const [recReview, setRecReview] = useState(null);
+  const [recPickerOpen, setRecPickerOpen] = useState(false);
   const load = React.useCallback(async () => {
     try {
       const [{ data: s }, { data: g }, { data: ch }] = await Promise.all([
@@ -5603,6 +5607,19 @@ function CoachView({ userId, setView }){
       setRhythmMsg({ mode, content: (data && data.reply) || '' });
     } catch(_){ setRhythmBusy(false); }
     setRhythmBusy(false);
+  };
+  const openRecPicker = async () => {
+    setRecPickerOpen(true);
+    try { const { data } = await supabase.from('recordings').select('id,title,recorded_at,created_at').eq('user_id', userId).eq('transcription_status', 'ready').not('transcript_text', 'is', null).order('recorded_at', { ascending:false }).limit(12); setRecList(data || []); } catch(_){ setRecList([]); }
+  };
+  const reviewRecording = async (id) => {
+    setRecBusy(true); setRecPickerOpen(false);
+    try {
+      const { data } = await supabase.functions.invoke('coach-recording-review', { body: { recording_id: id } });
+      if (data && data.reply) setRecReview({ title: data.title, meRatio: data.me_ratio, reply: data.reply });
+      else setRecReview({ title:'', meRatio:null, reply:'I couldn’t review that one — the transcript may not be ready yet.' });
+    } catch(_){ setRecReview({ title:'', meRatio:null, reply:'I ran into trouble reviewing that — try again in a moment.' }); }
+    setRecBusy(false);
   };
   if (loading) return <div className="ww-prism" style={{ padding:20 }}><PrismThinking label="Loading your Blueprint" /></div>;
   if (editing) return <GoalSetup userId={userId} coachName={coachName} existing={goal} onSaved={() => { setEditing(false); load(); }} onCancel={goal ? () => setEditing(false) : null} />;
@@ -5686,6 +5703,57 @@ function CoachView({ userId, setView }){
           <button onClick={() => send('Coach me on my weakest link — ' + wc.title)} className="btn btn-primary btn-sm">Talk to {coachName} about this</button>
         </div>
       ); })()}
+      {pace && pace.links[1].actual >= 3 && (() => {
+        const c = pace.links[0].actual, a = pace.links[1].actual, d = pace.links[2].actual;
+        const real = { cpa: a > 0 ? c / a : null, apd: d > 0 ? a / d : null, comm: d > 0 ? pace.gciActual / d : null };
+        const asm = bp.ratios;
+        const fmt1 = (x) => x == null ? '—' : (Math.round(x * 10) / 10);
+        const worse = (realV, asmV) => realV != null && realV > asmV * 1.15;
+        const applyReal = async () => {
+          const params = { ...(goal.params || {}), convos_per_appt: real.cpa ? Math.round(real.cpa * 10) / 10 : asm.convosPerAppt, appts_per_deal: real.apd ? Math.round(real.apd * 10) / 10 : asm.apptsPerDeal, avg_commission: real.comm ? Math.round(real.comm) : asm.avgComm };
+          try { await supabase.from('coach_goals').update({ params }).eq('id', goal.id); load(); } catch(_){}
+        };
+        const Row = ({ label, realV, asmV, money }) => (
+          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid rgba(203,163,92,.1)' }}>
+            <span style={{ flex:1, fontSize:12.5, color:'#F6F1E7' }}>{label}</span>
+            <span style={{ fontSize:12.5, color: worse(realV, asmV) ? '#e0965a' : '#8FCA8F', fontWeight:700 }}>{realV == null ? '—' : (money ? ('$' + Math.round(realV).toLocaleString()) : fmt1(realV))}</span>
+            <span style={{ fontSize:11, color:'#8C8475', minWidth:64, textAlign:'right' }}>plan {money ? ('$' + Math.round(asmV).toLocaleString()) : asmV}</span>
+          </div>
+        );
+        return (
+          <div style={{ marginBottom:18, padding:'14px 16px', borderRadius:14, background:'#150F0A', border:'1px solid rgba(203,163,92,.24)' }}>
+            <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>Your real conversion · from {a} appointments</div>
+            <Row label="Conversations per appointment" realV={real.cpa} asmV={asm.convosPerAppt} />
+            <Row label="Appointments per closing" realV={real.apd} asmV={asm.apptsPerDeal} />
+            <Row label="Avg commission" realV={real.comm} asmV={asm.avgComm} money />
+            <div style={{ fontSize:11.5, color:'#8C8475', margin:'10px 0', lineHeight:1.5 }}>Numbers in amber are running heavier than your plan — that link is where you’re leaking. Apply your real numbers and {coachName} recalibrates the whole Blueprint to reality.</div>
+            <button onClick={applyReal} className="btn btn-ghost btn-sm">Apply my real numbers</button>
+          </div>
+        );
+      })()}
+      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>Review an appointment with {coachName}</div>
+      <div style={{ marginBottom:22 }}>
+        {recReview ? (
+          <div style={{ padding:'14px 16px', borderRadius:14, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.4)' }}>
+            <div style={{ fontSize:12.5, fontWeight:700, color:'#F6F1E7', marginBottom:4 }}>{recReview.title}</div>
+            {recReview.meRatio != null && <div style={{ fontSize:11.5, color: recReview.meRatio > 0.6 ? '#e0965a' : '#8FCA8F', marginBottom:8 }}>You spoke {Math.round(recReview.meRatio * 100)}% of the time{recReview.meRatio > 0.6 ? ' — try to listen more' : ''}</div>}
+            <div style={{ fontSize:13.5, color:'#F6F1E7', lineHeight:1.55, whiteSpace:'pre-wrap' }}>{recReview.reply}</div>
+            <button onClick={() => { setRecReview(null); setRecPickerOpen(false); }} className="btn btn-ghost btn-sm" style={{ marginTop:10 }}>Done</button>
+          </div>
+        ) : recBusy ? (
+          <div style={{ padding:'14px' }}><PrismThinking label={coachName + ' is listening'} /></div>
+        ) : recPickerOpen ? (
+          <div style={{ padding:'12px', borderRadius:14, background:'#150F0A', border:'1px solid rgba(203,163,92,.2)' }}>
+            {recList.length === 0 ? <div style={{ fontSize:12.5, color:'#8C8475', padding:'6px' }}>No transcribed recordings yet. Record an appointment and it’ll appear here.</div> :
+             recList.map(r => <button key={r.id} onClick={() => reviewRecording(r.id)} style={{ display:'block', width:'100%', textAlign:'left', padding:'10px 12px', marginBottom:6, borderRadius:10, background:'transparent', border:'1px solid rgba(203,163,92,.2)', color:'#F6F1E7', fontSize:12.5, cursor:'pointer' }}>{r.title || 'Untitled recording'}<span style={{ display:'block', fontSize:10.5, color:'#8C8475' }}>{new Date(r.recorded_at || r.created_at).toLocaleDateString()}</span></button>)}
+          </div>
+        ) : (
+          <div style={{ padding:'14px 16px', borderRadius:14, background:'#150F0A', border:'1px solid rgba(203,163,92,.2)' }}>
+            <div style={{ fontSize:12.5, color:'#C8BFAE', marginBottom:10, lineHeight:1.5 }}>Let {coachName} listen to a real appointment and coach you on it — your talk ratio, whether you found the motivation, the ask, the objections, the next steps. This is how the pros get better.</div>
+            <button onClick={openRecPicker} className="btn btn-primary btn-sm">Pick a recording</button>
+          </div>
+        )}
+      </div>
       <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>Talk to {coachName}</div>
       <div style={{ background:'#150F0A', border:'1px solid rgba(203,163,92,.2)', borderRadius:14, padding:'12px', marginBottom:12 }}>
         {msgs.length === 0 && <div style={{ fontSize:12.5, color:'#8C8475', padding:'8px 4px' }}>Ask {coachName} anything — how you’re pacing, what to do next, a slump, a listing you bombed. He knows your Blueprint and your numbers.</div>}
