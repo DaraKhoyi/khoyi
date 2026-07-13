@@ -5136,6 +5136,86 @@ function LearnView({ setView }){
   );
 }
 
+// ── Phase 4: behavior-driven coaching ──────────────────────────────
+// Reads the agent's real data, finds one meaningful gap, teaches the why,
+// offers a one-tap fix. Paced: at most one nudge per 2 days, and a given
+// nudge won't repeat for 5 days (or until the gap closes on its own).
+const COACH_GLOBAL_GAP = 48 * 60 * 60 * 1000;
+const COACH_COOLDOWN = 5 * 24 * 60 * 60 * 1000;
+function coachSeen(){ try { return JSON.parse(localStorage.getItem('prism_coach_seen') || '{}'); } catch(_){ return {}; } }
+function coachLast(){ try { return parseInt(localStorage.getItem('prism_coach_last') || '0', 10) || 0; } catch(_){ return 0; } }
+function coachLastTouch(c){ const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; }
+
+const BEHAVIORS = [
+  { id:'going_cold', priority:6, view:'contacts', min:8,
+    test:(x)=>{ const n=Date.now(); return x.contacts.filter(c=>{ const t=coachLastTouch(c); return t && (n - t) > 75*86400000; }).length; },
+    title:(x)=>{ const n=Date.now(); const c=x.contacts.filter(cc=>{ const t=coachLastTouch(cc); return t && (n - t) > 75*86400000; }).length; return c + ' people haven\'t heard from you in months'; },
+    why:'The deal goes to whoever is top-of-mind the moment someone decides to move — not the best agent, the remembered one. A quick, genuine touch now keeps a warm relationship from quietly going cold on you.',
+    cta:'See who\'s cold' },
+  { id:'cadence_gap', priority:5, view:'contacts', min:1,
+    test:(x)=>{ const total=x.contacts.length; const cad=x.contacts.filter(c=>c.cadence_days).length; return (total >= 15 && cad < Math.max(3, Math.round(total*0.1))) ? 1 : 0; },
+    title:()=>'Most of your contacts have no cadence',
+    why:'A cadence turns a name in your phone into a relationship that sends referrals. Set one on your key people and Prism reminds you when it\'s time to reach out — so staying top-of-mind runs on rhythm instead of memory.',
+    cta:'Set cadences' },
+  { id:'review_backlog', priority:7, view:'review', min:4,
+    test:(x)=> x.reviewCount || 0,
+    title:(x)=> x.reviewCount + ' items are waiting in Review',
+    why:'Review is where recordings get labeled and suggested to-dos get confirmed. Let it stack up and Prism can\'t research the people you met or surface the right next step. Two minutes clearing it keeps the whole engine sharp.',
+    cta:'Clear Review' },
+  { id:'owe_replies', priority:8, view:'contacts', min:4,
+    test:(x)=> Object.keys(x.oweReplyMap || {}).length,
+    title:(x)=> 'You owe ' + Object.keys(x.oweReplyMap || {}).length + ' people a reply',
+    why:'Speed is the cheapest edge in this business — the first agent to respond usually wins. When people are left waiting, some go find someone who answers. Knock these out and protect the deals sitting inside them.',
+    cta:'See who\'s waiting' },
+  { id:'overdue_tasks', priority:4, view:'tasks', min:6,
+    test:(x)=>{ const t=new Date().toISOString().slice(0,10); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < t).length; },
+    title:(x)=>{ const t=new Date().toISOString().slice(0,10); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < t).length + ' tasks are past due'; },
+    why:'A task list you don\'t trust is a list you stop looking at. When overdue items pile up, reschedule or clear them so the list reflects reality again — a clean list is one you\'ll actually work.',
+    cta:'Review tasks' },
+];
+
+function CoachNudge({ contacts = [], tasks = [], events = [], deals = [], reviewCount = 0, oweReplyMap = {}, setView }){
+  const [pick, setPick] = useState(null);
+  const [dismissed, setDismissed] = useState(false);
+  const evaluated = React.useRef(false);
+  React.useEffect(() => {
+    if (evaluated.current) return;
+    if (!(contacts.length || reviewCount || tasks.length || Object.keys(oweReplyMap).length)) return; // wait for data
+    evaluated.current = true;
+    try {
+      if (!tipsAreEnabled()) return;
+      if (Date.now() - coachLast() < COACH_GLOBAL_GAP) return;
+      const ctx = { contacts, tasks, events, deals, reviewCount, oweReplyMap };
+      const seen = coachSeen();
+      const cands = BEHAVIORS
+        .map(b => ({ b, n: (b.test(ctx) || 0) }))
+        .filter(o => o.n >= (o.b.min || 1))
+        .filter(o => (Date.now() - (seen[o.b.id] || 0)) >= COACH_COOLDOWN)
+        .sort((a, b) => b.b.priority - a.b.priority);
+      const chosen = cands[0] ? cands[0].b : null;
+      if (chosen) {
+        const s = coachSeen(); s[chosen.id] = Date.now();
+        localStorage.setItem('prism_coach_seen', JSON.stringify(s));
+        localStorage.setItem('prism_coach_last', String(Date.now()));
+        setPick(chosen);
+      }
+    } catch (_) {}
+  }, [contacts, reviewCount, tasks, deals, oweReplyMap]);
+  if (!pick || dismissed) return null;
+  const ctx = { contacts, tasks, events, deals, reviewCount, oweReplyMap };
+  return (
+    <div style={{ border:'1px solid rgba(203,163,92,.4)', borderRadius:16, padding:'16px 18px', marginBottom:16, background:'linear-gradient(180deg,#1B1610,#100D09)' }}>
+      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>✦ Prism noticed</div>
+      <div style={{ fontFamily:'Fraunces, serif', fontSize:18, letterSpacing:'-.01em', color:'#F6F1E7', marginBottom:6 }}>{pick.title(ctx)}</div>
+      <div style={{ fontSize:13, lineHeight:1.6, color:'#C8BFAE', marginBottom:14 }}>{pick.why}</div>
+      <div style={{ display:'flex', gap:8 }}>
+        <button onClick={() => { setDismissed(true); setView(pick.view); }} className="btn btn-primary btn-sm">{pick.cta}</button>
+        <button onClick={() => setDismissed(true)} className="btn btn-ghost btn-sm">Not now</button>
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, reviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [], oweReplyMap = {}, setOweReplyMap }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
@@ -5262,6 +5342,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
   return (
     <div className="ww-prism">
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .dash-hero{background:linear-gradient(180deg,#1B1610,#100D09);border:1px solid rgba(203,163,92,.22);border-radius:20px;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .quick-chip{border:1px solid rgba(203,163,92,.34);color:#C8BFAE;background:transparent;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
+      <CoachNudge contacts={contacts} tasks={tasks} events={events} deals={deals} reviewCount={reviewCount} oweReplyMap={oweReplyMap} setView={setView} />
       {reviewCount > 0 && (
         <button onClick={()=>setView('review')} style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'12px 16px', marginBottom:12, borderRadius:14, cursor:'pointer', textAlign:'left', background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.34)' }}>
           <span style={{ fontSize:18 }}>✦</span>
