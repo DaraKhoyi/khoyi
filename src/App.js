@@ -1363,6 +1363,7 @@ function ChatView({ robots, userId }) {
             const msg = { role: e.role, content: e.content || '' };
             if (e.image_path) msg.image_path = e.image_path;
             if (e.receipt_data) msg.receipt_data = e.receipt_data;
+            if (e.research_action) msg.research_action = e.research_action;
             flat.push(msg);
           }
         }
@@ -1554,12 +1555,14 @@ function ChatView({ robots, userId }) {
       if (error) throw error;
       const reply = data?.response || data?.reply || data?.content || '';
       const receiptData = data?.receipt_data || null;
-      if (reply || receiptData) {
+      const researchAction = data?.research_action || null;
+      if (reply || receiptData || researchAction) {
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last?.role === 'assistant' && last?.content === reply && !receiptData) return prev;
+          if (last?.role === 'assistant' && last?.content === reply && !receiptData && !researchAction) return prev;
           const newMsg = { role: 'assistant', content: reply };
           if (receiptData) newMsg.receipt_data = receiptData;
+          if (researchAction) newMsg.research_action = researchAction;
           return [...prev, newMsg];
         });
       } else if (data?.error) {
@@ -1942,6 +1945,23 @@ function ChatMessageBubble({
                 )}
               </>
             )}
+          </div>
+        )}
+        {message.research_action && (
+          <div style={{ marginTop: 8 }}>
+            {message.research_action.kind === 'research' ? (
+              <button type="button"
+                onClick={() => { if (window.__openContactResearch) window.__openContactResearch(message.research_action.contact_id); }}
+                style={{ background:'var(--accent)', color:'#000', border:'none', borderRadius:999, padding:'8px 14px', fontSize:13, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6 }}>
+                🔎 Research {message.research_action.name}
+              </button>
+            ) : message.research_action.kind === 'create' ? (
+              <button type="button"
+                onClick={() => { if (window.__openContactResearch) window.__openContactResearch(null, message.research_action); }}
+                style={{ background:'transparent', color:'var(--accent)', border:'1px solid var(--accent)', borderRadius:999, padding:'8px 14px', fontSize:13, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6 }}>
+                🔎 Create contact &amp; research {message.research_action.name}
+              </button>
+            ) : null}
           </div>
         )}
       </div>
@@ -7903,6 +7923,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const [showResearchModal, setShowResearchModal] = useState(false);
   const [researchScope, setResearchScope] = useState('both');  // 'personal' | 'business' | 'both'
   const [researchStage, setResearchStage] = useState('idle');  // 'idle' | 'identifying' | 'choose_candidate' | 'researching' | 'done' | 'error'
+  useEffect(() => { if (contact && window.__autoResearch && window.__autoResearch === contact.id) { window.__autoResearch = null; setShowResearchModal(true); setTimeout(() => { try { startResearch(); } catch (_) {} }, 150); } /* eslint-disable-next-line */ }, [contact]);
   const [researchCandidates, setResearchCandidates] = useState([]);
   const [researchError, setResearchError] = useState(null);
   const [showResearchReport, setShowResearchReport] = useState(false);  // for viewing existing report
@@ -17072,6 +17093,7 @@ function AppMain() {
   // window.__composeEmail(address) to open the PrismOS composer instead of the OS/Gmail app.
   useEffect(() => {
     window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
+    window.__openContactResearch = (contactId, prefill) => { try { if (contactId) { window.__pendingResearch = contactId; } else if (prefill) { window.__pendingContactPrefill = prefill; } navigate('contacts'); } catch (_) {} };
     window.__setView = (v) => { try { navigate(v); } catch (_) {} };  // used by the automated smoke-check harness
     window.__openOnboarding = () => { setOnboardingReopen(true); setSidebarOpen(false); };  // manual re-launch of the setup wizard
   }); // eslint-disable-line

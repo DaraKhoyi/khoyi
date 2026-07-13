@@ -162,6 +162,7 @@ function buildToolSpecs() {
     { perm: "calendar_write", confirm: true, def: { name: "create_event", description: "Create a calendar event. Requires confirm:true.", input_schema: { type: "object", properties: { title: { type: "string" }, start_at: { type: "string", description: "ISO datetime" }, end_at: { type: "string", description: "ISO datetime" }, all_day: { type: "boolean" }, location: { type: "string" }, description: { type: "string" }, confirm: { type: "boolean" } }, required: ["title", "start_at"] } } },
     { perm: "prospecting_control", def: { name: "prospecting", description: "Control prospecting: start_timer/stop_timer for a lead-gen system, or complete_task. Live actions, no confirm needed.", input_schema: { type: "object", properties: { action: { type: "string", enum: ["start_timer", "stop_timer", "complete_task"] }, system: { type: "string", description: "system name" }, task: { type: "string", description: "task description to match" } }, required: ["action"] } } },
     { perm: "contacts_read", def: { name: "find_contacts", description: "Search the user's contacts by name, company, or email.", input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } } } } },
+    { perm: "contacts_read", def: { name: "research_contact", description: "Call this when the user asks you to look up, research, find info on, or 'who is' a specific PERSON. It checks whether that person is one of the user's contacts and surfaces a one-tap button that runs PrismOS's full web research on them. Pass the person's name plus any identifiers the user mentioned (email, phone, company). Do NOT web-search the person yourself — this hands off to the dedicated research flow, which is more thorough and saves the result to the contact.", input_schema: { type: "object", properties: { name: { type: "string" }, email: { type: "string" }, phone: { type: "string" }, company: { type: "string" } }, required: ["name"] } } },
     { perm: "contacts_write", confirm: true, def: { name: "update_contact", description: "Update a contact. Requires confirm:true.", input_schema: { type: "object", properties: { contact_id: { type: "string" }, name: { type: "string", description: "used to find the contact if no id" }, notes: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, priority: { type: "string" }, status: { type: "string" }, cadence_days: { type: "integer" }, confirm: { type: "boolean" } } } } },
     { perm: "contacts_write", confirm: true, def: { name: "create_contact", description: "Create a NEW contact. Use this when the user shares a business card photo, a screenshot, or typed details and wants the person saved. Read every field you can from the image/text and pass them in. Requires confirm:true.", input_schema: { type: "object", properties: {
       name: { type: "string", description: "Full name (required)" },
@@ -308,6 +309,26 @@ async function execTool(name, input, ctx) {
         if (input.query) q = q.or(`name.ilike.%${input.query}%,company.ilike.%${input.query}%,email.ilike.%${input.query}%`);
         const { data } = await q.order("last_contact_at", { ascending: false, nullsFirst: false }).limit(Math.min(25, input.limit || 15));
         return { contacts: data || [] };
+      }
+      case "research_contact": {
+        const nm = String(input.name || "").trim();
+        if (!nm) return { error: "A name is required." };
+        let q = supabase.from("contacts").select("id,name,company").eq("user_id", userId);
+        const ors = [`name.ilike.%${nm}%`];
+        if (input.email) ors.push(`email.ilike.%${input.email}%`);
+        if (input.company) ors.push(`company.ilike.%${input.company}%`);
+        q = q.or(ors.join(","));
+        const { data: matches } = await q.limit(6);
+        const list = matches || [];
+        if (list.length === 1) {
+          if (ctx.actionRef) ctx.actionRef.value = { kind: "research", contact_id: list[0].id, name: list[0].name };
+          return { found: true, contact: { id: list[0].id, name: list[0].name, company: list[0].company || null }, note: "A Research button will appear under your reply. Tell the user you found them and to tap it — do NOT describe the person yourself." };
+        }
+        if (list.length > 1) {
+          return { found: "multiple", matches: list.map((c) => ({ name: c.name, company: c.company || null })), note: "Ask which one they mean, then call research_contact again with more detail." };
+        }
+        if (ctx.actionRef) ctx.actionRef.value = { kind: "create", name: nm, email: input.email || null, phone: input.phone || null, company: input.company || null };
+        return { found: false, name: nm, note: "Not a saved contact. A 'Create contact & research' button will appear under your reply. Offer it, and mention research works best with an email, phone, or employer." };
       }
       case "update_contact": {
         const c = await findContact(supabase, userId, input.contact_id || input.name);
@@ -583,6 +604,7 @@ serve(async (req) => {
     capLines.push("You can search the user's own saved Knowledge with search_knowledge (their notes, documents, files, links about their projects and know-how). Use it whenever they ask about their projects, properties, deals, or anything they might have saved; answer from what it returns, cite sources inline as [Knowledge: <title>], and never invent details it does not contain.");
     if (tools.length) {
       capLines.push("You have live tools to act inside PrismOS on the user's behalf — all scoped to this user only. Use them to fetch real data and take actions rather than guessing.");
+      capLines.push("RESEARCH HANDOFF: When the user asks you to look up, research, find info on, or 'who is' a specific person, call research_contact — do NOT web-search them yourself. If it returns found:true, say you found them in their contacts and to tap the Research button below; do not summarize the person. If found:false, offer the 'Create contact & research' button below and note research works best with an email, phone, or employer. If multiple, ask which one they mean.");
       capLines.push("CONFIRMATIONS: If a tool returns needs_confirmation, the action did NOT happen. Tell the user in plain language exactly what you'll do and ask them to confirm; only re-call that tool with confirm:true after they explicitly agree.");
     }
     if (tools.some((t) => t.name === "create_contact")) {
@@ -595,6 +617,7 @@ serve(async (req) => {
     let usage = null;
     let chatFailed = false;
     let loopMessages = messages;
+    const actionRef = { value: null };
     try {
       for (let i = 0; i < MAX_TOOL_ITERS; i++) {
         const resp = await callClaude(system, loopMessages, tools);
@@ -604,7 +627,7 @@ serve(async (req) => {
           loopMessages = [...loopMessages, { role: "assistant", content: resp.content }];
           const results = [];
           for (const tu of clientToolUses) {
-            const out = await execTool(tu.name, tu.input, { supabase, userId, token, robotId: robot_id });
+            const out = await execTool(tu.name, tu.input, { supabase, userId, token, robotId: robot_id, actionRef });
             results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out ?? {}) || "{}" });
           }
           loopMessages = [...loopMessages, { role: "user", content: results }];
@@ -637,6 +660,7 @@ serve(async (req) => {
       if (image_path) userTurn.image_path = image_path;
       const assistantTurn = { role: "assistant", content: text, ts: new Date().toISOString() };
       if (receiptData) assistantTurn.receipt_data = receiptData;
+      if (actionRef.value) assistantTurn.research_action = actionRef.value;
       const newTurns = [userTurn, assistantTurn];
       const { data: existing } = await supabase.from("robot_conversations").select("id, messages").eq("user_id", userId).eq("robot_id", robot_id).maybeSingle();
       if (existing) {
@@ -649,6 +673,7 @@ serve(async (req) => {
 
     const responsePayload = { response: text, meta: { model: MODEL, tokens: usage, degraded: chatFailed } };
     if (receiptData) responsePayload.receipt_data = receiptData;
+    if (actionRef.value) responsePayload.research_action = actionRef.value;
     return new Response(JSON.stringify(responsePayload), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err && err.message ? err.message : err) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });

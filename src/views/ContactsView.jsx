@@ -925,8 +925,12 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     try {
       const v = window.__pendingSharedVCard;
       if (v) { window.__pendingSharedVCard = null; const parsed = parseVCard(v); if (parsed) { setEditContact(parsed); setShowModal(true); } }
+      const rid = window.__pendingResearch;
+      if (rid && contacts && contacts.length) { const c = contacts.find(x => x.id === rid); if (c) { window.__pendingResearch = null; window.__autoResearch = c.id; setDetailContact(c); } }
+      const pf = window.__pendingContactPrefill;
+      if (pf) { window.__pendingContactPrefill = null; window.__researchAfterSave = true; setEditContact({ name: pf.name || '', email: pf.email || '', phone: pf.phone || '', company: pf.company || '' }); setShowModal(true); }
     } catch (_) {}
-  }, []);
+  }, [contacts]);
   const [detailContact, setDetailContact] = useState(null);
   // Bulk lead-source tagging
   const [tagMode, setTagMode] = useState(false);
@@ -1226,6 +1230,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     }
     setShowModal(false);
     if (editFromDetail && savedRow) setDetailContact(savedRow);
+    else if (window.__researchAfterSave && savedRow) { window.__researchAfterSave = false; window.__autoResearch = savedRow.id; setDetailContact(savedRow); }
     setEditContact(null); setEditFromDetail(false);
   }
 
@@ -1599,7 +1604,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       )}
       {showVCard && <VCardImportModal onClose={()=>setShowVCard(false)} onParsed={(init)=>{ setShowVCard(false); setEditContact(init); setShowModal(true); }} />}
       {showModal && <ContactModal canSeeRestricted={canSeeRestricted}
-        onClose={()=>{ setShowModal(false); if (editFromDetail && editContact) setDetailContact(editContact); setEditContact(null); setEditFromDetail(false); }}
+        onClose={()=>{ try { window.__researchAfterSave = false; } catch(_){} setShowModal(false); if (editFromDetail && editContact) setDetailContact(editContact); setEditContact(null); setEditFromDetail(false); }}
         onSave={handleSave}
         onDelete={async (c)=>{ if(!await confirmDialog(`Delete contact "${c.name}"?`)) return; await deleteContact(c.id); setShowModal(false); setEditContact(null); setEditFromDetail(false); }}
         onShowDetails={(c)=>{ setShowModal(false); setEditContact(null); setEditFromDetail(false); setDetailContact(c); }}
