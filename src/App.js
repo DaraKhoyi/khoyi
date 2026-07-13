@@ -5060,32 +5060,45 @@ const LESSONS = [
 ];
 
 const MILESTONES = [
-  { id:'first',  icon:'✦', label:'First light',   desc:'Learned your first lesson',           need:(s)=> s.filter(id=>LESSONS.some(l=>l.id===id)).length >= 1 },
-  { id:'day',    icon:'☀️', label:'Day master',    desc:'Learned everything in Your day',      need:(s)=> LESSONS.filter(l=>l.cat==='Your day').every(l=>s.includes(l.id)) },
-  { id:'people', icon:'👥', label:'People reader',  desc:'Learned everything in Your people',   need:(s)=> LESSONS.filter(l=>l.cat==='Your people').every(l=>s.includes(l.id)) },
-  { id:'biz',    icon:'📈', label:'Numbers person', desc:'Learned everything in Your business', need:(s)=> LESSONS.filter(l=>l.cat==='Your business').every(l=>s.includes(l.id)) },
-  { id:'memory', icon:'🧠', label:'Total recall',   desc:'Learned everything in Your memory',   need:(s)=> LESSONS.filter(l=>l.cat==='Your memory').every(l=>s.includes(l.id)) },
-  { id:'pro',    icon:'🏆', label:'PrismOS Pro',    desc:'Learned every fundamental',           need:(s)=> LESSONS.every(l=>s.includes(l.id)) },
+  { id:'first',  icon:'✦', label:'First light',   desc:'Learned your first lesson',           need:(s,L)=> s.filter(id=>L.some(l=>l.id===id)).length >= 1 },
+  { id:'day',    icon:'☀️', label:'Day master',    desc:'Learned everything in Your day',      need:(s,L)=> L.filter(l=>l.cat==='Your day').every(l=>s.includes(l.id)) },
+  { id:'people', icon:'👥', label:'People reader',  desc:'Learned everything in Your people',   need:(s,L)=> L.filter(l=>l.cat==='Your people').every(l=>s.includes(l.id)) },
+  { id:'biz',    icon:'📈', label:'Numbers person', desc:'Learned everything in Your business', need:(s,L)=> L.filter(l=>l.cat==='Your business').every(l=>s.includes(l.id)) },
+  { id:'memory', icon:'🧠', label:'Total recall',   desc:'Learned everything in Your memory',   need:(s,L)=> L.filter(l=>l.cat==='Your memory').every(l=>s.includes(l.id)) },
+  { id:'pro',    icon:'🏆', label:'PrismOS Pro',    desc:'Learned every fundamental',           need:(s,L)=> L.every(l=>s.includes(l.id)) },
 ];
 
-function LearnView({ setView }){
+function LearnView({ setView, userId, isAdmin = false }){
   const [seen, setSeen] = useState(() => tipsSeenList());
   const [open, setOpen] = useState(null);
   const [deepId, setDeepId] = useState(null);
-  const total = LESSONS.length;
-  const learned = LESSONS.filter(l => seen.includes(l.id)).length;
+  const [custom, setCustom] = useState([]);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const loadCustom = React.useCallback(async () => {
+    try { const { data } = await supabase.from('teaching_lessons').select('*').eq('active', true).order('sort', { ascending: true }); setCustom((data || []).map(r => ({ id:'tl_'+r.id, cat: r.category || 'Your business', title: r.title, body: r.body, deeper: r.deeper || '' }))); } catch (_) {}
+  }, []);
+  React.useEffect(() => { loadCustom(); }, [loadCustom]);
+  const allLessons = [...LESSONS, ...custom];
+  const total = allLessons.length;
+  const learned = allLessons.filter(l => seen.includes(l.id)).length;
   const cats = [];
-  LESSONS.forEach(l => { if (!cats.includes(l.cat)) cats.push(l.cat); });
-  const earnedCount = MILESTONES.filter(m => m.need(seen)).length;
+  allLessons.forEach(l => { if (!cats.includes(l.cat)) cats.push(l.cat); });
+  const earnedCount = MILESTONES.filter(m => m.need(seen, allLessons)).length;
   const toggle = (id) => {
     setOpen(o => o === id ? null : id); setDeepId(null);
     if (!seen.includes(id)) { try { const arr = tipsSeenList(); arr.push(id); localStorage.setItem('prism_tips_seen', JSON.stringify(arr)); } catch(_){} setSeen(tipsSeenList()); }
   };
+  if (studioOpen) return <TeachingStudio userId={userId} onClose={() => { setStudioOpen(false); loadCustom(); }} />;
   return (
     <div className="ww-prism">
-      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--border:rgba(203,163,92,.20);--accent:#CBA35C;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;}`}</style>
-      <div className="ww-eyebrow" style={{ marginBottom:4 }}>✦ The self-teaching app</div>
-      <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:30, letterSpacing:'-.02em', margin:'0 0 4px', color:'#F6F1E7' }}>Learn</h2>
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--border:rgba(203,163,92,.20);--accent:#CBA35C;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism .form-input{background:#0c0a07;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;box-sizing:border-box;width:100%;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.3);color:#C8BFAE;background:transparent;}`}</style>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10 }}>
+        <div>
+          <div className="ww-eyebrow" style={{ marginBottom:4 }}>✦ The self-teaching app</div>
+          <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:30, letterSpacing:'-.02em', margin:'0 0 4px', color:'#F6F1E7' }}>Learn</h2>
+        </div>
+        {isAdmin && <button onClick={() => setStudioOpen(true)} className="btn btn-ghost btn-sm" style={{ flexShrink:0, marginTop:6, fontSize:11 }}>✎ Studio</button>}
+      </div>
       <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 16px' }}>Short lessons on the why behind your workflow. Read them here anytime, or let them surface as you work.</p>
       <div style={{ background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.28)', borderRadius:16, padding:'14px 16px', marginBottom:18 }}>
         <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8 }}>
@@ -5097,7 +5110,7 @@ function LearnView({ setView }){
       <div style={{ marginBottom:22 }}>
         <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>Milestones · {earnedCount}/{MILESTONES.length}</div>
         <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4 }}>
-          {MILESTONES.map(m => { const got = m.need(seen); return (
+          {MILESTONES.map(m => { const got = m.need(seen, allLessons); return (
             <div key={m.id} title={m.desc} style={{ flexShrink:0, width:96, textAlign:'center', padding:'12px 8px', borderRadius:12, border:'1px solid '+(got?'#CBA35C':'rgba(203,163,92,.16)'), background: got?'rgba(203,163,92,.1)':'transparent' }}>
               <div style={{ fontSize:22, marginBottom:4, filter: got?'none':'grayscale(1)', opacity: got?1:0.4 }}>{m.icon}</div>
               <div style={{ fontSize:10.5, fontWeight:700, color: got?'#EBCB82':'#8C8475', lineHeight:1.2 }}>{m.label}</div>
@@ -5108,7 +5121,7 @@ function LearnView({ setView }){
       {cats.map(cat => (
         <div key={cat} style={{ marginBottom:20 }}>
           <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>{cat}</div>
-          {LESSONS.filter(l => l.cat === cat).map(l => {
+          {allLessons.filter(l => l.cat === cat).map(l => {
             const isSeen = seen.includes(l.id); const isOpen = open === l.id;
             return (
               <div key={l.id} style={{ border:'1px solid '+(isOpen?'rgba(203,163,92,.4)':'rgba(203,163,92,.16)'), borderRadius:12, marginBottom:8, background: isOpen?'rgba(203,163,92,.06)':'transparent', overflow:'hidden' }}>
@@ -5132,6 +5145,120 @@ function LearnView({ setView }){
         </div>
       ))}
       <div style={{ fontSize:11.5, color:'#8C8475', marginTop:4 }}>Set how often lessons surface as you work in Settings → Learning pace.</div>
+    </div>
+  );
+}
+
+const TRIGGER_META = {
+  cold_contacts: { label:'People going cold', hint:'Fires when at least [threshold] contacts have had no touch in [days]+ days.', hasDays:true },
+  no_cadence:    { label:'Contacts without a cadence', hint:'Fires when you have [threshold]+ contacts and fewer than ~10% have a cadence set.', hasDays:false },
+  review_backlog:{ label:'Review backlog', hint:'Fires when [threshold]+ items are waiting in Review.', hasDays:false },
+  owe_replies:   { label:'Owed replies', hint:'Fires when you owe [threshold]+ people a reply.', hasDays:false },
+  overdue_tasks: { label:'Overdue tasks', hint:'Fires when [threshold]+ tasks are past due.', hasDays:false },
+};
+const VIEW_OPTIONS = [ ['contacts','Contacts'], ['review','Review'], ['tasks','Tasks'], ['prospecting','Prospecting'], ['finance','Finance'], ['calendar','Calendar'], ['dashboard','Dashboard'] ];
+const CAT_OPTIONS = ['Your day','Your people','Your business','Your memory'];
+
+function TeachingStudio({ userId, onClose }){
+  const [tab, setTab] = useState('lessons');
+  const [lessons, setLessons] = useState([]);
+  const [triggers, setTriggers] = useState([]);
+  const [msg, setMsg] = useState('');
+  const [lf, setLf] = useState({ category:'Your business', title:'', body:'', deeper:'' });
+  const [tf, setTf] = useState({ template:'cold_contacts', threshold:8, days:75, title:'', why:'', cta_label:'Open', cta_view:'contacts', priority:5 });
+  const load = React.useCallback(async () => {
+    try { const [{ data: L }, { data: T }] = await Promise.all([ supabase.from('teaching_lessons').select('*').order('created_at', { ascending:false }), supabase.from('teaching_triggers').select('*').order('created_at', { ascending:false }) ]); setLessons(L||[]); setTriggers(T||[]); } catch (_) {}
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+  const addLesson = async () => {
+    if (!lf.title.trim() || !lf.body.trim()) { setMsg('Title and body are required.'); return; }
+    try { await supabase.from('teaching_lessons').insert({ category: lf.category, title: lf.title.trim(), body: lf.body.trim(), deeper: lf.deeper.trim() || null, created_by: userId }); setLf({ category:'Your business', title:'', body:'', deeper:'' }); setMsg('Lesson added — it’s live in Learn.'); load(); } catch (_) { setMsg('Could not save.'); }
+  };
+  const delLesson = async (id) => { if (!window.confirm('Delete this lesson?')) return; try { await supabase.from('teaching_lessons').delete().eq('id', id); load(); } catch (_) {} };
+  const toggleLesson = async (l) => { try { await supabase.from('teaching_lessons').update({ active: !l.active }).eq('id', l.id); load(); } catch (_) {} };
+  const addTrigger = async () => {
+    if (!tf.title.trim() || !tf.why.trim()) { setMsg('Title and why are required.'); return; }
+    try { await supabase.from('teaching_triggers').insert({ template: tf.template, threshold: parseInt(tf.threshold) || 1, days: tf.template === 'cold_contacts' ? (parseInt(tf.days) || 75) : null, title: tf.title.trim(), why: tf.why.trim(), cta_label: tf.cta_label.trim() || 'Open', cta_view: tf.cta_view, priority: parseInt(tf.priority) || 5, created_by: userId }); setTf({ template:'cold_contacts', threshold:8, days:75, title:'', why:'', cta_label:'Open', cta_view:'contacts', priority:5 }); setMsg('Trigger added — it’ll surface when the gap appears.'); load(); } catch (_) { setMsg('Could not save.'); }
+  };
+  const delTrigger = async (id) => { if (!window.confirm('Delete this trigger?')) return; try { await supabase.from('teaching_triggers').delete().eq('id', id); load(); } catch (_) {} };
+  const toggleTrigger = async (t) => { try { await supabase.from('teaching_triggers').update({ active: !t.active }).eq('id', t.id); load(); } catch (_) {} };
+  const lbl = { fontSize:11, fontWeight:700, color:'#C8BFAE', margin:'10px 0 4px' };
+  const tabBtn = (id, label) => <button onClick={() => { setTab(id); setMsg(''); }} className="btn btn-ghost btn-sm" style={{ borderColor: tab===id?'#CBA35C':'rgba(203,163,92,.3)', color: tab===id?'#EBCB82':'#C8BFAE' }}>{label}</button>;
+  return (
+    <div className="ww-prism">
+      <style>{`.ww-prism{--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:#100D09;min-height:100%;} .ww-prism .form-input{background:#0c0a07;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;box-sizing:border-box;width:100%;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.3);color:#C8BFAE;background:transparent;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.2);border-radius:14px;padding:14px;}`}</style>
+      <button onClick={onClose} className="btn btn-ghost btn-sm" style={{ marginBottom:12 }}>← Back to Learn</button>
+      <div className="ww-eyebrow" style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.24em', textTransform:'uppercase', color:'#CBA35C', marginBottom:4 }}>✦ Owner tools</div>
+      <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:28, margin:'0 0 4px', color:'#F6F1E7' }}>Teaching Studio</h2>
+      <p style={{ fontSize:12.5, color:'#8C8475', margin:'0 0 14px' }}>Write lessons and coaching triggers for every agent — they go live instantly, no update needed.</p>
+      <div style={{ display:'flex', gap:8, marginBottom:16 }}>{tabBtn('lessons','Lessons')}{tabBtn('triggers','Coaching triggers')}</div>
+      {msg && <div style={{ fontSize:12, color:'#EBCB82', marginBottom:12 }}>{msg}</div>}
+
+      {tab === 'lessons' && (<>
+        <div className="panel" style={{ marginBottom:16 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:'#F6F1E7', marginBottom:4 }}>New lesson</div>
+          <div style={lbl}>Category</div>
+          <select className="form-input" value={lf.category} onChange={e => setLf({ ...lf, category:e.target.value })}>{CAT_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <div style={lbl}>Title</div>
+          <input className="form-input" value={lf.title} onChange={e => setLf({ ...lf, title:e.target.value })} placeholder="e.g. Ask for the referral" />
+          <div style={lbl}>The why (short)</div>
+          <textarea className="form-input" rows={3} value={lf.body} onChange={e => setLf({ ...lf, body:e.target.value })} placeholder="Two or three sentences on why this matters." />
+          <div style={lbl}>Go deeper (optional)</div>
+          <textarea className="form-input" rows={3} value={lf.deeper} onChange={e => setLf({ ...lf, deeper:e.target.value })} placeholder="A fuller explanation for those who want it." />
+          <button onClick={addLesson} className="btn btn-primary btn-sm" style={{ marginTop:12 }}>Add lesson</button>
+        </div>
+        <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>Your lessons ({lessons.length})</div>
+        {lessons.length === 0 && <div style={{ fontSize:12.5, color:'#8C8475' }}>No custom lessons yet.</div>}
+        {lessons.map(l => (
+          <div key={l.id} className="panel" style={{ marginBottom:8, opacity: l.active?1:0.5 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'#F6F1E7' }}>{l.title}</div>
+                <div style={{ fontSize:11, color:'#8C8475' }}>{l.category}{l.active?'':' · hidden'}</div>
+              </div>
+              <button onClick={() => toggleLesson(l)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>{l.active?'Hide':'Show'}</button>
+              <button onClick={() => delLesson(l.id)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </>)}
+
+      {tab === 'triggers' && (<>
+        <div className="panel" style={{ marginBottom:16 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:'#F6F1E7', marginBottom:4 }}>New coaching trigger</div>
+          <div style={lbl}>When this happens</div>
+          <select className="form-input" value={tf.template} onChange={e => setTf({ ...tf, template:e.target.value })}>{Object.keys(TRIGGER_META).map(k => <option key={k} value={k}>{TRIGGER_META[k].label}</option>)}</select>
+          <div style={{ fontSize:11, color:'#8C8475', marginTop:5 }}>{TRIGGER_META[tf.template].hint}</div>
+          <div style={{ display:'flex', gap:10 }}>
+            <div style={{ flex:1 }}><div style={lbl}>Threshold</div><input className="form-input" type="number" value={tf.threshold} onChange={e => setTf({ ...tf, threshold:e.target.value })} /></div>
+            {TRIGGER_META[tf.template].hasDays && <div style={{ flex:1 }}><div style={lbl}>Days</div><input className="form-input" type="number" value={tf.days} onChange={e => setTf({ ...tf, days:e.target.value })} /></div>}
+            <div style={{ width:90 }}><div style={lbl}>Priority</div><input className="form-input" type="number" value={tf.priority} onChange={e => setTf({ ...tf, priority:e.target.value })} /></div>
+          </div>
+          <div style={lbl}>Headline</div>
+          <input className="form-input" value={tf.title} onChange={e => setTf({ ...tf, title:e.target.value })} placeholder="e.g. Time to work your database" />
+          <div style={lbl}>The why</div>
+          <textarea className="form-input" rows={3} value={tf.why} onChange={e => setTf({ ...tf, why:e.target.value })} placeholder="Why this matters, in your voice." />
+          <div style={{ display:'flex', gap:10 }}>
+            <div style={{ flex:1 }}><div style={lbl}>Button label</div><input className="form-input" value={tf.cta_label} onChange={e => setTf({ ...tf, cta_label:e.target.value })} /></div>
+            <div style={{ flex:1 }}><div style={lbl}>Button opens</div><select className="form-input" value={tf.cta_view} onChange={e => setTf({ ...tf, cta_view:e.target.value })}>{VIEW_OPTIONS.map(([v,n]) => <option key={v} value={v}>{n}</option>)}</select></div>
+          </div>
+          <button onClick={addTrigger} className="btn btn-primary btn-sm" style={{ marginTop:12 }}>Add trigger</button>
+        </div>
+        <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:'#CBA35C', marginBottom:8 }}>Your triggers ({triggers.length})</div>
+        {triggers.length === 0 && <div style={{ fontSize:12.5, color:'#8C8475' }}>No custom triggers yet.</div>}
+        {triggers.map(t => (
+          <div key={t.id} className="panel" style={{ marginBottom:8, opacity: t.active?1:0.5 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'#F6F1E7' }}>{t.title}</div>
+                <div style={{ fontSize:11, color:'#8C8475' }}>{(TRIGGER_META[t.template]||{}).label || t.template} · ≥{t.threshold}{t.days?(' · '+t.days+'d'):''}{t.active?'':' · off'}</div>
+              </div>
+              <button onClick={() => toggleTrigger(t)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>{t.active?'Off':'On'}</button>
+              <button onClick={() => delTrigger(t.id)} className="btn btn-ghost btn-sm" style={{ fontSize:11 }}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </>)}
     </div>
   );
 }
@@ -5174,6 +5301,13 @@ const BEHAVIORS = [
     cta:'Review tasks' },
 ];
 
+const TRIGGER_TEMPLATES = {
+  cold_contacts: { defaultView:'contacts', test:(x,t)=>{ const n=Date.now(); return x.contacts.filter(c=>{ const ts=coachLastTouch(c); return ts && (n-ts) > ((t.days||75))*86400000; }).length; } },
+  no_cadence:    { defaultView:'contacts', test:(x,t)=>{ const total=x.contacts.length; const cad=x.contacts.filter(c=>c.cadence_days).length; return (total >= (t.threshold||15) && cad < Math.max(3, Math.round(total*0.1))) ? 1 : 0; } },
+  review_backlog:{ defaultView:'review', test:(x)=> x.reviewCount || 0 },
+  owe_replies:   { defaultView:'contacts', test:(x)=> Object.keys(x.oweReplyMap||{}).length },
+  overdue_tasks: { defaultView:'tasks', test:(x)=>{ const d=new Date().toISOString().slice(0,10); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < d).length; } },
+};
 function CoachNudge({ contacts = [], tasks = [], events = [], deals = [], reviewCount = 0, oweReplyMap = {}, setView }){
   const [pick, setPick] = useState(null);
   const [dismissed, setDismissed] = useState(false);
@@ -5182,12 +5316,18 @@ function CoachNudge({ contacts = [], tasks = [], events = [], deals = [], review
     if (evaluated.current) return;
     if (!(contacts.length || reviewCount || tasks.length || Object.keys(oweReplyMap).length)) return; // wait for data
     evaluated.current = true;
+    (async () => {
     try {
       if (!tipsAreEnabled()) return;
       if (Date.now() - coachLast() < COACH_GLOBAL_GAP) return;
       const ctx = { contacts, tasks, events, deals, reviewCount, oweReplyMap };
+      let dbB = [];
+      try {
+        const { data } = await supabase.from('teaching_triggers').select('*').eq('active', true);
+        dbB = (data || []).map(r => { const tpl = TRIGGER_TEMPLATES[r.template]; if (!tpl) return null; return { id:'db_'+r.id, priority: r.priority || 5, view: r.cta_view || tpl.defaultView, min: (r.template === 'no_cadence' ? 1 : (r.threshold || 1)), test:(x)=>tpl.test(x, r), title:()=>r.title, why: r.why, cta: r.cta_label }; }).filter(Boolean);
+      } catch (_) {}
       const seen = coachSeen();
-      const cands = BEHAVIORS
+      const cands = [...BEHAVIORS, ...dbB]
         .map(b => ({ b, n: (b.test(ctx) || 0) }))
         .filter(o => o.n >= (o.b.min || 1))
         .filter(o => (Date.now() - (seen[o.b.id] || 0)) >= COACH_COOLDOWN)
@@ -5200,6 +5340,7 @@ function CoachNudge({ contacts = [], tasks = [], events = [], deals = [], review
         setPick(chosen);
       }
     } catch (_) {}
+    })();
   }, [contacts, reviewCount, tasks, deals, oweReplyMap]);
   if (!pick || dismissed) return null;
   const ctx = { contacts, tasks, events, deals, reviewCount, oweReplyMap };
@@ -16758,7 +16899,7 @@ function AppMain() {
               : view==='app_health' ? <AppHealthView/>
               : view==='documents' ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><DocumentsView userId={user.id}/></div>
               : view==='review'      ? <ReviewView userId={user.id} contacts={contacts} events={events} setTasks={setTasks} priorityPref={priorityPref} setView={setView} />
-              : view==='learn'       ? <LearnView setView={setView} />
+              : view==='learn'       ? <LearnView setView={setView} userId={user.id} isAdmin={isAdmin} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
