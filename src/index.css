@@ -1325,6 +1325,15 @@ input[type="radio"], input[type="range"], select, progress {
 .mobile-header-logo .mh-text { display: flex; flex-direction: column; justify-content: center; line-height: 1; }
 .mobile-header-logo .rog-adv { margin-left: 1.75px; }
 
+/* Robust header: a large system font / page zoom must never push the menu
+   button off-screen. Let the logo shrink & truncate; pin the hamburger. */
+.mobile-header { overflow: hidden; }
+.mobile-header-logo { min-width: 0; flex: 0 1 auto; overflow: hidden; }
+.mobile-header-logo .mh-text { min-width: 0; overflow: hidden; }
+.mobile-header-logo .rog-wordmark,
+.mobile-header-logo .rog-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hamburger { flex-shrink: 0; margin-left: 8px; min-width: 40px; text-align: center; }
+
 /* Ari Rewrite — tuning-fork "working" overlay */
 .fork-ov { position: fixed; inset: 0; z-index: 4000; display: flex; align-items: center; justify-content: center; background: rgba(16,13,9,.74); -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); animation: forkOvIn .28s ease both; }
 @keyframes forkOvIn { from { opacity: 0; } to { opacity: 1; } }
