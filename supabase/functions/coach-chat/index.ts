@@ -51,6 +51,7 @@ serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
     const body = await req.json().catch(() => ({}));
     const message = String(body.message || "").slice(0, 2000);
+    const pace = body.pace || null;
     if (!message) return J({ error: "empty" }, 400);
 
     const [{ data: settings }, { data: goal }, { data: profs }, { data: checkins }] = await Promise.all([
@@ -67,6 +68,7 @@ serve(async (req) => {
     const disc = selfProf ? (selfProf.baseline_primary || selfProf.primary_letter || "") : "";
     const discKey = String(disc || "").charAt(0).toUpperCase();
     const bp = goal ? buildBlueprint(goal) : null;
+    const paceCtx = pace ? `\n\nLIVE PACING (real activity this goal period, day ${pace.elapsedDays} of ${pace.totalDays}): ${(pace.links||[]).map((l:any)=>`${l.label} ${l.actual}/${l.needed} (on-pace target ${l.expected})`).join("; ")}. ${pace.onTrack ? "They are ON PACE — acknowledge it and keep them steady." : `They are BEHIND — at this pace they project to about $${Number(pace.projectedGci||0).toLocaleString()} vs their goal. To get back on track they need ${pace.neededPerDay} conversations/day from here.`} THEIR WEAKEST LINK right now is ${pace.weakest ? pace.weakest.label : "conversations"}${pace.weakest ? ` (${pace.weakest.actual}/${pace.weakest.needed})` : ""} — this is the bottleneck. Coach the weakest link specifically, not generic effort.` : "";
 
     const blueprintCtx = bp
       ? `The agent's Blueprint (their goal expressed as a causal chain): GOAL = $${bp.gci.toLocaleString()} GCI. The chain: ${bp.convos.toLocaleString()} conversations -> ${bp.appts.toLocaleString()} appointments -> ${bp.deals} closings -> $${bp.gci.toLocaleString()} GCI. THE LEADING DOMINO is conversations: ${bp.perDay}/day, ${bp.perWeek}/week. This is the one number that makes the rest fall. Anchor your coaching to it.`
@@ -75,7 +77,7 @@ serve(async (req) => {
     const system = `You are ${coachName}, a real estate accountability coach living inside PrismOS. You are not a generic chatbot — you are this agent's personal coach who knows their real business.
 
 THE BLUEPRINT IS YOUR SPINE. A goal is never just a number; it is a causal chain of activities that produce it: conversations -> appointments -> closings -> GCI. You coach the ONE leading activity (conversations) that makes the whole chain fall, and you speak in this language: "your chain", "today's leading number", "the next domino".
-${blueprintCtx}
+${blueprintCtx}${paceCtx}
 
 HOW YOU COACH:
 - Ground every reply in their real numbers above. Never give generic advice like "prospect more" — say "you need ${bp ? bp.perDay : "your daily number of"} conversations today."

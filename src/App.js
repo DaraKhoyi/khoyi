@@ -5477,6 +5477,42 @@ function GoalSetup({ userId, coachName, existing, onSaved, onCancel }){
   );
 }
 
+function computePace(goal, bp, actuals){
+  const start = goal.start_date || goal.created_at;
+  const startMs = new Date(start).getTime();
+  const endMs = goal.end_date ? new Date(goal.end_date).getTime() : startMs + 365 * 86400000;
+  const now = Date.now();
+  const totalDays = Math.max(1, (endMs - startMs) / 86400000);
+  const elapsedDays = Math.max(0.5, Math.min(totalDays, (now - startMs) / 86400000));
+  const elapsedFrac = Math.max(0.002, elapsedDays / totalDays);
+  const defs = [
+    ['conversations', 'Conversations', bp.links[0].needed, actuals.convos],
+    ['appointments', 'Appointments', bp.links[1].needed, actuals.appts],
+    ['closings', 'Closings', bp.links[2].needed, actuals.closings],
+  ];
+  const links = defs.map(([key, label, needed, actual]) => {
+    const expected = Math.round(needed * elapsedFrac);
+    const paceRatio = expected > 0 ? actual / expected : (actual > 0 ? 1.5 : 1);
+    return { key, label, needed, actual, expected, paceRatio };
+  });
+  const lead = links[0];
+  const frac = lead.expected > 0 ? lead.actual / lead.expected : 0;
+  const projectedGci = Math.round(bp.outcome.amount * frac);
+  const projectedClosings = Math.round(bp.links[2].needed * frac);
+  const remainingConvos = Math.max(0, bp.links[0].needed - actuals.convos);
+  const remainingWorkdays = Math.max(1, (totalDays - elapsedDays) * 5 / 7);
+  const neededPerDay = Math.ceil(remainingConvos / remainingWorkdays);
+  const onTrack = lead.paceRatio >= 0.95;
+  const weakest = [...links].filter(l => l.needed > 0).sort((a, b) => a.paceRatio - b.paceRatio)[0] || lead;
+  return { links, elapsedFrac, elapsedDays: Math.round(elapsedDays), totalDays: Math.round(totalDays), projectedGci, projectedClosings, gciActual: actuals.gciActual, neededPerDay, onTrack, weakest };
+}
+function weakestLinkCoaching(pace){
+  const w = pace.weakest;
+  if (w.key === 'conversations') return { title:'Top of the funnel is the leak', why:'You’re behind on conversations — the one number that feeds everything else. More at-bats is the whole fix; nothing downstream can outrun a thin top of funnel.' };
+  if (w.key === 'appointments') return { title:'Conversations aren’t converting to appointments', why:'You’re having the conversations, but they’re not turning into appointments — the leak is the ask and the qualifying. Listen for the real motivation, then make the ask.' };
+  return { title:'Appointments aren’t closing', why:'You’re getting in front of people, but they’re not converting — the leak is the presentation and the price conversation. Anchor to the data and price it right.' };
+}
+
 function CoachView({ userId, setView }){
   const [settings, setSettings] = useState(null);
   const [goal, setGoal] = useState(null);
@@ -5485,6 +5521,7 @@ function CoachView({ userId, setView }){
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [pace, setPace] = useState(null);
   const load = React.useCallback(async () => {
     try {
       const [{ data: s }, { data: g }, { data: ch }] = await Promise.all([
@@ -5494,17 +5531,33 @@ function CoachView({ userId, setView }){
       ]);
       setSettings(s || { coach_name:'John' }); setGoal(g || null);
       setMsgs(((ch || []).reverse()).map(c => ({ role:c.role, content:c.content })));
-      if (!g) setEditing(true);
+      if (!g) { setEditing(true); }
+      else {
+        try {
+          const bpp = buildBlueprint(g);
+          const start = g.start_date || g.created_at;
+          const nowIso = new Date().toISOString();
+          const [cv, ap, cl] = await Promise.all([
+            supabase.from('contact_interactions').select('id', { count:'exact', head:true }).eq('user_id', userId).in('kind', ['call','meeting']).gte('occurred_at', start),
+            supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).gte('start_at', start).lte('start_at', nowIso),
+            supabase.from('deals').select('gross_commission').eq('user_id', userId).eq('status','closed').gte('close_date', start),
+          ]);
+          const closings = cl.data || [];
+          const actuals = { convos: cv.count || 0, appts: ap.count || 0, closings: closings.length, gciActual: closings.reduce((s2,d)=> s2 + (Number(d.gross_commission)||0), 0) };
+          setPace(computePace(g, bpp, actuals));
+        } catch(_){}
+      }
     } catch(_){}
     setLoading(false);
   }, [userId]);
   React.useEffect(() => { load(); }, [load]);
   const coachName = (settings && settings.coach_name) || 'John';
-  const send = async () => {
-    const text = input.trim(); if (!text || thinking) return;
+  const send = async (preset) => {
+    const text = (typeof preset === 'string' ? preset : input).trim(); if (!text || thinking) return;
     setInput(''); setMsgs(m => [...m, { role:'agent', content:text }]); setThinking(true);
     try {
-      const { data } = await supabase.functions.invoke('coach-chat', { body: { message: text } });
+      const paceSummary = pace ? { onTrack: pace.onTrack, projectedGci: pace.projectedGci, neededPerDay: pace.neededPerDay, elapsedDays: pace.elapsedDays, totalDays: pace.totalDays, weakest: { key: pace.weakest.key, label: pace.weakest.label, actual: pace.weakest.actual, needed: pace.weakest.needed }, links: pace.links.map(l => ({ label:l.label, actual:l.actual, needed:l.needed, expected:l.expected })) } : null;
+      const { data } = await supabase.functions.invoke('coach-chat', { body: { message: text, pace: paceSummary } });
       const reply = (data && data.reply) || 'I’m having trouble reaching my notes right now — try me again in a moment.';
       setMsgs(m => [...m, { role:'coach', content: reply }]);
     } catch (_) { setMsgs(m => [...m, { role:'coach', content:'I’m having trouble connecting right now — try again in a moment.' }]); }
@@ -5523,27 +5576,54 @@ function CoachView({ userId, setView }){
         </div>
         <button onClick={() => setEditing(true)} className="btn btn-ghost btn-sm" style={{ flexShrink:0, marginTop:6, fontSize:11 }}>Adjust goal</button>
       </div>
-      <div style={{ margin:'12px 0 16px', padding:'18px', borderRadius:16, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.34)' }}>
+      <div style={{ margin:'12px 0 14px', padding:'18px', borderRadius:16, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.34)' }}>
         <div style={{ fontSize:11.5, color:'#C8BFAE', marginBottom:4 }}>Today’s leading number — the one domino that makes the rest fall</div>
-        <div style={{ fontFamily:'Fraunces, serif', fontSize:44, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{bp.leading.perDay}</div>
-        <div style={{ fontSize:13, color:'#F6F1E7', marginTop:2 }}>conversations today · {bp.leading.perWeek}/week</div>
+        <div style={{ fontFamily:'Fraunces, serif', fontSize:44, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{pace && !pace.onTrack ? pace.neededPerDay : bp.leading.perDay}</div>
+        <div style={{ fontSize:13, color:'#F6F1E7', marginTop:2 }}>conversations today{pace && !pace.onTrack ? ' to get back on track' : ''} · plan is {bp.leading.perDay}/day</div>
       </div>
-      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>The chain to ${Number(bp.outcome.amount).toLocaleString()}</div>
-      <div style={{ marginBottom:22 }}>
-        {bp.links.map((lk, i) => (
-          <div key={lk.key} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', marginBottom:8, borderRadius:12, border:'1px solid '+(lk.leading?'#CBA35C':'rgba(203,163,92,.18)'), background: lk.leading?'rgba(203,163,92,.1)':'transparent' }}>
-            <span style={{ fontFamily:'Fraunces, serif', fontSize:22, fontWeight:300, color: lk.leading?'#EBCB82':'#F6F1E7', minWidth:64 }}>{Number(lk.needed).toLocaleString()}</span>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:13.5, fontWeight:700, color:'#F6F1E7' }}>{lk.label}{lk.leading && <span style={{ fontSize:10, color:'#CBA35C', marginLeft:6, fontWeight:700 }}>← DRIVE THIS</span>}</div>
-              <div style={{ fontSize:11, color:'#8C8475' }}>a year · {i===0?bp.leading.perWeek+'/wk':''}</div>
+      {pace && (
+        <div style={{ marginBottom:16, padding:'14px 16px', borderRadius:14, border:'1px solid '+(pace.onTrack?'rgba(120,180,120,.4)':'rgba(224,150,90,.45)'), background: pace.onTrack?'rgba(120,180,120,.08)':'rgba(224,150,90,.08)' }}>
+          <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color: pace.onTrack?'#8FCA8F':'#e0965a', marginBottom:6 }}>{pace.onTrack ? 'On pace' : 'Behind pace'} · day {pace.elapsedDays} of {pace.totalDays}</div>
+          <div style={{ fontSize:13.5, color:'#F6F1E7', lineHeight:1.5 }}>At your current pace you’re tracking to <b style={{ color:'#EBCB82' }}>${(pace.projectedGci/1000).toFixed(0)}k</b> — your goal is ${(bp.outcome.amount/1000).toFixed(0)}k.</div>
+          {!pace.onTrack && <div style={{ fontSize:12.5, color:'#C8BFAE', marginTop:6 }}>To still hit it: <b style={{ color:'#F6F1E7' }}>{pace.neededPerDay} conversations/day</b> from here.</div>}
+        </div>
+      )}
+      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>Your chain {pace ? '— actual vs. plan' : '— to $'+Number(bp.outcome.amount).toLocaleString()}</div>
+      <div style={{ marginBottom:18 }}>
+        {(pace ? pace.links : bp.links.map(l => ({ ...l, actual:null, expected:null, paceRatio:1 }))).map((lk, i) => {
+          const leading = i === 0;
+          const behind = pace && lk.paceRatio < 0.95;
+          const pct = pace && lk.needed > 0 ? Math.min(100, Math.round(lk.actual / lk.needed * 100)) : 0;
+          const expPct = pace && lk.needed > 0 ? Math.min(100, Math.round(lk.expected / lk.needed * 100)) : 0;
+          return (
+            <div key={lk.key} style={{ padding:'12px 14px', marginBottom:8, borderRadius:12, border:'1px solid '+(leading?'#CBA35C':'rgba(203,163,92,.18)'), background: leading?'rgba(203,163,92,.08)':'transparent' }}>
+              <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom: pace?7:0 }}>
+                <span style={{ fontSize:13.5, fontWeight:700, color:'#F6F1E7', flex:1 }}>{lk.label}{leading && <span style={{ fontSize:10, color:'#CBA35C', marginLeft:6, fontWeight:700 }}>← DRIVE THIS</span>}</span>
+                {pace ? <span style={{ fontSize:12.5, color:'#C8BFAE' }}><b style={{ color: behind?'#e0965a':'#8FCA8F' }}>{lk.actual.toLocaleString()}</b> / {lk.needed.toLocaleString()}</span>
+                       : <span style={{ fontFamily:'Fraunces, serif', fontSize:20, color:'#F6F1E7' }}>{lk.needed.toLocaleString()}</span>}
+              </div>
+              {pace && (
+                <div style={{ position:'relative', height:7, borderRadius:100, background:'rgba(203,163,92,.14)', overflow:'hidden' }}>
+                  <div style={{ position:'absolute', left:0, top:0, height:'100%', width:pct+'%', background: behind?'linear-gradient(90deg,#c77d43,#e0965a)':'linear-gradient(90deg,#5f9a5f,#8FCA8F)', borderRadius:100 }} />
+                  <div style={{ position:'absolute', left:'calc('+expPct+'% - 1px)', top:-2, width:2, height:11, background:'#EBCB82' }} />
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderRadius:12, border:'1px solid rgba(203,163,92,.34)', background:'rgba(203,163,92,.06)' }}>
           <span style={{ fontFamily:'Fraunces, serif', fontSize:22, fontWeight:300, color:'#EBCB82', minWidth:64 }}>${(Number(bp.outcome.amount)/1000).toFixed(0)}k</span>
-          <div style={{ fontSize:13.5, fontWeight:700, color:'#F6F1E7' }}>{bp.outcome.label} — your goal</div>
+          <div style={{ fontSize:13.5, fontWeight:700, color:'#F6F1E7', flex:1 }}>{bp.outcome.label} — your goal{pace && pace.gciActual>0 ? <span style={{ fontSize:11, color:'#8FCA8F', fontWeight:400, marginLeft:6 }}>${(pace.gciActual/1000).toFixed(0)}k closed so far</span> : null}</div>
         </div>
       </div>
+      {pace && (() => { const wc = weakestLinkCoaching(pace); return (
+        <div style={{ marginBottom:18, padding:'14px 16px', borderRadius:14, background:'rgba(203,163,92,.06)', border:'1px solid rgba(203,163,92,.3)' }}>
+          <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:'#CBA35C', marginBottom:6 }}>Your weakest link</div>
+          <div style={{ fontFamily:'Fraunces, serif', fontSize:17, color:'#F6F1E7', marginBottom:5 }}>{wc.title}</div>
+          <div style={{ fontSize:12.5, color:'#C8BFAE', lineHeight:1.55, marginBottom:10 }}>{wc.why}</div>
+          <button onClick={() => send('Coach me on my weakest link — ' + wc.title)} className="btn btn-primary btn-sm">Talk to {coachName} about this</button>
+        </div>
+      ); })()}
       <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>Talk to {coachName}</div>
       <div style={{ background:'#150F0A', border:'1px solid rgba(203,163,92,.2)', borderRadius:14, padding:'12px', marginBottom:12 }}>
         {msgs.length === 0 && <div style={{ fontSize:12.5, color:'#8C8475', padding:'8px 4px' }}>Ask {coachName} anything — how you’re pacing, what to do next, a slump, a listing you bombed. He knows your Blueprint and your numbers.</div>}
