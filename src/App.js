@@ -5397,6 +5397,171 @@ function CoachNudge({ contacts = [], tasks = [], events = [], deals = [], review
   );
 }
 
+// ── John, the accountability coach — Blueprint engine (pluggable by goal_type) ──
+function buildBlueprint(goal){
+  if (!goal) return null;
+  if (goal.goal_type === 'recruiting') return buildRecruitingBlueprint(goal);
+  return buildSalesBlueprint(goal);
+}
+function buildSalesBlueprint(goal){
+  const p = goal.params || {};
+  const gci = Number(goal.target_amount) || 0;
+  const avgComm = Number(p.avg_commission) || 9000;
+  const apptsPerDeal = Number(p.appts_per_deal) || 3;
+  const convosPerAppt = Number(p.convos_per_appt) || 5;
+  const weeks = Number(p.work_weeks) || 50;
+  const deals = gci > 0 ? Math.ceil(gci / avgComm) : 0;
+  const appts = deals * apptsPerDeal;
+  const convos = appts * convosPerAppt;
+  return {
+    outcome: { label: goal.outcome_label || 'GCI', amount: gci, isMoney: true },
+    links: [
+      { key:'conversations', label:'Conversations', needed: convos, leading: true },
+      { key:'appointments',  label:'Appointments',  needed: appts },
+      { key:'closings',      label:'Closings',      needed: deals },
+    ],
+    leading: { metric:'conversations', label:'conversations', total: convos, perWeek: weeks ? Math.ceil(convos / weeks) : 0, perDay: weeks ? Math.ceil(convos / (weeks * 5)) : 0 },
+    ratios: { avgComm, apptsPerDeal, convosPerAppt, weeks },
+  };
+}
+// Placeholder so the engine is pluggable; recruiting chain gets built when goal types expand.
+function buildRecruitingBlueprint(goal){ return buildSalesBlueprint(goal); }
+
+function GoalSetup({ userId, coachName, existing, onSaved, onCancel }){
+  const ep = (existing && existing.params) || {};
+  const [target, setTarget] = useState(existing ? String(existing.target_amount || '') : '');
+  const [avgComm, setAvgComm] = useState(String(ep.avg_commission || 9000));
+  const [apptsPerDeal, setApptsPerDeal] = useState(String(ep.appts_per_deal || 3));
+  const [convosPerAppt, setConvosPerAppt] = useState(String(ep.convos_per_appt || 5));
+  const [weeks, setWeeks] = useState(String(ep.work_weeks || 50));
+  const [saving, setSaving] = useState(false);
+  const preview = buildSalesBlueprint({ target_amount: target, outcome_label:'GCI', params:{ avg_commission: avgComm, appts_per_deal: apptsPerDeal, convos_per_appt: convosPerAppt, work_weeks: weeks } });
+  const save = async () => {
+    if (!(Number(target) > 0)) return;
+    setSaving(true);
+    const params = { avg_commission: Number(avgComm)||9000, appts_per_deal: Number(apptsPerDeal)||3, convos_per_appt: Number(convosPerAppt)||5, work_weeks: Number(weeks)||50 };
+    try {
+      if (existing) await supabase.from('coach_goals').update({ target_amount: Number(target), params }).eq('id', existing.id);
+      else { await supabase.from('coach_goals').update({ active:false }).eq('user_id', userId).eq('active', true); await supabase.from('coach_goals').insert({ user_id: userId, goal_type:'sales', outcome_label:'GCI', target_amount: Number(target), timeframe:'12mo', params, active:true }); }
+    } catch(_){}
+    setSaving(false); onSaved();
+  };
+  const lbl = { fontSize:11, fontWeight:700, color:'#C8BFAE', margin:'12px 0 4px' };
+  return (
+    <div className="ww-prism">
+      <style>{`.ww-prism{--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%),#100D09;min-height:100%;} .ww-prism .form-input{background:#0c0a07;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;box-sizing:border-box;width:100%;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.3);color:#C8BFAE;background:transparent;}`}</style>
+      {onCancel && <button onClick={onCancel} className="btn btn-ghost btn-sm" style={{ marginBottom:12 }}>← Back</button>}
+      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.24em', textTransform:'uppercase', color:'#CBA35C', marginBottom:4 }}>✦ {coachName} · your Blueprint</div>
+      <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:28, margin:'0 0 4px', color:'#F6F1E7' }}>{existing ? 'Adjust your goal' : 'Let’s build your Blueprint'}</h2>
+      <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 6px' }}>Your goal isn’t a number — it’s a chain of activity that produces it. Tell {coachName} your target and how your business converts, and he’ll work backward to the one number you drive every day.</p>
+      <div style={lbl}>Your income goal (GCI) for the year</div>
+      <input className="form-input" type="number" value={target} onChange={e=>setTarget(e.target.value)} placeholder="e.g. 150000" />
+      <div style={{ display:'flex', gap:10 }}>
+        <div style={{ flex:1 }}><div style={lbl}>Avg commission / closing ($)</div><input className="form-input" type="number" value={avgComm} onChange={e=>setAvgComm(e.target.value)} /></div>
+        <div style={{ flex:1 }}><div style={lbl}>Working weeks / year</div><input className="form-input" type="number" value={weeks} onChange={e=>setWeeks(e.target.value)} /></div>
+      </div>
+      <div style={{ display:'flex', gap:10 }}>
+        <div style={{ flex:1 }}><div style={lbl}>Appointments per closing</div><input className="form-input" type="number" value={apptsPerDeal} onChange={e=>setApptsPerDeal(e.target.value)} /></div>
+        <div style={{ flex:1 }}><div style={lbl}>Conversations per appointment</div><input className="form-input" type="number" value={convosPerAppt} onChange={e=>setConvosPerAppt(e.target.value)} /></div>
+      </div>
+      <div style={{ fontSize:11, color:'#8C8475', marginTop:6 }}>Not sure on the ratios? The defaults are a solid starting point — {coachName} will sharpen them from your real numbers over time.</div>
+      {Number(target) > 0 && (
+        <div style={{ marginTop:16, padding:'14px 16px', borderRadius:14, background:'rgba(203,163,92,.08)', border:'1px solid rgba(203,163,92,.3)' }}>
+          <div style={{ fontSize:11, color:'#C8BFAE', marginBottom:4 }}>To hit ${Number(target).toLocaleString()}, your daily number is</div>
+          <div style={{ fontFamily:'Fraunces, serif', fontSize:34, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{preview.leading.perDay} <span style={{ fontSize:15, color:'#C8BFAE' }}>conversations / day</span></div>
+          <div style={{ fontSize:12, color:'#8C8475', marginTop:6 }}>{preview.leading.perWeek}/week → {preview.links[1].needed} appointments → {preview.links[2].needed} closings → ${Number(target).toLocaleString()}</div>
+        </div>
+      )}
+      <button onClick={save} disabled={saving || !(Number(target)>0)} className="btn btn-primary" style={{ marginTop:16, width:'100%', opacity:(Number(target)>0?1:0.5) }}>{saving ? 'Saving…' : (existing ? 'Update my Blueprint' : 'Build my Blueprint')}</button>
+    </div>
+  );
+}
+
+function CoachView({ userId, setView }){
+  const [settings, setSettings] = useState(null);
+  const [goal, setGoal] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const load = React.useCallback(async () => {
+    try {
+      const [{ data: s }, { data: g }, { data: ch }] = await Promise.all([
+        supabase.from('coach_settings').select('*').eq('user_id', userId).maybeSingle(),
+        supabase.from('coach_goals').select('*').eq('user_id', userId).eq('active', true).order('created_at', { ascending:false }).limit(1).maybeSingle(),
+        supabase.from('coach_checkins').select('role,content,created_at').eq('user_id', userId).in('role', ['coach','agent']).order('created_at', { ascending:false }).limit(12),
+      ]);
+      setSettings(s || { coach_name:'John' }); setGoal(g || null);
+      setMsgs(((ch || []).reverse()).map(c => ({ role:c.role, content:c.content })));
+      if (!g) setEditing(true);
+    } catch(_){}
+    setLoading(false);
+  }, [userId]);
+  React.useEffect(() => { load(); }, [load]);
+  const coachName = (settings && settings.coach_name) || 'John';
+  const send = async () => {
+    const text = input.trim(); if (!text || thinking) return;
+    setInput(''); setMsgs(m => [...m, { role:'agent', content:text }]); setThinking(true);
+    try {
+      const { data } = await supabase.functions.invoke('coach-chat', { body: { message: text } });
+      const reply = (data && data.reply) || 'I’m having trouble reaching my notes right now — try me again in a moment.';
+      setMsgs(m => [...m, { role:'coach', content: reply }]);
+    } catch (_) { setMsgs(m => [...m, { role:'coach', content:'I’m having trouble connecting right now — try again in a moment.' }]); }
+    setThinking(false);
+  };
+  if (loading) return <div className="ww-prism" style={{ padding:20 }}><PrismThinking label="Loading your Blueprint" /></div>;
+  if (editing) return <GoalSetup userId={userId} coachName={coachName} existing={goal} onSaved={() => { setEditing(false); load(); }} onCancel={goal ? () => setEditing(false) : null} />;
+  const bp = buildBlueprint(goal);
+  return (
+    <div className="ww-prism">
+      <style>{`.ww-prism{--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%),#100D09;min-height:100%;} .ww-prism .form-input{background:#0c0a07;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;border-radius:10px;padding:11px 13px;font-size:14px;font-family:inherit;box-sizing:border-box;width:100%;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.3);color:#C8BFAE;background:transparent;}`}</style>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10 }}>
+        <div>
+          <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.24em', textTransform:'uppercase', color:'#CBA35C', marginBottom:4 }}>✦ {coachName} · your coach</div>
+          <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:28, letterSpacing:'-.02em', margin:'0 0 2px', color:'#F6F1E7' }}>Your Blueprint</h2>
+        </div>
+        <button onClick={() => setEditing(true)} className="btn btn-ghost btn-sm" style={{ flexShrink:0, marginTop:6, fontSize:11 }}>Adjust goal</button>
+      </div>
+      <div style={{ margin:'12px 0 16px', padding:'18px', borderRadius:16, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.34)' }}>
+        <div style={{ fontSize:11.5, color:'#C8BFAE', marginBottom:4 }}>Today’s leading number — the one domino that makes the rest fall</div>
+        <div style={{ fontFamily:'Fraunces, serif', fontSize:44, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{bp.leading.perDay}</div>
+        <div style={{ fontSize:13, color:'#F6F1E7', marginTop:2 }}>conversations today · {bp.leading.perWeek}/week</div>
+      </div>
+      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>The chain to ${Number(bp.outcome.amount).toLocaleString()}</div>
+      <div style={{ marginBottom:22 }}>
+        {bp.links.map((lk, i) => (
+          <div key={lk.key} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', marginBottom:8, borderRadius:12, border:'1px solid '+(lk.leading?'#CBA35C':'rgba(203,163,92,.18)'), background: lk.leading?'rgba(203,163,92,.1)':'transparent' }}>
+            <span style={{ fontFamily:'Fraunces, serif', fontSize:22, fontWeight:300, color: lk.leading?'#EBCB82':'#F6F1E7', minWidth:64 }}>{Number(lk.needed).toLocaleString()}</span>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:13.5, fontWeight:700, color:'#F6F1E7' }}>{lk.label}{lk.leading && <span style={{ fontSize:10, color:'#CBA35C', marginLeft:6, fontWeight:700 }}>← DRIVE THIS</span>}</div>
+              <div style={{ fontSize:11, color:'#8C8475' }}>a year · {i===0?bp.leading.perWeek+'/wk':''}</div>
+            </div>
+          </div>
+        ))}
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderRadius:12, border:'1px solid rgba(203,163,92,.34)', background:'rgba(203,163,92,.06)' }}>
+          <span style={{ fontFamily:'Fraunces, serif', fontSize:22, fontWeight:300, color:'#EBCB82', minWidth:64 }}>${(Number(bp.outcome.amount)/1000).toFixed(0)}k</span>
+          <div style={{ fontSize:13.5, fontWeight:700, color:'#F6F1E7' }}>{bp.outcome.label} — your goal</div>
+        </div>
+      </div>
+      <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>Talk to {coachName}</div>
+      <div style={{ background:'#150F0A', border:'1px solid rgba(203,163,92,.2)', borderRadius:14, padding:'12px', marginBottom:12 }}>
+        {msgs.length === 0 && <div style={{ fontSize:12.5, color:'#8C8475', padding:'8px 4px' }}>Ask {coachName} anything — how you’re pacing, what to do next, a slump, a listing you bombed. He knows your Blueprint and your numbers.</div>}
+        {msgs.map((m, i) => (
+          <div key={i} style={{ display:'flex', justifyContent: m.role==='agent'?'flex-end':'flex-start', marginBottom:8 }}>
+            <div style={{ maxWidth:'85%', padding:'9px 12px', borderRadius:12, fontSize:13, lineHeight:1.5, background: m.role==='agent'?'rgba(203,163,92,.16)':'#1B1610', border:'1px solid rgba(203,163,92,.2)', color: m.role==='agent'?'#EBCB82':'#F6F1E7', whiteSpace:'pre-wrap' }}>{m.content}</div>
+          </div>
+        ))}
+        {thinking && <div style={{ padding:'4px' }}><PrismThinking label={coachName + ' is thinking'} /></div>}
+      </div>
+      <div style={{ display:'flex', gap:8 }}>
+        <input className="form-input" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') send(); }} placeholder={'Message ' + coachName + '…'} style={{ flex:1 }} />
+        <button onClick={send} disabled={thinking || !input.trim()} className="btn btn-primary btn-sm">Send</button>
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount = 0, reviewCount = 0, user, setView, robots, contacts = [], setContacts, brain, defaultSystem, properties = [], events = [], onOpenPlan, deals = [], oweReplyMap = {}, setOweReplyMap }) {
   const [editTask, setEditTask] = useState(null);
   const [fin, setFin] = useState(null);
@@ -11866,6 +12031,32 @@ function DropboxFolderBrowser({ connectionId, onClose, onPick }) {
   );
 }
 
+function CoachSettings({ userId }){
+  const [s, setS] = useState(null);
+  const [saved, setSaved] = useState(false);
+  React.useEffect(() => { (async () => { try { const { data } = await supabase.from('coach_settings').select('*').eq('user_id', userId).maybeSingle(); setS(data || { coach_name:'John', intensity:'balanced', style:'supportive', rhythm:'weekly' }); } catch(_){ setS({ coach_name:'John', intensity:'balanced', style:'supportive', rhythm:'weekly' }); } })(); }, [userId]);
+  const save = async (patch) => { const next = { ...s, ...patch }; setS(next); try { await supabase.from('coach_settings').upsert({ user_id: userId, coach_name: (next.coach_name || 'John').trim() || 'John', intensity: next.intensity, style: next.style, rhythm: next.rhythm, updated_at: new Date().toISOString() }, { onConflict:'user_id' }); setSaved(true); setTimeout(() => setSaved(false), 1500); } catch(_){} };
+  if (!s) return null;
+  const sel = (val, opts, key) => <select className="form-input" value={val} onChange={e=>save({ [key]: e.target.value })} style={{ marginTop:4 }}>{opts.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>;
+  return (
+    <div className="panel" style={{ marginBottom:'18px' }}>
+      <div className="panel-header"><h3>Your Coach</h3></div>
+      <div className="panel-body">
+        <div style={{ fontSize:'12px', color:'var(--text-3)', marginBottom:'10px' }}>Your accountability coach lives in the Coach tab, built around your Blueprint. Make him yours.</div>
+        <label className="form-label">Coach name</label>
+        <input className="form-input" value={s.coach_name || ''} onChange={e=>setS({ ...s, coach_name:e.target.value })} onBlur={e=>save({ coach_name:e.target.value })} placeholder="John" maxLength={40} />
+        <label className="form-label" style={{ marginTop:'12px' }}>Intensity</label>
+        {sel(s.intensity, [['light','Light — a gentle nudge'],['balanced','Balanced'],['intense','Intense — push me']], 'intensity')}
+        <label className="form-label" style={{ marginTop:'12px' }}>Style</label>
+        {sel(s.style, [['supportive','Supportive'],['balanced','Balanced'],['tough_love','Tough love']], 'style')}
+        <label className="form-label" style={{ marginTop:'12px' }}>Rhythm</label>
+        {sel(s.rhythm, [['daily','Daily check-ins'],['weekly','Weekly review'],['light','Light — when I ask']], 'rhythm')}
+        {saved && <div style={{ fontSize:'12px', color:'var(--accent-2)', marginTop:'10px' }}>Saved.</div>}
+      </div>
+    </div>
+  );
+}
+
 function IosSharingSettings({ userId }) {
   const ENDPOINT = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/ios-ingest';
   const [token, setToken] = useState(null);
@@ -12433,6 +12624,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
         <EmailAliasesPanel emailAliases={emailAliases || []} setEmailAliases={setEmailAliases} emailAccounts={emailAccounts || []} userId={userId} />
             </>}
             {settingsTab==='prefs' && <>
+              <CoachSettings userId={userId} />
         <TipsSetting />
         <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
         <div className="panel" style={{marginBottom:'18px'}}>
@@ -16671,6 +16863,7 @@ function AppMain() {
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'review',      icon: '📥', label: 'Review',      badge: reviewCount || null },
+    { id: 'coach',       icon: '🎯', label: 'Coach' },
     { id: 'learn',       icon: '🎓', label: 'Learn' },
     { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
     { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
@@ -16939,6 +17132,7 @@ function AppMain() {
               : view==='app_health' ? <AppHealthView/>
               : view==='documents' ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><DocumentsView userId={user.id}/></div>
               : view==='review'      ? <ReviewView userId={user.id} contacts={contacts} events={events} setTasks={setTasks} priorityPref={priorityPref} setView={setView} />
+              : view==='coach'       ? <CoachView userId={user.id} setView={setView} />
               : view==='learn'       ? <LearnView setView={setView} userId={user.id} isAdmin={isAdmin} />
               : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
