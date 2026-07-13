@@ -73,6 +73,7 @@ serve(async (req) => {
 
     // Build identifiers either from contact row or from manual override
     let identifiers = {};
+    let contactUserId = null;
     if (body.contact_id) {
       const { data: contact, error } = await supabase
         .from("contacts").select("*").eq("id", body.contact_id).single();
@@ -86,6 +87,7 @@ serve(async (req) => {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      contactUserId = contact.user_id;
       identifiers = {
         name: contact.name,
         email: contact.email,
@@ -160,56 +162,53 @@ Important:
 - Do NOT speculate. Only include people you can actually find evidence of online.
 - ${isLocked ? "Return at most 1 candidate." : "Return at most 5 candidates, ordered by match strength."}`;
 
-    const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4096,
-        tools: [{
-          type: "web_search_20250305",
-          name: "web_search",
-          max_uses: isLocked ? 4 : 8,
-        }],
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    const writeIdentify = async (fields) => {
+      if (!body.contact_id || !contactUserId) return;
+      const { data: existing } = await supabase.from("profiles").select("id").eq("contact_id", body.contact_id).maybeSingle();
+      if (existing) await supabase.from("profiles").update(fields).eq("id", existing.id);
+      else await supabase.from("profiles").insert({ contact_id: body.contact_id, user_id: contactUserId, subject_kind: "contact", ...fields });
+    };
 
-    if (!apiResp.ok) {
-      const errText = await apiResp.text();
-      return new Response(JSON.stringify({ error: `Anthropic API error: ${apiResp.status}`, detail: errText.slice(0, 500) }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const apiData = await apiResp.json();
-    // Concatenate all text blocks (the model may have interleaved web_search blocks)
-    const textBlocks = (apiData.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-
-    // Extract JSON array from the response (model may wrap in fences despite instructions)
-    let candidates = [];
-    try {
-      // Try direct parse first
-      candidates = JSON.parse(textBlocks.trim());
-    } catch (_) {
-      // Try to find a JSON array in the text
-      const match = textBlocks.match(/\[[\s\S]*\]/);
-      if (match) {
-        try { candidates = JSON.parse(match[0]); } catch (_) { candidates = []; }
+    const runIdentify = async () => {
+      try {
+        const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 4096, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: isLocked ? 4 : 8 }], messages: [{ role: "user", content: prompt }] }),
+        });
+        if (!apiResp.ok) {
+          const errText = await apiResp.text();
+          await writeIdentify({ identify_status: "error", identify_error: `Identity service error ${apiResp.status}. Please try again.`, identify_at: new Date().toISOString() });
+          return { error: `Anthropic API error: ${apiResp.status}`, detail: errText.slice(0, 500) };
+        }
+        const apiData = await apiResp.json();
+        const textBlocks = (apiData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        let candidates = [];
+        try { candidates = JSON.parse(textBlocks.trim()); }
+        catch (_) { const match = textBlocks.match(/\[[\s\S]*\]/); if (match) { try { candidates = JSON.parse(match[0]); } catch (_) { candidates = []; } } }
+        if (!Array.isArray(candidates)) candidates = [];
+        await writeIdentify({ identify_status: "done", identify_candidates: candidates, identify_confidence: confidence, identify_error: null, identify_at: new Date().toISOString() });
+        return { candidates, confidence, search_count: (apiData.usage?.server_tool_use?.web_search_requests) ?? null };
+      } catch (e) {
+        await writeIdentify({ identify_status: "error", identify_error: "Identity lookup failed. Please try again.", identify_at: new Date().toISOString() });
+        return { error: String(e) };
       }
-    }
-    if (!Array.isArray(candidates)) candidates = [];
+    };
 
-    return new Response(JSON.stringify({
-      confidence,
-      candidates,
-      identifiers_used: identifiers,
-      search_count: (apiData.usage?.server_tool_use?.web_search_requests) ?? null,
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Interactive contact calls run in the BACKGROUND (fixes iOS Safari killing the
+    // long web-search fetch); the client polls the profile. Internal drip + manual
+    // (no contact_id) calls stay synchronous.
+    if (body.contact_id && !isInternal) {
+      await writeIdentify({ identify_status: "running", identify_candidates: null, identify_error: null, identify_at: new Date().toISOString() });
+      // @ts-ignore EdgeRuntime provided by the Supabase edge runtime
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(runIdentify());
+      else runIdentify();
+      return new Response(JSON.stringify({ status: "identifying", confidence }), { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const r = await runIdentify();
+    if (r.error) return new Response(JSON.stringify({ error: r.error, detail: r.detail }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ confidence: r.confidence, candidates: r.candidates, identifiers_used: identifiers, search_count: r.search_count }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), {

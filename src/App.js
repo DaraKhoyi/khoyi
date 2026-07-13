@@ -8361,6 +8361,24 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
     setResearchStage('identifying');
     setResearchError(null);
     setResearchCandidates([]);
+    const proceed = (candidates, confidence) => {
+      setResearchCandidates(candidates || []);
+      if (confidence === 'insufficient') {
+        setResearchError('Not enough info to identify this person safely. Add an email, phone, or employer to the contact.');
+        setResearchStage('error');
+        return;
+      }
+      if ((candidates || []).length === 0) {
+        setResearchError('No matching public profiles found. Try adding more identifiers (email, phone, employer) to the contact.');
+        setResearchStage('error');
+        return;
+      }
+      if (confidence === 'locked' && candidates.length === 1) {
+        runResearch(candidates[0], (contact && contact.email) ? 'email' : (contact && contact.phone ? 'phone' : 'manual'));
+      } else {
+        setResearchStage('choose_candidate');
+      }
+    };
     try {
       const { data, error } = await supabase.functions.invoke('contact-identify', {
         body: { contact_id: contact.id },
@@ -8370,24 +8388,25 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         try { const b = await error.context.json(); if (b && b.error) m = b.error; } catch (_) {}
         throw new Error(m);
       }
-      if (data.error) throw new Error(data.error);
-      setResearchCandidates(data.candidates || []);
-      if (data.confidence === 'insufficient') {
-        setResearchError(data.message || 'Not enough info to identify this person safely. Add an email, phone, or employer to the contact.');
-        setResearchStage('error');
-        return;
-      }
-      if ((data.candidates || []).length === 0) {
-        setResearchError('No matching public profiles found. Try adding more identifiers (email, phone, employer) to the contact.');
-        setResearchStage('error');
-        return;
-      }
-      if (data.confidence === 'locked' && data.candidates.length === 1) {
-        // Auto-advance to research
-        await runResearch(data.candidates[0], 'email' in (contact || {}) && contact.email ? 'email' : (contact.phone ? 'phone' : 'manual'));
+      if (data && data.error) throw new Error(data.error);
+      // Identify now runs in the background (fixes iOS Safari killing the long
+      // web-search request). Poll the profile until it finishes.
+      if (data && data.status === 'identifying') {
+        const started = Date.now();
+        const poll = async () => {
+          try {
+            const { data: p } = await supabase.from('profiles')
+              .select('identify_status, identify_candidates, identify_confidence, identify_error')
+              .eq('contact_id', contact.id).maybeSingle();
+            if (p && p.identify_status === 'done') { proceed(p.identify_candidates || [], p.identify_confidence); return; }
+            if (p && p.identify_status === 'error') { setResearchError(p.identify_error || 'Identity lookup failed. Please try again.'); setResearchStage('error'); return; }
+            if (Date.now() - started > 180000) { setResearchError('This is taking longer than usual — reopen this contact in a minute and try again.'); setResearchStage('error'); return; }
+            setTimeout(poll, 5000);
+          } catch (_e) { setTimeout(poll, 5000); }
+        };
+        poll();
       } else {
-        // User picks
-        setResearchStage('choose_candidate');
+        proceed(data.candidates || [], data.confidence);
       }
     } catch (err) {
       setResearchError(err.message || String(err));
