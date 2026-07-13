@@ -1962,6 +1962,9 @@ function ChatMessageBubble({
                 🔎 Create contact &amp; research {message.research_action.name}
               </button>
             ) : null}
+            {(message.research_action.kind === 'research' || message.research_action.kind === 'create') && (
+              <div style={{ fontSize:10.5, color:'var(--text-3)', marginTop:5 }}>Runs a full web search</div>
+            )}
           </div>
         )}
       </div>
