@@ -5425,92 +5425,109 @@ function buildSalesBlueprint(goal){
   };
 }
 // Placeholder so the engine is pluggable; recruiting chain gets built when goal types expand.
-function buildRecruitingBlueprint(goal){ return buildSalesBlueprint(goal); }
+async function computeCoachTrend(userId){
+  try {
+    const since = new Date(Date.now() - 56 * 86400000).toISOString();
+    const { data } = await supabase.from('contact_interactions').select('occurred_at').eq('user_id', userId).in('kind', ['call','meeting']).gte('occurred_at', since).limit(5000);
+    const now = Date.now();
+    const weeks = new Array(8).fill(0);
+    (data || []).forEach(r => { const t = new Date(r.occurred_at).getTime(); const wk = Math.floor((now - t) / (7 * 86400000)); if (wk >= 0 && wk < 8) weeks[7 - wk]++; });
+    const avg = weeks.slice(0, 7).reduce((a, b) => a + b, 0) / 7 || 0;
+    const last = weeks[7], prev = weeks[6], prev2 = weeks[5];
+    const slump = avg > 2 && last < avg * 0.6 && last <= prev && prev <= prev2;
+    const streak = avg > 2 && weeks.slice(5, 8).every(v => v >= avg * 0.9);
+    const priorHigh = (weeks[4] + weeks[5] + weeks[6]) / 3;
+    const wellbeing = priorHigh > avg * 1.3 && last < priorHigh * 0.4;
+    let insight = null;
+    if (wellbeing) insight = { kind:'wellbeing', title:'You’ve been going hard — check in with yourself', body:'Your activity spiked and then dropped off sharply. That pattern often means you’re running on fumes. This is a marathon — a real rest day now protects the whole season.' };
+    else if (slump) insight = { kind:'slump', title:'Your conversations have been sliding', body:'The last couple of weeks have trended down. It happens to everyone — the fix is small and early. Let’s figure out what changed and get one good block back on the board.' };
+    else if (streak) insight = { kind:'streak', title:'You’re on a streak', body:'Three steady weeks of conversations — this is exactly how pipelines get built. Consistency compounding. Keep the rhythm going.' };
+    return { weeks, avg: Math.round(avg * 10) / 10, slump, streak, wellbeing, insight };
+  } catch(_){ return null; }
+}
+
+function buildRecruitingBlueprint(goal){
+  const p = goal.params || {};
+  const target = Number(goal.target_amount) || 0;
+  const perHire = Number(p.avg_production_per_hire) || 3000000;
+  const apptsPerHire = Number(p.appts_per_hire) || 5;
+  const convosPerAppt = Number(p.convos_per_appt) || 4;
+  const weeks = Number(p.work_weeks) || 50;
+  const hires = perHire > 0 ? Math.ceil(target / perHire) : 0;
+  const appts = hires * apptsPerHire;
+  const convos = appts * convosPerAppt;
+  return {
+    outcome: { label: goal.outcome_label || 'Recruited production', amount: target, isMoney: true },
+    links: [
+      { key:'conversations', label:'Recruiting conversations', needed: convos, leading: true },
+      { key:'appointments',  label:'Recruiting appointments',  needed: appts },
+      { key:'closings',      label:'Hires',                    needed: hires },
+    ],
+    leading: { metric:'conversations', label:'recruiting conversations', total: convos, perWeek: weeks ? Math.ceil(convos / weeks) : 0, perDay: weeks ? Math.ceil(convos / (weeks * 5)) : 0 },
+    ratios: { avgComm: perHire, apptsPerDeal: apptsPerHire, convosPerAppt, weeks },
+  };
+}
 
 function GoalSetup({ userId, coachName, existing, onSaved, onCancel }){
   const ep = (existing && existing.params) || {};
+  const [goalType, setGoalType] = useState((existing && existing.goal_type) || 'sales');
   const [target, setTarget] = useState(existing ? String(existing.target_amount || '') : '');
   const [avgComm, setAvgComm] = useState(String(ep.avg_commission || 9000));
   const [apptsPerDeal, setApptsPerDeal] = useState(String(ep.appts_per_deal || 3));
+  const [perHire, setPerHire] = useState(String(ep.avg_production_per_hire || 3000000));
+  const [apptsPerHire, setApptsPerHire] = useState(String(ep.appts_per_hire || 5));
   const [convosPerAppt, setConvosPerAppt] = useState(String(ep.convos_per_appt || 5));
   const [weeks, setWeeks] = useState(String(ep.work_weeks || 50));
   const [saving, setSaving] = useState(false);
-  const preview = buildSalesBlueprint({ target_amount: target, outcome_label:'GCI', params:{ avg_commission: avgComm, appts_per_deal: apptsPerDeal, convos_per_appt: convosPerAppt, work_weeks: weeks } });
+  const isRecruit = goalType === 'recruiting';
+  const previewGoal = isRecruit
+    ? { goal_type:'recruiting', target_amount: target, outcome_label:'Recruited production', params:{ avg_production_per_hire: perHire, appts_per_hire: apptsPerHire, convos_per_appt: convosPerAppt, work_weeks: weeks } }
+    : { goal_type:'sales', target_amount: target, outcome_label:'GCI', params:{ avg_commission: avgComm, appts_per_deal: apptsPerDeal, convos_per_appt: convosPerAppt, work_weeks: weeks } };
+  const preview = buildBlueprint(previewGoal);
   const save = async () => {
     if (!(Number(target) > 0)) return;
     setSaving(true);
-    const params = { avg_commission: Number(avgComm)||9000, appts_per_deal: Number(apptsPerDeal)||3, convos_per_appt: Number(convosPerAppt)||5, work_weeks: Number(weeks)||50 };
+    const params = isRecruit
+      ? { avg_production_per_hire: Number(perHire) || 3000000, appts_per_hire: Number(apptsPerHire) || 5, convos_per_appt: Number(convosPerAppt) || 4, work_weeks: Number(weeks) || 50 }
+      : { avg_commission: Number(avgComm) || 9000, appts_per_deal: Number(apptsPerDeal) || 3, convos_per_appt: Number(convosPerAppt) || 5, work_weeks: Number(weeks) || 50 };
+    const outcome_label = isRecruit ? 'Recruited production' : 'GCI';
     try {
-      if (existing) await supabase.from('coach_goals').update({ target_amount: Number(target), params }).eq('id', existing.id);
-      else { await supabase.from('coach_goals').update({ active:false }).eq('user_id', userId).eq('active', true); await supabase.from('coach_goals').insert({ user_id: userId, goal_type:'sales', outcome_label:'GCI', target_amount: Number(target), timeframe:'12mo', params, active:true }); }
+      if (existing) await supabase.from('coach_goals').update({ goal_type: goalType, outcome_label, target_amount: Number(target), params }).eq('id', existing.id);
+      else { await supabase.from('coach_goals').update({ active:false }).eq('user_id', userId).eq('active', true); await supabase.from('coach_goals').insert({ user_id: userId, goal_type: goalType, outcome_label, target_amount: Number(target), timeframe:'12mo', params, active:true }); }
     } catch(_){}
     setSaving(false); onSaved();
   };
   const lbl = { fontSize:11, fontWeight:700, color:'#C8BFAE', margin:'12px 0 4px' };
+  const seg = (val, label) => <button onClick={() => setGoalType(val)} style={{ flex:1, padding:'9px', borderRadius:8, border:'1px solid '+(goalType===val?'#CBA35C':'rgba(203,163,92,.24)'), background: goalType===val?'rgba(203,163,92,.14)':'transparent', color: goalType===val?'#EBCB82':'#C8BFAE', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>{label}</button>;
   return (
     <div className="ww-prism">
       <style>{`.ww-prism{--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%),#100D09;min-height:100%;} .ww-prism .form-input{background:#0c0a07;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;box-sizing:border-box;width:100%;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.3);color:#C8BFAE;background:transparent;}`}</style>
       {onCancel && <button onClick={onCancel} className="btn btn-ghost btn-sm" style={{ marginBottom:12 }}>← Back</button>}
       <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.24em', textTransform:'uppercase', color:'#CBA35C', marginBottom:4 }}>✦ {coachName} · your Blueprint</div>
       <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:28, margin:'0 0 4px', color:'#F6F1E7' }}>{existing ? 'Adjust your goal' : 'Let’s build your Blueprint'}</h2>
-      <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 6px' }}>Your goal isn’t a number — it’s a chain of activity that produces it. Tell {coachName} your target and how your business converts, and he’ll work backward to the one number you drive every day.</p>
-      <div style={lbl}>Your income goal (GCI) for the year</div>
-      <input className="form-input" type="number" value={target} onChange={e=>setTarget(e.target.value)} placeholder="e.g. 150000" />
+      <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 6px' }}>Your goal isn’t a number — it’s a chain of activity that produces it. Tell {coachName} your target and how it converts, and he’ll work backward to the one number you drive every day.</p>
+      <div style={{ display:'flex', gap:8, margin:'12px 0 2px' }}>{seg('sales', 'Sales (GCI)')}{seg('recruiting', 'Recruiting')}</div>
+      <div style={lbl}>{isRecruit ? 'Recruited production goal for the year (hires × their trailing-12 sales)' : 'Your income goal (GCI) for the year'}</div>
+      <input className="form-input" type="number" value={target} onChange={e=>setTarget(e.target.value)} placeholder={isRecruit ? 'e.g. 15000000' : 'e.g. 150000'} />
       <div style={{ display:'flex', gap:10 }}>
-        <div style={{ flex:1 }}><div style={lbl}>Avg commission / closing ($)</div><input className="form-input" type="number" value={avgComm} onChange={e=>setAvgComm(e.target.value)} /></div>
+        <div style={{ flex:1 }}><div style={lbl}>{isRecruit ? 'Avg production / hire ($)' : 'Avg commission / closing ($)'}</div><input className="form-input" type="number" value={isRecruit ? perHire : avgComm} onChange={e => isRecruit ? setPerHire(e.target.value) : setAvgComm(e.target.value)} /></div>
         <div style={{ flex:1 }}><div style={lbl}>Working weeks / year</div><input className="form-input" type="number" value={weeks} onChange={e=>setWeeks(e.target.value)} /></div>
       </div>
       <div style={{ display:'flex', gap:10 }}>
-        <div style={{ flex:1 }}><div style={lbl}>Appointments per closing</div><input className="form-input" type="number" value={apptsPerDeal} onChange={e=>setApptsPerDeal(e.target.value)} /></div>
+        <div style={{ flex:1 }}><div style={lbl}>{isRecruit ? 'Appointments per hire' : 'Appointments per closing'}</div><input className="form-input" type="number" value={isRecruit ? apptsPerHire : apptsPerDeal} onChange={e => isRecruit ? setApptsPerHire(e.target.value) : setApptsPerDeal(e.target.value)} /></div>
         <div style={{ flex:1 }}><div style={lbl}>Conversations per appointment</div><input className="form-input" type="number" value={convosPerAppt} onChange={e=>setConvosPerAppt(e.target.value)} /></div>
       </div>
-      <div style={{ fontSize:11, color:'#8C8475', marginTop:6 }}>Not sure on the ratios? The defaults are a solid starting point — {coachName} will sharpen them from your real numbers over time.</div>
+      <div style={{ fontSize:11, color:'#8C8475', marginTop:6 }}>Not sure on the ratios? The defaults are a solid start — {coachName} sharpens them from your real numbers over time.</div>
       {Number(target) > 0 && (
         <div style={{ marginTop:16, padding:'14px 16px', borderRadius:14, background:'rgba(203,163,92,.08)', border:'1px solid rgba(203,163,92,.3)' }}>
           <div style={{ fontSize:11, color:'#C8BFAE', marginBottom:4 }}>To hit ${Number(target).toLocaleString()}, your daily number is</div>
-          <div style={{ fontFamily:'Fraunces, serif', fontSize:34, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{preview.leading.perDay} <span style={{ fontSize:15, color:'#C8BFAE' }}>conversations / day</span></div>
-          <div style={{ fontSize:12, color:'#8C8475', marginTop:6 }}>{preview.leading.perWeek}/week → {preview.links[1].needed} appointments → {preview.links[2].needed} closings → ${Number(target).toLocaleString()}</div>
+          <div style={{ fontFamily:'Fraunces, serif', fontSize:32, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{preview.leading.perDay} <span style={{ fontSize:14, color:'#C8BFAE' }}>{isRecruit ? 'recruiting conversations' : 'conversations'} / day</span></div>
+          <div style={{ fontSize:12, color:'#8C8475', marginTop:6 }}>{preview.leading.perWeek}/week → {preview.links[1].needed} {isRecruit ? 'appointments' : 'appointments'} → {preview.links[2].needed} {isRecruit ? 'hires' : 'closings'} → ${Number(target).toLocaleString()}</div>
         </div>
       )}
       <button onClick={save} disabled={saving || !(Number(target)>0)} className="btn btn-primary" style={{ marginTop:16, width:'100%', opacity:(Number(target)>0?1:0.5) }}>{saving ? 'Saving…' : (existing ? 'Update my Blueprint' : 'Build my Blueprint')}</button>
     </div>
   );
-}
-
-function computePace(goal, bp, actuals){
-  const start = goal.start_date || goal.created_at;
-  const startMs = new Date(start).getTime();
-  const endMs = goal.end_date ? new Date(goal.end_date).getTime() : startMs + 365 * 86400000;
-  const now = Date.now();
-  const totalDays = Math.max(1, (endMs - startMs) / 86400000);
-  const elapsedDays = Math.max(0.5, Math.min(totalDays, (now - startMs) / 86400000));
-  const elapsedFrac = Math.max(0.002, elapsedDays / totalDays);
-  const defs = [
-    ['conversations', 'Conversations', bp.links[0].needed, actuals.convos],
-    ['appointments', 'Appointments', bp.links[1].needed, actuals.appts],
-    ['closings', 'Closings', bp.links[2].needed, actuals.closings],
-  ];
-  const links = defs.map(([key, label, needed, actual]) => {
-    const expected = Math.round(needed * elapsedFrac);
-    const paceRatio = expected > 0 ? actual / expected : (actual > 0 ? 1.5 : 1);
-    return { key, label, needed, actual, expected, paceRatio };
-  });
-  const lead = links[0];
-  const frac = lead.expected > 0 ? lead.actual / lead.expected : 0;
-  const projectedGci = Math.round(bp.outcome.amount * frac);
-  const projectedClosings = Math.round(bp.links[2].needed * frac);
-  const remainingConvos = Math.max(0, bp.links[0].needed - actuals.convos);
-  const remainingWorkdays = Math.max(1, (totalDays - elapsedDays) * 5 / 7);
-  const neededPerDay = Math.ceil(remainingConvos / remainingWorkdays);
-  const onTrack = lead.paceRatio >= 0.95;
-  const weakest = [...links].filter(l => l.needed > 0).sort((a, b) => a.paceRatio - b.paceRatio)[0] || lead;
-  return { links, elapsedFrac, elapsedDays: Math.round(elapsedDays), totalDays: Math.round(totalDays), projectedGci, projectedClosings, gciActual: actuals.gciActual, neededPerDay, onTrack, weakest };
-}
-function weakestLinkCoaching(pace){
-  const w = pace.weakest;
-  if (w.key === 'conversations') return { title:'Top of the funnel is the leak', why:'You’re behind on conversations — the one number that feeds everything else. More at-bats is the whole fix; nothing downstream can outrun a thin top of funnel.' };
-  if (w.key === 'appointments') return { title:'Conversations aren’t converting to appointments', why:'You’re having the conversations, but they’re not turning into appointments — the leak is the ask and the qualifying. Listen for the real motivation, then make the ask.' };
-  return { title:'Appointments aren’t closing', why:'You’re getting in front of people, but they’re not converting — the leak is the presentation and the price conversation. Anchor to the data and price it right.' };
 }
 
 function CoachView({ userId, setView }){
@@ -5522,6 +5539,7 @@ function CoachView({ userId, setView }){
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
   const [pace, setPace] = useState(null);
+  const [trend, setTrend] = useState(null);
   const [rhythmMsg, setRhythmMsg] = useState(null);
   const [rhythmBusy, setRhythmBusy] = useState(false);
   const [moment, setMoment] = useState(null);
@@ -5538,6 +5556,7 @@ function CoachView({ userId, setView }){
         supabase.from('coach_checkins').select('role,content,created_at,kind').eq('user_id', userId).order('created_at', { ascending:false }).limit(40),
       ]);
       setSettings(s || { coach_name:'John' }); setGoal(g || null);
+      computeCoachTrend(userId).then(t => setTrend(t));
       const all = ch || [];
       setMsgs(all.filter(c => (c.kind === 'adhoc' || !c.kind) && (c.role === 'coach' || c.role === 'agent')).reverse().map(c => ({ role:c.role, content:c.content })));
       const todayStr = new Date().toDateString();
@@ -5580,7 +5599,7 @@ function CoachView({ userId, setView }){
     setInput(''); setMsgs(m => [...m, { role:'agent', content:text }]); setThinking(true);
     try {
       const paceSummary = pace ? { onTrack: pace.onTrack, projectedGci: pace.projectedGci, neededPerDay: pace.neededPerDay, elapsedDays: pace.elapsedDays, totalDays: pace.totalDays, weakest: { key: pace.weakest.key, label: pace.weakest.label, actual: pace.weakest.actual, needed: pace.weakest.needed }, links: pace.links.map(l => ({ label:l.label, actual:l.actual, needed:l.needed, expected:l.expected })) } : null;
-      const { data } = await supabase.functions.invoke('coach-chat', { body: { message: text, pace: paceSummary } });
+      const { data } = await supabase.functions.invoke('coach-chat', { body: { message: text, pace: paceSummary, trend: trend ? { weeks: trend.weeks, slump: trend.slump, streak: trend.streak, wellbeing: trend.wellbeing } : null } });
       const reply = (data && data.reply) || 'I’m having trouble reaching my notes right now — try me again in a moment.';
       setMsgs(m => [...m, { role:'coach', content: reply }]);
     } catch (_) { setMsgs(m => [...m, { role:'coach', content:'I’m having trouble connecting right now — try again in a moment.' }]); }
@@ -5603,7 +5622,7 @@ function CoachView({ userId, setView }){
     setRhythmBusy(true); setMoment(null);
     try {
       const win = mode === 'weekly' ? await computeWeekWindow() : null;
-      const { data } = await supabase.functions.invoke('coach-chat', { body: { message:'', mode, window: win, pace: paceSummary() } });
+      const { data } = await supabase.functions.invoke('coach-chat', { body: { message:'', mode, window: win, pace: paceSummary(), trend: trend ? { weeks: trend.weeks, slump: trend.slump, streak: trend.streak, wellbeing: trend.wellbeing } : null } });
       setRhythmMsg({ mode, content: (data && data.reply) || '' });
     } catch(_){ setRhythmBusy(false); }
     setRhythmBusy(false);
@@ -5634,6 +5653,15 @@ function CoachView({ userId, setView }){
         </div>
         <button onClick={() => setEditing(true)} className="btn btn-ghost btn-sm" style={{ flexShrink:0, marginTop:6, fontSize:11 }}>Adjust goal</button>
       </div>
+      {trend && trend.insight && (
+        <div style={{ marginBottom:14, padding:'14px 16px', borderRadius:14, background: trend.insight.kind==='streak'?'rgba(120,180,120,.08)':'rgba(203,163,92,.06)', border:'1px solid '+(trend.insight.kind==='wellbeing'?'rgba(224,150,90,.45)':trend.insight.kind==='streak'?'rgba(120,180,120,.4)':'rgba(203,163,92,.35)') }}>
+          <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color: trend.insight.kind==='streak'?'#8FCA8F':trend.insight.kind==='wellbeing'?'#e0965a':'#CBA35C', marginBottom:6 }}>{trend.insight.kind==='wellbeing'?'💛 A gentle check-in':trend.insight.kind==='streak'?'🔥 Pattern':'👀 '+coachName+' noticed a pattern'}</div>
+          <div style={{ fontFamily:'Fraunces, serif', fontSize:17, color:'#F6F1E7', marginBottom:5 }}>{trend.insight.title}</div>
+          <div style={{ fontSize:12.5, color:'#C8BFAE', lineHeight:1.55, marginBottom:10 }}>{trend.insight.body}</div>
+          <div style={{ display:'flex', gap:4, alignItems:'flex-end', height:28, marginBottom:10 }}>{trend.weeks.map((v, i) => { const mx = Math.max(...trend.weeks, 1); return <div key={i} style={{ flex:1, height:Math.max(3, Math.round(v / mx * 28)) + 'px', background: i===7 ? '#EBCB82' : 'rgba(203,163,92,.35)', borderRadius:2 }} />; })}</div>
+          <button onClick={() => send('Coach me on this — ' + trend.insight.title)} className="btn btn-primary btn-sm">Talk to {coachName}</button>
+        </div>
+      )}
       {celebrate != null && (
         <div style={{ marginBottom:14, padding:'14px 16px', borderRadius:14, background:'rgba(120,180,120,.1)', border:'1px solid rgba(120,180,120,.45)' }}>
           <div style={{ fontSize:20, marginBottom:2 }}>🎉</div>
