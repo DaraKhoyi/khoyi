@@ -1658,6 +1658,10 @@ function ChatView({ robots, userId }) {
         <div className="online-dot" title="Online" />
       </div>
 
+      <div style={{ padding: '10px 12px 0' }}>
+        <Tip id="ari_research" label="Let Ari do the digging">Ask me to look up anyone in your world — try “<b>research Ali</b>” or “<b>who is Jane Doe</b>”. I’ll find the contact and run a full web research profile: who they are, their background, and how to connect. Add an <b>email, phone, or employer</b> and the results get sharper.</Tip>
+      </div>
+
       {/* Messages */}
       <div className="chat-messages" ref={scrollRef}>
         {loadingHistory ? (
@@ -1668,7 +1672,7 @@ function ChatView({ robots, userId }) {
             <h3 style={{fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'34px',letterSpacing:'-0.02em',color:'#F6F1E7',margin:'0 0 10px',lineHeight:1.12}}>How can I help?</h3>
             <p style={{color:'#C8BFAE',fontSize:'14px',maxWidth:'36ch',margin:'0 auto',lineHeight:1.5}}>{robot.role || 'Your assistant'} — ask me anything, or tap 📷 to snap a receipt and I\'ll push it to accounting.</p>
             <div style={{display:'flex',flexWrap:'wrap',gap:'8px',justifyContent:'center',marginTop:'18px'}}>
-              {['What should I do next?','Draft a follow-up to my newest lead','Summarize my week'].map(s => (
+              {['What should I do next?','Look up a contact for me','Draft a follow-up to my newest lead','Summarize my week'].map(s => (
                 <button key={s} onClick={() => { setInput(s); setTimeout(() => inputRef.current?.focus(), 30); }} style={{background:'transparent',border:'1px solid rgba(203,163,92,.34)',color:'#C8BFAE',fontFamily:'Manrope,sans-serif',fontSize:'12.5px',padding:'9px 14px',borderRadius:'100px',cursor:'pointer'}}>{s}</button>
               ))}
             </div>
