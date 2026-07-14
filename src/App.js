@@ -1955,7 +1955,7 @@ function ChatMessageBubble({
           <div style={{ marginTop: 8 }}>
             {message.research_action.kind === 'research' ? (
               <button type="button"
-                onClick={() => { if (window.__openContactResearch) window.__openContactResearch(message.research_action.contact_id); }}
+                onClick={() => { if (window.__openContactResearch) window.__openContactResearch(message.research_action.contact_id, null, message.research_action.hint); }}
                 style={{ background:'var(--accent)', color:'#000', border:'none', borderRadius:999, padding:'8px 14px', fontSize:13, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6 }}>
                 🔎 Research {message.research_action.name}
               </button>
@@ -4984,7 +4984,13 @@ function PendingRecordings({ userId, contacts = [], events = [], onCount, inRevi
         if (es && t >= es && t <= (ee || es)) {
           if (ev.contact_id) { const c = contacts.find(x => x.id === ev.contact_id); add(ev.contact_id, (c && c.name) || 'Contact', 100, ev.title ? ('During \u201C' + ev.title + '\u201D') : 'On your calendar then'); }
           const title = (ev.title || ev.summary || '').toLowerCase();
-          if (title) for (const c of contacts) { if (c.name && c.name.length > 3 && title.includes(c.name.toLowerCase())) add(c.id, c.name, 90, 'Named in the meeting'); }
+          const desc = (ev.description || '').toLowerCase();
+          if (title || desc) for (const c of contacts) {
+            if (!c.name || c.name.length <= 3) continue;
+            const nl = c.name.toLowerCase();
+            if (title.includes(nl)) add(c.id, c.name, 90, 'Named in the meeting');
+            else if (desc.includes(nl)) add(c.id, c.name, 85, 'Named in the meeting notes');
+          }
         }
       }
     }
@@ -7931,7 +7937,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const [showResearchModal, setShowResearchModal] = useState(false);
   const [researchScope, setResearchScope] = useState('both');  // 'personal' | 'business' | 'both'
   const [researchStage, setResearchStage] = useState('idle');  // 'idle' | 'identifying' | 'choose_candidate' | 'researching' | 'done' | 'error'
-  useEffect(() => { if (contact && window.__autoResearch && window.__autoResearch === contact.id) { window.__autoResearch = null; setShowResearchModal(true); setTimeout(() => { try { startResearch(); } catch (_) {} }, 150); } /* eslint-disable-next-line */ }, [contact]);
+  useEffect(() => { if (contact && window.__autoResearch && window.__autoResearch === contact.id) { window.__autoResearch = null; const _h = window.__autoResearchHint; window.__autoResearchHint = null; setShowResearchModal(true); setTimeout(() => { try { startResearch(_h); } catch (_) {} }, 150); } /* eslint-disable-next-line */ }, [contact]);
   const [researchCandidates, setResearchCandidates] = useState([]);
   const [researchError, setResearchError] = useState(null);
   const [researchHint, setResearchHint] = useState('');
@@ -17107,7 +17113,7 @@ function AppMain() {
   // window.__composeEmail(address) to open the PrismOS composer instead of the OS/Gmail app.
   useEffect(() => {
     window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
-    window.__openContactResearch = (contactId, prefill) => { try { if (contactId) { window.__pendingResearch = contactId; } else if (prefill) { window.__pendingContactPrefill = prefill; } navigate('contacts'); } catch (_) {} };
+    window.__openContactResearch = (contactId, prefill, hint) => { try { window.__autoResearchHint = hint || (prefill && prefill.hint) || null; if (contactId) { window.__pendingResearch = contactId; } else if (prefill) { window.__pendingContactPrefill = prefill; } navigate('contacts'); } catch (_) {} };
     window.__setView = (v) => { try { navigate(v); } catch (_) {} };  // used by the automated smoke-check harness
     window.__openOnboarding = () => { setOnboardingReopen(true); setSidebarOpen(false); };  // manual re-launch of the setup wizard
   }); // eslint-disable-line
