@@ -4979,10 +4979,10 @@ function PendingRecordings({ userId, contacts = [], events = [], onCount, inRevi
     const add = (id, name, score, reason) => { if (!id) return; const cur = scored.get(id); if (!cur || cur.score < score) scored.set(id, { contact_id: id, name, score, reason }); };
     if (t) {
       for (const ev of (events || [])) {
-        const sRaw = ev.start_time || ev.start || ev.starts_at; const eRaw = ev.end_time || ev.end || ev.ends_at;
+        const sRaw = ev.start_at || ev.start_time || ev.start; const eRaw = ev.end_at || ev.end_time || ev.end;
         const es = sRaw ? new Date(sRaw).getTime() : 0; const ee = eRaw ? new Date(eRaw).getTime() : (es ? es + 3600000 : 0);
-        if (es && t >= es - 1800000 && t <= (ee || es) + 1800000) {
-          if (ev.contact_id) { const c = contacts.find(x => x.id === ev.contact_id); add(ev.contact_id, (c && c.name) || 'Contact', 100, 'On your calendar then'); }
+        if (es && t >= es && t <= (ee || es)) {
+          if (ev.contact_id) { const c = contacts.find(x => x.id === ev.contact_id); add(ev.contact_id, (c && c.name) || 'Contact', 100, ev.title ? ('During \u201C' + ev.title + '\u201D') : 'On your calendar then'); }
           const title = (ev.title || ev.summary || '').toLowerCase();
           if (title) for (const c of contacts) { if (c.name && c.name.length > 3 && title.includes(c.name.toLowerCase())) add(c.id, c.name, 90, 'Named in the meeting'); }
         }
