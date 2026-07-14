@@ -7428,6 +7428,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             </div>
           </div>
           {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.body || e.brief}</div>}
+          {e.entity_type === 'recording' && <button onClick={() => { try { document.getElementById('contact-recordings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} }} style={{ marginTop: '6px', background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>🎙 View full recording ▸</button>}
           {((e.mentions && e.mentions.length > 0) || (e.tags && e.tags.length > 0)) && (
             <div style={{ marginTop: '6px', display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
               {(e.mentions || []).map(id => {
@@ -8920,7 +8921,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
 
           {/* Recordings section */}
-          <ContactRecordingsSection contact={contact} userId={userId} onTranscribed={reanalyze} />
+          <div id="contact-recordings-section"><ContactRecordingsSection contact={contact} userId={userId} onTranscribed={reanalyze} /></div>
 
           {/* Documents section */}
           <ContactDocuments contactId={contact.id} userId={userId} />

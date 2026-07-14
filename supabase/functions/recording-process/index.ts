@@ -11,14 +11,16 @@ const MODELS = ["claude-sonnet-4-6", "claude-3-5-sonnet-20241022"];
 function estToday(){ return new Date(Date.now()-4*3600e3).toISOString().slice(0,10); }
 function toText(v: any): string { if (!v) return ""; if (typeof v === "string") return v; if (Array.isArray(v)) return v.join("\n"); if (typeof v === "object") return JSON.stringify(v); return String(v); }
 
-const SYSTEM = `You extract concrete follow-up commitments from a phone call transcript for a real estate broker named Dara ("me"). Output STRICT JSON only — no prose, no markdown.
+const SYSTEM = `You process a phone call transcript for a real estate broker named Dara ("me"). Output STRICT JSON only — no prose, no markdown.
 Shape:
-{ "call_summary": "one or two sentence summary of what the call was about and where it landed",
+{ "call_summary": "a tight 2-4 sentence summary: what the call was about, the key points or advice discussed, and where it landed",
+  "key_points": [ "a concise, substantive point, decision, or piece of advice worth remembering later" ],
   "non_english": true if the transcript contains ANY non-English speech (e.g. Farsi or Spanish), otherwise false,
   "action_items": [ { "owner": "me" | "them", "title": "short imperative task", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
 Rules:
-- Only include real commitments or clearly-implied next steps. If nothing was committed, return "action_items": [].
-- "owner":"me" = something Dara agreed to do. "owner":"them" = the other person's commitment (Dara should track/expect it).
+- call_summary + key_points carry the SUBSTANCE of the call (context, advice, decisions). This is where information is preserved, NOT in tasks. Be useful but concise: up to 5 key_points, fewer if the call was simple; return "key_points": [] if there is nothing beyond the summary.
+- action_items are ONLY concrete, real next steps someone actually committed to, each with a clear deliverable. BE STRICT: exclude vague intentions ("we should catch up sometime"), hypotheticals, general discussion, pleasantries, and anything already done during the call. If something is context or advice rather than a discrete to-do, keep it in key_points and do NOT make it a task. When in doubt, leave it out. Return at most 5 action_items; if nothing was truly committed, return [].
+- "owner":"me" = something Dara agreed to do. "owner":"them" = the other person's commitment (Dara should track/expect it). Include both.
 - Resolve relative dates to an absolute YYYY-MM-DD using the provided current date; else null.
 - Keep titles short and actionable. Do not invent commitments that were not discussed.
 LANGUAGE:
@@ -98,7 +100,8 @@ serve(async (req) => {
       let transcriptEn: string | null = null;
       if (plan.non_english) { try { const t = await translateToEnglish(transcript); if (t) transcriptEn = t; } catch (_) {} }
       const summary = String(plan.call_summary || "").trim();
-      const items = Array.isArray(plan.action_items) ? plan.action_items : [];
+      const keyPoints = (Array.isArray(plan.key_points) ? plan.key_points : []).map((k: any) => String(k || "").trim()).filter(Boolean).slice(0, 6);
+      const items = (Array.isArray(plan.action_items) ? plan.action_items : []).slice(0, 5);
 
       const occurredAt = rec.recorded_at || rec.created_at || new Date().toISOString();
       const durMin = rec.duration_seconds ? Math.max(1, Math.round(rec.duration_seconds / 60)) : null;
@@ -107,7 +110,7 @@ serve(async (req) => {
       let interactionId = rec.interaction_id || null;
       if (rec.contact_id && !interactionId) {
         const briefLine = (summary || transcript).split("\n").map((s) => s.trim()).filter(Boolean)[0]?.slice(0, 180) || "Recorded call";
-        const bodyText = [summary ? `Summary:\n${summary}` : "", `Transcript:\n${transcript}`].filter(Boolean).join("\n\n");
+        const bodyText = [summary, keyPoints.length ? keyPoints.map((k) => "• " + k).join("\n") : ""].filter(Boolean).join("\n\n") || "Recorded call — see full recording.";
         const { data: ins } = await admin.from("contact_interactions").insert({
           user_id: rec.user_id, contact_id: rec.contact_id, channel: "call", direction: "inbound",
           kind: "call", occurred_at: occurredAt, duration_minutes: durMin,
@@ -121,7 +124,7 @@ serve(async (req) => {
       const proposed = items.map((a: any) => ({ title: String(a.title || "").slice(0, 200), owner: a.owner === "them" ? "them" : "me", due_date: a.due_date || null, priority: ["high", "medium", "low"].includes(a.priority) ? a.priority : "medium", note: String(a.note || "").slice(0, 300), status: "pending" }));
       actions += proposed.length;
       await admin.from("recordings").update({
-        summary: summary ? [summary] : null, proposed_tasks: proposed, transcript_en: transcriptEn,
+        summary: (summary || keyPoints.length) ? [summary, ...keyPoints].filter(Boolean) : null, proposed_tasks: proposed, transcript_en: transcriptEn,
         review_status: proposed.length ? "pending" : "done", interaction_id: interactionId, processed_at: new Date().toISOString(),
       }).eq("id", rec.id);
       processed++;
