@@ -107,7 +107,8 @@ serve(async (req) => {
       };
     }
 
-    const confidence = classifyConfidence(identifiers);
+    let confidence = classifyConfidence(identifiers);
+    if (confidence === "insufficient" && body.hint) confidence = "open";
 
     if (confidence === "insufficient") {
       return new Response(JSON.stringify({
@@ -137,6 +138,7 @@ serve(async (req) => {
     if (identifiers.role) idLines.push(`Role / title: ${identifiers.role}`);
     if (identifiers.city) idLines.push(`City: ${identifiers.city}`);
     if (identifiers.state) idLines.push(`State: ${identifiers.state}`);
+    if (body.hint) idLines.push(`What the user already knows about them (use this to locate them — may be a social handle, employer, or how they are publicly known): ${String(body.hint).slice(0, 240)}`);
 
     const isLocked = confidence === "locked";
 

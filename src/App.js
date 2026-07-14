@@ -774,7 +774,7 @@ function KnowledgeView({ userId, isAdmin = false }) {
       const { data, error } = await supabase.functions.invoke('knowledge-ingest', { body });
       if (error || !data?.source_id) { setAddMsg('Could not add: ' + (error?.message || data?.error || 'unknown')); setAdding(false); return; }
       setTitle(''); setText(''); setUrl(''); setFile(null); setTagsStr('');
-      setAddMsg('Added — processing now. It\u2019ll be searchable in a moment.');
+      setAddMsg('Added — processing now. It’ll be searchable in a moment.');
       setTab('library'); loadLib();
     } catch (e) { setAddMsg(String(e)); }
     setAdding(false);
@@ -6930,7 +6930,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
                 <span style={{ marginLeft: 'auto' }}><AriRewriteButton text={bodyText} onRewrite={setBodyText} contactName={recipient?.name} contactId={recipient?.id} discLabel={discHint ? `${discHint.p}${discHint.s ? '/' + discHint.s : ''}` : ''} /></span>
               </div>
               <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
-                placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}…\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you\u2019ve written — adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
+                placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}…\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you’ve written — adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
                 style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
               {channel === 'email' && (
                 <div style={{ marginTop: '8px' }}>
@@ -7934,6 +7934,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   useEffect(() => { if (contact && window.__autoResearch && window.__autoResearch === contact.id) { window.__autoResearch = null; setShowResearchModal(true); setTimeout(() => { try { startResearch(); } catch (_) {} }, 150); } /* eslint-disable-next-line */ }, [contact]);
   const [researchCandidates, setResearchCandidates] = useState([]);
   const [researchError, setResearchError] = useState(null);
+  const [researchHint, setResearchHint] = useState('');
   const [showResearchReport, setShowResearchReport] = useState(false);  // for viewing existing report
 
   // Linked tasks
@@ -8386,7 +8387,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
 
   // Identify candidates for this contact, then either auto-run (locked) or
   // prompt for candidate selection (strong/weak/insufficient).
-  async function startResearch() {
+  async function startResearch(hint) {
     setResearchStage('identifying');
     setResearchError(null);
     setResearchCandidates([]);
@@ -8410,7 +8411,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
     };
     try {
       const { data, error } = await supabase.functions.invoke('contact-identify', {
-        body: { contact_id: contact.id },
+        body: { contact_id: contact.id, hint: (hint && String(hint).trim()) || undefined },
       });
       if (error) {
         let m = error.message || 'Identity lookup failed';
@@ -9451,8 +9452,13 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                   <div style={{padding:'10px',background:'rgba(239,68,68,0.10)',border:'1px solid #ef4444',borderRadius:'6px',color:'#ef4444',fontSize:'12px',lineHeight:1.5,marginBottom:'12px'}}>
                     {researchError}
                   </div>
+                  <div style={{ marginBottom:'12px' }}>
+                    <div style={{ fontSize:'11.5px', color:'var(--text-2)', marginBottom:'6px', lineHeight:1.45 }}>Know something that’ll help find them? Add a handle, employer, or how they’re publicly known:</div>
+                    <input className="form-input" value={researchHint} onChange={e => setResearchHint(e.target.value)} placeholder="e.g. Instagram @janedoe, or runs Acme Realty" style={{ width:'100%', boxSizing:'border-box' }} />
+                    <button className="btn btn-primary btn-sm" disabled={!researchHint.trim()} style={{ marginTop:'8px', opacity: researchHint.trim() ? 1 : 0.5 }} onClick={() => { const h = researchHint.trim(); if (h) startResearch(h); }}>Search with this detail</button>
+                  </div>
                   <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
-                    <button className="btn btn-ghost" onClick={() => { setShowResearchModal(false); setResearchStage('idle'); }}>Close</button>
+                    <button className="btn btn-ghost" onClick={() => { setShowResearchModal(false); setResearchStage('idle'); setResearchHint(''); }}>Close</button>
                     <button className="btn btn-primary" onClick={() => setResearchStage('idle')}>Try again</button>
                   </div>
                 </div>
