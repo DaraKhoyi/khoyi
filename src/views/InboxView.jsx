@@ -203,7 +203,7 @@ function highlightMatch(text, q) {
 }
 
 
-function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeholder, autoFocus }) {
+function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeholder, autoFocus, pendingRef }) {
   const [inputText, setInputText] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(0);
@@ -218,6 +218,9 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
   const [dropdownMaxHeight, setDropdownMaxHeight] = useState(320);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
+  // Mirror the live, uncommitted text upward. Tapping Send must be able to flush
+  // an address the user typed but never committed with Enter/Tab/comma.
+  useEffect(() => { if (pendingRef) pendingRef.current = inputText; }, [inputText, pendingRef]);
 
   // Parse the comma-separated string into displayable chips. Each chip
   // gets a name (if a contact exists at that email) and a contactId for
@@ -493,6 +496,7 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
         <input ref={inputRef} type="text" value={inputText}
           onChange={onInputChange} onKeyDown={onKeyDown}
           onFocus={() => { if (inputText) setShowDropdown(true); }}
+          onBlur={() => { const t = inputText.trim(); if (t && EMAIL_RE.test(t)) commitRecipient(t, null, null); }}
           autoFocus={autoFocus}
           autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
           style={{
@@ -1174,6 +1178,10 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
   const [aiDrafting, setAiDrafting] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendMsg, setSendMsg] = useState('');
+  // Live (uncommitted) text inside each RecipientPicker — flushed on Send.
+  const composeToPendingRef = useRef('');
+  const composeCcPendingRef = useRef('');
+  const composeBccPendingRef = useRef('');
   const [syncingAliases, setSyncingAliases] = useState(false);
   // Backfill state: { running, round, totalNew, remaining, error, message }
   const [backfill, setBackfill] = useState(null);
@@ -2050,26 +2058,49 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     setShowCompose(true);
   }
 
+  // Merge committed chips with any address still sitting uncommitted in the
+  // picker's input. Without this, typing an address and tapping Send straight
+  // away sends nothing — the text never became a chip.
+  function mergeRecipients(committed, ref) {
+    const out = []; const seen = new Set();
+    const add = (raw) => {
+      const t = String(raw || '').trim();
+      if (!t || !EMAIL_RE.test(t)) return;
+      const k = t.toLowerCase();
+      if (seen.has(k)) return;
+      seen.add(k); out.push(t);
+    };
+    String(committed || '').split(',').forEach(add);
+    String((ref && ref.current) || '').split(',').forEach(add);
+    return out;
+  }
+
   async function handleSend(ev) {
-    ev.preventDefault();
+    if (ev && ev.preventDefault) ev.preventDefault();
+    const toArr = mergeRecipients(composeTo, composeToPendingRef);
+    if (!toArr.length) {
+      const typed = (composeToPendingRef.current || '').trim();
+      setSendMsg(typed ? `“${typed}” doesn’t look like a valid email address.` : 'Add a recipient before sending.');
+      return;
+    }
     setSending(true);
     setSendMsg('');
     try {
       const payload = {
         account_id: account.id,
-        to: composeTo.split(',').map(s => s.trim()).filter(Boolean),
+        to: toArr,
         subject: composeSubject,
         body_text: composeBody,
       };
       if (composeAttachments.length) payload.attachments = composeAttachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 }));
       if (composeTrack) {
         payload.track = true;
-        const firstTo = (composeTo.split(',')[0] || '').trim().toLowerCase();
+        const firstTo = (toArr[0] || '').trim().toLowerCase();
         const cm = (contacts || []).find(c => (c.email || '').toLowerCase() === firstTo);
         if (cm) payload.contact_id = cm.id;
       }
-      const ccArr = composeCc.split(',').map(s => s.trim()).filter(Boolean);
-      const bccArr = composeBcc.split(',').map(s => s.trim()).filter(Boolean);
+      const ccArr = mergeRecipients(composeCc, composeCcPendingRef);
+      const bccArr = mergeRecipients(composeBcc, composeBccPendingRef);
       if (ccArr.length) payload.cc = ccArr;
       if (bccArr.length) payload.bcc = bccArr;
       if (composeFrom && composeFrom !== account.email_address) {
@@ -2110,6 +2141,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
 
       setShowCompose(false);
       setComposeTo(''); setComposeCc(''); setComposeBcc(''); setShowCcBcc(false); setComposeSubject(''); setComposeBody(''); setComposeFrom(''); setComposeReplyMeta(null);
+      composeToPendingRef.current = ''; composeCcPendingRef.current = ''; composeBccPendingRef.current = '';
       // Trigger a sync so the sent message shows up
       runSync();
     } catch (err) {
@@ -3030,6 +3062,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                 <RecipientPicker
                   value={composeTo}
                   onChange={setComposeTo}
+                  pendingRef={composeToPendingRef}
                   contacts={contacts}
                   profiles={profiles}
                   placeholder="Type a name or email…"
@@ -3040,14 +3073,14 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                 <>
                   <div className="form-group">
                     <label className="form-label">Cc</label>
-                    <RecipientPicker value={composeCc} onChange={setComposeCc} contacts={contacts} profiles={profiles} placeholder="Carbon copy — they'll see each other" />
+                    <RecipientPicker value={composeCc} onChange={setComposeCc} pendingRef={composeCcPendingRef} contacts={contacts} profiles={profiles} placeholder="Carbon copy — they'll see each other" />
                   </div>
                   <div className="form-group">
                     <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                       <span>Bcc</span>
                       <span style={{fontSize:'10px',color:'var(--text-3)',fontWeight:400}}>hidden from all recipients</span>
                     </label>
-                    <RecipientPicker value={composeBcc} onChange={setComposeBcc} contacts={contacts} profiles={profiles} placeholder="Blind copy — others won't see these" />
+                    <RecipientPicker value={composeBcc} onChange={setComposeBcc} pendingRef={composeBccPendingRef} contacts={contacts} profiles={profiles} placeholder="Blind copy — others won't see these" />
                   </div>
                 </>
               )}
@@ -3093,10 +3126,10 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                   </div>
                 )}
               </div>
-              {sendMsg && <p style={{fontSize:'13px',color: sendMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',margin:'4px 0'}}>{sendMsg}</p>}
+              {sendMsg && <p style={{fontSize:'13px',color: sendMsg === 'Sent.' ? 'var(--green)' : '#e0965a',margin:'4px 0'}}>{sendMsg}</p>}
               <div className="modal-actions">
                 <button type="button" className="btn btn-ghost" onClick={()=>setShowCompose(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={sending || !composeTo.trim()}>{sending?'Sending…':'Send'}</button>
+                <button type="submit" className="btn btn-primary" disabled={sending}>{sending?'Sending…':'Send'}</button>
               </div>
             </form>
           </div>
