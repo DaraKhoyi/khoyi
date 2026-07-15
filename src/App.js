@@ -4903,6 +4903,34 @@ function DashboardAnnouncements({ userId }) {
   );
 }
 
+function PendingAudio({ pendingId }) {
+  const [url, setUrl] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  // Lazy: only mint the link when the user actually wants to listen. With hundreds of
+  // pending items we must never fetch links for a whole list.
+  const load = async () => {
+    if (url || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('pending-audio-link', { body: { pending_id: pendingId } });
+      if (error) throw error;
+      if (data && data.url) setUrl(data.url);
+      else setErr(data && data.error === 'unsupported_provider' ? 'Playback isn’t available for this source yet.' : 'Couldn’t load this audio.');
+    } catch (_) { setErr('Couldn’t load this audio — try again.'); }
+    setBusy(false);
+  };
+  if (url) return <audio src={url} controls preload="none" style={{ width:'100%', height:36, marginBottom:10 }} />;
+  return (
+    <div style={{ marginBottom:10 }}>
+      <button onClick={load} disabled={busy} style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'7px 13px', borderRadius:100, border:'1px solid rgba(203,163,92,.4)', background:'transparent', color:'#EBCB82', fontSize:12.5, fontWeight:700, cursor:busy?'default':'pointer' }}>
+        {busy ? 'Loading…' : '▶ Listen'}
+      </button>
+      {err && <div style={{ fontSize:11.5, color:'#e0965a', marginTop:5 }}>{err}</div>}
+    </div>
+  );
+}
+
 function PendingCard({ rec, contacts, candidates, onConfirm, onPersonal, onIgnore }) {
   const [selected, setSelected] = useState(() => new Set());
   const [depth, setDepth] = useState('deep');
@@ -4924,6 +4952,7 @@ function PendingCard({ rec, contacts, candidates, onConfirm, onPersonal, onIgnor
           <div style={{ fontSize:11.5, color:'#8C8475' }}>{whenStr}{sizeStr?' · '+sizeStr:''}</div>
         </div>
       </div>
+      <PendingAudio pendingId={rec.id} />
       <div style={{ fontFamily:'Fraunces, serif', fontSize:17, color:'#F6F1E7', marginBottom:10 }}>Who did you meet with?</div>
       <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginBottom:8 }}>
         {candidates.map(cd => (
