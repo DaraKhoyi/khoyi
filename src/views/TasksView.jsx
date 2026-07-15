@@ -713,7 +713,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
                 </button>
                 <button onClick={() => { if (bulkMode) exitBulk(); else { setBulkMode(true); setBulkSel(new Set()); } }}
                   style={pillStyle(bulkMode)} title="Select multiple tasks to set due date or priority">
-                  {bulkMode ? '✕ Done' : '☑ Select'}
+                  {bulkMode ? '✕ Exit select' : '☑ Select'}
                 </button>
               </>
             );
@@ -878,6 +878,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
                   style={{ width: '30px', height: '30px', borderRadius: '7px', fontSize: '13px', fontWeight: 800, color: '#000', background: QUAD_COLORS[L], border: 'none', cursor: 'pointer' }}>{L}</button>
               ))}
             </div>
+            <button onClick={exitBulk} style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: 800, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>✕ Exit select</button>
           </div>, document.body
         )}
 
