@@ -629,7 +629,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         .ww-cal{
           --bg-base:#100D09; --bg-card:#1B1610; --bg-hover:#221B10;
           --border:rgba(203,163,92,.20); --border-strong:rgba(203,163,92,.40);
-          --accent:#CBA35C; --accent-2:#EBCB82; --accent-dim:rgba(203,163,92,.45); --accent-glow:rgba(203,163,92,.14);
+          --accent:#CBA35C; --accent-2:#EBCB82; --accent-dim:rgba(203,163,92,.45); --accent-glow:rgba(203,163,92,.14); --event-bg:rgba(203,163,92,.34); --text-on-accent:#E4DCCB;
           --text-1:#F6F1E7; --text-2:#C8BFAE; --text-3:#8C8475;
           font-family:Manrope,sans-serif;
           background:radial-gradient(120% 34% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;
