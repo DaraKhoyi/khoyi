@@ -3577,10 +3577,85 @@ function buildGrowthMoves({ contacts=[], deals=[], gciGoal=0, now=Date.now() }){
   moves.push({ key:'oh', icon:'target', title:'Line up an open house', why:'One listing becomes many buyer leads — plan an open house this week', cta:{ label:'My pipeline', kind:'view', payload:'pipeline' } });
   return moves;
 }
+// Delivery-failure copy. A bounce is the ONLY signal that an email the app already
+// told you was "Sent." never actually arrived — so it outranks everything else.
+const BOUNCE_SHORT = {
+  alias_misconfigured: 'the “send as” alias can’t sign in',
+  address_not_found: 'that address doesn’t exist',
+  mailbox_full: 'their mailbox is full',
+  blocked_spam: 'their server rejected it as spam',
+  too_large: 'the message was too big',
+  domain_not_found: 'their email domain wasn’t found',
+  unknown: 'delivery failed',
+};
+
+function BouncesModal({ onClose, onChanged }) {
+  const [rows, setRows] = useState(null);
+  const load = async () => {
+    try {
+      const { data } = await supabase.from('email_bounces')
+        .select('id, original_subject, failed_recipients, reason_code, reason_text, fix_hint, from_address, bounced_at, handled')
+        .eq('handled', false).order('bounced_at', { ascending: false }).limit(25);
+      setRows(data || []);
+    } catch (_) { setRows([]); }
+  };
+  useEffect(() => { load(); }, []);
+  const markHandled = async (id) => {
+    try { await supabase.from('email_bounces').update({ handled: true, handled_at: new Date().toISOString() }).eq('id', id); } catch (_) {}
+    setRows(r => (r || []).filter(x => x.id !== id));
+    if (onChanged) onChanged();
+    if (window.__notify) window.__notify('Marked handled.', 'success');
+  };
+  return (
+    <div className="modal-overlay" style={{ zIndex: 2400 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 620, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div className="modal-header"><h3 style={{ margin: 0 }}>Emails that didn’t arrive</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        {rows === null && <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Checking…</p>}
+        {rows && rows.length === 0 && <p style={{ color: 'var(--text-2)', fontSize: 13 }}>Nothing bounced. Everything you’ve sent was accepted for delivery.</p>}
+        {(rows || []).map(b => (
+          <div key={b.id} style={{ border: '1px solid rgba(203,163,92,.3)', borderRadius: 12, padding: 14, marginBottom: 12, background: 'linear-gradient(180deg,#1B1610,#100D09)' }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, color: '#F6F1E7', marginBottom: 4 }}>{b.original_subject || '(no subject)'}</div>
+            <div style={{ fontSize: 11.5, color: '#E4DCCB', marginBottom: 8 }}>
+              sent {b.bounced_at ? new Date(b.bounced_at).toLocaleString() : ''}{b.from_address ? ' · from ' + b.from_address : ''}
+            </div>
+            <div style={{ fontSize: 12.5, color: '#e0965a', fontWeight: 700, marginBottom: 6 }}>
+              Not delivered to {(b.failed_recipients || []).length || 'anyone'}: {(b.failed_recipients || []).join(', ')}
+            </div>
+            {b.fix_hint && <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 8 }}>{b.fix_hint}</div>}
+            {b.reason_text && <details style={{ marginBottom: 8 }}><summary style={{ fontSize: 11.5, color: 'var(--text-3)', cursor: 'pointer' }}>What the mail server said</summary>
+              <pre style={{ fontSize: 10.5, color: 'var(--text-3)', whiteSpace: 'pre-wrap', margin: '6px 0 0' }}>{b.reason_text}</pre></details>}
+            <button className="btn btn-ghost btn-sm" onClick={() => markHandled(b.id)}>✓ Handled</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[], deals=[], gciGoal=0, setView, onOpenPlan, myUserId=null, oweReplyMap={}, setOweReplyMap }){
   const now=Date.now();
   const [openSignals,setOpenSignals]=useState({});
   const [docActions,setDocActions]=useState([]);
+  const [bounceActions,setBounceActions]=useState([]);
+  const [showBounces,setShowBounces]=useState(false);
+  const [bounceNonce,setBounceNonce]=useState(0);
+  useEffect(()=>{ let alive=true; (async()=>{
+    try{
+      const { data } = await supabase.from('email_bounces')
+        .select('id, original_subject, failed_recipients, reason_code, bounced_at')
+        .eq('handled',false).order('bounced_at',{ascending:false}).limit(10);
+      if(!alive) return;
+      const sigs=(data||[]).map(b=>{
+        const rec=b.failed_recipients||[];
+        const who = rec.length===1 ? rec[0] : (rec.length? rec.length+' people' : 'its recipients');
+        return { key:'bounce:'+b.id, score:98, tag:'bounce', icon:'alert', contactId:null,
+          title:'Your email never reached '+who,
+          why:('“'+String(b.original_subject||'(no subject)').slice(0,58)+'” — '+(BOUNCE_SHORT[b.reason_code]||'delivery failed')+'. It looked sent, but it wasn’t.'),
+          cta:{ label:'See what happened', kind:'bounces' } };
+      });
+      setBounceActions(sigs);
+    }catch(_){}
+  })(); return ()=>{alive=false;}; },[bounceNonce]);
   useEffect(()=>{ let alive=true; (async()=>{
     try{
       const since=new Date(Date.now()-30*86400000).toISOString();
@@ -3601,18 +3676,18 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
       setDocActions(sigs);
     }catch(_){}
   })(); return ()=>{alive=false;}; },[contacts]);
-  const actions=React.useMemo(()=>{ const base=buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}); return [...base,...docActions].sort((a,b)=>b.score-a.score); },[contacts,tasks,events,deals,oweReplyMap,openSignals,docActions]);
+  const actions=React.useMemo(()=>{ const base=buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}); return [...base,...docActions,...bounceActions].sort((a,b)=>b.score-a.score); },[contacts,tasks,events,deals,oweReplyMap,openSignals,docActions,bounceActions]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
   const urgent=actions.length>0; const list=urgent?actions:growth;
   const cur=list[Math.min(idx,list.length-1)]||null;
-  const runCta=(cta)=>{ if(!cta) return; if(cta.kind==='task_done'){ const id=cta.payload; try{ supabase.from('tasks').update({completed:true, completed_at:new Date().toISOString()}).eq('id',id).then(()=>{}); }catch(_){} setTasks&&setTasks(pr=>pr.map(x=>x.id===id?{...x,completed:true}:x)); if(window.__notify) window.__notify('Done — nice work.','success'); setIdx(0); } else if(cta.kind==='open_reply'){ const ch=cta.channel||''; const isText=ch.includes('text')||ch.includes('sms'); if((isText||(!ch.includes('email')&&!cta.email)) && cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else if(cta.email){ window.__inboxOpenEmail=cta.email; setView&&setView('inbox'); } else if(cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else { setView&&setView('inbox'); } } else if(cta.kind==='view'){ setView&&setView(cta.payload); } else if(cta.kind==='call'){ window.location.href='tel:'+cta.payload; } };
+  const runCta=(cta)=>{ if(!cta) return; if(cta.kind==='task_done'){ const id=cta.payload; try{ supabase.from('tasks').update({completed:true, completed_at:new Date().toISOString()}).eq('id',id).then(()=>{}); }catch(_){} setTasks&&setTasks(pr=>pr.map(x=>x.id===id?{...x,completed:true}:x)); if(window.__notify) window.__notify('Done — nice work.','success'); setIdx(0); } else if(cta.kind==='open_reply'){ const ch=cta.channel||''; const isText=ch.includes('text')||ch.includes('sms'); if((isText||(!ch.includes('email')&&!cta.email)) && cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else if(cta.email){ window.__inboxOpenEmail=cta.email; setView&&setView('inbox'); } else if(cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else { setView&&setView('inbox'); } } else if(cta.kind==='bounces'){ setShowBounces(true); } else if(cta.kind==='view'){ setView&&setView(cta.payload); } else if(cta.kind==='call'){ window.location.href='tel:'+cta.payload; } };
   // "I already replied" — clears an owe-a-reply instantly by bumping the field the
   // engine reads (last_outbound_at past last_inbound_at), independent of email/text
   // sync timing. Updates local state so the card drops immediately.
   const markReplied=(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString(); try{ supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction:'outbound', channel:'manual', occurred_at: nowIso, brief:'Marked replied' }).then(()=>{},()=>{}); }catch(_){} setOweReplyMap && setOweReplyMap(m=>{ const n={...m}; delete n[contactId]; return n; }); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
   if(!cur) return null;
-  const tagColor=cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
+  const tagColor=cur.tag==='bounce'?'var(--red)':cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
   return (
     <div className="nba-card" style={{position:'relative',borderRadius:20,padding:'20px 18px 16px',marginBottom:22,background:'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)',border:'1px solid rgba(203,163,92,0.55)',boxShadow:'0 0 40px rgba(203,163,92,0.12)'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9}}>
@@ -3633,6 +3708,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
         {urgent && onOpenPlan && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenPlan()}>Plan my day</button>}
         {list.length>1 && <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setShowAll(s=>!s)}>{showAll?'Hide':'See all ('+list.length+')'}</button>}
       </div>
+      {showBounces && <BouncesModal onClose={()=>setShowBounces(false)} onChanged={()=>setBounceNonce(n=>n+1)} />}
       {showAll && <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:10}}>
         {list.slice(0,8).map((a,i)=>(
           <div key={a.key} onClick={()=>{setIdx(i);setShowAll(false);}} style={{display:'flex',gap:10,alignItems:'center',cursor:'pointer',opacity:i===idx?1:0.8}}>
