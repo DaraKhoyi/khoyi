@@ -15,6 +15,20 @@ python3 smoke/hooks_check.py
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 
+# Preflight: the browser must actually exist. Without this the node step dies with a
+# wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
+# code gets masked and the deploy proceeds on a gate that never ran. A gate that
+# silently passes is worse than no gate at all.
+CHROME_PATH="$(node -e "try{process.stdout.write(require('playwright').chromium.executablePath())}catch(e){}" 2>/dev/null || true)"
+if [ -z "$CHROME_PATH" ] || [ ! -e "$CHROME_PATH" ]; then
+  echo "" >&2
+  echo "✗ SMOKE GATE CANNOT RUN — Playwright's chromium is not installed." >&2
+  echo "  This is NOT a pass. Install it, then re-run:" >&2
+  echo "      npx playwright install chromium" >&2
+  echo "" >&2
+  exit 2
+fi
+
 EMAIL="smoke_$(date +%s)_$RANDOM@example.com"; PASSWORD="Smoke!$(date +%s)$RANDOM"
 echo "→ creating throwaway agent $EMAIL"
 SUID=$(curl -s -X POST "$SUPABASE_URL/auth/v1/admin/users" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" -H "Content-Type: application/json" \

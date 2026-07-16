@@ -1,0 +1,76 @@
+name: Build & Deploy PrismOS
+
+# Runs automatically on every push to main, and can be triggered by hand.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Let the built-in token push the compiled site to the gh-pages branch.
+permissions:
+  contents: write
+
+# Never let two deploys clobber each other.
+concurrency:
+  group: prismos-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Stamp build id
+        # Make sw.js unique per deploy so the browser always detects a new
+        # service worker and clients auto-update (no more stale-bundle lock-in).
+        # Also append the short SHA to the visible version for at-a-glance proof.
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          sed -i "s#const VERSION = '[^']*'#const VERSION = 'prismos-${SHA}'#" public/sw.js
+          sed -i "s#export const BUILD_VERSION = '\([^']*\)'#export const BUILD_VERSION = '\1+${SHA}'#" src/version.js
+          echo "Stamped ${SHA}:"; grep "const VERSION" public/sw.js; grep BUILD_VERSION src/version.js
+
+      - name: Build production bundle
+        env:
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Smoke gate — must pass before anything publishes
+        # This workflow deploys automatically on every push to main, so the gate has
+        # to run HERE. If any critical view crashes, the job fails and the publish
+        # step below never runs. Never deploy on red smoke.
+        env:
+          SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx playwright install --with-deps chromium
+          # The service_role key isn't stored as an Actions secret, and doesn't need to
+          # be — mint it at run time from the Management token we already have.
+          REF=$(echo "$SUPABASE_URL" | sed -E 's#https://([^.]+)\..*#\1#')
+          SUPABASE_SERVICE_KEY=$(curl -s "https://api.supabase.com/v1/projects/$REF/api-keys?reveal=true" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "User-Agent: KhoyiApp/1.0" \
+            | python3 -c "import sys,json;print([k['api_key'] for k in json.load(sys.stdin) if k['name']=='service_role'][0])")
+          export SUPABASE_SERVICE_KEY
+          bash smoke/run.sh
+
+      - name: Publish build to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          publish_branch: gh-pages
+          cname: darasapp.com
