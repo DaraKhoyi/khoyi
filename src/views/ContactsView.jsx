@@ -1339,6 +1339,15 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       )}
 
+      {/* Search input — always visible, first thing on the page. The × clears the text (no collapse). */}
+      <HeaderSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="🔍 Search contacts (name, email, company)…"
+        onClose={() => {}}
+        autoFocus={false}
+      />
+
       {!tagMode && !search.trim() && <Tip id="disc" label="Reading the room">That gold letter on a contact is their <b>behavioral style</b> (DISC). A <b>D</b> wants the bottom line, fast; an <b>S</b> wants warmth and reassurance. Match your delivery to how they're wired and rapport comes easy — Prism reads it for you, so you never have to be the expert.</Tip>}
       {!tagMode && !search.trim() && reachNext && (
         <div className="ww-next">
@@ -1359,15 +1368,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           </div>
         </div>
       )}
-
-      {/* Search input — always visible. The × clears the text (no collapse). */}
-      <HeaderSearchInput
-        value={search}
-        onChange={setSearch}
-        placeholder="🔍 Search contacts (name, email, company)…"
-        onClose={() => {}}
-        autoFocus={false}
-      />
 
       {search.trim() && (
         <div className="ww-quick">
