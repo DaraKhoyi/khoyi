@@ -1309,7 +1309,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         .ww-qempty{ padding:16px 14px; font-size:13.5px; color:#8C8475; text-align:center; }
       `}</style>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
-        <div style={{flex:1,minWidth:0}}><div className="ww-eyebrow">Your sphere · Realty ONE Group</div><h2 style={{margin:'8px 0 6px'}}>Your people.</h2><p style={{color:'var(--text-3)',fontSize:'13px'}}>{contacts.length} contacts{dueCount>0 && <> · <b style={{color:'var(--accent-2)',fontWeight:700}}>{dueCount} due</b> for a touch</>}</p></div>
+        <div style={{flex:1,minWidth:0}}><h2 style={{margin:'0 0 6px'}}>Your people.</h2><p style={{color:'var(--text-3)',fontSize:'13px'}}>{contacts.length} contacts{dueCount>0 && <> · <b style={{color:'var(--accent-2)',fontWeight:700}}>{dueCount} due</b> for a touch</>}</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
           <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
           <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>

@@ -395,7 +395,7 @@ function PropertiesView({ properties, setProperties, userId, contacts }) {
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><div className="ww-eyebrow" style={{marginBottom:6}}>Your portfolio · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="properties" size={24} style={{color:'var(--accent)',flexShrink:0}} />Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
+        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="properties" size={24} style={{color:'var(--accent)',flexShrink:0}} />Properties</h2><p>{properties.length} total · {filtered.length} shown</p></div>
         <button className="btn-add-circle" onClick={()=>{setEditProp(null);setShowModal(true);}} title="New Property" aria-label="New Property">+</button>
       </div>
 

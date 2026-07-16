@@ -1668,7 +1668,6 @@ function ChatView({ robots, userId }) {
           <div className="chat-empty"><div className="spinner" style={{margin:'0 auto'}} /></div>
         ) : messages.length === 0 ? (
           <div className="chat-empty">
-            <div className="ww-eyebrow" style={{marginBottom:'14px'}}>Ask {robot.name} · Realty ONE Group</div>
             <h3 style={{fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'34px',letterSpacing:'-0.02em',color:'#F6F1E7',margin:'0 0 10px',lineHeight:1.12}}>How can I help?</h3>
             <p style={{color:'#C8BFAE',fontSize:'14px',maxWidth:'36ch',margin:'0 auto',lineHeight:1.5}}>{robot.role || 'Your assistant'} — ask me anything, or tap 📷 to snap a receipt and I\'ll push it to accounting.</p>
             <div style={{display:'flex',flexWrap:'wrap',gap:'8px',justifyContent:'center',marginTop:'18px'}}>
@@ -4897,7 +4896,6 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   return (<div className="view ww-prism">
     <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .form-input,.ww-prism .form-select{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
     <div style={{ marginBottom:14 }}>
-      <div className="ww-eyebrow" style={{ marginBottom:7 }}>Your numbers · Realty ONE Group</div>
       <h2 style={{ margin:0, fontFamily:'Fraunces, serif', fontSize:34, fontWeight:300, letterSpacing:'-0.02em', color:'#F6F1E7', lineHeight:1.05 }}>My numbers.</h2>
       <div style={{ fontSize:13, color:'#C8BFAE', marginTop:4 }}>Your production, pipeline, and activity</div>
     </div>
@@ -5163,7 +5161,6 @@ function ReviewView({ userId, contacts = [], events = [], setTasks, priorityPref
   return (
     <div className="ww-prism">
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--border:rgba(203,163,92,.20);--accent:#CBA35C;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .form-input{background:#100D09;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;}`}</style>
-      <div className="ww-eyebrow" style={{ marginBottom:4 }}>✦ Your review inbox</div>
       <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:30, letterSpacing:'-.02em', margin:'0 0 4px', color:'#F6F1E7' }}>Review</h2>
       <p style={{ fontSize:13, color:'#C8BFAE', margin:'0 0 14px' }}>Quick decisions Prism is waiting on. Clear these and your task list stays only what you chose to do.</p>
       <Tip id="review" label="Decide here, do in Tasks">This is Prism's inbox to you — a recording to label, a to-do it heard on a call. Confirm what's real and it graduates into <b>Tasks</b> with a priority; dismiss the rest. Your A/B/C/D list stays clean because nothing lands there until you say yes.</Tip>
@@ -5272,7 +5269,6 @@ function LearnView({ setView, userId, isAdmin = false }){
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--border:rgba(203,163,92,.20);--accent:#CBA35C;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.10), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism .form-input{background:#0c0a07;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;box-sizing:border-box;width:100%;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.3);color:#C8BFAE;background:transparent;}`}</style>
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10 }}>
         <div>
-          <div className="ww-eyebrow" style={{ marginBottom:4 }}>✦ The self-teaching app</div>
           <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:30, letterSpacing:'-.02em', margin:'0 0 4px', color:'#F6F1E7' }}>Learn</h2>
         </div>
         {isAdmin && <button onClick={() => setStudioOpen(true)} className="btn btn-ghost btn-sm" style={{ flexShrink:0, marginTop:6, fontSize:11 }}>✎ Studio</button>}
@@ -5366,7 +5362,6 @@ function TeachingStudio({ userId, onClose }){
     <div className="ww-prism">
       <style>{`.ww-prism{--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:#100D09;min-height:100%;} .ww-prism .form-input{background:#0c0a07;border:1px solid rgba(203,163,92,.24);color:#F6F1E7;border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;box-sizing:border-box;width:100%;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.3);color:#C8BFAE;background:transparent;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.2);border-radius:14px;padding:14px;}`}</style>
       <button onClick={onClose} className="btn btn-ghost btn-sm" style={{ marginBottom:12 }}>← Back to Learn</button>
-      <div className="ww-eyebrow" style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.24em', textTransform:'uppercase', color:'#CBA35C', marginBottom:4 }}>✦ Owner tools</div>
       <h2 style={{ fontFamily:'Fraunces, serif', fontWeight:300, fontSize:28, margin:'0 0 4px', color:'#F6F1E7' }}>Teaching Studio</h2>
       <p style={{ fontSize:12.5, color:'#8C8475', margin:'0 0 14px' }}>Write lessons and coaching triggers for every agent — they go live instantly, no update needed.</p>
       <div style={{ display:'flex', gap:8, marginBottom:16 }}>{tabBtn('lessons','Lessons')}{tabBtn('triggers','Coaching triggers')}</div>
@@ -6082,7 +6077,6 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
       <div className="dash-hero">
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
           <div style={{ minWidth:0 }}>
-            <div className="ww-eyebrow" style={{ marginBottom:7 }}>Your day · Realty ONE Group</div>
             <h2 style={{ margin:0, fontFamily:'Fraunces, serif', fontSize:34, fontWeight:300, letterSpacing:'-0.02em', color:'#F6F1E7', lineHeight:1.05 }}>{gr}, {name}.</h2>
             <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--text-2)', fontWeight:500 }}>{today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
           </div>
@@ -12862,7 +12856,7 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
   return (
     <div className="ww-prism">
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 24% at 50% -3%, rgba(203,163,92,.08), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .form-input,.ww-prism .form-select,.ww-prism .form-textarea{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
-      <div className="page-header"><div><div className="ww-eyebrow" style={{marginBottom:6}}>Your settings · Realty ONE Group</div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="settings" size={24} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div></div>
+      <div className="page-header"><div><h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="settings" size={24} style={{color:'var(--accent)',flexShrink:0}} />Settings</h2><p>Manage your account</p></div></div>
       <div style={{maxWidth:'480px'}}>
         {settingsTab === null ? (
           <div>

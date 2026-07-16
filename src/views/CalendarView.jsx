@@ -656,7 +656,6 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
       `}</style>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}>
-          <div className="ww-eyebrow">Your calendar · Realty ONE Group</div>
           <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'6px 0 4px'}}><Icon name="calendar" size={24} style={{color:'var(--accent)',flexShrink:0}} />Calendar</h2>
           <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total{taskBlockCount>0?` · ${taskBlockCount} scheduled task block${taskBlockCount===1?'':'s'}`:''}</p>
         </div>

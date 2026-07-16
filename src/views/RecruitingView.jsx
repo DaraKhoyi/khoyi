@@ -144,7 +144,6 @@ function RecruitingView({ contacts, setContacts, userId }) {
     <div className="page-shell">
       <div className="page-header" style={{alignItems:'flex-start'}}>
         <div style={{flex:1,minWidth:0}}>
-          <div className="ww-eyebrow" style={{marginBottom:6}}>Grow your team · Realty ONE Group</div>
           <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="recruiting" size={24} style={{color:'var(--accent)',flexShrink:0}} />Recruiting</h2>
         </div>
         <button className="btn btn-primary btn-sm" onClick={() => setShowAddForm(true)}>+ Recruit</button>

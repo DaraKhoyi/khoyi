@@ -328,7 +328,7 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   return (
     <div className="view">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ minWidth: 0 }}><div className="ww-eyebrow" style={{ marginBottom: 5 }}>Your line · Realty ONE Group</div><h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}><Icon name="quo" size={24} style={{ color: 'var(--accent)', flexShrink: 0 }} />Phone & Text</h2></div>
+        <div style={{ minWidth: 0 }}><h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}><Icon name="quo" size={24} style={{ color: 'var(--accent)', flexShrink: 0 }} />Phone & Text</h2></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Number</span>
           <select value={fromNumber?.id || ''} onChange={e => changeNumber(e.target.value)} style={{ background: 'var(--bg-card)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontWeight: 600 }}>

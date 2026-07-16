@@ -618,7 +618,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           gap:'12px', marginBottom:'10px',
         }}>
           <div style={{minWidth:0, flex:1}}>
-            <div className="ww-eyebrow">Your tasks · Realty ONE Group</div>
             <h2 style={{margin:'6px 0 2px',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} />Tasks</h2>
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
             <Tip id="eisenhower" label="Urgent vs. important">Prism ranks by <b>importance × urgency</b> (the Eisenhower idea). Do important-and-urgent now; <b>schedule</b> important-but-not-urgent; let the rest wait. Working the matrix keeps you proactive, not just busy.</Tip>

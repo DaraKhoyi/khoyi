@@ -234,7 +234,6 @@ function JournalView({ userId }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '80px' }}>
       {/* Header */}
       <div>
-        <div className="ww-eyebrow" style={{ marginBottom: 6 }}>Daily Journal · Realty ONE Group</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
           <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} />Daily Journal</h2>
           <span style={{ flex: 1 }} />
