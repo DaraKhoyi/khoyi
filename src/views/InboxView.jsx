@@ -734,29 +734,38 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
 
   if (!account) return <InboxConnectScreen setView={setView} reloadData={reloadData} />;
 
+  // The account switcher is built here (this component owns account selection) but is
+  // RENDERED by the child, underneath the page title — so Inbox opens with its title
+  // like every other screen instead of being pushed down by chrome.
+  const accountSwitcher = mailAccounts.length > 1 ? (
+    <div style={{ display: 'flex', gap: '8px', margin: '0 0 14px', flexWrap: 'nowrap', width: '100%' }}>
+      {mailAccounts.map(a => {
+        const active = a.id === account.id;
+        return (
+          <button key={a.id} onClick={() => setSelectedId(a.id)}
+            title={a.email_address}
+            style={{
+              // flex:1 + minWidth:0 + ellipsis keeps both pills on ONE line at any font
+              // scale. The old flexWrap:'wrap' silently stacked them instead.
+              flex: '1 1 0', minWidth: 0,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              padding: '7px 10px', borderRadius: '999px', cursor: 'pointer', fontSize: '12.5px',
+              fontWeight: active ? 700 : 500,
+              background: active ? 'rgba(197,169,94,0.14)' : 'var(--bg-card)',
+              color: active ? '#C5A95E' : 'var(--text-2)',
+              border: `1px solid ${active ? '#C5A95E' : 'var(--border)'}`,
+            }}>
+            <Icon name="mail" size={13} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email_address}</span>
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
   return (
     <div>
-      {mailAccounts.length > 1 && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-          {mailAccounts.map(a => {
-            const active = a.id === account.id;
-            return (
-              <button key={a.id} onClick={() => setSelectedId(a.id)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
-                  fontWeight: active ? 700 : 500,
-                  background: active ? 'rgba(197,169,94,0.14)' : 'var(--bg-card)',
-                  color: active ? '#C5A95E' : 'var(--text-2)',
-                  border: `1px solid ${active ? '#C5A95E' : 'var(--border)'}`,
-                }}>
-                <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="mail" size={13} /> {a.email_address}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <GmailInboxView key={account.id} account={account} openThreadId={pendingOpenThreadId} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} reloadData={reloadData} defaultSystem={defaultSystem} />
+      <GmailInboxView key={account.id} account={account} openThreadId={pendingOpenThreadId} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={userId} reloadData={reloadData} defaultSystem={defaultSystem} accountSwitcher={accountSwitcher} />
     </div>
   );
 }
@@ -984,7 +993,7 @@ function PlainTextBody({ text }) {
 }
 
 
-function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData, defaultSystem = 'eisenhower' }) {
+function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData, defaultSystem = 'eisenhower', accountSwitcher = null }) {
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [tab, setTab] = useState('inbox');
@@ -2431,8 +2440,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         <div>
           <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="inbox" size={26} style={{color:'var(--accent)',flexShrink:0}} />Inbox</h2>
           <p style={{fontSize:'13px'}}>
-            <strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>
-            {' · '}
+            {!accountSwitcher && <><strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>{' · '}</>}
             {unreadCount > 0 ? `${unreadCount} unread` : 'all caught up'}
             {account.last_sync_at && <> · last sync: {timeAgo(account.last_sync_at)}</>}
             {account.last_sync_error && <> · <span style={{color:'var(--red)'}}>sync error</span></>}
@@ -2461,6 +2469,8 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           <button className="btn btn-primary" onClick={openCompose} style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="edit" size={14} /> Compose</button>
         </div>
       </div>
+
+      {accountSwitcher}
 
       <Tip id="speed" label="Speed wins"><b>Speed-to-lead</b> is the highest-ROI habit in real estate: the first agent to respond usually wins the client. Prism surfaces who's waiting on you, so a fast reply becomes automatic — not accidental.</Tip>
       {/* Search input — collapsible. Filters threads client-side by subject,
