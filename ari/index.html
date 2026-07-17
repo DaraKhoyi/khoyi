@@ -92,10 +92,29 @@
   <div class="acts hidden" id="grant">
     <button id="grantgo" class="p">Turn on Ari's access</button>
   </div>
+  <div class="acts hidden" id="inst">
+    <button id="instgo" class="p">Install Ari as an app</button>
+  </div>
 
 <script>
 (function(){
   "use strict";
+
+  // ── Register the service worker FROM HERE. This is why /ari/ installed as a
+  // bookmark instead of an app. The SW is registered by an inline script in the
+  // MAIN app's index.html, so it only ever registered if you had loaded
+  // darasapp.com in this browser. Open /ari/ first (or in a different browser)
+  // and there is NO service worker controlling the page — Chrome then judges it
+  // "not installable", silently downgrades Install to Add-to-Home-screen, and
+  // you get a shortcut with a URL bar that the side key cannot see.
+  // Scope "/" is permitted from here because the SCRIPT lives at the root; max
+  // scope is the script's directory, not the page's. Riding the root SW (rather
+  // than shipping /ari/sw.js) is deliberate: the root SW's activate() deletes
+  // every cache whose key !== VERSION, so a separate Ari cache would be wiped.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function(){});
+  }
+
   var SUPA = "https://xlgfspnojjgvkuitcoaf.supabase.co";
   var ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsZ2ZzcG5vampndmt1aXRjb2FmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTk1NzksImV4cCI6MjA5NDk3NTU3OX0.t6stnTptCp6T7YC-ogUKA9OP5YXhCf5Zm-0-WLkEnm0";  // publishable anon key — already public in the main bundle; RLS is the real guard
   var SKEY = "sb-xlgfspnojjgvkuitcoaf-auth-token";   // supabase-js default; shared with PrismOS (same origin)
@@ -116,20 +135,40 @@
   // ── Pocket guard ────────────────────────────────────────────────────────
   // A double-press in your pocket opens the mic. If nothing is ever said and
   // nothing is tapped, close rather than sit there listening.
+  // Standalone = launched from the home screen / side key, where window.close()
+  // actually works and an unattended screen should go away. In a browser TAB it
+  // does not work, so self-closing there just strands you on a dead "Done"
+  // screen with no way back — which is exactly what happened on Dara's phone.
+  function isStandalone(){
+    try{
+      return window.matchMedia("(display-mode: standalone)").matches ||
+             window.matchMedia("(display-mode: fullscreen)").matches ||
+             navigator.standalone === true;
+    }catch(e){ return false; }
+  }
   function armIdle(){
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(function(){ if(!spoke && !busy) bye(); }, 12000);
+    idleTimer = setTimeout(function(){
+      if(spoke || busy) return;
+      if(isStandalone()) return bye();   // pocket press: vanish
+      idle();                            // browser tab: just stand down, stay usable
+    }, 12000);
+  }
+  // Stop listening but STAY ALIVE and obviously restartable. Never a dead end.
+  function idle(){
+    try{ if(rec) rec.abort(); }catch(e){}
+    show(orb,true); orb.className = "orb";
+    setEyebrow("Tap to speak");
+    heard.textContent = "";
+    hint.textContent = "";
   }
   function bye(){
     try{ if(rec) rec.abort(); }catch(e){}
     setEyebrow("Done"); heard.textContent = "";
     window.close();
-    // window.close() is not guaranteed outside a script-opened window. If we're
-    // still here a beat later, say so honestly instead of pretending to close.
-    setTimeout(function(){
-      show(orb,false); show(acts,false);
-      hint.textContent = "You can close this now.";
-    }, 350);
+    // close() is only honoured in an installed window. If we're still here a
+    // beat later, hand control back rather than leaving a dead screen.
+    setTimeout(function(){ if(!document.hidden) idle(); }, 350);
   }
   $("close").onclick = bye;
 
@@ -275,6 +314,34 @@
     rec.onend = function(){ if(!busy) orb.className = "orb"; };
     try{ rec.start(); }catch(e){}
   }
+
+  // ── Install ────────────────────────────────────────────────────────────
+  // Chrome fires beforeinstallprompt ONLY when it considers this a real,
+  // installable app. So this button is also the diagnosis: if it appears, the
+  // side key will be able to see Ari; if it never appears, Chrome is still
+  // refusing and "Add to Home screen" would only make another bookmark.
+  // Surfacing it here beats telling a busy man to hunt through a browser menu.
+  var deferredInstall = null;
+  window.addEventListener("beforeinstallprompt", function(e){
+    e.preventDefault();
+    deferredInstall = e;
+    if(!isStandalone()) show($("inst"), true);
+  });
+  window.addEventListener("appinstalled", function(){
+    deferredInstall = null; show($("inst"), false);
+    hint.textContent = "Installed. Set it on your side key in Settings.";
+  });
+  $("instgo").onclick = async function(){
+    if(!deferredInstall) return;
+    $("instgo").textContent = "Installing…";
+    try{
+      deferredInstall.prompt();
+      var res = await deferredInstall.userChoice;
+      if(res && res.outcome === "accepted"){ show($("inst"), false); }
+      else { $("instgo").textContent = "Install Ari as an app"; }
+    }catch(e){ $("instgo").textContent = "Install Ari as an app"; }
+    deferredInstall = null;
+  };
 
   // Test hook — the same trick the main app uses with window.__setView. Without it
   // the ask() path is closed over and therefore unverifiable, and the round trip
