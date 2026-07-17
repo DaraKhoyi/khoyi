@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Ari</title>
+<link rel="manifest" href="/ari/manifest.json"/>
+<meta name="theme-color" content="#100D09"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<!--
+  ARI — the press-and-speak shell.
+  ───────────────────────────────────────────────────────────────────────────
+  Deliberately ONE hand-written file with inline CSS/JS and NO build step.
+  The whole point is the Samsung side key: press -> speak. PrismOS proper is a
+  ~1MB React bundle; if the mic isn't live in under a second this never gets
+  used, so a route inside the main app would have defeated the feature.
+
+  Same ORIGIN as PrismOS on purpose: localStorage is shared, so the Supabase
+  session is already here and there is no second login. Different SCOPE (/ari/)
+  so Android installs it as its own app with its own icon — which is what makes
+  it selectable in Settings > Advanced features > Side key > Open app.
+
+  Fonts load async and never block first paint; the system stack renders first.
+-->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400&family=Manrope:wght@400;600;700&display=swap">
+<style>
+  :root{
+    --bg:#100D09; --cream:#F6F1E7; --gold:#CBA35C; --champagne:#EBCB82;
+    --muted:#8C8475; --line:rgba(203,163,92,.22); --warm:#18130D; --red:#E0685E;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--cream);
+    font-family:Manrope,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column;
+    padding:max(14px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));
+    overscroll-behavior:none;
+  }
+  .top{display:flex;align-items:center;gap:9px;flex:none;padding-bottom:10px;border-bottom:1px solid var(--line);}
+  .fork{width:17px;height:17px;flex:none;}
+  .brand{font-family:Fraunces,Georgia,serif;font-style:italic;color:var(--champagne);font-size:16px;letter-spacing:.01em;}
+  .x{margin-left:auto;background:none;border:none;color:var(--muted);font-size:23px;line-height:1;padding:4px 8px;cursor:pointer;}
+  .stage{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;text-align:center;padding:14px 2px;min-height:0;overflow-y:auto;}
+  .eyebrow{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-weight:700;}
+  .heard{font-family:Fraunces,Georgia,serif;font-weight:300;font-size:25px;line-height:1.28;color:var(--cream);max-width:22ch;}
+  .heard .partial{color:var(--muted);}
+  .reply{font-size:15.5px;line-height:1.62;color:var(--cream);text-align:left;white-space:pre-wrap;width:100%;max-width:38ch;}
+  .reply.err{color:var(--red);}
+  /* The mic. One signature moment per screen — this is it. */
+  .orb{width:104px;height:104px;border-radius:50%;border:1px solid rgba(203,163,92,.45);
+       background:radial-gradient(70% 70% at 50% 30%, rgba(203,163,92,.20), transparent 70%), var(--warm);
+       display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer;}
+  .orb.live{animation:breathe 2.1s ease-in-out infinite;border-color:var(--champagne);}
+  .orb.busy{animation:spin 1s linear infinite;border-style:dashed;}
+  @keyframes breathe{0%,100%{box-shadow:0 0 0 0 rgba(235,203,130,.34);}50%{box-shadow:0 0 0 17px rgba(235,203,130,0);}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .orb svg{width:34px;height:34px;}
+  .hint{font-size:12.5px;color:var(--muted);}
+  .acts{display:flex;gap:9px;width:100%;max-width:38ch;flex:none;}
+  .acts button{flex:1;padding:14px;border-radius:100px;font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer;border:1px solid rgba(203,163,92,.40);background:transparent;color:var(--cream);}
+  .acts button.p{background:var(--champagne);color:#1a1409;border:none;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+  <div class="top">
+    <svg class="fork" viewBox="0 0 24 24" fill="none" stroke="#CBA35C" stroke-width="1.6" stroke-linecap="round">
+      <path d="M9 3v8a3 3 0 0 0 6 0V3M12 14v7"/>
+    </svg>
+    <span class="brand">Ari</span>
+    <button class="x" id="close" aria-label="Close">&times;</button>
+  </div>
+
+  <div class="stage">
+    <div id="eyebrow" class="eyebrow">Listening</div>
+    <div id="heard" class="heard">Speak.</div>
+    <div id="orb" class="orb live" role="button" tabindex="0" aria-label="Tap to speak">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#EBCB82" stroke-width="1.5" stroke-linecap="round">
+        <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/>
+      </svg>
+    </div>
+    <div id="reply" class="reply hidden"></div>
+    <div id="hint" class="hint"></div>
+  </div>
+
+  <div class="acts hidden" id="acts">
+    <button id="no">No</button>
+    <button id="yes" class="p">Yes, do it</button>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  var SUPA = "https://xlgfspnojjgvkuitcoaf.supabase.co";
+  var ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsZ2ZzcG5vampndmt1aXRjb2FmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTk1NzksImV4cCI6MjA5NDk3NTU3OX0.t6stnTptCp6T7YC-ogUKA9OP5YXhCf5Zm-0-WLkEnm0";  // publishable anon key — already public in the main bundle; RLS is the real guard
+  var SKEY = "sb-xlgfspnojjgvkuitcoaf-auth-token";   // supabase-js default; shared with PrismOS (same origin)
+
+  var $ = function(id){ return document.getElementById(id); };
+  var eyebrow=$("eyebrow"), heard=$("heard"), orb=$("orb"), reply=$("reply"),
+      hint=$("hint"), acts=$("acts"), yes=$("yes"), no=$("no");
+
+  var history = [];      // full turn history so confirm ("yes") has context
+  var robotId = null;
+  var busy = false;
+  var spoke = false;     // did we ever hear anything? guards the pocket-press timer
+  var idleTimer = null;
+
+  function show(el,on){ el.classList.toggle("hidden", !on); }
+  function setEyebrow(t){ eyebrow.textContent = t; }
+
+  // ── Pocket guard ────────────────────────────────────────────────────────
+  // A double-press in your pocket opens the mic. If nothing is ever said and
+  // nothing is tapped, close rather than sit there listening.
+  function armIdle(){
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function(){ if(!spoke && !busy) bye(); }, 12000);
+  }
+  function bye(){
+    try{ if(rec) rec.abort(); }catch(e){}
+    setEyebrow("Done"); heard.textContent = "";
+    window.close();
+    // window.close() is not guaranteed outside a script-opened window. If we're
+    // still here a beat later, say so honestly instead of pretending to close.
+    setTimeout(function(){
+      show(orb,false); show(acts,false);
+      hint.textContent = "You can close this now.";
+    }, 350);
+  }
+  $("close").onclick = bye;
+
+  // ── Auth: reuse the PrismOS session sitting in localStorage ─────────────
+  function readSession(){
+    try{
+      var raw = localStorage.getItem(SKEY);
+      if(!raw) return null;
+      var s = JSON.parse(raw);
+      return (s && s.access_token) ? s : null;
+    }catch(e){ return null; }
+  }
+  async function freshToken(){
+    var s = readSession();
+    if(!s) return null;
+    var exp = (s.expires_at || 0) * 1000;
+    if(exp - Date.now() > 60000) return s.access_token;   // still good
+    if(!s.refresh_token) return null;
+    var r = await fetch(SUPA + "/auth/v1/token?grant_type=refresh_token", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "apikey":ANON },
+      body: JSON.stringify({ refresh_token: s.refresh_token })
+    });
+    if(!r.ok) return null;
+    var d = await r.json();
+    if(!d || !d.access_token) return null;
+    // Write it back in supabase-js's own shape so the MAIN app picks up the
+    // refreshed session too — otherwise Ari would silently fight PrismOS over
+    // whose token is current.
+    d.expires_at = Math.floor(Date.now()/1000) + (d.expires_in || 3600);
+    try{ localStorage.setItem(SKEY, JSON.stringify(d)); }catch(e){}
+    return d.access_token;
+  }
+
+  async function getRobotId(token){
+    if(robotId) return robotId;
+    var cached = null;
+    try{ cached = localStorage.getItem("ari_robot_id"); }catch(e){}
+    if(cached){ robotId = cached; return robotId; }
+    var r = await fetch(SUPA + "/rest/v1/robots?select=id&order=created_at.asc&limit=1", {
+      headers:{ "apikey":ANON, "Authorization":"Bearer "+token }
+    });
+    var rows = await r.json();
+    if(rows && rows[0] && rows[0].id){
+      robotId = rows[0].id;
+      try{ localStorage.setItem("ari_robot_id", robotId); }catch(e){}
+    }
+    return robotId;
+  }
+
+  // ── Ask ────────────────────────────────────────────────────────────────
+  async function ask(text){
+    if(!text || busy) return;
+    busy = true; clearTimeout(idleTimer);
+    try{ if(rec) rec.abort(); }catch(e){}
+    heard.textContent = text;
+    show(reply,false); show(acts,false);
+    setEyebrow("Thinking"); hint.textContent = "";
+    orb.className = "orb busy";
+
+    try{
+      var token = await freshToken();
+      if(!token){
+        return fail("You're signed out. Open PrismOS once to sign in, then try again.");
+      }
+      var rid = await getRobotId(token);
+      if(!rid) return fail("Couldn't find your assistant. Open PrismOS once, then try again.");
+
+      var r = await fetch(SUPA + "/functions/v1/robot-chat", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "apikey":ANON, "Authorization":"Bearer "+token },
+        body: JSON.stringify({ robot_id: rid, message: text, history: history.slice(-20) })
+      });
+      var d = await r.json();
+      var out = (d && (d.response || d.reply || d.content)) || "";
+      if(!out && d && d.error) return fail(d.error);
+      if(!out) return fail("No answer came back. Try again.");
+
+      history.push({ role:"user", content:text });
+      history.push({ role:"assistant", content:out });
+
+      orb.className = "orb"; show(orb,false);
+      setEyebrow("Ari");
+      reply.className = "reply"; reply.textContent = out; show(reply,true);
+
+      // Tap-to-confirm, voice as backup. Rather than guess from the wording
+      // whether Ari is asking permission, the answer buttons are ALWAYS offered
+      // and the mic reopens — say "yes" or tap it, whichever hand is free.
+      show(acts,true);
+      hint.textContent = "Tap, or just say it.";
+      spoke = false; listen();
+    }catch(e){
+      fail("Something went wrong: " + (e && e.message ? e.message : e));
+    }finally{ busy = false; }
+  }
+
+  function fail(msg){
+    busy = false; orb.className = "orb"; show(orb,false);
+    setEyebrow("Ari"); reply.className = "reply err"; reply.textContent = msg;
+    show(reply,true); show(acts,false);
+    hint.textContent = "Tap the mic to try again.";
+    show(orb,true); orb.className = "orb";
+  }
+
+  yes.onclick = function(){ ask("Yes"); };
+  no.onclick  = function(){ bye(); };
+
+  // ── Voice ──────────────────────────────────────────────────────────────
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec = null;
+
+  function listen(){
+    if(!SR){
+      // No speech engine (commonly Samsung Internet). Don't dead-end — the orb
+      // still works, it just can't transcribe, so say so plainly.
+      show(orb,true); orb.className = "orb";
+      setEyebrow("Type instead");
+      hint.textContent = "This browser can't listen. Install Ari from Chrome for voice.";
+      return;
+    }
+    try{ if(rec) rec.abort(); }catch(e){}
+    rec = new SR();
+    rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false;
+    rec.onstart = function(){ show(orb,true); orb.className = "orb live"; setEyebrow("Listening"); armIdle(); };
+    rec.onresult = function(ev){
+      var finalTxt = "", interim = "";
+      for(var i=ev.resultIndex; i<ev.results.length; i++){
+        var t = ev.results[i][0].transcript;
+        if(ev.results[i].isFinal) finalTxt += t; else interim += t;
+      }
+      spoke = true;
+      if(interim){ show(reply,false); heard.innerHTML = '<span class="partial">'+interim.replace(/</g,"&lt;")+'</span>'; }
+      if(finalTxt.trim()) ask(finalTxt.trim());
+    };
+    rec.onerror = function(ev){
+      if(ev.error === "not-allowed" || ev.error === "service-not-allowed"){
+        setEyebrow("Mic blocked"); hint.textContent = "Allow microphone access, then tap the mic.";
+        orb.className = "orb";
+      } else if(ev.error === "no-speech" && !spoke){
+        orb.className = "orb"; setEyebrow("Tap to speak"); hint.textContent = "";
+      }
+    };
+    rec.onend = function(){ if(!busy) orb.className = "orb"; };
+    try{ rec.start(); }catch(e){}
+  }
+
+  // Test hook — the same trick the main app uses with window.__setView. Without it
+  // the ask() path is closed over and therefore unverifiable, and the round trip
+  // (speech -> robot-chat -> reply) is the ONE path that must not be shipped
+  // unproven. Harmless in production: it just types for you.
+  window.__ariAsk = ask;
+
+  orb.onclick = function(){ spoke = false; heard.textContent = "Speak."; show(reply,false); show(acts,false); listen(); };
+
+  // Boot: mic live immediately. Chrome may require a gesture on a cold start —
+  // if it refuses, onerror leaves the orb tappable, which is still one tap.
+  if(!readSession()){
+    show(orb,false); setEyebrow("Signed out");
+    heard.textContent = "Open PrismOS to sign in.";
+    hint.innerHTML = '<a href="/" style="color:#EBCB82">Open PrismOS</a>';
+  } else {
+    listen();
+  }
+})();
+</script>
+</body>
+</html>
