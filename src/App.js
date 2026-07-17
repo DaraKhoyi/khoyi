@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL } from './dataService';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
+import ProductionBoard, { MyProduction } from './views/ProductionViews';
 // The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
 // purpose: deploy-functions.yml decides what to redeploy from the CHANGED PATH's
 // function name, and it FILTERS OUT _shared — so an engine living in _shared/ would
@@ -4835,6 +4836,7 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   const weekTotal=tasks.filter(t=>t.completed&&t.completed_at&&(now-new Date(t.completed_at).getTime())<=7*86400000).length;
   return (<div className="view ww-prism">
     <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 26% at 50% -4%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .form-input,.ww-prism .form-select{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
+    <MyProduction year={2026} />
     <div style={{ marginBottom:14 }}>
       <h2 style={{ margin:0, fontFamily:'Fraunces, serif', fontSize:34, fontWeight:300, letterSpacing:'-0.02em', color:'#F6F1E7', lineHeight:1.05 }}>My numbers.</h2>
       <div style={{ fontSize:13, color:'#C8BFAE', marginTop:4 }}>Your production, pipeline, and activity</div>
@@ -17272,7 +17274,7 @@ function AppMain() {
       { label: 'Add Agent', view: 'agents', icon: 'recruiting' },
       { label: 'Set Up Agent', view: 'agents', icon: 'clipboard' },
       { label: 'Commission Plan & GCI', built: false, icon: 'target' },
-      { label: 'Commission On Track?', built: false, icon: 'chart' },
+      { label: 'Commission On Track?', view: 'production', icon: 'chart' },
       { label: 'DISC & Systems Deployed', built: false, icon: 'signal' },
       { label: 'Company Leads', built: false, icon: 'gift' },
       { label: 'Oversight Accountability', built: false, icon: 'eye' },
@@ -17463,6 +17465,7 @@ function AppMain() {
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
                 {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} reviewCount={reviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
+                : view==='production' ? <ProductionBoard year={2026} />
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
               : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='agentruns'   ? <AgentRunsView userId={user.id} setView={setView}/>
