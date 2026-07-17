@@ -4,7 +4,7 @@ import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 // The SAME ranking the Dashboard's "Do this next" hero runs. Single source of
 // truth in _shared/nba.js — if this ever forks, the app and Ari start disagreeing
 // about what matters most, which is worse than Ari not answering at all.
-import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from "../_shared/nba.js";
+import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from "./nba.js";
 
 const MAX_IMAGE_EDGE = 1568;
 const corsHeaders = {
@@ -232,6 +232,24 @@ async function execTool(name, input, ctx) {
         const canPortfolio = perms.portfolio_read === true;
         const canInbox = perms.inbox_read === true;
 
+        // BLINDNESS IS NOT ALL-CLEAR. A brand-new robot row is created with
+        // permissions {} — and because next_actions is defaultOn it still runs, sees
+        // nothing through every sub-permission, finds no actions, and cheerfully
+        // reports the growth-move fallback. That is the worst possible failure: it
+        // doesn't error, it reassures. Verified live — dara@brokerdara.com's own robot
+        // has 0 permissions on, so "what do I need to do next?" answered "nothing is
+        // on fire" while he had 3 bounced emails and 48 owed replies. Say "I can't
+        // see", never "you're clear".
+        const blind = [];
+        if (!canTasks) blind.push("your tasks");
+        if (!canContacts) blind.push("your contacts, owed replies and cadence");
+        if (!canCal) blind.push("your calendar");
+        if (!canPortfolio) blind.push("your deals");
+        if (blind.length === 4) {
+          return { blind: true, actions: [],
+            note: "You are BLIND, not clear. Every read permission is switched off, so you cannot see " + blind.join(", ") + ". Tell the user plainly that you can't see any of their signals and that they can switch capabilities on in Settings > Ari. Do NOT say 'nothing is on fire' or suggest growth moves — you have no idea what is on fire." };
+        }
+
         const nowMs = Date.now();
         const eventsFrom = new Date(nowMs - 86400000).toISOString();
         const eventsTo = new Date(nowMs + 14 * 86400000).toISOString();
@@ -264,12 +282,13 @@ async function execTool(name, input, ctx) {
 
         if (actions.length === 0) {
           const moves = buildGrowthMoves({ contacts, deals: dealsR.data || [], gciGoal: (finR.data && finR.data.annual_gci_goal) || 0, now: nowMs });
-          return { urgent: false, note: "Nothing is on fire. These are growth moves, in the app's own order — say so plainly rather than inventing urgency.", actions: moves.slice(0, lim).map((m) => ({ title: m.title, why: m.why })) };
+          return { urgent: false, blind_spots: blind, note: "No urgent actions among the signals you CAN see. These are growth moves, in the app's own order — say so plainly rather than inventing urgency." + (blind.length ? " IMPORTANT: you cannot see " + blind.join(", ") + " — say that out loud before claiming nothing is urgent, because you might simply be blind to it." : ""), actions: moves.slice(0, lim).map((m) => ({ title: m.title, why: m.why })) };
         }
         return {
           urgent: true,
           total: actions.length,
-          note: "Ranked by the app's real engine. The FIRST item is the single highest-value next move — lead with it and give its reason. Do not re-rank these yourself.",
+          blind_spots: blind,
+          note: "Ranked by the app's real engine. The FIRST item is the single highest-value next move — lead with it and give its reason. Do not re-rank these yourself." + (blind.length ? " Note you cannot see " + blind.join(", ") + "; mention that only if the user asks whether anything else is pending." : ""),
           actions: actions.slice(0, lim).map((a) => ({ title: a.title, why: a.why, kind: a.tag, score: a.score })),
         };
       }

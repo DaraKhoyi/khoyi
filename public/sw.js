@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-v1.03.32'
+const VERSION = 'prismos-v1.03.33'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -21,6 +21,16 @@ const APP_SHELL = [
   '/logo512.png',
   '/apple-touch-icon.png',
   '/favicon.ico',
+  // The Ari side-key shell. Precached on purpose: its whole reason to exist is
+  // press -> mic live in under a second, and a network round-trip on a cold
+  // phone would defeat that. It rides THIS service worker rather than
+  // registering its own, because activate() below deletes every cache whose
+  // key !== VERSION — a separate Ari cache would be wiped on the next deploy.
+  '/ari/',
+  '/ari/index.html',
+  '/ari/manifest.json',
+  '/ari/icon-192.png',
+  '/ari/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -109,8 +119,12 @@ self.addEventListener('fetch', (event) => {
   // Navigations (page loads) — network-first, fall back to cached index.html
   // when offline so the PWA still opens to a usable shell.
   if (req.mode === 'navigate') {
+    // /ari/ must fall back to ITS OWN shell, not the main app's. Sending the
+    // side key to a cold-started PrismOS would be the exact failure this
+    // feature exists to avoid.
+    const isAri = new URL(req.url).pathname.startsWith('/ari');
     event.respondWith(
-      fetch(req).catch(() => caches.match('/index.html'))
+      fetch(req).catch(() => caches.match(isAri ? '/ari/index.html' : '/index.html'))
     );
     return;
   }

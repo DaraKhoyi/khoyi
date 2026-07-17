@@ -1,0 +1,19 @@
+{
+  "id": "/ari/",
+  "short_name": "Ari",
+  "name": "Ari — PrismOS",
+  "description": "Press. Speak. Done.",
+  "start_url": "/ari/?src=sidekey",
+  "scope": "/ari/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#100D09",
+  "background_color": "#100D09",
+  "categories": ["productivity", "business"],
+  "icons": [
+    { "src": "/ari/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/ari/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "maskable" },
+    { "src": "/ari/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/ari/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
+}

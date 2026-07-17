@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL } from './dataService';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
-// The Next Best Action ranking. Lives under supabase/functions/_shared/ because the
-// SERVER imports the very same file for Ari's next_actions tool — the app and Ari
-// must never disagree about what matters most. Pure functions, no deps.
-import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, BOUNCE_SHORT } from '../supabase/functions/_shared/nba.js';
+// The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
+// purpose: deploy-functions.yml decides what to redeploy from the CHANGED PATH's
+// function name, and it FILTERS OUT _shared — so an engine living in _shared/ would
+// ship to the client and silently never reach the server. Here, editing it IS a
+// robot-chat change, so both sides always move together. Pure functions, no deps.
+import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, BOUNCE_SHORT } from '../supabase/functions/robot-chat/nba.js';
 
 // --- Hardware/gesture BACK button closes the top modal instead of leaving the PWA ---
 // A modal calls useBackClose(onClose) to register its close handler in a shared LIFO
