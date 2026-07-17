@@ -95,7 +95,7 @@ serve(async (req) => {
 
     const out: Record<string, unknown>[] = [];
     const unmatched = new Map<string, number>();
-    let sales = 0, rentals = 0, fees = 0, volume = 0, gci = 0, skipped = 0;
+    let sales = 0, rentals = 0, fees = 0, noPrice = 0, volume = 0, gci = 0, skipped = 0;
 
     for (let i = h + 1; i < rows.length; i++) {
       const r = rows[i] || [];
@@ -106,12 +106,25 @@ serve(async (req) => {
       const gross = num(r[cGross]);
       const comm  = num(r[cComm]);
       const paid  = cPaid >= 0 ? num(r[cPaid]) : 0;
-      const kind  = gross > RENTAL_MAX ? "sale" : gross > 0 ? "rental" : "fee";
+      // Column G is "Gross Commission RECEIVED" by the office. If it carries money,
+      // the office earned a commission — that is a deal, however incomplete the row.
+      // If G is empty and money only flows OUT through column I, it is a fee for a
+      // different job (TC, mentoring, broker-of-record weeks) and must never count
+      // toward a commission goal. Josh's entire year is 17 such rows.
+      // "commission" = the office was paid but nobody typed the sale price. A real
+      // deal with a data gap, not a fee — Alex's R125 is a LIST side worth $12,655.
+      const kind = gross > RENTAL_MAX ? "sale"
+                 : gross > 0          ? "rental"
+                 : comm > 0           ? "commission"
+                 : "fee";
 
       const agent_id = resolve(rawName);
       if (!agent_id) { unmatched.set(rawName, (unmatched.get(rawName) || 0) + 1); continue; }
 
-      if (kind === "sale") { sales++; volume += gross; } else if (kind === "rental") rentals++; else fees++;
+      if (kind === "sale") { sales++; volume += gross; }
+      else if (kind === "rental") rentals++;
+      else if (kind === "commission") noPrice++;
+      else fees++;
       gci += comm;
 
       let d: string | null = null;
@@ -141,7 +154,7 @@ serve(async (req) => {
 
     const summary = {
       tab, year, dry_run,
-      rows: out.length, sales, rentals, fees, skipped,
+      rows: out.length, sales, rentals, fees, noPrice, skipped,
       volume: Math.round(volume), gci: Math.round(gci),
       added, updated, removed: removed.length,
       unmatched: [...unmatched.entries()].map(([name, n]) => ({ name, rows: n })),

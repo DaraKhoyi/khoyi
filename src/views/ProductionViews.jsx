@@ -53,7 +53,7 @@ function PaceTrack({ row }) {
         <div style={{ position: 'absolute', top: 0, bottom: 0, left: (p.yf * 100) + '%', width: 2, background: 'var(--text-1)', opacity: .8 }} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11.5 }}>
-        <b style={{ color: p.onTrack ? 'var(--accent-2)' : 'EMBER', letterSpacing: '.03em' }}>
+        <b style={{ color: p.onTrack ? 'var(--accent-2)' : EMBER, letterSpacing: '.03em' }}>
           {p.onTrack
             ? `ON TRACK — ${money(p.ahead)} ahead of pace`
             : `BEHIND — ${money(p.shortfall)} short${p.behindBy ? ` · about ${p.behindBy} more transaction${p.behindBy === 1 ? '' : 's'}` : ''}`}
@@ -94,7 +94,7 @@ export function MyProduction({ year = 2026 }) {
   if (row === undefined) return <div style={{ ...card, marginBottom: 14, color: 'var(--text-3)', fontSize: 12 }}>Loading your production…</div>;
   if (!row) return null;
 
-  const producer = row.sales > 0;
+  const producer = Number(row.gci) > 0;
   const staffEarner = !producer && Number(row.fee_income) > 0;
 
   // ── Staff / non-producing: a different job needs a different scoreboard ────
@@ -105,14 +105,14 @@ export function MyProduction({ year = 2026 }) {
       <div style={{ ...lab, color: 'var(--accent)' }}>Your 2026 · office &amp; support work</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12 }}>
         <div style={card}>
-          <div style={lab}>Paid to you</div>
+          <div style={lab}>Paid to you — fees, not commission</div>
           <div style={{ ...big, color: 'var(--accent-2)' }}>{money(row.fee_income)}</div>
-          <div style={sub}>{row.fee_rows} payments — transaction coordination, mentoring and broker work</div>
+          <div style={sub}>{row.fee_rows} payments — transaction coordination, mentoring and broker-of-record work. Deliberately kept out of GCI: it isn’t commission, and counting it toward a commission goal would flatter the number.</div>
         </div>
         <div style={card}>
           <div style={lab}>Your own sales</div>
           <div style={big}>{row.sales}</div>
-          <div style={sub}>Nothing closed in your name this year. If you have closings that simply haven’t been paid out yet, they won’t appear here until they are.</div>
+          <div style={sub}>No commission was received in your name this year — every 2026 commission has been paid out, so this is the full picture, not a lag. Your income above is for a different job.</div>
         </div>
       </div>
     </div>
@@ -155,7 +155,8 @@ export function MyProduction({ year = 2026 }) {
           <div style={sub}>
             {row.double_ends > 0 && <><b style={{ color: 'var(--accent-2)' }}>{row.double_ends} double-ended</b> — both sides, paid twice. </>}
             {row.rentals > 0 && <>{row.rentals} lease{row.rentals === 1 ? '' : 's'} counted separately. </>}
-            {row.noside > 0 && <span style={{ color: 'EMBER' }}>{row.noside} sale{row.noside === 1 ? '' : 's'} with no side recorded.</span>}
+            {row.noside > 0 && <span style={{ color: EMBER }}>{row.noside} sale{row.noside === 1 ? '' : 's'} with no side recorded. </span>}
+            {row.no_price > 0 && <span style={{ color: EMBER }}>{row.no_price} commission{row.no_price === 1 ? '' : 's'} with no sale price recorded — the money counts, the volume can’t.</span>}
           </div>
         </div>
 
@@ -180,11 +181,11 @@ export function MyProduction({ year = 2026 }) {
 
       <div style={{ ...card, marginTop: 12 }}>
         <div style={lab}>GCI against your goal</div>
-        <div style={{ ...big, color: Number(row.goal) ? (usePace(row).onTrack ? 'var(--accent-2)' : 'EMBER') : 'var(--text-1)' }}>{money(row.gci)}</div>
+        <div style={{ ...big, color: Number(row.goal) ? (usePace(row).onTrack ? 'var(--accent-2)' : EMBER) : 'var(--text-1)' }}>{money(row.gci)}</div>
         {Number(row.goal) > 0
           ? <PaceTrack row={row} />
           : <div style={sub}>No goal set. Add one in <b>Finance → Blueprint</b> and this tracks itself.</div>}
-        {Number(row.fee_income) > 0 && <div style={sub}>Plus {money(row.fee_income)} in fees and mentor income.</div>}
+        {Number(row.fee_income) > 0 && <div style={sub}>Plus {money(row.fee_income)} in fees and mentor income — counted separately, not toward your goal.</div>}
         <Months months={row.months} />
       </div>
     </div>
@@ -271,6 +272,7 @@ function ImportGold({ onDone }) {
             <span style={{ color: 'var(--accent-2)' }}>{preview.added} new</span>
             {' · '}{preview.updated} updated
             {preview.removed > 0 && <span style={{ color: EMBER }}> · {preview.removed} gone from the sheet (will be deleted here)</span>}
+            {preview.noPrice > 0 && <span style={{ color: EMBER }}> · {preview.noPrice} commission(s) with no sale price</span>}
             {preview.skipped > 0 && <span style={{ color: 'var(--text-3)' }}> · {preview.skipped} subtotal/blank rows ignored</span>}
           </div>
 
@@ -312,7 +314,7 @@ export default function ProductionBoard({ year = 2026 }) {
     } catch (e) { setErr(e.message || String(e)); }
   })(); }, [year]);
 
-  if (err) return <div className="view"><div style={{ ...card, color: 'EMBER' }}>Couldn’t load production: {err}</div></div>;
+  if (err) return <div className="view"><div style={{ ...card, color: EMBER }}>Couldn’t load production: {err}</div></div>;
   if (!rows) return <div className="view"><div style={{ color: 'var(--text-3)' }}>Loading production…</div></div>;
 
   const producers = rows.filter(r => r.sales > 0);
@@ -336,11 +338,11 @@ export default function ProductionBoard({ year = 2026 }) {
         <div style={card}><div style={lab}>Office GCI</div><div style={big}>{moneyM(officeGci)}</div>
           <div style={sub}>Gross commission received</div></div>
         <div style={card}><div style={lab}>Producing agents</div><div style={big}>{producers.length}</div>
-          <div style={sub}>of {rows.length} on the roster · <b style={{ color: 'EMBER' }}>{quiet.length}</b> with nothing paid this year</div></div>
+          <div style={sub}>of {rows.length} on the roster · <b style={{ color: EMBER }}>{quiet.length}</b> with nothing paid this year</div></div>
         <div style={card}><div style={lab}>Goals set</div><div style={big}>{withGoal.length}</div>
           <div style={sub}>{withGoal.length === 0
             ? 'Nobody has a goal — "on track" can’t mean anything yet'
-            : <><b style={{ color: 'EMBER' }}>{behind.length}</b> behind pace</>}</div></div>
+            : <><b style={{ color: EMBER }}>{behind.length}</b> behind pace</>}</div></div>
       </div>
 
       <ImportGold onDone={() => window.location.reload()} />
@@ -360,7 +362,8 @@ export default function ProductionBoard({ year = 2026 }) {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {r.agent_name}
-                  {r.noside > 0 && <span title={`${r.noside} sale(s) missing a Buy/List flag`} style={{ color: 'EMBER', marginLeft: 6, fontSize: 10 }}>⚑</span>}
+                  {r.noside > 0 && <span title={`${r.noside} sale(s) missing a Buy/List flag`} style={{ color: EMBER, marginLeft: 6, fontSize: 10 }}>⚑</span>}
+                  {r.no_price > 0 && <span title={`${r.no_price} commission(s) with no sale price recorded`} style={{ color: EMBER, marginLeft: 4, fontSize: 10 }}>$?</span>}
                 </div>
                 <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
                   {r.sales} sales · L{r.listings}/B{r.buyers} · {r.comm_rate ? Number(r.comm_rate).toFixed(2) + '%' : '—'} · {moneyM(r.volume)}
@@ -368,7 +371,7 @@ export default function ProductionBoard({ year = 2026 }) {
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontWeight: 800, fontSize: 13.5, fontVariantNumeric: 'tabular-nums' }}>{money(r.gci)}</div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: !p.goal ? 'var(--text-3)' : (p.onTrack ? 'var(--accent-2)' : 'EMBER') }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: !p.goal ? 'var(--text-3)' : (p.onTrack ? 'var(--accent-2)' : EMBER) }}>
                   {!p.goal ? 'no goal' : (p.onTrack ? 'on track' : `${money(p.shortfall)} short`)}
                 </div>
               </div>
