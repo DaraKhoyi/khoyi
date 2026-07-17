@@ -84,6 +84,7 @@
     <div id="reply" class="reply hidden"></div>
     <div id="hint" class="hint"></div>
   </div>
+  <div id="diag" style="flex:none;text-align:center;font-size:10px;letter-spacing:.09em;color:#5C5648;padding-top:6px;"></div>
 
   <div class="acts hidden" id="acts">
     <button id="no">No</button>
@@ -326,6 +327,7 @@
     e.preventDefault();
     deferredInstall = e;
     if(!isStandalone()) show($("inst"), true);
+    diag();
   });
   window.addEventListener("appinstalled", function(){
     deferredInstall = null; show($("inst"), false);
@@ -342,6 +344,20 @@
     }catch(e){ $("instgo").textContent = "Install Ari as an app"; }
     deferredInstall = null;
   };
+
+  // ── Status line ────────────────────────────────────────────────────────
+  // I can't reach Dara's phone, so a screenshot has to be able to answer:
+  // which build is this, is the service worker controlling, is it running as an
+  // installed app, and has Chrome offered to install it? Guessing at those from
+  // a description costs a round trip each time and I've already burned two.
+  var BUILD = "v1.03.36";
+  function diag(){
+    var d = $("diag");
+    var sw  = navigator.serviceWorker && navigator.serviceWorker.controller ? "sw on" : "sw off";
+    var app = isStandalone() ? "installed" : "browser";
+    var ins = deferredInstall ? "installable" : "install not offered";
+    d.textContent = BUILD + " · " + sw + " · " + app + " · " + (isStandalone() ? "" : ins);
+  }
 
   // Test hook — the same trick the main app uses with window.__setView. Without it
   // the ask() path is closed over and therefore unverifiable, and the round trip
@@ -411,6 +427,10 @@
 
   // Boot: mic live immediately. Chrome may require a gesture on a cold start —
   // if it refuses, onerror leaves the orb tappable, which is still one tap.
+  diag();
+  setTimeout(diag, 2000);
+  if(navigator.serviceWorker){ navigator.serviceWorker.ready.then(function(){ setTimeout(diag, 300); }).catch(function(){}); }
+
   if(!readSession()){
     show(orb,false); setEyebrow("Signed out");
     heard.textContent = "Open PrismOS to sign in.";
