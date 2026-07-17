@@ -1,0 +1,54 @@
+name: auto-fix
+
+# Supervised auto-fix: crash -> AI patch -> build -> SMOKE GATE -> STAGING ONLY.
+# It never touches production. Promotion to prod is always a separate human step.
+# Fired by repository_dispatch from the app (one tap), never on a schedule.
+on:
+  repository_dispatch:
+    types: [auto_fix]
+
+# Only one fix at a time — two runners racing on the same staging branch would
+# interleave force-pushes and leave staging in a state neither fix produced.
+concurrency:
+  group: auto-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run supervised auto-fix (staging only)
+        env:
+          # Reuse the secrets that already exist rather than minting near-duplicates
+          # under new names — two secrets holding the same value is two things to
+          # rotate and one to forget.
+          SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # propose-patch's OWN token, not the shared QCP_TOKEN (which 14 functions use).
+          INTERNAL_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}
+          DEPLOY_PAT: ${{ secrets.DEPLOY_PAT }}
+          SIGNATURE_ID: ${{ github.event.client_payload.signature_id }}
+          FIX_ID: ${{ github.event.client_payload.fix_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # The service_role key bypasses every RLS policy you have. Deliberately NOT
+          # stored as a GitHub secret: it is minted here from the Management token and
+          # lives only for the length of this job. Same approach as the deploy smoke
+          # gate. A key that isn't at rest can't leak from a repo setting.
+          REF=$(echo "$SUPABASE_URL" | sed -E 's#https://([^.]+)\..*#\1#')
+          SUPABASE_SERVICE_KEY=$(curl -s "https://api.supabase.com/v1/projects/$REF/api-keys?reveal=true" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "User-Agent: KhoyiApp/1.0" \
+            | python3 -c "import sys,json;print([k['api_key'] for k in json.load(sys.stdin) if k['name']=='service_role'][0])")
+          export SUPABASE_SERVICE_KEY
+          test -n "$SUPABASE_SERVICE_KEY" || { echo "could not mint service_role"; exit 1; }
+          node scripts/auto-fix.mjs

@@ -3,7 +3,7 @@
 The crash → AI-fix → staging pipeline. **It never touches production** — prod
 promotion is always a separate, manual, human step.
 
-## Status: engine built & validated; autonomous trigger pending one permission grant
+## Status: ACTIVE (2026-07-17). One-tap autonomy is live.
 - `supabase/functions/propose-patch` — given a crash + code slice, returns a
   minimal patch (keeps the Anthropic key server-side).
 - `scripts/auto-fix.mjs` — for ONE crash: resolve file/line → get patch → apply →
@@ -14,8 +14,14 @@ promotion is always a separate, manual, human step.
   confidence, smoke_result, staging_url) for human review.
 
 ## To activate one-tap-from-the-app autonomy
-The deploy PAT currently lacks **Secrets**, **Workflows**, and **Actions**
-permissions, so the GitHub Actions runner can't be provisioned automatically.
+DONE. The PAT was regranted with Contents/Workflows/Actions/Secrets, the workflow
+lives at `.github/workflows/auto-fix.yml`, and its secrets are set. Notes:
+- `SUPABASE_SERVICE_KEY` is deliberately NOT a stored secret — it is minted at run
+  time from `SUPABASE_ACCESS_TOKEN`. The key that bypasses all RLS never sits at rest.
+- propose-patch authenticates on `AUTOFIX_TOKEN` (its own secret), NOT the shared
+  `QCP_TOKEN` that 14 other functions use. Blast radius of one.
+- `ANTHROPIC_API_KEY` is not needed by the runner; propose-patch keeps it server-side.
+OLD NOTE (historical):
 Grant those three on the fine-grained PAT (github.com → Settings → Developer
 settings → the token → Repository permissions), then:
 1. Move `scripts/auto-fix.workflow.yml` → `.github/workflows/auto-fix.yml`.

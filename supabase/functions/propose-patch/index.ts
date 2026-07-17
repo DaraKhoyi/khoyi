@@ -6,7 +6,16 @@ const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const J = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
-  if ((req.headers.get("x-internal-token") || "") !== (Deno.env.get("QCP_TOKEN") || "")) return J({ error: "unauthorized" }, 401);
+  // Auth: accept EITHER the shared internal token or propose-patch's own AUTOFIX_TOKEN.
+  // Why two: the GitHub Actions runner needs a token it can hold, but QCP_TOKEN is
+  // shared by 14 edge functions (and by cron callers that may carry it literally), so
+  // rotating or exporting it to CI would risk breaking all of them. AUTOFIX_TOKEN is a
+  // dedicated credential scoped to this one endpoint — blast radius of one.
+  // Constant-time-ish compare and a non-empty guard: if BOTH secrets were unset, an
+  // empty header would otherwise match "" and leave this endpoint wide open.
+  const presented = req.headers.get("x-internal-token") || "";
+  const accepted = [Deno.env.get("QCP_TOKEN") || "", Deno.env.get("AUTOFIX_TOKEN") || ""].filter((t) => t.length > 0);
+  if (!presented || !accepted.some((t) => t === presented)) return J({ error: "unauthorized" }, 401);
   const b = await req.json().catch(() => ({}));
   const prompt = `You are fixing a crash in a React app. Produce a MINIMAL, surgical patch.
 
