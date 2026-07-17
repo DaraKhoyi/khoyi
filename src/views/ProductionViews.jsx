@@ -191,6 +191,114 @@ export function MyProduction({ year = 2026 }) {
   );
 }
 
+
+// ── Import the GOLD report ───────────────────────────────────────────────────
+// The browser only READS the workbook and posts raw cells; every rule (what counts
+// as a sale, who an agent is, which rows are subtotals) lives in the edge function.
+// A second copy of those rules here would drift, and then the preview and the board
+// would disagree about the office's own revenue.
+// SheetJS is ~800KB, so it is dynamically imported: it becomes its own chunk and
+// never lands in the main bundle that every agent downloads on every visit.
+function ImportGold({ onDone }) {
+  const [tabs, setTabs] = useState(null);
+  const [tab, setTab] = useState('');
+  const [rowsByTab, setRowsByTab] = useState({});
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function readFile(file) {
+    setErr(null); setPreview(null); setBusy(true);
+    try {
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+      const map = {};
+      wb.SheetNames.forEach(n => {
+        map[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null })
+          .map(r => (r || []).map(c => c instanceof Date ? c.toISOString().slice(0, 10) : c));
+      });
+      setRowsByTab(map); setTabs(wb.SheetNames);
+      const guess = wb.SheetNames.find(n => /paid\s*2026/i.test(n)) || wb.SheetNames[0];
+      setTab(guess);
+    } catch (e) { setErr('Could not read that file: ' + (e.message || e)); }
+    setBusy(false);
+  }
+
+  async function run(dry) {
+    setBusy(true); setErr(null);
+    try {
+      const year = parseInt((tab.match(/(20\d{2})/) || [])[1] || '2026', 10);
+      const { data, error } = await supabase.functions.invoke('brokerage-import', {
+        body: { tab, year, rows: rowsByTab[tab], dry_run: dry },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setPreview(data);
+      if (!dry) { setTimeout(() => onDone && onDone(), 600); }
+    } catch (e) { setErr(e.message || String(e)); }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ ...card, marginBottom: 14 }}>
+      <div style={lab}>Import the GOLD report</div>
+      <input type="file" accept=".xlsx,.xlsm,.xls" onChange={e => e.target.files?.[0] && readFile(e.target.files[0])}
+        style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }} />
+
+      {tabs && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+          <select value={tab} onChange={e => { setTab(e.target.value); setPreview(null); }}
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 100,
+              color: 'var(--text-1)', padding: '8px 12px', fontSize: 13 }}>
+            {tabs.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button disabled={busy} onClick={() => run(true)}
+            style={{ background: 'transparent', border: '1px solid var(--border-strong)', borderRadius: 100,
+              color: 'var(--text-1)', padding: '8px 14px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>
+            {busy ? 'Reading…' : 'Preview changes'}
+          </button>
+        </div>
+      )}
+
+      {err && <div style={{ ...sub, color: EMBER }}>{err}</div>}
+
+      {preview && (
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+          <div style={{ fontSize: 12.5, lineHeight: 1.8 }}>
+            <b>{preview.rows}</b> rows · <b>{preview.sales}</b> sales · {preview.rentals} leases · {preview.fees} fees
+            {' · '}volume <b>{moneyM(preview.volume)}</b> · GCI <b>{money(preview.gci)}</b><br />
+            <span style={{ color: 'var(--accent-2)' }}>{preview.added} new</span>
+            {' · '}{preview.updated} updated
+            {preview.removed > 0 && <span style={{ color: EMBER }}> · {preview.removed} gone from the sheet (will be deleted here)</span>}
+            {preview.skipped > 0 && <span style={{ color: 'var(--text-3)' }}> · {preview.skipped} subtotal/blank rows ignored</span>}
+          </div>
+
+          {preview.unmatched?.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 12, color: EMBER }}>
+              <b>{preview.unmatched.length} name{preview.unmatched.length === 1 ? '' : 's'} not on the roster — these rows will NOT be imported:</b>
+              <div style={{ color: 'var(--text-2)', marginTop: 4 }}>
+                {preview.unmatched.map(u => `${u.name} (${u.rows})`).join(' · ')}
+              </div>
+              <div style={{ color: 'var(--text-3)', marginTop: 4 }}>
+                Add them under Agent Roster, or fix the spelling in the sheet, then preview again.
+              </div>
+            </div>
+          )}
+
+          {preview.dry_run
+            ? <button disabled={busy} onClick={() => run(false)}
+                style={{ marginTop: 12, background: 'var(--accent-2)', color: '#1a1409', border: 'none', borderRadius: 100,
+                  padding: '10px 18px', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+                {busy ? 'Importing…' : `Import ${preview.rows} rows into ${preview.tab}`}
+              </button>
+            : <div style={{ ...sub, color: 'var(--accent-2)' }}>✓ Imported. Refreshing…</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── The office board (staff only) ────────────────────────────────────────────
 export default function ProductionBoard({ year = 2026 }) {
   const [rows, setRows] = useState(null);
@@ -234,6 +342,8 @@ export default function ProductionBoard({ year = 2026 }) {
             ? 'Nobody has a goal — "on track" can’t mean anything yet'
             : <><b style={{ color: 'EMBER' }}>{behind.length}</b> behind pace</>}</div></div>
       </div>
+
+      <ImportGold onDone={() => window.location.reload()} />
 
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find an agent…"
         style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 100,

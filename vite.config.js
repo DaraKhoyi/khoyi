@@ -30,6 +30,12 @@ export default defineConfig({
         chunkFileNames: 'static/js/[name].[hash].chunk.js',
         manualChunks(id) {
           if (id.includes('node_modules')) {
+            // SheetJS (~800KB) is ONLY used by the staff-only GOLD import. The
+            // catch-all below would fold it into the eager vendor chunk, which
+            // index.html loads on every visit — meaning every agent downloads an
+            // xlsx parser on mobile data for a button they will never press.
+            // Its own chunk keeps the dynamic import genuinely lazy.
+            if (id.includes('xlsx')) return 'vendor-xlsx';
             if (id.includes('react-dom')) return 'vendor-react-dom';
             if (id.includes('/react/') || id.includes('/react/jsx') || id.includes('scheduler')) return 'vendor-react';
             if (id.includes('@supabase') || id.includes('supabase')) return 'vendor-supabase';
