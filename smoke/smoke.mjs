@@ -43,6 +43,28 @@ try {
     results.push({ view, ok, boundary, err: errs[0]?.msg });
     console.log(`${ok ? '✓ PASS' : '✗ FAIL'}  ${view}${boundary ? '   [error boundary]' : ''}${errs[0] ? '   ' + errs[0].msg : ''}`);
   }
+  // ── The Ari side-key shell ────────────────────────────────────────────────
+  // It lives at /ari/ and is NOT a view, so the loop above can never see it.
+  // It is also the one surface reached by a hardware key: if it's broken, the
+  // failure is "Dara presses the button and nothing happens", with no error
+  // boundary and no crash report to catch it. It ships in the same build as
+  // the app, so it belongs behind the same gate.
+  current = 'ari_shell';
+  {
+    const before = pageErrors.length;
+    const ariUrl = URL.replace(/\/?$/, '/') + 'ari/';
+    await page.goto(ariUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    // __ariAsk is assigned at the very END of the shell's IIFE, so its presence
+    // proves the whole script parsed and ran — a far stronger signal than
+    // "some pixels rendered".
+    const booted = await page.evaluate(() => typeof window.__ariAsk === 'function');
+    const signedOut = await page.evaluate(() => (document.getElementById('eyebrow') || {}).textContent === 'Signed out');
+    const errs = pageErrors.slice(before);
+    const ok = booted && !signedOut && errs.length === 0;
+    results.push({ view: 'ari_shell', ok, err: errs[0]?.msg });
+    console.log(`${ok ? '✓ PASS' : '✗ FAIL'}  ari_shell${!booted ? '   [never booted]' : ''}${signedOut ? '   [session not inherited]' : ''}${errs[0] ? '   ' + errs[0].msg : ''}`);
+  }
 } catch (e) {
   console.log(`✗ FATAL during "${current}": ${e.message}`);
   results.push({ view: current, ok: false, err: e.message });

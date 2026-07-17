@@ -89,6 +89,9 @@
     <button id="no">No</button>
     <button id="yes" class="p">Yes, do it</button>
   </div>
+  <div class="acts hidden" id="grant">
+    <button id="grantgo" class="p">Turn on Ari's access</button>
+  </div>
 
 <script>
 (function(){
@@ -281,6 +284,64 @@
 
   orb.onclick = function(){ spoke = false; heard.textContent = "Speak."; show(reply,false); show(acts,false); listen(); };
 
+  // ── Blind robot: fix it here, don't send them to Settings ────────────────
+  // Robot rows are created with permissions {}, so a brand-new agent's Ari can
+  // see NOTHING. Telling someone who just pressed a hardware key to "go open
+  // Settings > Ari" is a dead-end — the exact thing this product refuses to do.
+  // Reads only. Writes (send email, create events, spend money) stay a
+  // deliberate opt-in in Settings; nobody should grant those from a lock screen.
+  var READ_PERMS = ["next_actions","tasks_read","calendar_read","contacts_read",
+                    "inbox_read","finance_read","portfolio_read","knowledge_search","web_search"];
+  var CORE_READS = ["tasks_read","contacts_read","calendar_read","portfolio_read"];
+  var blindRobot = null;
+
+  async function getRobot(token){
+    var r = await fetch(SUPA + "/rest/v1/robots?select=id,permissions&order=created_at.asc&limit=1", {
+      headers:{ "apikey":ANON, "Authorization":"Bearer "+token }
+    });
+    var rows = await r.json();
+    return (rows && rows[0]) || null;
+  }
+  function isBlind(perms){
+    perms = perms || {};
+    return !CORE_READS.some(function(k){ return perms[k] === true; });
+  }
+  function showBlind(robot){
+    blindRobot = robot;
+    try{ if(rec) rec.abort(); }catch(e){}
+    clearTimeout(idleTimer);
+    show(orb,false); show(acts,false);
+    setEyebrow("Ari can't see anything yet");
+    heard.textContent = "";
+    reply.className = "reply";
+    reply.textContent = "Ari has no access to your tasks, contacts, calendar or deals — so it can't tell you what matters. Turn on read access and it will answer straight away.\n\nSending email, creating events and anything that spends money stay off until you switch them on in Settings.";
+    show(reply,true); show($("grant"),true);
+    hint.textContent = "";
+  }
+  $("grantgo").onclick = async function(){
+    if(!blindRobot) return;
+    $("grantgo").textContent = "Turning on…";
+    try{
+      var token = await freshToken();
+      var merged = Object.assign({}, blindRobot.permissions || {});
+      READ_PERMS.forEach(function(k){ merged[k] = true; });   // merge, never clobber
+      var r = await fetch(SUPA + "/rest/v1/robots?id=eq." + blindRobot.id, {
+        method:"PATCH",
+        headers:{ "apikey":ANON, "Authorization":"Bearer "+token, "Content-Type":"application/json", "Prefer":"return=representation" },
+        body: JSON.stringify({ permissions: merged })
+      });
+      var out = await r.json();
+      if(!r.ok || !out || !out[0]) throw new Error("couldn't save");
+      blindRobot = null;
+      show($("grant"),false); show(reply,false);
+      setEyebrow("Ready"); heard.textContent = "Ask me anything.";
+      spoke = false; listen();
+    }catch(e){
+      $("grantgo").textContent = "Turn on Ari's access";
+      hint.textContent = "Couldn't turn it on. Open PrismOS > Settings > Ari.";
+    }
+  };
+
   // Boot: mic live immediately. Chrome may require a gesture on a cold start —
   // if it refuses, onerror leaves the orb tappable, which is still one tap.
   if(!readSession()){
@@ -288,7 +349,19 @@
     heard.textContent = "Open PrismOS to sign in.";
     hint.innerHTML = '<a href="/" style="color:#EBCB82">Open PrismOS</a>';
   } else {
-    listen();
+    listen();   // mic first — never make the microphone wait on a network round trip
+    (async function(){
+      try{
+        var token = await freshToken();
+        if(!token) return;
+        var robot = await getRobot(token);
+        if(robot){
+          robotId = robot.id;
+          try{ localStorage.setItem("ari_robot_id", robot.id); }catch(e){}
+          if(isBlind(robot.permissions)) showBlind(robot);
+        }
+      }catch(e){}
+    })();
   }
 })();
 </script>
