@@ -16823,6 +16823,10 @@ function AppMain() {
   const [sharedAudio, setSharedAudio] = useState(null);
   // Web Share Target: another app shared an audio file to PrismOS. The service
   // worker stashed it in the 'prismos-shared' cache and redirected here with
+  // Expose the live view so tests can assert where we actually are. The smoke gate
+  // could only ever check "did this view crash", never "did we land on it".
+  useEffect(() => { try { window.__currentView = view; } catch (_) {} }, [view]);
+
   // ── Deep links: /?view=prospecting ────────────────────────────────────────
   // The view lived only in memory, so every launch — and every new tab — landed on
   // the Dashboard. That is what made "open CRM here, prospecting there" impossible.

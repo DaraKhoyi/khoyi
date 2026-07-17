@@ -21,3 +21,10 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+# throwaway probe scripts — my git add -A swept four of these into the repo
+dl*.mjs
+dbg*.mjs
+shot.mjs
+imptest.mjs
+installcheck.mjs
+livecheck.mjs
