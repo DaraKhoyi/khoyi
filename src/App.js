@@ -16823,6 +16823,24 @@ function AppMain() {
   const [sharedAudio, setSharedAudio] = useState(null);
   // Web Share Target: another app shared an audio file to PrismOS. The service
   // worker stashed it in the 'prismos-shared' cache and redirected here with
+  // ── Deep links: /?view=prospecting ────────────────────────────────────────
+  // The view lived only in memory, so every launch — and every new tab — landed on
+  // the Dashboard. That is what made "open CRM here, prospecting there" impossible.
+  // Read ONCE on boot, then wipe the query string (same pattern as ?shared= below)
+  // so the URL never becomes a second source of truth fighting the back-button
+  // guard, which owns history for the modal stack.
+  // Whitelisted on purpose: a launcher is user input like any other, and ?view=
+  // should not be able to poke at an arbitrary internal string.
+  useEffect(() => {
+    let v;
+    try { v = new URLSearchParams(window.location.search).get('view'); } catch (_) { return; }
+    if (!v) return;
+    const ALLOWED = ['dashboard','prospecting','tasks','calendar','contacts','inbox','quo',
+                     'journal','numbers','chat','finance','documents','mileage','production'];
+    if (ALLOWED.includes(v)) setView(v);
+    try { window.history.replaceState({}, '', '/'); } catch (_) {}
+  }, []);
+
   // ?shared=audio; pull it out and open the "Share a recording" flow.
   useEffect(() => {
     let params;
@@ -17157,6 +17175,7 @@ function AppMain() {
     window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
     window.__openContactResearch = (contactId, prefill, hint) => { try { window.__autoResearchHint = hint || (prefill && prefill.hint) || null; if (contactId) { window.__pendingResearch = contactId; } else if (prefill) { window.__pendingContactPrefill = prefill; } navigate('contacts'); } catch (_) {} };
     window.__setView = (v) => { try { navigate(v); } catch (_) {} };  // used by the automated smoke-check harness
+    window.__getView = () => { try { return viewRef.current; } catch (_) { return null; } };  // read hook: lets tests assert WHICH view is on screen
     window.__openOnboarding = () => { setOnboardingReopen(true); setSidebarOpen(false); };  // manual re-launch of the setup wizard
   }); // eslint-disable-line
   // Stamp the active view so uncaught errors/rejections are attributed correctly.
