@@ -7230,6 +7230,33 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     return () => { cancelled = true; };
   }, [isContact, entityId, contact && contact.email]);
 
+  // Reach back into ALL of Gmail for one specific person, on demand. The normal
+  // sync only holds what it has already pulled; this asks Gmail directly for the
+  // contact's entire history (any label, any age, archived or not — Gmail search
+  // ignores folders), stores it, then re-links so it lands on this timeline.
+  const [backfilling, setBackfilling] = useState('');
+  async function backfillContactEmail() {
+    const email = isContact && contact && contact.email ? contact.email.trim().toLowerCase() : null;
+    if (!email) return;
+    setBackfilling('working');
+    try {
+      const { data: accts } = await supabase.from('email_accounts').select('id').eq('user_id', userId);
+      // -in:trash -in:spam so we still skip the bin, but no label/inbox limit:
+      // Gmail search spans All Mail, so archived and labelled mail is included.
+      const q = `from:${email} OR to:${email} -in:trash -in:spam`;
+      for (const a of (accts || [])) {
+        await supabase.functions.invoke('gmail-sync', {
+          body: { account_id: a.id, query_override: q, limit: 500 },
+        });
+      }
+      // stitch the newly-pulled mail onto contacts by address
+      await supabase.functions.invoke('contact-link-emails', { body: { user_id: userId } });
+      setBackfilling('done');
+    } catch (e) {
+      setBackfilling('error');
+    }
+  }
+
   // Open tasks/reminders linked to this entity (contacts via task_contacts +
   // tasks.contact_id; properties via tasks.property_id). Surfaces overdue nudges.
   const [reminders, setReminders] = useState([]);
@@ -7695,6 +7722,22 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
               style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '10px', cursor: 'pointer', border: `1px solid ${tagFilter === tg ? 'var(--accent)' : 'var(--border)'}`, background: tagFilter === tg ? 'rgba(197,169,94,0.15)' : 'transparent', color: tagFilter === tg ? 'var(--accent)' : 'var(--text-3)', fontWeight: 600 }}>#{tg}</button>
           ))}
           {tagFilter && <button onClick={() => setTagFilter(null)} style={{ fontSize: '10px', color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>clear</button>}
+        </div>
+      )}
+
+      {/* Reach back into all of Gmail for this one person */}
+      {isContact && contact && contact.email && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <button onClick={backfillContactEmail} disabled={backfilling === 'working'}
+            style={{ fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 100,
+              border: '1px solid var(--border)', background: 'transparent',
+              color: backfilling === 'working' ? 'var(--text-3)' : 'var(--accent)', cursor: 'pointer' }}>
+            {backfilling === 'working' ? 'Reaching back through Gmail…'
+              : backfilling === 'done' ? '✓ Pulled their full history — refresh to see it'
+              : backfilling === 'error' ? 'Couldn’t reach Gmail — try again'
+              : '⟲ Pull this contact’s full email history'}
+          </button>
+          {backfilling === 'done' && <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>archived & labelled mail included</span>}
         </div>
       )}
 
