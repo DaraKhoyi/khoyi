@@ -92,6 +92,7 @@ serve(async (req) => {
       } catch { spokenNames = []; }
     }
     for (const nm of spokenNames) {
+      if (norm(nm).length < 4) continue;   // "bj", "zane" ok; skip 1-3 char noise
       const hits = byFirst.get(norm(nm)) || [];
       // a spoken name that matches exactly one contact is a strong hit; if it
       // matches several (three "Mike"s) it's weak until the calendar disambiguates
@@ -106,8 +107,10 @@ serve(async (req) => {
       // events that started within 3h of the recording — a meeting recorded live
       const lo = new Date(t - 3 * 3600e3).toISOString();
       const hi = new Date(t + 3 * 3600e3).toISOString();
-      const { data: evs } = await db.from("events").select("id,title,description,attendees,start_at,end_at")
-        .eq("user_id", user_id).gte("start_at", lo).lte("start_at", hi).limit(20);
+      const { data: evs } = await db.from("events").select("id,title,description,attendees,start_at,end_at,all_day")
+        .eq("user_id", user_id).gte("start_at", lo).lte("start_at", hi)
+        .or("all_day.is.null,all_day.eq.false")   // a birthday is not a meeting you record
+        .limit(20);
       // pick the event whose window best contains the recording time
       let best: any = null, bestGap = Infinity;
       for (const e of evs || []) {
@@ -125,11 +128,14 @@ serve(async (req) => {
         }
         // 2b. names typed into the DESCRIPTION (Dara does this by hand) + the title
         const blob = `${best.title || ""} ${best.description || ""}`;
+        const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         for (const c of (contacts || [])) {
           const nm = norm(c.name);
           const fn = firstName(c.name);
-          if (nm && nm.length > 3 && blob.toLowerCase().includes(nm)) add(c, 4, `named in the "${best.title}" event`);
-          else if (fn && new RegExp(`\\b${fn}\\b`, "i").test(blob)) add(c, 2, `mentioned in the "${best.title}" event`);
+          // full name, on word boundaries — "Javier Suarez" yes, fragment of "T. Blahut" no
+          if (nm.length > 4 && new RegExp(`\\b${esc(nm)}\\b`, "i").test(blob)) add(c, 4, `named in the "${best.title}" event`);
+          // first name alone only counts if it's substantial (>=4 chars), so "BJ"/"Al"/"T" don't fire
+          else if (fn.length >= 4 && new RegExp(`\\b${esc(fn)}\\b`, "i").test(blob)) add(c, 2, `mentioned in the "${best.title}" event`);
         }
       }
     }
