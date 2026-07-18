@@ -223,18 +223,45 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
   //    party (the contact) has a null userId — so that's how we isolate them.
   try {
     const { data: calls } = await supabase.from("quo_calls")
-      .select("id, transcript, completed_at, op_created_at, duration")
+      .select("id, transcript, speaker_map, completed_at, op_created_at, duration")
       .eq("user_id", userId).eq("contact_id", contact.id)
       .not("transcript", "is", null)
       .order("completed_at", { ascending: false }).limit(10);
     for (const c of calls || []) {
-      if (!Array.isArray(c.transcript) || c.transcript.length === 0) continue;
-      const contactText = c.transcript
-        .filter((s: any) => s && (s.userId === null || s.userId === undefined) && s.content)
-        .map((s: any) => String(s.content).trim())
-        .filter((line: string) => line && !/^call recording is on/i.test(line))
-        .join(" ")
-        .slice(0, 3000);
+      // Two transcript shapes reach this table and only one was ever handled.
+      // OpenPhone sends an ARRAY of segments where our side carries a userId and
+      // the contact's is null. Cube ACR — which is every call on this account —
+      // sends a STRING of "Speaker A: ...". The old guard was
+      //   if (!Array.isArray(c.transcript)) continue;
+      // so 213 recorded calls, the richest behavioural evidence in the system,
+      // were silently skipped and DISC ran on emails and notes alone.
+      let contactText = "";
+      if (Array.isArray(c.transcript)) {
+        contactText = c.transcript
+          .filter((s: any) => s && (s.userId === null || s.userId === undefined) && s.content)
+          .map((s: any) => String(s.content).trim())
+          .filter((line: string) => line && !/^call recording is on/i.test(line))
+          .join(" ");
+      } else {
+        // Cube ACR: use the stored speaker map to keep ONLY the contact's words.
+        // Reading a blend of both voices would score the contact partly on the
+        // agent's own behaviour — which is worse than no read at all, because it
+        // looks like a read.
+        const map = (c as any).speaker_map;
+        if (!map) continue;                       // unattributed: refuse rather than guess
+        const mine = new Set(Object.keys(map).filter((k) => map[k] === "contact"));
+        if (!mine.size) continue;
+        const text = typeof c.transcript === "string"
+          ? c.transcript
+          : String((c.transcript as any)?.text || "");
+        contactText = text.split("\n")
+          .map((line: string) => line.match(/^\s*Speaker\s+([A-Z0-9]+)\s*:\s*(.*)$/))
+          .filter((m: any) => m && mine.has(m[1]) && m[2].trim())
+          .map((m: any) => m[2].trim())
+          .filter((line: string) => !/^call recording is on/i.test(line))
+          .join(" ");
+      }
+      contactText = contactText.slice(0, 3000);
       if (!contactText.trim()) continue;
       evidence.push({
         ref: `quo_call:${c.id}`,
