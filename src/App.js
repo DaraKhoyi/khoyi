@@ -3947,7 +3947,10 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     try {
       const haveTask = undone.filter(p => p.taskId);
       const noTask = undone.filter(p => !p.taskId);
-      if (haveTask.length) await supabase.from('tasks').update({ due_date: tISO, completed: false }).in('id', haveTask.map(p => p.taskId));
+      // Every roll is now counted. This used to be a silent bulk update, which is
+      // exactly why 68 tasks reached 30-60 days old while all of them displayed
+      // "1 day late" — the app was hiding the cost of saying "not today".
+      if (haveTask.length) await supabase.rpc('carry_tasks', { p_ids: haveTask.map(p => p.taskId), p_due: tISO });
       let inserted = [];
       if (noTask.length) {
         const payload = noTask.map(p => ({ user_id: userId, title: p.title, due_date: tISO, notes: `Carried from ${todayISO()} plan`, completed: false }));

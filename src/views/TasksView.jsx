@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import CommitmentReview from './CommitmentReview';
+import StaleDecide from './StaleDecide';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
 import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, emailAssignTask, modal, notify, todayISO } from '../App';
@@ -424,6 +425,8 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
       // list read as 199 things he was failing to do. He can't do any of them.
       // They live below, in their own section, and only come back when late.
       if (!showWaiting && t.waiting_on && filter !== 'completed') return false;
+      // Decided against. Not done — and never counted as done.
+      if (t.dropped_at && filter !== 'completed') return false;
       return true;
     });
   }, [tasks, filter, taskSearch, showWaiting]);
@@ -432,7 +435,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   // one of these becomes your problem, and then the job is to chase, not to do.
   const waitingTasks = useMemo(() => {
     const today = todayISO();
-    return tasks.filter(t => !t.completed && t.waiting_on)
+    return tasks.filter(t => !t.completed && !t.dropped_at && t.waiting_on)
       .sort((a, b) => {
         const al = a.due_date && a.due_date < today ? 0 : 1;
         const bl = b.due_date && b.due_date < today ? 0 : 1;
@@ -634,6 +637,10 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             through the day. Yours become tasks; theirs stay on the radar until
             they're late. Renders nothing when there's nothing to decide. */}
         <CommitmentReview userId={userId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
+
+        {/* The bill for "not today". Carry-forward made deferring free and silent;
+            this is where it stops being free. */}
+        <StaleDecide tasks={tasks} setTasks={setTasks} userId={userId} />
 
         {/* Other people's work, counted but not mixed in. A number you can see is
             a number you can act on; 36 of these hiding inside 199 is just weight. */}
