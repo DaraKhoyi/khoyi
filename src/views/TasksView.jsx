@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
+import CommitmentReview from './CommitmentReview';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
 import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, emailAssignTask, modal, notify, todayISO } from '../App';
@@ -608,6 +609,11 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   return (
     <DragProvider onDragStart={async () => setIsDragging(true)} onDragEnd={() => setIsDragging(false)}>
       <div className="view">
+        {/* Calls turn into work HERE, in one batch — not as six notifications
+            through the day. Yours become tasks; theirs stay on the radar until
+            they're late. Renders nothing when there's nothing to decide. */}
+        <CommitmentReview userId={userId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
+
         {/* Header: title + subtitle on left  ·  view-mode icons + add button on right
             The icons replace the old standalone Sequence/Matrix text-button row
             that used to live below the search. Layout is flex with flex-start
