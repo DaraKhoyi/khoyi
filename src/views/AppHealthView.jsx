@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
+import WorkerHealth from './WorkerHealth';
 
 const GOLD = '#C5A95E';
 const KIND_LABEL = { boundary: 'View crash', window: 'Uncaught error', promise: 'Promise rejection' };
@@ -51,6 +52,11 @@ export default function AppHealthView() {
         <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={load}>↻ Refresh</button>
       </div>
       <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 12, lineHeight: 1.5 }}>Crashes your agents hit, captured the instant they happen and diagnosed automatically by the crash-monitor agent — likely cause, where in the code, and a suggested fix. You&rsquo;ll see a problem here (and get a push) before an agent has to tell you.</div>
+      {/* Crashes were watched; the 38 jobs that actually run the business were not.
+          bounce-scan answered 401 every ten minutes for months and nothing said a
+          word — this panel is the alarm that should have existed. */}
+      <WorkerHealth />
+
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, width: 'fit-content' }}>
           {seg('24h', '24 hours')}{seg('7d', '7 days')}{seg('30d', '30 days')}
