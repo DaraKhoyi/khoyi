@@ -108,6 +108,13 @@ function fromGoogleEvent(g: any, userId: string, calendarId: string) {
     title: g.summary || "(no title)",
     description: g.description || null,
     location: g.location || null,
+    // Google sends attendees as {email, displayName, responseStatus}. Store the
+    // ones with a real address — this is what lets a recording made during a
+    // meeting be matched to the people who were actually invited.
+    attendees: Array.isArray(g.attendees)
+      ? g.attendees.filter((a: any) => a.email && !a.resource)
+          .map((a: any) => ({ email: String(a.email).toLowerCase(), name: a.displayName || null }))
+      : null,
     start_at: startAt,
     end_at: endAt || null,
     all_day: allDay,
