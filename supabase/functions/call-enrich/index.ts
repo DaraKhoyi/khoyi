@@ -82,10 +82,15 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const limit = Math.min(Number(body.limit) || 15, 40);
 
-    let sel = db.from("quo_calls").select("*").is("enriched_at", null).not("transcript", "is", null)
-      .order("op_created_at", { ascending: false }).limit(limit);
-    if (body.call_id) sel = db.from("quo_calls").select("*").eq("id", body.call_id).limit(1);
-    const { data: calls, error } = await sel;
+    // deno check trips TS2589 ("type instantiation excessively deep") when a
+    // supabase-js query builder is reassigned — a known typing quirk, harmless at
+    // runtime. Building each branch separately keeps the checker green without
+    // casting the whole client to any and losing the rest of the types.
+    const { data: calls, error } = body.call_id
+      ? await db.from("quo_calls").select("*").eq("id", body.call_id).limit(1)
+      : await db.from("quo_calls").select("*")
+          .is("enriched_at", null).not("transcript", "is", null)
+          .order("op_created_at", { ascending: false }).limit(limit);
     if (error) return J({ error: error.message }, 500);
     if (!calls?.length) return J({ done: 0, note: "nothing to enrich" });
 
