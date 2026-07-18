@@ -80,9 +80,16 @@ serve(async (req) => {
         catch { throw new Error(`HTTP ${r.status} — non-JSON reply: ${bodyText.slice(0, 120).replace(/\s+/g, " ")}`); }
         if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
 
-        await supabase.from("disc_analysis_queue").update({
+        // CHECK THE WRITE. This update was fire-and-forget, and it had been
+        // failing 23505 on every already-analysed contact for weeks: the row
+        // stayed "processing", the batch cheerfully reported errors:0, and the
+        // drain re-analysed the same people every 15 minutes, billing Claude each
+        // time. A worker that does not look at its own writes cannot tell you it
+        // is broken — it just gets more expensive.
+        const { error: doneErr } = await supabase.from("disc_analysis_queue").update({
           status: "done", processed_at: new Date().toISOString(), error_message: null,
         }).eq("id", item.id);
+        if (doneErr) throw new Error(`analysis succeeded but the queue write failed: ${doneErr.message}`);
 
         results.processed++;
         results.items.push({ contact_id: item.contact_id, status: data.status, ok: true });
