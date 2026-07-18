@@ -78,22 +78,24 @@ serve(async (req) => {
       : await db.from("quo_calls").select("*")
           .not("speaker_map", "is", null)
           .not("transcript", "is", null)
-          .order("op_created_at", { ascending: false })
-          .limit(Math.min(Number(body.limit) || 8, 20));
+          .is("commitments_read_at", null)     // <- the marker. Without it this
+          .order("op_created_at", { ascending: false })  // re-read the same six
+          .limit(Math.min(Number(body.limit) || 8, 20)); // calls forever.
     if (!calls?.length) return J({ done: 0, note: "no attributed calls to read" });
 
     const out: unknown[] = [];
     for (const call of calls) {
       try {
+        await db.from("quo_calls").update({ commitments_read_at: new Date().toISOString() }).eq("id", call.id);
         if (!call.speaker_map) { out.push({ id: call.id, skipped: "not attributed" }); continue; }
-        const { data: existing } = await db.from("commitments").select("id").eq("call_id", call.id).limit(1);
-        if (existing?.length && !body.force) { out.push({ id: call.id, skipped: "already read" }); continue; }
+        if (call.commitments_read_at && !body.force) { out.push({ id: call.id, skipped: "already read" }); continue; }
 
         const { data: contact } = call.contact_id
           ? await db.from("contacts").select("id,name").eq("id", call.contact_id).maybeSingle()
           : { data: null };
         const them = contact?.name || "The contact";
         const script = labelledTranscript(call.transcript, call.speaker_map, them, "Me");
+        await db.from("quo_calls").update({ commitments_read_at: new Date().toISOString() }).eq("id", call.id);
         if (!script.trim()) { out.push({ id: call.id, skipped: "no transcript" }); continue; }
 
         const sys =
@@ -135,8 +137,12 @@ serve(async (req) => {
           }, { onConflict: "user_id,dedupe_key", ignoreDuplicates: true });
           if (!error) kept++;
         }
+        // Mark read whether or not anything was found. "No promises made" is a
+        // result — and per the design it is the RIGHT result for most calls.
+        await db.from("quo_calls").update({ commitments_read_at: new Date().toISOString() }).eq("id", call.id);
         out.push({ id: call.id, who: them, found: list.length, kept });
       } catch (e) {
+        // deliberately NOT marked read: a genuine failure deserves another go.
         out.push({ id: call.id, error: String((e as Error)?.message || e).slice(0, 110) });
       }
     }
