@@ -4,6 +4,7 @@ import { supabase, SUPABASE_URL } from './dataService';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
+const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
 // The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
 // purpose: deploy-functions.yml decides what to redeploy from the CHANGED PATH's
 // function name, and it FILTERS OUT _shared — so an engine living in _shared/ would
@@ -7069,6 +7070,8 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
   // Composer
   const [kind, setKind] = useState('note');
   const [body, setBody] = useState('');
+  const [callByInteraction, setCallByInteraction] = useState({});
+  const [openCall, setOpenCall] = useState(null);
   const [whenLocal, setWhenLocal] = useState(nowLocalInput());
   const [direction, setDirection] = useState('outbound');
   const [duration, setDuration] = useState('');
@@ -7173,6 +7176,21 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
       }
       const { data } = await query.order('occurred_at', { ascending: false });
       if (!cancelled) { setTimeline(data || []); setLoading(false); }
+
+      // Which of these rows has a recorded call behind it? One query for the whole
+      // timeline rather than one per row — the transcript and the audio stay put
+      // until asked for, so the timeline loads at the same speed it always did.
+      const callIds = (data || []).filter(d => d.kind === 'call').map(d => d.id);
+      if (callIds.length) {
+        const { data: calls } = await supabase.from('quo_calls')
+          .select('id,interaction_id,duration,direction,speaker_map,raw')
+          .in('interaction_id', callIds);
+        if (!cancelled && calls) {
+          const m = {};
+          calls.forEach(c => { if (c.interaction_id) m[c.interaction_id] = c; });
+          setCallByInteraction(m);
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [entityType, entityId, isContact]);
@@ -7475,6 +7493,23 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
             </div>
           </div>
           {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.body || e.brief}</div>}
+          {callByInteraction[e.id] && (
+            <div style={{ marginTop: 6 }}>
+              <button onClick={() => setOpenCall(openCall === e.id ? null : e.id)}
+                style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--accent)',
+                  borderRadius: 100, padding: '4px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                {openCall === e.id ? 'Hide' : 'Transcript'}
+                {callByInteraction[e.id]?.raw?.cube?.drive_file_id ? ' & recording' : ''}
+              </button>
+              {openCall === e.id && (
+                <React.Suspense fallback={<div style={{ fontSize: 12, color: 'var(--text-3)', padding: '8px 0' }}>Opening…</div>}>
+                  <CallDetail callId={callByInteraction[e.id].id}
+                    contactName={contact?.name || contactName(e.contact_id) || 'Them'}
+                    onClose={() => setOpenCall(null)} />
+                </React.Suspense>
+              )}
+            </div>
+          )}
           {e.entity_type === 'recording' && <button onClick={() => { try { document.getElementById('contact-recordings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} }} style={{ marginTop: '6px', background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>🎙 View full recording ▸</button>}
           {((e.mentions && e.mentions.length > 0) || (e.tags && e.tags.length > 0)) && (
             <div style={{ marginTop: '6px', display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
