@@ -7262,6 +7262,37 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
     }
   }
 
+  // Find past recordings — phone calls by number, meetings by spoken name +
+  // calendar — that probably feature this contact but were never linked. The
+  // mirror of the email reach-back: the moment an old conversation matters.
+  const [findingRecs, setFindingRecs] = useState('');
+  const [recCandidates, setRecCandidates] = useState(null);
+  async function findPastRecordings() {
+    if (!isContact || !contact) return;
+    setFindingRecs('working'); setRecCandidates(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('contact-find-recordings', {
+        body: { contact_id: contact.id, user_id: userId },
+      });
+      if (error) throw error;
+      setRecCandidates(data?.candidates || []);
+      setFindingRecs('done');
+    } catch (e) { setFindingRecs('error'); }
+  }
+  async function linkPastRecording(cand) {
+    try {
+      if (cand.kind === 'call') {
+        await supabase.from('quo_calls').update({ contact_id: contact.id }).eq('id', cand.id);
+      } else {
+        await supabase.from('recordings').update({ contact_id: contact.id }).eq('id', cand.id);
+      }
+      await supabase.from('disc_analysis_queue').insert({
+        user_id: userId, contact_id: contact.id, reason: 'past recording linked', status: 'pending',
+      }).then(() => {}, () => {});
+      setRecCandidates(prev => (prev || []).filter(c => c.id !== cand.id));
+    } catch (_) {}
+  }
+
   // Open tasks/reminders linked to this entity (contacts via task_contacts +
   // tasks.contact_id; properties via tasks.property_id). Surfaces overdue nudges.
   const [reminders, setReminders] = useState([]);
@@ -7743,6 +7774,48 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
               : '⟲ Pull this contact’s full email history'}
           </button>
           {backfilling === 'done' && <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>archived & labelled mail included</span>}
+        </div>
+      )}
+
+      {/* Reach back for past recordings that were never linked to this contact */}
+      {isContact && contact && (
+        <div style={{ marginBottom: 10 }}>
+          <button onClick={findPastRecordings} disabled={findingRecs === 'working'}
+            style={{ fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 100,
+              border: '1px solid var(--border)', background: 'transparent',
+              color: findingRecs === 'working' ? 'var(--text-3)' : 'var(--accent)', cursor: 'pointer' }}>
+            {findingRecs === 'working' ? 'Searching past recordings…'
+              : findingRecs === 'error' ? 'Couldn’t search — try again'
+              : '⟲ Find past recordings with this contact'}
+          </button>
+          {findingRecs === 'done' && recCandidates && recCandidates.length === 0 && (
+            <span style={{ fontSize: 10.5, color: 'var(--text-3)', marginLeft: 8 }}>none found</span>
+          )}
+          {recCandidates && recCandidates.length > 0 && (
+            <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+              <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginBottom: 7, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }}>
+                {recCandidates.length} may be this contact — confirm to link
+              </div>
+              {recCandidates.map(c => (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, flex: 'none',
+                    background: c.confidence === 'high' ? '#22c55e' : c.confidence === 'medium' ? '#C5A95E' : '#8C8475' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5 }}>
+                      <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em', color: 'var(--text-3)', marginRight: 6 }}>
+                        {c.kind === 'call' ? 'CALL' : 'MEETING'}
+                      </span>
+                      {c.when ? new Date(c.when).toLocaleDateString() : ''} {c.preview ? '· ' + c.preview : ''}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>{(c.why || []).join(' · ')}</div>
+                  </div>
+                  <button onClick={() => linkPastRecording(c)}
+                    style={{ fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 100,
+                      border: 'none', background: 'var(--accent-2)', color: '#1a1409', cursor: 'pointer' }}>Link</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
