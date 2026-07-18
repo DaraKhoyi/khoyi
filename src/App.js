@@ -5,6 +5,7 @@ import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
+import IdentifyRecording from './views/IdentifyRecording';
 // The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
 // purpose: deploy-functions.yml decides what to redeploy from the CHANGED PATH's
 // function name, and it FILTERS OUT _shared — so an engine living in _shared/ would
@@ -6460,6 +6461,10 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
                   <button onClick={() => retranscribe(r)} className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: '10px' }} title="Re-transcribe" disabled={r.audio_purged}>↻</button>
                   <button onClick={() => deleteRecording(r)} className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: '10px', color: '#ef4444' }} title="Delete">×</button>
                 </div>
+                {!r.contact_id && r.transcript_text && userId && (
+                  <IdentifyRecording recording={r} userId={userId}
+                    onLinked={() => { try { window.dispatchEvent(new Event('prism:recording-linked')); } catch(_){} }} />
+                )}
                 {r.transcription_error && (
                   <div style={{ marginTop: '6px', padding: '6px 8px', background: 'rgba(239,68,68,0.08)', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', fontSize: '10px' }}>
                     {r.transcription_error}
