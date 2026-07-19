@@ -37,6 +37,12 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
+  // What the user sets on a card WHILE reviewing — a due date and a priority — so
+  // a commitment becomes a properly-scheduled task in one step, instead of landing
+  // dateless and having to be hunted down and edited later.
+  const [edits, setEdits] = useState({});   // { [id]: { due, priority } }
+  const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B' };
+  const setEdit = (id, patch) => setEdits(e => ({ ...e, [id]: { ...(e[id] || { due: '', priority: 'B' }), ...patch } }));
 
   async function load() {
     let q = supabase.from('commitments')
@@ -61,10 +67,18 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
     try {
       if (c.owner === 'me') {
         // Same shape the app uses everywhere else — no bespoke task dialect.
+        const e = editOf(c);
+        // A/B/C is the Eisenhower quadrant, NOT the priority column (which is
+        // constrained to high/medium/low). Writing 'B' to priority would violate
+        // a CHECK constraint. Map to both so the task sorts correctly.
+        const pmap = { A: 'high', B: 'medium', C: 'low' };
         const { data: t, error } = await supabase.from('tasks').insert({
           user_id: userId,
           title: c.title,
-          due_date: c.due_date || null,
+          due_date: e.due || c.due_date || null,
+          priority: pmap[e.priority] || 'medium',
+          priority_system: 'eisenhower',
+          eisenhower_quadrant: e.priority || 'B',
           notes: `From a call with ${c.contact_name} — they/you said: “${c.quote}”`,
           contact_id: c.contact_id || null,
           completed: false,
@@ -85,6 +99,26 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
     setBusy(c.id);
     await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', c.id);
     await load(); onChanged && onChanged(); setBusy(null);
+  }
+
+  // "I already did this." A commitment can be finished by the time you review it.
+  // Record it as a COMPLETED task so the work counts, then close the commitment.
+  async function doneAlready(c) {
+    setBusy(c.id); setErr(null);
+    try {
+      const { data: t, error } = await supabase.from('tasks').insert({
+        user_id: userId,
+        title: c.title,
+        notes: `From a call with ${c.contact_name} - already done when reviewed.`,
+        contact_id: c.contact_id || null,
+        completed: true,
+        completed_at: new Date().toISOString(),
+      }).select().single();
+      if (error) throw error;
+      await supabase.from('commitments').update({ status: 'done', task_id: t.id, decided_at: new Date().toISOString() }).eq('id', c.id);
+      await load(); onChanged && onChanged();
+    } catch (e) { setErr(String(e.message || e)); }
+    setBusy(null);
   }
 
   // The late ones: the only moment somebody else's promise becomes your problem.
@@ -164,9 +198,31 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
           </div>
           {proposed.map(c => (
             <Card key={c.id} c={c}>
+              {/* For a task you'll own, set WHEN and how urgent right here, so it
+                  lands scheduled instead of dateless. Theirs needs neither. */}
+              {c.owner === 'me' && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', marginBottom: 8, flexWrap: 'wrap' }}>
+                  <input type="date" value={editOf(c).due}
+                    onChange={ev => setEdit(c.id, { due: ev.target.value })}
+                    style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8,
+                      color: 'var(--text-1)', padding: '5px 8px', fontSize: 12 }} />
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    {['A', 'B', 'C'].map(p => (
+                      <button key={p} onClick={() => setEdit(c.id, { priority: p })}
+                        style={{ width: 26, height: 26, borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                          border: '1px solid ' + (editOf(c).priority === p ? 'var(--accent-2)' : 'var(--border)'),
+                          background: editOf(c).priority === p ? 'var(--accent-2)' : 'transparent',
+                          color: editOf(c).priority === p ? '#1a1409' : 'var(--text-3)' }}>{p}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button disabled={busy === c.id} onClick={() => accept(c)} style={btn(true)}>
                 {c.owner === 'me' ? 'Make it a task' : 'Track it'}
               </button>
+              {c.owner === 'me' && (
+                <button disabled={busy === c.id} onClick={() => doneAlready(c)} style={btn(false)}>Done already</button>
+              )}
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
             </Card>
           ))}
