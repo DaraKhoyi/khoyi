@@ -1371,3 +1371,104 @@ input[type="radio"], input[type="range"], select, progress {
 .prism-think-label .pt-dots i:nth-child(3) { animation-delay: .4s; }
 @keyframes ptDot { 0%,100% { opacity: .2; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .prism-think .pt-beam, .prism-think .pt-ray, .prism-think-label .pt-dots i { animation: none; } .prism-think .pt-ray { opacity: .7; } }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRISM MODERNIZATION LAYER  (v1.04.03)
+   Pulls the dashboard's warm, glowing, dynamic feel down into the shared theme
+   so EVERY screen inherits it at once. Scoped to .ww-prism (the app-wide theme
+   scope), so it can't leak into auth/marketing surfaces. Refinement, not
+   redesign — same gold/black identity, same Fraunces/Manrope/Barlow fonts.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* 1 — AMBIENT CANVAS. Every themed screen gets the lit-from-within glow the
+       dashboard has, instead of flat black. Two soft gold pools, top and
+       bottom, fixed so they don't scroll away. */
+.ww-prism {
+  --shadow-warm: 0 12px 34px rgba(0,0,0,.45), 0 0 0 1px rgba(203,163,92,.06);
+  --shadow-lift: 0 18px 44px rgba(0,0,0,.5), 0 0 0 1px rgba(203,163,92,.28);
+  --card-grad: radial-gradient(120% 120% at 90% 0%, rgba(203,163,92,.06), transparent 55%), var(--bg-card);
+  background:
+    radial-gradient(70% 45% at 78% 4%, rgba(203,163,92,.075), transparent 62%),
+    radial-gradient(55% 42% at 12% 92%, rgba(203,163,92,.045), transparent 60%),
+    var(--bg-base) !important;
+}
+
+/* 2 — RICHER SURFACES. Cards read as warm, layered objects, not flat panels:
+       a whisper of gold gradient, warmer border, real shadow. Scoped to the
+       actual card container classes (not their -header/-actions sub-elements,
+       which would create nested boxes). */
+.ww-prism .card,
+.ww-prism .dash-card,
+.ww-prism .stat-card,
+.ww-prism .nba-card,
+.ww-prism .mv-card,
+.ww-prism .fsa-card {
+  background: var(--card-grad);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-warm);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+/* 3 — MOTION ON INTERACTION. Substantial cards and primary buttons lift warmly
+       on hover — the "dynamic" feel — without making tiny icon buttons jump. */
+.ww-prism .card:hover,
+.ww-prism .dash-card:hover,
+.ww-prism .stat-card:hover,
+.ww-prism .btn-primary:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+.ww-prism .card:hover,
+.ww-prism .dash-card:hover,
+.ww-prism .stat-card:hover {
+  box-shadow: var(--shadow-lift);
+  border-color: var(--border-strong);
+}
+
+/* 4 — CONTENT REVEAL. Screens fade up as they mount via the opt-in .reveal
+       class (already used by several views), so navigation feels alive without
+       re-animating on every state change. Respects reduced-motion. */
+@keyframes prismRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.ww-prism .reveal { animation: prismRise .5s ease both; }
+
+/* 5 — HEADINGS get the editorial serif + a hint of the gold gradient the
+       dashboard hero uses, so section titles feel designed, not default. */
+.ww-prism h1, .ww-prism h2, .ww-prism .view-title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -.01em;
+}
+@keyframes prismGoldSweep { to { background-position: 200% center; } }
+.ww-prism .gold-sweep {
+  background: linear-gradient(90deg, #7A5020, #C5A95E, #F5E8B0, #C5A95E, #7A5020);
+  background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: prismGoldSweep 6s linear infinite;
+}
+
+/* 6 — EYEBROWS / small caps labels pick up Barlow Condensed for that
+       structural, magazine feel the dashboard uses. */
+.ww-prism .eyebrow, .ww-prism .section-eyebrow {
+  font-family: 'Barlow Condensed', sans-serif;
+  text-transform: uppercase; font-weight: 600; letter-spacing: .18em;
+}
+
+/* 7 — PRIMARY ACTIONS glow. The main gold buttons get the hero's warm halo. */
+.ww-prism .btn-primary, .ww-prism .btn.btn-primary {
+  background: linear-gradient(135deg, #EBCB82, #C5A95E);
+  color: #231a08; border: none;
+  box-shadow: 0 8px 24px rgba(203,163,92,.3);
+}
+.ww-prism .btn-primary:hover { box-shadow: 0 12px 30px rgba(203,163,92,.45); }
+
+/* 8 — SCROLLBAR in the warm palette, so even the chrome feels considered. */
+.ww-prism ::-webkit-scrollbar { width: 9px; height: 9px; }
+.ww-prism ::-webkit-scrollbar-thumb { background: rgba(203,163,92,.22); border-radius: 10px; }
+.ww-prism ::-webkit-scrollbar-thumb:hover { background: rgba(203,163,92,.38); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ww-prism .reveal { animation: none; }
+  .ww-prism .card:hover, .ww-prism .dash-card:hover, .ww-prism .stat-card:hover,
+  .ww-prism .btn-primary:hover { transform: none; }
+  .ww-prism .gold-sweep { animation: none; }
+}
