@@ -6763,6 +6763,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
   const [channel, setChannel] = useState(recipient?.email ? 'email' : 'text');
   const [subject, setSubject] = useState('');
   const [bodyText, setBodyText] = useState('');
+  const composeBodyRef = useRef(null);
   const [drafting, setDrafting] = useState(false);
   const [sending, setSending] = useState(false);
   const [instruction, setInstruction] = useState('');
@@ -6986,9 +6987,9 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
                 {discHint
                   ? <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>adapted to <strong style={{ color: 'var(--accent)' }}>{discHint.p}{discHint.s ? '/' + discHint.s : ''}</strong> style</span>
                   : <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>no DISC profile yet · neutral tone</span>}
-                <span style={{ marginLeft: 'auto' }}><AriRewriteButton text={bodyText} onRewrite={setBodyText} contactName={recipient?.name} contactId={recipient?.id} discLabel={discHint ? `${discHint.p}${discHint.s ? '/' + discHint.s : ''}` : ''} /></span>
+                <span style={{ marginLeft: 'auto' }}><AriRewriteButton text={bodyText} onRewrite={setBodyText} textareaRef={composeBodyRef} contactName={recipient?.name} contactId={recipient?.id} discLabel={discHint ? `${discHint.p}${discHint.s ? '/' + discHint.s : ''}` : ''} /></span>
               </div>
-              <textarea className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
+              <textarea ref={composeBodyRef} className="form-textarea" value={bodyText} onChange={e => setBodyText(e.target.value)}
                 placeholder={`Write your ${channel === 'email' ? 'email' : 'message'} to ${(recipient?.name || '').split(/\s+/)[0] || 'them'}…\n\nOr tap \u201cRegenerate\u201d to have Ari draft it, or \u201cAri rewrite\u201d to polish what you’ve written — adapted to their ${discHint ? discHint.p + (discHint.s ? '/' + discHint.s : '') + ' ' : ''}style.`}
                 style={{ minHeight: '180px', fontSize: '13px', padding: '10px', margin: 0, lineHeight: 1.5, width: '100%' }} />
               {channel === 'email' && (
@@ -13955,25 +13956,51 @@ function ForkTuningOverlay({ contactName, discLabel }) {
   );
 }
 
-function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText, contactId }) {
+function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText, contactId, textareaRef }) {
   const [busy, setBusy] = useState(false);
   const [prev, setPrev] = useState(null);
   const [err, setErr] = useState(null);
+  const [scope, setScope] = useState(null); // remembers a selection-only rewrite for undo
   const go = async () => {
     if (!text || !text.trim()) { setErr('Write a draft first.'); return; }
+    // If the user has highlighted part of the draft, rewrite ONLY that — leave
+    // the rest (e.g. a forwarded message below) untouched. Otherwise rewrite all.
+    const ta = textareaRef && textareaRef.current;
+    let selStart = -1, selEnd = -1, selected = '';
+    if (ta && typeof ta.selectionStart === 'number' && ta.selectionEnd > ta.selectionStart) {
+      selStart = ta.selectionStart; selEnd = ta.selectionEnd;
+      selected = text.slice(selStart, selEnd);
+    }
+    const usingSelection = selected.trim().length > 0;
+    const toRewrite = usingSelection ? selected : text;
     setErr(null); setBusy(true);
-    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:text, contact_name:contactName||'the recipient', contact_id:contactId, disc_label:discLabel||'', source_text:sourceText||'' } });
+    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft: toRewrite, contact_name:contactName||'the recipient', contact_id:contactId, disc_label:discLabel||'', source_text:sourceText||'' } });
     setBusy(false);
     if (error || data?.error || !data?.message) { setErr('Rewrite failed — try again.'); return; }
-    setPrev(text); onRewrite(data.message);
+    setPrev(text);
+    if (usingSelection) {
+      // splice the rewritten selection back into the full draft, preserving
+      // leading/trailing whitespace so surrounding text stays intact
+      const rewritten = String(data.message);
+      const next = text.slice(0, selStart) + rewritten + text.slice(selEnd);
+      setScope({ start: selStart, len: rewritten.length });
+      onRewrite(next);
+      // restore a caret/selection around the rewritten span after render
+      setTimeout(() => {
+        if (ta) { try { ta.focus(); ta.setSelectionRange(selStart, selStart + rewritten.length); } catch (_) {} }
+      }, 0);
+    } else {
+      setScope(null);
+      onRewrite(data.message);
+    }
   };
-  const undo = () => { if (prev==null) return; onRewrite(prev); setPrev(null); };
+  const undo = () => { if (prev==null) return; onRewrite(prev); setPrev(null); setScope(null); };
   return (
-    <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
+    <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',marginBottom:'6px'}}>
       {busy && <ForkTuningOverlay contactName={contactName} discLabel={discLabel} />}
       {err && <span style={{fontSize:'10px',color:'var(--red)',marginRight:'auto'}}>{err}</span>}
       {prev!=null && <button type="button" className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={undo}>Undo</button>}
-      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice, adapted to the recipient" style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice. Highlight part of the draft to rewrite only that." style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
     </div>
   );
 }

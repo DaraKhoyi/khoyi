@@ -717,14 +717,28 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const doRewrite = async (r) => {
     const cur = (edits[r.contact_id]?.message) ?? r.message;
     if (!cur || !cur.trim()) { setErr('Write a draft first, then let Ari refine it.'); return; }
+    // If the user highlighted part of THIS draft's textarea, rewrite only that —
+    // leaving the rest intact. We read the selection off the focused textarea.
+    const ta = document.activeElement;
+    let selStart = -1, selEnd = -1, selected = '';
+    if (ta && ta.tagName === 'TEXTAREA' && typeof ta.selectionStart === 'number'
+        && ta.selectionEnd > ta.selectionStart && ta.value === cur) {
+      selStart = ta.selectionStart; selEnd = ta.selectionEnd;
+      selected = cur.slice(selStart, selEnd);
+    }
+    const usingSelection = selected.trim().length > 0;
+    const toRewrite = usingSelection ? selected : cur;
     setRwBusy(b=>({ ...b,[r.contact_id]:true }));
     const grp = !!replyAll[r.contact_id];
     const others = grp ? otherRecips(r) : [];
-    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft:cur, contact_name:r.name, contact_id:r.contact_id, disc_label:r.disc_label||'', source_text:(r.source&&r.source.text)||'', audience: grp?'group':'individual', recipients: others } });
+    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft: toRewrite, contact_name:r.name, contact_id:r.contact_id, disc_label:r.disc_label||'', source_text:(r.source&&r.source.text)||'', audience: grp?'group':'individual', recipients: others } });
     setRwBusy(b=>({ ...b,[r.contact_id]:false }));
-    if (error || data?.error || !data?.message) { setErr('Ari rewrite failed: '+(error?.message||data?.error||'no output')); return; }
+    if (error || data?.error || !data?.message) { setErr('Ari rewrite failed: '+(error?.message||data?.error||'unknown')); return; }
     setPrevMsg(p=>({ ...p,[r.contact_id]:cur }));
-    setEdit(r.contact_id,'message',data.message,r);
+    const nextMsg = usingSelection
+      ? cur.slice(0, selStart) + String(data.message) + cur.slice(selEnd)
+      : data.message;
+    setEdit(r.contact_id,'message',nextMsg,r);
   };
   const undoRewrite = (r) => {
     const prev = prevMsg[r.contact_id];
