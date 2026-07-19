@@ -6,6 +6,7 @@ import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
 import DashboardHub from './views/DashboardHub';
 import ModeBar from './views/ModeBar';
+import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
 import IdentifyRecording from './views/IdentifyRecording';
@@ -17661,40 +17662,28 @@ function AppMain() {
       <InstallPwaPrompt />
       <UpdateBanner />
       <ImpersonationBanner />
-      <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />
+      {/* QuickLog FAB (the graph icon) is preserved but hidden for now — Dara
+          asked to remove it from all displays and save it for later. Flip
+          SHOW_QUICKLOG_FAB to true to bring it back. */}
+      {false && <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />}
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo" onClick={goHome} style={{cursor:"pointer"}} role="button" aria-label="Home"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
-        <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
-          {sidebarOpen ? '✕' : '☰'}
+        <div className="mobile-header-logo" onClick={() => setSidebarOpen(true)} style={{cursor:"pointer"}} role="button" aria-label="Menu"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
+        <button className="hamburger" onClick={goHome} aria-label="Dashboard" title="Dashboard">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#CBA35C" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11l8-7 8 7M6 9v11h12V9"/></svg>
         </button>
       </div>
 
+      {/* The mindset menu — opens from the tuning fork. Dashboard + the five
+          rooms (+ Brokerage for admins). Replaces the old 40-item stack. */}
+      <MindsetMenu open={sidebarOpen} onClose={() => setSidebarOpen(false)}
+        currentView={view} activeMode={activeMode} isAdmin={isAdmin || isTeamLeader}
+        onHome={goHome} onEnterMode={enterMode}
+        modeBadges={{ plan: hubDueToday + hubClear, relationships: hubOweReply, deals: hubActiveDeals }}
+        userName={user.user_metadata?.display_name?.trim()||user.user_metadata?.full_name?.trim()?.split(/\s+/)[0]||user.email?.split('@')[0]}
+        userEmail={user.email} onSignOut={handleSignOut} />
+
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
-        {/* Overlay */}
-        {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
-
-        {/* Sidebar */}
-        <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-          <div className="sidebar-logo">
-            <RogLogo />
-          </div>
-          <div className="sidebar-nav">
-            <div className="nav-section-label">Menu</div>
-            {MENU.map((node, i) => <MenuNode key={node._key || i} node={node} depth={0} ctx={menuCtx} />)}
-          </div>
-          <div className="sidebar-footer">
-            <div className="sidebar-user">
-              <div className="sidebar-avatar">{(user.user_metadata?.display_name||user.user_metadata?.full_name||user.email||'').slice(0,2).toUpperCase()}</div>
-              <div className="sidebar-user-info">
-                <div className="sidebar-user-name">{user.user_metadata?.display_name?.trim()||user.user_metadata?.full_name?.trim()?.split(/\s+/)[0]||user.email?.split('@')[0]}</div>
-                <div className="sidebar-user-email">{user.email}</div>
-              </div>
-              <button className="logout-btn" onClick={handleSignOut} title="Sign out">⏻</button>
-            </div>
-          </div>
-        </nav>
-
         {/* Main */}
         <main className="main-content ww-prism" ref={mainScrollRef} onTouchStart={onMainTouchStart} onTouchMove={onMainTouchMove} onTouchEnd={onMainTouchEnd} style={activeMode ? { paddingBottom: 76 } : undefined}>
           <style>{`.main-content.ww-prism{background:radial-gradient(120% 20% at 50% -2%, rgba(203,163,92,.09), transparent 55%), #100D09;} .ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .form-input,.ww-prism .form-select,.ww-prism .form-textarea{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;} .ww-prism .seg-btn.active{background:linear-gradient(180deg,#EBCB82,#CBA35C)!important;color:#1a1409!important;}`}</style>
