@@ -142,21 +142,41 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // SECURITY: derive user_id from JWT only; body user_id ignored
+    // Auth accepts TWO trusted callers:
+    //  1. A signed-in user (client): derive user_id from their JWT, ignore body.
+    //  2. The service role (the every-minute calendar-poll cron): trusted server
+    //     context, so honour the body's user_id.
+    // The previous code REJECTED the service role outright, which meant every
+    // background poll returned 401 and the calendar only ever synced while the
+    // user was sitting on the Calendar tab. That is why adds/edits/deletes made
+    // in Google were missed: the reconcile never ran in the background.
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token || token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    let user_id: string;
+    if (token && SERVICE_ROLE && token === SERVICE_ROLE) {
+      // trusted server path (calendar-poll) — user_id must come from the body
+      const bodyUser = (body && body.user_id) || null;
+      if (!bodyUser) {
+        return new Response(JSON.stringify({ error: "service-role call requires user_id in body" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      user_id = bodyUser;
+    } else {
+      if (!token) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      user_id = user.id;
     }
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const user_id = user.id;
 
     // Load the account designated for CALENDAR. Prefer purposes @> {calendar},
     // fall back to any active google account with a calendar scope.
