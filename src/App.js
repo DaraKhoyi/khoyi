@@ -17755,8 +17755,8 @@ function AppMain() {
       {/* The scoped bottom bar — only appears inside a mindset room, showing just
           that room's 3-5 sections plus a Home button back to the hub. */}
       {activeMode && dataLoaded && (
-        <ModeBar modeId={activeMode} currentView={view}
-          onNavigate={setView} onHome={goHome} badges={barBadges} />
+        <ModeBar modeId={activeMode} currentView={view} currentSub={deepLink.view === view ? deepLink.sub : null}
+          onNavigate={navigate} onHome={goHome} badges={barBadges} />
       )}
       <ToastHost />
       <ConfirmHost />

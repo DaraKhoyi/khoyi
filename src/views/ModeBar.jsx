@@ -37,7 +37,7 @@ const Icon = ({ name, active }) => (
   </svg>
 );
 
-export default function ModeBar({ modeId, currentView, onNavigate, onHome, badges = {} }) {
+export default function ModeBar({ modeId, currentView, currentSub, onNavigate, onHome, badges = {} }) {
   const mode = modeById(modeId);
   if (!mode) return null;
 
@@ -57,21 +57,29 @@ export default function ModeBar({ modeId, currentView, onNavigate, onHome, badge
           <span style={{ fontSize: 9.5, color: GOLD, fontWeight: 700 }}>Home</span>
         </button>
 
-        {/* the mode's own sections — bar, not menu */}
+        {/* the mode's own sections — bar, not menu. A bar item is either a plain
+            view id (string) or an object {view, sub, label, glyph} that deep-links
+            into a screen's sub-tab (e.g. Prospect > Systems -> the lead-gen library). */}
         <div style={{ flex: 1, display: 'flex', justifyContent: 'space-around' }}>
-          {mode.bar.map((v) => {
+          {mode.bar.map((item) => {
+            const v = typeof item === 'string' ? item : item.view;
+            const sub = typeof item === 'string' ? null : (item.sub || null);
             const meta = VIEW_META[v] || { label: v, glyph: 'star' };
-            const active = v === currentView;
+            const label = (typeof item === 'object' && item.label) || meta.label;
+            const glyph = (typeof item === 'object' && item.glyph) || meta.glyph;
+            const key = sub ? `${v}:${sub}` : v;
+            // active when we're on this view AND (no sub required, or the sub matches)
+            const active = v === currentView && (!sub || sub === currentSub);
             const badge = badges[v];
             return (
-              <button key={v} onClick={() => onNavigate(v)}
+              <button key={key} onClick={() => onNavigate(v, sub)}
                 style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center',
                   justifyContent: 'center', gap: 3, padding: '9px 6px 8px', flex: 1, minWidth: 0,
                   background: 'none', border: 'none', cursor: 'pointer' }}>
-                <Icon name={meta.glyph} active={active} />
+                <Icon name={glyph} active={active} />
                 <span style={{ fontSize: 10, fontWeight: active ? 800 : 600,
                   color: active ? GOLD : 'rgba(246,241,231,0.6)', whiteSpace: 'nowrap' }}>
-                  {meta.label}
+                  {label}
                 </span>
                 {badge > 0 && (
                   <span style={{ position: 'absolute', top: 4, right: '50%', marginRight: -18,

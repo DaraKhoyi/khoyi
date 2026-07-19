@@ -39,7 +39,16 @@ export const MODES = [
     glyph: 'target',
     accent: '#C98A5E',
     home: 'prospecting',
-    bar: ['prospecting', 'systems', 'growth', 'recruiting'],
+    // The prospecting mindset lives almost entirely inside ProspectingView, which
+    // has its own sub-tabs. The bar deep-links into them so "Systems" opens the
+    // LEAD-GEN LIBRARY (browse + activate the 85 systems) — NOT the infrastructure
+    // health monitor, which is a different screen entirely.
+    bar: [
+      { view: 'prospecting', sub: 'today', label: 'Today', glyph: 'target' },
+      { view: 'prospecting', sub: 'library', label: 'Systems', glyph: 'gear' },
+      { view: 'growth', label: 'Growth', glyph: 'up' },
+      { view: 'recruiting', label: 'Recruit', glyph: 'people' },
+    ],
     views: ['prospecting', 'systems', 'growth', 'recruiting', 'playbooks'],
   },
   {
