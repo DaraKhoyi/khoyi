@@ -40,9 +40,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   // What the user sets on a card WHILE reviewing — a due date and a priority — so
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
-  const [edits, setEdits] = useState({});   // { [id]: { due, priority } }
-  const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B' };
-  const setEdit = (id, patch) => setEdits(e => ({ ...e, [id]: { ...(e[id] || { due: '', priority: 'B' }), ...patch } }));
+  const [edits, setEdits] = useState({});   // { [id]: { due, priority, title } }
+  const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B', title: c.title };
+  const setEdit = (id, patch) => setEdits(e => ({ ...e, [id]: { ...(e[id] || { due: '', priority: 'B', title: '' }), ...patch } }));
 
   async function load() {
     let q = supabase.from('commitments')
@@ -64,17 +64,18 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
 
   async function accept(c) {
     setBusy(c.id); setErr(null);
+    const e = editOf(c);
+    const title = (e.title || c.title || '').trim();
+    if (!title) { setErr('Give the task a title first.'); setBusy(null); return; }
     try {
       if (c.owner === 'me') {
-        // Same shape the app uses everywhere else — no bespoke task dialect.
-        const e = editOf(c);
         // A/B/C is the Eisenhower quadrant, NOT the priority column (which is
         // constrained to high/medium/low). Writing 'B' to priority would violate
         // a CHECK constraint. Map to both so the task sorts correctly.
         const pmap = { A: 'high', B: 'medium', C: 'low' };
         const { data: t, error } = await supabase.from('tasks').insert({
           user_id: userId,
-          title: c.title,
+          title,
           due_date: e.due || c.due_date || null,
           priority: pmap[e.priority] || 'medium',
           priority_system: 'eisenhower',
@@ -87,8 +88,13 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
         await supabase.from('commitments').update({ status: 'accepted', task_id: t.id, decided_at: new Date().toISOString() }).eq('id', c.id);
       } else {
         // Theirs: on the radar, not on the list. No task is created here — that
-        // is the entire point. It becomes work only if they miss the date.
-        await supabase.from('commitments').update({ status: 'accepted', decided_at: new Date().toISOString() }).eq('id', c.id);
+        // is the entire point. It becomes work only if they miss the date. But we
+        // keep your edited title and the date you expect it by, so the waiting-on
+        // card and the late-detection use your version.
+        await supabase.from('commitments').update({
+          status: 'accepted', title, due_date: e.due || c.due_date || null,
+          decided_at: new Date().toISOString(),
+        }).eq('id', c.id);
       }
       await load(); onChanged && onChanged();
     } catch (e) { setErr(String(e.message || e)); }
@@ -105,10 +111,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   // Record it as a COMPLETED task so the work counts, then close the commitment.
   async function doneAlready(c) {
     setBusy(c.id); setErr(null);
+    const title = (editOf(c).title || c.title || '').trim();
     try {
       const { data: t, error } = await supabase.from('tasks').insert({
         user_id: userId,
-        title: c.title,
+        title,
         notes: `From a call with ${c.contact_name} - already done when reviewed.`,
         contact_id: c.contact_id || null,
         completed: true,
@@ -119,6 +126,14 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
       await load(); onChanged && onChanged();
     } catch (e) { setErr(String(e.message || e)); }
     setBusy(null);
+  }
+
+  // Someone else's promise came through. It was never your task, so no completed
+  // task is recorded — we just close the tracking. "They delivered, stop watching."
+  async function resolveTheirs(c) {
+    setBusy(c.id);
+    await supabase.from('commitments').update({ status: 'done', decided_at: new Date().toISOString() }).eq('id', c.id);
+    await load(); onChanged && onChanged(); setBusy(null);
   }
 
   // The late ones: the only moment somebody else's promise becomes your problem.
@@ -148,7 +163,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   const onTime = waiting.filter(r => !late.includes(r));
   if (!proposed.length && !waiting.length) return null;
 
-  const Card = ({ c, children, tone }) => (
+  const Card = ({ c, children, tone, editable }) => (
     <div style={{ ...card, borderColor: tone === 'late' ? EMBER : 'var(--border)', marginBottom: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 5 }}>
         <span style={{ ...lab, color: c.owner === 'me' ? 'var(--accent-2)' : 'var(--text-3)' }}>
@@ -156,7 +171,16 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
         </span>
         {c.confidence === 'low' && <span style={{ fontSize: 9, color: EMBER, fontWeight: 700 }}>· unsure</span>}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.4 }}>{c.title}</div>
+      {editable ? (
+        // The title is yours to fix — the extraction is a draft, not gospel.
+        <input value={editOf(c).title}
+          onChange={ev => setEdit(c.id, { title: ev.target.value })}
+          style={{ width: '100%', boxSizing: 'border-box', fontSize: 14, fontWeight: 600,
+            color: 'var(--text-1)', lineHeight: 1.4, background: 'var(--bg-base)',
+            border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px' }} />
+      ) : (
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.4 }}>{c.title}</div>
+      )}
       {c.quote && (
         <div style={{ fontSize: 12, color: 'var(--text-2)', fontStyle: 'italic', margin: '6px 0 0',
           paddingLeft: 9, borderLeft: '2px solid var(--accent-dim)', lineHeight: 1.5 }}>
@@ -197,32 +221,35 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
             From your calls — {proposed.length} to review
           </div>
           {proposed.map(c => (
-            <Card key={c.id} c={c}>
-              {/* For a task you'll own, set WHEN and how urgent right here, so it
-                  lands scheduled instead of dateless. Theirs needs neither. */}
-              {c.owner === 'me' && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', marginBottom: 8, flexWrap: 'wrap' }}>
-                  <input type="date" value={editOf(c).due}
-                    onChange={ev => setEdit(c.id, { due: ev.target.value })}
-                    style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8,
-                      color: 'var(--text-1)', padding: '5px 8px', fontSize: 12 }} />
-                  <div style={{ display: 'flex', gap: 3 }}>
-                    {['A', 'B', 'C'].map(p => (
-                      <button key={p} onClick={() => setEdit(c.id, { priority: p })}
-                        style={{ width: 26, height: 26, borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                          border: '1px solid ' + (editOf(c).priority === p ? 'var(--accent-2)' : 'var(--border)'),
-                          background: editOf(c).priority === p ? 'var(--accent-2)' : 'transparent',
-                          color: editOf(c).priority === p ? '#1a1409' : 'var(--text-3)' }}>{p}</button>
-                    ))}
-                  </div>
+            <Card key={c.id} c={c} editable>
+              {/* Set WHEN and how urgent right here — for a task you'll own so it
+                  lands scheduled, and for one you're tracking so you know when to
+                  expect it and how much it matters. */}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', marginBottom: 8, flexWrap: 'wrap' }}>
+                <input type="date" value={editOf(c).due}
+                  onChange={ev => setEdit(c.id, { due: ev.target.value })}
+                  style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8,
+                    color: 'var(--text-1)', padding: '5px 8px', fontSize: 12 }} />
+                <div style={{ display: 'flex', gap: 3 }}>
+                  {['A', 'B', 'C'].map(p => (
+                    <button key={p} onClick={() => setEdit(c.id, { priority: p })}
+                      style={{ width: 26, height: 26, borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                        border: '1px solid ' + (editOf(c).priority === p ? 'var(--accent-2)' : 'var(--border)'),
+                        background: editOf(c).priority === p ? 'var(--accent-2)' : 'transparent',
+                        color: editOf(c).priority === p ? '#1a1409' : 'var(--text-3)' }}>{p}</button>
+                  ))}
                 </div>
-              )}
+              </div>
               <button disabled={busy === c.id} onClick={() => accept(c)} style={btn(true)}>
                 {c.owner === 'me' ? 'Make it a task' : 'Track it'}
               </button>
-              {c.owner === 'me' && (
-                <button disabled={busy === c.id} onClick={() => doneAlready(c)} style={btn(false)}>Done already</button>
-              )}
+              {/* Done: for yours it records a completed task so the work counts;
+                  for theirs it just closes the tracking — they delivered. */}
+              <button disabled={busy === c.id}
+                onClick={() => (c.owner === 'me' ? doneAlready(c) : resolveTheirs(c))}
+                style={btn(false)}>
+                {c.owner === 'me' ? 'Done already' : 'They delivered'}
+              </button>
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
             </Card>
           ))}
