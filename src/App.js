@@ -4,6 +4,9 @@ import { supabase, SUPABASE_URL } from './dataService';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
+import DashboardHub from './views/DashboardHub';
+import ModeBar from './views/ModeBar';
+import { MODES, VIEW_TO_MODE, modeById } from './modes';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
 import IdentifyRecording from './views/IdentifyRecording';
 // The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
@@ -16912,6 +16915,13 @@ function AppMain() {
   useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ try{ await supabase.rpc('claim_agent_profile'); }catch(_e){} const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
+  // ── mindset-mode navigation ──────────────────────────────────────────────
+  // The room the current screen lives in (derived), and the helpers the hub +
+  // bottom bar use. Entering a mode jumps to that room's home screen; Home
+  // returns to the hub (the dashboard).
+  const activeMode = view === 'dashboard' ? null : (VIEW_TO_MODE[view] || null);
+  const enterMode = (modeId) => { const m = modeById(modeId); if (m) setView(m.home); };
+  const goHome = () => setView('dashboard');
   React.useEffect(() => {
     try {
       const p = new URLSearchParams(window.location.search).get('dropbox');
@@ -17383,6 +17393,37 @@ function AppMain() {
   const isImpersonating = (() => { try { return !!localStorage.getItem('__impersonating'); } catch (_) { return false; } })();
   const openTaskCount = tasks.filter(t=>!t.completed).length;
 
+  // ── the hub's briefing data: hero + vital signs + per-mode state ──────────
+  // Built from counts already loaded here — no new queries. Each room learns
+  // whether it has anything urgent so the dashboard can float it up and light it.
+  const hubOweReply = Object.keys(oweReplyMap || {}).length;
+  const hubTodayStr = new Date().toISOString().slice(0, 10);
+  const hubDueToday = tasks.filter(t => !t.completed && t.due_date && t.due_date <= hubTodayStr).length;
+  const hubActiveDeals = (deals || []).filter(d => ['lead', 'active', 'pending'].includes(d.status)).length;
+  const hubClear = (reviewCount || 0) + (needsReviewCount || 0);
+  const hubHero = hubOweReply > 0
+    ? { title: `${hubOweReply} ${hubOweReply === 1 ? 'person is' : 'people are'} waiting on your reply`, why: 'A fast reply keeps deals and relationships warm.', cta: 'Reply now', go: () => setView('contacts') }
+    : hubDueToday > 0
+    ? { title: `${hubDueToday} ${hubDueToday === 1 ? 'task is' : 'tasks are'} due today`, why: 'Clear today’s list before it becomes tomorrow’s backlog.', cta: 'Plan my day', go: () => setView('briefing') }
+    : hubClear > 0
+    ? { title: `${hubClear} items from your calls to review`, why: 'Turn conversations into tasks before they’re forgotten.', cta: 'Review now', go: () => setView('review') }
+    : { title: 'You’re clear — go find your next deal', why: 'Nothing urgent. A great time to prospect.', cta: 'Start prospecting', go: () => setView('prospecting') };
+  const hubVitals = [
+    { id: 'owe', value: hubOweReply || '0', label: 'Owe a reply', lit: hubOweReply > 0, onClick: () => setView('contacts') },
+    { id: 'due', value: hubDueToday || '0', label: 'Due today', lit: hubDueToday > 0, onClick: () => setView('tasks') },
+    { id: 'clear', value: hubClear || '0', label: 'To clear', lit: hubClear > 0, onClick: () => setView('review') },
+    { id: 'deals', value: hubActiveDeals || '0', label: 'Deals in motion', good: hubActiveDeals > 0, onClick: () => setView('pipeline') },
+  ];
+  const hubModeState = {
+    plan: { urgent: hubDueToday > 0 || hubClear > 0, badge: hubDueToday + hubClear, hint: hubDueToday ? `${hubDueToday} due today` : null },
+    relationships: { urgent: hubOweReply > 0, badge: hubOweReply, hint: hubOweReply ? `${hubOweReply} owe a reply` : null },
+    prospect: {},
+    deals: { badge: hubActiveDeals, hint: hubActiveDeals ? `${hubActiveDeals} in motion` : null },
+    money: {},
+    brokerage: {},
+  };
+  const barBadges = { tasks: openTaskCount, review: reviewCount, inbox: unreadEmailCount, email_review: needsReviewCount, contacts: hubOweReply };
+
   const NAV_ALL = [
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'review',      icon: '📥', label: 'Review',      badge: reviewCount || null },
@@ -17596,7 +17637,7 @@ function AppMain() {
       <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
+        <div className="mobile-header-logo" onClick={goHome} style={{cursor:"pointer"}} role="button" aria-label="Home"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu">
           {sidebarOpen ? '✕' : '☰'}
         </button>
@@ -17628,7 +17669,7 @@ function AppMain() {
         </nav>
 
         {/* Main */}
-        <main className="main-content ww-prism" ref={mainScrollRef} onTouchStart={onMainTouchStart} onTouchMove={onMainTouchMove} onTouchEnd={onMainTouchEnd}>
+        <main className="main-content ww-prism" ref={mainScrollRef} onTouchStart={onMainTouchStart} onTouchMove={onMainTouchMove} onTouchEnd={onMainTouchEnd} style={activeMode ? { paddingBottom: 76 } : undefined}>
           <style>{`.main-content.ww-prism{background:radial-gradient(120% 20% at 50% -2%, rgba(203,163,92,.09), transparent 55%), #100D09;} .ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .form-input,.ww-prism .form-select,.ww-prism .form-textarea{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;} .ww-prism .seg-btn.active{background:linear-gradient(180deg,#EBCB82,#CBA35C)!important;color:#1a1409!important;}`}</style>
           {(ptrPull > 0 || ptrBusy) && (
             <div className="ptr-indicator" style={{ height: ptrBusy ? 40 : ptrPull, opacity: ptrBusy ? 1 : Math.min(ptrPull / PTR_THRESHOLD, 1) }}>
@@ -17646,7 +17687,15 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} reviewCount={reviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
+                {view==='dashboard'   ? <DashboardHub
+                    agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]}
+                    hour={new Date().getHours()}
+                    isAdmin={isAdmin || isTeamLeader}
+                    hero={hubHero} onHero={hubHero.go}
+                    vitals={hubVitals}
+                    modeState={hubModeState}
+                    onEnterMode={enterMode} />
+                : view==='classic_dashboard' ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} reviewCount={reviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
                 : view==='production' ? <ProductionBoard year={2026} />
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
               : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>
@@ -17703,6 +17752,12 @@ function AppMain() {
           }
         </main>
       </div>
+      {/* The scoped bottom bar — only appears inside a mindset room, showing just
+          that room's 3-5 sections plus a Home button back to the hub. */}
+      {activeMode && dataLoaded && (
+        <ModeBar modeId={activeMode} currentView={view}
+          onNavigate={setView} onHome={goHome} badges={barBadges} />
+      )}
       <ToastHost />
       <ConfirmHost />
       {planOpen && dataLoaded && user && (
