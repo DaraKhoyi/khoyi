@@ -41,8 +41,14 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
   const [edits, setEdits] = useState({});   // { [id]: { due, priority, title } }
-  const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B', title: c.title };
-  const setEdit = (id, patch) => setEdits(e => ({ ...e, [id]: { ...(e[id] || { due: '', priority: 'B', title: '' }), ...patch } }));
+  const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B', title: c.title || '' };
+  // Seed from the COMMITMENT on first touch — not from empty strings — so setting
+  // a date never wipes the title (and vice versa). Takes the whole commitment so
+  // the seed has the real values. Functional update reads the latest edits map.
+  const setEdit = (c, patch) => setEdits(e => {
+    const cur = e[c.id] || { due: c.due_date || '', priority: 'B', title: c.title || '' };
+    return { ...e, [c.id]: { ...cur, ...patch } };
+  });
 
   async function load() {
     let q = supabase.from('commitments')
@@ -163,8 +169,14 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   const onTime = waiting.filter(r => !late.includes(r));
   if (!proposed.length && !waiting.length) return null;
 
-  const Card = ({ c, children, tone, editable }) => (
-    <div style={{ ...card, borderColor: tone === 'late' ? EMBER : 'var(--border)', marginBottom: 8 }}>
+  // IMPORTANT: this is a plain function, NOT a nested <Card/> component. A nested
+  // component defined inside the render gets a new function identity every render,
+  // so React remounts its whole subtree on each keystroke — which destroys the
+  // <input> DOM node and drops focus/keyboard after one character. Calling a
+  // function that returns JSX splices it into the parent at a stable position, so
+  // the input keeps its identity and focus survives typing. Key goes on the root.
+  const renderCard = (c, { children, tone, editable }) => (
+    <div key={c.id} style={{ ...card, borderColor: tone === 'late' ? EMBER : 'var(--border)', marginBottom: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 5 }}>
         <span style={{ ...lab, color: c.owner === 'me' ? 'var(--accent-2)' : 'var(--text-3)' }}>
           {c.owner === 'me' ? 'You said you would' : `${c.contact_name} said they would`}
@@ -174,7 +186,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
       {editable ? (
         // The title is yours to fix — the extraction is a draft, not gospel.
         <input value={editOf(c).title}
-          onChange={ev => setEdit(c.id, { title: ev.target.value })}
+          onChange={ev => setEdit(c, { title: ev.target.value })}
           style={{ width: '100%', boxSizing: 'border-box', fontSize: 14, fontWeight: 600,
             color: 'var(--text-1)', lineHeight: 1.4, background: 'var(--bg-base)',
             border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px' }} />
@@ -206,12 +218,12 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
       {late.length > 0 && (
         <>
           <div style={{ ...lab, color: EMBER, marginBottom: 7 }}>They’re late — {late.length}</div>
-          {late.map(c => (
-            <Card key={c.id} c={c} tone="late">
+          {late.map(c => renderCard(c, { tone: 'late', children: (
+            <>
               <button disabled={busy === c.id} onClick={() => chase(c)} style={btn(true)}>Chase them</button>
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Let it go</button>
-            </Card>
-          ))}
+            </>
+          ) }))}
         </>
       )}
 
@@ -220,19 +232,19 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
           <div style={{ ...lab, marginBottom: 7, marginTop: late.length ? 14 : 0 }}>
             From your calls — {proposed.length} to review
           </div>
-          {proposed.map(c => (
-            <Card key={c.id} c={c} editable>
+          {proposed.map(c => renderCard(c, { editable: true, children: (
+            <>
               {/* Set WHEN and how urgent right here — for a task you'll own so it
                   lands scheduled, and for one you're tracking so you know when to
                   expect it and how much it matters. */}
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', marginBottom: 8, flexWrap: 'wrap' }}>
                 <input type="date" value={editOf(c).due}
-                  onChange={ev => setEdit(c.id, { due: ev.target.value })}
+                  onChange={ev => setEdit(c, { due: ev.target.value })}
                   style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8,
                     color: 'var(--text-1)', padding: '5px 8px', fontSize: 12 }} />
                 <div style={{ display: 'flex', gap: 3 }}>
                   {['A', 'B', 'C'].map(p => (
-                    <button key={p} onClick={() => setEdit(c.id, { priority: p })}
+                    <button key={p} onClick={() => setEdit(c, { priority: p })}
                       style={{ width: 26, height: 26, borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: 'pointer',
                         border: '1px solid ' + (editOf(c).priority === p ? 'var(--accent-2)' : 'var(--border)'),
                         background: editOf(c).priority === p ? 'var(--accent-2)' : 'transparent',
@@ -251,8 +263,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
                 {c.owner === 'me' ? 'Done already' : 'They delivered'}
               </button>
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
-            </Card>
-          ))}
+            </>
+          ) }))}
         </>
       )}
 
