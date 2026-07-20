@@ -1048,7 +1048,11 @@ export function GrowthView({ userId, setView }) {
   const [tab, setTab] = useState('results');
   return (
     <>
-      <div style={{ padding: '12px 16px 0' }}>
+      <div style={{ padding: '18px 16px 4px' }}>
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 600, color: 'var(--accent)', marginBottom: '2px' }}>Plan</div>
+        <h2 style={{ margin: '0 0 2px', fontFamily: "'Fraunces',Georgia,serif", fontWeight: 400 }}>Set up your day.</h2>
+      </div>
+      <div style={{ padding: '8px 16px 0' }}>
         <div className="seg-track">
           <button className={`seg-btn ${tab === 'results' ? 'active' : ''}`} onClick={() => setTab('results')}>Results</button>
           <button className={`seg-btn ${tab === 'goal' ? 'active' : ''}`} onClick={() => setTab('goal')}>Goal</button>

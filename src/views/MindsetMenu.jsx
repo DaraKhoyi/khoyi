@@ -59,12 +59,25 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
           backdropFilter: 'blur(3px)', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none',
           transition: 'opacity .22s ease' }} />
       {/* panel */}
-      <nav aria-label="Menu"
+      <nav aria-label="Menu" className="mm-panel"
         style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 'min(86vw, 340px)', zIndex: 9001,
-          background: 'radial-gradient(90% 40% at 20% 0%, rgba(203,163,92,0.08), transparent 60%), #100D09',
+          background: `
+            radial-gradient(ellipse 70% 34% at 78% 6%, rgba(203,163,92,0.13), transparent 62%),
+            radial-gradient(ellipse 60% 40% at 15% 92%, rgba(203,163,92,0.07), transparent 60%),
+            radial-gradient(90% 40% at 20% 0%, rgba(203,163,92,0.05), transparent 60%),
+            #100D09`,
           borderRight: '1px solid rgba(203,163,92,0.22)', boxShadow: '18px 0 50px rgba(0,0,0,0.5)',
           transform: open ? 'translateX(0)' : 'translateX(-102%)', transition: 'transform .26s cubic-bezier(.4,0,.2,1)',
-          display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+          display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
+        {/* a soft breathing gold glow overlay — the "lit from within" feel the
+            dashboard has, gently pulsing so the menu feels alive when it opens */}
+        <style>{`
+          @keyframes mm-breathe { 0%,100%{ opacity:.5; transform:translate(0,0) scale(1); } 50%{ opacity:.9; transform:translate(6px,-4px) scale(1.06); } }
+        `}</style>
+        <div aria-hidden="true" style={{ position: 'absolute', top: -60, right: -40, width: 240, height: 240,
+          borderRadius: '50%', pointerEvents: 'none', filter: 'blur(8px)',
+          background: 'radial-gradient(circle, rgba(235,203,130,0.16), transparent 68%)',
+          animation: 'mm-breathe 7s ease-in-out infinite' }} />
         {/* header — tuning fork vibrating from its stationary bottom tip, and a
             right-justified greeting: "Where to," (off-white) then the name
             (gold sweep), then the tagline. Wraps to two lines for long names. */}
@@ -80,7 +93,7 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
             -webkit-text-fill-color:transparent; animation: mm-sweep 6s linear infinite; }
         `}</style>
         <div style={{ padding: '20px 18px 15px', borderBottom: '1px solid rgba(203,163,92,0.14)',
-          display: 'flex', alignItems: 'center', gap: 12 }}>
+          display: 'flex', alignItems: 'center', gap: 12, position: 'relative', zIndex: 1 }}>
           {/* tuning fork — the bottom tip stays locked; the top swings */}
           <svg className="mm-fork" width="39" height="44" viewBox="0 0 40 40" fill="none" style={{ flex: 'none', marginTop: -6 }} aria-hidden="true">
             <g className="mm-swing">
@@ -102,7 +115,7 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
             </span>
           </div>
         </div>
-        <div style={{ padding: '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ padding: '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 1 }}>
           <Row glyph="home" accent={G.champ} label="Dashboard" tag="Your briefing"
             active={currentView === 'dashboard'} onClick={() => { onHome(); onClose(); }} />
           <div style={{ height: 1, background: 'rgba(203,163,92,0.12)', margin: '6px 12px' }} />
