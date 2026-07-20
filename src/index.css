@@ -1472,3 +1472,97 @@ input[type="radio"], input[type="range"], select, progress {
   .ww-prism .btn-primary:hover { transform: none; }
   .ww-prism .gold-sweep { animation: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRISM CALM LAYER  (v1.04.11)
+   The v1.04.03 layer added warmth + glow. This one addresses what still made the
+   busy interior pages feel busy next to the Dashboard: harsh borders, cramped
+   spacing, and flat hierarchy. Same tokens, scoped to .ww-prism — brings every
+   dense screen (Tasks, Finance, Pipeline, Contacts…) toward the editorial calm.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* A — BREATHING ROOM. The single biggest difference between the calm Dashboard
+       and a busy page is air. Give the page header room, and separate stacked
+       sections so they don't crowd. */
+.ww-prism .main-content,
+.main-content.ww-prism { padding-top: 26px; }
+.ww-prism .page-header,
+.ww-prism .page-header-row,
+.ww-prism .view-header { margin-bottom: 22px; }
+/* space between consecutive cards/sections so they read as distinct, calm blocks */
+.ww-prism .card + .card,
+.ww-prism .stat-card + .stat-card,
+.ww-prism .section + .section { margin-top: 14px; }
+
+/* B — SOFTER BORDERS. Full-strength hairlines on every box create visual noise.
+       The theme's --border is declared inline on each .ww-prism element (which
+       beats a stylesheet token override), so soften the borders on the card
+       rules directly instead — a whisper, letting the warm surface + shadow do
+       the separating. */
+.ww-prism .card,
+.ww-prism .dash-card,
+.ww-prism .stat-card,
+.ww-prism .nba-card,
+.ww-prism .mv-card,
+.ww-prism .fsa-card {
+  border-color: rgba(203,163,92,.14) !important;
+  border-radius: 16px;
+}
+
+/* C — CALMER SECTION HEADERS. Section titles get the editorial serif so each
+       block has a clear, quiet start. Kept to h2 + explicit title classes (not
+       h3, which is often a small label where serif would look out of place). */
+.ww-prism h2,
+.ww-prism .section-title,
+.ww-prism .card-title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -.005em;
+  margin-bottom: 10px;
+}
+
+/* D — GENTLER INPUTS & PILLS. Form fields and filter pills are everywhere on the
+       busy pages; softening them removes a lot of the "control panel" feeling. */
+.ww-prism .form-input,
+.ww-prism .form-textarea,
+.ww-prism input[type="text"],
+.ww-prism input[type="search"],
+.ww-prism select,
+.ww-prism textarea {
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(203,163,92,.16);
+  border-radius: 12px;
+  transition: border-color .15s, background .15s;
+}
+.ww-prism .form-input:focus,
+.ww-prism .form-textarea:focus,
+.ww-prism input:focus,
+.ww-prism select:focus,
+.ww-prism textarea:focus {
+  border-color: rgba(203,163,92,.5);
+  background: rgba(255,255,255,.05);
+  outline: none;
+}
+.ww-prism .pill,
+.ww-prism .chip,
+.ww-prism .filter-pill,
+.ww-prism .tab {
+  border-radius: 100px;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+/* E — QUIETER DIVIDERS. Internal <hr>/dividers on dense pages default to a hard
+       line; make them a soft gold hairline that fades at the ends. */
+.ww-prism hr,
+.ww-prism .divider {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(203,163,92,.18), transparent);
+  margin: 16px 0;
+}
+
+/* F — TABLES read calmer: no heavy row borders, just a whisper, with warm hover. */
+.ww-prism table td,
+.ww-prism table th { border-color: rgba(203,163,92,.10); }
+.ww-prism table tbody tr:hover,
+.ww-prism table tr:hover { background: rgba(203,163,92,.04); }
