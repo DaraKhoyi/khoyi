@@ -72,7 +72,7 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
           @keyframes mm-fork-swing { 0%,100%{ transform:rotate(-2.4deg); } 50%{ transform:rotate(2.4deg); } }
           @keyframes mm-fork-wave  { 0%,100%{ opacity:.25; } 50%{ opacity:1; } }
           @keyframes mm-sweep      { to { background-position:200% center; } }
-          .mm-swing     { animation: mm-fork-swing 0.40s ease-in-out infinite; transform-origin:20px 39px; transform-box:fill-box; }
+          .mm-swing     { animation: mm-fork-swing 1.0s ease-in-out infinite; transform-origin:20px 39px; transform-box:fill-box; }
           .mm-fork .w2  { animation: mm-fork-wave 0.9s ease-in-out infinite; }
           .mm-fork .w1  { animation: mm-fork-wave 0.9s ease-in-out infinite .15s; }
           .mm-name-sweep{ background:linear-gradient(90deg,#7A5020,#CBA35C,#F5E8B0,#CBA35C,#7A5020);
