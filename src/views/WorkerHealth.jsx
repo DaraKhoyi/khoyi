@@ -14,7 +14,7 @@ import { supabase } from '../dataService';
 //
 // This is the panel that would have caught it on day one.
 
-const OK = '#22c55e', WARN = '#f59e0b', BAD = '#C9563F';
+const OK = '#22c55e', WARN = '#f59e0b', BAD = '#C9563F', UNKNOWN = '#8C8475';
 
 const rel = (ts) => {
   if (!ts) return 'never';
@@ -72,18 +72,19 @@ export default function WorkerHealth() {
       )}
 
       {shown.map(r => {
-        const c = r.verdict === 'broken' ? BAD : r.verdict === 'degraded' ? WARN : OK;
+        const c = r.verdict === 'broken' ? BAD : r.verdict === 'degraded' ? WARN : r.verdict === 'unknown' ? UNKNOWN : OK;
         return (
-          <div key={r.job_name} style={{ background: 'var(--bg-card)', border: `1px solid ${r.verdict === 'ok' ? 'var(--border)' : c + '66'}`,
+          <div key={r.job_name} style={{ background: 'var(--bg-card)', border: `1px solid ${r.verdict === 'ok' || r.verdict === 'unknown' ? 'var(--border)' : c + '66'}`,
             borderRadius: 10, padding: '10px 12px', marginBottom: 6, display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ width: 7, height: 7, borderRadius: 99, background: c, flex: 'none' }} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)' }}>{r.job_name}</div>
               <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1 }}>
                 {r.schedule} · ran {r.runs_24h}× · last {rel(r.last_run)}
-                {r.failures_24h > 0 && <span style={{ color: c, fontWeight: 700 }}> · {r.failures_24h} failed ({r.fail_pct}%)</span>}
+                {r.verdict !== 'ok' && r.verdict !== 'unknown' && r.failures_24h > 0 &&
+                  <span style={{ color: c, fontWeight: 700 }}> · {r.failures_24h} failed ({r.fail_pct}%)</span>}
               </div>
-              {r.verdict !== 'ok' && (
+              {(r.verdict === 'broken' || r.verdict === 'degraded') && (
                 <div style={{ fontSize: 11, color: c, marginTop: 3 }}>{r.detail}</div>
               )}
             </div>
