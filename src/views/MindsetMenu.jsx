@@ -65,14 +65,14 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
           borderRight: '1px solid rgba(203,163,92,0.22)', boxShadow: '18px 0 50px rgba(0,0,0,0.5)',
           transform: open ? 'translateX(0)' : 'translateX(-102%)', transition: 'transform .26s cubic-bezier(.4,0,.2,1)',
           display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-        {/* header — vibrating tuning fork on the left, everything else
-            right-justified: "Where to," (small) then the name (larger, gold
-            sweep). Wraps to two lines when the name is too long to fit. */}
+        {/* header — tuning fork vibrating from its stationary bottom tip, and a
+            right-justified greeting: "Where to," (off-white) then the name
+            (gold sweep), then the tagline. Wraps to two lines for long names. */}
         <style>{`
-          @keyframes mm-fork-shake { 0%,100%{ transform:rotate(0); } 25%{ transform:rotate(-2.2deg); } 75%{ transform:rotate(2.2deg); } }
+          @keyframes mm-fork-swing { 0%,100%{ transform:rotate(-2.4deg); } 50%{ transform:rotate(2.4deg); } }
           @keyframes mm-fork-wave  { 0%,100%{ opacity:.25; } 50%{ opacity:1; } }
           @keyframes mm-sweep      { to { background-position:200% center; } }
-          .mm-fork      { animation: mm-fork-shake 0.28s ease-in-out infinite; transform-origin:50% 20%; }
+          .mm-swing     { animation: mm-fork-swing 0.12s ease-in-out infinite; transform-origin:20px 39px; transform-box:fill-box; }
           .mm-fork .w2  { animation: mm-fork-wave 0.9s ease-in-out infinite; }
           .mm-fork .w1  { animation: mm-fork-wave 0.9s ease-in-out infinite .15s; }
           .mm-name-sweep{ background:linear-gradient(90deg,#7A5020,#CBA35C,#F5E8B0,#CBA35C,#7A5020);
@@ -81,20 +81,25 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
         `}</style>
         <div style={{ padding: '20px 18px 15px', borderBottom: '1px solid rgba(203,163,92,0.14)',
           display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* vibrating tuning fork */}
+          {/* tuning fork — the bottom tip stays locked; the top swings */}
           <svg className="mm-fork" width="30" height="34" viewBox="0 0 40 40" fill="none" style={{ flex: 'none' }} aria-hidden="true">
-            <g className="w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g>
-            <g className="w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g>
-            <g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g>
-            <circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/>
+            <g className="mm-swing">
+              <g className="w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g>
+              <g className="w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g>
+              <g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g>
+              <circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/>
+            </g>
           </svg>
           {/* right-justified greeting; wraps to two lines if the name is long */}
-          <div style={{ flex: 1, minWidth: 0, textAlign: 'right', lineHeight: 1.12 }}>
+          <div style={{ flex: 1, minWidth: 0, textAlign: 'right', lineHeight: 1.14 }}>
             <span style={{ fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase',
-              letterSpacing: '.16em', fontSize: 11, fontWeight: 600, color: G.gold }}>Where to,</span>
+              letterSpacing: '.16em', fontSize: 11, fontWeight: 600, color: '#F3EEE4' }}>Where to,</span>
             {' '}
             <span className="mm-name-sweep" style={{ fontFamily: 'Fraunces, Georgia, serif',
               fontSize: 23, fontWeight: 400, letterSpacing: '-.01em' }}>{userName || 'there'}</span>
+            <span style={{ display: 'block', marginTop: 6, fontSize: 12, color: '#F3EEE4', opacity: 0.72 }}>
+              Pick the headspace you're in.
+            </span>
           </div>
         </div>
         <div style={{ padding: '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: 2 }}>
