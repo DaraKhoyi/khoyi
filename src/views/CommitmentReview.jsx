@@ -37,6 +37,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
+  const [editingId, setEditingId] = useState(null);
   // What the user sets on a card WHILE reviewing — a due date and a priority — so
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
@@ -110,6 +111,26 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   async function dismiss(c) {
     setBusy(c.id);
     await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', c.id);
+    await load(); onChanged && onChanged(); setBusy(null);
+  }
+
+  // Reword a commitment in place. Save the edited title back to the row.
+  async function saveTitle(c, newTitle) {
+    const t = (newTitle || '').trim();
+    setEditingId(null);
+    if (!t || t === c.title) return;            // nothing changed
+    setBusy(c.id);
+    const { error } = await supabase.from('commitments').update({ title: t }).eq('id', c.id);
+    if (error) { setErr(String(error.message || error)); }
+    await load(); onChanged && onChanged(); setBusy(null);
+  }
+
+  // Delete a commitment outright (a bad/wrong item you don't want tracked at all).
+  async function removeCommitment(c) {
+    if (!window.confirm(`Delete this item?\n\n"${c.title}"\n\nThis removes it from your list entirely.`)) return;
+    setBusy(c.id);
+    const { error } = await supabase.from('commitments').delete().eq('id', c.id);
+    if (error) { setErr(String(error.message || error)); setBusy(null); return; }
     await load(); onChanged && onChanged(); setBusy(null);
   }
 
@@ -191,7 +212,17 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
             color: 'var(--text-1)', lineHeight: 1.4, background: 'var(--bg-base)',
             border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px' }} />
       ) : (
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.4 }}>{c.title}</div>
+        editingId === c.id ? (
+          <input autoFocus defaultValue={c.title}
+            onBlur={ev => saveTitle(c, ev.target.value)}
+            onKeyDown={ev => { if (ev.key === 'Enter') { ev.preventDefault(); saveTitle(c, ev.target.value); } if (ev.key === 'Escape') setEditingId(null); }}
+            style={{ width: '100%', boxSizing: 'border-box', fontSize: 14, fontWeight: 600,
+              color: 'var(--text-1)', lineHeight: 1.4, background: 'var(--bg-base)',
+              border: '1px solid var(--accent-2)', borderRadius: 8, padding: '7px 9px' }} />
+        ) : (
+          <div onClick={() => setEditingId(c.id)} title="Tap to reword"
+            style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.4, cursor: 'text' }}>{c.title}</div>
+        )
       )}
       {c.quote && (
         <div style={{ fontSize: 12, color: 'var(--text-2)', fontStyle: 'italic', margin: '6px 0 0',
@@ -206,6 +237,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
           </span>
         )}
         <div style={{ flex: 1 }} />
+        {!editable && (
+          <button disabled={busy === c.id} onClick={() => removeCommitment(c)} title="Delete this item" aria-label="Delete"
+            style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '2px 4px' }}>×</button>
+        )}
         {children}
       </div>
     </div>
@@ -276,11 +311,23 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
           {onTime.map(c => (
             <div key={c.id} style={{ ...card, padding: '10px 12px', marginBottom: 6, display: 'flex', gap: 10, alignItems: 'center' }}>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 12.5, color: 'var(--text-1)' }}>
-                  <b style={{ color: 'var(--accent-2)' }}>{c.contact_name}</b> — {c.title}
-                </div>
+                {editingId === c.id ? (
+                  <input autoFocus defaultValue={c.title}
+                    onBlur={ev => saveTitle(c, ev.target.value)}
+                    onKeyDown={ev => { if (ev.key === 'Enter') { ev.preventDefault(); saveTitle(c, ev.target.value); } if (ev.key === 'Escape') setEditingId(null); }}
+                    style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--accent-2)', borderRadius: 7,
+                      color: 'var(--text-1)', padding: '5px 8px', fontSize: 12.5 }} />
+                ) : (
+                  <div onClick={() => setEditingId(c.id)} title="Tap to reword"
+                    style={{ fontSize: 12.5, color: 'var(--text-1)', cursor: 'text' }}>
+                    <b style={{ color: 'var(--accent-2)' }}>{c.contact_name}</b> — {c.title}
+                  </div>
+                )}
                 {c.due_date && <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 2 }}>by {fmtDate(c.due_date)}</div>}
               </div>
+              <button disabled={busy === c.id} onClick={() => removeCommitment(c)} title="Delete this item"
+                aria-label="Delete"
+                style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '2px 4px', flex: 'none' }}>×</button>
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={{ ...btn(false), padding: '5px 10px', fontSize: 11 }}>Done</button>
             </div>
           ))}
