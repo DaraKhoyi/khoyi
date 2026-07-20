@@ -267,10 +267,21 @@ serve(async (req) => {
         const disc2 = data.disc || {};
         const cleanReport = fullReport.replace(/```json\s*[\s\S]*?```/g, "").trim();
         const shortSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
+        // ── IDENTITY GUARD ──────────────────────────────────────────────────
+        // A "locked" identity from contact-identify only means an email/phone was
+        // PRESENT — not that the found public profile truly belongs to this
+        // person. If the research itself is only medium/low confident it found the
+        // right individual, we must NOT present the write-up as settled. Flag it
+        // for human confirmation and keep the DISC scores OUT of the trusted
+        // fields until confirmed, so a wrong-person match can never silently
+        // pollute the profile the way it did before.
+        const idConf = (data.identity_confidence || "").toLowerCase();
+        const needsConfirmation = idConf === "medium" || idConf === "low" || idConf === "";
         await writeProfile({
           user_id: contact.user_id, subject_kind: "contact",
           research_headline: data.headline ?? null,
           research_identity_confidence: data.identity_confidence ?? null,
+          research_needs_confirmation: needsConfirmation,
           research_profile: { background_education: data.background_education ?? null, career: data.career ?? null, expertise: data.expertise ?? [], community_media: data.community_media ?? [], interests_values: data.interests_values ?? [], causes: data.causes ?? [] },
           research_personal: data.personal ?? null,
           research_connection_plan: data.connection_plan ?? null,
@@ -285,12 +296,13 @@ serve(async (req) => {
           research_scope: scope, research_matched_by: matched_by || "manual",
           research_status: "done", research_error: null,
         });
-        // Fold the fresh research into the behavioral evidence graph: re-run the
-        // observed analysis now that a research_read exists for this contact.
-        // Fire-and-forget — a re-analysis hiccup must never fail the research.
-        try {
-          await supabase.functions.invoke("disc-analyze", { body: { contact_id, user_id: contact.user_id, force: true } });
-        } catch (_) { /* non-fatal */ }
+        // Only fold research into the behavioral DISC graph when we're confident
+        // it's the right person. A medium/low match must not seed the analysis.
+        if (!needsConfirmation) {
+          try {
+            await supabase.functions.invoke("disc-analyze", { body: { contact_id, user_id: contact.user_id, force: true } });
+          } catch (_) { /* non-fatal */ }
+        }
       } catch (e) {
         const msg = (e && e.name === "AbortError")
           ? "The research took longer than expected. Try again, or set the scope to Business-only or Personal-only."

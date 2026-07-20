@@ -7892,7 +7892,7 @@ function RIChips({ items, tone }) {
   if (!arr.length) return null;
   return <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{arr.map((x, i) => <RIChip key={i} tone={tone}>{typeof x === 'string' ? x : (x.detail || '')}</RIChip>)}</div>;
 }
-function RelationshipIntel({ profile }) {
+function RelationshipIntel({ profile, onPurge }) {
   if (!profile || !profile.research_taken_at) return null;
   const p = profile.research_profile || {};
   const per = profile.research_personal || {};
@@ -7912,6 +7912,22 @@ function RelationshipIntel({ profile }) {
         </div>
         {profile.research_headline && <div style={{ fontSize: '14px', color: 'var(--text-1)', marginTop: '8px', lineHeight: 1.4, fontWeight: 500 }}>{profile.research_headline}</div>}
         {idc === 'low' && <div style={{ fontSize: '11px', color: 'var(--yellow)', marginTop: '6px' }}>⚠ Identity match is uncertain — verify before relying on these details.</div>}
+        {profile.research_needs_confirmation && (
+          <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--yellow)', marginBottom: '3px' }}>⚠ Confirm this is the right person</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+              The web match was only <b>{idc || 'medium'}</b> confidence, so this write-up hasn't been folded into the DISC read. If it's the wrong person, purge it below and re-run once you have a stronger identifier.
+            </div>
+          </div>
+        )}
+        {onPurge && (
+          <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => onPurge(profile.contact_id)} title="Remove this research and DISC write-up from the profile (reversible)"
+              style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: '11px', borderRadius: '8px', padding: '4px 10px', cursor: 'pointer' }}>
+              Purge this research
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '4px 16px 16px' }}>
@@ -9095,7 +9111,18 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             )}
           </div>
 
-          <RelationshipIntel profile={profile} />
+          <RelationshipIntel profile={profile} onPurge={async (cid) => {
+            if (!window.confirm('Purge the research and DISC write-up from this profile?\n\nThis clears the web-research findings and the research-based DISC read (in case it matched the wrong person). It is reversible from the backup, and does not delete the contact. Re-run research once you have a stronger identifier.')) return;
+            try {
+              const { data, error } = await supabase.rpc('purge_contact_research', { p_contact_id: cid, p_reason: 'purged from contact profile' });
+              if (error || !data?.ok) { setAnalyzeMsg && setAnalyzeMsg({ type: 'error', text: 'Purge failed: ' + (error?.message || data?.error || 'unknown') }); return; }
+              const { data: fresh } = await supabase.from('profiles').select('*').eq('contact_id', cid).maybeSingle();
+              if (fresh) onProfileUpdate(fresh);
+              setAnalyzeMsg && setAnalyzeMsg({ type: 'ok', text: 'Research purged. This is reversible from the backup if needed.' });
+            } catch (e) {
+              setAnalyzeMsg && setAnalyzeMsg({ type: 'error', text: 'Purge failed: ' + (e.message || e) });
+            }
+          }} />
 
           {/* Baseline entry */}
           <div style={{marginBottom:'14px'}}>
