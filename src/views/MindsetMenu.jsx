@@ -72,7 +72,7 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
           @keyframes mm-fork-swing { 0%,100%{ transform:rotate(-2.4deg); } 50%{ transform:rotate(2.4deg); } }
           @keyframes mm-fork-wave  { 0%,100%{ opacity:.25; } 50%{ opacity:1; } }
           @keyframes mm-sweep      { to { background-position:200% center; } }
-          .mm-swing     { animation: mm-fork-swing 0.12s ease-in-out infinite; transform-origin:20px 39px; transform-box:fill-box; }
+          .mm-swing     { animation: mm-fork-swing 0.40s ease-in-out infinite; transform-origin:20px 39px; transform-box:fill-box; }
           .mm-fork .w2  { animation: mm-fork-wave 0.9s ease-in-out infinite; }
           .mm-fork .w1  { animation: mm-fork-wave 0.9s ease-in-out infinite .15s; }
           .mm-name-sweep{ background:linear-gradient(90deg,#7A5020,#CBA35C,#F5E8B0,#CBA35C,#7A5020);
@@ -82,7 +82,7 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
         <div style={{ padding: '20px 18px 15px', borderBottom: '1px solid rgba(203,163,92,0.14)',
           display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* tuning fork — the bottom tip stays locked; the top swings */}
-          <svg className="mm-fork" width="30" height="34" viewBox="0 0 40 40" fill="none" style={{ flex: 'none' }} aria-hidden="true">
+          <svg className="mm-fork" width="39" height="44" viewBox="0 0 40 40" fill="none" style={{ flex: 'none', marginTop: -6 }} aria-hidden="true">
             <g className="mm-swing">
               <g className="w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g>
               <g className="w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g>
