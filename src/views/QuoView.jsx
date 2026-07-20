@@ -195,12 +195,13 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
         const list = (res?.data || []).map(n => ({ id: n.id, number: n.number || n.phoneNumber, name: n.name }));
         setNumbers(list);
         const { data: st } = await supabase.from('quo_settings').select('*').eq('user_id', userId).maybeSingle();
-        const chosen = (st?.active_phone_number_id && list.some(n => n.id === st.active_phone_number_id)) ? st.active_phone_number_id : (list[0]?.id || '');
+        // Only use a number the agent has EXPLICITLY saved. Do NOT auto-default
+        // to list[0] — the Quo workspace is shared under one API key, so list[0]
+        // is whoever's number comes back first (e.g. the broker's), and
+        // auto-saving it silently assigns the wrong person's line to this agent.
+        // Leave it unset until they pick one in the dropdown (changeNumber).
+        const chosen = (st?.active_phone_number_id && list.some(n => n.id === st.active_phone_number_id)) ? st.active_phone_number_id : '';
         setFromId(chosen);
-        if (!st?.active_phone_number_id && chosen) {
-          const n = list.find(x => x.id === chosen);
-          await supabase.from('quo_settings').upsert({ user_id: userId, active_phone_number_id: chosen, active_number: n?.number, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-        }
         // first-run: register webhooks + backfill
         if (!st?.webhooks_registered) {
           setSyncing(true);

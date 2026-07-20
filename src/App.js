@@ -6690,8 +6690,7 @@ function QuoTextModal({ contact, userId, defaultText = '', phone, onClose, onSen
       let from = null;
       const { data: st } = await supabase.from('quo_settings').select('active_number').eq('user_id', userId).maybeSingle();
       from = st?.active_number || null;
-      if (!from) { const pn = await quoCall('/v1/phone-numbers'); from = (pn?.data || [])[0]?.number || null; }
-      if (!from) throw new Error('No Quo number is set up yet — open the Text & Phone screen once.');
+      if (!from) throw new Error('No Quo number is selected for your account yet. Open the Text & Phone screen and pick YOUR number before sending.');
       await quoCall('/v1/messages', { method: 'POST', body: { content: msg, from, to: [to] } });
       if (contact?.id) {
         try {
@@ -6923,8 +6922,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
       let from = null;
       const { data: st } = await supabase.from('quo_settings').select('active_number').eq('user_id', userId).maybeSingle();
       from = st?.active_number || null;
-      if (!from) { const pn = await quoCall('/v1/phone-numbers'); from = (pn?.data || [])[0]?.number || null; }
-      if (!from) throw new Error('No Quo number connected yet — open the Quo tab once to set it up.');
+      if (!from) throw new Error('No Quo number is selected for your account yet. Open the Quo tab and pick YOUR number before sending.');
       await quoCall('/v1/messages', { method: 'POST', body: { content: bodyText, from, to: [to] } });
       await logSent('text', bodyText);
       notify('Text sent via Quo to ' + (recipient.name || to), 'success');

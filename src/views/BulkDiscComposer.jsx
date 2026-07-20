@@ -98,8 +98,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
   async function quoFrom() {
     const { data: st } = await supabase.from('quo_settings').select('active_number').eq('user_id', userId).maybeSingle();
     let from = st?.active_number || null;
-    if (!from) { const pn = await quoCall('/v1/phone-numbers'); from = (pn?.data || [])[0]?.number || null; }
-    if (!from) throw new Error('No Quo number set up — open the Quo tab once.');
+    if (!from) throw new Error('No Quo number is selected for your account yet. Open the Quo tab and pick YOUR number before sending.');
     return from;
   }
   async function logSent(contact, ch, body, subject) {
