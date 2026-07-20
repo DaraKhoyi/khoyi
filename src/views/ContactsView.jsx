@@ -342,7 +342,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
 
   return (
     <div className="modal-overlay overlay-fade" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
-      <div className="modal sheet-rise" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div className="modal sheet-rise" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',minHeight:0,margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {/* Header mirrors the contact sheet so editing feels like the same surface */}
         <div style={{padding:'calc(14px + env(safe-area-inset-top, 0px)) 16px 14px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
           <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
@@ -515,7 +515,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
             </EditSection>
 
           </div>
-          <div className="modal-actions" style={{padding:'12px 16px calc(12px + env(safe-area-inset-bottom, 0px))',borderTop:'1px solid var(--border)',margin:0,flexShrink:0}}>
+          <div className="modal-actions" style={{padding:'12px 16px calc(14px + env(safe-area-inset-bottom, 0px))',borderTop:'1px solid var(--border)',margin:0,flexShrink:0,position:'sticky',bottom:0,background:'var(--bg-card)',zIndex:2}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary">{initial ? 'Save changes' : 'Create contact'}</button>
           </div>
