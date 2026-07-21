@@ -17579,6 +17579,7 @@ function AppMain() {
   ] };
   const MENU = [
     // ── Top level — promoted daily drivers (Dara's order) ──
+    { label: 'Today', view: 'today', icon: 'sparkles' },
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     { label: 'Tasks', view: 'tasks', icon: 'tasks' },
