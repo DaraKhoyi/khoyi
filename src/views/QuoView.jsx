@@ -224,8 +224,20 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   }, [loadData]);
 
   async function changeNumber(id) {
-    setFromId(id); setSelected(null);
     const n = numbers.find(x => x.id === id);
+    // On a shared Quo/OpenPhone workspace every user's app sees ALL workspace
+    // lines. Prevent an agent from selecting a line that another user has already
+    // claimed as their active number — otherwise their calls/recordings would be
+    // attributed to that line's real owner. One line = one owner.
+    try {
+      const { data: taken } = await supabase.from('quo_settings')
+        .select('user_id').eq('active_phone_number_id', id).neq('user_id', userId).maybeSingle();
+      if (taken) {
+        setErr('That number is already assigned to another user in your workspace. Pick a line that is yours, or ask your admin to assign you one.');
+        return;
+      }
+    } catch (_) { /* if the check fails, fall through — the webhook still attributes by line */ }
+    setFromId(id); setSelected(null);
     await supabase.from('quo_settings').upsert({ user_id: userId, active_phone_number_id: id, active_number: n?.number, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
   }
 
