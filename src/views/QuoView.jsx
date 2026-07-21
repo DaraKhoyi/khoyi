@@ -112,7 +112,7 @@ function QuoTranscript({ call }) {
   );
 }
 
-function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
+function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenhower' }) {
   const [tab, setTab] = useState('dialer');             // dialer | feed | messages | calls
   const [numbers, setNumbers] = useState([]);
   const [fromId, setFromId] = useState('');
@@ -135,6 +135,7 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   const [dialSearch, setDialSearch] = useState(''); // contact search query
   const [callVia, setCallVia] = useState('quo');    // 'quo' | 'phone'
   const [afterCall, setAfterCall] = useState(null);  // {contact, phone} shown after a call is placed
+  const [incomingCall, setIncomingCall] = useState(null); // live banner for a ringing inbound call
   const threadRef = useRef(null);
   // On phones the messages view shows ONE pane at a time (list, then thread),
   // instead of a 2-column split that pushes the thread off-screen.
@@ -181,6 +182,76 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
     return m;
   }, [contacts]);
 
+  // DISC read by contact id (for the pre-call context + on-call coaching).
+  const discByContact = useMemo(() => {
+    const m = {};
+    for (const p of profiles) if (p.contact_id && p.primary_letter && !m[p.contact_id]) m[p.contact_id] = p;
+    return m;
+  }, [profiles]);
+  // One-line call coaching per DISC primary type — how to talk to them on a call.
+  const DISC_CALL_COACH = {
+    D: 'Direct type — be brief, lead with the bottom line, respect their time.',
+    I: 'Expressive type — warm and personable, let them talk, keep energy up.',
+    S: 'Steady type — unhurried and reassuring, no pressure, confirm next steps.',
+    C: 'Analytical type — precise and factual, have details ready, avoid hype.',
+  };
+  // Last interaction per contact id (for "you last spoke…" on the context card).
+  const [lastByContact, setLastByContact] = useState({});
+  useEffect(() => {
+    let go = true;
+    (async () => {
+      const { data } = await supabase.from('contact_interactions')
+        .select('contact_id, channel, direction, brief, occurred_at')
+        .order('occurred_at', { ascending: false }).limit(400);
+      if (!go || !data) return;
+      const m = {};
+      for (const r of data) if (r.contact_id && !m[r.contact_id]) m[r.contact_id] = r;
+      setLastByContact(m);
+    })();
+    return () => { go = false; };
+  }, [userId]);
+
+  // Recent people (from call history) + favorites (most-called), DISC-tagged.
+  const recentPeople = useMemo(() => {
+    const seen = new Set(); const out = [];
+    for (const c of [...calls].sort((a, b) => new Date(b.op_created_at || 0) - new Date(a.op_created_at || 0))) {
+      const k = quoLast10(c.participant); if (!k || seen.has(k)) continue; seen.add(k);
+      out.push({ phone: c.participant, contact: phoneToContact[k] || null, at: c.op_created_at, dir: c.direction });
+      if (out.length >= 8) break;
+    }
+    return out;
+  }, [calls, phoneToContact]);
+  const favoritePeople = useMemo(() => {
+    const cnt = {};
+    for (const c of calls) { const k = quoLast10(c.participant); if (k) cnt[k] = (cnt[k] || 0) + 1; }
+    return Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([k, n]) => { const c = calls.find(x => quoLast10(x.participant) === k); return { phone: c?.participant, contact: phoneToContact[k] || null, count: n }; })
+      .filter(x => x.phone);
+  }, [calls, phoneToContact]);
+
+  // Pre-call context card: who they are, DISC + how to talk to them, last touch,
+  // and quick call/text. Shown when the dialer has identified a contact.
+  const renderPreCall = (contact, phone) => {
+    if (!contact) return null;
+    const disc = discByContact[contact.id];
+    const last = lastByContact[contact.id];
+    const coach = disc?.primary_letter ? DISC_CALL_COACH[disc.primary_letter.toUpperCase()] : null;
+    const daysAgo = last?.occurred_at ? Math.floor((Date.now() - new Date(last.occurred_at)) / 86400000) : null;
+    return (
+      <div className="panel" style={{ padding: 14, marginBottom: 12, borderColor: 'rgba(203,163,92,.35)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: coach || last ? 8 : 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 15, color: 'var(--text-1)', fontWeight: 700 }}>{contact.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{[contact.company, contact.role].filter(Boolean).join(' · ') || quoFmtPhone(phone)}</div>
+          </div>
+          {disc?.primary_letter && <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--accent)' }}>{disc.primary_letter}{disc.secondary_letter ? '/' + disc.secondary_letter : ''}</span>}
+        </div>
+        {coach && <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.45, marginBottom: last ? 6 : 0 }}>{coach}</div>}
+        {last && <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Last {last.channel || 'touch'}{last.direction ? ' (' + (last.direction === 'inbound' ? 'they reached out' : 'you reached out') + ')' : ''}{daysAgo != null ? ' · ' + (daysAgo === 0 ? 'today' : daysAgo + 'd ago') : ''}</div>}
+      </div>
+    );
+  };
+
   // load stored messages + calls
   const loadData = React.useCallback(async () => {
     const [m, c] = await Promise.all([
@@ -224,10 +295,26 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
     loadData();
     const ch = supabase.channel('quo-main')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quo_messages' }, p => setMsgs(m => [p.new, ...m.filter(x => x.op_id !== p.new.op_id)]))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quo_calls' }, p => setCalls(c => [p.new, ...c.filter(x => x.id !== p.new.id)]))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quo_calls' }, p => {
+        setCalls(c => [p.new, ...c.filter(x => x.id !== p.new.id)]);
+        // Live incoming-call identity: when a new inbound call arrives that's still
+        // ringing/unanswered, surface who it is so you know before you pick up.
+        const nc = p.new;
+        if (nc && nc.direction === 'incoming' && !['completed', 'missed', 'no-answer', 'voicemail'].includes((nc.status || '').toLowerCase())) {
+          const k = quoLast10(nc.participant);
+          setIncomingCall({ phone: nc.participant, contact: phoneToContact[k] || null, at: Date.now() });
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [loadData]);
+
+  // Auto-clear the incoming-call banner after 30s so it doesn't linger.
+  useEffect(() => {
+    if (!incomingCall) return;
+    const t = setTimeout(() => setIncomingCall(null), 30000);
+    return () => clearTimeout(t);
+  }, [incomingCall]);
 
   async function changeNumber(id) {
     const n = numbers.find(x => x.id === id);
@@ -419,6 +506,23 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
       <QuoStatusPanel msgs={msgs} calls={calls} activeNumber={fromNumber?.number} />
       <CallFollowupsPanel userId={userId} contacts={contacts} defaultSystem={defaultSystem} />
 
+      {incomingCall && (
+        <div className="panel" style={{ padding: 14, marginBottom: 12, borderColor: 'var(--green, #4ADE80)', background: 'rgba(74,222,128,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 20 }}>📞</span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 11, letterSpacing: 1.5, color: 'var(--green, #4ADE80)', fontWeight: 700 }}>INCOMING CALL</div>
+            <div style={{ fontSize: 15, color: 'var(--text-1)', fontWeight: 700 }}>
+              {incomingCall.contact ? incomingCall.contact.name : quoFmtPhone(incomingCall.phone)}
+              {incomingCall.contact && discByContact[incomingCall.contact.id]?.primary_letter && <span style={{ color: 'var(--accent)', marginLeft: 8, fontWeight: 800 }}>{discByContact[incomingCall.contact.id].primary_letter}</span>}
+            </div>
+            {incomingCall.contact
+              ? <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{[incomingCall.contact.company, incomingCall.contact.role].filter(Boolean).join(' · ') || quoFmtPhone(incomingCall.phone)}{discByContact[incomingCall.contact.id]?.primary_letter ? ' · ' + (DISC_CALL_COACH[discByContact[incomingCall.contact.id].primary_letter.toUpperCase()] || '') : ''}</div>
+              : <div style={{ fontSize: 12, color: 'var(--text-3)' }}>Not in your contacts</div>}
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => setIncomingCall(null)}>Dismiss</button>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
         {TABS.map(t => <button key={t.id} className={`btn btn-sm ${tab === t.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t.id)}>{t.icon} {t.label}</button>)}
       </div>
@@ -495,6 +599,67 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
                   <button className="btn btn-primary" onClick={() => placeCall(dialNum, typedContact)} disabled={typed.length < 11} style={{ flex: 2 }}>Call</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setDialNum(d => d.slice(0, -1))} disabled={!dialNum} title="Backspace">⌫</button>
                 </div>
+
+                {/* Pre-call context: who they are + how to talk to them */}
+                {typedContact && <div style={{ marginTop: 14 }}>{renderPreCall(typedContact, typed)}</div>}
+
+                {/* Quick text templates for the typed contact */}
+                {typed.length >= 11 && (
+                  <div style={{ marginTop: 10, maxWidth: 300, marginLeft: 'auto', marginRight: 'auto' }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: 1.5, color: 'var(--text-3)', marginBottom: 6, fontWeight: 700 }}>QUICK TEXT</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {TEXT_TEMPLATES.map(t => (
+                        <button key={t.label} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+                          onClick={() => { const nm = typedContact?.name ? ' ' + typedContact.name.split(' ')[0] : ''; const body = t.body.replace('{name}', nm); if (callVia === 'quo') { setTab('messages'); openConvo(typed, typedContact?.name || nameFor(typed)); setCompose(body); } else { window.location.href = `sms:${typed}${/*body*/ '?&body=' + encodeURIComponent(body)}`; } }}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recents + favorites quick-dial when the pad is empty */}
+                {!dialNum && (recentPeople.length > 0 || favoritePeople.length > 0) && (
+                  <div style={{ marginTop: 18 }}>
+                    {favoritePeople.length > 0 && (
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 10.5, letterSpacing: 1.5, color: 'var(--text-3)', marginBottom: 8, fontWeight: 700 }}>FAVORITES</div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {favoritePeople.map((f, i) => {
+                            const disc = f.contact ? discByContact[f.contact.id] : null;
+                            return (
+                              <button key={i} onClick={() => placeCall(f.phone, f.contact)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 100, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-1)', cursor: 'pointer', fontSize: 12.5 }}>
+                                {f.contact?.name || quoFmtPhone(f.phone)}
+                                {disc?.primary_letter && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{disc.primary_letter}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {recentPeople.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 10.5, letterSpacing: 1.5, color: 'var(--text-3)', marginBottom: 8, fontWeight: 700 }}>RECENT</div>
+                        <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+                          {recentPeople.map((r, i) => {
+                            const disc = r.contact ? discByContact[r.contact.id] : null;
+                            return (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: i < recentPeople.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                                <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{r.dir === 'incoming' ? '↙' : '↗'}</span>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ fontSize: 13.5, color: 'var(--text-1)' }}>{r.contact?.name || quoFmtPhone(r.phone)}{disc?.primary_letter && <span style={{ color: 'var(--accent)', fontWeight: 700, marginLeft: 6 }}>{disc.primary_letter}</span>}</div>
+                                </div>
+                                <button className="btn btn-ghost btn-sm" onClick={() => textVia(r.phone, r.contact)}>Text</button>
+                                <button className="btn btn-primary btn-sm" onClick={() => placeCall(r.phone, r.contact)}>Call</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
 
@@ -510,6 +675,18 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
                   {afterCall.contact && <button className="btn btn-ghost btn-sm" onClick={() => { if (window.__openContactResearch) window.__openContactResearch(afterCall.contact.id); }}>Open contact</button>}
                   {afterCall.contact && <button className="btn btn-ghost btn-sm" onClick={async () => { try { await supabase.from('tasks').insert({ user_id: userId, title: `Follow up with ${afterCall.contact.name}`, priority: 'medium', contact_id: afterCall.contact.id }); if (window.__notify) window.__notify('Follow-up task added'); } catch (e) { setErr('Could not add task: ' + (e.message || e)); } }}>Add follow-up task</button>}
                   <button className="btn btn-ghost btn-sm" onClick={() => setAfterCall(null)}>Done</button>
+                </div>
+                {/* If they didn't pick up: quick follow-up texts (VM-drop style) */}
+                <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                  <div style={{ fontSize: 10.5, letterSpacing: 1.5, color: 'var(--text-3)', marginBottom: 6, fontWeight: 700 }}>NO ANSWER? QUICK FOLLOW-UP</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {TEXT_TEMPLATES.map(t => (
+                      <button key={t.label} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+                        onClick={() => { const nm = afterCall.contact?.name ? ' ' + afterCall.contact.name.split(' ')[0] : ''; const body = t.body.replace('{name}', nm); if (callVia === 'quo') { setTab('messages'); openConvo(afterCall.phone, afterCall.contact?.name || nameFor(afterCall.phone)); setCompose(body); } else { window.location.href = `sms:${afterCall.phone}?&body=${encodeURIComponent(body)}`; } setAfterCall(null); }}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
