@@ -113,7 +113,7 @@ function QuoTranscript({ call }) {
 }
 
 function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
-  const [tab, setTab] = useState('feed');               // feed | messages | calls
+  const [tab, setTab] = useState('dialer');             // dialer | feed | messages | calls
   const [numbers, setNumbers] = useState([]);
   const [fromId, setFromId] = useState('');
   const [msgs, setMsgs] = useState([]);
@@ -129,6 +129,12 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   const [showNew, setShowNew] = useState(false);
   const [newTo, setNewTo] = useState('');
   const [openCall, setOpenCall] = useState(null);
+  // Dialer (the 10x phone driver): typed number, contact search, call/text channel,
+  // and the post-call follow-up prompt.
+  const [dialNum, setDialNum] = useState('');       // raw digits/text in the pad field
+  const [dialSearch, setDialSearch] = useState(''); // contact search query
+  const [callVia, setCallVia] = useState('quo');    // 'quo' | 'phone'
+  const [afterCall, setAfterCall] = useState(null);  // {contact, phone} shown after a call is placed
   const threadRef = useRef(null);
   // On phones the messages view shows ONE pane at a time (list, then thread),
   // instead of a 2-column split that pushes the thread off-screen.
@@ -326,6 +332,64 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
   }
   function startCall() { const e = quoNormPhone(newTo); if (e.length < 11) { setErr('Enter a valid US / Canada number.'); return; } setShowNew(false); setNewTo(''); quoDial(e); }
 
+  // ── DIALER (the phone driver) ────────────────────────────────────────────────
+  // Place a call on the chosen channel. 'quo' rings through your Quo number via the
+  // OpenPhone deep link. 'phone' hands off to the device's native dialer (your
+  // T-Mobile line) with the number pre-filled. Either way we log the intent and
+  // surface the post-call follow-up card so nothing gets dropped.
+  function placeCall(toRaw, contact) {
+    const to = quoNormPhone(toRaw);
+    if (!to || to.length < 11) { setErr('Enter a valid US / Canada number to call.'); return; }
+    setErr('');
+    if (callVia === 'quo') {
+      if (!fromId) { setErr('Pick your Quo number first (top of screen), or switch to Phone.'); return; }
+      quoDial(to);
+    } else {
+      // native T-Mobile line
+      window.location.href = `tel:${to}`;
+    }
+    logCallIntent(to, contact);
+    setAfterCall({ contact: contact || phoneToContact[quoLast10(to)] || null, phone: to });
+  }
+  // Text on the chosen channel. 'quo' opens the in-app Quo thread (server-send).
+  // 'phone' opens the native SMS app on your T-Mobile line.
+  function textVia(toRaw, contact) {
+    const to = quoNormPhone(toRaw);
+    if (!to || to.length < 11) { setErr('Enter a valid US / Canada number to text.'); return; }
+    setErr('');
+    if (callVia === 'quo') {
+      setTab('messages'); openConvo(to, (contact && contact.name) || nameFor(to));
+    } else {
+      window.location.href = `sms:${to}`;
+    }
+  }
+  // Best-effort: log an outbound call attempt so it shows in history + feeds the
+  // "owe a reply" / cadence signals even before the Quo webhook lands (Quo) or at
+  // all (native phone, which we otherwise can't see).
+  async function logCallIntent(to, contact) {
+    try {
+      await supabase.from('contact_interactions').insert({
+        user_id: userId, contact_id: contact?.id || phoneToContact[quoLast10(to)]?.id || null,
+        channel: 'call', kind: 'call', direction: 'outbound',
+        brief: `Outbound call via ${callVia === 'quo' ? 'Quo' : 'phone'}`,
+        occurred_at: new Date().toISOString(),
+      });
+    } catch (_) { /* non-fatal — logging must never block dialing */ }
+  }
+
+  // Contacts matching the dialer search (name / company / number).
+  const dialMatches = useMemo(() => {
+    const q = dialSearch.trim().toLowerCase();
+    if (!q) return [];
+    const digits = q.replace(/[^0-9]/g, '');
+    return contacts.filter(c => {
+      const nm = (c.name || '').toLowerCase();
+      const co = (c.company || '').toLowerCase();
+      const ph = [c.phone, c.mobile, c.business_phone, c.home_phone].filter(Boolean).join(' ').replace(/[^0-9]/g, '');
+      return nm.includes(q) || co.includes(q) || (digits.length >= 3 && ph.includes(digits));
+    }).slice(0, 8);
+  }, [dialSearch, contacts]);
+
   const callList = useMemo(() => calls.slice().sort((a, b) => new Date(b.op_created_at || 0) - new Date(a.op_created_at || 0)), [calls]);
   const feed = useMemo(() => {
     const rows = [];
@@ -336,7 +400,7 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
 
   if (loadingNums) return <div className="loading-screen" style={{ height: '50vh' }}><div className="spinner" /></div>;
 
-  const TABS = [{ id: 'feed', label: 'Live feed', icon: <Icon name="zap" size={13} /> }, { id: 'messages', label: 'Messages', icon: <Icon name="message" size={13} /> }, { id: 'calls', label: 'Calls', icon: <Icon name="quo" size={13} /> }];
+  const TABS = [{ id: 'dialer', label: 'Dialer', icon: <Icon name="quo" size={13} /> }, { id: 'feed', label: 'Live feed', icon: <Icon name="zap" size={13} /> }, { id: 'messages', label: 'Messages', icon: <Icon name="message" size={13} /> }, { id: 'calls', label: 'Calls', icon: <Icon name="quo" size={13} /> }];
 
   return (
     <div className="view">
@@ -361,6 +425,97 @@ function QuoView({ contacts = [], userId, defaultSystem = 'eisenhower' }) {
 
       {err && <div className="panel" style={{ borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13, padding: '8px 12px', marginBottom: 10 }}>{err}</div>}
       {syncing && <div style={{ fontSize: 12, color: 'var(--accent)', marginBottom: 10 }}>⟳ Pulling your Quo history &amp; arming live sync…</div>}
+
+      {tab === 'dialer' && (() => {
+        const typed = quoNormPhone(dialNum);
+        const typedContact = typed.length >= 11 ? (phoneToContact[quoLast10(typed)] || null) : null;
+        const PAD = [['1',''],['2','ABC'],['3','DEF'],['4','GHI'],['5','JKL'],['6','MNO'],['7','PQRS'],['8','TUV'],['9','WXYZ'],['*',''],['0','+'],['#','']];
+        const press = (k) => { setDialSearch(''); setDialNum(d => (d + k)); };
+        return (
+          <div>
+            {/* Channel toggle: which line to use */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button className={`btn btn-sm ${callVia === 'quo' ? 'btn-primary' : 'btn-ghost'}`} style={{ flex: 1 }} onClick={() => setCallVia('quo')}>
+                Quo{fromNumber?.number ? ' · ' + quoFmtPhone(fromNumber.number) : ''}
+              </button>
+              <button className={`btn btn-sm ${callVia === 'phone' ? 'btn-primary' : 'btn-ghost'}`} style={{ flex: 1 }} onClick={() => setCallVia('phone')}>
+                Phone (T-Mobile)
+              </button>
+            </div>
+
+            {/* Contact search — matches your people by name / company / number */}
+            <input className="form-input" value={dialSearch} onChange={e => { setDialSearch(e.target.value); }}
+              placeholder="Search your contacts…" style={{ marginBottom: dialSearch ? 8 : 12 }} />
+            {dialSearch.trim() && (
+              <div className="panel" style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
+                {dialMatches.length === 0
+                  ? <div style={{ padding: 14, color: 'var(--text-3)', fontSize: 13 }}>No contact matches “{dialSearch.trim()}”. You can still dial the number on the pad below.</div>
+                  : dialMatches.map(c => {
+                      const ph = c.phone || c.mobile || c.business_phone || c.home_phone;
+                      return (
+                        <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 14, color: 'var(--text-1)', fontWeight: 600 }}>{c.name}</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{[c.company, ph ? quoFmtPhone(ph) : 'no number'].filter(Boolean).join(' · ')}</div>
+                          </div>
+                          {ph && <button className="btn btn-ghost btn-sm" onClick={() => textVia(ph, c)}>Text</button>}
+                          {ph && <button className="btn btn-primary btn-sm" onClick={() => placeCall(ph, c)}>Call</button>}
+                        </div>
+                      );
+                    })}
+              </div>
+            )}
+
+            {/* The typed number + who it is */}
+            {!dialSearch.trim() && (
+              <>
+                <div style={{ textAlign: 'center', marginBottom: 4 }}>
+                  <div style={{ fontFamily: 'Fraunces, serif', fontSize: 30, color: 'var(--text-1)', letterSpacing: 1, minHeight: 40 }}>
+                    {dialNum ? quoFmtPhone(dialNum) : <span style={{ color: 'var(--text-3)' }}>Enter a number</span>}
+                  </div>
+                  {typedContact
+                    ? <div style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}>{typedContact.name}{typedContact.company ? ' · ' + typedContact.company : ''}</div>
+                    : (typed.length >= 11 ? <div style={{ fontSize: 12, color: 'var(--text-3)' }}>Not in your contacts</div> : <div style={{ minHeight: 18 }} />)}
+                </div>
+
+                {/* Number pad */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, maxWidth: 300, margin: '0 auto 12px' }}>
+                  {PAD.map(([d, sub]) => (
+                    <button key={d} onClick={() => press(d)}
+                      style={{ padding: '12px 0', borderRadius: 14, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-1)', cursor: 'pointer', fontFamily: 'Fraunces, serif' }}>
+                      <div style={{ fontSize: 22, lineHeight: 1 }}>{d}</div>
+                      {sub && <div style={{ fontSize: 8.5, letterSpacing: 1.5, color: 'var(--text-3)', marginTop: 2 }}>{sub}</div>}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Call / Text / backspace */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 300, margin: '0 auto' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => textVia(dialNum, typedContact)} disabled={typed.length < 11} style={{ flex: 1 }}>Text</button>
+                  <button className="btn btn-primary" onClick={() => placeCall(dialNum, typedContact)} disabled={typed.length < 11} style={{ flex: 2 }}>Call</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setDialNum(d => d.slice(0, -1))} disabled={!dialNum} title="Backspace">⌫</button>
+                </div>
+              </>
+            )}
+
+            {/* Post-call follow-up — never drop a promise */}
+            {afterCall && (
+              <div className="panel" style={{ marginTop: 16, padding: 14, borderColor: 'var(--accent)' }}>
+                <div style={{ fontSize: 11, letterSpacing: 1.5, color: 'var(--accent)', fontWeight: 700, marginBottom: 6 }}>AFTER THE CALL</div>
+                <div style={{ fontSize: 14, color: 'var(--text-1)', marginBottom: 10 }}>
+                  {afterCall.contact ? afterCall.contact.name : quoFmtPhone(afterCall.phone)} — what next?
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => textVia(afterCall.phone, afterCall.contact)}>Send a text</button>
+                  {afterCall.contact && <button className="btn btn-ghost btn-sm" onClick={() => { if (window.__openContactResearch) window.__openContactResearch(afterCall.contact.id); }}>Open contact</button>}
+                  {afterCall.contact && <button className="btn btn-ghost btn-sm" onClick={async () => { try { await supabase.from('tasks').insert({ user_id: userId, title: `Follow up with ${afterCall.contact.name}`, priority: 'medium', contact_id: afterCall.contact.id }); if (window.__notify) window.__notify('Follow-up task added'); } catch (e) { setErr('Could not add task: ' + (e.message || e)); } }}>Add follow-up task</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={() => setAfterCall(null)}>Done</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {tab === 'feed' && (
         <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
