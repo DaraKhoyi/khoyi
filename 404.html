@@ -1,122 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <script>/* Restore a deep-link path handed over by 404.html so the SPA router can read it */(function(){try{var m=location.search.match(/[?&]__spa=([^&]*)/);if(m){var t=decodeURIComponent(m[1]);if(t&&t.charAt(0)==='/')history.replaceState(null,'',t);}}catch(e){}})();</script>
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#0a0b0d" />
-    <meta name="description" content="PrismOS — Dara's personal operating system" />
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="PrismOS" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <title>PrismOS</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/static/js/main.CiHMKz89.js"></script>
-    <link rel="modulepreload" crossorigin href="/static/js/vendor-react.DecIrkRQ.chunk.js">
-    <link rel="modulepreload" crossorigin href="/static/js/vendor-react-dom.CLTjDK3B.chunk.js">
-    <link rel="modulepreload" crossorigin href="/static/js/vendor.Ks84_326.chunk.js">
-    <link rel="modulepreload" crossorigin href="/static/js/vendor-supabase.Bv9NtBh5.chunk.js">
-    <link rel="stylesheet" crossorigin href="/static/css/index.B_DEf8hm.css">
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <script>
-      (function () {
-        if (!('serviceWorker' in navigator)) return;
-
-        var reloading = false;
-        // When the new SW takes control (after the user taps Refresh), reload
-        // once so the page swaps to the new bundle. Guarded against loops.
-        navigator.serviceWorker.addEventListener('controllerchange', function () {
-          if (reloading) return;
-          reloading = true;
-          window.location.reload();
-        });
-
-        function showUpdatePrompt(worker) {
-          if (document.getElementById('prismos-update-bar')) return;
-          var bar = document.createElement('div');
-          bar.id = 'prismos-update-bar';
-          bar.setAttribute('role', 'status');
-          bar.style.cssText = [
-            'position:fixed', 'left:50%', 'transform:translateX(-50%)',
-            'bottom:calc(16px + env(safe-area-inset-bottom,0px))', 'z-index:99999',
-            'display:flex', 'align-items:center', 'gap:12px',
-            'padding:10px 12px 10px 16px', 'border-radius:14px',
-            'background:#161921', 'border:1px solid #C5A95E',
-            'box-shadow:0 8px 30px rgba(0,0,0,.45)',
-            'font-family:Inter,system-ui,sans-serif', 'color:#e8eaf0',
-            'font-size:13.5px', 'max-width:calc(100vw - 24px)'
-          ].join(';');
-
-          var label = document.createElement('span');
-          label.textContent = 'New version available';
-          label.style.cssText = 'font-weight:600;white-space:nowrap';
-
-          var btn = document.createElement('button');
-          btn.textContent = 'Refresh';
-          btn.style.cssText = [
-            'background:#C5A95E', 'color:#111', 'border:none', 'border-radius:10px',
-            'padding:7px 16px', 'font-size:13px', 'font-weight:700', 'cursor:pointer',
-            'font-family:inherit', 'white-space:nowrap'
-          ].join(';');
-          btn.addEventListener('click', function () {
-            btn.disabled = true; btn.textContent = 'Updating…';
-            try { if (worker) worker.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
-            // Fallback: if the new worker doesn't take control quickly (or there's
-            // no waiting worker to message), force the reload anyway so the button
-            // can never get stuck on "Updating…".
-            setTimeout(function () { if (!reloading) { reloading = true; window.location.reload(); } }, 2500);
-          });
-
-          var dismiss = document.createElement('button');
-          dismiss.setAttribute('aria-label', 'Dismiss');
-          dismiss.textContent = '✕';
-          dismiss.style.cssText = [
-            'background:none', 'border:none', 'color:#9499b0', 'cursor:pointer',
-            'font-size:14px', 'padding:4px 6px', 'font-family:inherit'
-          ].join(';');
-          dismiss.addEventListener('click', function () { bar.remove(); });
-
-          bar.appendChild(label); bar.appendChild(btn); bar.appendChild(dismiss);
-          document.body.appendChild(bar);
-        }
-
-        window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/sw.js').then(function (reg) {
-            // A new version was already downloaded and is waiting.
-            if (reg.waiting && navigator.serviceWorker.controller) {
-              showUpdatePrompt(reg.waiting);
-            }
-            // A new version starts installing while the app is open.
-            reg.addEventListener('updatefound', function () {
-              var nw = reg.installing;
-              if (!nw) return;
-              nw.addEventListener('statechange', function () {
-                // "installed" + an existing controller == an update (not first install).
-                if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-                  showUpdatePrompt(reg.waiting || nw);
-                }
-              });
-            });
-            // Resumed/backgrounded PWAs don't navigate, so poll for a new SW
-            // whenever the app comes back to the foreground.
-            document.addEventListener('visibilitychange', function () {
-              if (document.visibilityState === 'visible') { reg.update().catch(function () {}); }
-            });
-          }).catch(function (err) {
-            console.warn('SW registration failed:', err);
-          });
-        });
-      })();
-    </script>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PrismOS</title>
+  <style>body{background:#100D09;color:#C8BFAE;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style>
+</head>
+<body>
+  <div>Loading…</div>
+  <script>
+    (function () {
+      var p = location.pathname, s = location.search, h = location.hash;
+      // Public booking links: /book/{slug}  ->  /book.html?u={slug}
+      var bm = p.match(/^\/book\/([^\/?#]+)/);
+      if (bm) {
+        location.replace('/book.html?u=' + encodeURIComponent(bm[1]) + (s ? '&' + s.slice(1) : ''));
+        return;
+      }
+      // Everything else (e.g. /sign/{token}): hand back to the SPA, preserving the path.
+      location.replace('/?__spa=' + encodeURIComponent(p + s + h));
+    })();
+  </script>
+</body>
 </html>
