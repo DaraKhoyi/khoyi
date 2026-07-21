@@ -56,6 +56,8 @@ export default function TodayView({
   const [commitments, setCommitments] = useState([]);
   const [flaggedEmail, setFlaggedEmail] = useState([]);
   const [pendingRec, setPendingRec] = useState(0);
+  const [showBounces, setShowBounces] = useState(false);
+  const [bounceRows, setBounceRows] = useState(null);
 
   useEffect(() => {
     let go = true;
@@ -125,7 +127,25 @@ export default function TodayView({
       else setView && setView('inbox');
     } else if (cta.kind === 'view') { setView && setView(cta.payload); }
     else if (cta.kind === 'call') { window.location.href = 'tel:' + cta.payload; }
-    else if (cta.kind === 'bounces') { setView && setView('inbox'); }
+    else if (cta.kind === 'bounces') { openBounces(); }
+  };
+  // Load the full bounce detail (who it didn't reach + why + how to fix) and show
+  // it in a modal — instead of dropping the agent in a generic inbox with no idea
+  // which message is the problem.
+  const openBounces = async () => {
+    setShowBounces(true); setBounceRows(null);
+    try {
+      const { data } = await supabase.from('email_bounces')
+        .select('id, original_subject, failed_recipients, reason_code, reason_text, fix_hint, from_address, bounced_at, handled')
+        .eq('handled', false).order('bounced_at', { ascending: false }).limit(25);
+      setBounceRows(data || []);
+    } catch (_) { setBounceRows([]); }
+  };
+  const markBounceHandled = async (id) => {
+    try { await supabase.from('email_bounces').update({ handled: true, handled_at: new Date().toISOString() }).eq('id', id); } catch (_) {}
+    setBounceRows(r => (r || []).filter(x => x.id !== id));
+    setBounceActions(a => a.filter(x => x.key !== 'bounce:' + id));
+    if (window.__notify) window.__notify('Marked handled.', 'success');
   };
   const markReplied = (contactId) => {
     if (!contactId) return;
@@ -254,6 +274,29 @@ export default function TodayView({
         <div style={{ fontSize: 11.5, color: 'var(--text-3)', textAlign: 'center', marginTop: 18, lineHeight: 1.5 }}>
           You have {pastDue} past-due tasks. They're not gone — Prism is just keeping today focused on what matters most.
           <br /><button style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, padding: 4 }} onClick={() => setView && setView('tasks')}>See everything</button>
+        </div>
+      )}
+      {/* Bounce detail — "what happened" to the emails that didn't arrive */}
+      {showBounces && (
+        <div className="modal-overlay" style={{ zIndex: 2400 }} onClick={e => e.target === e.currentTarget && setShowBounces(false)}>
+          <div className="modal" style={{ maxWidth: 620, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
+            <div className="modal-header"><h3 style={{ margin: 0 }}>Emails that didn't arrive</h3><button className="modal-close" onClick={() => setShowBounces(false)}>×</button></div>
+            {bounceRows === null && <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Checking…</p>}
+            {bounceRows && bounceRows.length === 0 && <p style={{ color: 'var(--text-2)', fontSize: 13 }}>All clear — everything you've sent was accepted for delivery.</p>}
+            {(bounceRows || []).map(b => (
+              <div key={b.id} style={{ border: '1px solid rgba(203,163,92,.3)', borderRadius: 12, padding: 14, marginBottom: 12, background: 'linear-gradient(180deg,#1B1610,#100D09)' }}>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, color: '#F6F1E7', marginBottom: 4 }}>{b.original_subject || '(no subject)'}</div>
+                <div style={{ fontSize: 11.5, color: '#E4DCCB', marginBottom: 8 }}>sent {b.bounced_at ? new Date(b.bounced_at).toLocaleString() : ''}{b.from_address ? ' · from ' + b.from_address : ''}</div>
+                <div style={{ fontSize: 12.5, color: '#e0965a', fontWeight: 700, marginBottom: 6 }}>Didn't reach {(b.failed_recipients || []).length || 'anyone'}: {(b.failed_recipients || []).join(', ')}</div>
+                {b.fix_hint && <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 8 }}>{b.fix_hint}</div>}
+                {b.reason_text && <details style={{ marginBottom: 8 }}><summary style={{ fontSize: 11.5, color: 'var(--text-3)', cursor: 'pointer' }}>What the mail server said</summary><pre style={{ fontSize: 10.5, color: 'var(--text-3)', whiteSpace: 'pre-wrap', margin: '6px 0 0' }}>{b.reason_text}</pre></details>}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => { window.__composeEmail && window.__composeEmail((b.failed_recipients || [])[0] || '', b.original_subject ? 'Re: ' + b.original_subject : ''); setShowBounces(false); }}>Resend</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => markBounceHandled(b.id)}>✓ Handled</button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
