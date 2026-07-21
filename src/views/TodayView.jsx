@@ -153,6 +153,16 @@ export default function TodayView({
     setOweReplyMap && setOweReplyMap(m => { const n = { ...m }; delete n[contactId]; return n; });
     setHeroIdx(0); bumpApprovals();
   };
+  // No reply needed — handled elsewhere / no longer applies; you did NOT reply.
+  const markNoReplyNeeded = (contactId) => {
+    if (!contactId) return;
+    const stampIso = (oweReplyMap && oweReplyMap[contactId]) || new Date().toISOString();
+    try { supabase.from('contacts').update({ no_reply_needed_at: stampIso }).eq('id', contactId).then(() => {}, () => {}); } catch (_) {}
+    setOweReplyMap && setOweReplyMap(m => { const n = { ...m }; delete n[contactId]; return n; });
+    setContacts && setContacts(pr => pr.map(x => x.id === contactId ? { ...x, no_reply_needed_at: stampIso } : x));
+    if (window.__notify) window.__notify('Cleared — no reply needed.', 'success');
+    setHeroIdx(0);
+  };
 
   const tagColor = (t) => t === 'bounce' || t === 'overdue' ? 'var(--red)' : t === 'reply' ? 'var(--yellow)' : t === 'appt' ? '#06b6d4' : t === 'deal' ? '#22c55e' : 'var(--accent)';
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
@@ -226,6 +236,7 @@ export default function TodayView({
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             {cur.cta && <button className="btn btn-primary btn-sm" onClick={() => runCta(cur.cta)}>{cur.cta.label}</button>}
             {cur.tag === 'reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={() => markReplied(cur.contactId)}>✓ Replied</button>}
+            {cur.tag === 'reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={() => markNoReplyNeeded(cur.contactId)} title="No reply is needed — handled elsewhere or no longer applies">No reply needed</button>}
             {totalOpen > 1 && <button className="btn btn-ghost btn-sm" onClick={() => setHeroIdx(i => (i + 1) % totalOpen)}>Skip</button>}
             {onOpenPlan && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => onOpenPlan()}>Plan my day</button>}
           </div>

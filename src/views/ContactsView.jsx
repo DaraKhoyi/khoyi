@@ -1247,25 +1247,27 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     }
   }
 
-  const dueCount = useMemo(() => contacts.filter(c => { const cd = cadenceDue(c); return (cd && cd.due && !cd.snoozed) || (c.last_communication_direction==='inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date())); }).length, [contacts]);
+  const oweReplyFn = (c) => c.last_communication_direction==='inbound' && c.last_inbound_at
+    && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1
+    && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date())
+    && !(c.no_reply_needed_at && new Date(c.no_reply_needed_at) >= new Date(c.last_inbound_at));
+  const dueCount = useMemo(() => contacts.filter(c => { const cd = cadenceDue(c); return (cd && cd.due && !cd.snoozed) || oweReplyFn(c); }).length, [contacts]);
   const reachNext = useMemo(() => {
-    const owe = contacts.find(c => c.last_communication_direction==='inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date()));
+    const owe = contacts.find(oweReplyFn);
     if (owe) return { c: owe, why: 'you owe a reply · ' + relDaysShort(Math.floor((Date.now()-new Date(owe.last_inbound_at))/86400000)) + ' ago' };
     const due = contacts.find(c => { const cd = cadenceDue(c); return cd && cd.due && !cd.snoozed; });
     if (due) return { c: due, why: 'due for a touch · ' + relDaysShort(daysSinceTouch(due)) + ' since last' };
     return null;
   }, [contacts]);
 
-  // Clear the "reach out" requirement for a contact. If it's an owe-a-reply, mark
-  // it handled by flipping last_communication_direction to 'outbound' (you've now
-  // responded) — this permanently clears the owe-reply. If it's a cadence "due for
-  // a touch", snooze the cadence instead. Either way the card auto-falls-through:
-  // an cleared owe-reply drops to the cadence check, and a cleared cadence drops
-  // to nothing — exactly "clear it and divert to cadence if applicable".
+  // Clear the "reach out" requirement. If it's an owe-a-reply, stamp
+  // no_reply_needed_at at the inbound time — honest (doesn't fake a reply) and
+  // auto-re-arms if they write again. If it's a cadence "due for a touch", snooze.
+  // Either way the card auto-falls-through to cadence, or off entirely.
   const clearReachout = async (c, why) => {
     const isOwe = /owe a reply/.test(why || '');
     const patch = isOwe
-      ? { last_communication_direction: 'outbound', last_outbound_at: new Date().toISOString() }
+      ? { no_reply_needed_at: c.last_inbound_at || new Date().toISOString() }
       : { reachout_snooze_until: new Date(Date.now() + 30*86400000).toISOString() };
     // optimistic update so the card re-evaluates immediately
     setContacts(prev => prev.map(x => x.id === c.id ? { ...x, ...patch } : x));
@@ -1584,7 +1586,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
                 {sorted.slice(0, visibleCount).map(c => {
                   const p = profileByContact.get(c.id);
                   const cad = cadenceDue(c);
-                  const owe = c.last_communication_direction === 'inbound' && c.last_inbound_at && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1 && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date());
+                  const owe = oweReplyFn(c);
                   const isDue = (cad && cad.due && !cad.snoozed) || owe;
                   const dt = daysSinceTouch(c);
                   const touchLabel = owe ? 'owes reply' : (cad && cad.due && !cad.snoozed) ? 'due' : (dt != null ? relDaysShort(dt)+' ago' : '');

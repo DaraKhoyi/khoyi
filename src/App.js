@@ -3197,6 +3197,9 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
     if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false;
     if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
     const lin = new Date(c.last_inbound_at).getTime();
+    // Dismissed as "no reply needed" — but only for THIS inbound. A newer inbound
+    // (after the dismissal) re-arms the owe-reply automatically.
+    if (c.no_reply_needed_at && new Date(c.no_reply_needed_at).getTime() >= lin) return false;
     const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0;
     return lin > lout;
   }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
@@ -3633,6 +3636,10 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   // engine reads (last_outbound_at past last_inbound_at), independent of email/text
   // sync timing. Updates local state so the card drops immediately.
   const markReplied=(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString(); try{ supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction:'outbound', channel:'manual', occurred_at: nowIso, brief:'Marked replied' }).then(()=>{},()=>{}); }catch(_){} setOweReplyMap && setOweReplyMap(m=>{ const n={...m}; delete n[contactId]; return n; }); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
+  // "No reply needed" — the matter's handled or no longer applies, and you did NOT
+  // reply. Stamps no_reply_needed_at at the inbound's time so THIS message clears
+  // but a future inbound from them re-arms it. Honest: doesn't fake an outbound.
+  const markNoReplyNeeded=(contactId)=>{ if(!contactId) return; const stampIso=(oweReplyMap && oweReplyMap[contactId]) || new Date().toISOString(); try{ supabase.from('contacts').update({ no_reply_needed_at: stampIso }).eq('id', contactId).then(()=>{},()=>{}); }catch(_){} setOweReplyMap && setOweReplyMap(m=>{ const n={...m}; delete n[contactId]; return n; }); setContacts && setContacts(pr=>pr.map(x=>x.id===contactId?{...x, no_reply_needed_at: stampIso}:x)); if(window.__notify) window.__notify('Cleared — no reply needed.','success'); setIdx(0); };
   if(!cur) return null;
   const tagColor=cur.tag==='bounce'?'var(--red)':cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
   return (
@@ -3651,6 +3658,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
       <div style={{display:'flex',gap:8,marginTop:13,flexWrap:'wrap',alignItems:'center'}}>
         {cur.cta && <button className="btn btn-primary btn-sm" onClick={()=>runCta(cur.cta)}>{cur.cta.label}</button>}
         {cur.tag==='reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={()=>markReplied(cur.contactId)} title="I've already replied — clear this">✓ Replied</button>}
+        {cur.tag==='reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={()=>markNoReplyNeeded(cur.contactId)} title="No reply is needed — handled elsewhere or no longer applies">No reply needed</button>}
         {list.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>setIdx(i=>(i+1)%list.length)}>Skip</button>}
         {urgent && onOpenPlan && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenPlan()}>Plan my day</button>}
         {list.length>1 && <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setShowAll(s=>!s)}>{showAll?'Hide':'See all ('+list.length+')'}</button>}
