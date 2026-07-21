@@ -25,19 +25,42 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Resolve owner: explicit secret first, else the most recent quo_settings row.
-  let owner = Deno.env.get("QUO_OWNER_USER_ID") || null;
-  if (!owner) {
-    const { data } = await supabase.from("quo_settings").select("user_id").order("updated_at", { ascending: false }).limit(1).maybeSingle();
-    owner = data?.user_id || null;
-  }
-  if (!owner) return new Response("no owner configured", { status: 200 });
-
   let evt: any;
   try { evt = await req.json(); } catch { return new Response("bad json", { status: 200 }); }
 
   const type: string = evt?.type || "";
   const o = evt?.data?.object || {};
+
+  // Resolve owner by the phone LINE the event actually happened on — NOT by
+  // "whoever touched settings last". OpenPhone sends phoneNumberId on every
+  // message/call; the owner is the user who has that line selected in their
+  // quo_settings. This is what prevents one agent's calls/recordings from being
+  // filed under another agent's account on a shared workspace.
+  let owner: string | null = Deno.env.get("QUO_OWNER_USER_ID") || null;
+  const pnId: string | null = o.phoneNumberId || null;
+  if (!owner && pnId) {
+    const { data: byLine } = await supabase.from("quo_settings")
+      .select("user_id").eq("active_phone_number_id", pnId).limit(1).maybeSingle();
+    owner = byLine?.user_id || null;
+  }
+  // Fallback: match by the actual phone NUMBER on the event (from/to) against
+  // any user's saved active_number, in case phoneNumberId isn't present.
+  if (!owner) {
+    const cand = _last10(o.from) || _last10((Array.isArray(o.to) ? o.to[0] : o.to));
+    if (cand) {
+      const { data: rows } = await supabase.from("quo_settings").select("user_id, active_number");
+      const hit = (rows || []).find((r: any) => _last10(r.active_number) === cand);
+      owner = hit?.user_id || null;
+    }
+  }
+  // Last resort: if we still can't tell whose line it is, DROP the event rather
+  // than misattribute it to an arbitrary account. Silent misfiling (the old
+  // "most recent quo_settings" behaviour) is exactly the cross-account leak we're
+  // fixing — better to skip than to file a recording under the wrong person.
+  if (!owner) {
+    console.error("quo-webhook: could not resolve owner for phoneNumberId=", pnId, "— dropping event to avoid misattribution");
+    return new Response("no owner for this line — skipped", { status: 200 });
+  }
 
   try {
     if (type.startsWith("message.")) {
