@@ -8912,7 +8912,8 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                   <span style={{fontSize:'11px',color:'var(--text-3)',minWidth:'52px'}}>Source</span>
                   <select value={contact.lead_gen_system_id || ''} onChange={e => updatePipe({ lead_gen_system_id: e.target.value || null })} style={{flex:1,background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px',color:'var(--text-1)',padding:'8px 10px',fontSize:'12.5px'}}>
                     <option value="">— Not attributed —</option>
-                    {leadSystems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {leadSystems.filter(s => s.name === 'Not a Lead').map(s => <option key={s.id} value={s.id}>Not a Lead</option>)}
+                    {leadSystems.filter(s => s.name !== 'Not a Lead').map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div style={{marginTop:'10px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
