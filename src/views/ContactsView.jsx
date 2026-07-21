@@ -1255,6 +1255,27 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     if (due) return { c: due, why: 'due for a touch · ' + relDaysShort(daysSinceTouch(due)) + ' since last' };
     return null;
   }, [contacts]);
+
+  // Clear the "reach out" requirement for a contact. If it's an owe-a-reply, mark
+  // it handled by flipping last_communication_direction to 'outbound' (you've now
+  // responded) — this permanently clears the owe-reply. If it's a cadence "due for
+  // a touch", snooze the cadence instead. Either way the card auto-falls-through:
+  // an cleared owe-reply drops to the cadence check, and a cleared cadence drops
+  // to nothing — exactly "clear it and divert to cadence if applicable".
+  const clearReachout = async (c, why) => {
+    const isOwe = /owe a reply/.test(why || '');
+    const patch = isOwe
+      ? { last_communication_direction: 'outbound', last_outbound_at: new Date().toISOString() }
+      : { reachout_snooze_until: new Date(Date.now() + 30*86400000).toISOString() };
+    // optimistic update so the card re-evaluates immediately
+    setContacts(prev => prev.map(x => x.id === c.id ? { ...x, ...patch } : x));
+    const { error } = await supabase.from('contacts').update(patch).eq('id', c.id);
+    if (error) {
+      // revert on failure
+      setContacts(prev => prev.map(x => x.id === c.id ? { ...x, ...Object.fromEntries(Object.keys(patch).map(k=>[k, c[k]])) } : x));
+      if (window.__notify) window.__notify('Could not clear: ' + error.message);
+    }
+  };
   return (
     <div className="ww-contacts">
       <style>{`
@@ -1286,6 +1307,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         .ww-acts{ display:flex; gap:8px; margin-top:13px; }
         .ww-acts a, .ww-acts button{ flex:1; text-align:center; background:transparent; border:1px solid rgba(203,163,92,.40); color:#C8BFAE; font-family:Manrope,sans-serif; font-size:12.5px; font-weight:600; padding:9px; border-radius:100px; cursor:pointer; text-decoration:none; }
         .ww-acts .p{ background:#EBCB82; color:#1a1409; border:none; font-weight:700; }
+        .ww-acts .ww-clear{ flex:0 0 auto; padding:9px 14px; border-color:rgba(203,163,92,.22); color:#8C8475; }
+        .ww-acts .ww-clear:hover{ border-color:rgba(203,163,92,.45); color:#C8BFAE; }
         .ww-av{ width:42px; height:42px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:15px; color:#EBCB82; border:1px solid rgba(203,163,92,.40); background:#18130D; text-transform:uppercase; }
         .ww-row{ display:flex; align-items:center; gap:13px; padding:14px 2px; border-bottom:1px solid rgba(203,163,92,.16); }
         .ww-row .ww-body{ flex:1; min-width:0; }
@@ -1365,6 +1388,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
             {reachNext.c.phone && <button onClick={()=>setTextTo({ contact: reachNext.c, phone: reachNext.c.phone })}>Text</button>}
             {reachNext.c.email && <button onClick={()=>{ if(window.__composeEmail) window.__composeEmail(reachNext.c.email); }}>Email</button>}
             <button onClick={()=>setDetailContact(reachNext.c)}>Open</button>
+            <button className="ww-clear" title={/owe a reply/.test(reachNext.why) ? 'Mark handled — clears the reply you owe' : 'Not now — snooze this touch'} onClick={()=>clearReachout(reachNext.c, reachNext.why)}>Clear</button>
           </div>
         </div>
       )}
