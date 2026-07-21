@@ -5,6 +5,7 @@ import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
 import DashboardHub from './views/DashboardHub';
+import TodayView from './views/TodayView';
 import ModeBar from './views/ModeBar';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
@@ -17480,6 +17481,7 @@ function AppMain() {
   const barBadges = { tasks: openTaskCount, review: reviewCount, inbox: unreadEmailCount, email_review: needsReviewCount, contacts: hubOweReply };
 
   const NAV_ALL = [
+    { id: 'today',       icon: '✦', label: 'Today' },
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'review',      icon: '📥', label: 'Review',      badge: reviewCount || null },
     { id: 'coach',       icon: '🎯', label: 'Coach' },
@@ -17753,7 +17755,8 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='dashboard'   ? <DashboardHub
+                {view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />
+                : view==='dashboard'   ? <DashboardHub
                     agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]}
                     hour={new Date().getHours()}
                     isAdmin={isAdmin || isTeamLeader}

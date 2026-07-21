@@ -1,0 +1,261 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase } from '../dataService';
+import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from '../../supabase/functions/robot-chat/nba.js';
+
+// ── TodayView — the single calm command center ───────────────────────────────
+// One question, answered: "what do I do next?" Everything the agent must decide
+// is triaged FOR them into a short deck of batches, not shown as raw inventory.
+// The Automation Dial (Manual → Aggressive) governs how much the AI does before
+// the agent is asked. Default is Suggest (level 2): the AI thinks ahead, the
+// agent approves — trust is earned before anything acts on its own.
+
+const AUTO_LEVELS = [
+  { n: 1, key: 'manual',     label: 'Manual',      blurb: 'Nothing acts on its own. The app shows you what needs doing; you do it all.' },
+  { n: 2, key: 'suggest',    label: 'Suggest',     blurb: 'The AI prepares everything — drafts replies, flags stale work — but waits for your tap. Recommended while you build trust.' },
+  { n: 3, key: 'batch',      label: 'Batch-approve', blurb: 'The AI drafts and cleans in bulk. You approve a whole batch in one tap instead of one at a time.' },
+  { n: 4, key: 'aggressive', label: 'Aggressive',  blurb: 'Auto-pilot. The AI clears obvious work on its own and only surfaces what truly needs you — then reports what it did.' },
+];
+
+export default function TodayView({
+  contacts = [], setContacts, tasks = [], setTasks, events = [], deals = [],
+  gciGoal = 0, setView, myUserId = null, oweReplyMap = {}, setOweReplyMap,
+  agentName = '', onOpenPlan,
+}) {
+  const now = Date.now();
+  const todayISO = new Date().toISOString().slice(0, 10);
+
+  // ── Automation dial ────────────────────────────────────────────────────────
+  const [autoLevel, setAutoLevel] = useState(2);
+  const [approvals, setApprovals] = useState(0);
+  const [showDial, setShowDial] = useState(false);
+  useEffect(() => {
+    let go = true;
+    (async () => {
+      if (!myUserId) return;
+      const { data } = await supabase.from('user_settings')
+        .select('automation_level, automation_approvals').eq('user_id', myUserId).maybeSingle();
+      if (!go || !data) return;
+      setAutoLevel(data.automation_level || 2);
+      setApprovals(data.automation_approvals || 0);
+    })();
+    return () => { go = false; };
+  }, [myUserId]);
+  const saveLevel = async (n) => {
+    setAutoLevel(n); setShowDial(false);
+    try { await supabase.from('user_settings').update({ automation_level: n }).eq('user_id', myUserId); } catch (_) {}
+  };
+  const bumpApprovals = useCallback(async (by = 1) => {
+    const next = approvals + by; setApprovals(next);
+    try { await supabase.from('user_settings').update({ automation_approvals: next }).eq('user_id', myUserId); } catch (_) {}
+  }, [approvals, myUserId]);
+
+  // ── NBA signals (the same engine the dashboard + Ari use) ───────────────────
+  const [openSignals, setOpenSignals] = useState({});
+  const [docActions, setDocActions] = useState([]);
+  const [bounceActions, setBounceActions] = useState([]);
+  const [commitments, setCommitments] = useState([]);
+  const [flaggedEmail, setFlaggedEmail] = useState([]);
+  const [pendingRec, setPendingRec] = useState(0);
+
+  useEffect(() => {
+    let go = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('email_bounces')
+          .select('id, original_subject, failed_recipients, reason_code, bounced_at')
+          .eq('handled', false).order('bounced_at', { ascending: false }).limit(10);
+        if (go) setBounceActions(bounceSignals(data || []));
+      } catch (_) {}
+      try {
+        const since = new Date(now - 30 * 86400000).toISOString();
+        const { data } = await supabase.from('email_tracking')
+          .select('contact_id,confident_open_at,open_count')
+          .not('contact_id', 'is', null).not('confident_open_at', 'is', null)
+          .gte('confident_open_at', since).order('confident_open_at', { ascending: false }).limit(300);
+        const m = {}; for (const r of (data || [])) if (!m[r.contact_id]) m[r.contact_id] = r;
+        if (go) setOpenSignals(m);
+      } catch (_) {}
+      try {
+        const { data } = await supabase.from('documents')
+          .select('id, title, doc_type, summary, action_label, signed_state, document_contacts(contact_id)')
+          .eq('action_needed', true).eq('status', 'ready').order('created_at', { ascending: false }).limit(20);
+        if (go) setDocActions(docSignals(data || [], contacts));
+      } catch (_) {}
+      try {
+        const { data } = await supabase.from('commitments')
+          .select('id, title, owner, contact_name, status, due_date')
+          .eq('status', 'proposed').order('created_at', { ascending: false }).limit(50);
+        if (go) setCommitments(data || []);
+      } catch (_) {}
+      try {
+        const { data } = await supabase.from('recordings').select('id')
+          .in('status', ['pending', 'review', 'transcribing']).limit(200);
+        if (go) setPendingRec((data || []).length);
+      } catch (_) {}
+    })();
+    return () => { go = false; };
+  }, [contacts, now]);
+
+  const actions = useMemo(() => {
+    const base = buildNextActions({ contacts, tasks, events, deals, now, oweReplyMap, openSignals });
+    return [...base, ...docActions, ...bounceActions].sort((a, b) => b.score - a.score);
+  }, [contacts, tasks, events, deals, oweReplyMap, openSignals, docActions, bounceActions, now]);
+
+  // ── Triage groups (the deck) ────────────────────────────────────────────────
+  const owe = useMemo(() => Object.keys(oweReplyMap || {}).length, [oweReplyMap]);
+  const dueToday = useMemo(() => tasks.filter(t => !t.completed && t.due_date === todayISO).length, [tasks, todayISO]);
+  const pastDue = useMemo(() => tasks.filter(t => !t.completed && t.due_date && t.due_date < todayISO).length, [tasks, todayISO]);
+  const staleTasks = useMemo(() => tasks.filter(t => !t.completed && t.due_date && ((now - new Date(t.due_date)) / 86400000) > 21).length, [tasks, now]);
+
+  const hero = actions[0] || null;
+  const [heroIdx, setHeroIdx] = useState(0);
+  const cur = actions[Math.min(heroIdx, Math.max(0, actions.length - 1))] || null;
+  const totalOpen = actions.length;
+
+  // Act on a hero CTA (mirror of the dashboard's runCta, kept minimal here).
+  const runCta = (cta) => {
+    if (!cta) return;
+    if (cta.kind === 'task_done') {
+      try { supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', cta.payload).then(() => {}); } catch (_) {}
+      setTasks && setTasks(pr => pr.map(x => x.id === cta.payload ? { ...x, completed: true } : x));
+      setHeroIdx(0); bumpApprovals();
+    } else if (cta.kind === 'open_reply') {
+      if (cta.email) { window.__inboxOpenEmail = cta.email; setView && setView('inbox'); }
+      else if (cta.phone) { window.__quoTab = { tab: 'messages', phone: cta.phone, name: cta.name }; setView && setView('quo'); }
+      else setView && setView('inbox');
+    } else if (cta.kind === 'view') { setView && setView(cta.payload); }
+    else if (cta.kind === 'call') { window.location.href = 'tel:' + cta.payload; }
+    else if (cta.kind === 'bounces') { setView && setView('inbox'); }
+  };
+  const markReplied = (contactId) => {
+    if (!contactId) return;
+    try { supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction: 'outbound', channel: 'manual', occurred_at: new Date().toISOString(), brief: 'Marked replied' }).then(() => {}, () => {}); } catch (_) {}
+    setOweReplyMap && setOweReplyMap(m => { const n = { ...m }; delete n[contactId]; return n; });
+    setHeroIdx(0); bumpApprovals();
+  };
+
+  const tagColor = (t) => t === 'bounce' || t === 'overdue' ? 'var(--red)' : t === 'reply' ? 'var(--yellow)' : t === 'appt' ? '#06b6d4' : t === 'deal' ? '#22c55e' : 'var(--accent)';
+  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  const level = AUTO_LEVELS.find(l => l.n === autoLevel) || AUTO_LEVELS[1];
+
+  // A group card in the triage deck.
+  const Group = ({ icon, label, count, sub, tone, onOpen, actionLabel }) => {
+    if (!count) return null;
+    return (
+      <div onClick={onOpen} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', cursor: 'pointer', marginBottom: 10 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', border: '1px solid ' + (tone || 'var(--border)'), fontSize: 20 }}>{icon}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 15, color: 'var(--text-1)', fontWeight: 600, fontFamily: 'Fraunces, serif' }}>{label}</div>
+          {sub && <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{sub}</div>}
+        </div>
+        <div style={{ fontFamily: 'Fraunces, serif', fontSize: 26, fontWeight: 300, color: tone || 'var(--accent)' }}>{count}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="ww-prism" style={{ maxWidth: 720, margin: '0 auto' }}>
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:#2A2016;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;--accent:#CBA35C;}`}</style>
+
+      {/* Calm header */}
+      <div style={{ marginBottom: 6 }}>
+        <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--accent)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif' }}>TODAY</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 32, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: 0 }}>
+            {greeting}{agentName ? ', ' + agentName.split(' ')[0] : ''}.
+          </h1>
+          <button onClick={() => setShowDial(s => !s)} title="Automation level"
+            style={{ flexShrink: 0, background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', borderRadius: 100, padding: '5px 12px', fontSize: 11.5, cursor: 'pointer' }}>
+            ⚙ {level.label}
+          </button>
+        </div>
+      </div>
+
+      {/* Automation dial */}
+      {showDial && (
+        <div className="panel" style={{ padding: 16, marginBottom: 16, borderColor: 'var(--accent)' }}>
+          <div style={{ fontSize: 11, letterSpacing: 1.5, color: 'var(--accent)', fontWeight: 700, marginBottom: 4 }}>HOW MUCH SHOULD PRISM DO FOR YOU?</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>You can move this any time. Start where you're comfortable — Prism earns its way up.</div>
+          {AUTO_LEVELS.map(l => (
+            <div key={l.n} onClick={() => saveLevel(l.n)}
+              style={{ display: 'flex', gap: 12, padding: '10px 12px', borderRadius: 12, cursor: 'pointer', marginBottom: 6, background: l.n === autoLevel ? 'rgba(203,163,92,0.10)' : 'transparent', border: '1px solid ' + (l.n === autoLevel ? 'rgba(203,163,92,0.45)' : 'var(--border)') }}>
+              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 2, border: '2px solid ' + (l.n === autoLevel ? 'var(--accent)' : 'var(--text-3)'), background: l.n === autoLevel ? 'var(--accent)' : 'transparent' }} />
+              <div>
+                <div style={{ fontSize: 14, color: 'var(--text-1)', fontWeight: 600 }}>{l.label}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.4 }}>{l.blurb}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* The one hero — Do this next */}
+      {cur ? (
+        <div style={{ position: 'relative', borderRadius: 20, padding: '22px 20px 18px', marginBottom: 18, background: 'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid rgba(203,163,92,0.55)', boxShadow: '0 0 40px rgba(203,163,92,0.12)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#EBCB82' }}>✦ Do this next</span>
+            {totalOpen > 1 && <span style={{ fontSize: 10.5, color: 'var(--text-3)', fontWeight: 700 }}>{Math.min(heroIdx + 1, totalOpen)} / {totalOpen}</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid ' + tagColor(cur.tag), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>◆</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 21, fontFamily: 'Fraunces, serif', fontWeight: 300, letterSpacing: '-0.01em', color: '#F6F1E7', lineHeight: 1.18 }}>{cur.title}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3, lineHeight: 1.4 }}>{cur.why}</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            {cur.cta && <button className="btn btn-primary btn-sm" onClick={() => runCta(cur.cta)}>{cur.cta.label}</button>}
+            {cur.tag === 'reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={() => markReplied(cur.contactId)}>✓ Replied</button>}
+            {totalOpen > 1 && <button className="btn btn-ghost btn-sm" onClick={() => setHeroIdx(i => (i + 1) % totalOpen)}>Skip</button>}
+            {onOpenPlan && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => onOpenPlan()}>Plan my day</button>}
+          </div>
+        </div>
+      ) : (
+        <div style={{ borderRadius: 20, padding: '28px 20px', marginBottom: 18, textAlign: 'center', background: 'linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 34, marginBottom: 6 }}>✦</div>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 300, color: 'var(--text-1)' }}>You're clear.</div>
+          <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 4 }}>Nothing urgent. A great moment to reach out to someone new.</div>
+          <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setView && setView('prospecting')}>See growth moves</button>
+        </div>
+      )}
+
+      {/* The triage deck — batches, not inventory */}
+      <div style={{ fontSize: 11, letterSpacing: 1.5, color: 'var(--text-3)', fontWeight: 700, marginBottom: 10, fontFamily: 'Barlow Condensed, sans-serif' }}>YOUR DAY, TRIAGED</div>
+
+      <Group icon="↩" label="Replies you owe" count={owe} tone="var(--yellow)"
+        sub={autoLevel >= 2 ? 'Prism can draft these in your voice' : 'People waiting to hear back'}
+        onOpen={() => setView && setView('contacts')} />
+
+      <Group icon="✓" label="Call commitments to confirm" count={commitments.length} tone="var(--accent)"
+        sub="Pulled from your calls & recordings — confirm or dismiss" onOpen={() => setView && setView('review')} />
+
+      <Group icon="◷" label="Due today" count={dueToday} tone="#06b6d4"
+        sub="Tasks scheduled for today" onOpen={() => setView && setView('tasks')} />
+
+      <Group icon="✱" label="Flagged for your review" count={flaggedEmail.length} tone="var(--accent)"
+        sub="Emails that need a decision" onOpen={() => setView && setView('inbox')} />
+
+      <Group icon="◉" label="Recordings to process" count={pendingRec} tone="var(--text-3)"
+        sub="Transcribe & pull action items" onOpen={() => setView && setView('review')} />
+
+      {/* Stale backlog — offered as cleanup, NOT shown as a wall of shame */}
+      {staleTasks > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 14, background: 'rgba(140,132,117,0.06)', border: '1px dashed var(--border)', marginTop: 4 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13.5, color: 'var(--text-2)' }}>{staleTasks} tasks have been sitting for 3+ weeks.</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Old tasks make the list feel heavier than it is.</div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => { window.__groomStale = true; setView && setView('tasks'); }}>Clean up →</button>
+        </div>
+      )}
+
+      {/* Honest footer: what's NOT being shown, and why that's on purpose */}
+      {pastDue > 0 && (
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)', textAlign: 'center', marginTop: 18, lineHeight: 1.5 }}>
+          You have {pastDue} past-due tasks. They're not gone — Prism is just keeping today focused on what matters most.
+          <br /><button style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, padding: 4 }} onClick={() => setView && setView('tasks')}>See everything</button>
+        </div>
+      )}
+    </div>
+  );
+}
