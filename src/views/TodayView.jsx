@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { CallFollowupsPanel } from '../App';
+import CommitmentReview from './CommitmentReview';
+import StaleDecide from './StaleDecide';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
@@ -330,6 +332,10 @@ export default function TodayView({
 
       <Group icon="◉" label="Recordings to process" count={pendingRec} tone="var(--text-3)"
         sub="Transcribe & pull action items" onOpen={() => setView && setView('review')} />
+
+      {/* Planning decisions live here, not in the Tasks list */}
+      <CommitmentReview userId={myUserId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
+      <StaleDecide tasks={tasks} setTasks={setTasks} userId={myUserId} />
 
       {/* Follow-ups pulled from your calls — planning belongs here, not in the dialer */}
       <CallFollowupsPanel userId={myUserId} contacts={contacts} setTasks={setTasks} />

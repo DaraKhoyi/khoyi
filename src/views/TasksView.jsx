@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
-import CommitmentReview from './CommitmentReview';
-import StaleDecide from './StaleDecide';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
 import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, emailAssignTask, modal, notify, todayISO } from '../App';
@@ -353,7 +351,10 @@ function useDropTarget({ type, onDrop }) {
 function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTaskFilter, taskViewMode, setTaskViewMode, brain, contacts, properties, events = [], focusTaskId, setFocusTaskId }) {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState(null);
-  const viewMode = (taskViewMode === 'sequence' || taskViewMode === 'matrix') ? taskViewMode : 'sequence';
+  // Focus is the calm default — five at a time instead of a wall. 'sequence'
+  // (full Eisenhower list) and 'matrix' remain one tap away.
+  const viewMode = (taskViewMode === 'sequence' || taskViewMode === 'matrix' || taskViewMode === 'focus') ? taskViewMode : 'focus';
+  const setViewMode = (m) => { try { setTaskViewMode && setTaskViewMode(m); } catch (_) {} };
   const filter = taskFilter || 'today';
   const [isDragging, setIsDragging] = useState(false);
   const [datePickerTask, setDatePickerTask] = useState(null);
@@ -636,11 +637,9 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
         {/* Calls turn into work HERE, in one batch — not as six notifications
             through the day. Yours become tasks; theirs stay on the radar until
             they're late. Renders nothing when there's nothing to decide. */}
-        <CommitmentReview userId={userId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
 
         {/* The bill for "not today". Carry-forward made deferring free and silent;
             this is where it stops being free. */}
-        <StaleDecide tasks={tasks} setTasks={setTasks} userId={userId} />
 
         {/* Other people's work, counted but not mixed in. A number you can see is
             a number you can act on; 36 of these hiding inside 199 is just weight. */}
@@ -702,6 +701,15 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
               open={searchOpen}
               onToggle={() => setSearchOpen(o => !o)}
             />
+            <button
+              type="button"
+              onClick={() => setTaskViewMode('focus')}
+              title="Focus — five at a time"
+              aria-label="Focus view"
+              aria-pressed={viewMode === 'focus'}
+              className={`btn-view-toggle${viewMode === 'focus' ? ' active' : ''}`}>
+              <span style={{fontSize:'13px',fontWeight:800}}>✦</span>
+            </button>
             <button
               type="button"
               onClick={() => setTaskViewMode('sequence')}
@@ -900,6 +908,14 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
               );
             })}
           </div>
+        ) : viewMode === 'focus' ? (
+          <FocusDeck
+            tasks={[...(QUADS.flatMap(q => sequenceGroups.buckets[q] || [])), ...sequenceGroups.unranked]}
+            onEdit={openEdit}
+            onToggleComplete={toggleComplete}
+            showRanking={false} hideTodayDue={filter === 'today'}
+            onShowAll={() => setViewMode('sequence')}
+          />
         ) : viewMode === 'sequence' ? (
           <SequenceView
             buckets={sequenceGroups.buckets}
@@ -1007,6 +1023,84 @@ const QUAD_COLORS = {
   D: '#94a3b8',
 };
 
+
+// ── FocusDeck ────────────────────────────────────────────────────────────────
+// Calm by default. You see FIVE things, never a wall. Everything is already
+// loaded, so "showing more" is instant — you are never waiting on generation.
+// Clear one and the next slides up. Clear the batch and you get a real stopping
+// point ("that's enough today") — permission to stop is what keeps a task list
+// from becoming a treadmill.
+function FocusDeck({ tasks, onEdit, onToggleComplete, showRanking, hideTodayDue, onShowAll }) {
+  const BATCH = 5;
+  const [shown, setShown] = useState(BATCH);
+  const [rested, setRested] = useState(false);
+  const visible = tasks.slice(0, shown);
+  const remaining = Math.max(0, tasks.length - visible.length);
+  const clearedBatch = visible.length === 0 && tasks.length > 0;
+
+  useEffect(() => { if (tasks.length && shown > tasks.length) setShown(Math.max(BATCH, tasks.length)); }, [tasks.length, shown]);
+
+  if (rested) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 20px', borderRadius: 20, border: '1px dashed var(--border)' }}>
+        <div style={{ fontSize: 34, marginBottom: 8 }}>✦</div>
+        <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 300, color: 'var(--text-1)' }}>Enough for today.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 6, lineHeight: 1.5 }}>
+          {tasks.length} still waiting — they'll be here tomorrow, and nothing is lost.
+        </div>
+        <button className="btn btn-ghost btn-sm" style={{ marginTop: 14 }} onClick={() => setRested(false)}>Actually, keep going</button>
+      </div>
+    );
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 20px', borderRadius: 20, border: '1px dashed var(--border)' }}>
+        <div style={{ fontSize: 34, marginBottom: 8 }}>✓</div>
+        <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 300, color: 'var(--text-1)' }}>Nothing left here.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 6 }}>You cleared this list.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* quiet shape of the day — you know the size without staring at it */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ fontSize: 11, letterSpacing: 1.4, color: 'var(--text-3)', fontWeight: 700 }}>
+          {visible.length} of {tasks.length}
+        </div>
+        <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
+          <div style={{ width: `${Math.min(100, (visible.length / Math.max(1, tasks.length)) * 100)}%`, height: '100%', background: 'var(--accent)', opacity: .55 }} />
+        </div>
+        <button onClick={onShowAll} style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 11, cursor: 'pointer' }}>See all →</button>
+      </div>
+
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+        {visible.map((t, i) => (
+          <TaskProRow key={t.id} task={t} rankNumber={i + 1} quadrant={t.quadrant || null}
+            onEdit={onEdit} onToggleComplete={onToggleComplete}
+            showRanking={showRanking} hideTodayDue={hideTodayDue} />
+        ))}
+      </div>
+
+      {/* the stopping point — the most important part of the whole screen */}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+        {remaining > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setShown(s => s + BATCH)}>
+            Show {Math.min(BATCH, remaining)} more
+          </button>
+        )}
+        <button className="btn btn-ghost btn-sm" onClick={() => setRested(true)}>That's enough today</button>
+      </div>
+      {remaining > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', marginTop: 8 }}>
+          {remaining} more waiting — no rush.
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SequenceView({ buckets, unranked, quads, onEdit, onToggleComplete, onMoveTask, showRanking, hideTodayDue }) {
   const allEmpty = quads.every(q => (buckets[q] || []).length === 0) && unranked.length === 0;

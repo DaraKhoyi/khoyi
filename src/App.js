@@ -17127,7 +17127,7 @@ function AppMain() {
   }, [dataLoaded]);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
   const [taskFilter, setTaskFilter] = useState('today');
-  const [taskViewMode, setTaskViewMode] = useState('sequence');
+  const [taskViewMode, setTaskViewMode] = useState('focus');
 
   // Sync priority pref + task UI prefs from user metadata when session changes
   useEffect(() => {
