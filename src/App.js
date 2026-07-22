@@ -6,6 +6,7 @@ import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
 import DashboardHub from './views/DashboardHub';
 import TodayView from './views/TodayView';
+import FirstLook from './views/FirstLook';
 import SomedayView from './views/SomedayView';
 import ModeBar from './views/ModeBar';
 import MindsetMenu from './views/MindsetMenu';
@@ -1201,9 +1202,9 @@ function OnboardingModal({ userId, userEmail, onComplete, onClose, initial }) {
       <div className="modal" style={{maxWidth: '520px', width: '100%', maxHeight: '92vh', overflowY: 'auto'}}>
         <div className="modal-header" style={{borderBottom: '1px solid var(--border)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px'}}>
           <div>
-            <h2 style={{margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-1)'}}>Welcome to Prism</h2>
+            <h2 style={{margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-1)'}}>Let's get you set up</h2>
             <p style={{margin: '4px 0 0', fontSize: '13px', color: 'var(--text-2)'}}>
-              A few quick things so we can set up your workspace and personalize your assistant.
+              Just your name to start &mdash; everything else can wait. Next we'll connect your email and show you what's already waiting for you.
             </p>
           </div>
           {onClose && (
@@ -17865,6 +17866,10 @@ function AppMain() {
       {/* Pass 2 Batch C: Blocking onboarding modal for new users (and existing
           users on first run after this ships). Only mounts once user_settings
           has been fetched (avoids flashing the modal before we know). */}
+      {dataLoaded && userSettings && userSettings.onboarding_complete === true && userSettings.first_look_done !== true && (
+        <FirstLook userId={user.id} setView={setView}
+          onDone={() => setUserSettings(u => ({ ...(u || {}), first_look_done: true }))} />
+      )}
       {dataLoaded && userSettings && (userSettings.onboarding_complete === false || onboardingReopen) && (
         <OnboardingModal
           userId={user.id}
