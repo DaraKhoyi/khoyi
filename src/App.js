@@ -16989,7 +16989,7 @@ function AppMain() {
   const [appCtx, setAppCtx] = useState(null);
   useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ try{ await supabase.rpc('claim_agent_profile'); }catch(_e){} const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('dashboard');
+  const [view, setView] = useState('today');   // Today is home; Dashboard is retired
   // ── mindset-mode navigation ──────────────────────────────────────────────
   // The room the current screen lives in (derived), and the helpers the hub +
   // bottom bar use. Entering a mode jumps to that room's home screen; Home
@@ -17019,7 +17019,7 @@ function AppMain() {
   const [ptrBusy, setPtrBusy] = useState(false);
   const PTR_THRESHOLD = 64;
   const onMainTouchStart = (e) => {
-    if (view !== 'dashboard') { ptrRef.current.active = false; return; }
+    if (view !== 'today') { ptrRef.current.active = false; return; }
     const el = mainScrollRef.current;
     if (el && el.scrollTop <= 0 && !ptrBusy) { ptrRef.current.startY = e.touches[0].clientY; ptrRef.current.active = true; }
     else ptrRef.current.active = false;
@@ -17192,8 +17192,8 @@ function AppMain() {
         return;
       }
       // 2) Not on the home screen? Back returns home instead of leaving the app.
-      if (viewRef.current && viewRef.current !== 'dashboard') {
-        try { setView('dashboard'); } catch (_) {}
+      if (viewRef.current && viewRef.current !== 'today') {
+        try { setView('today'); } catch (_) {}
         return;
       }
       // 3) On the home screen with nothing to close → confirm before leaving.
@@ -17474,7 +17474,7 @@ function AppMain() {
   // whether it has anything urgent so the dashboard can float it up and light it.
   const hubOweReply = Object.keys(oweReplyMap || {}).length;
   const hubTodayStr = new Date().toISOString().slice(0, 10);
-  const hubDueToday = tasks.filter(t => !t.completed && t.due_date && t.due_date <= hubTodayStr).length;
+  const hubDueToday = tasks.filter(t => !t.completed && t.due_date === hubTodayStr).length;   // ACTUALLY due today — not 'today or earlier'
   const hubActiveDeals = (deals || []).filter(d => ['lead', 'active', 'pending'].includes(d.status)).length;
   const hubClear = (reviewCount || 0) + (needsReviewCount || 0);
   const hubHero = hubOweReply > 0
