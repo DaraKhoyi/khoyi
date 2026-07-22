@@ -17139,8 +17139,8 @@ function AppMain() {
     if (tf && DATE_FILTERS.some(f => f.id === tf)) setTaskFilter(tf);
     else setTaskFilter('today');
     const tv = meta.task_view_mode;
-    if (tv === 'sequence' || tv === 'matrix') setTaskViewMode(tv);
-    else setTaskViewMode('sequence');
+    if (tv === 'sequence' || tv === 'matrix' || tv === 'focus') setTaskViewMode(tv);
+    else setTaskViewMode('focus');
   }, [session]);
 
   // Persist task UI prefs to user metadata (debounced, fire-and-forget)

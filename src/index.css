@@ -1308,7 +1308,7 @@ input[type="radio"], input[type="range"], select, progress {
 .month-event.icloud-personal, .month-day-event.icloud-personal { background: rgba(124,131,163,0.5) !important; }
 
 /* Teachable moments — in-context lessons */
-.prism-tip{ background:linear-gradient(180deg, rgba(203,163,92,.11), rgba(203,163,92,.03)); border:1px solid rgba(203,163,92,.38); border-radius:14px; padding:13px 15px; margin:0 0 14px; }
+.prism-tip{ background:linear-gradient(180deg, rgba(203,163,92,.11), rgba(203,163,92,.03)); border:1px solid rgba(203,163,92,.38); border-radius:14px; padding:13px 15px; margin:0 0 14px;  width:100%; box-sizing:border-box; }
 .prism-tip-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:7px; }
 .prism-tip-eye{ font-size:10px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:#EBCB82; }
 .prism-tip-got{ background:transparent; border:1px solid rgba(203,163,92,.4); color:#C8BFAE; font-family:Manrope,sans-serif; font-size:11px; font-weight:700; padding:5px 12px; border-radius:100px; cursor:pointer; white-space:nowrap; }

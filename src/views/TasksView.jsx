@@ -693,7 +693,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           <div style={{minWidth:0, flex:1}}>
             <h2 style={{margin:'6px 0 2px',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} />Tasks</h2>
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
-            <Tip id="eisenhower" label="Urgent vs. important">Prism ranks by <b>importance × urgency</b> (the Eisenhower idea). Do important-and-urgent now; <b>schedule</b> important-but-not-urgent; let the rest wait. Working the matrix keeps you proactive, not just busy.</Tip>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
             <HeaderSearchIcon
@@ -749,6 +748,8 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             <button className="btn-add-circle" onClick={openNew} title="New Task" aria-label="New Task">+</button>
           </div>
         </div>
+
+        <Tip id="eisenhower" label="Urgent vs. important">Prism ranks by <b>importance × urgency</b> (the Eisenhower idea). Do important-and-urgent now; <b>schedule</b> important-but-not-urgent; let the rest wait. Working the matrix keeps you proactive, not just busy.</Tip>
 
         {/* Filter pills */}
         <div style={{display:'flex',gap:'6px',padding:'4px 0 12px',alignItems:'center',flexWrap:'wrap'}}>
