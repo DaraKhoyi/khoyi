@@ -26,6 +26,7 @@ export default function StaleDecide({ tasks, setTasks, userId }) {
   const [busy, setBusy] = useState(null);
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(null);
+  const [shown, setShown] = useState(3);   // never a wall — 3 decisions at a time
 
   const stale = useMemo(() => (tasks || [])
     .filter(t => !t.completed && !t.dropped_at && !t.waiting_on)
@@ -82,7 +83,7 @@ export default function StaleDecide({ tasks, setTasks, userId }) {
             These have been moved to tomorrow over and over. That’s already an answer —
             it just never got recorded. Three doors, no fourth.
           </div>
-          {stale.slice(0, 12).map(t => (
+          {stale.slice(0, shown).map(t => (
             <div key={t.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
               borderRadius: 12, padding: 12, marginBottom: 7 }}>
               <div style={{ fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.4 }}>{t.title}</div>
@@ -112,9 +113,12 @@ export default function StaleDecide({ tasks, setTasks, userId }) {
               )}
             </div>
           ))}
-          {stale.length > 12 && (
-            <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', padding: '6px 0' }}>
-              {stale.length - 12} more — twelve at a time is enough for one sitting.
+          {stale.length > shown && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '8px 0' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShown(n => n + 3)}>
+                Show 3 more ({stale.length - shown} left)
+              </button>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>A few at a time is enough for one sitting.</div>
             </div>
           )}
         </div>
