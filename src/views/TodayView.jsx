@@ -127,6 +127,21 @@ export default function TodayView({
   useEffect(() => { loadGroom(); }, [loadGroom, tasks.length]);
   const staleTasks = groomCands.length;
 
+  // ── "How you're doing" — the one thing worth keeping from the old Dashboard.
+  // Deliberately at the BOTTOM: it should reward, not pressure.
+  const progress = useMemo(() => {
+    const dayISO = (d) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    const doneToday = tasks.filter(t => t.completed && (t.completed_at || '').slice(0, 10) === todayISO).length;
+    const openToday = tasks.filter(t => !t.completed && t.due_date === todayISO).length;
+    const total = doneToday + openToday;
+    const week = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = dayISO(i);
+      week.push(tasks.filter(t => t.completed && (t.completed_at || '').slice(0, 10) === d).length);
+    }
+    return { doneToday, total, pct: total > 0 ? doneToday / total : 0, week, weekTotal: week.reduce((a, b) => a + b, 0) };
+  }, [tasks, todayISO]);
+
   const hero = actions[0] || null;
   const [heroIdx, setHeroIdx] = useState(0);
   const cur = actions[Math.min(heroIdx, Math.max(0, actions.length - 1))] || null;
@@ -358,6 +373,35 @@ export default function TodayView({
           <br /><button style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, padding: 4 }} onClick={() => setView && setView('tasks')}>See everything</button>
         </div>
       )}
+      {/* How you're doing — reward at the end of the work, not a gate at the start */}
+      <div style={{ marginTop: 26, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 10.5, letterSpacing: 1.6, color: 'var(--text-3)', fontWeight: 700, marginBottom: 10, fontFamily: 'Barlow Condensed, sans-serif' }}>HOW YOU'RE DOING</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div style={{ position: 'relative', width: 62, height: 62, flexShrink: 0 }}>
+            <svg width="62" height="62" viewBox="0 0 62 62">
+              <circle cx="31" cy="31" r="27" fill="none" stroke="var(--border)" strokeWidth="5" />
+              <circle cx="31" cy="31" r="27" fill="none" stroke="var(--accent)" strokeWidth="5" strokeLinecap="round"
+                strokeDasharray={`${Math.round(progress.pct * 169.6)} 169.6`} transform="rotate(-90 31 31)" />
+            </svg>
+            <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontFamily: 'Fraunces, serif', fontSize: 17, color: 'var(--text-1)' }}>
+              {progress.doneToday}
+            </div>
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13.5, color: 'var(--text-1)' }}>
+              {progress.doneToday === 0 ? 'Nothing checked off yet today.' : `${progress.doneToday} done today.`}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 7 }}>{progress.weekTotal} in the last 7 days</div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 26 }}>
+              {progress.week.map((n, i) => {
+                const max = Math.max(1, ...progress.week);
+                return <div key={i} title={`${n} done`} style={{ flex: 1, height: `${Math.max(3, (n / max) * 26)}px`, borderRadius: 2, background: i === 6 ? 'var(--accent)' : 'rgba(203,163,92,0.32)' }} />;
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Bounce detail — "what happened" to the emails that didn't arrive */}
       {showBounces && (
         <div className="modal-overlay" style={{ zIndex: 2400 }} onClick={e => e.target === e.currentTarget && setShowBounces(false)}>

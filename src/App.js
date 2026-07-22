@@ -16996,7 +16996,7 @@ function AppMain() {
   // returns to the hub (the dashboard).
   const activeMode = view === 'dashboard' ? null : (VIEW_TO_MODE[view] || null);
   const enterMode = (modeId) => { if (modeId === '__today__') { setView('today'); return; } const m = modeById(modeId); if (m) setView(m.home); };
-  const goHome = () => setView('dashboard');
+  const goHome = () => setView('today');   // Today replaces the Dashboard as home
   React.useEffect(() => {
     try {
       const p = new URLSearchParams(window.location.search).get('dropbox');
@@ -17601,7 +17601,6 @@ function AppMain() {
   const MENU = [
     // ── Top level — promoted daily drivers (Dara's order) ──
     { label: 'Today', view: 'today', icon: 'sparkles' },
-    { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     { label: 'Tasks', view: 'tasks', icon: 'tasks' },
     { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
@@ -17731,7 +17730,7 @@ function AppMain() {
       <MindsetMenu open={mindsetOpen} onClose={() => setMindsetOpen(false)}
         currentView={view} activeMode={activeMode} isAdmin={isAdmin || isTeamLeader}
         onHome={goHome} onEnterMode={enterMode}
-        modeBadges={{ plan: hubDueToday + hubClear, relationships: hubOweReply, deals: hubActiveDeals }}
+        modeBadges={{ plan: hubDueToday + hubClear, relationships: hubOweReply, deals: hubActiveDeals, prospect: 0, money: 0, brokerage: 0 }}
         userName={user.user_metadata?.display_name?.trim()||user.user_metadata?.full_name?.trim()?.split(/\s+/)[0]||user.email?.split('@')[0]}
         userEmail={user.email} onSignOut={handleSignOut} />
 

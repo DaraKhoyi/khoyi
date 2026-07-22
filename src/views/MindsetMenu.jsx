@@ -50,7 +50,22 @@ function Row({ glyph, accent, label, tag, badge, active, onClick }) {
 }
 
 export default function MindsetMenu({ open, onClose, currentView, activeMode, isAdmin, onHome, onEnterMode, modeBadges = {}, userName, userEmail, onSignOut }) {
-  const rooms = MODES.filter(m => !m.adminOnly || isAdmin);
+  // Rooms ordered like the hub: anything urgent floats up, then the room that
+  // suits the hour (Plan in the morning, Money late afternoon), then the rest.
+  const rooms = React.useMemo(() => {
+    const hour = new Date().getHours();
+    const list = MODES.filter(m => !m.adminOnly || isAdmin);
+    const weight = (m) => {
+      const b = modeBadges[m.id] || 0;
+      if (b > 0) return 100 + Math.min(b, 99);
+      if (m.id === 'plan' && hour < 11) return 60;
+      if (m.id === 'prospect' && hour >= 9 && hour < 15) return 40;
+      if (m.id === 'deals' && hour >= 10 && hour < 18) return 38;
+      if (m.id === 'money' && hour >= 15) return 30;
+      return 10;
+    };
+    return [...list].sort((a, b) => weight(b) - weight(a));
+  }, [isAdmin, modeBadges]);
   return (
     <>
       {/* backdrop */}
@@ -157,8 +172,6 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
             </span>
           </button>
 
-          <Row glyph="home" accent={G.champ} label="Dashboard" tag="Your briefing"
-            active={currentView === 'dashboard'} onClick={() => { onHome(); onClose(); }} />
           <div style={{ height: 1, background: 'rgba(203,163,92,0.12)', margin: '6px 12px' }} />
           {rooms.map(m => (
             <Row key={m.id} glyph={m.glyph} accent={m.accent} label={m.label} tag={m.tag}
