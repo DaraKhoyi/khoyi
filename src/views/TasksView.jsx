@@ -643,43 +643,6 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
 
         {/* Other people's work, counted but not mixed in. A number you can see is
             a number you can act on; 36 of these hiding inside 199 is just weight. */}
-        {waitingTasks.length > 0 && (
-          <div style={{ marginBottom: 14 }}>
-            <button onClick={() => setShowWaiting(v => !v)}
-              style={{ width: '100%', textAlign: 'left', background: 'var(--bg-card)',
-                border: '1px solid var(--border)', borderRadius: 12, padding: '11px 14px',
-                color: 'var(--text-1)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700 }}>
-                Waiting on other people — {waitingTasks.length}
-              </span>
-              {(() => {
-                const today = new Date().toISOString().slice(0, 10);
-                const late = waitingTasks.filter(t => t.due_date && t.due_date < today).length;
-                return late > 0 ? <span style={{ fontSize: 11, fontWeight: 800, color: '#C9563F' }}>{late} late</span> : null;
-              })()}
-              <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{showWaiting ? 'hide' : 'these aren’t yours to do'}</span>
-            </button>
-            {showWaiting && (
-              <div style={{ marginTop: 6 }}>
-                {waitingTasks.map(t => {
-                  const today = new Date().toISOString().slice(0, 10);
-                  const late = t.due_date && t.due_date < today;
-                  return (
-                    <div key={t.id} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '8px 12px',
-                      borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
-                      <span style={{ color: late ? '#C9563F' : 'var(--accent)', fontWeight: 800, fontSize: 10,
-                        minWidth: 96, letterSpacing: '.04em' }}>{t.waiting_on}</span>
-                      <span style={{ flex: 1, color: 'var(--text-2)', minWidth: 0, overflow: 'hidden',
-                        textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-                      {late && <span style={{ fontSize: 10, color: '#C9563F', fontWeight: 700 }}>late</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Header: title + subtitle on left  ·  view-mode icons + add button on right
             The icons replace the old standalone Sequence/Matrix text-button row
@@ -936,6 +899,44 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             onMoveTask={moveTaskToQuadrant}
             showRanking={filter === 'today'} hideTodayDue={filter === 'today'}
           />
+        )}
+
+        {waitingTasks.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <button onClick={() => setShowWaiting(v => !v)}
+              style={{ width: '100%', textAlign: 'left', background: 'var(--bg-card)',
+                border: '1px solid var(--border)', borderRadius: 12, padding: '11px 14px',
+                color: 'var(--text-1)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700 }}>
+                Waiting on other people — {waitingTasks.length}
+              </span>
+              {(() => {
+                const today = new Date().toISOString().slice(0, 10);
+                const late = waitingTasks.filter(t => t.due_date && t.due_date < today).length;
+                return late > 0 ? <span style={{ fontSize: 11, fontWeight: 800, color: '#C9563F' }}>{late} late</span> : null;
+              })()}
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{showWaiting ? 'hide' : 'these aren’t yours to do'}</span>
+            </button>
+            {showWaiting && (
+              <div style={{ marginTop: 6 }}>
+                {waitingTasks.map(t => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const late = t.due_date && t.due_date < today;
+                  return (
+                    <div key={t.id} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '8px 12px',
+                      borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
+                      <span style={{ color: late ? '#C9563F' : 'var(--accent)', fontWeight: 800, fontSize: 10,
+                        minWidth: 96, letterSpacing: '.04em' }}>{t.waiting_on}</span>
+                      <span style={{ flex: 1, color: 'var(--text-2)', minWidth: 0, overflow: 'hidden',
+                        textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+                      {late && <span style={{ fontSize: 10, color: '#C9563F', fontWeight: 700 }}>late</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
 
         <DropZoneStrip
