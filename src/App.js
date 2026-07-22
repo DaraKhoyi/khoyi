@@ -16995,7 +16995,7 @@ function AppMain() {
   // bottom bar use. Entering a mode jumps to that room's home screen; Home
   // returns to the hub (the dashboard).
   const activeMode = view === 'dashboard' ? null : (VIEW_TO_MODE[view] || null);
-  const enterMode = (modeId) => { const m = modeById(modeId); if (m) setView(m.home); };
+  const enterMode = (modeId) => { if (modeId === '__today__') { setView('today'); return; } const m = modeById(modeId); if (m) setView(m.home); };
   const goHome = () => setView('dashboard');
   React.useEffect(() => {
     try {

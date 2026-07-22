@@ -21,15 +21,15 @@ const G = { gold: '#CBA35C', champ: '#EBCB82', cream: '#F6F1E7', ember: '#C9563F
 
 function Row({ glyph, accent, label, tag, badge, active, onClick }) {
   return (
-    <button onClick={onClick}
+    <button onClick={onClick} className="mm-row"
       style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left',
         padding: '14px 16px', border: 'none', cursor: 'pointer', borderRadius: 14,
         background: active ? 'rgba(203,163,92,0.12)' : 'transparent',
         transition: 'background .15s' }}
       onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(203,163,92,0.06)'; }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
-      <span style={{ flex: 'none', width: 40, height: 40, borderRadius: 11, display: 'grid', placeItems: 'center',
-        background: 'rgba(203,163,92,0.10)', border: '1px solid rgba(203,163,92,0.22)' }}>
+      <span className="mm-glyph" style={{ flex: 'none', width: 40, height: 40, borderRadius: 11, display: 'grid', placeItems: 'center',
+        background: 'rgba(203,163,92,0.10)', border: '1px solid rgba(203,163,92,0.22)', color: accent || G.gold }}>
         <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke={accent || G.gold}
           strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{glyphs[glyph] || glyphs.sun}</svg>
       </span>
@@ -72,6 +72,32 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
         {/* a soft breathing gold glow overlay — the "lit from within" feel the
             dashboard has, gently pulsing so the menu feels alive when it opens */}
         <style>{`
+          /* ── Today hero: shimmer sweep + pulsing star ───────────────────── */
+          .mm-today { transition: transform .18s ease, box-shadow .25s ease, border-color .25s ease; }
+          .mm-today:hover, .mm-today:focus-visible { transform: translateY(-2px);
+            box-shadow: 0 10px 34px rgba(203,163,92,.28), 0 0 0 1px rgba(235,203,130,.5) inset;
+            border-color: rgba(235,203,130,.9); }
+          .mm-today:active { transform: translateY(0) scale(.99); }
+          .mm-shimmer { position:absolute; top:0; bottom:0; left:-60%; width:45%;
+            background: linear-gradient(105deg, transparent, rgba(255,240,200,.16), transparent);
+            transform: skewX(-18deg); animation: mm-sweep 4.2s ease-in-out infinite; pointer-events:none; }
+          @keyframes mm-sweep { 0% { left:-60%; } 55% { left:120%; } 100% { left:120%; } }
+          .mm-star { animation: mm-twinkle 2.6s ease-in-out infinite; display:inline-block; }
+          @keyframes mm-twinkle {
+            0%,100% { opacity:.85; transform: scale(1) rotate(0deg); }
+            50%     { opacity:1;   transform: scale(1.18) rotate(12deg); }
+          }
+          /* ── Room rows: lift + gold edge on touch ─────────────────────────── */
+          .mm-row { transition: transform .16s ease, background .2s ease, box-shadow .2s ease; }
+          .mm-row:hover { transform: translateX(3px); background: rgba(203,163,92,.07);
+            box-shadow: inset 2px 0 0 rgba(235,203,130,.75); }
+          .mm-row:active { transform: translateX(1px) scale(.995); }
+          .mm-row:hover .mm-glyph { filter: drop-shadow(0 0 7px currentColor); transform: scale(1.08); }
+          .mm-glyph { transition: transform .18s ease, filter .18s ease; }
+          @media (prefers-reduced-motion: reduce) {
+            .mm-shimmer, .mm-star { animation: none; }
+            .mm-today:hover, .mm-row:hover { transform: none; }
+          }
           @keyframes mm-breathe { 0%,100%{ opacity:.5; transform:translate(0,0) scale(1); } 50%{ opacity:.9; transform:translate(6px,-4px) scale(1.06); } }
         `}</style>
         <div aria-hidden="true" style={{ position: 'absolute', top: -60, right: -40, width: 240, height: 240,
@@ -116,6 +142,21 @@ export default function MindsetMenu({ open, onClose, currentView, activeMode, is
           </div>
         </div>
         <div style={{ padding: '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 1 }}>
+          {/* TODAY — the daily driver, given a signature glowing treatment */}
+          <button onClick={() => { onEnterMode && onEnterMode('__today__'); onClose(); }}
+            className="mm-today"
+            style={{ position: 'relative', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12,
+              padding: '13px 14px', marginBottom: 8, borderRadius: 16, cursor: 'pointer', overflow: 'hidden',
+              border: '1px solid rgba(203,163,92,0.55)',
+              background: 'radial-gradient(120% 160% at 100% 0%, rgba(235,203,130,0.18), transparent 60%), linear-gradient(180deg,#241C12,#150F0A)' }}>
+            <span aria-hidden="true" className="mm-shimmer" />
+            <span className="mm-star" style={{ fontSize: 17, color: '#EBCB82', flexShrink: 0, filter: 'drop-shadow(0 0 6px rgba(235,203,130,.55))' }}>✦</span>
+            <span style={{ minWidth: 0, flex: 1, position: 'relative' }}>
+              <span style={{ display: 'block', fontFamily: 'Fraunces, serif', fontSize: 17, color: '#F6F1E7', letterSpacing: '-0.01em' }}>Today</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: '#C8BFAE' }}>What to do next</span>
+            </span>
+          </button>
+
           <Row glyph="home" accent={G.champ} label="Dashboard" tag="Your briefing"
             active={currentView === 'dashboard'} onClick={() => { onHome(); onClose(); }} />
           <div style={{ height: 1, background: 'rgba(203,163,92,0.12)', margin: '6px 12px' }} />
