@@ -189,6 +189,25 @@ export default function TodayView({
     } catch (_) {}
   };
 
+  // Park the selected tasks in Someday/Maybe — kept, but off the active list.
+  const parkSomeday = async () => {
+    const ids = Object.entries(groomSel).filter(([, v]) => v).map(([k]) => k);
+    if (!ids.length) return;
+    setGroomBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('tasks_park_someday', { p_task_ids: ids, p_note: null });
+      if (error || !data?.ok) { if (window.__notify) window.__notify('Could not park: ' + (error?.message || data?.error || ''), 'error'); }
+      else {
+        setLastBatch(data.batch_id);
+        setTasks && setTasks(pr => pr.filter(t => !ids.includes(t.id)));
+        setShowGroom(false);
+        if (window.__notify) window.__notify(`Moved ${data.parked} to Someday/Maybe.`, 'success');
+        loadGroom();
+      }
+    } catch (e) { if (window.__notify) window.__notify('Could not park: ' + (e.message || e), 'error'); }
+    setGroomBusy(false);
+  };
+
   const markReplied = (contactId) => {
     if (!contactId) return;
     try { supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction: 'outbound', channel: 'manual', occurred_at: new Date().toISOString(), brief: 'Marked replied' }).then(() => {}, () => {}); } catch (_) {}
@@ -358,9 +377,13 @@ export default function TodayView({
           <div className="modal" style={{ maxWidth: 640, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
             <div className="modal-header"><h3 style={{ margin: 0 }}>Clear out old tasks</h3><button className="modal-close" onClick={() => setShowGroom(false)}>×</button></div>
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, marginTop: 0 }}>
-              These have been open a month or more. Archiving hides them from your list — <b>nothing is deleted</b>, and you can restore any of them.
+              These have been open a month or more. Decide what each pile deserves — <b>nothing is deleted</b>, and everything is reversible.
               Anything tied to a live deal, an upcoming appointment, someone you owe a reply, or marked high priority is left alone.
             </p>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, marginBottom: 10, padding: '8px 10px', borderRadius: 10, background: 'rgba(203,163,92,0.06)', border: '1px solid var(--border)' }}>
+              <b style={{ color: 'var(--accent)' }}>Someday / Maybe</b> — worth keeping, no schedule (a book to read, a movie to watch, an idea to revisit).<br />
+              <b style={{ color: 'var(--text-2)' }}>Archive</b> — done with it; hide it but keep the record.
+            </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
               <button className="btn btn-ghost btn-sm" onClick={() => setGroomSel(Object.fromEntries(groomCands.map(g => [g.task_id, true])))}>Select all</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setGroomSel({})}>Select none</button>
@@ -377,10 +400,13 @@ export default function TodayView({
                 </label>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn-ghost" onClick={() => setShowGroom(false)}>Cancel</button>
-              <button className="btn btn-primary" disabled={groomBusy || !Object.values(groomSel).some(Boolean)} onClick={runGroom} style={{ flex: 1 }}>
-                {groomBusy ? 'Clearing…' : `Archive ${Object.values(groomSel).filter(Boolean).length} tasks`}
+              <button className="btn btn-primary" disabled={groomBusy || !Object.values(groomSel).some(Boolean)} onClick={parkSomeday} style={{ flex: 1, minWidth: 150 }}>
+                {groomBusy ? '…' : `→ Someday/Maybe (${Object.values(groomSel).filter(Boolean).length})`}
+              </button>
+              <button className="btn btn-ghost" disabled={groomBusy || !Object.values(groomSel).some(Boolean)} onClick={runGroom} style={{ flex: 1, minWidth: 120 }}>
+                {groomBusy ? '…' : `Archive (${Object.values(groomSel).filter(Boolean).length})`}
               </button>
             </div>
           </div>

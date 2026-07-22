@@ -6,6 +6,7 @@ import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
 import DashboardHub from './views/DashboardHub';
 import TodayView from './views/TodayView';
+import SomedayView from './views/SomedayView';
 import ModeBar from './views/ModeBar';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
@@ -2415,6 +2416,9 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
               <h3 style={{margin:0,fontSize:'17px',fontWeight:800,color:'var(--text-1)'}}>{initial ? 'Edit Task' : 'New Task'}</h3>
               {completed && <div style={{fontSize:'11px',color:'var(--green)',fontWeight:700}}>✓ Completed</div>}
             </div>
+            {initial && <button type="button" title="Move to Someday / Maybe — keep it, but off your active list"
+              onClick={async()=>{ try{ const { data } = await supabase.rpc('tasks_park_someday',{ p_task_ids:[initial.id], p_note:null }); if(data?.ok){ if(window.__notify) window.__notify('Moved to Someday / Maybe.','success'); onClose && onClose(true); } }catch(e){ if(window.__notify) window.__notify('Could not move: '+(e.message||e),'error'); } }}
+              style={{marginLeft:'2px',background:'none',border:'1px solid var(--border-strong)',color:'var(--text-2)',cursor:'pointer',padding:'6px 10px',borderRadius:'999px',fontSize:'11.5px',fontWeight:600,whiteSpace:'nowrap'}}>✦ Someday</button>}
             {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete" style={{marginLeft:'2px',background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:'6px',borderRadius:'8px',display:'inline-flex'}}><Icon name="trash" size={16} /></button>}
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'10px',flexShrink:0}}>
@@ -17231,7 +17235,7 @@ function AppMain() {
     const eventsUpperBound = new Date(now.getTime() + 540 * 86400000).toISOString();
 
     const queries = [
-      ['tasks',          supabase.from('tasks').select('*').is('archived_at', null).order('created_at', { ascending: false }).limit(500)],
+      ['tasks',          supabase.from('tasks').select('*').is('archived_at', null).eq('someday', false).order('created_at', { ascending: false }).limit(500)],
       ['robots',         supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true })],
       ['notes',          supabase.from('notes').select('*').order('updated_at', { ascending: false }).limit(500)],
       ['contacts',       supabase.from('contacts').select('*').order('created_at', { ascending: false }).limit(10000)],
@@ -17507,6 +17511,7 @@ function AppMain() {
     { id: 'team',        icon: '👥', label: 'Team', badge: null },
     { id: 'contact_types', icon: '🏷️', label: 'Contact types', badge: null },
     { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
+    { id: 'someday',     icon: '✦', label: 'Someday / Maybe' },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
     { id: 'email_review', icon: '🕵️', label: 'Email review', badge: needsReviewCount || null },
@@ -17591,6 +17596,7 @@ function AppMain() {
     { label: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     { label: 'Tasks', view: 'tasks', icon: 'tasks' },
+    { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
     { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
     { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
     { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
@@ -17764,7 +17770,8 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />
+                {view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
+                : view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />
                 : view==='dashboard'   ? <DashboardHub
                     agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]}
                     hour={new Date().getHours()}
