@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-152a2b79'
+const VERSION = 'prismos-3b0ff3d2'
 const APP_SHELL = [
   '/',
   '/index.html',
