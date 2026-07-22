@@ -16,13 +16,24 @@ Shape:
 { "call_summary": "a tight 2-4 sentence summary: what the call was about, the key points or advice discussed, and where it landed",
   "key_points": [ "a concise, substantive point, decision, or piece of advice worth remembering later" ],
   "non_english": true if the transcript contains ANY non-English speech (e.g. Farsi or Spanish), otherwise false,
-  "action_items": [ { "owner": "me" | "them", "title": "short imperative task", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
+  "action_items": [ { "owner": "me" | "them", "title": "short imperative task", "fuse": "immediate" | "near" | "distant", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
 Rules:
 - call_summary + key_points carry the SUBSTANCE of the call (context, advice, decisions). This is where information is preserved, NOT in tasks. Be useful but concise: up to 5 key_points, fewer if the call was simple; return "key_points": [] if there is nothing beyond the summary.
 - action_items are ONLY concrete, real next steps someone actually committed to, each with a clear deliverable. BE STRICT: exclude vague intentions ("we should catch up sometime"), hypotheticals, general discussion, pleasantries, and anything already done during the call. If something is context or advice rather than a discrete to-do, keep it in key_points and do NOT make it a task. When in doubt, leave it out. Return at most 5 action_items; if nothing was truly committed, return [].
 - "owner":"me" = something Dara agreed to do. "owner":"them" = the other person's commitment (Dara should track/expect it). Include both.
 - Resolve relative dates to an absolute YYYY-MM-DD using the provided current date; else null.
 - Keep titles short and actionable. Do not invent commitments that were not discussed.
+- "fuse" classifies HOW SOON the promise comes due, which decides whether it is worth queuing at all:
+    "immediate" = due within a few hours, usually inside the same conversation window
+                  ("I'll call you right back", "be there in 20 minutes", "text you shortly").
+                  These are almost always already handled by the time anyone reviews them.
+    "near"      = a real future window with a deliverable: today, tomorrow, a named day,
+                  "by Friday", "this week", "before the closing".
+    "distant"   = far off or conditional: "follow up in 6 months", "if I don't hear back",
+                  "when you're ready", "sometime".
+  Measured on 199 real commitments: 91% of "immediate" ones were thrown away as stale,
+  because review happens ~23 hours after the call. Classify honestly — do NOT inflate an
+  immediate promise into "near" to make it look important.
 LANGUAGE:
 - The transcript may contain more than one language (the speaker code-switches, e.g. English with Farsi, or English with Spanish). Write ALL of your output — call_summary, every action item title, and every note — in clear, natural English, translating from the other language(s) as needed. Never leave non-English text in the summary or tasks.
 PRONOUNS (get these exactly right in the summary and notes):

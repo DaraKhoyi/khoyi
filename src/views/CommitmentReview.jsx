@@ -185,7 +185,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   }
 
   if (!rows) return null;
-  const proposed = rows.filter(r => r.status === 'proposed');
+  // Short-fuse promises ("call you right back", "there in 20 minutes") are already
+  // moot by the time anyone reviews — measured 91% dismissed. Keep them out of the
+  // queue entirely rather than making you hand-dismiss stale work.
+  const proposed = rows.filter(r => r.status === 'proposed' && (r.fuse || 'near') !== 'immediate');
   const waiting = rows.filter(r => r.status === 'accepted' && r.owner === 'them');
   const late = waiting.filter(r => r.due_date && daysLate(r.due_date) > 0);
   const onTime = waiting.filter(r => !late.includes(r));
