@@ -107,7 +107,22 @@ export default function TodayView({
   const owe = useMemo(() => Object.keys(oweReplyMap || {}).length, [oweReplyMap]);
   const dueToday = useMemo(() => tasks.filter(t => !t.completed && t.due_date === todayISO).length, [tasks, todayISO]);
   const pastDue = useMemo(() => tasks.filter(t => !t.completed && t.due_date && t.due_date < todayISO).length, [tasks, todayISO]);
-  const staleTasks = useMemo(() => tasks.filter(t => !t.completed && t.due_date && ((now - new Date(t.due_date)) / 86400000) > 21).length, [tasks, now]);
+  // Stale is judged by AGE SINCE CREATION (the auto-scheduler keeps re-dating old
+  // tasks forward, so due_date always looks recent and is useless as a signal).
+  // Candidates come from the server RPC, which also applies the safety guardrails.
+  const [groomCands, setGroomCands] = useState([]);
+  const [showGroom, setShowGroom] = useState(false);
+  const [groomSel, setGroomSel] = useState({});
+  const [groomBusy, setGroomBusy] = useState(false);
+  const [lastBatch, setLastBatch] = useState(null);
+  const loadGroom = useCallback(async () => {
+    try {
+      const { data } = await supabase.rpc('groom_stale_preview', { p_min_age_days: 30 });
+      setGroomCands(data || []);
+    } catch (_) { setGroomCands([]); }
+  }, []);
+  useEffect(() => { loadGroom(); }, [loadGroom, tasks.length]);
+  const staleTasks = groomCands.length;
 
   const hero = actions[0] || null;
   const [heroIdx, setHeroIdx] = useState(0);
@@ -147,6 +162,33 @@ export default function TodayView({
     setBounceActions(a => a.filter(x => x.key !== 'bounce:' + id));
     if (window.__notify) window.__notify('Marked handled.', 'success');
   };
+  // Archive the selected stale tasks — reversible, logged, and undoable in one tap.
+  const runGroom = async () => {
+    const ids = Object.entries(groomSel).filter(([, v]) => v).map(([k]) => k);
+    if (!ids.length) return;
+    setGroomBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('groom_stale_archive', { p_task_ids: ids, p_level: autoLevel });
+      if (error || !data?.ok) { if (window.__notify) window.__notify('Could not archive: ' + (error?.message || data?.error || ''), 'error'); }
+      else {
+        setLastBatch(data.batch_id);
+        setTasks && setTasks(pr => pr.filter(t => !ids.includes(t.id)));
+        setShowGroom(false);
+        if (window.__notify) window.__notify(`Cleared ${data.archived} tasks — tap Undo if that wasn't right.`, 'success');
+        bumpApprovals(ids.length);
+        loadGroom();
+      }
+    } catch (e) { if (window.__notify) window.__notify('Could not archive: ' + (e.message || e), 'error'); }
+    setGroomBusy(false);
+  };
+  const undoGroom = async () => {
+    if (!lastBatch) return;
+    try {
+      const { data } = await supabase.rpc('groom_undo', { p_batch_id: lastBatch });
+      if (data?.ok) { if (window.__notify) window.__notify(`Restored ${data.restored} tasks.`, 'success'); setLastBatch(null); loadGroom(); }
+    } catch (_) {}
+  };
+
   const markReplied = (contactId) => {
     if (!contactId) return;
     try { supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction: 'outbound', channel: 'manual', occurred_at: new Date().toISOString(), brief: 'Marked replied' }).then(() => {}, () => {}); } catch (_) {}
@@ -273,10 +315,10 @@ export default function TodayView({
       {staleTasks > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 14, background: 'rgba(140,132,117,0.06)', border: '1px dashed var(--border)', marginTop: 4 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 13.5, color: 'var(--text-2)' }}>{staleTasks} tasks have been sitting for 3+ weeks.</div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Old tasks make the list feel heavier than it is.</div>
+            <div style={{ fontSize: 13.5, color: 'var(--text-2)' }}>{staleTasks} tasks have been open for a month or more.</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{autoLevel >= 3 ? 'Prism can clear these in one tap — fully reversible.' : 'Old tasks make the list feel heavier than it is.'}</div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => { window.__groomStale = true; setView && setView('tasks'); }}>Clean up →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setGroomSel(Object.fromEntries(groomCands.map(g => [g.task_id, true]))); setShowGroom(true); }}>Review →</button>
         </div>
       )}
 
@@ -308,6 +350,49 @@ export default function TodayView({
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {/* Stale-task review — the groomer proposes, you decide. Always reversible. */}
+      {showGroom && (
+        <div className="modal-overlay" style={{ zIndex: 2400 }} onClick={e => e.target === e.currentTarget && setShowGroom(false)}>
+          <div className="modal" style={{ maxWidth: 640, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
+            <div className="modal-header"><h3 style={{ margin: 0 }}>Clear out old tasks</h3><button className="modal-close" onClick={() => setShowGroom(false)}>×</button></div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, marginTop: 0 }}>
+              These have been open a month or more. Archiving hides them from your list — <b>nothing is deleted</b>, and you can restore any of them.
+              Anything tied to a live deal, an upcoming appointment, someone you owe a reply, or marked high priority is left alone.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setGroomSel(Object.fromEntries(groomCands.map(g => [g.task_id, true])))}>Select all</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setGroomSel({})}>Select none</button>
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-3)', alignSelf: 'center' }}>{Object.values(groomSel).filter(Boolean).length} of {groomCands.length} selected</span>
+            </div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
+              {groomCands.map((g, i) => (
+                <label key={g.task_id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderBottom: i < groomCands.length - 1 ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!groomSel[g.task_id]} onChange={e => setGroomSel(s => ({ ...s, [g.task_id]: e.target.checked }))} style={{ marginTop: 3 }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13.5, color: 'var(--text-1)' }}>{g.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{g.age_days}d old · {g.reason}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-ghost" onClick={() => setShowGroom(false)}>Cancel</button>
+              <button className="btn btn-primary" disabled={groomBusy || !Object.values(groomSel).some(Boolean)} onClick={runGroom} style={{ flex: 1 }}>
+                {groomBusy ? 'Clearing…' : `Archive ${Object.values(groomSel).filter(Boolean).length} tasks`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* One-tap undo after a grooming run */}
+      {lastBatch && !showGroom && (
+        <div style={{ position: 'fixed', left: 16, right: 16, bottom: 84, zIndex: 2300, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 14, background: 'var(--bg-card)', border: '1px solid var(--accent)', boxShadow: '0 10px 30px rgba(0,0,0,.45)' }}>
+          <div style={{ flex: 1, fontSize: 13, color: 'var(--text-1)' }}>Old tasks cleared.</div>
+          <button className="btn btn-ghost btn-sm" onClick={undoGroom}>Undo</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setLastBatch(null)}>Dismiss</button>
         </div>
       )}
     </div>

@@ -17231,7 +17231,7 @@ function AppMain() {
     const eventsUpperBound = new Date(now.getTime() + 540 * 86400000).toISOString();
 
     const queries = [
-      ['tasks',          supabase.from('tasks').select('*').order('created_at', { ascending: false }).limit(500)],
+      ['tasks',          supabase.from('tasks').select('*').is('archived_at', null).order('created_at', { ascending: false }).limit(500)],
       ['robots',         supabase.from('robots').select('*').eq('active', true).order('created_at', { ascending: true })],
       ['notes',          supabase.from('notes').select('*').order('updated_at', { ascending: false }).limit(500)],
       ['contacts',       supabase.from('contacts').select('*').order('created_at', { ascending: false }).limit(10000)],
