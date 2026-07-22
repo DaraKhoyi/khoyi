@@ -929,6 +929,18 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             const task = tasks.find(t => t.id === taskId);
             if (task) setDatePickerTask(task);
           }}
+          onDropNextWeek={(taskId) => setTaskDate(taskId, addDaysISO(7))}
+          onDropNoDate={(taskId) => setTaskDate(taskId, null)}
+          onDropSomeday={async (taskId) => {
+            // Park it: kept, but off the active list and out of every count/NBA.
+            try {
+              const { data } = await supabase.rpc('tasks_park_someday', { p_task_ids: [taskId], p_note: null });
+              if (data?.ok) {
+                setTasks && setTasks(pr => pr.filter(t => t.id !== taskId));
+                if (window.__notify) window.__notify('Moved to Someday / Maybe.', 'success');
+              }
+            } catch (e) { if (window.__notify) window.__notify('Could not move: ' + (e.message || e), 'error'); }
+          }}
         />
 
         {bulkMode && bulkSel.size > 0 && createPortal(
@@ -1335,22 +1347,29 @@ function MatrixTaskRow({ task, rankNumber, quadrant, headerColor, onEdit, onTogg
 }
 
 
-function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate }) {
+function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate, onDropNextWeek, onDropSomeday, onDropNoDate }) {
   return (
     <div style={{
       position:'fixed',
-      bottom: visible ? '12px' : '-100px',
+      bottom: visible ? '12px' : '-160px',
       left:'12px', right:'12px',
-      display:'grid',
-      gridTemplateColumns:'1fr 1fr 1fr',
-      gap:'8px',
+      display:'flex', flexDirection:'column', gap:'8px',
       zIndex:200,
       transition:'bottom .25s ease',
       pointerEvents: visible ? 'auto' : 'none',
     }}>
-      <DropZoneCell label="Today" action="today" onDrop={onDropToday} />
-      <DropZoneCell label="Tomorrow" action="tomorrow" onDrop={onDropTomorrow} />
-      <DropZoneCell label="Pick Date" action="pick" onDrop={onDropPickDate} />
+      {/* Row 1 — schedule it now */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}}>
+        <DropZoneCell label="Today" action="today" onDrop={onDropToday} />
+        <DropZoneCell label="Tomorrow" action="tomorrow" onDrop={onDropTomorrow} />
+        <DropZoneCell label="Pick Date" action="pick" onDrop={onDropPickDate} />
+      </div>
+      {/* Row 2 — push it out or park it */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}}>
+        <DropZoneCell label="Next Week" action="nextweek" onDrop={onDropNextWeek} />
+        <DropZoneCell label="✦ Someday" action="someday" onDrop={onDropSomeday} />
+        <DropZoneCell label="No Date" action="nodate" onDrop={onDropNoDate} />
+      </div>
     </div>
   );
 }

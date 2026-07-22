@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
+import { CallFollowupsPanel } from '../App';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
@@ -329,6 +330,9 @@ export default function TodayView({
 
       <Group icon="◉" label="Recordings to process" count={pendingRec} tone="var(--text-3)"
         sub="Transcribe & pull action items" onOpen={() => setView && setView('review')} />
+
+      {/* Follow-ups pulled from your calls — planning belongs here, not in the dialer */}
+      <CallFollowupsPanel userId={myUserId} contacts={contacts} setTasks={setTasks} />
 
       {/* Stale backlog — offered as cleanup, NOT shown as a wall of shame */}
       {staleTasks > 0 && (

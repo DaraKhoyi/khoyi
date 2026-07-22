@@ -136,6 +136,7 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
   const [callVia, setCallVia] = useState('quo');    // 'quo' | 'phone'
   const [afterCall, setAfterCall] = useState(null);  // {contact, phone} shown after a call is placed
   const [incomingCall, setIncomingCall] = useState(null); // live banner for a ringing inbound call
+  const [showSetup, setShowSetup] = useState(false);      // number/sync/status — config, not daily use
   const threadRef = useRef(null);
   // On phones the messages view shows ONE pane at a time (list, then thread),
   // instead of a 2-column split that pushes the thread off-screen.
@@ -491,20 +492,31 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
 
   return (
     <div className="view">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ minWidth: 0 }}><h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}><Icon name="quo" size={24} style={{ color: 'var(--accent)', flexShrink: 0 }} />Phone & Text</h2></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Number</span>
-          <select value={fromNumber?.id || ''} onChange={e => changeNumber(e.target.value)} style={{ background: 'var(--bg-card)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontWeight: 600 }}>
-            {numbers.map(n => <option key={n.id} value={n.id}>{n.name ? n.name + ' · ' : ''}{quoFmtPhone(n.number)}</option>)}
-          </select>
-          <button className="btn btn-ghost btn-sm" onClick={syncNow} disabled={syncing} title="Pull latest history from Quo">{syncing ? 'Syncing…' : '⟳ Sync'}</button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon name="quo" size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ fontSize: 11, letterSpacing: 1.6, color: 'var(--accent)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif' }}>PHONE &amp; TEXT</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowSetup(s => !s)} title="Number, sync & connection status">⚙</button>
         </div>
       </div>
 
-      <QuoStatusPanel msgs={msgs} calls={calls} activeNumber={fromNumber?.number} />
-      <CallFollowupsPanel userId={userId} contacts={contacts} defaultSystem={defaultSystem} />
+      {/* Setup & status — tucked away; this is configuration, not daily use. */}
+      {showSetup && (
+        <div className="panel" style={{ padding: 12, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Your number</span>
+            <select value={fromNumber?.id || ''} onChange={e => changeNumber(e.target.value)} style={{ background: 'var(--bg-card)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontWeight: 600 }}>
+              <option value="">— pick your line —</option>
+              {numbers.map(n => <option key={n.id} value={n.id}>{n.name ? n.name + ' · ' : ''}{quoFmtPhone(n.number)}</option>)}
+            </select>
+            <button className="btn btn-ghost btn-sm" onClick={syncNow} disabled={syncing} title="Pull latest history from Quo">{syncing ? 'Syncing…' : '⟳ Sync'}</button>
+          </div>
+          <QuoStatusPanel msgs={msgs} calls={calls} activeNumber={fromNumber?.number} />
+        </div>
+      )}
 
       {incomingCall && (
         <div className="panel" style={{ padding: 14, marginBottom: 12, borderColor: 'var(--green, #4ADE80)', background: 'rgba(74,222,128,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
