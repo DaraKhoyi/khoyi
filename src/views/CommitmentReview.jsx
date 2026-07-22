@@ -38,6 +38,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [shownProposed, setShownProposed] = useState(3);   // never a wall
   // What the user sets on a card WHILE reviewing — a due date and a priority — so
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
@@ -265,9 +266,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
       {proposed.length > 0 && (
         <>
           <div style={{ ...lab, marginBottom: 7, marginTop: late.length ? 14 : 0 }}>
-            From your calls — {proposed.length} to review
+            From your calls — {Math.min(shownProposed, proposed.length)} of {proposed.length} to review
           </div>
-          {proposed.map(c => renderCard(c, { editable: true, children: (
+          {proposed.slice(0, shownProposed).map(c => renderCard(c, { editable: true, children: (
             <>
               {/* Set WHEN and how urgent right here — for a task you'll own so it
                   lands scheduled, and for one you're tracking so you know when to
@@ -331,6 +332,13 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={{ ...btn(false), padding: '5px 10px', fontSize: 11 }}>Done</button>
             </div>
           ))}
+          {proposed.length > shownProposed && (
+            <div style={{ display:'flex', gap:8, justifyContent:'center', marginTop:8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShownProposed(n => n + 3)}>
+                Show 3 more ({proposed.length - shownProposed} left)
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -13784,6 +13784,7 @@ function EmailRepliesPanel() {
 // dismisses them. Renders nothing when there's nothing to review.
 // ─────────────────────────────────────────
 function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = 'eisenhower' }) {
+  const [shownCalls, setShownCalls] = useState(3);   // never a wall — 3 calls at a time
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -13903,7 +13904,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
         </div>
         <button className="btn btn-ghost btn-sm" onClick={recheck} disabled={busy} title="Scan recent calls for new follow-ups">{busy ? 'Checking…' : 'Check calls'}</button>
       </div>
-      {rows.map(call => (
+      {rows.slice(0, shownCalls).map(call => (
         <div key={call.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', fontWeight: 700 }}>{nameForCall(call)}</span>
@@ -13945,6 +13946,13 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
           })}
         </div>
       ))}
+      {rows.length > shownCalls && (
+        <div style={{ display:'flex', gap:8, justifyContent:'center', marginTop:10, flexWrap:'wrap' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShownCalls(n => n + 3)}>
+            Show 3 more ({rows.length - shownCalls} left)
+          </button>
+        </div>
+      )}
     </div>
   );
 }
