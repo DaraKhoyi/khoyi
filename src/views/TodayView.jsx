@@ -60,11 +60,18 @@ export default function TodayView({
   const [flaggedEmail, setFlaggedEmail] = useState([]);
   const [pendingRec, setPendingRec] = useState(0);
   const [showBounces, setShowBounces] = useState(false);
+  const [brief, setBrief] = useState(null);          // AI daily briefing narrative
+  const [showBrief, setShowBrief] = useState(false);
   const [bounceRows, setBounceRows] = useState(null);
 
   useEffect(() => {
     let go = true;
     (async () => {
+      try {
+        const { data } = await supabase.from('ari_briefings')
+          .select('summary, created_at').order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (go && data?.summary) setBrief(data);
+      } catch (_) {}
       try {
         const { data } = await supabase.from('email_bounces')
           .select('id, original_subject, failed_recipients, reason_code, bounced_at')
@@ -326,6 +333,27 @@ export default function TodayView({
           <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 300, color: 'var(--text-1)' }}>You're clear.</div>
           <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 4 }}>Nothing urgent. A great moment to reach out to someone new.</div>
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setView && setView('prospecting')}>See growth moves</button>
+        </div>
+      )}
+
+      {/* The day, narrated — folded in from the old Planning briefing */}
+      {brief?.summary && (
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={() => setShowBrief(v => !v)}
+            style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8,
+              background: 'none', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 13px',
+              color: 'var(--text-2)', fontSize: 12.5, cursor: 'pointer' }}>
+            <span style={{ color: 'var(--accent)' }}>❋</span>
+            <span style={{ flex: 1 }}>{showBrief ? 'Hide the briefing' : 'Read my briefing'}</span>
+            <span style={{ color: 'var(--text-3)', fontSize: 11 }}>{showBrief ? '▴' : '▾'}</span>
+          </button>
+          {showBrief && (
+            <div style={{ marginTop: 8, padding: '13px 15px', borderRadius: 12,
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+              fontSize: 13.5, lineHeight: 1.6, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
+              {brief.summary}
+            </div>
+          )}
         </div>
       )}
 

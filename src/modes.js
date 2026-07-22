@@ -12,17 +12,6 @@
 // 3–5 that appear in the scoped bottom bar (bar[0] is the room's home).
 export const MODES = [
   {
-    id: 'plan',
-    label: 'Plan',
-    tag: 'Set me up for the day',
-    glyph: 'sun',
-    accent: '#CBA35C',
-    // what "get ready" wants in front of it
-    home: 'briefing',
-    bar: ['briefing', 'tasks', 'review', 'calendar'],
-    views: ['briefing', 'tasks', 'review', 'calendar', 'chief'],
-  },
-  {
     id: 'relationships',
     label: 'Relationships',
     tag: 'Who needs my attention',
@@ -68,8 +57,10 @@ export const MODES = [
     glyph: 'coin',
     accent: '#C9A84E',
     home: 'numbers',
-    bar: ['numbers', 'scoreboard', 'mileage', 'finance'],
-    views: ['numbers', 'scoreboard', 'mileage', 'finance', 'investments'],
+    bar: ['numbers', 'briefing', 'scoreboard', 'finance'],
+    // 'briefing' carries Outreach -> Results + the Goal Engine: performance
+    // review, not daily planning. Visited weekly/monthly, deliberately.
+    views: ['numbers', 'briefing', 'scoreboard', 'mileage', 'finance', 'investments'],
   },
   {
     // Only rendered for broker-admins / team leaders. Same app, role-aware room.

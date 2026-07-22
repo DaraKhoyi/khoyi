@@ -17730,7 +17730,7 @@ function AppMain() {
       <MindsetMenu open={mindsetOpen} onClose={() => setMindsetOpen(false)}
         currentView={view} activeMode={activeMode} isAdmin={isAdmin || isTeamLeader}
         onHome={goHome} onEnterMode={enterMode}
-        modeBadges={{ plan: hubDueToday + hubClear, relationships: hubOweReply, deals: hubActiveDeals, prospect: 0, money: 0, brokerage: 0 }}
+        modeBadges={{ relationships: hubOweReply, deals: hubActiveDeals, prospect: 0, money: 0, brokerage: 0 }}
         userName={user.user_metadata?.display_name?.trim()||user.user_metadata?.full_name?.trim()?.split(/\s+/)[0]||user.email?.split('@')[0]}
         userEmail={user.email} onSignOut={handleSignOut} />
 
