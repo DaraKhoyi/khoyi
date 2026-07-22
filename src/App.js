@@ -17135,7 +17135,7 @@ function AppMain() {
   }, [dataLoaded]);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
   const [taskFilter, setTaskFilter] = useState('today');
-  const [taskViewMode, setTaskViewMode] = useState('focus');
+  const [taskViewMode, setTaskViewMode] = useState('sequence');
 
   // Sync priority pref + task UI prefs from user metadata when session changes
   useEffect(() => {
@@ -17148,7 +17148,7 @@ function AppMain() {
     else setTaskFilter('today');
     const tv = meta.task_view_mode;
     if (tv === 'sequence' || tv === 'matrix' || tv === 'focus') setTaskViewMode(tv);
-    else setTaskViewMode('focus');
+    else setTaskViewMode('sequence');
   }, [session]);
 
   // Persist task UI prefs to user metadata (debounced, fire-and-forget)
