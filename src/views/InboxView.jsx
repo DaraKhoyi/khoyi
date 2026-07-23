@@ -670,26 +670,6 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
 // ─────────────────────────────────────────
 
 function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData, defaultSystem }) {
-  // A name in an email header is only useful if it gets you to the record. Built
-  // once from the contact list rather than scanned per render — a long thread
-  // renders this for every sender and every recipient.
-  const contactByEmail = React.useMemo(() => {
-    const m = new Map();
-    for (const c of (contacts || [])) {
-      if (c && c.email) m.set(String(c.email).trim().toLowerCase(), c);
-      // People have more than one address; the jsonb array is the real source.
-      if (Array.isArray(c?.emails)) {
-        for (const e of c.emails) {
-          const v = typeof e === 'string' ? e : (e && e.value);
-          if (v) m.set(String(v).trim().toLowerCase(), c);
-        }
-      }
-    }
-    return m;
-  }, [contacts]);
-  const findContact = React.useCallback(
-    (email) => (email ? contactByEmail.get(String(email).trim().toLowerCase()) || null : null),
-    [contactByEmail]);
 
   // All connected email-capable Google accounts (locked-in once OAuth'd for email).
   const mailAccounts = emailAccounts.filter(a =>
@@ -1015,6 +995,26 @@ function PlainTextBody({ text }) {
 
 
 function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData, defaultSystem = 'eisenhower', accountSwitcher = null }) {
+  // A name in an email header is only useful if it gets you to the record. Built
+  // once from the contact list rather than scanned per render — a long thread
+  // renders this for every sender and every recipient.
+  const contactByEmail = React.useMemo(() => {
+    const m = new Map();
+    for (const c of (contacts || [])) {
+      if (c && c.email) m.set(String(c.email).trim().toLowerCase(), c);
+      // People have more than one address; the jsonb array is the real source.
+      if (Array.isArray(c?.emails)) {
+        for (const e of c.emails) {
+          const v = typeof e === 'string' ? e : (e && e.value);
+          if (v) m.set(String(v).trim().toLowerCase(), c);
+        }
+      }
+    }
+    return m;
+  }, [contacts]);
+  const findContact = React.useCallback(
+    (email) => (email ? contactByEmail.get(String(email).trim().toLowerCase()) || null : null),
+    [contactByEmail]);
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [tab, setTab] = useState('inbox');

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
+import { PrismThinking } from '../App';
 
 const GOLD = '#C5A95E';
 const TYPE_COLOR = { contract: '#ef4444', disclosure: '#f59e0b', lease: '#8b5cf6', agreement: '#3b82f6', id: '#ec4899', invoice: '#10b981', statement: '#10b981', letter: '#6b7280', report: '#0ea5e9', flyer: '#f97316', note: '#9A8038', other: '#6b7280' };

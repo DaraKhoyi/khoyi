@@ -12,6 +12,13 @@ cd "$(dirname "$0")/.."
 echo "→ static hooks-order check"
 python3 smoke/hooks_check.py
 
+# Static guard: no undefined identifiers. The runtime smoke check proves views
+# MOUNT; it cannot prove every branch inside them runs, because the throwaway
+# agent has no data. v1.04.49 shipped a ReferenceError straight past a green
+# gate for exactly that reason.
+echo "→ static scope check"
+node smoke/scope_check.mjs
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 
