@@ -112,6 +112,20 @@ function QuoTranscript({ call }) {
   );
 }
 
+// Quick-text presets. Two panels use these: the dial pad ("QUICK TEXT") and the
+// after-call panel ("NO ANSWER? QUICK FOLLOW-UP"), so they live at module scope.
+// Referenced in both places but never defined — that crashed the panel outright.
+//
+// {name} is substituted with a LEADING SPACE plus first name, or an empty string
+// when the number is not a known contact. So write "Hi{name}," and it reads
+// "Hi John," with a match and "Hi," without one — never "Hi ,".
+const TEXT_TEMPLATES = [
+  { label: 'Just missed you', body: 'Hi{name}, just tried you — give me a ring when you get a minute.' },
+  { label: 'Got a minute?',   body: 'Hi{name}, do you have a couple of minutes to talk today?' },
+  { label: 'Following up',    body: 'Hi{name}, following up on our last conversation — where would you like to go from here?' },
+  { label: 'On my way',       body: 'Hi{name}, on my way — see you shortly.' },
+];
+
 function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenhower' }) {
   const [tab, setTab] = useState('dialer');             // dialer | feed | messages | calls
   const [numbers, setNumbers] = useState([]);

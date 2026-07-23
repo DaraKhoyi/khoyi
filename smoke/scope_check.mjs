@@ -38,17 +38,11 @@ const files = [
   ...readdirSync('src/views').filter(f => /\.jsx?$/.test(f)).map(f => `src/views/${f}`),
 ];
 
-// PRE-EXISTING, NOT YET FIXED — each is a real ReferenceError waiting for its
-// code path to run. Listed so this gate can block NEW undefined references
-// today rather than waiting until someone has time to write these. Removing an
-// entry here should mean the function now exists, never that it got noisy.
-//   computePace / weakestLinkCoaching  App.js — Coach "pace" is silently dead:
-//       computePace() sits inside a bare try/catch, so setPace() never runs, so
-//       `pace &&` is always falsy and weakestLinkCoaching never renders. The
-//       feature fails quietly rather than loudly, which is why nobody noticed.
-//   TEXT_TEMPLATES                     QuoView — WILL crash the panel that
-//       renders it; not wrapped in anything.
-const KNOWN_MISSING = new Set(['computePace', 'weakestLinkCoaching', 'TEXT_TEMPLATES']);
+// Known-missing allowlist. It should only ever SHRINK, and only because the
+// identifier now exists — never because a finding got inconvenient. As of
+// v1.04.51 it is empty: computePace, weakestLinkCoaching, TEXT_TEMPLATES and
+// the PrismThinking import were all written rather than tolerated.
+const KNOWN_MISSING = new Set([]);
 
 let problems = 0;
 let known = 0;

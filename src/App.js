@@ -5592,6 +5592,119 @@ function buildSalesBlueprint(goal){
     ratios: { avgComm, apptsPerDeal, convosPerAppt, weeks },
   };
 }
+// ── Pace: plan vs. reality ───────────────────────────────────────────────────
+// Referenced at the Coach screen but never written, and the call sits inside a
+// bare try/catch — so setPace() never ran, `pace &&` was always falsy, and the
+// entire actual-vs-plan half of Coach silently rendered nothing. It failed
+// quietly instead of loudly, which is exactly why it went unnoticed.
+//
+// Returns null when it cannot say anything honest, so callers keep their
+// plan-only rendering rather than showing invented numbers.
+function computePace(goal, bp, actuals) {
+  if (!goal || !bp || !bp.links || !bp.links.length) return null;
+  const DAY = 86400000;
+  const start = new Date(goal.start_date || goal.created_at || Date.now());
+  if (isNaN(start.getTime())) return null;
+  const weeks = (bp.ratios && bp.ratios.weeks) || 50;
+  const end = goal.end_date ? new Date(goal.end_date) : new Date(start.getTime() + weeks * 7 * DAY);
+  const totalDays = Math.max(1, Math.round((end - start) / DAY));
+  // Clamp both ends: before the start there is no pace, after the end the goal
+  // is simply over — neither should produce a divide-by-zero or a >100% "pace".
+  const elapsedDays = Math.min(totalDays, Math.max(1, Math.round((Date.now() - start.getTime()) / DAY)));
+  const through = elapsedDays / totalDays;
+
+  const actualFor = { conversations: Number(actuals?.convos) || 0,
+                      appointments:  Number(actuals?.appts) || 0,
+                      closings:      Number(actuals?.closings) || 0 };
+  const links = bp.links.map(l => {
+    const actual = actualFor[l.key] || 0;
+    const expected = Math.round((Number(l.needed) || 0) * through);
+    // With nothing expected yet, you cannot be behind. Ratio 1 = exactly on plan.
+    const paceRatio = expected > 0 ? actual / expected : 1;
+    return { ...l, actual, expected, paceRatio };
+  });
+
+  // The weakest link is the lowest ratio — but a link is only judged once the
+  // plan meaningfully expects something of it. On day one the plan expects ~1
+  // conversation, and telling someone they are "1 behind" before they have had
+  // their coffee is technically true and completely useless.
+  const JUDGE_FLOOR = 3;
+  const judged = links.filter(l => l.expected >= JUDGE_FLOOR);
+  const tooEarly = judged.length === 0;
+  const weakest = (judged.length ? judged : links).reduce((a, b) => (b.paceRatio < a.paceRatio ? b : a));
+
+  // Project from the LEADING metric, not from closed GCI. Commission arrives
+  // months after the conversation that caused it, so extrapolating closings in
+  // month two reads as catastrophe no matter how well someone is working.
+  const r = bp.ratios || {};
+  const perDeal = (Number(r.convosPerAppt) || 5) * (Number(r.apptsPerDeal) || 3);
+  const avgComm = Number(r.avgComm) || 9000;
+  const convos = actualFor.conversations;
+  const projectedConvos = elapsedDays > 0 ? (convos / elapsedDays) * totalDays : 0;
+  const projectedGci = perDeal > 0 ? Math.round((projectedConvos / perDeal) * avgComm) : 0;
+
+  const target = Number(bp.outcome && bp.outcome.amount) || 0;
+  const onTrack = target <= 0 ? true : projectedGci >= target * 0.98;
+
+  // What it takes from HERE — over remaining WORK days, not calendar days.
+  const neededTotal = Number((bp.links[0] || {}).needed) || 0;
+  const remainingConvos = Math.max(0, neededTotal - convos);
+  const daysLeft = totalDays - elapsedDays;
+  const finished = daysLeft <= 0;
+  const remainingWorkDays = Math.max(1, Math.round(daysLeft * 5 / 7));
+  // A finished goal has no catch-up rate. Demanding "55/day from here" when the
+  // period already ended is worse than saying nothing.
+  const neededPerDay = finished ? 0 : Math.ceil(remainingConvos / remainingWorkDays);
+
+  return {
+    onTrack, projectedGci, neededPerDay, elapsedDays, totalDays,
+    gciActual: Number(actuals?.gciActual) || 0,
+    links, weakest, tooEarly, finished,
+  };
+}
+
+// Names the one link to fix, and says why in the agent's own terms. Every branch
+// returns a title AND a why — the caller renders both unconditionally.
+function weakestLinkCoaching(pace) {
+  const w = (pace && pace.weakest) || null;
+  if (!w) return { title: 'Not enough data yet', why: 'Once a few weeks of activity are logged, this will name the single link costing you the most.' };
+  if (pace.finished) {
+    return { title: 'This goal period has ended',
+      why: 'The window for this goal is closed, so there is no catch-up pace left to set. Start a fresh goal and the chain will begin measuring again from day one.' };
+  }
+  if (pace.tooEarly) {
+    return { title: 'Too early to call anything weak',
+      why: 'The plan barely expects anything of you yet, so any gap right now is noise rather than a signal. Keep the daily conversation block and this will start naming a real weakest link within a couple of weeks.' };
+  }
+  const behind = w.paceRatio < 0.95;
+  const short = Math.max(0, (w.expected || 0) - (w.actual || 0));
+
+  if (!behind) {
+    return {
+      title: 'Nothing is lagging — protect the rhythm',
+      why: 'Every link is at or ahead of plan. The risk now is not a weak step, it is a good week that quietly becomes a slow one. Keep the daily conversation block untouchable.',
+    };
+  }
+  const copy = {
+    conversations: {
+      title: 'You are not talking to enough people',
+      why: `You are ${short} conversation${short === 1 ? '' : 's'} behind where the plan says you should be. This is the only link you fully control — appointments and closings are downstream of it, so nothing else can be fixed until this one is.`,
+    },
+    appointments: {
+      title: 'Conversations are not turning into appointments',
+      why: `You are ${short} appointment${short === 1 ? '' : 's'} short. The volume is happening but the ask is not landing — that is usually a matter of asking directly for a specific time rather than leaving it open.`,
+    },
+    closings: {
+      title: 'Appointments are not turning into closings',
+      why: `You are ${short} closing${short === 1 ? '' : 's'} behind. Appointments are being set, so the gap is in what happens inside them — qualification, follow-through, or the paperwork stalling after the yes.`,
+    },
+  };
+  return copy[w.key] || {
+    title: `${w.label} is your weakest link`,
+    why: `${w.label} is running behind plan — ${w.actual} against ${w.expected} expected by now.`,
+  };
+}
+
 // Placeholder so the engine is pluggable; recruiting chain gets built when goal types expand.
 async function computeCoachTrend(userId){
   try {
