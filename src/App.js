@@ -2410,28 +2410,57 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{maxWidth:'640px',width:'min(640px,100%)',padding:0,maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',padding:'16px 20px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg, rgba(197,169,94,0.10), transparent)',flexShrink:0}}>
-          <div style={{display:'flex',alignItems:'center',gap:'12px',minWidth:0}}>
-            <span style={{width:'36px',height:'36px',borderRadius:'10px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(197,169,94,0.14)',border:'1px solid var(--accent)',color:'var(--accent)'}}><Icon name="tasks" size={18} /></span>
-            <div style={{minWidth:0}}>
-              <h3 style={{margin:0,fontSize:'17px',fontWeight:800,color:'var(--text-1)'}}>{initial ? 'Edit Task' : 'New Task'}</h3>
+        {/* HEADER — title row and ACTION row are separate on purpose. Cramming
+            the title, two labelled pills and a close button into one flex row
+            collapsed at Dara's large system font: "Edit Task" wrapped to two
+            lines and ran underneath the pills. Same class of bug as the
+            hamburger (v1.03.13) and the Inbox pills (v1.03.28). A row that
+            holds only at default font scale is broken, not tight. */}
+        <div style={{padding:'14px 16px 0',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg, rgba(197,169,94,0.10), transparent)',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:'11px',minWidth:0}}>
+            <span style={{width:'34px',height:'34px',borderRadius:'10px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(197,169,94,0.14)',border:'1px solid var(--accent)',color:'var(--accent)'}}><Icon name="tasks" size={17} /></span>
+            <div style={{minWidth:0,flex:1}}>
+              <h3 style={{margin:0,fontSize:'17px',fontWeight:800,color:'var(--text-1)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{initial ? 'Edit Task' : 'New Task'}</h3>
               {completed && <div style={{fontSize:'11px',color:'var(--green)',fontWeight:700}}>✓ Completed</div>}
             </div>
-            {initial && <button type="button" title="Move to Someday / Maybe — keep it, but off your active list"
-              onClick={async()=>{ try{ const { data } = await supabase.rpc('tasks_park_someday',{ p_task_ids:[initial.id], p_note:null }); if(data?.ok){ if(window.__notify) window.__notify('Moved to Someday / Maybe.','success'); onClose && onClose(true); } }catch(e){ if(window.__notify) window.__notify('Could not move: '+(e.message||e),'error'); } }}
-              style={{marginLeft:'2px',background:'none',border:'1px solid var(--border-strong)',color:'var(--text-2)',cursor:'pointer',padding:'6px 10px',borderRadius:'999px',fontSize:'11.5px',fontWeight:600,whiteSpace:'nowrap'}}>✦ Someday</button>}
-            {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" aria-label="Delete" style={{marginLeft:'2px',background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:'6px',borderRadius:'8px',display:'inline-flex'}}><Icon name="trash" size={16} /></button>}
+            <button type="button" onClick={onClose} aria-label="Close" style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'24px',lineHeight:1,cursor:'pointer',padding:'0 2px',flexShrink:0}}>×</button>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:'10px',flexShrink:0}}>
-            {initial && (
-              <button type="button" onClick={()=>setCompleted(c=>!c)} aria-pressed={completed} title={completed?'Mark as not complete':'Mark complete'}
-                style={{display:'inline-flex',alignItems:'center',gap:'6px',padding:'8px 12px',minHeight:'38px',borderRadius:'999px',cursor:'pointer',fontSize:'12.5px',fontWeight:600,whiteSpace:'nowrap',border:`1px solid ${completed?'var(--green)':'var(--border-strong)'}`,background:completed?'rgba(34,197,94,0.15)':'transparent',color:completed?'var(--green)':'var(--text-2)'}}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/>{completed && <polyline points="8 12 11 15 16 9" />}</svg>
-                {completed?'Completed':'Mark complete'}
-              </button>
-            )}
-            <button type="button" onClick={onClose} aria-label="Close" style={{background:'none',border:'none',color:'var(--text-3)',fontSize:'26px',lineHeight:1,cursor:'pointer',padding:'0 2px'}}>×</button>
-          </div>
+
+          {initial && initial.id && (
+            <div style={{display:'flex',gap:'7px',padding:'12px 0 13px'}}>
+              {/* Three verbs, equal weight, each its own colour so the
+                  destructive one can never be mistaken for the routine one. */}
+              {[
+                { key:'someday', label:'Someday', tone:'var(--accent)', tint:'rgba(197,169,94,0.13)',
+                  active:false, title:'Keep it, but off the active list',
+                  icon:(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a6.5 6.5 0 0 0 11 11z"/></svg>),
+                  onClick: async()=>{ try{ const { data } = await supabase.rpc('tasks_park_someday',{ p_task_ids:[initial.id], p_note:null }); if(data?.ok){ if(window.__notify) window.__notify('Moved to Someday / Maybe.','success'); onClose && onClose(true); } }catch(e){ if(window.__notify) window.__notify('Could not move: '+(e.message||e),'error'); } } },
+                { key:'complete', label: completed?'Completed':'Complete', tone:'var(--green)', tint:'rgba(34,197,94,0.15)',
+                  active: completed, title: completed?'Mark as not complete':'Mark complete',
+                  icon:(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/>{completed && <polyline points="8 12 11 15 16 9" />}</svg>),
+                  onClick: ()=>setCompleted(c=>!c) },
+                { key:'delete', label:'Delete', tone:'var(--red)', tint:'rgba(239,68,68,0.13)',
+                  active:false, title:'Delete permanently — use this for duplicates, not \u201Ccomplete\u201D',
+                  icon:(<Icon name="trash" size={15} />),
+                  onClick: ()=>{ if (onDelete) return onDelete(initial); if (window.__notify) window.__notify('Delete is not available from this screen yet.','error'); } },
+              ].map(b => (
+                <button key={b.key} type="button" onClick={b.onClick} title={b.title} aria-label={b.label}
+                  aria-pressed={b.key==='complete' ? completed : undefined}
+                  style={{flex:'1 1 0',minWidth:0,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:'6px',
+                    padding:'9px 6px',minHeight:'42px',borderRadius:'11px',cursor:'pointer',
+                    fontSize:'12px',fontWeight:700,whiteSpace:'nowrap',overflow:'hidden',
+                    border:'1px solid '+(b.active ? b.tone : 'var(--border-strong)'),
+                    background: b.active ? b.tint : 'transparent',
+                    color: b.active ? b.tone : 'var(--text-2)'}}
+                  onMouseEnter={e=>{ e.currentTarget.style.color=b.tone; e.currentTarget.style.borderColor=b.tone; e.currentTarget.style.background=b.tint; }}
+                  onMouseLeave={e=>{ if(!b.active){ e.currentTarget.style.color='var(--text-2)'; e.currentTarget.style.borderColor='var(--border-strong)'; e.currentTarget.style.background='transparent'; } }}>
+                  <span style={{flexShrink:0,display:'inline-flex'}}>{b.icon}</span>
+                  <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{b.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {!(initial && initial.id) && <div style={{height:'14px'}} />}
         </div>
         <form onSubmit={handleSubmit} style={{display:'flex',flexDirection:'column',minHeight:0,flex:1,overflow:'hidden'}}>
           <div style={{overflowY:'auto',padding:'18px 20px',flex:1}}>
@@ -6126,7 +6155,17 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
         </div>
 
         {editTask && (
-          <TaskModal onClose={() => setEditTask(null)} onSave={handleTaskSave} initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts} properties={properties} events={events} userId={user.id} />
+          <TaskModal onClose={() => setEditTask(null)} onSave={handleTaskSave}
+            onDelete={async (t) => {
+              if (!await confirmDialog(`Delete "${t.title}"? This cannot be undone.`, { confirmLabel: 'Delete', danger: true })) return;
+              const { error } = await supabase.from('tasks').delete().eq('id', t.id);
+              if (error) { if (window.__notify) window.__notify('Could not delete: ' + error.message, 'error'); return; }
+              setTasks(prev => prev.filter(x => x.id !== t.id));
+              setEditTask(null);
+              if (window.__notify) window.__notify('Task deleted.', 'success');
+              try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
+            }}
+            initial={editTask} defaultSystem={defaultSystem} brain={brain} contacts={contacts} properties={properties} events={events} userId={user.id} />
         )}
       </div>
 
