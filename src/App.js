@@ -5870,14 +5870,18 @@ function CoachView({ userId, setView }){
           const nowIso = new Date().toISOString();
           const [cv, ap, cl] = await Promise.all([
             supabase.from('contact_interactions').select('id', { count:'exact', head:true }).eq('user_id', userId).in('kind', ['call','meeting']).gte('occurred_at', start),
-            // APPOINTMENTS = calendar events tied to a PERSON. Counting every
-            // calendar row (focus blocks, personal, synced noise) put 438
-            // "appointments" against 205 conversations — a funnel where the
-            // downstream step is bigger than the one feeding it, which cannot
-            // happen and made the chart meaningless. contact_id is the only
-            // trustworthy signal in this data: event_kind records the SOURCE
-            // (synced/manual), and category is null on 97% of rows.
-            supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).not('contact_id', 'is', null).gte('start_at', start).lte('start_at', nowIso),
+            // APPOINTMENT = tied to a PERSON, at a specific time, not a calendar
+            // artifact, and not one the user has explicitly excluded.
+            //
+            // Counting every calendar row put 438 "appointments" against 205
+            // conversations — a funnel whose downstream step is bigger than the
+            // one feeding it, which cannot happen. But contact_id alone is not
+            // enough either: PrismOS deliberately encourages mixing personal and
+            // business on one calendar, so "Anvar" and "Dinner party at Ali's"
+            // are contact-linked and are not client appointments. Birthdays name
+            // a contact too. Hence: timed, non-artifact, and overridable —
+            // is_appointment=false is the user's final word.
+            supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).not('contact_id', 'is', null).eq('all_day', false).not('title', 'ilike', '%birthday%').not('title', 'ilike', '%anniversary%').not('is_appointment', 'is', false).gte('start_at', start).lte('start_at', nowIso),
             supabase.from('deals').select('gross_commission').eq('user_id', userId).eq('status','closed').gte('close_date', start),
           ]);
           const closings = cl.data || [];
@@ -5908,9 +5912,9 @@ function CoachView({ userId, setView }){
       const nowIso = new Date().toISOString();
       const [cv, ap, cl] = await Promise.all([
         supabase.from('contact_interactions').select('id', { count:'exact', head:true }).eq('user_id', userId).in('kind', ['call','meeting']).gte('occurred_at', weekAgo),
-        // Same definition as the pace query above — these two must agree or the
-        // weekly window contradicts the year-to-date chain on the same screen.
-        supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).not('contact_id', 'is', null).gte('start_at', weekAgo).lte('start_at', nowIso),
+        // Same definition as the pace query — these two must agree or the weekly
+        // window contradicts the year-to-date chain on the same screen.
+        supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).not('contact_id', 'is', null).eq('all_day', false).not('title', 'ilike', '%birthday%').not('title', 'ilike', '%anniversary%').not('is_appointment', 'is', false).gte('start_at', weekAgo).lte('start_at', nowIso),
         supabase.from('deals').select('id', { count:'exact', head:true }).eq('user_id', userId).eq('status', 'closed').gte('close_date', weekAgo),
       ]);
       return { convos: cv.count || 0, appts: ap.count || 0, closings: cl.count || 0 };

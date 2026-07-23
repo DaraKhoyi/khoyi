@@ -131,6 +131,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
   const [location, setLocation] = useState(init.location || '');
   const [description, setDescription] = useState(init.description || '');
   const [contactId, setContactId] = useState(init.contact_id || '');
+  const [isAppt, setIsAppt] = useState(init.is_appointment);
   const [brainEntryId, setBrainEntryId] = useState(init.brain_entry_id || '');
   const [propertyId, setPropertyId] = useState(init.property_id || '');
   // Recurrence
@@ -152,6 +153,9 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
       location: location.trim() || null,
       description: description.trim() || null,
       contact_id: contactId || null,
+      // NULL = never asked (counted if it otherwise looks like one), true/false =
+      // the user's decision. Only meaningful once a contact is attached.
+      is_appointment: contactId ? (isAppt === undefined ? null : isAppt) : null,
       brain_entry_id: brainEntryId || null,
       property_id: propertyId || null,
       recur_freq: repeats ? recurFreq : null,
@@ -228,6 +232,24 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
             <div className="form-group">
               <label className="form-label">Linked contact</label>
               <ContactSearchSelect contacts={contacts} value={contactId} onChange={setContactId} />
+              {/* Your calendar deliberately mixes personal and business, so a
+                  linked person does not mean a client appointment — "Anvar" and
+                  "Dinner party at Ali's" are both linked and neither counts.
+                  This is the override that keeps goal tracking honest. */}
+              {contactId && (
+                <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginTop:8 }}>
+                  <span style={{ fontSize:11, color:'var(--text-3)', flex:'1 1 150px', minWidth:0 }}>
+                    Count this toward your goal as a client appointment?
+                  </span>
+                  {[['Yes', true], ['No', false]].map(([lbl, val]) => (
+                    <button key={lbl} type="button" onClick={() => setIsAppt(isAppt === val ? undefined : val)}
+                      style={{ padding:'4px 12px', borderRadius:100, fontSize:11.5, fontWeight:700, cursor:'pointer', flex:'none',
+                        border:'1px solid ' + (isAppt === val ? 'var(--accent)' : 'var(--border-strong)'),
+                        background: isAppt === val ? 'rgba(197,169,94,.16)' : 'transparent',
+                        color: isAppt === val ? 'var(--accent)' : 'var(--text-2)' }}>{lbl}</button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {brain && brain.length > 0 && (

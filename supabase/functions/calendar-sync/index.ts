@@ -380,7 +380,19 @@ serve(async (req) => {
       .update({ last_sync_at: new Date().toISOString(), last_sync_error: null })
       .eq("id", account.id);
 
-    return new Response(JSON.stringify({ ok: true, pushed, pulled, deleted }), {
+    // Newly pulled events arrive with no contact link. Resolve what can be
+    // resolved now, so the link stays current instead of depending on a manual
+    // pass nobody keeps up. Attendee-email matches first (hard evidence), then
+    // an unambiguous full-name title match with birthdays/all-day excluded.
+    // Never overwrites a link a human set. Best-effort: a failure here must not
+    // fail the sync itself.
+    let autolinked: any = null;
+    try {
+      const { data: al } = await supabase.rpc("autolink_event_contacts", { p_user_id: user_id });
+      autolinked = Array.isArray(al) ? al[0] : al;
+    } catch (_) { /* non-fatal */ }
+
+    return new Response(JSON.stringify({ ok: true, pushed, pulled, deleted, autolinked }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
