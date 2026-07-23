@@ -5656,8 +5656,13 @@ function computePace(goal, bp, actuals) {
   // period already ended is worse than saying nothing.
   const neededPerDay = finished ? 0 : Math.ceil(remainingConvos / remainingWorkDays);
 
+  // One status the UI branches on. Deriving this in the render from three
+  // separate booleans is how "0 conversations today to get back on track"
+  // happens on a goal whose period already ended.
+  const status = finished ? 'finished' : tooEarly ? 'early' : onTrack ? 'ontrack' : 'behind';
+
   return {
-    onTrack, projectedGci, neededPerDay, elapsedDays, totalDays,
+    onTrack, projectedGci, neededPerDay, elapsedDays, totalDays, status,
     gciActual: Number(actuals?.gciActual) || 0,
     links, weakest, tooEarly, finished,
   };
@@ -5696,7 +5701,11 @@ function weakestLinkCoaching(pace) {
     },
     closings: {
       title: 'Appointments are not turning into closings',
-      why: `You are ${short} closing${short === 1 ? '' : 's'} behind. Appointments are being set, so the gap is in what happens inside them — qualification, follow-through, or the paperwork stalling after the yes.`,
+      // Closings are the one link measured from a table the user has to keep
+      // up by hand. Diagnosing a sales problem when the real problem is an
+      // empty Deals tab would be a confident, wrong, and demoralising call.
+      why: `You are ${short} closing${short === 1 ? '' : 's'} behind. Appointments are being set, so the gap is in what happens inside them — qualification, follow-through, or paperwork stalling after the yes.`
+        + (w.actual <= 1 ? ' Worth checking first: this counts closed deals recorded in Deals, so if closings are not being logged there, this is a bookkeeping gap rather than a selling one.' : ''),
     },
   };
   return copy[w.key] || {
@@ -5861,7 +5870,14 @@ function CoachView({ userId, setView }){
           const nowIso = new Date().toISOString();
           const [cv, ap, cl] = await Promise.all([
             supabase.from('contact_interactions').select('id', { count:'exact', head:true }).eq('user_id', userId).in('kind', ['call','meeting']).gte('occurred_at', start),
-            supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).gte('start_at', start).lte('start_at', nowIso),
+            // APPOINTMENTS = calendar events tied to a PERSON. Counting every
+            // calendar row (focus blocks, personal, synced noise) put 438
+            // "appointments" against 205 conversations — a funnel where the
+            // downstream step is bigger than the one feeding it, which cannot
+            // happen and made the chart meaningless. contact_id is the only
+            // trustworthy signal in this data: event_kind records the SOURCE
+            // (synced/manual), and category is null on 97% of rows.
+            supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).not('contact_id', 'is', null).gte('start_at', start).lte('start_at', nowIso),
             supabase.from('deals').select('gross_commission').eq('user_id', userId).eq('status','closed').gte('close_date', start),
           ]);
           const closings = cl.data || [];
@@ -5879,7 +5895,7 @@ function CoachView({ userId, setView }){
     const text = (typeof preset === 'string' ? preset : input).trim(); if (!text || thinking) return;
     setInput(''); setMsgs(m => [...m, { role:'agent', content:text }]); setThinking(true);
     try {
-      const paceSummary = pace ? { onTrack: pace.onTrack, projectedGci: pace.projectedGci, neededPerDay: pace.neededPerDay, elapsedDays: pace.elapsedDays, totalDays: pace.totalDays, weakest: { key: pace.weakest.key, label: pace.weakest.label, actual: pace.weakest.actual, needed: pace.weakest.needed }, links: pace.links.map(l => ({ label:l.label, actual:l.actual, needed:l.needed, expected:l.expected })) } : null;
+      const paceSummary = pace ? { status: pace.status, onTrack: pace.onTrack, projectedGci: pace.projectedGci, neededPerDay: pace.neededPerDay, elapsedDays: pace.elapsedDays, totalDays: pace.totalDays, weakest: { key: pace.weakest.key, label: pace.weakest.label, actual: pace.weakest.actual, needed: pace.weakest.needed }, links: pace.links.map(l => ({ label:l.label, actual:l.actual, needed:l.needed, expected:l.expected })) } : null;
       const { data } = await supabase.functions.invoke('coach-chat', { body: { message: text, pace: paceSummary, trend: trend ? { weeks: trend.weeks, slump: trend.slump, streak: trend.streak, wellbeing: trend.wellbeing } : null } });
       const reply = (data && data.reply) || 'I’m having trouble reaching my notes right now — try me again in a moment.';
       setMsgs(m => [...m, { role:'coach', content: reply }]);
@@ -5892,13 +5908,15 @@ function CoachView({ userId, setView }){
       const nowIso = new Date().toISOString();
       const [cv, ap, cl] = await Promise.all([
         supabase.from('contact_interactions').select('id', { count:'exact', head:true }).eq('user_id', userId).in('kind', ['call','meeting']).gte('occurred_at', weekAgo),
-        supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).gte('start_at', weekAgo).lte('start_at', nowIso),
+        // Same definition as the pace query above — these two must agree or the
+        // weekly window contradicts the year-to-date chain on the same screen.
+        supabase.from('events').select('id', { count:'exact', head:true }).eq('user_id', userId).not('contact_id', 'is', null).gte('start_at', weekAgo).lte('start_at', nowIso),
         supabase.from('deals').select('id', { count:'exact', head:true }).eq('user_id', userId).eq('status', 'closed').gte('close_date', weekAgo),
       ]);
       return { convos: cv.count || 0, appts: ap.count || 0, closings: cl.count || 0 };
     } catch(_){ return null; }
   };
-  const paceSummary = () => pace ? { onTrack:pace.onTrack, projectedGci:pace.projectedGci, neededPerDay:pace.neededPerDay, elapsedDays:pace.elapsedDays, totalDays:pace.totalDays, weakest:{ key:pace.weakest.key, label:pace.weakest.label, actual:pace.weakest.actual, needed:pace.weakest.needed }, links:pace.links.map(l => ({ label:l.label, actual:l.actual, needed:l.needed, expected:l.expected })) } : null;
+  const paceSummary = () => pace ? { status:pace.status, onTrack:pace.onTrack, projectedGci:pace.projectedGci, neededPerDay:pace.neededPerDay, elapsedDays:pace.elapsedDays, totalDays:pace.totalDays, weakest:{ key:pace.weakest.key, label:pace.weakest.label, actual:pace.weakest.actual, needed:pace.weakest.needed }, links:pace.links.map(l => ({ label:l.label, actual:l.actual, needed:l.needed, expected:l.expected })) } : null;
   const triggerRhythm = async (mode) => {
     setRhythmBusy(true); setMoment(null);
     try {
@@ -5966,16 +5984,36 @@ function CoachView({ userId, setView }){
       )}
       <div style={{ margin:'12px 0 14px', padding:'18px', borderRadius:16, background:'linear-gradient(180deg,#1B1610,#100D09)', border:'1px solid rgba(203,163,92,.34)' }}>
         <div style={{ fontSize:11.5, color:'#C8BFAE', marginBottom:4 }}>Today’s leading number — the one domino that makes the rest fall</div>
-        <div style={{ fontFamily:'Fraunces, serif', fontSize:44, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{pace && !pace.onTrack ? pace.neededPerDay : bp.leading.perDay}</div>
-        <div style={{ fontSize:13, color:'#F6F1E7', marginTop:2 }}>conversations today{pace && !pace.onTrack ? ' to get back on track' : ''} · plan is {bp.leading.perDay}/day</div>
+        <div style={{ fontFamily:'Fraunces, serif', fontSize:44, fontWeight:300, color:'#EBCB82', lineHeight:1 }}>{pace && pace.status === 'behind' ? pace.neededPerDay : bp.leading.perDay}</div>
+        <div style={{ fontSize:13, color:'#F6F1E7', marginTop:2 }}>conversations today{pace && pace.status === 'behind' ? ' to get back on track' : ''} · plan is {bp.leading.perDay}/day</div>
       </div>
-      {pace && (
-        <div style={{ marginBottom:16, padding:'14px 16px', borderRadius:14, border:'1px solid '+(pace.onTrack?'rgba(120,180,120,.4)':'rgba(224,150,90,.45)'), background: pace.onTrack?'rgba(120,180,120,.08)':'rgba(224,150,90,.08)' }}>
-          <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color: pace.onTrack?'#8FCA8F':'#e0965a', marginBottom:6 }}>{pace.onTrack ? 'On pace' : 'Behind pace'} · day {pace.elapsedDays} of {pace.totalDays}</div>
-          <div style={{ fontSize:13.5, color:'#F6F1E7', lineHeight:1.5 }}>At your current pace you’re tracking to <b style={{ color:'#EBCB82' }}>${(pace.projectedGci/1000).toFixed(0)}k</b> — your goal is ${(bp.outcome.amount/1000).toFixed(0)}k.</div>
-          {!pace.onTrack && <div style={{ fontSize:12.5, color:'#C8BFAE', marginTop:6 }}>To still hit it: <b style={{ color:'#F6F1E7' }}>{pace.neededPerDay} conversations/day</b> from here.</div>}
-        </div>
-      )}
+      {pace && (() => {
+        // Four states, because a green/amber binary lied in two of them: it
+        // called day one "behind" off a single expected conversation, and it
+        // demanded a catch-up rate for a period that had already closed.
+        const TONE = {
+          ontrack:  { c:'#8FCA8F', bd:'rgba(120,180,120,.4)',  bg:'rgba(120,180,120,.08)', label:'On pace' },
+          behind:   { c:'#e0965a', bd:'rgba(224,150,90,.45)',  bg:'rgba(224,150,90,.08)',  label:'Behind pace' },
+          early:    { c:'#CBA35C', bd:'rgba(203,163,92,.4)',   bg:'rgba(203,163,92,.07)',  label:'Just getting started' },
+          finished: { c:'#C8BFAE', bd:'rgba(200,191,174,.35)', bg:'rgba(200,191,174,.06)', label:'Period ended' },
+        };
+        const t = TONE[pace.status] || TONE.behind;
+        const goalK = (Number(bp.outcome.amount) || 0) / 1000;
+        const projK = (Number(pace.projectedGci) || 0) / 1000;
+        return (
+          <div style={{ marginBottom:16, padding:'14px 16px', borderRadius:14, border:'1px solid '+t.bd, background:t.bg }}>
+            <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:t.c, marginBottom:6 }}>{t.label} · day {pace.elapsedDays} of {pace.totalDays}</div>
+            {pace.status === 'early' ? (
+              <div style={{ fontSize:13.5, color:'#F6F1E7', lineHeight:1.5 }}>Too little of the period has passed to project anything meaningful. Log conversations for a couple of weeks and this will start telling you where you actually stand.</div>
+            ) : pace.status === 'finished' ? (
+              <div style={{ fontSize:13.5, color:'#F6F1E7', lineHeight:1.5 }}>This goal’s window has closed. You finished with <b style={{ color:'#EBCB82' }}>${pace.gciActual.toLocaleString()}</b> against a ${goalK.toFixed(0)}k goal. Set a new goal to start measuring again.</div>
+            ) : (<>
+              <div style={{ fontSize:13.5, color:'#F6F1E7', lineHeight:1.5 }}>At your current pace you’re tracking to <b style={{ color:'#EBCB82' }}>${projK.toFixed(0)}k</b> — your goal is ${goalK.toFixed(0)}k.</div>
+              {pace.status === 'behind' && <div style={{ fontSize:12.5, color:'#C8BFAE', marginTop:6 }}>To still hit it: <b style={{ color:'#F6F1E7' }}>{pace.neededPerDay} conversations/day</b> from here.</div>}
+            </>)}
+          </div>
+        );
+      })()}
       <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:'.22em', textTransform:'uppercase', color:'#CBA35C', marginBottom:10 }}>Your chain {pace ? '— actual vs. plan' : '— to $'+Number(bp.outcome.amount).toLocaleString()}</div>
       <div style={{ marginBottom:18 }}>
         {(pace ? pace.links : bp.links.map(l => ({ ...l, actual:null, expected:null, paceRatio:1 }))).map((lk, i) => {
@@ -6012,7 +6050,7 @@ function CoachView({ userId, setView }){
           <button onClick={() => send('Coach me on my weakest link — ' + wc.title)} className="btn btn-primary btn-sm">Talk to {coachName} about this</button>
         </div>
       ); })()}
-      {pace && pace.links[1].actual >= 3 && (() => {
+      {pace && pace.links.length >= 3 && pace.links[1].actual >= 3 && (() => {
         const c = pace.links[0].actual, a = pace.links[1].actual, d = pace.links[2].actual;
         const real = { cpa: a > 0 ? c / a : null, apd: d > 0 ? a / d : null, comm: d > 0 ? pace.gciActual / d : null };
         const asm = bp.ratios;

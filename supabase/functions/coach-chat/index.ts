@@ -80,7 +80,13 @@ serve(async (req) => {
     const disc = selfProf ? (selfProf.baseline_primary || selfProf.primary_letter || "") : "";
     const discKey = String(disc || "").charAt(0).toUpperCase();
     const bp = goal ? buildBlueprint(goal) : null;
-    const paceCtx = pace ? `\n\nLIVE PACING (real activity this goal period, day ${pace.elapsedDays} of ${pace.totalDays}): ${(pace.links||[]).map((l:any)=>`${l.label} ${l.actual}/${l.needed} (on-pace target ${l.expected})`).join("; ")}. ${pace.onTrack ? "They are ON PACE — acknowledge it and keep them steady." : `They are BEHIND — at this pace they project to about $${Number(pace.projectedGci||0).toLocaleString()} vs their goal. To get back on track they need ${pace.neededPerDay} conversations/day from here.`} THEIR WEAKEST LINK right now is ${pace.weakest ? pace.weakest.label : "conversations"}${pace.weakest ? ` (${pace.weakest.actual}/${pace.weakest.needed})` : ""} — this is the bottleneck. Coach the weakest link specifically, not generic effort.` : "";
+    const paceCtx = pace ? `\n\nLIVE PACING (real activity this goal period, day ${pace.elapsedDays} of ${pace.totalDays}): ${(pace.links||[]).map((l:any)=>`${l.label} ${l.actual}/${l.needed} (on-pace target ${l.expected})`).join("; ")}. ${pace.status === "early"
+        ? "It is still VERY EARLY in this goal period — too early to judge pace. Do NOT tell them they are behind or quote a projection; the numbers are noise this soon. Focus on establishing the daily habit."
+        : pace.status === "finished"
+        ? "This goal period has ENDED. There is no catch-up pace to set. Reflect on how it went and help them frame the next goal."
+        : pace.onTrack
+        ? "They are ON PACE — acknowledge it and keep them steady."
+        : `They are BEHIND — at this pace they project to about $${Number(pace.projectedGci||0).toLocaleString()} vs their goal. To get back on track they need ${pace.neededPerDay} conversations/day from here.`} ${pace.status === "early" ? "Do not name a weakest link yet — there is not enough data." : `THEIR WEAKEST LINK right now is ${pace.weakest ? pace.weakest.label : "conversations"}`}${pace.weakest ? ` (${pace.weakest.actual}/${pace.weakest.needed})` : ""} — this is the bottleneck. Coach the weakest link specifically, not generic effort.` : "";
 
     const blueprintCtx = bp
       ? `The agent's Blueprint (their goal as a causal chain): GOAL = $${Number(bp.outcome).toLocaleString()} ${bp.outcomeLabel}. The chain: ${bp.convos.toLocaleString()} ${bp.l1} -> ${bp.appts.toLocaleString()} ${bp.l2} -> ${bp.deals} ${bp.l3} -> $${Number(bp.outcome).toLocaleString()} ${bp.outcomeLabel}. THE LEADING DOMINO is ${bp.l1}: ${bp.perDay}/day, ${bp.perWeek}/week. This is the one number that makes the rest fall. Anchor your coaching to it.`
