@@ -11,16 +11,19 @@ const MODELS = ["claude-sonnet-4-6", "claude-3-5-sonnet-20241022"];
 function estToday(){ return new Date(Date.now()-4*3600e3).toISOString().slice(0,10); }
 function toText(v: any): string { if (!v) return ""; if (typeof v === "string") return v; if (Array.isArray(v)) return v.join("\n"); if (typeof v === "object") return JSON.stringify(v); return String(v); }
 
-const SYSTEM = `You process a phone call transcript for a real estate broker named Dara ("me"). Output STRICT JSON only — no prose, no markdown.
+const SYSTEM = `You process a phone call transcript for a real estate professional, referred to below as the ACCOUNT OWNER ("me"). Output STRICT JSON only — no prose, no markdown.
 Shape:
 { "call_summary": "a tight 2-4 sentence summary: what the call was about, the key points or advice discussed, and where it landed",
   "key_points": [ "a concise, substantive point, decision, or piece of advice worth remembering later" ],
   "non_english": true if the transcript contains ANY non-English speech (e.g. Farsi or Spanish), otherwise false,
+  "labels_inverted": true if the "Me:"/"Them:" labels are backwards (see the ATTRIBUTION rule), otherwise false,
+  "attribution_confidence": "high" | "low",
   "action_items": [ { "owner": "me" | "them", "title": "short imperative task", "fuse": "immediate" | "near" | "distant", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
 Rules:
 - call_summary + key_points carry the SUBSTANCE of the call (context, advice, decisions). This is where information is preserved, NOT in tasks. Be useful but concise: up to 5 key_points, fewer if the call was simple; return "key_points": [] if there is nothing beyond the summary.
 - action_items are ONLY concrete, real next steps someone actually committed to, each with a clear deliverable. BE STRICT: exclude vague intentions ("we should catch up sometime"), hypotheticals, general discussion, pleasantries, and anything already done during the call. If something is context or advice rather than a discrete to-do, keep it in key_points and do NOT make it a task. When in doubt, leave it out. Return at most 5 action_items; if nothing was truly committed, return [].
-- "owner":"me" = something Dara agreed to do. "owner":"them" = the other person's commitment (Dara should track/expect it). Include both.
+- ATTRIBUTION — READ THIS BEFORE ASSIGNING ANY OWNER. The "Me:"/"Them:" labels were NOT produced by identifying anyone. They come from a positional guess about who spoke first, which is frequently WRONG — and when it is wrong, every label in the transcript is backwards. Do not trust them. Work out from the CONTENT who the account owner actually is: who introduces themselves by the owner's name, who is providing the real-estate service versus receiving it, who is being asked for information about listings, showings, contracts or commissions. If the content shows the labels are backwards, set "labels_inverted": true and assign owners according to the TRUE speaker, not the label. If you cannot tell who is who, set "attribution_confidence":"low".
+- "owner":"me" = something the ACCOUNT OWNER agreed to do. "owner":"them" = the other person's commitment (the owner should track/expect it). Include both.
 - Resolve relative dates to an absolute YYYY-MM-DD using the provided current date; else null.
 - Keep titles short and actionable. Do not invent commitments that were not discussed.
 - "fuse" classifies HOW SOON the promise comes due, which decides whether it is worth queuing at all:
@@ -71,6 +74,25 @@ async function translateToEnglish(transcript: string): Promise<string> {
   return "";
 }
 
+// Who is "me" for THIS recording. Never hardcode a person into a multi-user
+// function. Falls back to a neutral label rather than to somebody else's name.
+async function ownerIdentity(admin: any, userId: string): Promise<{ name: string; pronouns: string }> {
+  try {
+    const { data: a } = await admin.from("agents")
+      .select("name,email").eq("auth_user_id", userId).maybeSingle();
+    const name = a?.name || "The account owner";
+    let pronouns = "they/them (pronouns unknown — do not guess)";
+    if (a?.email) {
+      const { data: c } = await admin.from("contacts")
+        .select("pronouns").eq("email", a.email).not("pronouns", "is", null).maybeSingle();
+      if (c?.pronouns) pronouns = c.pronouns;
+    }
+    return { name, pronouns };
+  } catch (_) {
+    return { name: "The account owner", pronouns: "they/them (pronouns unknown — do not guess)" };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const J = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -101,13 +123,27 @@ serve(async (req) => {
       const transcript = toText(rec.transcript_text);
       if (!transcript.trim()) { await admin.from("recordings").update({ processed_at: new Date().toISOString() }).eq("id", rec.id); continue; }
 
-      let participants = `Known participants and their pronouns (use these exactly):\n- Dara — he/him (this is "me")`;
+      // MULTI-USER: this function runs for every agent's recordings, so the
+      // account owner must be looked up, never hardcoded. Pronouns come from the
+      // roster where known; where unknown we say so, because guessing gender from
+      // a voice or a name is exactly how people get mis-gendered in summaries.
+      const owner = await ownerIdentity(admin, rec.user_id);
+      let participants = `Known participants and their pronouns (use these exactly):\n- ${owner.name} — ${owner.pronouns} (this is "me", the account owner)`;
       if (rec.contact_id) {
         const { data: pc } = await admin.from("contacts").select("name, pronouns").eq("id", rec.contact_id).maybeSingle();
         if (pc?.name) participants += `\n- ${pc.name} — ${pc.pronouns ? pc.pronouns : "they/them (pronouns unknown — do not guess)"} (likely "them")`;
       }
       let plan: any = { call_summary: "", action_items: [] };
       try { plan = await callClaude(transcript, participants); } catch (_) { continue; } // leave unprocessed to retry next run
+
+      // The transcript's Me/Them labels are a positional guess (first_speaker
+      // defaults to "me"), so a call the other person opened comes through
+      // entirely backwards. If the model could tell from content that the labels
+      // are inverted, honour that over the label.
+      if (plan && plan.labels_inverted === true && Array.isArray(plan.action_items)) {
+        plan.action_items = plan.action_items.map((a: any) =>
+          ({ ...a, owner: a?.owner === "me" ? "them" : a?.owner === "them" ? "me" : a?.owner }));
+      }
       let transcriptEn: string | null = null;
       if (plan.non_english) { try { const t = await translateToEnglish(transcript); if (t) transcriptEn = t; } catch (_) {} }
       const summary = String(plan.call_summary || "").trim();
@@ -132,7 +168,11 @@ serve(async (req) => {
         if (interactionId) timelined++;
       }
 
-      const proposed = items.map((a: any) => ({ title: String(a.title || "").slice(0, 200), owner: a.owner === "them" ? "them" : "me", due_date: a.due_date || null, priority: ["high", "medium", "low"].includes(a.priority) ? a.priority : "medium", note: String(a.note || "").slice(0, 300), status: "pending" }));
+      const lowAttr = plan?.attribution_confidence === "low";
+      const proposed = items.map((a: any) => ({ title: String(a.title || "").slice(0, 200), owner: a.owner === "them" ? "them" : "me",
+        // Surfaced in review as "unsure" so a shaky attribution is visible rather
+        // than silently wrong — the reviewer can flip it in one tap.
+        attribution_confidence: lowAttr ? "low" : "high", due_date: a.due_date || null, priority: ["high", "medium", "low"].includes(a.priority) ? a.priority : "medium", note: String(a.note || "").slice(0, 300), status: "pending" }));
       actions += proposed.length;
       await admin.from("recordings").update({
         summary: (summary || keyPoints.length) ? [summary, ...keyPoints].filter(Boolean) : null, proposed_tasks: proposed, transcript_en: transcriptEn,

@@ -6261,6 +6261,28 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
     setRecordings(data || []);
   }
 
+  // Who-said-what was decided by machine and can be wrong. One tap puts the
+  // human in charge of it — cheaper and far more reliable than a second AI pass
+  // guessing at the first one's mistakes (measured: a re-read of the same
+  // transcript disagreed with itself, confidently, on the same file).
+  async function swapSpeakers(rec) {
+    const flip = (t) => String(t || '').split('\n').map(ln =>
+      ln.startsWith('Me: ') ? 'Them: ' + ln.slice(4)
+      : ln.startsWith('Them: ') ? 'Me: ' + ln.slice(6) : ln).join('\n');
+    const segs = Array.isArray(rec.transcript_segments)
+      ? rec.transcript_segments.map(sg => ({ ...sg,
+          speaker: sg.speaker === 'Me' ? 'Them' : sg.speaker === 'Them' ? 'Me' : sg.speaker }))
+      : rec.transcript_segments;
+    await supabase.from('recordings').update({
+      transcript_text: flip(rec.transcript_text),
+      transcript_en: rec.transcript_en ? flip(rec.transcript_en) : null,
+      transcript_segments: segs,
+      speaker_id_method: 'user-corrected',
+      speaker_id_confidence: 'high',
+    }).eq('id', rec.id);
+    await refreshRecordings();
+  }
+
   async function handleUpload(e) {
     e.preventDefault();
     if (!uploadForm.file) { setError('Pick an audio file first.'); return; }
@@ -6494,6 +6516,27 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
                       <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
                         <button onClick={() => setShowEnglish(true)} className="btn btn-ghost btn-sm" style={{ padding: '2px 11px', fontSize: '10px', background: showEnglish ? 'var(--accent)' : 'transparent', color: showEnglish ? '#1a1409' : 'var(--text-2)', border: '1px solid var(--accent-dim)', fontWeight: 700 }}>English</button>
                         <button onClick={() => setShowEnglish(false)} className="btn btn-ghost btn-sm" style={{ padding: '2px 11px', fontSize: '10px', background: !showEnglish ? 'var(--accent)' : 'transparent', color: !showEnglish ? '#1a1409' : 'var(--text-2)', border: '1px solid var(--accent-dim)', fontWeight: 700 }}>Original</button>
+                      </div>
+                    )}
+                    {/* Older transcripts had Me/Them assigned by WHO SPOKE FIRST,
+                        not by identifying anyone — so a call the other person
+                        opened reads entirely backwards. Say so plainly and make
+                        the correction one tap. */}
+                    {['positional-legacy', 'unresolved'].includes(r.speaker_id_method) && /^(Me|Them):/m.test(r.transcript_text || '') && (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px', padding: '7px 9px', background: 'rgba(245,158,11,0.10)', border: '1px solid #f59e0b', borderRadius: '6px', fontSize: '10.5px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+                        <span style={{ flex: '1 1 190px', minWidth: 0 }}>
+                          Speakers here were guessed from who spoke first, not identified — if “Me” and “Them” are reversed, fix it.
+                        </span>
+                        <button onClick={() => swapSpeakers(r)} className="btn btn-ghost btn-sm"
+                          style={{ padding: '3px 11px', fontSize: '10px', fontWeight: 700, border: '1px solid #f59e0b', color: '#f59e0b', flex: 'none' }}>
+                          Swap Me / Them
+                        </button>
+                      </div>
+                    )}
+                    {r.speaker_id_method === 'user-corrected' && (
+                      <div style={{ fontSize: '10px', color: 'var(--text-3)', marginBottom: '5px' }}>
+                        Speakers corrected by you.{' '}
+                        <button onClick={() => swapSpeakers(r)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '10px', padding: 0, textDecoration: 'underline' }}>swap back</button>
                       </div>
                     )}
                     <div style={{ padding: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '11px', color: 'var(--text-1)', lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: '320px', overflowY: 'auto' }}>
