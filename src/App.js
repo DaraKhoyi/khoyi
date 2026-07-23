@@ -3200,6 +3200,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
 
   const oweReply = contacts.filter(c => {
     if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false;
+    if (c.comms_settled_at) return false;   // you declared this exchange finished
     if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
     const lin = new Date(c.last_inbound_at).getTime();
     // Dismissed as "no reply needed" — but only for THIS inbound. A newer inbound
@@ -3212,7 +3213,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
   const dueTasks = tasks.filter(t => !t.completed && t.status !== 'done' && t.due_date && new Date(t.due_date + 'T23:59:59').getTime() <= endToday)
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
 
-  const outreach = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; })
+  const outreach = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.comms_settled_at) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; })
     .sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
 
   const total = oweReply.length + dueTasks.length + outreach.length;
@@ -3735,7 +3736,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
       const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
       const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; return !!(oweReplyMap && oweReplyMap[c.id]); }).sort((a, b) => new Date(oweReplyMap[a.id]||0) - new Date(oweReplyMap[b.id]||0));
-      const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
+      const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.comms_settled_at) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
       const reachSource = [
         ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
         ...outreach.slice(0, 10).map(c => ({ c, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
@@ -5974,8 +5975,9 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
   const todayTotal = doneToday + dueToday;
   const ringPct = todayTotal>0 ? doneToday/todayTotal : (pending.length===0 ? 1 : 1);
   // "Needs you now" — mirrors the Needs Attention panel's totals
-  const oweReplyN = contacts.filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).length;
-  const reachN = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); const ts = a.length ? Math.max(...a) : null; const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; }).length;
+  const oweReplyN = contacts.filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.comms_settled_at) return false;   // you declared this exchange finished
+    if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).length;
+  const reachN = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.comms_settled_at) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); const ts = a.length ? Math.max(...a) : null; const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; }).length;
   const dueOrOverdue = pending.filter(t => t.due_date && t.due_date <= todayISO).length;
   const needsNow = oweReplyN + reachN + dueOrOverdue;
   const upcoming = (events||[]).filter(e=>e.start_at && new Date(e.start_at) >= new Date()).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)).slice(0,4);
@@ -8815,7 +8817,35 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const _hdrLastTs = _hdrTs.length ? Math.max(..._hdrTs) : null;
   const _hdrRelAge = (ms) => { if (!ms) return null; const d = Math.floor((Date.now()-ms)/86400000); if (d<=0) return 'today'; if (d===1) return '1d ago'; if (d<7) return d+'d ago'; if (d<30) return Math.floor(d/7)+'w ago'; if (d<365) return Math.floor(d/30)+'mo ago'; return Math.floor(d/365)+'y ago'; };
   const hdrLastAge = _hdrRelAge(_hdrLastTs);
-  const hdrLastDir = contact.last_communication_direction === 'inbound' ? '↓ They' : contact.last_communication_direction === 'outbound' ? '↑ You' : (_hdrLastTs ? 'Last' : null);
+  // Three states, because two was a lie. Machine-derived direction is often
+  // right but sometimes wrong, and there is a third truth it can't represent:
+  // the exchange is FINISHED — nobody owes anybody and this person isn't on a
+  // keep-in-touch loop. Without it the only way to stop the nudges was to
+  // delete the cadence or let a false "they're waiting" sit there forever.
+  const hdrSettled = !!contact.comms_settled_at;
+  const hdrLastDir = hdrSettled ? '✓ Settled'
+    : contact.last_communication_direction === 'inbound' ? '↓ They'
+    : contact.last_communication_direction === 'outbound' ? '↑ You'
+    : (_hdrLastTs ? 'Last' : null);
+  // Tap cycles They -> You -> Settled -> They. Direction is stored as a fact the
+  // recompute job also writes; "settled" is a separate flag precisely BECAUSE
+  // recompute overwrites direction — a settled state stored there would silently
+  // revert the next time any message synced.
+  const cycleCommsState = async () => {
+    let patch;
+    if (hdrSettled) patch = { comms_settled_at: null, last_communication_direction: 'inbound' };
+    else if (contact.last_communication_direction === 'inbound') patch = { comms_settled_at: null, last_communication_direction: 'outbound' };
+    else patch = { comms_settled_at: new Date().toISOString() };
+    const { error } = await supabase.from('contacts').update(patch).eq('id', contact.id);
+    if (!error) {
+      Object.assign(contact, patch);
+      if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
+      if (window.__notify) window.__notify(
+        patch.comms_settled_at ? 'Settled — no reply owed, and no cadence nudges for this contact.'
+          : patch.last_communication_direction === 'inbound' ? 'Marked: they replied last — you owe a reply.'
+          : 'Marked: you replied last — waiting on them.', 'success');
+    }
+  };
   const hdrTouchDue = contact.cadence_days ? (_hdrLastTs ? (Date.now()-_hdrLastTs)/86400000 >= contact.cadence_days : true) : false;
   const _hdrOriginMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',csv:'CSV import',import:'Import',other:'Other'};
   const _hdrReferredBy = contact.referred_by_contact_id ? ((contacts.find(c => c.id === contact.referred_by_contact_id) || {}).name) : null;
@@ -8865,7 +8895,16 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             {hdrTypeLabel && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--accent)'}}>{hdrTypeLabel}</span>}
             {profile?.primary_letter && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(255,255,255,0.04)',border:'1px solid '+discBarColors[profile.primary_letter],color:discBarColors[profile.primary_letter]}}>DISC {profile.primary_letter}{profile.secondary_letter ? '/'+profile.secondary_letter : ''}</span>}
             {hdrTouchDue && <span style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(245,158,11,0.13)',border:'1px solid rgba(245,158,11,0.4)',color:'#fbbf24'}}><span style={{width:'6px',height:'6px',borderRadius:'50%',background:'#fbbf24'}} />Touch due</span>}
-            {hdrLastAge && <span style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-2)'}}>{hdrLastDir} · {hdrLastAge}</span>}
+            {hdrLastAge && (
+              <button type="button" onClick={cycleCommsState}
+                title="Tap to change who owes a reply — they, you, or nobody"
+                style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',cursor:'pointer',
+                  background: hdrSettled ? 'rgba(197,169,94,0.14)' : 'var(--bg-card)',
+                  border:'1px solid ' + (hdrSettled ? 'var(--accent)' : 'var(--border)'),
+                  color: hdrSettled ? 'var(--accent)' : 'var(--text-2)'}}>
+                {hdrLastDir} · {hdrLastAge}
+              </button>
+            )}
           </div>
         </div>
 
@@ -8903,6 +8942,13 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             const ss = ub ? profile.baseline_s_score : profile.s_score;
             const cc = ub ? profile.baseline_c_score : profile.c_score;
             const pct = profile.confidence_pct;
+            // A 28%-confidence guess used to render exactly like a verified
+            // assessment: big bold letters and a prescriptive instruction to
+            // "lead with the facts". Someone glancing at that walks into a
+            // meeting believing it. Below the provisional floor the read stays
+            // VISIBLE but stops presenting itself as fact — same principle as
+            // refusing to auto-flip speaker labels we can't stand behind.
+            const provisional = !ub && (pct == null || pct < 40);
             const confText = ub ? 'Verified assessment' : (pct != null ? pct + '% confidence' : 'Inferred');
             const confColor = ub ? '#34d399' : (pct >= 70 ? '#34d399' : pct >= 40 ? '#fbbf24' : 'var(--text-3)');
             const srcLine = ub
@@ -8917,11 +8963,22 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                 {(dd!=null||ii!=null||ss!=null||cc!=null) && discBars(dd, ii, ss, cc, null)}
                 {pl && (
                   <div style={{marginTop:'12px',display:'flex',alignItems:'baseline',gap:'9px',flexWrap:'wrap'}}>
-                    <span style={{fontSize:'24px',fontWeight:800,color:discBarColors[pl],lineHeight:1}}>{pl}{sl?'/'+sl:''}</span>
+                    <span style={{fontSize: provisional ? '19px' : '24px',fontWeight:800,lineHeight:1,
+                      color: provisional ? 'var(--text-2)' : discBarColors[pl],
+                      opacity: provisional ? 0.75 : 1}}>{pl}{sl?'/'+sl:''}</span>
                     <span style={{fontSize:'12.5px',color:'var(--text-2)'}}>{NAMES[pl]}{sl?' · '+NAMES[sl]:''}</span>
+                    {provisional && <span style={{fontSize:'10px',fontWeight:700,color:'#f59e0b',border:'1px solid #f59e0b',borderRadius:'999px',padding:'2px 8px'}}>EARLY READ</span>}
                   </div>
                 )}
-                {pl && TIPS[pl] && <div style={{marginTop:'10px',fontSize:'12.5px',color:'var(--text-1)',lineHeight:1.5,borderLeft:'2px solid '+discBarColors[pl],paddingLeft:'11px'}}>{TIPS[pl]}</div>}
+                {pl && TIPS[pl] && (
+                  provisional ? (
+                    <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-2)',lineHeight:1.5,borderLeft:'2px solid var(--border)',paddingLeft:'11px'}}>
+                      Too little evidence to coach from yet. <b>If</b> this read holds, {String(TIPS[pl]).charAt(0).toLowerCase() + String(TIPS[pl]).slice(1)} Treat it as a hypothesis to test on the next call — not a plan.
+                    </div>
+                  ) : (
+                    <div style={{marginTop:'10px',fontSize:'12.5px',color:'var(--text-1)',lineHeight:1.5,borderLeft:'2px solid '+discBarColors[pl],paddingLeft:'11px'}}>{TIPS[pl]}</div>
+                  )
+                )}
                 <div style={{marginTop:'10px',fontSize:'10.5px',color:'var(--text-3)'}}>{srcLine}</div>
               </div>
             );

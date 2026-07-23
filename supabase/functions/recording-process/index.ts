@@ -78,16 +78,21 @@ async function translateToEnglish(transcript: string): Promise<string> {
 // function. Falls back to a neutral label rather than to somebody else's name.
 async function ownerIdentity(admin: any, userId: string): Promise<{ name: string; pronouns: string }> {
   try {
+    // Pronouns live on the AGENT row — the account owner's own record. Reading
+    // them off a contact row was wrong: most owners have no contact record of
+    // themselves, so the lookup fell through to "unknown" and the model was left
+    // to infer gender from a voice. That is precisely how people get mis-gendered
+    // in their own call summaries.
     const { data: a } = await admin.from("agents")
-      .select("name,email").eq("auth_user_id", userId).maybeSingle();
+      .select("name,email,pronouns").eq("auth_user_id", userId).maybeSingle();
     const name = a?.name || "The account owner";
-    let pronouns = "they/them (pronouns unknown — do not guess)";
-    if (a?.email) {
+    let pronouns = a?.pronouns || null;
+    if (!pronouns && a?.email) {
       const { data: c } = await admin.from("contacts")
         .select("pronouns").eq("email", a.email).not("pronouns", "is", null).maybeSingle();
       if (c?.pronouns) pronouns = c.pronouns;
     }
-    return { name, pronouns };
+    return { name, pronouns: pronouns || "they/them (pronouns unknown — do not guess, never infer from voice)" };
   } catch (_) {
     return { name: "The account owner", pronouns: "they/them (pronouns unknown — do not guess)" };
   }
