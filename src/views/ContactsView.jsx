@@ -925,6 +925,12 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     try {
       const v = window.__pendingSharedVCard;
       if (v) { window.__pendingSharedVCard = null; const parsed = parseVCard(v); if (parsed) { setEditContact(parsed); setShowModal(true); } }
+      // Plain "show me this person" — no research side-effect.
+      const oid = window.__pendingOpenContact;
+      if (oid && contacts && contacts.length) {
+        const c = contacts.find(x => x.id === oid);
+        if (c) { window.__pendingOpenContact = null; setDetailContact(c); }
+      }
       const rid = window.__pendingResearch;
       if (rid && contacts && contacts.length) { const c = contacts.find(x => x.id === rid); if (c) { window.__pendingResearch = null; window.__autoResearch = c.id; setDetailContact(c); } }
       const pf = window.__pendingContactPrefill;

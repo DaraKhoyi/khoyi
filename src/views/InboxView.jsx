@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { Tip, AriRewriteButton, ForkTuningOverlay, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials } from '../App';
+import { Tip, AriRewriteButton, ForkTuningOverlay, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials , decodeEntities } from '../App';
 
 const TRIAGE_CATEGORIES = {
   urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },
@@ -670,6 +670,27 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
 // ─────────────────────────────────────────
 
 function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, setView, reloadData, defaultSystem }) {
+  // A name in an email header is only useful if it gets you to the record. Built
+  // once from the contact list rather than scanned per render — a long thread
+  // renders this for every sender and every recipient.
+  const contactByEmail = React.useMemo(() => {
+    const m = new Map();
+    for (const c of (contacts || [])) {
+      if (c && c.email) m.set(String(c.email).trim().toLowerCase(), c);
+      // People have more than one address; the jsonb array is the real source.
+      if (Array.isArray(c?.emails)) {
+        for (const e of c.emails) {
+          const v = typeof e === 'string' ? e : (e && e.value);
+          if (v) m.set(String(v).trim().toLowerCase(), c);
+        }
+      }
+    }
+    return m;
+  }, [contacts]);
+  const findContact = React.useCallback(
+    (email) => (email ? contactByEmail.get(String(email).trim().toLowerCase()) || null : null),
+    [contactByEmail]);
+
   // All connected email-capable Google accounts (locked-in once OAuth'd for email).
   const mailAccounts = emailAccounts.filter(a =>
     ((a.purposes || []).includes('email') || (a.scopes || []).some(s => s.includes('gmail'))) && a.refresh_token
@@ -1731,9 +1752,10 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     const subject = msg.subject || selectedThread?.subject || '';
     let body = msg.body_text || '';
     if (!body && msg.body_html) {
-      body = msg.body_html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
-        .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
-        .replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      body = decodeEntities(
+        msg.body_html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ')
+      ).replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
     }
     if (!body) body = msg.snippet || '';
     const from = (msg.from_address || '').trim();
@@ -1926,9 +1948,9 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     let text = msg.body_text || '';
     if (!text && msg.body_html) {
       // crude tag strip
-      text = msg.body_html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr)>/gi, '\n').replace(/<[^>]+>/g, ' ');
-      // decode a few common entities
-      text = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+      text = decodeEntities(
+        msg.body_html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr)>/gi, '\n').replace(/<[^>]+>/g, ' ')
+      );
     }
     if (!text) text = msg.snippet || '';
     if (!text) return null;
@@ -2945,9 +2967,18 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                             <div style={{display:'flex',gap:'10px',alignItems:'flex-start',flexWrap:'wrap'}}>
                               <div style={{flex:1,minWidth:0}}>
                                 <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'2px'}}>
-                                  <span style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>
-                                    {msg.from_name || msg.from_address}
-                                  </span>
+                                  {(() => {
+                                    const sc = findContact(msg.from_address);
+                                    const label = msg.from_name || msg.from_address;
+                                    if (!sc) return <span style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}>{label}</span>;
+                                    return (
+                                      <button type="button" title={`Open ${sc.name}'s record`}
+                                        onClick={() => window.__openContact && window.__openContact(sc.id)}
+                                        style={{fontWeight:600,color:'var(--accent)',fontSize:'14px',background:'none',border:'none',padding:0,cursor:'pointer',textAlign:'left',textDecorationLine:'underline',textDecorationStyle:'dotted',textUnderlineOffset:'3px'}}>
+                                        {label}
+                                      </button>
+                                    );
+                                  })()}
                                   {senderProfile && (
                                     <span className="pill" style={{background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',color:'var(--accent)',fontSize:'10px',padding:'2px 6px'}}>
                                       {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
@@ -2962,7 +2993,23 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                                 {sentTo.length > 0 && (
                                   <div style={{fontSize:'11px',color:'var(--text-3)',wordBreak:'break-word',lineHeight:1.5}}>
                                     <span style={{color:'var(--text-3)'}}>to </span>
-                                    {sentTo.map(fmtRecipient).join(', ')}
+                                    {sentTo.map((r, ri) => {
+                                      const em = typeof r === 'string' ? r : (r && r.email) || '';
+                                      const rc = findContact(em);
+                                      const label = fmtRecipient(r);
+                                      return (
+                                        <React.Fragment key={ri}>
+                                          {ri > 0 && ', '}
+                                          {rc ? (
+                                            <button type="button" title={`Open ${rc.name}'s record`}
+                                              onClick={() => window.__openContact && window.__openContact(rc.id)}
+                                              style={{color:'var(--accent)',fontSize:'11px',background:'none',border:'none',padding:0,cursor:'pointer',textDecorationLine:'underline',textDecorationStyle:'dotted',textUnderlineOffset:'2px'}}>
+                                              {label}
+                                            </button>
+                                          ) : label}
+                                        </React.Fragment>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>

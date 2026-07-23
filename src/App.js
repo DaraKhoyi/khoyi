@@ -2007,6 +2007,46 @@ const QUADRANTS = [
 // either way, mapping A↔high, B↔medium, C↔low, so callers don't change.
 const PRIO_TO_QUAD = { high: 'A', medium: 'B', low: 'C' };
 const QUAD_TO_PRIO = { A: 'high', B: 'medium', C: 'low' };
+
+// ── HTML entity decoding ─────────────────────────────────────────────────────
+// Email bodies arrive HTML-escaped. When we strip tags to make a plain-text
+// preview we were decoding exactly two entities by hand (&nbsp; and &amp;) and
+// nothing else, so every apostrophe in an email came out as a literal "&#39;"
+// on the contact timeline. React escapes text by default, so there is nothing
+// downstream to rescue it.
+//
+// Numeric references (&#39; &#x27;) are the common case in real mail — a
+// hand-picked list of named entities will always miss them. Regex rather than
+// the innerHTML trick so this is safe anywhere and never touches the DOM.
+//
+// &amp; is decoded LAST, deliberately: "&amp;#39;" must end up as the literal
+// text "&#39;", not as an apostrophe. Decoding it first would double-decode.
+const HTML_ENTITIES = {
+  lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ensp: ' ', emsp: ' ', thinsp: ' ',
+  ndash: '\u2013', mdash: '\u2014', lsquo: '\u2018', rsquo: '\u2019',
+  ldquo: '\u201C', rdquo: '\u201D', hellip: '\u2026', bull: '\u2022',
+  middot: '\u00B7', copy: '\u00A9', reg: '\u00AE', trade: '\u2122',
+  deg: '\u00B0', eacute: '\u00E9', egrave: '\u00E8', uuml: '\u00FC',
+  ouml: '\u00F6', auml: '\u00E4', ccedil: '\u00E7', ntilde: '\u00F1',
+  laquo: '\u00AB', raquo: '\u00BB', euro: '\u20AC', pound: '\u00A3', yen: '\u00A5',
+};
+function cpToStr(cp) {
+  // Reject surrogates and out-of-range values rather than throwing on bad input.
+  if (!Number.isFinite(cp) || cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return '';
+  try { return String.fromCodePoint(cp); } catch (_) { return ''; }
+}
+export function decodeEntities(str) {
+  if (typeof str !== 'string' || str.indexOf('&') === -1) return str;
+  return str
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => cpToStr(parseInt(h, 16)) || m)
+    .replace(/&#(\d+);/g, (m, d) => cpToStr(parseInt(d, 10)) || m)
+    .replace(/&([a-z][a-z0-9]*);/gi, (m, n) => {
+      const k = n.toLowerCase();
+      return k === 'amp' ? m : (HTML_ENTITIES[k] !== undefined ? HTML_ENTITIES[k] : m);
+    })
+    .replace(/&amp;/gi, '&');
+}
+
 export function PriorityField({ system, priority, onChange, style, className = 'form-select', disabled }) {
   const eis = (system || 'eisenhower') === 'eisenhower';
   const val = eis ? (PRIO_TO_QUAD[priority] || 'B') : (priority || 'medium');
@@ -7659,7 +7699,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
               {!e._email && <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}><Icon name="trash" size={14} /></button>}
             </div>
           </div>
-          {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{e.body || e.brief}</div>}
+          {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{decodeEntities(e.body || e.brief)}</div>}
           {callByInteraction[e.id] && (
             <div style={{ marginTop: 6 }}>
               <button onClick={() => setOpenCall(openCall === e.id ? null : e.id)}
@@ -17562,6 +17602,10 @@ function AppMain() {
   // window.__composeEmail(address) to open the PrismOS composer instead of the OS/Gmail app.
   useEffect(() => {
     window.__composeEmail = (email) => { if (!email) return; try { window.__inboxComposeTo = String(email).trim(); } catch (_) {} navigate('inbox'); };
+    // Open a contact record from anywhere (email headers, timelines). Separate
+    // from __openContactResearch on purpose: that one KICKS OFF research, which
+    // is wrong when the user just wants to look someone up.
+    window.__openContact = (contactId) => { try { if (!contactId) return; window.__pendingOpenContact = contactId; navigate('contacts'); } catch (_) {} };
     window.__openContactResearch = (contactId, prefill, hint) => { try { window.__autoResearchHint = hint || (prefill && prefill.hint) || null; if (contactId) { window.__pendingResearch = contactId; } else if (prefill) { window.__pendingContactPrefill = prefill; } navigate('contacts'); } catch (_) {} };
     window.__setView = (v) => { try { navigate(v); } catch (_) {} };  // used by the automated smoke-check harness
     window.__getView = () => { try { return viewRef.current; } catch (_) { return null; } };  // read hook: lets tests assert WHICH view is on screen
