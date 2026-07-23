@@ -3,6 +3,7 @@ import { supabase } from '../dataService';
 import { CallFollowupsPanel } from '../App';
 import CommitmentReview from './CommitmentReview';
 import StaleDecide from './StaleDecide';
+import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
@@ -377,6 +378,12 @@ export default function TodayView({
         sub="Transcribe & pull action items" onOpen={() => setView && setView('review')} />
 
       {/* Planning decisions live here, not in the Tasks list */}
+      {/* Somebody is blocked waiting on your yes or no — that outranks your own
+          grooming, so it sits above the review queues. */}
+      <DelegationInbox userId={myUserId}
+        onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
+      <DelegationOutbox userId={myUserId}
+        onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <CommitmentReview userId={myUserId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <StaleDecide tasks={tasks} setTasks={setTasks} userId={myUserId} />
 
