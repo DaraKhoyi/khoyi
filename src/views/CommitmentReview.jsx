@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../dataService';
+import OwnerPicker from './OwnerPicker';
 
 // ── CommitmentReview ─────────────────────────────────────────────────────────
 // The one moment where calls turn into work. Deliberately a BATCH — "6 things
@@ -35,6 +36,7 @@ const daysLate = (d) => Math.floor((Date.now() - new Date(d + 'T12:00:00')) / 86
 
 export default function CommitmentReview({ userId, contactId = null, onChanged }) {
   const [rows, setRows] = useState(null);
+  const [contacts, setContacts] = useState([]);
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -54,7 +56,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
 
   async function load() {
     let q = supabase.from('commitments')
-      .select('id,contact_id,owner,title,quote,due_date,confidence,status,call_id')
+      .select('id,contact_id,owner,owner_contact_id,title,quote,due_date,confidence,status,call_id,fuse')
       .in('status', ['proposed', 'accepted'])
       .order('created_at', { ascending: false });
     if (contactId) q = q.eq('contact_id', contactId);
@@ -67,8 +69,37 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
       (cs || []).forEach(c => { names[c.id] = c.name; });
     }
     setRows((data || []).map(r => ({ ...r, contact_name: names[r.contact_id] || 'Unknown' })));
+    // Everyone, for the "someone else" picker — the responsible party is often a
+    // lender/TC/co-agent who was never on the call, so this cannot be scoped to
+    // the call's participants.
+    if (!contacts.length) {
+      const { data: all } = await supabase.from('contacts').select('id,name').order('name');
+      setContacts(all || []);
+    }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [contactId]);
+
+  // WHO is on the hook. NULL owner_contact_id on a "them" item means the person
+  // on the call; set means a third party who never was.
+  const responsible = (c) => {
+    if (c.owner === 'me') return 'You';
+    if (c.owner_contact_id) {
+      const t = contacts.find(x => x.id === c.owner_contact_id);
+      return t ? t.name : 'Someone else';
+    }
+    return c.contact_name;
+  };
+
+  // Attribution is a FACT, not a draft — persist the correction the moment it is
+  // made, so it survives leaving the screen without accepting. Optimistic so the
+  // chips respond instantly on a phone.
+  async function setOwner(c, patch) {
+    setRows(rs => rs.map(r => r.id === c.id ? { ...r, ...patch } : r));
+    const { error } = await supabase.from('commitments')
+      .update({ owner: patch.owner, owner_contact_id: patch.owner_contact_id })
+      .eq('id', c.id);
+    if (error) { setErr(String(error.message || error)); await load(); }
+  }
 
   async function accept(c) {
     setBusy(c.id); setErr(null);
@@ -170,11 +201,14 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
     try {
       const { data: t, error } = await supabase.from('tasks').insert({
         user_id: userId,
-        title: `Chase ${c.contact_name}: ${c.title}`,
+        title: `Chase ${responsible(c)}: ${c.title}`,
         due_date: new Date().toISOString().slice(0, 10),
-        notes: `${c.contact_name} said “${c.quote}” — due ${fmtDate(c.due_date)}, now ${daysLate(c.due_date)} day(s) late.`,
-        contact_id: c.contact_id || null,
-        waiting_on: c.contact_name,     // the app already speaks this
+        // Provenance stays honest: the QUOTE came from the call, even when the
+        // person responsible was never on it.
+        notes: `${c.contact_name} said “${c.quote}” — due ${fmtDate(c.due_date)}, now ${daysLate(c.due_date)} day(s) late.`
+          + (c.owner_contact_id ? `\nYou assigned this to ${responsible(c)}, who was not on the call.` : ''),
+        contact_id: c.owner_contact_id || c.contact_id || null,
+        waiting_on: responsible(c),     // the app already speaks this
         completed: false,
       }).select().single();
       if (error) throw error;
@@ -202,11 +236,20 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   // the input keeps its identity and focus survives typing. Key goes on the root.
   const renderCard = (c, { children, tone, editable }) => (
     <div key={c.id} style={{ ...card, borderColor: tone === 'late' ? EMBER : 'var(--border)', marginBottom: 8 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 5 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 5, flexWrap: 'wrap' }}>
         <span style={{ ...lab, color: c.owner === 'me' ? 'var(--accent-2)' : 'var(--text-3)' }}>
-          {c.owner === 'me' ? 'You said you would' : `${c.contact_name} said they would`}
+          {c.owner === 'me' ? 'You said you would'
+            : c.owner_contact_id ? `${responsible(c)} is on the hook`
+            : `${c.contact_name} said they would`}
         </span>
         {c.confidence === 'low' && <span style={{ fontSize: 9, color: EMBER, fontWeight: 700 }}>· unsure</span>}
+      </div>
+      {/* Attribution is the single most-corrected field — extraction tagged 89 of
+          199 items "them" and 75% were thrown away. Make fixing it one tap. */}
+      <div style={{ marginBottom: 8 }}>
+        <OwnerPicker owner={c.owner} ownerContactId={c.owner_contact_id}
+          counterpartyName={c.contact_name} contacts={contacts}
+          onChange={(patch) => setOwner(c, patch)} />
       </div>
       {editable ? (
         // The title is yours to fix — the extraction is a draft, not gospel.
@@ -324,7 +367,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
                 ) : (
                   <div onClick={() => setEditingId(c.id)} title="Tap to reword"
                     style={{ fontSize: 12.5, color: 'var(--text-1)', cursor: 'text' }}>
-                    <b style={{ color: 'var(--accent-2)' }}>{c.contact_name}</b> — {c.title}
+                    <b style={{ color: 'var(--accent-2)' }}>{responsible(c)}</b> — {c.title}
                   </div>
                 )}
                 {c.due_date && <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 2 }}>by {fmtDate(c.due_date)}</div>}

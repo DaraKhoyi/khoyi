@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
+import OwnerPicker from './OwnerPicker';
 import { PrismThinking, useBackClose, Icon, QuoTextModal, TaskModal, PriorityField, money } from '../App';
 
 function ActionHubModal({ contactId, userId, onClose }) {
@@ -431,10 +432,16 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
       const { data: t, error } = await supabase.from('tasks').insert({
         user_id: userId, title: item.title, due_date: item.due_date || null, priority: item.priority || 'medium', notes: note,
         priority_system: defaultSystem || 'eisenhower', eisenhower_quadrant: quad(item.priority || 'medium'), completed: false,
+        // Someone else's promise: the app already speaks "waiting_on", so a
+        // follow-up reads as a chase rather than as your own work.
+        waiting_on: item.owner === 'them'
+          ? (nameOf(item.owner_contact_id) || nameOf(call.contact_id) || null) : null,
       }).select().single();
       if (!error && t) {
         if (setTasks) setTasks(prev => [t, ...prev]);
-        if (call.contact_id) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [call.contact_id] }); } catch (_) {} }
+        // Link to the RESPONSIBLE person when you reassigned it; otherwise the call.
+        const linkId = item.owner_contact_id || call.contact_id;
+        if (linkId) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [linkId] }); } catch (_) {} }
         return true;
       }
     } catch (_) {}
@@ -462,8 +469,11 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
     setBusy(b => ({ ...b, [call.id]: true })); setErr(null);
     const items = (call.proposed_tasks || []).map((it, i) => {
       const owner = tv(call, i, 'owner', it.owner);
+      const ownerCid = tv(call, i, 'owner_contact_id', it.owner_contact_id || null);
+      const who = owner === 'them' ? (nameOf(ownerCid) || nameOf(call.contact_id) || 'them') : null;
       const t0 = tv(call, i, 'title', it.title);
-      return { owner, title: owner === 'them' ? `Follow up: ${t0}` : t0, due_date: tv(call, i, 'due_date', it.due_date) || null, priority: tv(call, i, 'priority', it.priority) || 'medium', note: it.note || '', _checked: !!checked[keyOf(call, i)] };
+      return { owner, owner_contact_id: ownerCid,
+        title: owner === 'them' ? `Follow up (${who}): ${t0}` : t0, due_date: tv(call, i, 'due_date', it.due_date) || null, priority: tv(call, i, 'priority', it.priority) || 'medium', note: it.note || '', _checked: !!checked[keyOf(call, i)] };
     }).filter(x => x._checked && x.title.trim());
     let created = 0; const ambiguous = [];
     for (const item of items) {
@@ -514,8 +524,16 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
                 <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '8px', borderRadius: '8px', background: 'var(--bg-hover)', marginBottom: '6px' }}>
                   <input type="checkbox" checked={!!checked[k]} onChange={e => setChecked(s => ({ ...s, [k]: e.target.checked }))} style={{ marginTop: '6px' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', padding: '1px 6px', borderRadius: '5px', color: owner === 'them' ? '#f59e0b' : 'var(--accent)', border: `1px solid ${owner === 'them' ? '#f59e0b' : 'var(--accent-dim)'}` }}>{owner === 'them' ? 'Track (them)' : 'You'}</span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap' }}>
+                      {/* Same control as the commitments queue — attribution is
+                          wrong often enough that fixing it must be one tap, on
+                          every transcription surface. */}
+                      <OwnerPicker compact
+                        owner={owner}
+                        ownerContactId={tv(call, i, 'owner_contact_id', it.owner_contact_id || null)}
+                        counterpartyName={nm || 'the caller'}
+                        contacts={contacts}
+                        onChange={(patch) => { setTv(call, i, 'owner', patch.owner); setTv(call, i, 'owner_contact_id', patch.owner_contact_id); }} />
                       {it.note && <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{it.note}</span>}
                     </div>
                     <input className="form-input" style={{ margin: '0 0 6px', fontSize: '13px', padding: '6px 8px' }} value={tv(call, i, 'title', it.title)} onChange={e => setTv(call, i, 'title', e.target.value)} />
