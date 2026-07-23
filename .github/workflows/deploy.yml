@@ -60,10 +60,36 @@ jobs:
           npx playwright install --with-deps chromium
           # The service_role key isn't stored as an Actions secret, and doesn't need to
           # be — mint it at run time from the Management token we already have.
+          #
+          # Retried, because the Management API rate-limits and a transient 429 was
+          # landing as a raw Python traceback: an unreadable red gate on a build
+          # that was fine. A gate nobody can diagnose is a gate people learn to
+          # ignore. Fail loudly and legibly, or not at all.
           REF=$(echo "$SUPABASE_URL" | sed -E 's#https://([^.]+)\..*#\1#')
-          SUPABASE_SERVICE_KEY=$(curl -s "https://api.supabase.com/v1/projects/$REF/api-keys?reveal=true" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "User-Agent: KhoyiApp/1.0" \
-            | python3 -c "import sys,json;print([k['api_key'] for k in json.load(sys.stdin) if k['name']=='service_role'][0])")
+          SUPABASE_SERVICE_KEY=""
+          for attempt in 1 2 3; do
+            RESP=$(curl -s -w '\n%{http_code}' "https://api.supabase.com/v1/projects/$REF/api-keys?reveal=true" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "User-Agent: KhoyiApp/1.0")
+            CODE=$(printf '%s' "$RESP" | tail -n1)
+            BODY=$(printf '%s' "$RESP" | sed '$d')
+            if [ "$CODE" = "200" ]; then
+              # 2>/dev/null || true so malformed JSON yields an empty key and one more
+              # retry, instead of a traceback that reads like a code failure.
+              SUPABASE_SERVICE_KEY=$(printf '%s' "$BODY" | python3 -c "import sys,json; print(next((k['api_key'] for k in json.load(sys.stdin) if k.get('name')=='service_role'), ''))" 2>/dev/null || true)
+            fi
+            [ -n "$SUPABASE_SERVICE_KEY" ] && break
+            echo "→ could not mint service key (HTTP $CODE), attempt $attempt/3; retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          if [ -z "$SUPABASE_SERVICE_KEY" ]; then
+            echo "" >&2
+            echo "✗ SMOKE GATE CANNOT RUN — could not mint a service_role key from the" >&2
+            echo "  Supabase Management API after 3 attempts (last HTTP $CODE)." >&2
+            echo "  This is NOT a code failure and NOT a pass. Usually a rate limit or an" >&2
+            echo "  expired SUPABASE_ACCESS_TOKEN secret. Re-run the job; if it persists," >&2
+            echo "  rotate the token." >&2
+            exit 2
+          fi
           export SUPABASE_SERVICE_KEY
           bash smoke/run.sh
 
