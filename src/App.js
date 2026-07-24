@@ -9103,24 +9103,42 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
     : contact.last_communication_direction === 'inbound' ? '↓ They'
     : contact.last_communication_direction === 'outbound' ? '↑ You'
     : (_hdrLastTs ? 'Last' : null);
-  // Tap cycles They -> You -> Settled -> They. Direction is stored as a fact the
-  // recompute job also writes; "settled" is a separate flag precisely BECAUSE
-  // recompute overwrites direction — a settled state stored there would silently
-  // revert the next time any message synced.
-  const cycleCommsState = async () => {
-    let patch;
-    if (hdrSettled) patch = { comms_settled_at: null, last_communication_direction: 'inbound' };
-    else if (contact.last_communication_direction === 'inbound') patch = { comms_settled_at: null, last_communication_direction: 'outbound' };
-    else patch = { comms_settled_at: new Date().toISOString() };
+  // A PICKER, not a cycle. Cycling They -> You -> Settled forced a lie: reaching
+  // Settled meant first declaring "I replied last", writing direction='outbound'
+  // when no reply was sent. False, and unstable too — recompute_contact_comms_one
+  // rewrites direction from real messages on the next sync, so the fib did not
+  // even survive. Three states, one tap each, no invented middle step.
+  // ("settled" stays its own column precisely BECAUSE recompute owns direction.)
+  const [commsMenu, setCommsMenu] = useState(false);
+  const setCommsState = async (which) => {
+    setCommsMenu(false);
+    const patch = which === 'settled' ? { comms_settled_at: new Date().toISOString() }
+      : which === 'they' ? { comms_settled_at: null, last_communication_direction: 'inbound' }
+      : { comms_settled_at: null, last_communication_direction: 'outbound' };
     const { error } = await supabase.from('contacts').update(patch).eq('id', contact.id);
-    if (!error) {
-      Object.assign(contact, patch);
-      if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
-      if (window.__notify) window.__notify(
-        patch.comms_settled_at ? 'Settled — no reply owed either way. Your keep-in-touch cadence still runs.'
-          : patch.last_communication_direction === 'inbound' ? 'Marked: they replied last — you owe a reply.'
-          : 'Marked: you replied last — waiting on them.', 'success');
-    }
+    if (error) { if (window.__notify) window.__notify('Could not update: ' + (error.message || error), 'error'); return; }
+    Object.assign(contact, patch);
+    if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
+    if (window.__notify) window.__notify(
+      which === 'settled' ? 'Settled — no reply owed either way. Your keep-in-touch cadence still runs.'
+        : which === 'they' ? 'Marked: they wrote last — you owe a reply.'
+        : 'Marked: you wrote last — waiting on them.', 'success');
+  };
+
+  // "Touch due" read as a button and did nothing, which is the worst of both.
+  // It now snoozes the keep-in-touch nudge, reversibly — the cadence itself is
+  // untouched, this just says "not this fortnight".
+  const snoozeTouch = async () => {
+    const until = new Date(Date.now() + 14 * 86400000).toISOString();
+    const { error } = await supabase.from('contacts').update({ reachout_snooze_until: until }).eq('id', contact.id);
+    if (error) { if (window.__notify) window.__notify('Could not snooze: ' + (error.message || error), 'error'); return; }
+    contact.reachout_snooze_until = until;
+    if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, reachout_snooze_until: until } : c));
+    if (window.__notify) window.__notify('Touch snoozed for 2 weeks.', 'success', { label: 'Undo', onClick: async () => {
+      await supabase.from('contacts').update({ reachout_snooze_until: null }).eq('id', contact.id);
+      contact.reachout_snooze_until = null;
+      if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, reachout_snooze_until: null } : c));
+    }});
   };
   const hdrTouchDue = contact.cadence_days ? (_hdrLastTs ? (Date.now()-_hdrLastTs)/86400000 >= contact.cadence_days : true) : false;
   const _hdrOriginMap = {manual:'Manual entry',referral:'Referral',open_house:'Open house',prospecting:'Cold list / prospecting',website:'Website / inbound',sphere:'Sphere / past client',event:'Event / networking',social:'Social media',email:'From email',csv:'CSV import',import:'Import',other:'Other'};
@@ -9170,18 +9188,51 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'12px'}}>
             {hdrTypeLabel && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'var(--accent-glow)',border:'1px solid var(--accent-dim)',color:'var(--accent)'}}>{hdrTypeLabel}</span>}
             {profile?.primary_letter && <span style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(255,255,255,0.04)',border:'1px solid '+discBarColors[profile.primary_letter],color:discBarColors[profile.primary_letter]}}>DISC {profile.primary_letter}{profile.secondary_letter ? '/'+profile.secondary_letter : ''}</span>}
-            {hdrTouchDue && <span style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(245,158,11,0.13)',border:'1px solid rgba(245,158,11,0.4)',color:'#fbbf24'}}><span style={{width:'6px',height:'6px',borderRadius:'50%',background:'#fbbf24'}} />Touch due</span>}
-            {hdrLastAge && (
-              <button type="button" onClick={cycleCommsState}
-                title={hdrSettled
-                  ? 'Settled — nobody owes a reply. Your keep-in-touch cadence still runs. Tap to change.'
-                  : 'Tap to change who owes a reply — they, you, or nobody'}
-                style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',cursor:'pointer',
-                  background: hdrSettled ? 'rgba(197,169,94,0.14)' : 'var(--bg-card)',
-                  border:'1px solid ' + (hdrSettled ? 'var(--accent)' : 'var(--border)'),
-                  color: hdrSettled ? 'var(--accent)' : 'var(--text-2)'}}>
-                {hdrLastDir} · {hdrLastAge}
+            {hdrTouchDue && (
+              <button type="button" onClick={snoozeTouch} title="Due for a keep-in-touch — tap to snooze it for 2 weeks"
+                style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',cursor:'pointer',background:'rgba(245,158,11,0.13)',border:'1px solid rgba(245,158,11,0.4)',color:'#fbbf24'}}>
+                <span style={{width:'6px',height:'6px',borderRadius:'50%',background:'#fbbf24'}} />Touch due
               </button>
+            )}
+            {hdrLastAge && (
+              <span style={{position:'relative',display:'inline-flex'}}>
+                <button type="button" onClick={() => setCommsMenu(v => !v)}
+                  title="Who owes a reply? Tap to set it"
+                  style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',cursor:'pointer',
+                    background: hdrSettled ? 'rgba(197,169,94,0.14)' : 'var(--bg-card)',
+                    border:'1px solid ' + (hdrSettled ? 'var(--accent)' : 'var(--border)'),
+                    color: hdrSettled ? 'var(--accent)' : 'var(--text-2)'}}>
+                  {hdrLastDir} · {hdrLastAge} ▾
+                </button>
+                {commsMenu && (
+                  <>
+                    {/* tap-away layer — there is no Escape key on a phone */}
+                    <span onClick={() => setCommsMenu(false)} style={{position:'fixed',inset:0,zIndex:60}} />
+                    <div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:61,width:'232px',
+                      background:'var(--bg-card)',border:'1px solid var(--accent-dim)',borderRadius:'10px',
+                      padding:'6px',boxShadow:'0 10px 28px rgba(0,0,0,.5)'}}>
+                      {[
+                        ['they',    'They wrote last',  'You owe them a reply'],
+                        ['you',     'You wrote last',   'Waiting on them'],
+                        ['settled', 'Settled',          'Nobody owes anything. Cadence still runs.'],
+                      ].map(([key, label, sub]) => {
+                        const active = key === 'settled' ? hdrSettled
+                          : !hdrSettled && contact.last_communication_direction === (key === 'they' ? 'inbound' : 'outbound');
+                        return (
+                          <button key={key} type="button" onClick={() => setCommsState(key)}
+                            style={{display:'block',width:'100%',textAlign:'left',cursor:'pointer',borderRadius:'7px',
+                              padding:'7px 9px',marginBottom:'2px',
+                              border:'1px solid ' + (active ? 'var(--accent)' : 'transparent'),
+                              background: active ? 'rgba(197,169,94,.14)' : 'none'}}>
+                            <div style={{fontSize:'12.5px',fontWeight:700,color: active ? 'var(--accent)' : 'var(--text-1)'}}>{label}</div>
+                            <div style={{fontSize:'10.5px',color:'var(--text-3)',lineHeight:1.35}}>{sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </span>
             )}
           </div>
         </div>
