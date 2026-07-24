@@ -506,14 +506,23 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
 
   return (
     <div className="view">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
-        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Icon name="quo" size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          <span style={{ fontSize: 11, letterSpacing: 1.6, color: 'var(--accent)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif' }}>PHONE &amp; TEXT</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowSetup(s => !s)} title="Number, sync & connection status">⚙</button>
+      {/* House page-title pattern: Barlow Condensed eyebrow ABOVE a Fraunces
+          headline (same as Today and Someday). This screen had the eyebrow
+          standing in AS the title, so it was the one page in the app with no
+          headline at all — which is why the type read as the wrong font.
+          Title and actions sit on separate rows so the header holds at large
+          system font; a single row of title-plus-buttons has collapsed three
+          times before. */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ minWidth: 0, flex: '1 1 0' }}>
+            <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--accent)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</div>
+            <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '2px 0 4px', overflowWrap: 'anywhere' }}>Your line.</h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowSetup(s => !s)} title="Number, sync & connection status">⚙</button>
+          </div>
         </div>
       </div>
 
