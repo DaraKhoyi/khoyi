@@ -34,7 +34,16 @@ export default function AgentActivityView({ userId }) {
   async function togglePause() {
     setPauseBusy(true);
     const next = !paused;
-    try { await supabase.from('agent_controls').upsert({ user_id: userId, paused: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }); setPaused(next); } catch (_) {}
+    // If this write fails silently the toggle still flips, so the user believes
+    // their agents are paused while the agents keep running. Of everything the
+    // audit turned up, this is the one where a lie has real consequences.
+    const { error } = await supabase.from('agent_controls')
+      .upsert({ user_id: userId, paused: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    if (error) {
+      if (window.__notify) window.__notify('Could not ' + (next ? 'pause' : 'resume') + ' agents: ' + (error.message || error), 'error');
+    } else {
+      setPaused(next);
+    }
     setPauseBusy(false);
   }
 

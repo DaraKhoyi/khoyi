@@ -237,17 +237,25 @@ export default function TodayView({
     setGroomBusy(false);
   };
 
-  const markReplied = (contactId) => {
+  // .then(() => {}, () => {}) threw away BOTH outcomes and the card cleared
+  // regardless — so a failed write looked exactly like a success and the item
+  // reappeared later with no explanation. Same shape as the Skip bug.
+  const markReplied = async (contactId) => {
     if (!contactId) return;
-    try { supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction: 'outbound', channel: 'manual', occurred_at: new Date().toISOString(), brief: 'Marked replied' }).then(() => {}, () => {}); } catch (_) {}
+    const { error } = await supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction: 'outbound', channel: 'manual', occurred_at: new Date().toISOString(), brief: 'Marked replied' });
+    if (error) { if (window.__notify) window.__notify('Could not mark replied: ' + (error.message || error), 'error'); return; }
     setOweReplyMap && setOweReplyMap(m => { const n = { ...m }; delete n[contactId]; return n; });
     setHeroIdx(0); bumpApprovals();
   };
   // No reply needed — handled elsewhere / no longer applies; you did NOT reply.
-  const markNoReplyNeeded = (contactId) => {
+  const markNoReplyNeeded = async (contactId) => {
     if (!contactId) return;
     const stampIso = (oweReplyMap && oweReplyMap[contactId]) || new Date().toISOString();
-    try { supabase.from('contacts').update({ no_reply_needed_at: stampIso }).eq('id', contactId).then(() => {}, () => {}); } catch (_) {}
+    // Await and CHECK. The old version fired and forgot, then announced
+    // "Cleared" unconditionally — the single most misleading thing a button can
+    // do, because the user stops thinking about it.
+    const { error } = await supabase.from('contacts').update({ no_reply_needed_at: stampIso }).eq('id', contactId);
+    if (error) { if (window.__notify) window.__notify('Could not clear: ' + (error.message || error), 'error'); return; }
     setOweReplyMap && setOweReplyMap(m => { const n = { ...m }; delete n[contactId]; return n; });
     setContacts && setContacts(pr => pr.map(x => x.id === contactId ? { ...x, no_reply_needed_at: stampIso } : x));
     if (window.__notify) window.__notify('Cleared — no reply needed.', 'success');
