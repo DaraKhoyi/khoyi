@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL } from './dataService';
+import { useNbaSkips } from './nbaSkips';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
@@ -3737,21 +3738,8 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
       setDocActions(docSignals(data||[], contacts));  // shared engine — same copy Ari speaks
     }catch(_){}
   })(); return ()=>{alive=false;}; },[contacts]);
-  // Skips have to survive a re-render. They used to be a cursor: Skip moved the
-  // index forward, then Mark-done called setIdx(0) and snapped straight back to
-  // the item that was skipped. Nothing was ever remembered.
-  const [skipped,setSkipped]=useState({});   // action_key -> ISO until
-  React.useEffect(()=>{ let alive=true; (async()=>{
-    if(!myUserId) return;
-    try{
-      const { data } = await supabase.from('nba_dismissals')
-        .select('action_key,snoozed_until').eq('user_id',myUserId).gt('snoozed_until',new Date().toISOString());
-      if(!alive) return;
-      const m={}; (data||[]).forEach(r=>{ m[r.action_key]=r.snoozed_until; }); setSkipped(m);
-    }catch(_){}
-  })(); return ()=>{alive=false;}; },[myUserId]);
-
-  const actions=React.useMemo(()=>{ const base=buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}); const all=[...base,...docActions,...bounceActions].sort((a,b)=>b.score-a.score); const nowMs=Date.now(); return all.filter(a=>{ const until=skipped[a.key]; return !(until && new Date(until).getTime()>nowMs); }); },[contacts,tasks,events,deals,oweReplyMap,openSignals,docActions,bounceActions,skipped]);
+  const { skipAction, filterSkipped } = useNbaSkips(myUserId);
+  const actions=React.useMemo(()=>{ const base=buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}); const all=[...base,...docActions,...bounceActions].sort((a,b)=>b.score-a.score); return filterSkipped(all); },[contacts,tasks,events,deals,oweReplyMap,openSignals,docActions,bounceActions,filterSkipped]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
   const urgent=actions.length>0; const list=urgent?actions:growth;
@@ -3760,28 +3748,6 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   // "I already replied" — clears an owe-a-reply instantly by bumping the field the
   // engine reads (last_outbound_at past last_inbound_at), independent of email/text
   // sync timing. Updates local state so the card drops immediately.
-  // Skip = "not now", not "never". Until tomorrow morning, so a genuinely
-  // important thing returns rather than vanishing forever — and it is undoable,
-  // because a mis-tap on the top card should not silently bury something.
-  const skipAction=async(a)=>{
-    if(!a || !a.key) return;
-    const until=new Date(); until.setHours(24,0,0,0);   // next local midnight
-    const iso=until.toISOString();
-    setSkipped(m=>({...m,[a.key]:iso}));   // optimistic: the card drops instantly
-    setIdx(0);
-    if(myUserId){
-      try{ await supabase.from('nba_dismissals')
-        .upsert({ user_id:myUserId, action_key:a.key, snoozed_until:iso }, { onConflict:'user_id,action_key' }); }
-      catch(_){ /* the optimistic hide still holds for this session */ }
-    }
-    if(window.__notify) window.__notify('Skipped until tomorrow.','success',{ label:'Undo', onClick:()=>unskipAction(a.key) });
-  };
-  const unskipAction=async(key)=>{
-    setSkipped(m=>{ const n={...m}; delete n[key]; return n; });
-    if(myUserId){ try{ await supabase.from('nba_dismissals').delete().eq('user_id',myUserId).eq('action_key',key); }catch(_){} }
-    setIdx(0);
-  };
-
   const markReplied=(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString(); try{ supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction:'outbound', channel:'manual', occurred_at: nowIso, brief:'Marked replied' }).then(()=>{},()=>{}); }catch(_){} setOweReplyMap && setOweReplyMap(m=>{ const n={...m}; delete n[contactId]; return n; }); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
   // "No reply needed" — the matter's handled or no longer applies, and you did NOT
   // reply. Stamps no_reply_needed_at at the inbound's time so THIS message clears

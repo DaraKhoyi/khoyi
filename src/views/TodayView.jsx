@@ -4,6 +4,7 @@ import { CallFollowupsPanel } from '../App';
 import CommitmentReview from './CommitmentReview';
 import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
+import { useNbaSkips } from '../nbaSkips';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
@@ -109,10 +110,12 @@ export default function TodayView({
     return () => { go = false; };
   }, [contacts, now]);
 
+  const { skipAction, filterSkipped } = useNbaSkips(myUserId);
   const actions = useMemo(() => {
     const base = buildNextActions({ contacts, tasks, events, deals, now, oweReplyMap, openSignals });
-    return [...base, ...docActions, ...bounceActions].sort((a, b) => b.score - a.score);
-  }, [contacts, tasks, events, deals, oweReplyMap, openSignals, docActions, bounceActions, now]);
+    const all = [...base, ...docActions, ...bounceActions].sort((a, b) => b.score - a.score);
+    return filterSkipped(all);   // a skip has to outlive a recompute
+  }, [contacts, tasks, events, deals, oweReplyMap, openSignals, docActions, bounceActions, now, filterSkipped]);
 
   // ── Triage groups (the deck) ────────────────────────────────────────────────
   const owe = useMemo(() => Object.keys(oweReplyMap || {}).length, [oweReplyMap]);
@@ -324,7 +327,7 @@ export default function TodayView({
             {cur.cta && <button className="btn btn-primary btn-sm" onClick={() => runCta(cur.cta)}>{cur.cta.label}</button>}
             {cur.tag === 'reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={() => markReplied(cur.contactId)}>✓ Replied</button>}
             {cur.tag === 'reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={() => markNoReplyNeeded(cur.contactId)} title="No reply is needed — handled elsewhere or no longer applies">No reply needed</button>}
-            {totalOpen > 1 && <button className="btn btn-ghost btn-sm" onClick={() => setHeroIdx(i => (i + 1) % totalOpen)}>Skip</button>}
+            {totalOpen > 1 && <button className="btn btn-ghost btn-sm" title="Not now — hide this until tomorrow" onClick={() => { skipAction(cur); setHeroIdx(0); }}>Skip</button>}
             {onOpenPlan && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => onOpenPlan()}>Plan my day</button>}
           </div>
         </div>
