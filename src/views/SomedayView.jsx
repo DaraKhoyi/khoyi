@@ -37,7 +37,8 @@ export default function SomedayView({ userId, setView }) {
     if (!window.confirm('Remove this from Someday/Maybe? It will be archived (not deleted).')) return;
     setBusy(id);
     try {
-      await supabase.from('tasks').update({ archived_at: new Date().toISOString(), archived_reason: 'someday_dropped' }).eq('id', id);
+      const { error } = await supabase.from('tasks').update({ archived_at: new Date().toISOString(), archived_reason: 'someday_dropped' }).eq('id', id);
+      if (error) { if (window.__notify) window.__notify('Could not drop: ' + (error.message || error), 'error'); return; }
       setRows(r => (r || []).filter(x => x.id !== id));
     } catch (_) {}
     setBusy(null);

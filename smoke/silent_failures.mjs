@@ -91,6 +91,12 @@ for (const file of files) {
   });
 }
 
+// Machine-readable mode, for triage and for the reviewed-ledger below.
+if (process.env.SF_JSON) {
+  console.log(JSON.stringify(findings, null, 1));
+  process.exit(0);
+}
+
 // Cluster by file so the output is actionable rather than a wall.
 const byFile = new Map();
 for (const f of findings) {

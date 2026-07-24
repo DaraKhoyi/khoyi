@@ -162,9 +162,15 @@ export default function TodayView({
   const runCta = (cta) => {
     if (!cta) return;
     if (cta.kind === 'task_done') {
-      try { supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', cta.payload).then(() => {}); } catch (_) {}
-      setTasks && setTasks(pr => pr.map(x => x.id === cta.payload ? { ...x, completed: true } : x));
-      setHeroIdx(0); bumpApprovals();
+      // Was .then(() => {}) with the result discarded and the card cleared
+      // regardless. "Mark done" is the most-pressed button in the app; a silent
+      // failure un-completes the task on the next reload with no explanation.
+      (async () => {
+        const { error } = await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString() }).eq('id', cta.payload);
+        if (error) { if (window.__notify) window.__notify('Could not mark done: ' + (error.message || error), 'error'); return; }
+        setTasks && setTasks(pr => pr.map(x => x.id === cta.payload ? { ...x, completed: true } : x));
+        setHeroIdx(0); bumpApprovals();
+      })();
     } else if (cta.kind === 'open_reply') {
       if (cta.email) { window.__inboxOpenEmail = cta.email; setView && setView('inbox'); }
       else if (cta.phone) { window.__quoTab = { tab: 'messages', phone: cta.phone, name: cta.name }; setView && setView('quo'); }

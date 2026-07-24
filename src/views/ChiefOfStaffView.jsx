@@ -38,7 +38,10 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
   async function mark(id, status) { try { await supabase.from('cos_actions').update({ status, acted_at: new Date().toISOString() }).eq('id', id); } catch (_) {} load(); }
   async function act(a) {
     const p = a.action_payload || {};
-    if (a.action_type === 'create_task') { try { await supabase.from('tasks').insert({ user_id: userId, title: p.title || a.title, due_date: p.due_date || null, priority: p.priority || 'medium', completed: false, list: 'inbox', notes: 'Added by your Chief of Staff' }); } catch (_) {} await mark(a.id, 'done'); return; }
+    if (a.action_type === 'create_task') { const { error: tErr } = await supabase.from('tasks').insert({ user_id: userId, title: p.title || a.title, due_date: p.due_date || null, priority: p.priority || 'medium', completed: false, list: 'inbox', notes: 'Added by your Chief of Staff' });
+      // Approving something and getting no task is indistinguishable from
+      // the approval never happening — surface it instead of marking handled.
+      if (tErr) { if (window.__notify) window.__notify('Approved, but the task could not be created: ' + (tErr.message || tErr), 'error'); return; } await mark(a.id, 'done'); return; }
     // navigation actions: go there and leave the item in the queue until you actually finish it
     if (a.action_type === 'open_task' && p.task_id) { setFocusTaskId && setFocusTaskId(p.task_id); setView && setView('tasks'); }
     else if (a.action_type === 'open_task') { setView && setView('tasks'); }
@@ -48,7 +51,10 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
     else if (a.action_type === 'open_agentruns') { setView && setView('agentruns'); }
     else if (a.action_type === 'reply_contact') {
       if (p.email) { try { window.__inboxOpenEmail = p.email; } catch (_) {} setView && setView('inbox'); }
-      else { try { await supabase.from('tasks').insert({ user_id: userId, title: 'Reply to ' + (p.name || a.title), priority: 'high', completed: false, list: 'inbox', notes: 'They reached out and are waiting on you.' }); } catch (_) {} await mark(a.id, 'done'); }
+      else { const { error: tErr } = await supabase.from('tasks').insert({ user_id: userId, title: 'Reply to ' + (p.name || a.title), priority: 'high', completed: false, list: 'inbox', notes: 'They reached out and are waiting on you.' });
+      // Approving something and getting no task is indistinguishable from
+      // the approval never happening — surface it instead of marking handled.
+      if (tErr) { if (window.__notify) window.__notify('Approved, but the task could not be created: ' + (tErr.message || tErr), 'error'); return; } await mark(a.id, 'done'); }
     }
   }
 

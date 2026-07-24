@@ -3744,11 +3744,20 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
   const urgent=actions.length>0; const list=urgent?actions:growth;
   const cur=list[Math.min(idx,list.length-1)]||null;
-  const runCta=(cta)=>{ if(!cta) return; if(cta.kind==='task_done'){ const id=cta.payload; try{ supabase.from('tasks').update({completed:true, completed_at:new Date().toISOString()}).eq('id',id).then(()=>{}); }catch(_){} setTasks&&setTasks(pr=>pr.map(x=>x.id===id?{...x,completed:true}:x)); if(window.__notify) window.__notify('Done — nice work.','success'); setIdx(0); } else if(cta.kind==='open_reply'){ const ch=cta.channel||''; const isText=ch.includes('text')||ch.includes('sms'); if((isText||(!ch.includes('email')&&!cta.email)) && cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else if(cta.email){ window.__inboxOpenEmail=cta.email; setView&&setView('inbox'); } else if(cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else { setView&&setView('inbox'); } } else if(cta.kind==='bounces'){ setShowBounces(true); } else if(cta.kind==='view'){ setView&&setView(cta.payload); } else if(cta.kind==='call'){ window.location.href='tel:'+cta.payload; } };
+  const runCta=(cta)=>{ if(!cta) return; if(cta.kind==='task_done'){ const id=cta.payload;
+      // Same fire-and-forget as TodayView had — this is the second hero card.
+      (async()=>{ const { error } = await supabase.from('tasks').update({completed:true, completed_at:new Date().toISOString()}).eq('id',id);
+        if(error){ if(window.__notify) window.__notify('Could not mark done: '+(error.message||error),'error'); return; }
+        setTasks&&setTasks(pr=>pr.map(x=>x.id===id?{...x,completed:true}:x));
+        if(window.__notify) window.__notify('Done — nice work.','success');
+        setIdx(0); })(); } else if(cta.kind==='open_reply'){ const ch=cta.channel||''; const isText=ch.includes('text')||ch.includes('sms'); if((isText||(!ch.includes('email')&&!cta.email)) && cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else if(cta.email){ window.__inboxOpenEmail=cta.email; setView&&setView('inbox'); } else if(cta.phone){ window.__quoTab={ tab:'messages', phone:cta.phone, name:cta.name }; setView&&setView('quo'); } else { setView&&setView('inbox'); } } else if(cta.kind==='bounces'){ setShowBounces(true); } else if(cta.kind==='view'){ setView&&setView(cta.payload); } else if(cta.kind==='call'){ window.location.href='tel:'+cta.payload; } };
   // "I already replied" — clears an owe-a-reply instantly by bumping the field the
   // engine reads (last_outbound_at past last_inbound_at), independent of email/text
   // sync timing. Updates local state so the card drops immediately.
-  const markReplied=(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString(); try{ supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction:'outbound', channel:'manual', occurred_at: nowIso, brief:'Marked replied' }).then(()=>{},()=>{}); }catch(_){} setOweReplyMap && setOweReplyMap(m=>{ const n={...m}; delete n[contactId]; return n; }); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
+  const markReplied=async(contactId)=>{ if(!contactId) return; const nowIso=new Date().toISOString();
+    // Second copy of the TodayView handler fixed in v1.04.62.
+    const { error } = await supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction:'outbound', channel:'manual', occurred_at: nowIso, brief:'Marked replied' });
+    if(error){ if(window.__notify) window.__notify('Could not mark replied: '+(error.message||error),'error'); return; } setOweReplyMap && setOweReplyMap(m=>{ const n={...m}; delete n[contactId]; return n; }); if(window.__notify) window.__notify('Marked as replied — nice.','success'); setIdx(0); };
   // "No reply needed" — the matter's handled or no longer applies, and you did NOT
   // reply. Stamps no_reply_needed_at at the inbound's time so THIS message clears
   // but a future inbound from them re-arms it. Honest: doesn't fake an outbound.
@@ -4017,7 +4026,8 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
     if (!item.taskId) return;
     const cur = taskDone(item);
     try {
-      await supabase.from('tasks').update({ completed: !cur, updated_at: new Date().toISOString() }).eq('id', item.taskId);
+      const { error: tErr } = await supabase.from('tasks').update({ completed: !cur, updated_at: new Date().toISOString() }).eq('id', item.taskId);
+      if (tErr) { if (window.__notify) window.__notify('Could not update task: ' + (tErr.message || tErr), 'error'); return; }
       if (setTasks) setTasks(prev => prev.map(t => t.id === item.taskId ? { ...t, completed: !cur } : t));
     } catch (_e) {}
   };

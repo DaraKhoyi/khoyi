@@ -34,7 +34,8 @@ export default function AgentRunsView({ userId, setView }) {
         let notes = `[${step.channel || 'touch'}]`;
         if (isFirst && o.first_touch) notes += `\n\n${o.first_touch.subject ? 'Subject: ' + o.first_touch.subject + '\n\n' : ''}${o.first_touch.body || ''}`;
         else if (step.body) notes += `\n\n${step.body}`;
-        await supabase.from('tasks').insert({ user_id: userId, title: step.action || 'Follow up', due_date: estDate(step.day_offset), priority: 'medium', completed: false, list: 'inbox', contact_id: cid || null, source_url: 'cadence:' + run.id, notes });
+        const { error: tErr } = await supabase.from('tasks').insert({ user_id: userId, title: step.action || 'Follow up', due_date: estDate(step.day_offset), priority: 'medium', completed: false, list: 'inbox', contact_id: cid || null, source_url: 'cadence:' + run.id, notes });
+        if (tErr) { if (window.__notify) window.__notify('Could not create the task: ' + (tErr.message || tErr), 'error'); return; }
       }
       await supabase.from('agent_runs').update({ status: 'approved', decided_at: new Date().toISOString() }).eq('id', run.id);
     } catch (_) {}
