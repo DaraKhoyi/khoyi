@@ -119,7 +119,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
     let acc = null, from = null;
     try {
       if (isEmail) {
-        const { data: accs } = await supabase.from('email_accounts').select('id,email_address').contains('purposes', ['email']).order('created_at').limit(1);
+        const { data: accs } = await supabase.from('email_accounts').select('id,email_address,is_default').contains('purposes',['email']).order('is_default',{ascending:false}).order('created_at').limit(1);
         acc = accs && accs[0];
         if (!acc) { notify('No email account connected. Connect Gmail in Settings.', 'error'); return; }
       } else { from = await quoFrom(); }

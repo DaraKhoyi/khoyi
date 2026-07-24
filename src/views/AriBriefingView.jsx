@@ -617,7 +617,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   useEffect(()=>{ load(false); }, []);   // eslint-disable-line
   useEffect(()=>{ loadScore(); }, []);   // eslint-disable-line
   useEffect(()=>{ (async ()=>{
-    const { data:a } = await supabase.from('email_accounts').select('id,email_address').contains('purposes',['email']).order('created_at').limit(1);
+    const { data:a } = await supabase.from('email_accounts').select('id,email_address,is_default').contains('purposes',['email']).order('is_default',{ascending:false}).order('created_at').limit(1);
     setAcct((a&&a[0])||null);
     const nm = user?.user_metadata?.display_name?.trim() || user?.user_metadata?.full_name?.trim()?.split(/\s+/)[0] || (user?.email||'').split('@')[0] || 'there';
     setFirstName(nm);

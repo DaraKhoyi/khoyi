@@ -2208,10 +2208,25 @@ function ContactPicker({ contacts = [], selectedIds = [], onChange, label = 'Con
 // ─────────────────────────────────────────
 // TASK MODAL
 // ─────────────────────────────────────────
+
+// ── resolveSendAccount ───────────────────────────────────────────────────────
+// Which account outbound mail sends from. Every call site used to run its own
+// `.order('created_at').limit(1)`, so mail went from the OLDEST-connected
+// account regardless of intent — which is why it kept going out as
+// dara@brokerdara.com. Precedence: the user's chosen default, then any active
+// email-capable account, then oldest as a last resort.
+async function resolveSendAccount(fields = 'id,email_address') {
+  const sel = fields.includes('is_default') ? fields : fields + ',is_default';
+  const { data } = await supabase.from('email_accounts')
+    .select(sel).contains('purposes', ['email']).order('created_at');
+  const accs = data || [];
+  if (!accs.length) return null;
+  return accs.find(a => a.is_default) || accs.find(a => a.is_active !== false) || accs[0];
+}
+
 async function emailAssignTask(taskId, email) {
   if (!taskId || !email || !email.to) return { error: null };
-  const { data: accs } = await supabase.from('email_accounts').select('id').contains('purposes', ['email']).order('created_at').limit(1);
-  const acc = accs && accs[0];
+  const acc = await resolveSendAccount('id');
   if (!acc) return { error: 'No connected email account — connect Gmail in Settings.' };
   const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', { body: { account_id: acc.id, to: email.to, subject: email.subject, body_text: email.body } });
   if (se || (sr && sr.error)) return { error: 'Email send failed: ' + ((se && se.message) || (sr && sr.error)) };
@@ -7214,8 +7229,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
     if (!bodyText.trim()) return;
     setSending(true);
     try {
-      const { data: accs } = await supabase.from('email_accounts').select('id,email_address').contains('purposes', ['email']).order('created_at').limit(1);
-      const acc = accs && accs[0];
+      const acc = await resolveSendAccount();
       if (!acc) { notify('No email account is connected to send from. Connect Gmail in Settings.', 'error'); setSending(false); return; }
       const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', {
         body: { account_id: acc.id, to: recipient.email, subject: subject || '(no subject)', body_text: bodyText, attachments: attachments.map(a => ({ filename: a.filename, mime_type: a.mime_type, content_base64: a.content_base64 })), track: trackOpens, contact_id: recipient?.id || null },
@@ -7237,8 +7251,7 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
     if (isNaN(when.getTime()) || when.getTime() < Date.now() + 60000) { notify('Pick a time at least a minute in the future.', 'error'); return; }
     setScheduling(true);
     try {
-      const { data: accs } = await supabase.from('email_accounts').select('id,email_address').contains('purposes', ['email']).order('created_at').limit(1);
-      const acc = accs && accs[0];
+      const acc = await resolveSendAccount();
       if (!acc) { notify('No email account is connected to send from. Connect Gmail in Settings.', 'error'); setScheduling(false); return; }
       const { error: insErr } = await supabase.from('scheduled_emails').insert({
         user_id: userId, account_id: acc.id, to_email: recipient.email,
@@ -14054,7 +14067,7 @@ function ProjectTasksPanel({ userId }) {
         tdb.from('profiles').select('id,email,full_name,role').order('full_name'),
         tdb.from('project_members').select('*'),
         supabase.from('contacts').select('id,name,email,company').eq('user_id', userId).order('name'),
-        supabase.from('email_accounts').select('id,email_address,purposes').contains('purposes',['email']).order('created_at').limit(1),
+        supabase.from('email_accounts').select('id,email_address,purposes,is_default').contains('purposes',['email']).order('is_default',{ascending:false}).order('created_at').limit(1),
       ]);
       const names = {}; (pr.data||[]).forEach(p=>names[p.id]=p.name);
       setProjNames(names);

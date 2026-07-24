@@ -677,7 +677,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
   );
   const [selectedId, setSelectedId] = useState(null);
   const [pendingOpenThreadId, setPendingOpenThreadId] = useState(null);
-  const account = mailAccounts.find(a => a.id === selectedId) || mailAccounts[0] || null;
+  const account = mailAccounts.find(a => a.id === selectedId) || mailAccounts.find(a => a.is_default) || mailAccounts[0] || null;
 
   // Dashboard "Reply to…" deep-link. The person's thread can be on EITHER
   // connected account and thousands deep, so we resolve it against the whole

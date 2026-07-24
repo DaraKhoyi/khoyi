@@ -30,7 +30,7 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
         tdb.from('profiles').select('id,email,full_name,role').order('full_name'),
         tdb.from('projects').select('*').order('created_at'),
         tdb.from('project_members').select('*'),
-        supabase.from('email_accounts').select('id,email_address,purposes').contains('purposes',['email']).order('created_at').limit(1),
+        supabase.from('email_accounts').select('id,email_address,purposes,is_default').contains('purposes',['email']).order('is_default',{ascending:false}).order('created_at').limit(1),
       ]);
       if (pr.error) throw pr.error;
       setMe(pf.data); setPeople(pe.data||[]); setProjects(pr.data||[]); setMembers(mm.data||[]);
