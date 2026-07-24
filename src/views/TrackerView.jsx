@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { Icon, TrackerTaskModal, lbl, priorityClass, priorityLabel, sortTasks, todayISO } from '../App';
 import LinkedDocuments from './LinkedDocuments';
+import LinkedNotes from './LinkedNotes';
 
 function TrackerView({ userId, defaultSystem, contacts = [] }) {
   const tdb = supabase.schema('tracker');
@@ -205,6 +206,7 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
                 property, the tenant contact and the deal without existing four
                 times or being invisible from three of them. */}
             <LinkedDocuments userId={userId} targetType="project" targetId={sel.id} />
+            <LinkedNotes userId={userId} targetType="project" targetId={sel.id} />
 
             <div className="panel">
               <div className="panel-header">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
+import LinkedNotes from './LinkedNotes';
 import { useBackClose, ActivityTimeline, Icon, PropertyModal, confirmDialog, modal } from '../App';
 
 function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, userId }) {
@@ -253,6 +254,14 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
         <div style={{padding:'14px 18px',borderTop:'1px solid var(--border)',background:'var(--bg-base)'}}>
           <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',marginBottom:'10px',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="signal" size={13} /> Activity</div>
           <ActivityTimeline entityType="property" entityId={property.id} userId={userId} contacts={contacts} />
+        </div>
+
+        {/* property_notes rows were being loaded and written but NEVER rendered —
+            the notes existed and were invisible. They now live in the unified
+            `notes` store and surface here through entity_links, alongside
+            anything else linked to this property. */}
+        <div style={{ padding: '0 18px 14px' }}>
+          <LinkedNotes userId={userId} targetType="property" targetId={property.id} />
         </div>
 
         {property.notes && (
