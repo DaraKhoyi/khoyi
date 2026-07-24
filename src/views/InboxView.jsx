@@ -2143,7 +2143,11 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
       const { data, error } = await supabase.functions.invoke('gmail-send', {
         body: payload,
       });
-      if (error) throw error;
+      if (error) {
+        const msg = String(error.message || error);
+        if (/401|not authenticated|jwt|token/i.test(msg)) throw new Error('Your session expired mid-send. Refresh the page and try again.');
+        throw error;
+      }
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
       setSendMsg('Sent.');
 
