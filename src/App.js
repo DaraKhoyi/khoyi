@@ -14434,11 +14434,49 @@ function ForkTuningOverlay({ contactName, discLabel }) {
   );
 }
 
+
+// ── splitQuotedReply ─────────────────────────────────────────────────────────
+// A reply body is two different things stuck together: what YOU just wrote, and
+// the thread you are replying to. Rewriting the whole box rewrites the other
+// person's words too — which is both wrong and, on a long thread, expensive.
+//
+// Returns { body, quoted } where body is the part actually being composed. The
+// boundary is whichever attribution line comes FIRST, because mail clients each
+// use their own and a forwarded chain can contain several.
+//
+// Deliberately conservative: if no boundary is recognised the whole text is
+// treated as the body. Failing to split is a minor annoyance; splitting in the
+// wrong place would silently drop what someone wrote.
+export function splitQuotedReply(text) {
+  const src = String(text || '');
+  if (!src.trim()) return { body: src, quoted: '' };
+  const lines = src.split('\n');
+  const MARKERS = [
+    /^\s*On .{4,120}\bwrote:\s*$/i,          // Gmail / Apple: "On <date>, <name> wrote:"
+    /^\s*-{2,}\s*Original Message\s*-{2,}/i, // Outlook
+    /^\s*-{2,}\s*Forwarded message\s*-{2,}/i,
+    /^\s*_{5,}\s*$/,                          // Outlook's underscore rule
+    /^\s*From:\s*.+/i,                        // Outlook header block
+    /^\s*Sent from my \w+/i,                  // signature that precedes a quote
+  ];
+  let cut = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (MARKERS.some(re => re.test(ln))) { cut = i; break; }
+    // A run of quoted lines counts too, but one stray ">" does not — a single
+    // line could easily be an arrow or a fragment the user typed themselves.
+    if (/^\s*>/.test(ln) && /^\s*>/.test(lines[i + 1] || '')) { cut = i; break; }
+  }
+  if (cut < 0) return { body: src, quoted: '' };
+  return { body: lines.slice(0, cut).join('\n'), quoted: lines.slice(cut).join('\n') };
+}
+
 function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText, contactId, textareaRef }) {
   const [busy, setBusy] = useState(false);
   const [prev, setPrev] = useState(null);
   const [err, setErr] = useState(null);
   const [scope, setScope] = useState(null); // remembers a selection-only rewrite for undo
+  const [note, setNote] = useState(null);   // says what was actually rewritten
   const go = async () => {
     if (!text || !text.trim()) { setErr('Write a draft first.'); return; }
     // If the user has highlighted part of the draft, rewrite ONLY that — leave
@@ -14449,9 +14487,17 @@ function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText,
       selStart = ta.selectionStart; selEnd = ta.selectionEnd;
       selected = text.slice(selStart, selEnd);
     }
+    // Precedence: an explicit highlight wins (most specific intent), otherwise
+    // rewrite only the newly-composed part and leave the quoted thread alone.
     const usingSelection = selected.trim().length > 0;
-    const toRewrite = usingSelection ? selected : text;
-    setErr(null); setBusy(true);
+    const split = usingSelection ? null : splitQuotedReply(text);
+    if (!usingSelection && split && split.quoted && !split.body.trim()) {
+      setErr('Write your reply above the quoted thread first.');
+      return;
+    }
+    const autoScoped = !usingSelection && !!(split && split.quoted && split.body.trim());
+    const toRewrite = usingSelection ? selected : (autoScoped ? split.body : text);
+    setErr(null); setNote(null); setBusy(true);
     const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft: toRewrite, contact_name:contactName||'the recipient', contact_id:contactId, disc_label:discLabel||'', source_text:sourceText||'' } });
     setBusy(false);
     if (error || data?.error || !data?.message) { setErr('Rewrite failed — try again.'); return; }
@@ -14467,6 +14513,12 @@ function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText,
       setTimeout(() => {
         if (ta) { try { ta.focus(); ta.setSelectionRange(selStart, selStart + rewritten.length); } catch (_) {} }
       }, 0);
+    } else if (autoScoped) {
+      // Reattach the thread exactly as it was — not re-generated, not reflowed.
+      const rewritten = String(data.message).replace(/\s+$/, '');
+      setScope(null);
+      onRewrite(rewritten + '\n' + split.quoted);
+      setNote('Rewrote your message — the quoted thread below was left untouched.');
     } else {
       setScope(null);
       onRewrite(data.message);
@@ -14477,6 +14529,7 @@ function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText,
     <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',marginBottom:'6px'}}>
       {busy && <ForkTuningOverlay contactName={contactName} discLabel={discLabel} />}
       {err && <span style={{fontSize:'10px',color:'var(--red)',marginRight:'auto'}}>{err}</span>}
+      {!err && note && <span style={{fontSize:'10px',color:'var(--text-3)',marginRight:'auto'}}>{note}</span>}
       {prev!=null && <button type="button" className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={undo}>Undo</button>}
       <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice. Highlight part of the draft to rewrite only that." style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
     </div>

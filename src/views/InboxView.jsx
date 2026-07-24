@@ -1180,6 +1180,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
+  const composeBodyRef = useRef(null);   // lets Ari rewrite just a highlighted passage
   const [composeAttachments, setComposeAttachments] = useState([]); // [{filename, mime_type, content_base64, size}]
   const [composeTrack, setComposeTrack] = useState(false); // opt-in open tracking, OFF by default
   const composeAttachRef = useRef(null);
@@ -3160,9 +3161,9 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                       ? <span style={{fontSize:'11px',color:'var(--text-3)'}}>adapted to <strong style={{color:'var(--accent)'}}>{p.primary_letter}{p.secondary_letter ? '/' + p.secondary_letter : ''}</strong> style</span>
                       : <span style={{fontSize:'11px',color:'var(--text-3)'}}>no DISC profile yet · neutral tone</span>;
                   })()}
-                  <span style={{marginLeft:'auto'}}><AriRewriteButton text={composeBody} onRewrite={setComposeBody} contactName={composeTo} /></span>
+                  <span style={{marginLeft:'auto'}}><AriRewriteButton text={composeBody} onRewrite={setComposeBody} contactName={composeTo} textareaRef={composeBodyRef} /></span>
                 </div>
-                <textarea className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required />
+                <textarea ref={composeBodyRef} className="form-textarea" value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{minHeight:'200px'}} required />
               </div>
               <div style={{ marginTop: '8px' }}>
                 <input ref={composeAttachRef} type="file" multiple onChange={onPickComposeAttachments} style={{ display: 'none' }} />
