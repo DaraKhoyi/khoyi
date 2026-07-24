@@ -4,6 +4,7 @@ import { supabase, SUPABASE_URL } from './dataService';
 import { useNbaSkips, SnoozeMenu } from './nbaSkips';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
+import LinkedNotes from './views/LinkedNotes';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
 import DashboardHub from './views/DashboardHub';
 import TodayView from './views/TodayView';
@@ -8525,11 +8526,6 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const [linkedProperties, setLinkedProperties] = useState([]);
 
   // Date-stamped notes (proper notes table — separate from contacts.notes pinned summary)
-  const [dateNotes, setDateNotes] = useState([]);
-  const [newNoteBody, setNewNoteBody] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
-  const [editingNoteId, setEditingNoteId] = useState(null);
-  const [editingNoteBody, setEditingNoteBody] = useState('');
 
   // Manual interaction logging
   const [showLogInteraction, setShowLogInteraction] = useState(false);
@@ -8645,31 +8641,6 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const oweReply = owesReply(contact);
   const owedDays = (oweReply && lastIn) ? daysSince(lastIn) : null;
 
-  async function addDatedNote() {
-    if (!newNoteBody.trim()) return;
-    setSavingNote(true);
-    try {
-      const { data } = await supabase.from('contact_notes').insert({
-        user_id: userId, contact_id: contact.id, body: newNoteBody.trim(),
-      }).select().single();
-      if (data) {
-        setDateNotes(prev => [data, ...prev]);
-        setNewNoteBody('');
-      }
-    } finally { setSavingNote(false); }
-  }
-  async function saveEditedNote() {
-    if (!editingNoteId || !editingNoteBody.trim()) return;
-    const { data } = await supabase.from('contact_notes').update({ body: editingNoteBody.trim() })
-      .eq('id', editingNoteId).select().single();
-    if (data) setDateNotes(prev => prev.map(n => n.id === data.id ? data : n));
-    setEditingNoteId(null); setEditingNoteBody('');
-  }
-  async function deleteNote(id) {
-    if (!await confirmDialog('Delete this note?')) return;
-    await supabase.from('contact_notes').delete().eq('id', id);
-    setDateNotes(prev => prev.filter(n => n.id !== id));
-  }
 
   async function logInteraction() {
     if (!interactionForm.channel || !interactionForm.direction) return;
@@ -9629,6 +9600,12 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
 
           {/* Documents section */}
           <ContactDocuments contactId={contact.id} userId={userId} />
+
+          {/* Notes now come from the unified `notes` store via entity_links —
+              the same panel used on properties and projects. The old inline
+              contact_notes UI wrote to a separate table and, as it happened,
+              never rendered its list at all. */}
+          <LinkedNotes userId={userId} targetType="contact" targetId={contact.id} />
 
           {/* Evidence trail — collapsed by default; tap header to expand */}
           {hasInference && (
