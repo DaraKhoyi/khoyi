@@ -49,6 +49,11 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
     if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
     const owedAt = oweReplyMap && oweReplyMap[c.id];
     if(!owedAt) return; // per-recipient: surface only if THIS user actually owes a reply
+    // Settled is enforced in my_owe_reply too, but that map is fetched once at
+    // startup — without this the pill would appear to do nothing until reload.
+    // Compared against owedAt (not just truthiness) so a genuinely NEW inbound
+    // after the settlement re-opens it, matching the SQL exactly.
+    if(c.comms_settled_at && new Date(c.comms_settled_at) >= new Date(owedAt)) return;
     const lin=new Date(owedAt).getTime(); const daysExact=(now-lin)/86400000; const days=Math.floor(daysExact);
     out.push({ key:'reply:'+c.id, score:100+Math.min(daysExact*4,48)+softKnee(daysExact-12,9.5,30), tag:'reply', icon:'reply', contactId:c.id, title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'open_reply', channel:(c.last_communication_channel||'').toLowerCase(), phone:c.phone||null, email:c.email||null, name:c.name||null } });
   });

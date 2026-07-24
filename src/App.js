@@ -3804,7 +3804,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       const nowMs = Date.now();
       const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
       const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
-      const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; return !!(oweReplyMap && oweReplyMap[c.id]); }).sort((a, b) => new Date(oweReplyMap[a.id]||0) - new Date(oweReplyMap[b.id]||0));
+      const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const owedAt = oweReplyMap && oweReplyMap[c.id]; if (!owedAt) return false; if (c.comms_settled_at && new Date(c.comms_settled_at) >= new Date(owedAt)) return false; return true; }).sort((a, b) => new Date(oweReplyMap[a.id]||0) - new Date(oweReplyMap[b.id]||0));
       const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.comms_settled_at) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
       const reachSource = [
         ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
@@ -4921,7 +4921,7 @@ function MyNumbersView({ tasks=[], contacts=[], events=[], deals=[], unreadEmail
   const overdue=pending.filter(t=>t.due_date && t.due_date<todayISO);
   const topTasks=pending.filter(t=>t.priority==='high');
   const lastTouch=(c)=>{ const a=[c.last_contact_at,c.last_inbound_at,c.last_outbound_at].filter(Boolean).map(x=>new Date(x).getTime()); return a.length?Math.max(...a):null; };
-  const oweReplyN=contacts.filter(c=>{ if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; return !!(oweReplyMap && oweReplyMap[c.id]); }).length;
+  const oweReplyN=contacts.filter(c=>{ if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; const owedAt=oweReplyMap && oweReplyMap[c.id]; if(!owedAt) return false; if(c.comms_settled_at && new Date(c.comms_settled_at)>=new Date(owedAt)) return false; return true; }).length;
   const reachN=contacts.filter(c=>{ const cad=c.cadence_days; if(!cad)return false; if(c.reachout_snooze_until&&new Date(c.reachout_snooze_until)>new Date(now))return false; const ts=lastTouch(c); const ds=ts===null?null:Math.floor((now-ts)/86400000); return ds===null?true:ds>=cad; }).length;
   const dueOrOverdue=pending.filter(t=>t.due_date&&t.due_date<=todayISO).length;
   const needsNow=oweReplyN+reachN+dueOrOverdue;

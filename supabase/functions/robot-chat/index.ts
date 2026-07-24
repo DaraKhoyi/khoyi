@@ -255,7 +255,7 @@ async function execTool(name, input, ctx) {
         const eventsTo = new Date(nowMs + 14 * 86400000).toISOString();
 
         const [contactsR, tasksR, eventsR, dealsR, bouncesR, docsR, trackR, finR] = await Promise.all([
-          canContacts ? supabase.from("contacts").select("id,name,type,phone,email,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction,last_communication_channel,cadence_days,priority,pipeline_stage,pipeline_stage_changed_at,reachout_snooze_until").eq("user_id", userId).limit(5000) : Promise.resolve({ data: [] }),
+          canContacts ? supabase.from("contacts").select("id,name,type,phone,email,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction,last_communication_channel,cadence_days,priority,pipeline_stage,pipeline_stage_changed_at,reachout_snooze_until,comms_settled_at,no_reply_needed_at").eq("user_id", userId).limit(5000) : Promise.resolve({ data: [] }),
           canTasks ? supabase.from("tasks").select("id,title,due_date,priority,completed").eq("user_id", userId).eq("completed", false).limit(500) : Promise.resolve({ data: [] }),
           canCal ? supabase.from("events").select("id,title,start_at,end_at,all_day,location").eq("user_id", userId).gte("start_at", eventsFrom).lte("start_at", eventsTo).limit(200) : Promise.resolve({ data: [] }),
           canPortfolio ? supabase.from("deals").select("id,status,updated_at").eq("user_id", userId).limit(500) : Promise.resolve({ data: [] }),
@@ -266,13 +266,22 @@ async function execTool(name, input, ctx) {
         ]);
 
         const contacts = contactsR.data || [];
-        // Mirrors the my_owe_reply RPC the client uses: they spoke last and are still waiting.
+        // Mirrors the my_owe_reply RPC the client uses: they spoke last and are
+        // still waiting. This hand-written copy had DRIFTED from the RPC — the
+        // RPC honours no_reply_needed_at, and now comms_settled_at, and this
+        // honoured neither. So a conversation marked Settled went quiet on the
+        // dashboard and Ari kept raising it. Both dismissals work the same way:
+        // they clear what is on the table now, and a genuinely newer inbound
+        // re-opens it.
         const oweReplyMap = {};
         for (const c of contacts) {
           if (c.last_communication_direction !== "inbound" || !c.last_inbound_at) continue;
           const lin = new Date(c.last_inbound_at).getTime();
           const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0;
-          if (lin > lout) oweReplyMap[c.id] = c.last_inbound_at;
+          if (lin <= lout) continue;
+          if (c.comms_settled_at && new Date(c.comms_settled_at).getTime() >= lin) continue;
+          if (c.no_reply_needed_at && new Date(c.no_reply_needed_at).getTime() >= lin) continue;
+          oweReplyMap[c.id] = c.last_inbound_at;
         }
         const openSignals = {};
         for (const r of (trackR.data || [])) { if (!openSignals[r.contact_id]) openSignals[r.contact_id] = r; }
