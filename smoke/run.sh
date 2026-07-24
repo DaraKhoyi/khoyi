@@ -44,6 +44,13 @@ SUID=$(curl -s -X POST "$SUPABASE_URL/auth/v1/admin/users" -H "apikey: $SUPABASE
 curl -s -X POST "$SUPABASE_URL/rest/v1/user_settings" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" \
   -d "{\"user_id\":\"$SUID\",\"onboarding_complete\":true,\"display_name\":\"Smoke Test\"}" >/dev/null
 
+# Give the account something to render. Without this every list shows its empty
+# state and the gate only ever proves that views MOUNT — which is how a
+# ReferenceError past the first render, and three large-font collisions, all
+# shipped past a green run.
+echo "→ seeding the throwaway agent"
+SEED_USER_ID="$SUID" node smoke/seed.mjs || { echo "seed failed — the run below would prove nothing"; exit 2; }
+
 cleanup() {
   kill "${SRV:-}" 2>/dev/null || true
   curl -s -X DELETE "$SUPABASE_URL/auth/v1/admin/users/$SUID" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" >/dev/null || true
@@ -54,3 +61,9 @@ python3 -m http.server 4173 --directory build >/tmp/smoke_httpd.log 2>&1 & SRV=$
 sleep 2
 echo "→ running smoke check"
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/smoke.mjs
+
+# Large system font. This exact failure has shipped three times (hamburger
+# v1.03.13, Inbox pills v1.03.28, Edit Task header v1.04.47) and was caught by a
+# user every time. Writing the lesson down did not work; measuring does.
+echo "→ large-font layout check"
+SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/largefont.mjs
