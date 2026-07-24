@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL } from './dataService';
-import { useNbaSkips } from './nbaSkips';
+import { useNbaSkips, SnoozeMenu } from './nbaSkips';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
 import ProductionBoard, { MyProduction } from './views/ProductionViews';
@@ -3781,7 +3781,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
         {cur.cta && <button className="btn btn-primary btn-sm" onClick={()=>runCta(cur.cta)}>{cur.cta.label}</button>}
         {cur.tag==='reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={()=>markReplied(cur.contactId)} title="I've already replied — clear this">✓ Replied</button>}
         {cur.tag==='reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={()=>markNoReplyNeeded(cur.contactId)} title="No reply is needed — handled elsewhere or no longer applies">No reply needed</button>}
-        {list.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>skipAction(cur)} title="Not now — hide this until tomorrow">Skip</button>}
+        {list.length>1 && <SnoozeMenu onPick={(when)=>{ skipAction(cur, when); setIdx(0); }} />}
         {urgent && onOpenPlan && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenPlan()}>Plan my day</button>}
         {list.length>1 && <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setShowAll(s=>!s)}>{showAll?'Hide':'See all ('+list.length+')'}</button>}
       </div>

@@ -4,7 +4,7 @@ import { CallFollowupsPanel } from '../App';
 import CommitmentReview from './CommitmentReview';
 import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
-import { useNbaSkips } from '../nbaSkips';
+import { useNbaSkips, SnoozeMenu } from '../nbaSkips';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
@@ -341,7 +341,7 @@ export default function TodayView({
             {cur.cta && <button className="btn btn-primary btn-sm" onClick={() => runCta(cur.cta)}>{cur.cta.label}</button>}
             {cur.tag === 'reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={() => markReplied(cur.contactId)}>✓ Replied</button>}
             {cur.tag === 'reply' && cur.contactId && <button className="btn btn-ghost btn-sm" onClick={() => markNoReplyNeeded(cur.contactId)} title="No reply is needed — handled elsewhere or no longer applies">No reply needed</button>}
-            {totalOpen > 1 && <button className="btn btn-ghost btn-sm" title="Not now — hide this until tomorrow" onClick={() => { skipAction(cur); setHeroIdx(0); }}>Skip</button>}
+            {totalOpen > 1 && <SnoozeMenu onPick={(when) => { skipAction(cur, when); setHeroIdx(0); }} />}
             {onOpenPlan && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => onOpenPlan()}>Plan my day</button>}
           </div>
         </div>
