@@ -3282,7 +3282,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
   const dueTasks = tasks.filter(t => !t.completed && t.status !== 'done' && t.due_date && new Date(t.due_date + 'T23:59:59').getTime() <= endToday)
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
 
-  const outreach = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.comms_settled_at) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; })
+  const outreach = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; })
     .sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
 
   const total = oweReply.length + dueTasks.length + outreach.length;
@@ -3805,7 +3805,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
       const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
       const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
       const owe = (contacts || []).filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const owedAt = oweReplyMap && oweReplyMap[c.id]; if (!owedAt) return false; if (c.comms_settled_at && new Date(c.comms_settled_at) >= new Date(owedAt)) return false; return true; }).sort((a, b) => new Date(oweReplyMap[a.id]||0) - new Date(oweReplyMap[b.id]||0));
-      const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.comms_settled_at) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
+      const outreach = (contacts || []).filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const ts = lastTouch(c); const ds = ts === null ? null : Math.floor((nowMs - ts) / 86400000); return ds === null ? true : ds >= cad; }).sort((a, b) => (lastTouch(a) || 0) - (lastTouch(b) || 0));
       const reachSource = [
         ...owe.slice(0, 10).map(c => ({ c, reason: `owes a reply — they wrote ${relAge(c.last_inbound_at)}` })),
         ...outreach.slice(0, 10).map(c => ({ c, reason: `follow-up overdue — every ${c.cadence_days}d, last touch ${relAge(lastTouch(c))}` })),
@@ -6201,7 +6201,7 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
   // "Needs you now" — mirrors the Needs Attention panel's totals
   const oweReplyN = contacts.filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.comms_settled_at) return false;   // you declared this exchange finished
     if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).length;
-  const reachN = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.comms_settled_at) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); const ts = a.length ? Math.max(...a) : null; const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; }).length;
+  const reachN = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); const ts = a.length ? Math.max(...a) : null; const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; }).length;
   const dueOrOverdue = pending.filter(t => t.due_date && t.due_date <= todayISO).length;
   const needsNow = oweReplyN + reachN + dueOrOverdue;
   const upcoming = (events||[]).filter(e=>e.start_at && new Date(e.start_at) >= new Date()).sort((a,b)=>new Date(a.start_at)-new Date(b.start_at)).slice(0,4);
@@ -9075,7 +9075,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
       Object.assign(contact, patch);
       if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
       if (window.__notify) window.__notify(
-        patch.comms_settled_at ? 'Settled — no reply owed, and no cadence nudges for this contact.'
+        patch.comms_settled_at ? 'Settled — no reply owed either way. Your keep-in-touch cadence still runs.'
           : patch.last_communication_direction === 'inbound' ? 'Marked: they replied last — you owe a reply.'
           : 'Marked: you replied last — waiting on them.', 'success');
     }
@@ -9131,7 +9131,9 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             {hdrTouchDue && <span style={{display:'inline-flex',alignItems:'center',gap:'5px',fontSize:'11px',fontWeight:700,padding:'4px 9px',borderRadius:'999px',background:'rgba(245,158,11,0.13)',border:'1px solid rgba(245,158,11,0.4)',color:'#fbbf24'}}><span style={{width:'6px',height:'6px',borderRadius:'50%',background:'#fbbf24'}} />Touch due</span>}
             {hdrLastAge && (
               <button type="button" onClick={cycleCommsState}
-                title="Tap to change who owes a reply — they, you, or nobody"
+                title={hdrSettled
+                  ? 'Settled — nobody owes a reply. Your keep-in-touch cadence still runs. Tap to change.'
+                  : 'Tap to change who owes a reply — they, you, or nobody'}
                 style={{fontSize:'11px',fontWeight:600,padding:'4px 9px',borderRadius:'999px',cursor:'pointer',
                   background: hdrSettled ? 'rgba(197,169,94,0.14)' : 'var(--bg-card)',
                   border:'1px solid ' + (hdrSettled ? 'var(--accent)' : 'var(--border)'),

@@ -53,6 +53,9 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
     // startup — without this the pill would appear to do nothing until reload.
     // Compared against owedAt (not just truthiness) so a genuinely NEW inbound
     // after the settlement re-opens it, matching the SQL exactly.
+    // Settled is conversation-level: it says nobody owes a reply. It does NOT
+    // touch cadence — a finished conversation is exactly when a keep-in-touch
+    // rhythm should take over. Cadence has its own Off switch on the contact.
     if(c.comms_settled_at && new Date(c.comms_settled_at) >= new Date(owedAt)) return;
     const lin=new Date(owedAt).getTime(); const daysExact=(now-lin)/86400000; const days=Math.floor(daysExact);
     out.push({ key:'reply:'+c.id, score:100+Math.min(daysExact*4,48)+softKnee(daysExact-12,9.5,30), tag:'reply', icon:'reply', contactId:c.id, title:'Reply to '+(c.name||'a contact'), why:'They messaged you '+nbaAge(days)+(days<=0?'':' ago')+' and are waiting to hear back', cta:{ label:'Open', kind:'open_reply', channel:(c.last_communication_channel||'').toLowerCase(), phone:c.phone||null, email:c.email||null, name:c.name||null } });
@@ -64,7 +67,10 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
     const sig = openSignals && openSignals[c.id];
     if(!sig || !sig.confident_open_at) return;
     if(oweReplyMap && oweReplyMap[c.id]) return;
-    if(c.comms_settled_at) return;
+    // Conversation-level, so Settled applies — but timestamp-compared, not
+    // truthiness. A brand-new open AFTER you settled things is new information
+    // and should surface; the settlement only covers what was on the table then.
+    if(c.comms_settled_at && new Date(c.comms_settled_at) >= new Date(sig.confident_open_at)) return;
     if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
     const openedMs = new Date(sig.confident_open_at).getTime();
     const linMs = c.last_inbound_at ? new Date(c.last_inbound_at).getTime() : 0;
@@ -78,7 +84,7 @@ function buildNextActions({ contacts=[], tasks=[], events=[], deals=[], now=Date
   tasks.forEach(tk=>{ if(tk.completed||!tk.due_date) return; const pb=tk.priority==='high'?20:tk.priority==='medium'?8:0;
     if(tk.due_date<todayISO){ const odExact=Math.max(1,(startToday-new Date(tk.due_date+'T00:00:00').getTime())/86400000); const od=Math.floor(odExact); out.push({ key:'task:'+tk.id, score:88+pb+Math.min(odExact*2,28)+softKnee(odExact-14,7.5,45), tag:'overdue', icon:'target', title:tk.title, why:'Overdue '+od+'d'+(tk.priority==='high'?' · high priority':''), cta:{ label:'Mark done', kind:'task_done', payload:tk.id } }); }
     else if(tk.due_date===todayISO){ out.push({ key:'task:'+tk.id, score:70+pb, tag:'today', icon:'target', title:tk.title, why:'Due today'+(tk.priority==='high'?' · high priority':''), cta:{ label:'Mark done', kind:'task_done', payload:tk.id } }); } });
-  contacts.forEach(c=>{ const cad=c.cadence_days; if(!cad) return; if(c.comms_settled_at) return; if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
+  contacts.forEach(c=>{ const cad=c.cadence_days; if(!cad) return; if(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date(now)) return;
     const ts=nbaLastTouch(c); const ds=ts===null?null:Math.floor((now-ts)/86400000); const due=ds===null||ds>=cad; if(!due) return; const over=ds===null?cad:(ds-cad);
     out.push({ key:'reach:'+c.id, score:58+Math.min(over*1.2,34)+softKnee(over-28.34,5.5,60), tag:'reach', icon:'contacts', title:'Reach out to '+(c.name||'a contact'), why: ds===null?('On a '+cad+'-day cadence — no touch logged yet'):('Last touch '+ds+'d ago · '+cad+'-day cadence'), cta:{ label:'Open', kind:'view', payload:'contacts' } }); });
   return out.sort((a,b)=>b.score-a.score);
