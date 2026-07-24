@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
-import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone } from '../App';
+import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone, owesReply } from '../App';
 import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
 
 const CONTACT_TYPES = [
@@ -1253,10 +1253,13 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     }
   }
 
-  const oweReplyFn = (c) => c.last_communication_direction==='inbound' && c.last_inbound_at
+  // Shared definition — this used to re-derive the rule and had drifted: it
+  // honoured no_reply_needed_at but not comms_settled_at, so a Settled contact
+  // still headlined "you owe a reply" here. The one-day grace and the snooze are
+  // this screen's own additions on top of the shared rule.
+  const oweReplyFn = (c) => owesReply(c)
     && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1
-    && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date())
-    && !(c.no_reply_needed_at && new Date(c.no_reply_needed_at) >= new Date(c.last_inbound_at));
+    && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date());
   const dueCount = useMemo(() => contacts.filter(c => { const cd = cadenceDue(c); return (cd && cd.due && !cd.snoozed) || oweReplyFn(c); }).length, [contacts]);
   const reachNext = useMemo(() => {
     const owe = contacts.find(oweReplyFn);

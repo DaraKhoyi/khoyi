@@ -2047,6 +2047,31 @@ export function decodeEntities(str) {
     .replace(/&amp;/gi, '&');
 }
 
+
+// ── owesReply: ONE definition ────────────────────────────────────────────────
+// This rule existed in four places — the my_owe_reply RPC, robot-chat's
+// hand-written copy, ContactsView's oweReplyFn, and an inline calculation on the
+// contact detail panel — and they disagreed. Marking a contact Settled silenced
+// Do-This-Next while the contact's own screen kept insisting "you may owe a
+// reply", directly under a pill that said Settled. Two dismissals also existed
+// (no_reply_needed_at, comms_settled_at) and not every copy honoured both.
+//
+// Any new surface that wants to ask "do I owe this person a reply?" must call
+// this, not re-derive it. The server keeps its own copy in SQL because RLS runs
+// there; that copy is kept identical on purpose.
+//
+// Both dismissals are timestamp-compared, never truthiness: they clear what is
+// on the table now, and a genuinely NEWER inbound re-opens the question.
+export function owesReply(c) {
+  if (!c) return false;
+  if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
+  const lin = new Date(c.last_inbound_at).getTime();
+  if (!Number.isFinite(lin)) return false;
+  if (c.comms_settled_at && new Date(c.comms_settled_at).getTime() >= lin) return false;
+  if (c.no_reply_needed_at && new Date(c.no_reply_needed_at).getTime() >= lin) return false;
+  return true;
+}
+
 export function PriorityField({ system, priority, onChange, style, className = 'form-select', disabled }) {
   const eis = (system || 'eisenhower') === 'eisenhower';
   const val = eis ? (PRIO_TO_QUAD[priority] || 'B') : (priority || 'medium');
@@ -8625,7 +8650,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const lastOut = contact.last_outbound_at;
   const lastDir = contact.last_communication_direction;
   const lastChannel = contact.last_communication_channel || 'email';
-  const owedDays = (lastDir === 'inbound' && lastIn) ? daysSince(lastIn) : null;
+  // Settled/handled must silence this panel too — it sits directly under the
+  // pill that says Settled, so disagreeing here is the most visible way for the
+  // app to contradict itself.
+  const oweReply = owesReply(contact);
+  const owedDays = (oweReply && lastIn) ? daysSince(lastIn) : null;
 
   async function addDatedNote() {
     if (!newNoteBody.trim()) return;
@@ -9651,9 +9680,9 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
           {(lastIn || lastOut) && (
             <div style={{display:'flex',gap:'12px',flexWrap:'wrap',marginBottom:'8px'}}>
-              <div style={{flex:'1 1 200px',padding:'10px',background: lastDir === 'inbound' ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)', border:`1px solid ${lastDir === 'inbound' ? 'var(--yellow)' : 'var(--border)'}`, borderRadius:'6px'}}>
-                <div style={{fontSize:'10px',color: lastDir === 'inbound' ? 'var(--yellow)' : 'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginBottom:'3px'}}>
-                  ⬇ THEY → YOU {lastDir === 'inbound' ? '· awaiting your reply' : ''}
+              <div style={{flex:'1 1 200px',padding:'10px',background: oweReply ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)', border:`1px solid ${oweReply ? 'var(--yellow)' : 'var(--border)'}`, borderRadius:'6px'}}>
+                <div style={{fontSize:'10px',color: oweReply ? 'var(--yellow)' : 'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginBottom:'3px'}}>
+                  ⬇ THEY → YOU {oweReply ? '· awaiting your reply' : (lastDir === 'inbound' && contact.comms_settled_at ? '· settled' : '')}
                 </div>
                 <div style={{fontSize:'12px',color:'var(--text-1)'}}>
                   {lastIn ? `${formatRelative(lastIn)} via ${lastChannel}` : '—'}
