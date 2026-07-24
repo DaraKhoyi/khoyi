@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { Icon, TrackerTaskModal, lbl, priorityClass, priorityLabel, sortTasks, todayISO } from '../App';
+import LinkedDocuments from './LinkedDocuments';
 
 function TrackerView({ userId, defaultSystem, contacts = [] }) {
   const tdb = supabase.schema('tracker');
@@ -198,6 +199,12 @@ function TrackerView({ userId, defaultSystem, contacts = [] }) {
                 )}
               </div>
             )}
+
+            {/* Documents live in the shared library and are LINKED here, not
+                stored here — the same lease can hang off this project, the
+                property, the tenant contact and the deal without existing four
+                times or being invisible from three of them. */}
+            <LinkedDocuments userId={userId} targetType="project" targetId={sel.id} />
 
             <div className="panel">
               <div className="panel-header">

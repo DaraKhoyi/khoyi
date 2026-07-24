@@ -23,7 +23,10 @@ function rel(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
-async function uploadDocuments(files, userId, contactIds = []) {
+// links: [{ target_type, target_id }] — a document can land on a project, a
+// contact, a property and a deal at once. contactIds stays for the existing
+// call sites; both funnel into the same entity_links table.
+export async function uploadDocuments(files, userId, contactIds = [], links = []) {
   const created = [];
   for (const file of files) {
     try {
@@ -34,7 +37,23 @@ async function uploadDocuments(files, userId, contactIds = []) {
       if (upErr) throw upErr;
       const { data: doc, error: insErr } = await supabase.from('documents').insert({ id: docId, user_id: userId, title: file.name, storage_path: path, mime_type: file.type || null, size_bytes: file.size, status: 'pending' }).select().single();
       if (insErr) throw insErr;
-      if (contactIds.length) await supabase.from('document_contacts').insert(contactIds.map(cid => ({ document_id: docId, contact_id: cid, user_id: userId })));
+      if (contactIds.length) {
+        const { error: dcErr } = await supabase.from('document_contacts').insert(contactIds.map(cid => ({ document_id: docId, contact_id: cid, user_id: userId })));
+        if (dcErr) throw dcErr;
+      }
+      // Universal links. A failure here means the file uploaded but is attached
+      // to nothing — findable in the library, invisible where it was dropped —
+      // so it is surfaced rather than swallowed.
+      const allLinks = [
+        ...contactIds.map(cid => ({ target_type: 'contact', target_id: cid })),
+        ...links,
+      ];
+      if (allLinks.length) {
+        const { error: elErr } = await supabase.from('entity_links').insert(
+          allLinks.map(l => ({ user_id: userId, item_type: 'document', item_id: docId, target_type: l.target_type, target_id: l.target_id }))
+        );
+        if (elErr) throw elErr;
+      }
       supabase.functions.invoke('document-extract', { body: { document_id: docId } }); // fire; poll for status
       created.push(doc);
     } catch (e) { /* surface via caller */ created.push({ error: String(e.message || e), title: file.name }); }
