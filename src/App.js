@@ -18096,11 +18096,7 @@ function AppMain() {
     { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
     { label: 'Phone & Text', view: 'quo', icon: 'quo', ai: true },
     { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
-    { label: 'Notes & Library', view: 'notes', icon: 'notes', ai: true },
-    { label: 'Add to Library', icon: 'folder', children: [
-      { label: 'Documents (search all)', view: 'documents', icon: 'folder' },
-      { label: 'Upload a recording', icon: 'mic', action: () => { try { window.__attachRecording && window.__attachRecording(); } catch (_) {} } },
-    ] },
+    { label: 'Library', view: 'notes', icon: 'notes', ai: true },
     { label: 'Finance Dashboard', view: 'finance', icon: 'dollar' },
     { label: 'Mileage', view: 'mileage', icon: 'car' },
     { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true },

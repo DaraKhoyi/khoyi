@@ -67,7 +67,7 @@ function StatusPill({ status }) {
   return <span style={{ fontSize: 10, fontWeight: 700, color: GOLD }}>◌ reading…</span>;
 }
 
-function DocCard({ doc, onOpen, snippet }) {
+export function DocCard({ doc, onOpen, snippet }) {
   const k = kindOf(doc.mime_type, doc.title);
   return (
     <button onClick={() => onOpen(doc)} style={{ textAlign: 'left', width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, cursor: 'pointer', display: 'block', marginBottom: 10 }}>
@@ -87,7 +87,7 @@ function DocCard({ doc, onOpen, snippet }) {
   );
 }
 
-function ViewerModal({ doc, userId, onClose, onDeleted }) {
+export function ViewerModal({ doc, userId, onClose, onDeleted }) {
   const [full, setFull] = useState(doc);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -143,7 +143,7 @@ function ViewerModal({ doc, userId, onClose, onDeleted }) {
   );
 }
 
-function UploadButton({ userId, contactIds, onUploaded, label = '+ Upload' }) {
+export function UploadButton({ userId, contactIds, onUploaded, label = '+ Upload' }) {
   const ref = useRef(null);
   const [busy, setBusy] = useState(false);
   const pick = async (e) => {
@@ -163,7 +163,7 @@ function UploadButton({ userId, contactIds, onUploaded, label = '+ Upload' }) {
   );
 }
 
-function useDocPolling(rows, setRows, userId, contactId) {
+export function useDocPolling(rows, setRows, userId, contactId) {
   const pending = (rows || []).some(d => d.status === 'pending' || d.status === 'extracting');
   useEffect(() => {
     if (!pending) return;
