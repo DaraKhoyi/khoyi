@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
-import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone, owesReply } from '../App';
+import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone, owesReply, TipFor} from '../App';
 import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
 
 const CONTACT_TYPES = [
@@ -1342,6 +1342,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         .ww-qmore{ padding:10px 14px; font-size:12px; color:#8C8475; text-align:center; }
         .ww-qempty{ padding:16px 14px; font-size:13.5px; color:#8C8475; text-align:center; }
       `}</style>
+      <TipFor screen="contacts" />
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}><div style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:600,color:'var(--accent)',marginBottom:'3px'}}>Relationships</div><h2 style={{margin:'0 0 6px'}}>Your people.</h2><p style={{color:'var(--text-3)',fontSize:'13px'}}>{contacts.length} contacts{dueCount>0 && <> · <b style={{color:'var(--accent-2)',fontWeight:700}}>{dueCount} due</b> for a touch</>}</p></div>
         <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>

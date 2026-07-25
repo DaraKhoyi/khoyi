@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Tip, Icon, lbl, today_ymd, useDictation, ymd } from '../App';
+import { Tip, Icon, lbl, today_ymd, useDictation, ymd, TipFor} from '../App';
 import { logJournalEntry, mirrorJournalToTimeline } from '../lib/journalLog';
 
 const JLINK_META = {
@@ -232,6 +232,7 @@ function JournalView({ userId }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '80px' }}>
+      <TipFor screen="journal" />
       {/* Header */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>

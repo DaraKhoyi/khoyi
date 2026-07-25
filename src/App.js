@@ -11,6 +11,7 @@ import TodayView from './views/TodayView';
 import FirstLook from './views/FirstLook';
 import SomedayView from './views/SomedayView';
 import ModeBar from './views/ModeBar';
+import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
@@ -11459,6 +11460,21 @@ function Tip({ id, label = 'Why this works', children }){
     </div>
   );
 }
+
+// TipFor — drops the first not-yet-seen tip for a screen from the central
+// registry (src/tips.js). One line on any screen: <TipFor screen="deals" />.
+// The registry is where new lessons get added as features ship.
+function TipFor({ screen }) {
+  const list = TIPS_BY_SCREEN[screen];
+  if (!list || !list.length) return null;
+  let pick = null;
+  try {
+    const seen = tipsSeenList();
+    pick = list.find(t => !seen.includes(t.id)) || null;
+  } catch (_) { pick = list[0]; }
+  if (!pick) return null;
+  return <Tip id={pick.id} label={pick.label}><span dangerouslySetInnerHTML={{ __html: pick.body }} /></Tip>;
+}
 function TipsSetting(){
   const [pace, setPace] = useState(effectivePace());
   const unlocked = tipsUnlocked(); const seen = tipsSeenCount();
@@ -18251,7 +18267,7 @@ function AppMain() {
         </nav>
 
         {/* Main */}
-        <main className="main-content ww-prism" ref={mainScrollRef} onTouchStart={onMainTouchStart} onTouchMove={onMainTouchMove} onTouchEnd={onMainTouchEnd} style={activeMode ? { paddingBottom: 76 } : undefined}>
+        <main className="main-content ww-prism" ref={mainScrollRef} onTouchStart={onMainTouchStart} onTouchMove={onMainTouchMove} onTouchEnd={onMainTouchEnd} style={activeMode ? { paddingBottom: 'calc(var(--modebar-h, 76px) + 8px)' } : undefined}>
           <style>{`.main-content.ww-prism{background:radial-gradient(120% 20% at 50% -2%, rgba(203,163,92,.09), transparent 55%), #100D09;} .ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h1,.ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .form-input,.ww-prism .form-select,.ww-prism .form-textarea{background:#1B1610;border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;} .ww-prism .seg-btn.active{background:linear-gradient(180deg,#EBCB82,#CBA35C)!important;color:#1a1409!important;}`}</style>
           {(ptrPull > 0 || ptrBusy) && (
             <div className="ptr-indicator" style={{ height: ptrBusy ? 40 : ptrPull, opacity: ptrBusy ? 1 : Math.min(ptrPull / PTR_THRESHOLD, 1) }}>
@@ -18391,5 +18407,5 @@ export default function App() {
   return <AppMain />;
 }
 
-export { ActivityTimeline, AriRewriteButton, ForkTuningOverlay, PrismThinking, CallFollowupsPanel, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, QuoTextModal, RecruitingKpiTile, RecruitingView, Tip, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
+export { ActivityTimeline, AriRewriteButton, ForkTuningOverlay, PrismThinking, CallFollowupsPanel, ContactDetailModal, ContactPicker, ContactsView, DatePickerModal, DealsView, HeaderSearchIcon, HeaderSearchInput, Icon, MileageView, MultiValueField, NotesView, PropertyModal, QuoCallDetail, QuoTextModal, RecruitingKpiTile, RecruitingView, Tip, TipFor, SYSTEMS, SingleContactPicker, TaskModal, TrackerTaskModal, cadenceDue, confirmDialog, emailAssignTask, lbl, modal, money, notify, notifyError, num, pad2, pickerInitials, priorityClass, priorityLabel, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone, sortTasks, stageMeta, todayISO, today_ymd, useDictation, ymd };
 

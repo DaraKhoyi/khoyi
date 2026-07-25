@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { Tip, useBackClose, Icon, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd } from '../App';
+import { Tip, useBackClose, Icon, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd, TipFor} from '../App';
 
 function startOfMonthGrid(year, month) {
   // month: 0-indexed. Returns the Sunday on/before the 1st.
@@ -647,6 +647,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 
   return (
     <div className="ww-cal">
+      <TipFor screen="calendar" />
       <style>{`
         .ww-cal{
           --bg-base:#100D09; --bg-card:#1B1610; --bg-hover:#221B10;

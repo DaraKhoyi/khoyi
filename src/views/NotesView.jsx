@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon, confirmDialog, notify } from '../App';
+import { Icon, confirmDialog, notify, TipFor} from '../App';
 import { UploadButton, DocCard, ViewerModal, useDocPolling } from './DocumentsView';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -179,6 +179,8 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
         </div>
       </div>
 
+      <TipFor screen="notes" />
+
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', fontSize: 14, pointerEvents: 'none' }}>⌕</span>
         <input ref={searchInputRef} value={q} onChange={e => { setQ(e.target.value); if (deepResults) setDeepResults(null); }}
@@ -288,13 +290,13 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   if (narrow) {
     const showingReader = !!selected || !!openDoc;
     return (
-      <div style={{ height: 'calc(100dvh - 64px - 76px)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ height: 'calc(100dvh - 64px - var(--modebar-h, 76px))', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {showingReader ? readerPane : listPane}
       </div>
     );
   }
   return (
-    <div style={{ display: 'flex', gap: '20px', height: 'calc(100dvh - 64px - 76px)', minHeight: 0 }}>
+    <div style={{ display: 'flex', gap: '20px', height: 'calc(100dvh - 64px - var(--modebar-h, 76px))', minHeight: 0 }}>
       {listPane}
       {readerPane}
     </div>

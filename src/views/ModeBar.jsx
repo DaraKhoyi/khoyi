@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { modeById, VIEW_META } from '../modes';
 
 // ── ModeBar ──────────────────────────────────────────────────────────────────
@@ -42,11 +42,25 @@ const Icon = ({ name, active }) => (
 );
 
 export default function ModeBar({ modeId, currentView, currentSub, onNavigate, onHome, badges = {} }) {
+  const barRef = useRef(null);
+  // Publish the bar's true rendered height (padding + icon + label + safe-area)
+  // as --modebar-h so screens can reserve exactly the right space instead of a
+  // hardcoded guess that drifts on notched phones.
+  useEffect(() => {
+    const set = () => {
+      const h = barRef.current ? barRef.current.offsetHeight : 0;
+      document.documentElement.style.setProperty('--modebar-h', h + 'px');
+    };
+    set();
+    window.addEventListener('resize', set);
+    return () => { window.removeEventListener('resize', set); document.documentElement.style.setProperty('--modebar-h', '0px'); };
+  });
+
   const mode = modeById(modeId);
   if (!mode) return null;
 
   return (
-    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 40,
+    <div ref={barRef} style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 40,
       background: 'rgba(16,13,9,0.94)', backdropFilter: 'blur(12px)',
       borderTop: '1px solid rgba(203,163,92,0.28)', paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
       <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', alignItems: 'stretch' }}>

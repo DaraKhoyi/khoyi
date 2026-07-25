@@ -423,9 +423,9 @@ body {
 /* When a mindset room's bottom bar is showing, the chat column must be shorter
    by the bar's height (76px) or its input row sits UNDER the bar and cannot be
    tapped. The .has-modebar modifier is added whenever a scoped bar is present. */
-.chat-wrap.has-modebar { height: calc(100dvh - 64px - 76px); }
+.chat-wrap.has-modebar { height: calc(100dvh - 64px - var(--modebar-h, 76px)); }
 @media (max-width: 899px) {
-  .chat-wrap.has-modebar { height: calc(100dvh - var(--header-h) - 32px - 76px); }
+  .chat-wrap.has-modebar { height: calc(100dvh - var(--header-h) - 32px - var(--modebar-h, 76px)); }
 }
 
 .chat-robot-header {

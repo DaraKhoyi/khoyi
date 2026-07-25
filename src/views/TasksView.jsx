@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, emailAssignTask, modal, notify, todayISO } from '../App';
+import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, Icon, NotesView, TaskModal, confirmDialog, emailAssignTask, modal, notify, todayISO, TipFor} from '../App';
 
 const QUADS = ['A', 'B', 'C', 'D'];
 // Sort key for Eisenhower: A1 < A2 < B1 < ... Simple-system tasks sort after
@@ -634,6 +634,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
   return (
     <DragProvider onDragStart={async () => setIsDragging(true)} onDragEnd={() => setIsDragging(false)}>
       <div className="view">
+        <TipFor screen="tasks" />
         {/* Calls turn into work HERE, in one batch — not as six notifications
             through the day. Yours become tasks; theirs stay on the radar until
             they're late. Renders nothing when there's nothing to decide. */}
