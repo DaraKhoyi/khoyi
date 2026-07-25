@@ -143,7 +143,7 @@ export function ViewerModal({ doc, userId, onClose, onDeleted }) {
   );
 }
 
-export function UploadButton({ userId, contactIds, onUploaded, label = '+ Upload' }) {
+export function UploadButton({ userId, contactIds, onUploaded, label = '+ Upload', asRow = false }) {
   const ref = useRef(null);
   const [busy, setBusy] = useState(false);
   const pick = async (e) => {
@@ -158,7 +158,16 @@ export function UploadButton({ userId, contactIds, onUploaded, label = '+ Upload
   return (
     <>
       <input ref={ref} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.doc,.docx,image/*,application/pdf" onChange={pick} style={{ display: 'none' }} />
-      <button onClick={() => ref.current && ref.current.click()} disabled={busy} className="btn btn-primary btn-sm">{busy ? 'Uploading…' : label}</button>
+      {asRow ? (
+        // Rendered as a full-width menu/sheet row so it sits flush with its
+        // siblings instead of looking like a stray highlighted button.
+        <button onClick={() => ref.current && ref.current.click()} disabled={busy}
+          style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 10, padding: asRow === 'sheet' ? '14px 12px' : '10px 10px', fontSize: asRow === 'sheet' ? 15 : 13.5, fontWeight: 600, color: 'var(--text-1)' }}>
+          <span style={{ fontSize: asRow === 'sheet' ? 18 : 15 }}>📄</span>{busy ? 'Uploading…' : (label.replace(/^📄\s*/, ''))}
+        </button>
+      ) : (
+        <button onClick={() => ref.current && ref.current.click()} disabled={busy} className="btn btn-primary btn-sm">{busy ? 'Uploading…' : label}</button>
+      )}
     </>
   );
 }

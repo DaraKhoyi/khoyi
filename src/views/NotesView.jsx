@@ -390,28 +390,54 @@ function AddMenu({ onNewNote, onUploaded, userId, open: openProp, setOpen: setOp
   const [openLocal, setOpenLocal] = useState(false);
   const open = openProp !== undefined ? openProp : openLocal;
   const setOpen = setOpenProp || setOpenLocal;
+  const [sheet, setSheet] = useState(typeof window !== 'undefined' && window.innerWidth < 820);
+  useEffect(() => {
+    const onResize = () => setSheet(window.innerWidth < 820);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const items = (
+    <>
+      <MenuItem icon="📝" label="New note" sheet={sheet} onClick={() => { setOpen(false); onNewNote(); }} />
+      <UploadButton userId={userId} onUploaded={() => { setOpen(false); onUploaded(); }} label="📄 Upload a document" asRow={sheet ? 'sheet' : 'menu'} />
+      <MenuItem icon="🎙️" label="Upload a recording" sheet={sheet} onClick={() => { setOpen(false); try { window.__attachRecording && window.__attachRecording(); } catch (_) {} }} />
+    </>
+  );
+
   return (
     <span style={{ position: 'relative', display: 'inline-flex' }}>
       <button className="btn-add-circle btn-add-circle-sm" onClick={() => setOpen(o => !o)} title="Add to library" aria-label="Add to library">+</button>
-      {open && (
+      {open && sheet && (
+        // On a phone this rises from the BOTTOM as a sheet — because the triggers
+        // (the header + AND the bottom-bar Upload tab) are nowhere near each other,
+        // and a dropdown anchored to the header + appears at the TOP of the screen
+        // even when Upload was tapped at the BOTTOM. A bottom sheet is anchored to
+        // the thumb, not to whichever button happened to open it.
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.5)' }} />
+          <div style={{ position: 'fixed', left: 12, right: 12, bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', zIndex: 91,
+            background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 16, padding: 8, boxShadow: '0 -10px 40px rgba(0,0,0,.6)' }}>
+            <div style={{ fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--text-3)', fontWeight: 800, padding: '6px 10px 8px' }}>Add to library</div>
+            {items}
+          </div>
+        </>
+      )}
+      {open && !sheet && (
         <>
           <span onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 70 }} />
           <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 71, width: 220, background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 12, padding: 6, boxShadow: '0 12px 30px rgba(0,0,0,.5)' }}>
-            <MenuItem icon="📝" label="New note" onClick={() => { setOpen(false); onNewNote(); }} />
-            <div style={{ padding: '2px 4px' }}>
-              <UploadButton userId={userId} onUploaded={() => { setOpen(false); onUploaded(); }} label="📄 Upload a document" />
-            </div>
-            <MenuItem icon="🎙️" label="Upload a recording" onClick={() => { setOpen(false); try { window.__attachRecording && window.__attachRecording(); } catch (_) {} }} />
+            {items}
           </div>
         </>
       )}
     </span>
   );
 }
-function MenuItem({ icon, label, onClick }) {
+function MenuItem({ icon, label, onClick, sheet }) {
   return (
-    <button onClick={onClick} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 9, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, padding: '10px 10px', fontSize: 13.5, fontWeight: 600, color: 'var(--text-1)' }}>
-      <span style={{ fontSize: 15 }}>{icon}</span>{label}
+    <button onClick={onClick} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 10, padding: sheet ? '14px 12px' : '10px 10px', fontSize: sheet ? 15 : 13.5, fontWeight: 600, color: 'var(--text-1)' }}>
+      <span style={{ fontSize: sheet ? 18 : 15 }}>{icon}</span>{label}
     </button>
   );
 }
