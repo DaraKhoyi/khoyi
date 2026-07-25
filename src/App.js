@@ -18204,9 +18204,17 @@ function AppMain() {
       {/* Mobile header */}
       <div className="mobile-header">
         <div className="mobile-header-logo" onClick={() => setSidebarOpen(true)} style={{cursor:"pointer"}} role="button" aria-label="Menu"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
-        <button className="hamburger" onClick={() => setMindsetOpen(true)} aria-label="Mindset menu" title="Rooms">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#CBA35C" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="6" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="18" r="1.8"/><path d="M7 6h9M7 18h9M17 12H8"/></svg>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+          {/* Persistent Library search — the whole knowledge base is one tap from
+              anywhere, which is what makes stored intelligence feel INSTANT rather
+              than buried three menus deep. */}
+          <button className="hamburger" onClick={() => { setDeepLink({ view: 'notes', sub: 'search', n: Date.now() }); setView('notes'); }} aria-label="Search your library" title="Search your library">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#CBA35C" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>
+          </button>
+          <button className="hamburger" onClick={() => setMindsetOpen(true)} aria-label="Mindset menu" title="Rooms">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#CBA35C" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="6" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="18" r="1.8"/><path d="M7 6h9M7 18h9M17 12H8"/></svg>
+          </button>
+        </div>
       </div>
 
       {/* The mindset menu — opens from the UPPER-RIGHT button. Dashboard + the
@@ -18306,7 +18314,7 @@ function AppMain() {
               : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events} contacts={contacts}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks} focusEventId={focusEventId} setFocusEventId={setFocusEventId}/>
-              : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id}/>
+              : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id} initialSub={deepLink.view==='notes'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='journal'     ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><JournalView userId={user.id}/></div>
               : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>

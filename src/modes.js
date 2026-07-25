@@ -19,7 +19,32 @@ export const MODES = [
     accent: '#8FB8A8',
     home: 'contacts',
     bar: ['contacts', 'inbox', 'quo', 'journal'],
-    views: ['contacts', 'inbox', 'quo', 'journal', 'email_review', 'documents', 'notes', 'contact_types'],
+    views: ['contacts', 'inbox', 'quo', 'journal', 'email_review', 'contact_types'],
+  },
+  {
+    // THE LIBRARY as a first-class room. An agent is sometimes not working a
+    // person or a deal but looking for what they KNOW — a document, a call, a
+    // note, an answer. That headspace had no room; its screens (notes,
+    // documents) were buried as extra views inside other modes and appeared in
+    // no bottom bar. Now it is a destination.
+    //
+    // The bar is built for FINDING, not filing: All (the whole library), Search
+    // (jump straight to the search field), Upload (add something), and Ari — because
+    // a library you can ASK ("what did counsel say about the warehouse use?") is
+    // the difference between storage and intelligence.
+    id: 'library',
+    label: 'Library',
+    tag: 'Everything I know',
+    glyph: 'library',
+    accent: '#8FB8A8',
+    home: 'notes',
+    bar: [
+      { view: 'notes', sub: 'all',    label: 'All',    glyph: 'library' },
+      { view: 'notes', sub: 'search', label: 'Search', glyph: 'search' },
+      { view: 'notes', sub: 'upload', label: 'Upload', glyph: 'upload' },
+      { view: 'chat', label: 'Ask Ari', glyph: 'spark' },
+    ],
+    views: ['notes', 'documents', 'chat'],
   },
   {
     id: 'prospect',
@@ -47,8 +72,8 @@ export const MODES = [
     glyph: 'flow',
     accent: '#7FA6C9',
     home: 'pipeline',
-    bar: ['pipeline', 'deals', 'files', 'documents'],
-    views: ['pipeline', 'deals', 'files', 'documents', 'properties'],
+    bar: ['pipeline', 'deals', 'files', 'properties'],
+    views: ['pipeline', 'deals', 'files', 'properties'],
   },
   {
     id: 'money',
@@ -89,7 +114,7 @@ export const VIEW_META = {
   journal:    { label: 'Journal',  glyph: 'book' },
   email_review:{ label: 'Triage',  glyph: 'mail' },
   documents:  { label: 'Docs',     glyph: 'doc' },
-  notes:      { label: 'Notes',    glyph: 'book' },
+  notes:      { label: 'Library',  glyph: 'library' },
   contact_types:{ label: 'Types',  glyph: 'people' },
   prospecting:{ label: 'Today',    glyph: 'target' },
   systems:    { label: 'Systems',  glyph: 'gear' },

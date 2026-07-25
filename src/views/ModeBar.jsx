@@ -28,6 +28,10 @@ const glyphs = {
   coin: <><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/></>,
   car: <><path d="M4 12l2-5h12l2 5"/><path d="M3 12h18v5H3z"/><circle cx="7" cy="17" r="1.5"/><circle cx="17" cy="17" r="1.5"/></>,
   building: <><rect x="6" y="3" width="12" height="18"/><path d="M10 7h1M13 7h1M10 11h1M13 11h1"/></>,
+  library: <><path d="M4 5h4v14H4zM10 5h4v14h-4z"/><path d="M16 5l3.5 1-3 13L16 18z"/></>,
+  search: <><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></>,
+  upload: <><path d="M12 16V5M8 9l4-4 4 4"/><path d="M5 19h14"/></>,
+  spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>,
 };
 
 const Icon = ({ name, active }) => (

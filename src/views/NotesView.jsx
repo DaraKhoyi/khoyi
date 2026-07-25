@@ -45,7 +45,7 @@ function timeAgo(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
-function NotesView({ notes, setNotes, userId }) {
+function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   const [selected, setSelected] = useState(null);
   const [openDoc, setOpenDoc] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -57,6 +57,17 @@ function NotesView({ notes, setNotes, userId }) {
   const [deepBusy, setDeepBusy] = useState(false);
   const saveTimer = useRef(null);
   const bodyRef = useRef(null);
+
+  const searchInputRef = useRef(null);
+  const [addOpen, setAddOpen] = useState(false);
+  // Deep-links from the Library bottom bar: Search jumps to the field, Upload
+  // opens the add menu, All resets the feed. subNonce lets the same sub re-fire.
+  useEffect(() => {
+    if (initialSub === 'search') { setSection('all'); setTimeout(() => searchInputRef.current?.focus(), 120); }
+    else if (initialSub === 'upload') { setAddOpen(true); }
+    else if (initialSub === 'all') { setSection('all'); setSelected(null); setOpenDoc(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSub, subNonce]);
 
   const [narrow, setNarrow] = useState(typeof window !== 'undefined' && window.innerWidth < 820);
   useEffect(() => {
@@ -164,13 +175,13 @@ function NotesView({ notes, setNotes, userId }) {
           </p>
         </div>
         <div style={{ flexShrink: 0, paddingTop: 2 }}>
-          <AddMenu onNewNote={createNote} onUploaded={loadDocs} userId={userId} />
+          <AddMenu onNewNote={createNote} onUploaded={loadDocs} userId={userId} open={addOpen} setOpen={setAddOpen} />
         </div>
       </div>
 
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', fontSize: 14, pointerEvents: 'none' }}>⌕</span>
-        <input value={q} onChange={e => { setQ(e.target.value); if (deepResults) setDeepResults(null); }}
+        <input ref={searchInputRef} value={q} onChange={e => { setQ(e.target.value); if (deepResults) setDeepResults(null); }}
           onKeyDown={e => { if (e.key === 'Enter' && section === 'document') runDeepSearch(); }}
           placeholder="Search your whole library…"
           style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-card)', border: '1px solid var(--border)',
@@ -375,8 +386,10 @@ function BackBar({ onBack }) {
   return <div style={{ padding: '10px 0', flexShrink: 0 }}><BackBtn onClick={onBack} /></div>;
 }
 
-function AddMenu({ onNewNote, onUploaded, userId }) {
-  const [open, setOpen] = useState(false);
+function AddMenu({ onNewNote, onUploaded, userId, open: openProp, setOpen: setOpenProp }) {
+  const [openLocal, setOpenLocal] = useState(false);
+  const open = openProp !== undefined ? openProp : openLocal;
+  const setOpen = setOpenProp || setOpenLocal;
   return (
     <span style={{ position: 'relative', display: 'inline-flex' }}>
       <button className="btn-add-circle btn-add-circle-sm" onClick={() => setOpen(o => !o)} title="Add to library" aria-label="Add to library">+</button>
