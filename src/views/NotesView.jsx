@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon, confirmDialog, notify, TipFor} from '../App';
-import { UploadButton, DocCard, ViewerModal, useDocPolling } from './DocumentsView';
+import { Icon, confirmDialog, notify, TipFor, notifyError} from '../App';
+import { UploadButton, DocCard, ViewerModal, useDocPolling, uploadDocuments } from './DocumentsView';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THE LIBRARY — one store, five sections, one search.
@@ -388,37 +388,80 @@ function BackBar({ onBack }) {
   return <div style={{ padding: '10px 0', flexShrink: 0 }}><BackBtn onClick={onBack} /></div>;
 }
 
-function AddMenu({ onNewNote, onUploaded, userId, open: openProp, setOpen: setOpenProp }) {
+// AddMenu — every way something enters the library, in one place. Each item is
+// wired to REAL capture + indexing, not a label:
+//   New note        → a living note
+//   Take a picture  → camera → uploadDocuments (image OCR'd, summarised, linked)
+//   Record a voice memo → live mic → transcribed recording in the library
+//   Add a photo     → gallery image → same OCR/index path
+//   Add a document  → PDF / Word → OCR/index path
+//   Add files       → anything → index path
+//   Add a recording → existing audio file → recording pipeline
+//   Share…          → team & brokerage sharing (below)
+//
+// `links` carries the current entity context (a project/contact/property the
+// Library is scoped to) so everything captured is connected, not orphaned.
+function AddMenu({ onNewNote, onUploaded, userId, links = [], open: openProp, setOpen: setOpenProp }) {
   const [openLocal, setOpenLocal] = useState(false);
   const open = openProp !== undefined ? openProp : openLocal;
   const setOpen = setOpenProp || setOpenLocal;
   const [sheet, setSheet] = useState(typeof window !== 'undefined' && window.innerWidth < 820);
+  const [recOpen, setRecOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   useEffect(() => {
     const onResize = () => setSheet(window.innerWidth < 820);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  const cameraRef = useRef(null);
+  const photoRef = useRef(null);
+  const docRef = useRef(null);
+  const filesRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handlePicked(fileList, kind) {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    setBusy(true); setOpen(false);
+    const created = await uploadDocuments(files, userId, [], links);
+    setBusy(false);
+    const failed = created.filter(c => c && c.error);
+    if (failed.length) notifyError(`Some ${kind} failed: ` + failed.map(f => f.title).join(', '));
+    else notify(`${files.length} ${kind}${files.length > 1 ? 's' : ''} added — reading now, searchable shortly.`, 'success');
+    onUploaded && onUploaded();
+  }
+
   const items = (
     <>
       <MenuItem icon="📝" label="New note" sheet={sheet} onClick={() => { setOpen(false); onNewNote(); }} />
-      <UploadButton userId={userId} onUploaded={() => { setOpen(false); onUploaded(); }} label="📄 Upload a document" asRow={sheet ? 'sheet' : 'menu'} />
-      <MenuItem icon="🎙️" label="Upload a recording" sheet={sheet} onClick={() => { setOpen(false); try { window.__attachRecording && window.__attachRecording(); } catch (_) {} }} />
+      <MenuItem icon="📸" label="Take a picture" sheet={sheet} onClick={() => cameraRef.current && cameraRef.current.click()} />
+      <MenuItem icon="🎤" label="Record a voice memo" sheet={sheet} onClick={() => { setOpen(false); setRecOpen(true); }} />
+      <MenuItem icon="🖼️" label="Add a photo" sheet={sheet} onClick={() => photoRef.current && photoRef.current.click()} />
+      <MenuItem icon="📄" label="Add a document" sheet={sheet} onClick={() => docRef.current && docRef.current.click()} />
+      <MenuItem icon="📁" label="Add files" sheet={sheet} onClick={() => filesRef.current && filesRef.current.click()} />
+      <MenuItem icon="🎙️" label="Add a recording" sheet={sheet} onClick={() => { setOpen(false); try { window.__attachRecording && window.__attachRecording(); } catch (_) {} }} />
+      <div style={{ height: 1, background: 'var(--border)', margin: '6px 8px' }} />
+      <MenuItem icon="🤝" label="Share with the team" sheet={sheet} onClick={() => { setOpen(false); setShareOpen(true); }} />
+
+      {/* hidden capture inputs — camera opens the rear camera; the rest are pickers */}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { handlePicked(e.target.files, 'photo'); e.target.value = ''; }} />
+      <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => { handlePicked(e.target.files, 'photo'); e.target.value = ''; }} />
+      <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.pages,application/pdf" multiple style={{ display: 'none' }} onChange={e => { handlePicked(e.target.files, 'document'); e.target.value = ''; }} />
+      <input ref={filesRef} type="file" multiple style={{ display: 'none' }} onChange={e => { handlePicked(e.target.files, 'file'); e.target.value = ''; }} />
     </>
   );
 
   return (
     <span style={{ position: 'relative', display: 'inline-flex' }}>
       <button className="btn-add-circle btn-add-circle-sm" onClick={() => setOpen(o => !o)} title="Add to library" aria-label="Add to library">+</button>
+      {busy && <span style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 200, background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 100, padding: '6px 14px', fontSize: 12, color: 'var(--text-1)' }}>Uploading…</span>}
       {open && sheet && (
-        // On a phone this rises from the BOTTOM as a sheet — because the triggers
-        // (the header + AND the bottom-bar Upload tab) are nowhere near each other,
-        // and a dropdown anchored to the header + appears at the TOP of the screen
-        // even when Upload was tapped at the BOTTOM. A bottom sheet is anchored to
-        // the thumb, not to whichever button happened to open it.
+        // On a phone this rises from the BOTTOM as a sheet — anchored to the thumb,
+        // not to whichever button (header + or bottom-bar Upload) opened it.
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.5)' }} />
-          <div style={{ position: 'fixed', left: 12, right: 12, bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', zIndex: 91,
+          <div style={{ position: 'fixed', left: 12, right: 12, bottom: 'calc(var(--modebar-h, 76px) + 12px)', zIndex: 91, maxHeight: '70vh', overflowY: 'auto',
             background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 16, padding: 8, boxShadow: '0 -10px 40px rgba(0,0,0,.6)' }}>
             <div style={{ fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--text-3)', fontWeight: 800, padding: '6px 10px 8px' }}>Add to library</div>
             {items}
@@ -428,11 +471,13 @@ function AddMenu({ onNewNote, onUploaded, userId, open: openProp, setOpen: setOp
       {open && !sheet && (
         <>
           <span onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 70 }} />
-          <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 71, width: 220, background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 12, padding: 6, boxShadow: '0 12px 30px rgba(0,0,0,.5)' }}>
+          <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 71, width: 244, background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 12, padding: 6, boxShadow: '0 12px 30px rgba(0,0,0,.5)' }}>
             {items}
           </div>
         </>
       )}
+      {recOpen && <VoiceMemoRecorder userId={userId} links={links} onClose={() => setRecOpen(false)} onSaved={() => { setRecOpen(false); onUploaded && onUploaded(); }} />}
+      {shareOpen && <ShareToTeam userId={userId} onClose={() => setShareOpen(false)} />}
     </span>
   );
 }
@@ -441,6 +486,168 @@ function MenuItem({ icon, label, onClick, sheet }) {
     <button onClick={onClick} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 11, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 10, padding: sheet ? '14px 12px' : '10px 10px', fontSize: sheet ? 15 : 13.5, fontWeight: 600, color: 'var(--text-1)' }}>
       <span style={{ fontSize: sheet ? 18 : 15 }}>{icon}</span>{label}
     </button>
+  );
+}
+
+// ── Voice memo — live microphone → transcribed recording in the library ───────
+function VoiceMemoRecorder({ userId, links = [], onClose, onSaved }) {
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const mediaRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+
+  useEffect(() => { start(); return () => { try { mediaRef.current && mediaRef.current.stop(); } catch (_) {} clearInterval(timerRef.current); }; }, []);
+
+  async function start() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+        const mime = mr.mimeType || 'audio/webm';
+        await save(new Blob(chunksRef.current, { type: mime }), mime);
+      };
+      mediaRef.current = mr; mr.start(); setRecording(true);
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+    } catch (e) { notifyError('Microphone unavailable or permission denied.'); onClose(); }
+  }
+  function stop() { clearInterval(timerRef.current); try { mediaRef.current && mediaRef.current.stop(); } catch (_) {} setRecording(false); }
+
+  async function save(blob, mime) {
+    setBusy(true);
+    try {
+      // Ingest through the real recordings pipeline: create the row, upload the
+      // audio, fire transcription. The recording→notes mirror trigger then makes
+      // it searchable in the library like any call, and entity_links connects it
+      // to whatever the Library was scoped to.
+      const ext = mime.includes('mp4') ? 'm4a' : mime.includes('mpeg') ? 'mp3' : mime.includes('wav') ? 'wav' : 'webm';
+      const id = (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + '-' + Math.random().toString(36).slice(2));
+      const title = 'Voice memo — ' + new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      const { error: insErr } = await supabase.from('recordings').insert({
+        id, user_id: userId, title, recorded_at: new Date().toISOString(),
+        transcription_status: 'pending', first_speaker: 'me',
+      });
+      if (insErr) throw insErr;
+      const path = `${userId}/${id}/voice-memo.${ext}`;
+      const { error: upErr } = await supabase.storage.from('recordings').upload(path, blob, { contentType: mime, upsert: false });
+      if (upErr) { await supabase.from('recordings').delete().eq('id', id); throw upErr; }
+      const { error: updErr } = await supabase.from('recordings').update({ storage_path: path }).eq('id', id);
+      if (updErr) throw updErr;
+      // connect it to the current context (project/contact/property), if any
+      if (links.length) {
+        await supabase.from('entity_links').insert(links.map(l => ({ user_id: userId, item_type: 'recording', item_id: id, target_type: l.target_type, target_id: l.target_id })));
+      }
+      supabase.functions.invoke('recording-transcribe', { body: { recording_id: id, user_id: userId } }).catch(() => {});
+      notify('Voice memo saved — transcribing now.', 'success');
+      onSaved && onSaved();
+    } catch (e) { notifyError('Could not save the memo: ' + (e?.message || e)); }
+    setBusy(false); onClose();
+  }
+
+  const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(340px, 92vw)', background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 18, padding: 24, textAlign: 'center' }}>
+        <div style={{ fontFamily: 'Fraunces, serif', fontWeight: 400, fontSize: 20, color: 'var(--text-1)' }}>Voice memo</div>
+        <div style={{ fontSize: 46, fontVariantNumeric: 'tabular-nums', color: 'var(--accent-2)', margin: '18px 0', letterSpacing: '.02em' }}>{mmss}</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: recording ? '#ef4444' : 'var(--text-3)', fontSize: 12, fontWeight: 700 }}>
+          {recording && <span style={{ width: 9, height: 9, borderRadius: 9, background: '#ef4444', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />}
+          {busy ? 'Saving…' : recording ? 'Recording' : 'Stopped'}
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} disabled={busy} onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} disabled={busy || !recording} onClick={stop}>Stop &amp; save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Share with the team / brokerage ───────────────────────────────────────────
+// Real sharing: sets share_scope on your most recent library items so a team or
+// the whole brokerage can see them. Uses the same scope model as knowledge.
+function ShareToTeam({ userId, onClose }) {
+  const [teams, setTeams] = useState([]);
+  const [recent, setRecent] = useState(null);
+  const [picked, setPicked] = useState({});   // id -> {kind}
+  const [scope, setScope] = useState('team');
+  const [teamId, setTeamId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try { const { data } = await supabase.rpc('my_teams'); const t = Array.isArray(data) ? data : []; setTeams(t); if (t.length) setTeamId(t[0].team_id); } catch (_) {}
+      // recent private items the user could share (notes + documents)
+      const [{ data: n }, { data: d }] = await Promise.all([
+        supabase.from('notes').select('id,title,kind,updated_at,share_scope').eq('user_id', userId).order('updated_at', { ascending: false }).limit(15),
+        supabase.from('documents').select('id,title,created_at,share_scope').eq('user_id', userId).order('created_at', { ascending: false }).limit(15),
+      ]);
+      const rows = [
+        ...((n || []).map(x => ({ id: x.id, kind: 'note', title: x.title || 'Untitled', shared: x.share_scope && x.share_scope !== 'private', ts: x.updated_at }))),
+        ...((d || []).map(x => ({ id: x.id, kind: 'document', title: x.title || 'Document', shared: x.share_scope && x.share_scope !== 'private', ts: x.created_at }))),
+      ].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+      setRecent(rows);
+    })();
+  }, [userId]);
+
+  const toggle = (r) => setPicked(p => { const n = { ...p }; if (n[r.id]) delete n[r.id]; else n[r.id] = r.kind; return n; });
+
+  async function share() {
+    const ids = Object.entries(picked);
+    if (!ids.length) { notifyError('Pick at least one item to share.'); return; }
+    if (scope === 'team' && !teamId) { notifyError('Choose a team.'); return; }
+    setBusy(true);
+    const patch = { share_scope: scope, shared_team_id: scope === 'team' ? teamId : null, shared_at: new Date().toISOString() };
+    let ok = 0, fail = 0;
+    for (const [id, kind] of ids) {
+      const table = kind === 'note' ? 'notes' : 'documents';
+      const { error } = await supabase.from(table).update(patch).eq('id', id).eq('user_id', userId);
+      if (error) fail++; else ok++;
+    }
+    setBusy(false);
+    if (fail) notifyError(`Shared ${ok}, ${fail} failed.`);
+    else notify(`Shared ${ok} item${ok !== 1 ? 's' : ''} with ${scope === 'brokerage' ? 'the whole brokerage' : 'your team'}.`, 'success');
+    onClose();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(420px, 94vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--accent-dim)', borderRadius: 18, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontWeight: 400, fontSize: 20, color: 'var(--text-1)' }}>Share with the team</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>Pick items, choose who sees them.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, padding: '12px 18px', flexWrap: 'wrap' }}>
+          <button className={'btn btn-sm ' + (scope === 'team' ? 'btn-primary' : 'btn-ghost')} onClick={() => setScope('team')}>My team</button>
+          <button className={'btn btn-sm ' + (scope === 'brokerage' ? 'btn-primary' : 'btn-ghost')} onClick={() => setScope('brokerage')}>Whole brokerage</button>
+          {scope === 'team' && teams.length > 0 && (
+            <select className="form-input" value={teamId} onChange={e => setTeamId(e.target.value)} style={{ flex: '1 1 140px', padding: '6px 8px', fontSize: 13 }}>
+              {teams.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}
+            </select>
+          )}
+        </div>
+        <div style={{ flex: '1 1 0', overflowY: 'auto', padding: '0 12px 8px' }}>
+          {recent === null ? <div style={{ padding: 16, color: 'var(--text-3)', fontSize: 12 }}>Loading…</div>
+            : recent.length === 0 ? <div style={{ padding: 16, color: 'var(--text-3)', fontSize: 12 }}>Nothing to share yet.</div>
+            : recent.map(r => (
+              <button key={r.id} onClick={() => toggle(r)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, textAlign: 'left', background: picked[r.id] ? 'var(--accent-glow)' : 'none', border: '1px solid ' + (picked[r.id] ? 'var(--accent)' : 'transparent'), borderRadius: 10, padding: '10px 12px', cursor: 'pointer', marginBottom: 4 }}>
+                <span style={{ width: 18, height: 18, borderRadius: 5, border: '2px solid ' + (picked[r.id] ? 'var(--accent)' : 'var(--text-3)'), background: picked[r.id] ? 'var(--accent)' : 'transparent', flex: 'none' }} />
+                <span style={{ flex: '1 1 0', minWidth: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</span>
+                <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-3)', flex: 'none' }}>{r.kind}{r.shared ? ' · shared' : ''}</span>
+              </button>
+            ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10, padding: '12px 18px', borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} disabled={busy} onClick={share}>{busy ? 'Sharing…' : 'Share ' + (Object.keys(picked).length || '')}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

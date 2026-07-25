@@ -100,6 +100,12 @@ export const TIPS = [
   { id: 'mileage_track', screen: 'mileage', label: 'Miles are money you\u2019re leaving behind',
     body: 'Every drive to a showing is deductible — and easy to forget. Log it here and <b>the write-off is waiting at tax time</b>, documented the way an accountant wants it.' },
 
+  { id: 'capture_snap', screen: 'notes', label: 'Snap it, and it reads itself',
+    body: 'Photograph a document, a whiteboard, a business card — Prism <b>reads the text off the image</b>, summarizes it, and files it searchable. The photo becomes knowledge, not just a picture.' },
+  { id: 'capture_voice', screen: 'notes', label: 'Talk it out, hands-free',
+    body: 'Record a voice memo right into the library and Prism transcribes it — so a thought you had driving between showings becomes <b>searchable text</b> without you typing a word.' },
+  { id: 'capture_share', screen: 'notes', label: 'What you know, the team knows',
+    body: 'Share a document or note to your team or the whole brokerage in two taps. <b>Institutional knowledge stops living in one person’s head</b> — the best playbook helps everyone.' },
   // ── Recruiting / brokerage ──────────────────────────────────────────────────
   { id: 'recruiting_pipeline', screen: 'recruiting', label: 'Recruit like you sell',
     body: 'Agents are a pipeline too — same cadence, same follow-up discipline that wins listings. Prism tracks each prospect\u2019s stage so <b>your best recruits don\u2019t go cold while you\u2019re busy</b>.' },
