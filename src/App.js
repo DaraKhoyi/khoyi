@@ -6544,6 +6544,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
   const [expandedId, setExpandedId] = useState(null);
   const [showEnglish, setShowEnglish] = useState(true);
   const [uploadForm, setUploadForm] = useState({ open: false, title: '', firstSpeaker: 'me', recordedAt: new Date().toISOString().slice(0, 16), file: null });
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -6660,6 +6661,27 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
     }
   }
 
+  async function retryStuck() {
+    // Fires transcription for every recording orphaned in 'pending' (has audio,
+    // not purged). Runs through the signed-in session, same as the per-item retry.
+    // The retry cron does this automatically every 5 min; this is the manual push.
+    const stuck = recordings.filter(r => r.transcription_status === 'pending' && r.storage_path && !r.audio_purged);
+    if (!stuck.length) return;
+    setRetrying(true);
+    let ok = 0;
+    for (const rec of stuck) {
+      try {
+        await supabase.from('recordings').update({ transcription_status: 'transcribing', transcription_error: null }).eq('id', rec.id);
+        await supabase.functions.invoke('recording-transcribe', { body: { recording_id: rec.id, user_id: userId } });
+        ok++;
+      } catch (_) { /* leave it pending; the cron will try again */ }
+    }
+    await refreshRecordings();
+    if (onTranscribed) onTranscribed();
+    setRetrying(false);
+    if (window.__notify) window.__notify(`Re-running ${ok} recording${ok !== 1 ? 's' : ''} — transcribing now.`, 'success');
+  }
+
   async function retranscribe(rec) {
     if (rec.audio_purged) { setError('Audio has been purged — cannot re-transcribe.'); return; }
     await supabase.from('recordings').update({ transcription_status: 'transcribing', transcription_error: null }).eq('id', rec.id);
@@ -6673,8 +6695,7 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
     }
   }
 
-  async function deleteRecording(rec) {
-    if (!await confirmDialog(`Delete "${rec.title}"? This removes the audio AND transcript.`)) return;
+  async function deleteRecording(rec) {    if (!await confirmDialog(`Delete "${rec.title}"? This removes the audio AND transcript.`)) return;
     if (rec.storage_path) {
       await supabase.storage.from('recordings').remove([rec.storage_path]).catch(() => {});
     }
@@ -6708,9 +6729,17 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
         <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
           <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="mic" size={14} /> Recordings</span> {recordings.length > 0 && <span style={{ marginLeft: '4px', color: 'var(--text-2)' }}>({recordings.length})</span>}
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={() => setUploadForm(f => ({ ...f, open: !f.open }))} style={{ fontSize: '11px' }}>
-          {uploadForm.open ? '× Cancel' : '+ Upload audio'}
-        </button>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {recordings.some(r => r.transcription_status === 'pending' && r.storage_path && !r.audio_purged) && (
+            <button className="btn btn-ghost btn-sm" onClick={retryStuck} disabled={retrying} style={{ fontSize: '11px' }}
+              title="Re-run transcription on recordings stuck before processing">
+              {retrying ? 'Retrying…' : '↻ Retry stuck'}
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setUploadForm(f => ({ ...f, open: !f.open }))} style={{ fontSize: '11px' }}>
+            {uploadForm.open ? '× Cancel' : '+ Upload audio'}
+          </button>
+        </div>
       </div>
 
       {error && (

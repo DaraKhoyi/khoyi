@@ -78,21 +78,35 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // SECURITY: derive user_id from JWT only
-    const authHeader = req.headers.get("Authorization") || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token || token === SUPABASE_SERVICE_ROLE_KEY) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Two ways in:
+    //  (1) a signed-in user (the app) — derive user_id from their JWT.
+    //  (2) an internal caller (the stuck-recording retry cron) — presents the
+    //      shared internal token and an explicit user_id. This lets a scheduled
+    //      job re-submit a recording that got orphaned in 'pending' without
+    //      impersonating anyone. Same submit code runs either way (one place).
+    const INTERNAL_TOKEN = Deno.env.get("QCP_TOKEN") || "";
+    const internalTok = req.headers.get("x-internal-token") || "";
+    let userId: string;
+    if (INTERNAL_TOKEN && internalTok && internalTok === INTERNAL_TOKEN) {
+      userId = body.user_id;
+      if (!userId) throw new Error("user_id required for internal call");
+    } else {
+      // SECURITY: derive user_id from JWT only
+      const authHeader = req.headers.get("Authorization") || "";
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      if (!token || token === SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
     }
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const userId = user.id;
 
     // Load the recording
     const { data: rec, error: rErr } = await supabase.from("recordings")
