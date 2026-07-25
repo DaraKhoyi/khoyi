@@ -11461,19 +11461,59 @@ function Tip({ id, label = 'Why this works', children }){
   );
 }
 
-// TipFor — drops the first not-yet-seen tip for a screen from the central
-// registry (src/tips.js). One line on any screen: <TipFor screen="deals" />.
-// The registry is where new lessons get added as features ship.
+// TipFor — surfaces the teaching tips for a screen from the central registry
+// (src/tips.js). One line on any screen: <TipFor screen="deals" />.
+//
+// A feature deserves as many tips as it has distinct lessons — one is never a
+// cap. So a screen can register several, and they surface ONE PER VISIT (paced,
+// never floods) — but a curious agent can tap "Next tip" to walk the rest of a
+// screen's lessons right now instead of waiting for future visits. Each tip is
+// still marked seen on dismissal, so nothing repeats once learned.
 function TipFor({ screen }) {
   const list = TIPS_BY_SCREEN[screen];
-  if (!list || !list.length) return null;
-  let pick = null;
-  try {
-    const seen = tipsSeenList();
-    pick = list.find(t => !seen.includes(t.id)) || null;
-  } catch (_) { pick = list[0]; }
-  if (!pick) return null;
-  return <Tip id={pick.id} label={pick.label}><span dangerouslySetInnerHTML={{ __html: pick.body }} /></Tip>;
+  // Freeze the set of unseen tips for THIS mount, in registry order. Advancing
+  // with "Next" walks this list; dismissing marks each seen so it won't return.
+  const [queue] = useState(() => {
+    if (!tipsAreEnabled()) return [];
+    let seen = [];
+    try { seen = tipsSeenList(); } catch (_) {}
+    return (list || []).filter(t => !seen.includes(t.id));
+  });
+  const [idx, setIdx] = useState(0);
+  const [gone, setGone] = useState(() => {
+    // Respect the cooldown for the FIRST tip only — once the agent is actively
+    // stepping through with "Next", the cooldown shouldn't block them.
+    if (!queue.length) return true;
+    const last = tipsLastShown();
+    if (last && (Date.now() - last) < tipCooldownMs()) return true;
+    return false;
+  });
+  React.useEffect(() => { if (!gone) { try { localStorage.setItem('prism_tips_last_shown', String(Date.now())); } catch (_) {} } }, [gone]);
+
+  if (gone || idx >= queue.length) return null;
+  const cur = queue[idx];
+  const markSeen = (id) => { try { const s = tipsSeenList(); if (!s.includes(id)) { s.push(id); localStorage.setItem('prism_tips_seen', JSON.stringify(s)); } } catch (_) {} };
+  const hasNext = idx + 1 < queue.length;
+
+  const onGotIt = () => { markSeen(cur.id); setGone(true); };
+  const onNext = () => { markSeen(cur.id); setIdx(i => i + 1); };
+
+  return (
+    <div className="prism-tip">
+      <div className="prism-tip-top">
+        <span className="prism-tip-eye">✦ {cur.label}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {queue.length > 1 && (
+            <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 700, letterSpacing: '.04em' }}>{idx + 1}/{queue.length}</span>
+          )}
+          {hasNext
+            ? <button className="prism-tip-got" onClick={onNext}>Next tip →</button>
+            : <button className="prism-tip-got" onClick={onGotIt}>Got it</button>}
+        </span>
+      </div>
+      <div className="prism-tip-txt"><span dangerouslySetInnerHTML={{ __html: cur.body }} /></div>
+    </div>
+  );
 }
 function TipsSetting(){
   const [pace, setPace] = useState(effectivePace());
