@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { Tip, AriRewriteButton, ForkTuningOverlay, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notifyError, pickerInitials , decodeEntities } from '../App';
+import { Tip, AriRewriteButton, ForkTuningOverlay, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notify, notifyError, pickerInitials , decodeEntities } from '../App';
 
 const TRIAGE_CATEGORIES = {
   urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },
@@ -823,6 +823,25 @@ function InboxConnectScreen({ setView, reloadData }) {
 function MessageAttachments({ message, account }) {
   const [atts, setAtts] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [filing, setFiling] = useState(false);
+
+  // File the message's PDF/image/doc attachments into the shared library — one
+  // tap, server-side, OCR'd and searchable, and auto-linked to the sender. This
+  // is how reference material actually arrives: as an email attachment.
+  async function fileToLibrary() {
+    setFiling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('email-file-to-library', {
+        body: { account_id: account.id, message_id: message.id },
+      });
+      if (error || data?.error) throw new Error(data?.error || error?.message || 'Could not file');
+      if (data.filed === 0) notify(data.note || 'Nothing fileable on this message.', 'info');
+      else notify(`Filed ${data.filed} to your library${data.linked_to_sender ? ' — linked to the sender' : ''}. Searchable once read.`, 'success');
+    } catch (e) {
+      notifyError('Could not file to library: ' + (e?.message || e));
+    } finally { setFiling(false); }
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -865,8 +884,16 @@ function MessageAttachments({ message, account }) {
 
   return (
     <div style={{ padding: '0 16px 14px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
-        <Icon name="paperclip" size={12} /> {atts.length} attachment{atts.length !== 1 ? 's' : ''}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '6px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', flex: '1 1 auto' }}>
+          <Icon name="paperclip" size={12} /> {atts.length} attachment{atts.length !== 1 ? 's' : ''}
+        </span>
+        {atts.some(a => /^(application\/pdf|image\/|application\/(msword|vnd)|text\/plain)/.test(a.mime_type || '') && (a.size_bytes || 0) >= 3000) && (
+          <button className="btn btn-ghost btn-sm" style={{ flex: 'none' }} disabled={filing} onClick={fileToLibrary}
+            title="Save these to your searchable library, linked to the sender">
+            {filing ? 'Filing…' : '＋ File to library'}
+          </button>
+        )}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {atts.map(att => (
