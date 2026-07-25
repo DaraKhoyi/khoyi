@@ -92,24 +92,63 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
     if (!readOnlyKind(note.kind)) setTimeout(() => bodyRef.current?.focus(), 80);
   }
 
-  async function createNote() {
-    const { data, error } = await supabase.from('notes')
-      .insert({ user_id: userId, title: 'Untitled', body: '', pinned: false, kind: 'note' }).select().single();
-    if (error) { notify("Couldn't create the note.", 'error'); return; }
-    setNotes(prev => [data, ...prev]);
-    openNote(data);
+  // Draft-first: opening "New note" does NOT write a row. The note lives only in
+  // local state until it has real content — the first autosave with a non-empty
+  // title or body is what creates it. Leaving it empty (Back/close) discards the
+  // draft, so blank "Untitled" rows never accumulate in the library.
+  function createNote() {
+    setOpenDoc(null);
+    setSelected({ id: null, draft: true, title: '', body: '', kind: 'note', pinned: false });
+    setEditTitle('');
+    setEditBody('');
+    setTimeout(() => bodyRef.current?.focus(), 80);
   }
+
+  const isBlank = (t, b) => !(t || '').trim() && !(b || '').trim();
+
+  // Discard-or-keep when leaving the editor. Called by Back and by close.
+  function leaveNote() {
+    // A blank draft is simply forgotten; a blank *existing* note is deleted so
+    // we don't leave the very rows this fixes. Non-blank notes are already saved.
+    if (selected && selected.draft && isBlank(editTitle, editBody)) {
+      // never persisted — nothing to clean up
+    } else if (selected && !selected.draft && isBlank(editTitle, editBody)) {
+      const id = selected.id;
+      setNotes(prev => prev.filter(n => n.id !== id));
+      supabase.from('notes').delete().eq('id', id).then(() => {
+        supabase.from('entity_links').delete().eq('item_type', 'note').eq('item_id', id);
+      });
+    }
+    setSelected(null);
+  }
+
 
   function scheduleAutoSave(newTitle, newBody) {
     if (!selected) return;
+    // Don't create or write a row for an entirely blank note.
+    if (isBlank(newTitle, newBody)) {
+      clearTimeout(saveTimer.current);
+      return;
+    }
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       setSaving(true);
-      const { data: updated, error } = await supabase.from('notes')
-        .update({ title: newTitle || 'Untitled', body: newBody }).eq('id', selected.id).select().single();
-      if (!error && updated) {
-        setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
-        setSelected(updated);
+      if (selected.draft || !selected.id) {
+        // First real content — create the row now.
+        const { data, error } = await supabase.from('notes')
+          .insert({ user_id: userId, title: newTitle || 'Untitled', body: newBody, pinned: false, kind: 'note' })
+          .select().single();
+        if (!error && data) {
+          setNotes(prev => [data, ...prev]);
+          setSelected(data);
+        }
+      } else {
+        const { data: updated, error } = await supabase.from('notes')
+          .update({ title: newTitle || 'Untitled', body: newBody }).eq('id', selected.id).select().single();
+        if (!error && updated) {
+          setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+          setSelected(updated);
+        }
       }
       setSaving(false);
     }, 600);
@@ -234,8 +273,8 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
         ) : feed.length === 0 ? (
           <Empty icon="✦" title={query ? 'Nothing matched' : 'Nothing here yet'} sub={query ? 'Try different wording or another section.' : 'Add a note, upload a document, or file an email.'} />
         ) : feed.map(item => item._t === 'doc'
-          ? <DocRow key={'d' + item.id} item={item} active={!narrow && openDoc?.id === item.id} onOpen={() => { setSelected(null); setOpenDoc(item.raw); }} />
-          : <NoteRow key={'n' + item.id} item={item} active={!narrow && selected?.id === item.id} onOpen={() => openNote(item.raw)} onPin={togglePin} />
+          ? <DocRow key={'d' + item.id} item={item} active={!narrow && openDoc?.id === item.id} onOpen={() => { if (selected && !readOnlyKind(selected.kind)) leaveNote(); else setSelected(null); setOpenDoc(item.raw); }} />
+          : <NoteRow key={'n' + item.id} item={item} active={!narrow && selected?.id === item.id} onOpen={() => { if (selected && selected.id !== item.id && !readOnlyKind(selected.kind)) leaveNote(); openNote(item.raw); }} onPin={togglePin} />
         )}
       </div>
     </div>
@@ -256,7 +295,7 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
         background: 'var(--bg-card)', border: narrow ? 'none' : '1px solid var(--border)',
         borderRadius: narrow ? 0 : '14px', overflow: 'hidden', height: '100%' }}>
         <div style={{ padding: narrow ? '12px 4px 12px 0' : '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: '10px', flexShrink: 0 }}>
-          {narrow && <BackBtn onClick={() => setSelected(null)} />}
+          {narrow && <BackBtn onClick={() => (ro ? setSelected(null) : leaveNote())} />}
           <div style={{ flex: '1 1 0', minWidth: 0 }}>
             {ro ? (
               <div style={{ fontFamily: 'Fraunces, serif', fontWeight: 400, fontSize: '19px', lineHeight: 1.25, color: 'var(--text-1)', overflowWrap: 'anywhere' }}>{selected.title || 'Untitled'}</div>
