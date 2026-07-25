@@ -18042,7 +18042,7 @@ function AppMain() {
   const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
-  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'notes', 'prism', 'systems', 'knowledge', 'teams', 'actas', 'announcements', 'settings'];
+  const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'prism', 'systems', 'knowledge', 'teams', 'actas', 'announcements', 'settings'];
   const byNavId = Object.fromEntries(NAV.map(i => [i.id, i]));
   const usedIds = new Set([...MAIN_ORDER, ...MORE_ORDER]);
   const mainNav = MAIN_ORDER.map(id => byNavId[id]).filter(Boolean);
@@ -18096,9 +18096,10 @@ function AppMain() {
     { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
     { label: 'Phone & Text', view: 'quo', icon: 'quo', ai: true },
     { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
-    { label: 'Upload', icon: 'folder', children: [
-      { label: 'Documents', view: 'documents', icon: 'folder' },
-      { label: 'Recordings', icon: 'mic', action: () => { try { window.__attachRecording && window.__attachRecording(); } catch (_) {} } },
+    { label: 'Notes & Library', view: 'notes', icon: 'notes', ai: true },
+    { label: 'Add to Library', icon: 'folder', children: [
+      { label: 'Documents (search all)', view: 'documents', icon: 'folder' },
+      { label: 'Upload a recording', icon: 'mic', action: () => { try { window.__attachRecording && window.__attachRecording(); } catch (_) {} } },
     ] },
     { label: 'Finance Dashboard', view: 'finance', icon: 'dollar' },
     { label: 'Mileage', view: 'mileage', icon: 'car' },
