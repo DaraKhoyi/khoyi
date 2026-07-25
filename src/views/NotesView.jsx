@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { HeaderSearchIcon, HeaderSearchInput, Icon, confirmDialog, notify } from '../App';
 
@@ -13,6 +13,16 @@ function NotesView({ notes, setNotes, userId }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const saveTimer = useRef(null);
   const bodyRef = useRef(null);
+  // On a phone the screen shows ONE thing at a time — the list, or the reader —
+  // never a squeezed two-pane. The old layout forced a 260px list + editor onto
+  // a 390px screen, which starved the editor to ~40px and wrapped titles one
+  // letter per line. Single column below 820px; two-pane above it.
+  const [narrow, setNarrow] = useState(typeof window !== 'undefined' && window.innerWidth < 820);
+  useEffect(() => {
+    const onResize = () => setNarrow(window.innerWidth < 820);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Open a note
   function openNote(note) {
@@ -101,162 +111,172 @@ function NotesView({ notes, setNotes, userId }) {
   const unpinned = filtered.filter(n => !n.pinned);
   const sorted = [...pinned, ...unpinned];
 
-  return (
-    <div style={{ display: 'flex', gap: '18px', height: 'calc(100dvh - 64px)' }}>
-
-      {/* ── LEFT: note list ── */}
-      <div style={{ width: '260px', minWidth: '260px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap:'8px' }}>
-          <div style={{minWidth:0, flex:1}}>
-            <h2 style={{ fontSize: '22px', fontWeight: 700, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="notes" size={26} style={{color:'var(--accent)',flexShrink:0}} />Notes</h2>
-            <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>{notes.length} note{notes.length !== 1 ? 's' : ''}</p>
-          </div>
-          <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
-            <HeaderSearchIcon
-              value={search}
-              open={searchOpen}
-              onToggle={() => setSearchOpen(o => !o)}
-            />
-            <button className="btn-add-circle btn-add-circle-sm" onClick={createNote} title="New Note" aria-label="New Note">+</button>
-          </div>
+  // ── LIST (shared by phone + desktop) ────────────────────────────────────────
+  const listPane = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', minHeight: 0,
+      width: narrow ? '100%' : '320px', flex: narrow ? '1 1 auto' : '0 0 320px' }}>
+      {/* Title row — Fraunces headline over a count, the house pattern. */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+        <div style={{ minWidth: 0, flex: '1 1 0' }}>
+          <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--accent)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Library</div>
+          <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 28, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '2px 0 0', overflowWrap: 'anywhere' }}>Notes &amp; more</h1>
+          <p style={{ fontSize: '11.5px', color: 'var(--text-3)', marginTop: '2px' }}>{filtered.length} of {notes.length} item{notes.length !== 1 ? 's' : ''}</p>
         </div>
-
-        {/* Search input — only renders when the header magnifier is toggled open.
-            Icon gets an accent dot when a query is active but the bar is closed. */}
-        {searchOpen && (
-          <HeaderSearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="🔍 Search notes…"
-            onClose={() => setSearchOpen(false)}
-            style={{marginBottom:0}}
-          />
-        )}
-
-        {/* Kind filter — the one library, sliced. Journal and call transcripts
-            live here too now, searchable alongside hand-written notes. */}
-        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '4px' }}>
-          {[['all','All'],['note','Notes'],['journal','Journal'],['recording','Calls']].map(([k,label]) => (
-            <button key={k} onClick={() => setKindFilter(k)}
-              style={{ fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '100px', cursor: 'pointer',
-                border: '1px solid ' + (kindFilter === k ? 'var(--accent)' : 'var(--border)'),
-                background: kindFilter === k ? 'var(--accent-glow)' : 'transparent',
-                color: kindFilter === k ? 'var(--accent)' : 'var(--text-3)' }}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* List */}
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {sorted.length === 0 && (
-            <div className="empty-state"><div className="empty-icon"><Icon name="notes" size={28} /></div><p>No notes yet.<br/>Hit + New to start.</p></div>
-          )}
-          {sorted.map(note => (
-            <div
-              key={note.id}
-              onClick={() => openNote(note)}
-              style={{
-                background: selected?.id === note.id ? 'var(--accent-glow)' : 'var(--bg-card)',
-                border: `1px solid ${selected?.id === note.id ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: '10px', padding: '12px 14px', cursor: 'pointer',
-                transition: 'all 0.12s',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {note.pinned && <span style={{ color: 'var(--accent)', marginRight: '4px' }}><Icon name="pin" size={12} /></span>}
-                    {note.title || 'Untitled'}
-                  </div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--text-3)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {note.body?.slice(0, 50) || 'Empty note'}
-                  </div>
-                  <div style={{ fontSize: '10.5px', color: 'var(--text-3)', marginTop: '4px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    {(note.kind && note.kind !== 'note') && (
-                      <span style={{ fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', fontSize: '9px', color: (KIND_META[note.kind] || [,'var(--text-3)'])[1] }}>{(KIND_META[note.kind] || ['',''])[0]}</span>
-                    )}
-                    {timeAgo(note.updated_at)}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flexShrink: 0 }}>
-                  <button
-                    onClick={e => togglePin(note, e)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: note.pinned ? 1 : 0.3, padding: '1px' }}
-                    title={note.pinned ? 'Unpin' : 'Pin'}
-                  ><Icon name="pin" size={14} /></button>
-                  {!readOnlyKind(note.kind) && (
-                    <button
-                      onClick={e => deleteNote(note, e)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-3)', padding: '1px' }}
-                      title="Delete"
-                    ><Icon name="trash" size={14} /></button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, paddingTop: 2 }}>
+          <HeaderSearchIcon value={search} open={searchOpen} onToggle={() => setSearchOpen(o => !o)} />
+          <button className="btn-add-circle btn-add-circle-sm" onClick={createNote} title="New note" aria-label="New note">+</button>
         </div>
       </div>
 
-      {/* ── RIGHT: editor ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', minWidth: 0 }}>
-        {!selected ? (
-          <div className="empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="empty-icon"><Icon name="notes" size={28} /></div>
-            <p>Select a note or create a new one</p>
-            <button className="btn-add-circle btn-add-circle-lg" style={{ marginTop: '14px' }} onClick={createNote} title="New Note" aria-label="New Note">+</button>
-          </div>
-        ) : (
-          <>
-            {/* Editor header */}
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-              <input
-                className="form-input"
-                value={editTitle}
-                onChange={handleTitleChange}
-                readOnly={readOnlyKind(selected.kind)}
-                placeholder="Note title…"
-                style={{ fontSize: '16px', fontWeight: 700, background: 'transparent', border: '1px solid transparent', padding: '6px 8px', flex: 1 }}
-                onFocus={e => { if (!readOnlyKind(selected.kind)) e.target.style.borderColor = 'var(--accent)'; }}
-                onBlur={e => e.target.style.borderColor = 'transparent'}
-              />
-              <span style={{ fontSize: '11px', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-                {readOnlyKind(selected.kind)
-                  ? (selected.kind === 'journal' ? 'Journal · read-only' : 'Call transcript · read-only')
-                  : (saving ? <><Icon name="save" size={12} /> Saving…</> : '✓ Saved')}
-              </span>
-            </div>
+      {searchOpen && (
+        <HeaderSearchInput value={search} onChange={setSearch} placeholder="Search everything…" onClose={() => setSearchOpen(false)} style={{ marginBottom: 0 }} />
+      )}
 
-            {/* Body */}
-            <textarea
-              ref={bodyRef}
-              value={editBody}
-              onChange={handleBodyChange}
-              readOnly={readOnlyKind(selected.kind)}
-              placeholder="Start writing…&#10;&#10;Use this space for project notes, build ideas, meeting notes — anything you want to save."
-              style={{
-                flex: 1, resize: 'none', background: 'transparent', border: 'none',
-                outline: 'none', padding: '20px', fontSize: '14px', lineHeight: '1.75',
-                color: readOnlyKind(selected.kind) ? 'var(--text-2)' : 'var(--text-1)', fontFamily: 'inherit',
-                overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-              }}
-            />
+      {/* Filter chips — one row, scrollable rather than wrapping, so they never
+          reflow the header at large type. */}
+      <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px', WebkitOverflowScrolling: 'touch', flexShrink: 0 }}>
+        {[['all', 'All'], ['note', 'Notes'], ['journal', 'Journal'], ['recording', 'Calls']].map(([k, label]) => (
+          <button key={k} onClick={() => setKindFilter(k)}
+            style={{ flex: 'none', fontSize: '12px', fontWeight: 700, padding: '6px 14px', borderRadius: '100px', cursor: 'pointer',
+              border: '1px solid ' + (kindFilter === k ? 'var(--accent)' : 'var(--border)'),
+              background: kindFilter === k ? 'var(--accent-glow)' : 'transparent',
+              color: kindFilter === k ? 'var(--accent)' : 'var(--text-2)', whiteSpace: 'nowrap' }}>
+            {label}
+          </button>
+        ))}
+      </div>
 
-            {/* Footer */}
-            <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
-                {editBody.split(/\s+/).filter(Boolean).length} words · {editBody.length} chars
-              </span>
-              <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
-                Last updated {timeAgo(selected?.updated_at)}
-              </span>
-            </div>
-          </>
+      <div style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {sorted.length === 0 && (
+          <div className="empty-state"><div className="empty-icon"><Icon name="notes" size={28} /></div><p>Nothing here yet.</p></div>
         )}
+        {sorted.map(note => {
+          const meta = KIND_META[note.kind] || KIND_META.note;
+          const active = !narrow && selected?.id === note.id;
+          return (
+            <div key={note.id} onClick={() => openNote(note)}
+              style={{
+                background: active ? 'var(--accent-glow)' : 'var(--bg-card)',
+                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: '12px', padding: '13px 15px', cursor: 'pointer', transition: 'border-color .12s',
+                display: 'flex', alignItems: 'flex-start', gap: '12px',
+              }}>
+              {/* colour tick keyed to kind — a calm way to tell notes / journal /
+                  calls apart at a glance without a loud badge on every row. */}
+              <span style={{ flex: 'none', width: '3px', alignSelf: 'stretch', borderRadius: '2px', background: meta[1], opacity: note.kind && note.kind !== 'note' ? 0.9 : 0.25 }} />
+              <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ flex: '1 1 0', minWidth: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {note.pinned && <span style={{ color: 'var(--accent)', marginRight: '5px' }}><Icon name="pin" size={11} /></span>}
+                    {note.title || 'Untitled'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {(note.body || '').replace(/[•\n]/g, ' ').trim().slice(0, 64) || 'Empty'}
+                </div>
+                <div style={{ fontSize: '10.5px', color: 'var(--text-3)', marginTop: '6px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {note.kind && note.kind !== 'note' && (
+                    <span style={{ fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', fontSize: '9px', color: meta[1] }}>{meta[0]}</span>
+                  )}
+                  <span>{timeAgo(note.updated_at)}</span>
+                </div>
+              </div>
+              {/* pin only in the list; delete lives in the reader so the row is a
+                  clean tap target and a mis-tap cannot destroy anything. */}
+              {!readOnlyKind(note.kind) && (
+                <button onClick={e => togglePin(note, e)} title={note.pinned ? 'Unpin' : 'Pin'}
+                  style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', opacity: note.pinned ? 1 : 0.35, padding: '2px' }}>
+                  <Icon name="pin" size={15} />
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
+
+  // ── READER / EDITOR ─────────────────────────────────────────────────────────
+  const ro = selected && readOnlyKind(selected.kind);
+  const readerPane = selected ? (
+    <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column',
+      background: 'var(--bg-card)', border: narrow ? 'none' : '1px solid var(--border)',
+      borderRadius: narrow ? 0 : '14px', overflow: 'hidden', height: '100%' }}>
+      {/* Header: on phone a real back button returns to the list; the title is
+          Fraunces and allowed to WRAP to two lines, never truncated to a stripe. */}
+      <div style={{ padding: narrow ? '12px 4px 12px 0' : '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: '10px', flexShrink: 0 }}>
+        {narrow && (
+          <button onClick={() => setSelected(null)} aria-label="Back to list"
+            style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '15px', fontWeight: 700, padding: '4px 10px' }}>
+            ‹ Back
+          </button>
+        )}
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          {ro ? (
+            <div style={{ fontFamily: 'Fraunces, serif', fontWeight: 400, fontSize: '19px', lineHeight: 1.25, color: 'var(--text-1)', overflowWrap: 'anywhere' }}>{selected.title || 'Untitled'}</div>
+          ) : (
+            <input className="form-input" value={editTitle} onChange={handleTitleChange} placeholder="Title…"
+              style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'Fraunces, serif', fontSize: '19px', fontWeight: 400, background: 'transparent', border: '1px solid transparent', padding: '4px 6px' }}
+              onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = 'transparent'} />
+          )}
+          <div style={{ fontSize: '10.5px', color: 'var(--text-3)', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {selected.kind && selected.kind !== 'note' && (
+              <span style={{ fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', fontSize: '9px', color: (KIND_META[selected.kind] || KIND_META.note)[1] }}>
+                {(KIND_META[selected.kind] || KIND_META.note)[0]}{ro ? ' · read-only' : ''}
+              </span>
+            )}
+            <span>{ro ? 'Updated ' + timeAgo(selected.updated_at) : (saving ? 'Saving…' : 'Saved')}</span>
+          </div>
+        </div>
+        {!ro && (
+          <button onClick={e => deleteNote(selected, e)} title="Delete" aria-label="Delete note"
+            style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '4px' }}>
+            <Icon name="trash" size={16} />
+          </button>
+        )}
+      </div>
+
+      {ro ? (
+        // A record: rendered, not editable. Preserve line breaks and bullets.
+        <div style={{ flex: '1 1 0', overflowY: 'auto', padding: narrow ? '18px 4px' : '22px 24px', fontSize: '14px', lineHeight: 1.7, color: 'var(--text-1)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', WebkitOverflowScrolling: 'touch' }}>
+          {selected.body || ''}
+        </div>
+      ) : (
+        <textarea ref={bodyRef} value={editBody} onChange={handleBodyChange} placeholder="Start writing…"
+          style={{ flex: '1 1 0', resize: 'none', background: 'transparent', border: 'none', outline: 'none',
+            padding: narrow ? '18px 4px' : '22px 24px', fontSize: '14px', lineHeight: 1.7, color: 'var(--text-1)', fontFamily: 'inherit', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }} />
+      )}
+
+      {!ro && (
+        <div style={{ padding: '9px 20px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+          <span style={{ fontSize: '10.5px', color: 'var(--text-3)' }}>{editBody.split(/\s+/).filter(Boolean).length} words · {editBody.length} chars</span>
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="empty-state" style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="empty-icon"><Icon name="notes" size={28} /></div>
+      <p>Select something to read</p>
+    </div>
+  );
+
+  // ── LAYOUT ──────────────────────────────────────────────────────────────────
+  // Phone: ONE pane at a time — the reader replaces the list when open.
+  // Desktop: list + reader side by side.
+  if (narrow) {
+    return (
+      <div style={{ height: 'calc(100dvh - 64px)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {selected ? readerPane : listPane}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', gap: '20px', height: 'calc(100dvh - 64px)', minHeight: 0 }}>
+      {listPane}
+      {readerPane}
+    </div>
+  );
+
 }
 
 // ─────────────────────────────────────────
