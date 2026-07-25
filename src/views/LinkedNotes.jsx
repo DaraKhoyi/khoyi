@@ -142,14 +142,16 @@ export default function LinkedNotes({ userId, targetType, targetId, title = 'Not
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10.5, color: 'var(--text-3)', flex: '1 1 auto' }}>
                   {new Date(n.updated_at || n.created_at).toLocaleDateString()}
-                  {n.kind === 'journal' ? ' · journal' : ''}
+                  {n.kind === 'journal' ? ' · journal' : n.kind === 'recording' ? ' · call transcript' : ''}
                 </span>
-                {n.kind !== 'journal' && (
+                {n.kind !== 'journal' && n.kind !== 'recording' && (
                   <button onClick={() => { setEditing(n.id); setEditBody(n.body || ''); }}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Edit</button>
                 )}
-                <button onClick={() => remove(n)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Delete</button>
+                {n.kind !== 'recording' && (
+                  <button onClick={() => remove(n)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Delete</button>
+                )}
               </div>
             </>
           )}

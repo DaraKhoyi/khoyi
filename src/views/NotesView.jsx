@@ -8,6 +8,7 @@ function NotesView({ notes, setNotes, userId }) {
   const [editBody, setEditBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState('all');   // all | note | journal | recording
   // Search input collapses into a header icon; open it on demand.
   const [searchOpen, setSearchOpen] = useState(false);
   const saveTimer = useRef(null);
@@ -89,10 +90,13 @@ function NotesView({ notes, setNotes, userId }) {
     return new Date(ts).toLocaleDateString();
   }
 
-  const filtered = notes.filter(n =>
-    n.title.toLowerCase().includes(search.toLowerCase()) ||
-    (n.body || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = notes.filter(n => {
+    if (kindFilter !== 'all' && (n.kind || 'note') !== kindFilter) return false;
+    const q = search.toLowerCase();
+    return n.title.toLowerCase().includes(q) || (n.body || '').toLowerCase().includes(q);
+  });
+  const KIND_META = { note: ['Note', 'var(--text-3)'], journal: ['Journal', '#8b9dc3'], recording: ['Call', '#c39a6b'] };
+  const readOnlyKind = (k) => k === 'journal' || k === 'recording';
   const pinned = filtered.filter(n => n.pinned);
   const unpinned = filtered.filter(n => !n.pinned);
   const sorted = [...pinned, ...unpinned];
@@ -129,6 +133,20 @@ function NotesView({ notes, setNotes, userId }) {
           />
         )}
 
+        {/* Kind filter — the one library, sliced. Journal and call transcripts
+            live here too now, searchable alongside hand-written notes. */}
+        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '4px' }}>
+          {[['all','All'],['note','Notes'],['journal','Journal'],['recording','Calls']].map(([k,label]) => (
+            <button key={k} onClick={() => setKindFilter(k)}
+              style={{ fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '100px', cursor: 'pointer',
+                border: '1px solid ' + (kindFilter === k ? 'var(--accent)' : 'var(--border)'),
+                background: kindFilter === k ? 'var(--accent-glow)' : 'transparent',
+                color: kindFilter === k ? 'var(--accent)' : 'var(--text-3)' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {sorted.length === 0 && (
@@ -154,7 +172,12 @@ function NotesView({ notes, setNotes, userId }) {
                   <div style={{ fontSize: '11.5px', color: 'var(--text-3)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {note.body?.slice(0, 50) || 'Empty note'}
                   </div>
-                  <div style={{ fontSize: '10.5px', color: 'var(--text-3)', marginTop: '4px' }}>{timeAgo(note.updated_at)}</div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-3)', marginTop: '4px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    {(note.kind && note.kind !== 'note') && (
+                      <span style={{ fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', fontSize: '9px', color: (KIND_META[note.kind] || [,'var(--text-3)'])[1] }}>{(KIND_META[note.kind] || ['',''])[0]}</span>
+                    )}
+                    {timeAgo(note.updated_at)}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flexShrink: 0 }}>
                   <button
@@ -162,11 +185,13 @@ function NotesView({ notes, setNotes, userId }) {
                     style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', opacity: note.pinned ? 1 : 0.3, padding: '1px' }}
                     title={note.pinned ? 'Unpin' : 'Pin'}
                   ><Icon name="pin" size={14} /></button>
-                  <button
-                    onClick={e => deleteNote(note, e)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-3)', padding: '1px' }}
-                    title="Delete"
-                  ><Icon name="trash" size={14} /></button>
+                  {!readOnlyKind(note.kind) && (
+                    <button
+                      onClick={e => deleteNote(note, e)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-3)', padding: '1px' }}
+                      title="Delete"
+                    ><Icon name="trash" size={14} /></button>
+                  )}
                 </div>
               </div>
             </div>
@@ -190,13 +215,16 @@ function NotesView({ notes, setNotes, userId }) {
                 className="form-input"
                 value={editTitle}
                 onChange={handleTitleChange}
+                readOnly={readOnlyKind(selected.kind)}
                 placeholder="Note title…"
                 style={{ fontSize: '16px', fontWeight: 700, background: 'transparent', border: '1px solid transparent', padding: '6px 8px', flex: 1 }}
-                onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                onFocus={e => { if (!readOnlyKind(selected.kind)) e.target.style.borderColor = 'var(--accent)'; }}
                 onBlur={e => e.target.style.borderColor = 'transparent'}
               />
               <span style={{ fontSize: '11px', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-                {saving ? <><Icon name="save" size={12} /> Saving…</> : '✓ Saved'}
+                {readOnlyKind(selected.kind)
+                  ? (selected.kind === 'journal' ? 'Journal · read-only' : 'Call transcript · read-only')
+                  : (saving ? <><Icon name="save" size={12} /> Saving…</> : '✓ Saved')}
               </span>
             </div>
 
@@ -205,11 +233,12 @@ function NotesView({ notes, setNotes, userId }) {
               ref={bodyRef}
               value={editBody}
               onChange={handleBodyChange}
+              readOnly={readOnlyKind(selected.kind)}
               placeholder="Start writing…&#10;&#10;Use this space for project notes, build ideas, meeting notes — anything you want to save."
               style={{
                 flex: 1, resize: 'none', background: 'transparent', border: 'none',
                 outline: 'none', padding: '20px', fontSize: '14px', lineHeight: '1.75',
-                color: 'var(--text-1)', fontFamily: 'inherit',
+                color: readOnlyKind(selected.kind) ? 'var(--text-2)' : 'var(--text-1)', fontFamily: 'inherit',
                 overflowY: 'auto', WebkitOverflowScrolling: 'touch',
               }}
             />
