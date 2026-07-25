@@ -288,13 +288,13 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   if (narrow) {
     const showingReader = !!selected || !!openDoc;
     return (
-      <div style={{ height: 'calc(100dvh - 64px)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ height: 'calc(100dvh - 64px - 76px)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {showingReader ? readerPane : listPane}
       </div>
     );
   }
   return (
-    <div style={{ display: 'flex', gap: '20px', height: 'calc(100dvh - 64px)', minHeight: 0 }}>
+    <div style={{ display: 'flex', gap: '20px', height: 'calc(100dvh - 64px - 76px)', minHeight: 0 }}>
       {listPane}
       {readerPane}
     </div>

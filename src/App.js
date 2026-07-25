@@ -1325,7 +1325,7 @@ function OnboardingModal({ userId, userEmail, onComplete, onClose, initial }) {
 // ─────────────────────────────────────────
 // CHAT VIEW
 // ─────────────────────────────────────────
-function ChatView({ robots, userId }) {
+function ChatView({ robots, userId, hasModeBar }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -1664,7 +1664,7 @@ function ChatView({ robots, userId }) {
   const canSend = (input.trim() || pendingImageFile) && !sending && !uploadingImage;
 
   return (
-    <div className="chat-wrap ww-prism">
+    <div className={"chat-wrap ww-prism" + (hasModeBar ? " has-modebar" : "")}>
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .chat-robot-name{font-family:'Fraunces',serif;color:#F6F1E7;} .ww-prism .chat-bubble.assistant{background:linear-gradient(180deg,#1B1610,#18130D);border:1px solid rgba(203,163,92,.22);color:#F6F1E7;} .ww-prism .chat-bubble.user{background:rgba(203,163,92,.15);border:1px solid rgba(203,163,92,.32);color:#F6F1E7;}`}</style>
       {/* Robot header */}
       <div className="chat-robot-header">
@@ -18316,7 +18316,7 @@ function AppMain() {
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks} focusEventId={focusEventId} setFocusEventId={setFocusEventId}/>
               : view==='notes'       ? <NotesView notes={notes} setNotes={setNotes} userId={user.id} initialSub={deepLink.view==='notes'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='journal'     ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><JournalView userId={user.id}/></div>
-              : view==='chat'        ? <ChatView robots={robots} userId={user.id}/>
+              : view==='chat'        ? <ChatView robots={robots} userId={user.id} hasModeBar={!!activeMode}/>
               : view==='prism'       ? <PrismView profiles={profiles} setProfiles={setProfiles} voiceCards={voiceCards} setVoiceCards={setVoiceCards} contacts={contacts} userId={user.id}/>
               : view==='my_prism'    ? <MyPrismView userId={user.id} user={user}/>
               : view==='disc_test'   ? <DiscAssessmentView userId={user.id} user={user} profiles={profiles} setProfiles={setProfiles}/>
