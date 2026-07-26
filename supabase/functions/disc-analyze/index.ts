@@ -281,7 +281,7 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
       .select("research_summary, research_primary, research_secondary, research_confidence, research_scope, research_taken_at, research_d_score, research_i_score, research_s_score, research_c_score")
       .eq("contact_id", contact.id)
       .maybeSingle();
-    if (profile && profile.research_taken_at && profile.research_summary) {
+    if (profile && profile.research_taken_at && (profile.research_summary || profile.research_d_score !== null)) {
       const lines: string[] = [];
       lines.push(`Web research read (scope: ${profile.research_scope || 'both'}, confidence: ${profile.research_confidence || 'tentative'}):`);
       if (profile.research_primary) {
@@ -290,8 +290,10 @@ async function gatherEvidence(supabase: any, userId: string, contact: any): Prom
       if (profile.research_d_score !== null && profile.research_d_score !== undefined) {
         lines.push(`Inferred scores — D:${profile.research_d_score} I:${profile.research_i_score} S:${profile.research_s_score} C:${profile.research_c_score}`);
       }
-      lines.push(`Key public-evidence observations:`);
-      lines.push(profile.research_summary);
+      if (profile.research_summary) {
+        lines.push(`Key public-evidence observations:`);
+        lines.push(profile.research_summary);
+      }
       evidence.push({
         ref: `research:${contact.id}`,
         kind: "research_read",

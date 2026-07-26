@@ -241,6 +241,60 @@ serve(async (req) => {
       else await supabase.from("profiles").insert({ contact_id, user_id: contact.user_id, subject_kind: "contact", ...fields });
     };
 
+    // ── EXTRACT-ONLY MODE ────────────────────────────────────────────────────
+    // Recover structured DISC scores + fields from a report that already exists
+    // but never got parsed (the model returned prose without the JSON block).
+    // No web research — one cheap call over the saved report. Used to backfill
+    // profiles left with a readable report but null scores (flat-50s DISC bug).
+    if (body.extract_only) {
+      const { data: prof0 } = await supabase.from("profiles").select("research_full_report, research_d_score, research_needs_confirmation").eq("contact_id", contact_id).maybeSingle();
+      const report = prof0?.research_full_report || "";
+      if (!report || report.trim().length < 300) return J({ ok: false, reason: "no report to extract from" });
+      if (prof0.research_d_score !== null && prof0.research_d_score !== undefined && !body.force) return J({ ok: true, already: true });
+      try {
+        const exResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": useKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6", max_tokens: 1500,
+            messages: [{ role: "user", content: `From the relationship-intelligence report below, output ONLY a JSON object (no prose, no fences) with keys: headline (string), background_education (string|null), career (string|null), expertise (string[]), community_media (string[]), interests_values (string[]), causes (string[]), personal (string|null), connection_plan (string|null), overlaps_with_me (string[]), disc {d_score,i_score,s_score,c_score (0-100, D+I+S+C sum ~200), primary, secondary, confidence ("tentative"|"reasonably_confident"), key_evidence (string[])}. If behavior truly can't be read, set disc scores null. REPORT:\n\n${report.slice(0, 18000)}` }],
+          }),
+        });
+        if (!exResp.ok) return J({ ok: false, reason: "extract call failed " + exResp.status });
+        const exData = await exResp.json();
+        await logUsage(supabase, { userId: billUserId, fn: "contact-research-extract", model: "claude-sonnet-4-6", usage: exData.usage, usedOwn });
+        const exText = (exData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        const d = extractJson(exText) || {};
+        const disc2 = d.disc || {};
+        const exSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
+        await writeProfile({
+          research_headline: d.headline ?? null,
+          research_summary: exSummary,
+          research_profile: { background_education: d.background_education ?? null, career: d.career ?? null, expertise: d.expertise ?? [], community_media: d.community_media ?? [], interests_values: d.interests_values ?? [], causes: d.causes ?? [] },
+          research_personal: d.personal ?? null,
+          research_connection_plan: d.connection_plan ?? null,
+          research_overlaps: d.overlaps_with_me ?? [],
+          research_d_score: disc2.d_score ?? null, research_i_score: disc2.i_score ?? null,
+          research_s_score: disc2.s_score ?? null, research_c_score: disc2.c_score ?? null,
+          research_primary: disc2.primary ?? null, research_secondary: disc2.secondary ?? null,
+          research_confidence: disc2.confidence ?? null,
+        });
+        // Fold into the live DISC only if this match doesn't still need confirming.
+        if (!prof0.research_needs_confirmation) {
+          try {
+          await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/disc-analyze`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") },
+            body: JSON.stringify({ contact_id, user_id: contact.user_id, force: true }),
+          });
+        } catch (_) {}
+        }
+        return J({ ok: true, disc: disc2, folded: !prof0.research_needs_confirmation });
+      } catch (e) {
+        return J({ ok: false, reason: String(e?.message || e) });
+      }
+    }
+
     const runResearch = async () => {
       try {
         const controller = new AbortController();
@@ -325,7 +379,11 @@ serve(async (req) => {
         // it's the right person. A medium/low match must not seed the analysis.
         if (!needsConfirmation) {
           try {
-            await supabase.functions.invoke("disc-analyze", { body: { contact_id, user_id: contact.user_id, force: true } });
+            await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/disc-analyze`, {
+              method: "POST",
+              headers: { "content-type": "application/json", "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") },
+              body: JSON.stringify({ contact_id, user_id: contact.user_id, force: true }),
+            });
           } catch (_) { /* non-fatal */ }
         }
       } catch (e) {
