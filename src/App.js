@@ -8972,6 +8972,18 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   // Identify candidates for this contact, then either auto-run (locked) or
   // prompt for candidate selection (strong/weak/insufficient).
   async function startResearch(hint) {
+    // If a completed report already exists, SHOW IT — don't blindly re-identify.
+    // Re-identification is flaky and can come back empty, which previously buried
+    // a saved 23k-char profile behind a false "no profiles found" error. A refresh
+    // is only forced when the user passes an explicit hint (the "search with this
+    // detail" path) or clicks Re-run.
+    if (!hint && profile && profile.research_status === 'done' &&
+        (profile.research_full_report || profile.research_profile)) {
+      setShowResearchModal(false);
+      setShowResearchReport(true);
+      setResearchStage('idle');
+      return;
+    }
     setResearchStage('identifying');
     setResearchError(null);
     setResearchCandidates([]);
@@ -8983,6 +8995,14 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         return;
       }
       if ((candidates || []).length === 0) {
+        // If we already have a saved report, don't dead-end — the identify step is
+        // flaky and a prior run may have succeeded. Offer the existing profile.
+        if (profile && profile.research_status === 'done' && (profile.research_full_report || profile.research_profile)) {
+          setShowResearchModal(false);
+          setShowResearchReport(true);
+          setResearchStage('idle');
+          return;
+        }
         setResearchError('No matching public profiles found. Try adding more identifiers (email, phone, employer) to the contact.');
         setResearchStage('error');
         return;
