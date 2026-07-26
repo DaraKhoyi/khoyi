@@ -7134,7 +7134,7 @@ function QuoTextModal({ contact, userId, defaultText = '', phone, onClose, onSen
   );
 }
 
-function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, userId, onClose, onLogged }) {
+function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, userId, onClose, onLogged, onSent }) {
 
   useBackClose(onClose);
   const candidates = (() => {
@@ -7268,6 +7268,16 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
       if (se) throw se;
       if (sr?.error) throw new Error(sr.error);
       await logSent('email', bodyText);
+      // Flip the contact to "you replied last" IMMEDIATELY — both DB and (via
+      // onSent) the in-memory card — instead of waiting for the background comms
+      // recompute. Otherwise the card keeps showing "↓ They / you owe a reply"
+      // for minutes after you actually replied.
+      if (recipient?.id) {
+        const nowIso = new Date().toISOString();
+        const patch = { last_outbound_at: nowIso, last_contact_at: nowIso, last_communication_direction: 'outbound', comms_settled_at: null };
+        supabase.from('contacts').update(patch).eq('id', recipient.id).then(() => {});
+        if (onSent) onSent(recipient.id, patch);
+      }
       notify('Follow-up sent to ' + recipient.email, 'success');
       onClose();
     } catch (e) {
@@ -7310,6 +7320,12 @@ function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, user
       if (!from) throw new Error('No Quo number is selected for your account yet. Open the Quo tab and pick YOUR number before sending.');
       await quoCall('/v1/messages', { method: 'POST', body: { content: bodyText, from, to: [to] } });
       await logSent('text', bodyText);
+      if (recipient?.id) {
+        const nowIso = new Date().toISOString();
+        const patch = { last_outbound_at: nowIso, last_contact_at: nowIso, last_communication_direction: 'outbound', comms_settled_at: null };
+        supabase.from('contacts').update(patch).eq('id', recipient.id).then(() => {});
+        if (onSent) onSent(recipient.id, patch);
+      }
       notify('Text sent via Quo to ' + (recipient.name || to), 'success');
       onClose();
     } catch (e) {
@@ -8244,6 +8260,7 @@ function ActivityTimeline({ entityType = 'contact', entityId, contact = null, us
           userId={userId}
           onClose={() => setFollowupFor(null)}
           onLogged={(row) => setTimeline(prev => [row, ...prev])}
+          onSent={(cid, patch) => { if (onContactPatch) onContactPatch(patch); }}
         />
       )}
     </div>
@@ -9326,7 +9343,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
         )}
         {textTo && <QuoTextModal contact={contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
-        {emailComposeOpen && <FollowupDraftModal entry={{ entity_type:'contact', entity_id:contact.id, mentions:[contact.id] }} contacts={contacts} defaultContact={contact} userId={userId} onClose={()=>setEmailComposeOpen(false)} />}
+        {emailComposeOpen && <FollowupDraftModal entry={{ entity_type:'contact', entity_id:contact.id, mentions:[contact.id] }} contacts={contacts} defaultContact={contact} userId={userId} onClose={()=>setEmailComposeOpen(false)} onSent={(cid, patch) => { Object.assign(contact, patch); if (setContacts) setContacts(prev => prev.map(c => c.id === cid ? { ...c, ...patch } : c)); }} />}
 
         <div style={{padding:'13px 16px 10px'}}>
           <div className="seg-track" style={{display:'flex',gap:'2px'}}>
