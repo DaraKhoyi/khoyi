@@ -8964,7 +8964,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
       return { primary: a[0][0], secondary: (a[1][1] >= 50 && a[0][1] - a[1][1] <= 20) ? a[1][0] : null };
     };
     const baseline = has(p.baseline_d_score) ? { D: p.baseline_d_score, I: p.baseline_i_score, S: p.baseline_s_score, C: p.baseline_c_score } : null;
-    const observed = p.last_analyzed_at ? { D: p.d_score ?? 50, I: p.i_score ?? 50, S: p.s_score ?? 50, C: p.c_score ?? 50 } : null;
+    // A 'pending' analysis with all-zero scores is an un-run placeholder, not a
+    // real observation — treat it as no observation so we fall through to the
+    // research read (Layer 3) instead of rendering flat zeros.
+    const _obsZeroed = (p.analysis_status === 'pending') && !p.d_score && !p.i_score && !p.s_score && !p.c_score;
+    const observed = (p.last_analyzed_at && !_obsZeroed) ? { D: p.d_score ?? 50, I: p.i_score ?? 50, S: p.s_score ?? 50, C: p.c_score ?? 50 } : null;
     const research = has(p.research_d_score) ? { D: p.research_d_score, I: p.research_i_score, S: p.research_s_score, C: p.research_c_score } : null;
     const directMass = observed ? (p.signals_count || 0) : 0;
     const obsConf = observed ? (p.confidence_pct || 0) : 0;
