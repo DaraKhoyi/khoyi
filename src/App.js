@@ -9508,7 +9508,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
               <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-1)',display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="target" size={15} /> Behavioral Signal (DISC)</div>
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchModal(true)} style={{fontSize:'11px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { if (hasResearch && profile?.research_full_report) { setShowResearchReport(true); } else { setShowResearchModal(true); } }} style={{fontSize:'11px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
                   <Icon name="search" size={13} /> {hasResearch ? 'View research' : 'Research from web'}
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={reanalyze} disabled={analyzing || resetting} style={{fontSize:'11px',display:'inline-flex',alignItems:'center',gap:'5px'}}>
@@ -9626,15 +9626,23 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
           </div>
 
           <RelationshipIntel profile={profile} onConfirm={async (cid) => {
-            // Confirm the web match is the right person: clear the flag so the
-            // research folds into the DISC read. Simple, reversible (re-flagging
-            // isn't needed — purge remains available if they change their mind).
+            // Confirm the web match: clear the flag AND actually fold the research
+            // into the behavioral read. Clearing the boolean alone did nothing —
+            // the live DISC is recomputed by disc-analyze, which only now (post-
+            // confirm) folds in the research scores. If research scores are missing
+            // (extraction can fail), disc-analyze still re-reads all evidence.
             try {
               const { data, error } = await supabase.from('profiles')
                 .update({ research_needs_confirmation: false }).eq('contact_id', cid).select().single();
               if (error) { setAnalyzeMsg && setAnalyzeMsg({ type: 'error', text: 'Confirm failed: ' + error.message }); return; }
               if (data) onProfileUpdate(data);
-              setAnalyzeMsg && setAnalyzeMsg({ type: 'ok', text: 'Confirmed — research folded into the profile.' });
+              setAnalyzeMsg && setAnalyzeMsg({ type: 'ok', text: 'Confirmed — folding into the behavioral read…' });
+              try {
+                await supabase.functions.invoke('disc-analyze', { body: { contact_id: cid, user_id: userId, force: true } });
+                const { data: fresh } = await supabase.from('profiles').select('*').eq('contact_id', cid).maybeSingle();
+                if (fresh) onProfileUpdate(fresh);
+                setAnalyzeMsg && setAnalyzeMsg({ type: 'ok', text: 'Confirmed — research folded into the profile.' });
+              } catch (_) { /* flag is cleared; fold can be retried via Re-analyze */ }
             } catch (e) {
               setAnalyzeMsg && setAnalyzeMsg({ type: 'error', text: 'Confirm failed: ' + (e.message || e) });
             }
@@ -10263,7 +10271,17 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
                     <button onClick={async () => {
                       try {
                         const { data, error } = await supabase.from('profiles').update({ research_needs_confirmation: false }).eq('contact_id', profile.contact_id).select().single();
-                        if (!error && data) { onProfileUpdate(data); setAnalyzeMsg && setAnalyzeMsg({ type:'ok', text:'Confirmed — research folded into the profile.' }); }
+                        if (!error && data) {
+                          onProfileUpdate(data);
+                          setAnalyzeMsg && setAnalyzeMsg({ type:'ok', text:'Confirmed — folding into the behavioral read…' });
+                          try {
+                            await supabase.functions.invoke('disc-analyze', { body: { contact_id: profile.contact_id, user_id: userId, force: true } });
+                            const { data: fresh } = await supabase.from('profiles').select('*').eq('contact_id', profile.contact_id).maybeSingle();
+                            if (fresh) onProfileUpdate(fresh);
+                            setAnalyzeMsg && setAnalyzeMsg({ type:'ok', text:'Confirmed — research folded into the profile.' });
+                          } catch (_) {}
+                          setShowResearchReport(false);
+                        }
                       } catch (_) {}
                     }} style={{ background:'var(--accent-2, #EBCB82)', border:'none', color:'#1a1409', fontSize:'12px', fontWeight:700, borderRadius:'8px', padding:'8px 16px', cursor:'pointer' }}>
                       ✓ Yes, this is {contact.name?.split(' ')[0] || 'them'}

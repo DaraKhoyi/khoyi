@@ -263,7 +263,32 @@ serve(async (req) => {
         const apiData = await apiResp.json();
         await logUsage(supabase, { userId: billUserId, fn: "contact-research", model, usage: apiData.usage, usedOwn });
         const fullReport = (apiData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-        const data = extractJson(fullReport) || {};
+        let data = extractJson(fullReport) || {};
+        // FALLBACK: the model sometimes returns the narrative report but forgets
+        // the structured JSON block (or emits it unparseably), leaving DISC scores
+        // null and the Insights fields empty — a report you can read but the app
+        // can't use. If the structured payload is missing, make ONE focused call
+        // that extracts just the JSON from the report we already have. No new
+        // research, cheap, and it recovers the case reliably.
+        if (!data.disc && data.d_score === undefined && fullReport.trim().length > 300) {
+          try {
+            const exResp = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "content-type": "application/json", "x-api-key": useKey, "anthropic-version": "2023-06-01" },
+              body: JSON.stringify({
+                model: "claude-sonnet-4-6", max_tokens: 1500,
+                messages: [{ role: "user", content: `From the relationship-intelligence report below, output ONLY a JSON object (no prose, no fences) with keys: headline (string), identity_confidence ("high"|"medium"|"low"), background_education (string|null), career (string|null), expertise (string[]), community_media (string[]), interests_values (string[]), causes (string[]), personal (string|null), connection_plan (string|null), overlaps_with_me (string[]), disc {d_score,i_score,s_score,c_score (0-100, D+I+S+C sum ~200), primary, secondary, confidence ("tentative"|"reasonably_confident"), key_evidence (string[])}. If behavior truly can't be read, set disc scores null. REPORT:\n\n${fullReport.slice(0, 18000)}` }],
+              }),
+            });
+            if (exResp.ok) {
+              const exData = await exResp.json();
+              await logUsage(supabase, { userId: billUserId, fn: "contact-research-extract", model: "claude-sonnet-4-6", usage: exData.usage, usedOwn });
+              const exText = (exData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+              const parsed = extractJson(exText);
+              if (parsed && typeof parsed === "object") data = { ...parsed, ...data, disc: parsed.disc || data.disc };
+            }
+          } catch (_) { /* non-fatal — fall through with what we have */ }
+        }
         const disc2 = data.disc || {};
         const cleanReport = fullReport.replace(/```json\s*[\s\S]*?```/g, "").trim();
         const shortSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
