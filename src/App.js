@@ -8275,7 +8275,7 @@ function RIChips({ items, tone }) {
   if (!arr.length) return null;
   return <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{arr.map((x, i) => <RIChip key={i} tone={tone}>{typeof x === 'string' ? x : (x.detail || '')}</RIChip>)}</div>;
 }
-function RelationshipIntel({ profile, onPurge }) {
+function RelationshipIntel({ profile, onPurge, onConfirm }) {
   if (!profile || !profile.research_taken_at) return null;
   const p = profile.research_profile || {};
   const per = profile.research_personal || {};
@@ -8299,11 +8299,25 @@ function RelationshipIntel({ profile, onPurge }) {
           <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--yellow)', marginBottom: '3px' }}>⚠ Confirm this is the right person</div>
             <div style={{ fontSize: '11.5px', color: 'var(--text-2)', lineHeight: 1.5 }}>
-              The web match was only <b>{idc || 'medium'}</b> confidence, so this write-up hasn't been folded into the DISC read. If it's the wrong person, purge it below and re-run once you have a stronger identifier.
+              The web match was only <b>{idc || 'medium'}</b> confidence, so this write-up hasn't been folded into the DISC read. Confirm it's them to fold it in, or purge it if it's the wrong person.
             </div>
+            {onConfirm && (
+              <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button onClick={() => onConfirm(profile.contact_id)}
+                  style={{ background: 'var(--accent-2, #EBCB82)', border: 'none', color: '#1a1409', fontSize: '12px', fontWeight: 700, borderRadius: '8px', padding: '7px 14px', cursor: 'pointer' }}>
+                  ✓ Yes, this is them
+                </button>
+                {onPurge && (
+                  <button onClick={() => onPurge(profile.contact_id)}
+                    style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: '12px', borderRadius: '8px', padding: '7px 14px', cursor: 'pointer' }}>
+                    ✕ No, wrong person — purge
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
-        {onPurge && (
+        {onPurge && !profile.research_needs_confirmation && (
           <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={() => onPurge(profile.contact_id)} title="Remove this research and DISC write-up from the profile (reversible)"
               style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: '11px', borderRadius: '8px', padding: '4px 10px', cursor: 'pointer' }}>
@@ -8541,7 +8555,21 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   const [showResearchModal, setShowResearchModal] = useState(false);
   const [researchScope, setResearchScope] = useState('both');  // 'personal' | 'business' | 'both'
   const [researchStage, setResearchStage] = useState('idle');  // 'idle' | 'identifying' | 'choose_candidate' | 'researching' | 'done' | 'error'
-  useEffect(() => { if (contact && window.__autoResearch && window.__autoResearch === contact.id) { window.__autoResearch = null; const _h = window.__autoResearchHint; window.__autoResearchHint = null; setShowResearchModal(true); setTimeout(() => { try { startResearch(_h); } catch (_) {} }, 150); } /* eslint-disable-next-line */ }, [contact]);
+  useEffect(() => {
+    if (contact && window.__autoResearch && window.__autoResearch === contact.id) {
+      window.__autoResearch = null;
+      const _h = window.__autoResearchHint; window.__autoResearchHint = null;
+      // If a completed report already exists, don't auto-run — open the report so
+      // the existing profile (and its confirm step) is what the user sees.
+      if (!_h && profile && profile.research_status === 'done' && (profile.research_full_report || profile.research_profile)) {
+        setShowResearchReport(true);
+      } else {
+        setShowResearchModal(true);
+        setTimeout(() => { try { startResearch(_h); } catch (_) {} }, 150);
+      }
+    }
+    /* eslint-disable-next-line */
+  }, [contact, profile]);
   const [researchCandidates, setResearchCandidates] = useState([]);
   const [researchError, setResearchError] = useState(null);
   const [researchHint, setResearchHint] = useState('');
@@ -9597,7 +9625,20 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             )}
           </div>
 
-          <RelationshipIntel profile={profile} onPurge={async (cid) => {
+          <RelationshipIntel profile={profile} onConfirm={async (cid) => {
+            // Confirm the web match is the right person: clear the flag so the
+            // research folds into the DISC read. Simple, reversible (re-flagging
+            // isn't needed — purge remains available if they change their mind).
+            try {
+              const { data, error } = await supabase.from('profiles')
+                .update({ research_needs_confirmation: false }).eq('contact_id', cid).select().single();
+              if (error) { setAnalyzeMsg && setAnalyzeMsg({ type: 'error', text: 'Confirm failed: ' + error.message }); return; }
+              if (data) onProfileUpdate(data);
+              setAnalyzeMsg && setAnalyzeMsg({ type: 'ok', text: 'Confirmed — research folded into the profile.' });
+            } catch (e) {
+              setAnalyzeMsg && setAnalyzeMsg({ type: 'error', text: 'Confirm failed: ' + (e.message || e) });
+            }
+          }} onPurge={async (cid) => {
             if (!window.confirm('Purge the research and DISC write-up from this profile?\n\nThis clears the web-research findings and the research-based DISC read (in case it matched the wrong person). It is reversible from the backup, and does not delete the contact. Re-run research once you have a stronger identifier.')) return;
             try {
               const { data, error } = await supabase.rpc('purge_contact_research', { p_contact_id: cid, p_reason: 'purged from contact profile' });
@@ -10212,6 +10253,33 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchReport(false)}>✕</button>
             </div>
             <div style={{padding:'16px',overflowY:'auto',flex:1,fontSize:'13px',lineHeight:1.7,color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
+              {profile.research_needs_confirmation && (
+                <div style={{ marginBottom:'14px', padding:'12px 14px', borderRadius:'10px', background:'rgba(245,158,11,0.10)', border:'1px solid rgba(245,158,11,0.45)' }}>
+                  <div style={{ fontSize:'12.5px', fontWeight:700, color:'var(--yellow)', marginBottom:'4px' }}>⚠ Is this the right person?</div>
+                  <div style={{ fontSize:'12px', color:'var(--text-2)', lineHeight:1.5, marginBottom:'10px' }}>
+                    This was matched to <b>{contact.name}</b> by {profile.research_matched_by || 'a public identifier'} at medium confidence, so it hasn't been folded into the DISC read yet. Confirm it's them, or purge if it's wrong.
+                  </div>
+                  <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+                    <button onClick={async () => {
+                      try {
+                        const { data, error } = await supabase.from('profiles').update({ research_needs_confirmation: false }).eq('contact_id', profile.contact_id).select().single();
+                        if (!error && data) { onProfileUpdate(data); setAnalyzeMsg && setAnalyzeMsg({ type:'ok', text:'Confirmed — research folded into the profile.' }); }
+                      } catch (_) {}
+                    }} style={{ background:'var(--accent-2, #EBCB82)', border:'none', color:'#1a1409', fontSize:'12px', fontWeight:700, borderRadius:'8px', padding:'8px 16px', cursor:'pointer' }}>
+                      ✓ Yes, this is {contact.name?.split(' ')[0] || 'them'}
+                    </button>
+                    <button onClick={async () => {
+                      if (!window.confirm('Purge this research? Reversible from backup; does not delete the contact.')) return;
+                      try {
+                        const { data, error } = await supabase.rpc('purge_contact_research', { p_contact_id: profile.contact_id, p_reason: 'wrong person, purged from report' });
+                        if (!error && data?.ok) { const { data: fresh } = await supabase.from('profiles').select('*').eq('contact_id', profile.contact_id).maybeSingle(); if (fresh) onProfileUpdate(fresh); setShowResearchReport(false); setAnalyzeMsg && setAnalyzeMsg({ type:'ok', text:'Research purged.' }); }
+                      } catch (_) {}
+                    }} style={{ background:'none', border:'1px solid var(--border)', color:'var(--text-3)', fontSize:'12px', borderRadius:'8px', padding:'8px 16px', cursor:'pointer' }}>
+                      ✕ No, wrong person
+                    </button>
+                  </div>
+                </div>
+              )}
               {profile.research_full_report}
             </div>
             <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',gap:'8px'}}>
