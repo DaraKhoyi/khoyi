@@ -44,6 +44,8 @@ export const TIPS = [
   { id: 'contacts_touch', screen: 'contacts', label: 'Intuition is attention over time',
     body: 'A steady rhythm of small touches is how sphere agents earn referrals — not the big ask when you need something. Prism keeps the rhythm so <b>you look effortless</b>.' },
 
+  { id: 'social_research', screen: 'contacts', label: 'Add their socials, sharpen the research',
+    body: 'Drop a LinkedIn, Instagram, or Facebook on a contact (Details tab) and Prism uses it to <b>find the right person fast</b> — a profile URL pins identity far better than a name. Better in, better out.' },
   // ── Deals / pipeline ────────────────────────────────────────────────────────
   { id: 'deals_stall', screen: 'deals', label: 'Catch a deal before it dies',
     body: 'Deals rarely blow up — they <b>go quiet</b>. Prism flags the ones that have stalled past their stage so you re-engage while it is still saveable, not at the post-mortem.' },

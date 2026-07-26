@@ -24,6 +24,13 @@ const corsHeaders = {
 
 function buildResearchPrompt(candidate, contact, scope, me, disc) {
   const id = candidate || {};
+  // Social profiles are the STRONGEST anchors — a known LinkedIn/Instagram URL
+  // pins identity far better than name+email, so the research reads the right
+  // person and can start from their actual public presence.
+  const socials = (contact && contact.socials && typeof contact.socials === "object") ? contact.socials : {};
+  const socialLines = Object.entries(socials)
+    .filter(([, v]) => v && String(v).trim())
+    .map(([k, v]) => `- ${k.charAt(0).toUpperCase() + k.slice(1)}: ${v}`);
   const anchors = [
     `- Name: ${id.name || contact.name || "(unknown)"}`,
     (id.headline || contact.company || contact.role) ? `- Title / employer: ${id.headline || [contact.role, contact.company].filter(Boolean).join(" at ")}` : null,
@@ -33,6 +40,7 @@ function buildResearchPrompt(candidate, contact, scope, me, disc) {
     (contact.business_address || contact.home_address) ? `- Address: ${contact.business_address || contact.home_address}` : null,
     id.source_url ? `- Verified source: ${id.source_url}` : null,
     contact.profession ? `- Profession: ${contact.profession}` : null,
+    ...socialLines,
   ].filter(Boolean).join("\n");
 
   const scopeLine = scope === "personal"

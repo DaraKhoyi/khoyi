@@ -23,7 +23,7 @@ const corsHeaders = {
 };
 
 function classifyConfidence(identifiers) {
-  // 'locked'        = email OR phone present AND name
+  // 'locked'        = email OR phone OR a social profile URL present AND name
   // 'strong'        = name + company (employer)
   // 'weak'          = name + city only, OR name + role only
   // 'insufficient'  = name only, OR name has fewer than 2 tokens
@@ -33,8 +33,11 @@ function classifyConfidence(identifiers) {
   const hasCompany = !!(identifiers.company || "").trim();
   const hasCity = !!(identifiers.city || "").trim();
   const hasRole = !!(identifiers.role || "").trim();
+  // A social profile (esp. LinkedIn) uniquely pins a person — treat as locking.
+  const socials = identifiers.socials || {};
+  const hasSocial = !!(socials.linkedin || socials.instagram || socials.facebook || socials.x || socials.tiktok || socials.youtube);
   if (!hasName) return "insufficient";
-  if (hasEmail || hasPhone) return "locked";
+  if (hasEmail || hasPhone || hasSocial) return "locked";
   if (hasCompany) return "strong";
   if (hasCity || hasRole) return "weak";
   return "insufficient";
@@ -94,6 +97,7 @@ serve(async (req) => {
         phone: contact.phone,
         company: contact.company,
         role: contact.role,
+        socials: contact.socials || {},
       };
     } else {
       identifiers = {
