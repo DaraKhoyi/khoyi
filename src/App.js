@@ -9173,7 +9173,13 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
   // the exchange is FINISHED — nobody owes anybody and this person isn't on a
   // keep-in-touch loop. Without it the only way to stop the nudges was to
   // delete the cadence or let a false "they're waiting" sit there forever.
-  const hdrSettled = !!contact.comms_settled_at;
+  // "Settled" is only still true if they HAVEN'T written since you settled it.
+  // A newer inbound re-arms the reply — same rule owesReply() uses — so the badge
+  // never says "Settled" while the Reach-Out-Next card says "you owe a reply".
+  // (ONE RULE, ONE PLACE: don't re-derive "is settled" from the raw column.)
+  const _settleStillValid = !!contact.comms_settled_at &&
+    !(contact.last_inbound_at && new Date(contact.last_inbound_at).getTime() > new Date(contact.comms_settled_at).getTime());
+  const hdrSettled = _settleStillValid;
   const hdrLastDir = hdrSettled ? '✓ Settled'
     : contact.last_communication_direction === 'inbound' ? '↓ They'
     : contact.last_communication_direction === 'outbound' ? '↑ You'
@@ -9808,7 +9814,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
             <div style={{display:'flex',gap:'12px',flexWrap:'wrap',marginBottom:'8px'}}>
               <div style={{flex:'1 1 200px',padding:'10px',background: oweReply ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)', border:`1px solid ${oweReply ? 'var(--yellow)' : 'var(--border)'}`, borderRadius:'6px'}}>
                 <div style={{fontSize:'10px',color: oweReply ? 'var(--yellow)' : 'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:600,marginBottom:'3px'}}>
-                  ⬇ THEY → YOU {oweReply ? '· awaiting your reply' : (lastDir === 'inbound' && contact.comms_settled_at ? '· settled' : '')}
+                  ⬇ THEY → YOU {oweReply ? '· awaiting your reply' : (lastDir === 'inbound' && hdrSettled ? '· settled' : '')}
                 </div>
                 <div style={{fontSize:'12px',color:'var(--text-1)'}}>
                   {lastIn ? `${formatRelative(lastIn)} via ${lastChannel}` : '—'}
