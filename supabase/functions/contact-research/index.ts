@@ -118,6 +118,16 @@ Specific conversation starters tied to real things they care about; topics to le
 DISC scores sum to ~200 (two axes). Never claim above "reasonably_confident" from web research alone. If evidence is too thin to read behavior, set DISC scores to null and explain. Keep arrays tight and specific - quality over quantity.`;
 }
 
+// Coerce a value that SHOULD be an array into one — the model sometimes returns
+// a comma/semicolon string. Prevents a string reaching UI code that expects an
+// array (which then crashes on .filter/.map). Splits sentences conservatively.
+function asArr(v) {
+  if (Array.isArray(v)) return v.filter((x) => x !== null && x !== undefined && x !== "");
+  if (typeof v === "string" && v.trim()) {
+    return v.split(/\s*[;\n]\s*|\s*\u2022\s*/).map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
+}
 function extractJson(text) {
   if (!text) return null;
   // 1) Fenced ```json (or bare ```) blocks, newest first.
@@ -270,10 +280,10 @@ serve(async (req) => {
         await writeProfile({
           research_headline: d.headline ?? null,
           research_summary: exSummary,
-          research_profile: { background_education: d.background_education ?? null, career: d.career ?? null, expertise: d.expertise ?? [], community_media: d.community_media ?? [], interests_values: d.interests_values ?? [], causes: d.causes ?? [] },
+          research_profile: { background_education: d.background_education ?? null, career: d.career ?? null, expertise: asArr(d.expertise), community_media: asArr(d.community_media), interests_values: asArr(d.interests_values), causes: asArr(d.causes) },
           research_personal: d.personal ?? null,
           research_connection_plan: d.connection_plan ?? null,
-          research_overlaps: d.overlaps_with_me ?? [],
+          research_overlaps: asArr(d.overlaps_with_me),
           research_d_score: disc2.d_score ?? null, research_i_score: disc2.i_score ?? null,
           research_s_score: disc2.s_score ?? null, research_c_score: disc2.c_score ?? null,
           research_primary: disc2.primary ?? null, research_secondary: disc2.secondary ?? null,
@@ -361,10 +371,10 @@ serve(async (req) => {
           research_headline: data.headline ?? null,
           research_identity_confidence: data.identity_confidence ?? null,
           research_needs_confirmation: needsConfirmation,
-          research_profile: { background_education: data.background_education ?? null, career: data.career ?? null, expertise: data.expertise ?? [], community_media: data.community_media ?? [], interests_values: data.interests_values ?? [], causes: data.causes ?? [] },
+          research_profile: { background_education: data.background_education ?? null, career: data.career ?? null, expertise: asArr(data.expertise), community_media: asArr(data.community_media), interests_values: asArr(data.interests_values), causes: asArr(data.causes) },
           research_personal: data.personal ?? null,
           research_connection_plan: data.connection_plan ?? null,
-          research_overlaps: data.overlaps_with_me ?? [],
+          research_overlaps: asArr(data.overlaps_with_me),
           research_sources: data.sources ?? [],
           research_d_score: disc2.d_score ?? null, research_i_score: disc2.i_score ?? null,
           research_s_score: disc2.s_score ?? null, research_c_score: disc2.c_score ?? null,

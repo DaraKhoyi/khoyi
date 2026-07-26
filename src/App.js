@@ -8262,7 +8262,10 @@ function RISection({ label, children, hint }) {
   );
 }
 function RIList({ items, num }) {
-  const arr = (items || []).filter(Boolean);
+  // Coerce defensively: extraction can occasionally return a string where an
+  // array is expected. A bare string becomes a single item; anything else that
+  // isn't an array is dropped — never call .filter on a non-array (that throws).
+  const arr = (Array.isArray(items) ? items : (typeof items === 'string' && items.trim() ? [items] : [])).filter(Boolean);
   if (!arr.length) return <div style={{ fontSize: '12px', color: 'var(--text-3)' }}>—</div>;
   return (
     <ul style={{ margin: 0, paddingLeft: num ? '20px' : '16px', display: 'flex', flexDirection: 'column', gap: '5px', listStyle: num ? 'decimal' : 'disc' }}>
@@ -8271,7 +8274,7 @@ function RIList({ items, num }) {
   );
 }
 function RIChips({ items, tone }) {
-  const arr = (items || []).filter(Boolean);
+  const arr = (Array.isArray(items) ? items : (typeof items === 'string' && items.trim() ? [items] : [])).filter(Boolean);
   if (!arr.length) return null;
   return <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{arr.map((x, i) => <RIChip key={i} tone={tone}>{typeof x === 'string' ? x : (x.detail || '')}</RIChip>)}</div>;
 }
