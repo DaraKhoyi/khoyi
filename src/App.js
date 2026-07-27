@@ -15083,8 +15083,9 @@ function UpdateBanner() {
         if (m && m[1] !== currentHashRef.current) setReady(true);
       } catch (_) {}
     }
-    const t = setTimeout(check, 8000);
-    const iv = setInterval(check, 180000);
+    check();
+    const t = setTimeout(check, 3000);
+    const iv = setInterval(check, 60000);
     const onVis = () => { if (document.visibilityState === 'visible') check(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { stop = true; clearTimeout(t); clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
