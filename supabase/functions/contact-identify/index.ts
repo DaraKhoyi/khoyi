@@ -86,9 +86,17 @@ serve(async (req) => {
         });
       }
       if (!isInternal && contact.user_id !== user.id) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        // Authorize by visibility, not ownership (see contact-research). Re-check
+        // the row with the caller's own JWT: if RLS lets them read it, allow it.
+        const asUser = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_ANON_KEY"), {
+          global: { headers: { Authorization: `Bearer ${token}` } },
         });
+        const { data: visible } = await asUser.from("contacts").select("id").eq("id", body.contact_id).maybeSingle();
+        if (!visible) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
       contactUserId = contact.user_id;
       identifiers = {

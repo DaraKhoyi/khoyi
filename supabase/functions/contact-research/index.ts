@@ -223,7 +223,22 @@ serve(async (req) => {
 
     const { data: contact, error: cErr } = await supabase.from("contacts").select("*").eq("id", contact_id).single();
     if (cErr || !contact) return J({ error: "Contact not found" }, 404);
-    if (!isInternal && contact.user_id !== user.id) return J({ error: "Forbidden" }, 403);
+    // Authorize by VISIBILITY, not strict ownership. An agent must be able to
+    // research any contact they can legitimately see (their own, team, or
+    // brokerage-shared) — not only ones they personally own. Previously this was
+    // `contact.user_id !== user.id → 403`, which blocked every agent from
+    // researching the owner's/shared contacts (i.e. almost all of them). We check
+    // the SAME way RLS does: re-query the contact using the caller's own JWT; if
+    // their token can read the row, they're allowed to research it.
+    if (!isInternal) {
+      if (contact.user_id !== user.id) {
+        const asUser = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_ANON_KEY"), {
+          global: { headers: { Authorization: `Bearer ${token}` } },
+        });
+        const { data: visible } = await asUser.from("contacts").select("id").eq("id", contact_id).maybeSingle();
+        if (!visible) return J({ error: "Forbidden" }, 403);
+      }
+    }
 
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return J({ error: "ANTHROPIC_API_KEY not configured" }, 500);
