@@ -197,9 +197,39 @@ Important:
         }
         const apiData = await apiResp.json();
         const textBlocks = (apiData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-        let candidates = [];
-        try { candidates = JSON.parse(textBlocks.trim()); }
-        catch (_) { const match = textBlocks.match(/\[[\s\S]*\]/); if (match) { try { candidates = JSON.parse(match[0]); } catch (_) { candidates = []; } } }
+        // Robustly pull the JSON array. With web_search on, the model narrates its
+        // search ("Let me look… I found…") BEFORE the JSON, so a naive
+        // JSON.parse(whole text) fails and grabbing the FIRST "[" often catches a
+        // citation bracket → 0 candidates even when it clearly found the person
+        // ("locked"). Scan for every top-level [...] and take the last one that
+        // parses to an array of objects. This was the bug that dead-ended agents.
+        const extractCandidates = (txt) => {
+          if (!txt) return [];
+          // try fenced ```json blocks first
+          const fences = [...txt.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map(m => m[1]);
+          const bracketed = [...txt.matchAll(/\[[\s\S]*?\]/g)].map(m => m[0]);
+          const wholeTrim = txt.trim();
+          const tryParse = (s) => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : null; } catch { return null; } };
+          // Prefer: whole text, then fenced blocks, then bracketed spans — last valid wins
+          const candSets = [tryParse(wholeTrim), ...fences.map(tryParse), ...bracketed.map(tryParse)]
+            .filter(a => Array.isArray(a) && a.every(x => x && typeof x === "object"));
+          if (!candSets.length) return [];
+          // choose the longest well-formed array (the real answer, not a stray [])
+          return candSets.reduce((best, cur) => (cur.length >= best.length ? cur : best), candSets[0]);
+        };
+        let candidates = extractCandidates(textBlocks);
+        // FALLBACK: model found them (locked) but we still parsed nothing — one
+        // focused JSON-only re-ask over its own output, no web search.
+        if (isLocked && candidates.length === 0 && textBlocks.trim().length > 40) {
+          try {
+            const fx = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+              body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1024, messages: [{ role: "user", content: `From the research notes below, output ONLY a JSON array (no prose, no fences) of the identified person as one object with keys: name, headline, location, source_url, distinguishing_note, match_strength. If no one was identified, output []. NOTES:\n\n${textBlocks.slice(0, 8000)}` }] }),
+            });
+            if (fx.ok) { const fd = await fx.json(); const ft = (fd.content || []).filter(b => b.type === "text").map(b => b.text).join("\n"); candidates = extractCandidates(ft); }
+          } catch (_) { /* keep empty */ }
+        }
         if (!Array.isArray(candidates)) candidates = [];
         await writeIdentify({ identify_status: "done", identify_candidates: candidates, identify_confidence: confidence, identify_error: null, identify_at: new Date().toISOString() });
         return { candidates, confidence, search_count: (apiData.usage?.server_tool_use?.web_search_requests) ?? null };

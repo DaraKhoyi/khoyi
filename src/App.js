@@ -9047,19 +9047,33 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
         return;
       }
       if ((candidates || []).length === 0) {
-        // If we already have a saved report, don't dead-end — the identify step is
-        // flaky and a prior run may have succeeded. Offer the existing profile.
+        // If we already have a saved report, don't dead-end — offer it.
         if (profile && profile.research_status === 'done' && (profile.research_full_report || profile.research_profile)) {
           setShowResearchModal(false);
           setShowResearchReport(true);
           setResearchStage('idle');
           return;
         }
-        setResearchError('No matching public profiles found. Try adding more identifiers (email, phone, employer) to the contact.');
+        // If the identifiers are STRONG (locked = email/phone present) but the
+        // identify step returned no candidate, don't tell the user to "add more
+        // identifiers" they already have — just research with what we know. The
+        // identify pre-check is a safety net against name collisions, not a
+        // requirement; with a strong anchor we can research directly. This was
+        // the dead-end that blocked agents ("No matching public profiles found").
+        if (confidence === 'locked') {
+          runResearch({
+            name: contact.name,
+            headline: [contact.role, contact.company].filter(Boolean).join(' at ') || null,
+            location: contact.city || null,
+            source_url: (contact.socials && (contact.socials.linkedin || contact.socials.instagram)) || null,
+          }, (contact && contact.email) ? 'email' : (contact && contact.phone ? 'phone' : 'manual'));
+          return;
+        }
+        setResearchError('No matching public profiles found. Try adding an email, phone, or a LinkedIn/Instagram in Details.');
         setResearchStage('error');
         return;
       }
-      if (confidence === 'locked' && candidates.length === 1) {
+      if (confidence === 'locked' && candidates.length >= 1) {
         runResearch(candidates[0], (contact && contact.email) ? 'email' : (contact && contact.phone ? 'phone' : 'manual'));
       } else {
         setResearchStage('choose_candidate');
