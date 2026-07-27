@@ -356,6 +356,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
               <div style={{fontSize:'17px',fontWeight:800,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name || (initial ? initial.name : 'New contact')}</div>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:'5px',flexShrink:0}}>
+              <button type="button" onClick={handleSubmit} title={initial ? 'Save changes' : 'Create contact'} style={{height:'32px',padding:'0 14px',borderRadius:'8px',border:'none',background:'var(--accent-2, #EBCB82)',color:'#1a1409',cursor:'pointer',fontSize:'12px',fontWeight:800}}>{initial ? 'Save' : 'Create'}</button>
               {initial && onShowDetails && <button type="button" onClick={()=>onShowDetails(initial)} title="View details" style={{height:'32px',padding:'0 11px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:700}}>View →</button>}
               {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="trash" size={15} /></button>}
               <button type="button" onClick={onClose} title="Close" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'17px',lineHeight:1}}>×</button>
@@ -1219,6 +1220,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
 
   async function handleSave(data) {
     let savedRow = null;
+    try {
     if (editContact) {
       const { data: updated, error } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
       if (error) {
@@ -1231,12 +1233,19 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     } else {
       const { data: created, error } = await supabase.from('contacts').insert({ ...data, user_id: userId }).select().single();
       if (error) {
-        console.error('[contacts.insert] create failed', { error, data });
-        notify(describeSaveError(error, 'create'), 'error');
+        console.error('[contacts.insert] create failed', { error, data, userId });
+        notify(describeSaveError(error, 'create') + (error.message ? ' (' + error.message + ')' : ''), 'error');
         return;
       }
       savedRow = created;
       if (created) setContacts(prev => [created, ...prev]);
+    }
+    } catch (err) {
+      // Any unexpected throw (network, JS error) previously died silently on some
+      // clients, leaving the button looking dead. Always surface it.
+      console.error('[contacts.save] unexpected error', err);
+      notify('Save failed: ' + (err && err.message ? err.message : 'unknown error') + '. Try again or tell Dara.', 'error');
+      return;
     }
     setShowModal(false);
     if (editFromDetail && savedRow) setDetailContact(savedRow);
