@@ -276,8 +276,12 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const tog = (k) => setOpenSec(s => ({ ...s, [k]: !s[k] }));
 
   function handleSubmit(e) {
-    e.preventDefault();
-    if (!name.trim()) return;
+    if (e && e.preventDefault) e.preventDefault();
+    if (!name.trim()) {
+      // iOS: a silent return looks like a dead button. Tell the user why.
+      if (window.__notify) window.__notify('Add a name before saving.', 'error');
+      return;
+    }
     // Normalize phones/emails: drop empties, guarantee exactly one default.
     function normalize(arr) {
       const cleaned = (arr || [])
@@ -517,7 +521,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
           </div>
           <div className="modal-actions" style={{padding:'12px 16px calc(14px + env(safe-area-inset-bottom, 0px))',borderTop:'1px solid var(--border)',margin:0,flexShrink:0,position:'sticky',bottom:0,background:'var(--bg-card)',zIndex:2}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">{initial ? 'Save changes' : 'Create contact'}</button>
+            <button type="button" className="btn btn-primary" onClick={handleSubmit}>{initial ? 'Save changes' : 'Create contact'}</button>
           </div>
         </form>
       </div>
