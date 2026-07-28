@@ -8350,25 +8350,36 @@ function DownloadResearchDocx({ contactId, contactName }) {
     } finally { setBusy(false); }
   }
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setOpen(o => !o)} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+    <>
+      <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setOpen(true)} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
         {busy ? 'Building…' : '⬇ Word report'}
       </button>
-      {open && (
-        <div style={{ position: 'absolute', bottom: '110%', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', boxShadow: '0 8px 28px rgba(0,0,0,0.35)', padding: '6px', minWidth: '260px', zIndex: 30 }}>
-          <button onClick={() => download('client')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text-1)', padding: '9px 10px', borderRadius: '7px', cursor: 'pointer', fontSize: '12.5px' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover, rgba(203,163,92,0.08))'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-            <div style={{ fontWeight: 700 }}>Client-facing dossier</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px', lineHeight: 1.4 }}>Polished bio to share. No behavioral read, no coaching.</div>
-          </button>
-          <button onClick={() => download('agent')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text-1)', padding: '9px 10px', borderRadius: '7px', cursor: 'pointer', fontSize: '12.5px' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover, rgba(203,163,92,0.08))'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-            <div style={{ fontWeight: 700 }}>Agent prep sheet</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px', lineHeight: 1.4 }}>Adds the DISC read. Still excludes rapport & things-to-avoid.</div>
-          </button>
-        </div>
+      {open && createPortal(
+        <div className="modal-overlay" onClick={() => setOpen(false)} style={{ zIndex: 1400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '18px 18px 0 0',
+            width: '100%', maxWidth: '460px', padding: '8px 8px calc(16px + env(safe-area-inset-bottom,0px))',
+            boxShadow: '0 -8px 40px rgba(0,0,0,0.5)', animation: 'sheetUp .22s ease-out',
+          }}>
+            <div style={{ width: 36, height: 4, borderRadius: 4, background: 'var(--border)', margin: '6px auto 10px' }} />
+            <div style={{ padding: '0 10px 8px' }}>
+              <div style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 2 }}>Download Word report</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-3)' }}>Who is this for? Pick what it should include.</div>
+            </div>
+            <button onClick={() => download('client')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'var(--bg-2, rgba(255,255,255,0.03))', border: '1px solid var(--border)', color: 'var(--text-1)', padding: '13px 14px', borderRadius: '12px', cursor: 'pointer', marginBottom: '8px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px' }}>Client-facing dossier</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '3px', lineHeight: 1.45 }}>A polished bio to share with the person or a referral partner. No behavioral read, no coaching.</div>
+            </button>
+            <button onClick={() => download('agent')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'var(--bg-2, rgba(255,255,255,0.03))', border: '1px solid var(--border)', color: 'var(--text-1)', padding: '13px 14px', borderRadius: '12px', cursor: 'pointer' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px' }}>Agent prep sheet</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '3px', lineHeight: 1.45 }}>Adds the DISC behavioral read. Still excludes the rapport and things-to-avoid coaching.</div>
+            </button>
+            <button onClick={() => setOpen(false)} style={{ display: 'block', width: '100%', textAlign: 'center', background: 'none', border: 'none', color: 'var(--text-3)', padding: '12px', marginTop: '4px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
+          </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 

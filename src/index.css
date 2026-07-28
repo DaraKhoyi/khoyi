@@ -1655,3 +1655,6 @@ input[type="radio"], input[type="range"], select, progress {
 /* Research-progress active-step pulsing dot */
 .rp-pulse-dot { width: 7px; height: 7px; border-radius: 7px; background: var(--accent-2, #EBCB82); display: inline-block; animation: rpPulse 1s ease-in-out infinite; }
 @keyframes rpPulse { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
+
+/* Bottom-sheet slide-up (Word report picker + similar mobile sheets) */
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
