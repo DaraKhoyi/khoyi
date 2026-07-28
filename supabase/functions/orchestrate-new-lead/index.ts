@@ -50,6 +50,12 @@ ${res || "none"}
 ${voiceBlock}`;
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }) });
+  if (!r.ok) {
+    // Surface the API failure instead of silently emitting a "Could not generate
+    // a plan" placeholder that looks like a real (empty) result to the agent.
+    const errText = await r.text().catch(() => "");
+    throw new Error(`Anthropic API error ${r.status}: ${errText.slice(0, 200)}`);
+  }
   const j = await r.json();
   const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   let plan: any = {};
