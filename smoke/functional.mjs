@@ -94,6 +94,41 @@ for (const dev of want) {
       !reachable.found ? 'no Save button' : (!reachable.visible ? 'Save OFF-SCREEN (iOS bug)' : ''));
   } catch (e) { record(dev, 'New-contact Save reachable', false, String(e).slice(0,60)); }
 
+  // ---- FEATURE SWEEP: every major room renders real content, no crash ----
+  // Walks the app through each room's home view and asserts no error boundary and
+  // no empty-shell. This is the room-by-room audit, run on every device.
+  const ROOMS = [
+    ['today', 'Today / daily driver'],
+    ['tasks', 'Tasks'],
+    ['calendar', 'Calendar'],
+    ['inbox', 'Inbox / Comms'],
+    ['quo', 'Quo (calls/texts)'],
+    ['deals', 'Deals / pipeline'],
+    ['recruiting', 'Recruiting roster'],
+    ['journal', 'Journal'],
+    ['brain', 'Brain (semantic)'],
+    ['documents', 'Library / documents'],
+    ['prospecting', 'Prospecting'],
+    ['my_prism', 'My Prism / DISC'],
+    ['myvoice', 'MyVoice'],
+  ];
+  for (const [view, label] of ROOMS) {
+    try {
+      const res = await page.evaluate(async (v) => {
+        if (window.__setView) window.__setView(v);
+        await new Promise(r => setTimeout(r, 1100));
+        const txt = document.body.innerText || '';
+        return {
+          crash: txt.includes('This view ran into an error'),
+          // a real view has meaningful text; a blank shell is < ~40 chars of content
+          contentLen: txt.replace(/\s+/g, ' ').trim().length,
+        };
+      }, view);
+      const ok = !res.crash && res.contentLen > 40;
+      record(dev, `Room: ${label}`, ok, res.crash ? 'ERROR BOUNDARY' : (res.contentLen <= 40 ? 'blank shell' : ''));
+    } catch (e) { record(dev, `Room: ${label}`, false, String(e).slice(0, 50)); }
+  }
+
   if (SHOTS) { try { await page.screenshot({ path: `/tmp/func-${dev}.png` }); } catch(_){} }
 
   // ---- FEATURE: DISC/research display doesn't crash on edge-shaped data ----
