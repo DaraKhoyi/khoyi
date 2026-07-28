@@ -5293,6 +5293,7 @@ const LESSONS = [
   { id:'up_recruiting', cat:'Using Prism', title:'Grow and manage your roster', body:'The Recruiting room holds your agent roster, their earnings, and your brokerage lead engine. Tag any contact as "Our Agent" and they join the roster automatically — no double entry — so your team list is always complete.', deeper:'The roster powers everything team-related: leaderboards, commission plans, delegation. Because tagging a contact as an agent now auto-adds them, the old problem of "why isn\'t this person showing up?" is gone. Use it to see your team\'s production at a glance and to route brokerage leads to the right agent.' },
   { id:'up_journal', cat:'Using Prism', title:'Capture thoughts in the Journal', body:'The Journal is for the thought you have in the moment — a client detail, a follow-up, a reflection. Jot it and Prism files it against the right person and can summarize your days and weeks. Your mind is for having ideas, not holding them.', deeper:'Every open loop in your head is a tax on your attention; writing it down frees you to be present. Prism analyzes entries, links them to people, and can hand you a period summary when you want the big picture. Journal entries live in the Library too, searchable forever — capture once, find it whenever.' },
   { id:'up_brain', cat:'Using Prism', title:'Search your whole memory in Brain', body:'Brain is semantic search across everything Prism knows — ask in plain language ("what did I promise the Reyes family?") and it finds the answer across your notes, calls, and history, even if you don\'t remember the exact words. It\'s your second brain.', deeper:'Unlike a keyword search, semantic search understands meaning — it finds the right memory even when your query and the original note use different words. The more you capture, the more powerful Brain becomes. This is what turns "I think we discussed…" into "here\'s exactly what was said."' },
+  { id:'up_docx', cat:'Using Prism', title:'Export a research report as a Word doc', body:'From any contact\'s research report, tap "Word report" and pick who it\'s for. The client dossier is a polished, shareable bio — no behavioral read, no coaching. The agent prep sheet adds the DISC read but still hides the rapport and things-to-avoid notes. Both come branded as Realty ONE Group Advantage.', deeper:'This is how research becomes something you can hand to a client, a co-agent, or a referral partner — a professional one-pager instead of a raw dump. The two modes matter: never share the coaching (how to work someone) with the person themselves. The doc is built on the fly, so it always reflects the latest research on file.' },
   { id:'up_learn', cat:'Using Prism', title:'Keep leveling up in the Field Guide', body:'This is the Prism Field Guide — short lessons on both the craft of real estate and how to get the most from Prism. Work through them at your own pace or let them surface as tips while you work. Track your progress and earn milestones as you go.', deeper:'The lessons are the "why" behind the workflow — read one when you have a spare minute and it compounds. Tips also appear in context on the screens they relate to, one per visit, so you learn the app by using it. Set how often they surface in Settings → Learning pace.' },
 
   { id:'nba', cat:'Your day', title:'Do this next', body:'Top producers don\'t do more — they do the right thing next. Prism scans every signal (tasks, who owes you a reply, cadence, appointments, deals) and surfaces the single highest-leverage move, so you never open the app wondering where to start.', deeper:'The hardest part of this business isn\'t effort, it\'s decision fatigue — a hundred small "what should I do now?" moments that quietly burn your day. The one-tap next action removes that friction: when nothing is urgent, it pivots to the highest-value growth move instead of leaving you at a dead end. Trust it for a week and notice how much less you drift.' },
@@ -8320,6 +8321,57 @@ function RIChips({ items, tone }) {
   if (!arr.length) return null;
   return <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{arr.map((x, i) => <RIChip key={i} tone={tone}>{typeof x === 'string' ? x : (x.detail || '')}</RIChip>)}</div>;
 }
+// Downloads a cleaned-up, branded Word (.docx) research report. Two modes:
+// "client" (factual dossier to share — no DISC, no coaching) and "agent" (adds
+// the DISC behavioral read; still excludes the rapport/things-to-avoid coaching).
+// The docx is built server-side (research-report-docx) so it works on every
+// device, including iPhone.
+function DownloadResearchDocx({ contactId, contactName }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function download(mode) {
+    setBusy(true); setOpen(false);
+    try {
+      const { data, error } = await supabase.functions.invoke('research-report-docx', { body: { contact_id: contactId, mode } });
+      if (error || !data || !data.base64) throw new Error((error && error.message) || (data && data.error) || 'Could not generate the report');
+      // base64 → Blob → download
+      const bin = atob(data.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = data.filename || 'research.docx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      if (window.__notify) window.__notify('Word report downloaded.', 'success');
+    } catch (e) {
+      if (window.__notify) window.__notify('Report failed: ' + (e.message || 'unknown error'), 'error');
+    } finally { setBusy(false); }
+  }
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setOpen(o => !o)} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+        {busy ? 'Building…' : '⬇ Word report'}
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', bottom: '110%', right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', boxShadow: '0 8px 28px rgba(0,0,0,0.35)', padding: '6px', minWidth: '260px', zIndex: 30 }}>
+          <button onClick={() => download('client')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text-1)', padding: '9px 10px', borderRadius: '7px', cursor: 'pointer', fontSize: '12.5px' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover, rgba(203,163,92,0.08))'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+            <div style={{ fontWeight: 700 }}>Client-facing dossier</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px', lineHeight: 1.4 }}>Polished bio to share. No behavioral read, no coaching.</div>
+          </button>
+          <button onClick={() => download('agent')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text-1)', padding: '9px 10px', borderRadius: '7px', cursor: 'pointer', fontSize: '12.5px' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover, rgba(203,163,92,0.08))'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+            <div style={{ fontWeight: 700 }}>Agent prep sheet</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px', lineHeight: 1.4 }}>Adds the DISC read. Still excludes rapport & things-to-avoid.</div>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RelationshipIntel({ profile, onPurge, onConfirm }) {
   if (!profile || !profile.research_taken_at) return null;
   const p = profile.research_profile || {};
@@ -10374,11 +10426,14 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               )}
               {profile.research_full_report}
             </div>
-            <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',gap:'8px'}}>
+            <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',gap:'8px',flexWrap:'wrap'}}>
               <button className="btn btn-ghost btn-sm" onClick={() => { setShowResearchReport(false); setShowResearchModal(true); }}>
                 ↻ Re-run research
               </button>
-              <button className="btn btn-primary btn-sm" onClick={() => setShowResearchReport(false)}>Done</button>
+              <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                <DownloadResearchDocx contactId={profile.contact_id} contactName={contact.name} />
+                <button className="btn btn-primary btn-sm" onClick={() => setShowResearchReport(false)}>Done</button>
+              </div>
             </div>
           </div>
         </div>
