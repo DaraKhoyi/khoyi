@@ -108,9 +108,19 @@ for (const dev of want) {
     ['journal', 'Journal'],
     ['brain', 'Brain (semantic)'],
     ['documents', 'Library / documents'],
+    ['notes', 'Library (notes)'],
     ['prospecting', 'Prospecting'],
     ['my_prism', 'My Prism / DISC'],
     ['myvoice', 'MyVoice'],
+    ['properties', 'Properties'],
+    ['investments', 'Investments'],
+    ['mileage', 'Mileage'],
+    ['finance', 'Accounting / Finance'],
+    ['systems', 'Systems'],
+    ['playbooks', 'Playbooks'],
+    ['learn', 'Learn / Learning Center'],
+    ['prism', 'Ari (assistant)'],
+    ['tracker', 'Tracker'],
   ];
   for (const [view, label] of ROOMS) {
     try {
