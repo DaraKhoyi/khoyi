@@ -926,6 +926,12 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [editContact, setEditContact] = useState(null);
   const [editFromDetail, setEditFromDetail] = useState(false);
   const [showVCard, setShowVCard] = useState(false);
+  // Expose a hook so a deep-link, Ari ("add a new contact"), or the functional
+  // test harness can open the new-contact form directly.
+  React.useEffect(() => {
+    window.__openNewContact = () => { try { setEditContact(null); setShowModal(true); } catch (_) {} };
+    return () => { if (window.__openNewContact) delete window.__openNewContact; };
+  }, []);
   React.useEffect(() => {
     try {
       const v = window.__pendingSharedVCard;

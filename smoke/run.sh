@@ -67,3 +67,10 @@ SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWOR
 # user every time. Writing the lesson down did not work; measuring does.
 echo "→ large-font layout check"
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/largefont.mjs
+
+# ── FUNCTIONAL gate (v1.04.98+) ──────────────────────────────────────────────
+# The mount checks above prove views RENDER. This proves core features WORK, as a
+# logged-in agent, across iPhone/Android/tablet/desktop viewports — the gap that
+# let a broken research flow ship green and embarrass the beta.
+echo "→ running functional gate (multi-device)"
+SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/functional.mjs
