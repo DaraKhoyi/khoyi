@@ -3323,14 +3323,7 @@ function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
 
   const oweReply = contacts.filter(c => {
     if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false;
-    if (c.comms_settled_at) return false;   // you declared this exchange finished
-    if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
-    const lin = new Date(c.last_inbound_at).getTime();
-    // Dismissed as "no reply needed" — but only for THIS inbound. A newer inbound
-    // (after the dismissal) re-arms the owe-reply automatically.
-    if (c.no_reply_needed_at && new Date(c.no_reply_needed_at).getTime() >= lin) return false;
-    const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0;
-    return lin > lout;
+    return owesReply(c);   // ONE rule — honors settle/no-reply re-arm on newer inbound
   }).sort((a, b) => new Date(a.last_inbound_at) - new Date(b.last_inbound_at));
 
   const dueTasks = tasks.filter(t => !t.completed && t.status !== 'done' && t.due_date && new Date(t.due_date + 'T23:59:59').getTime() <= endToday)
@@ -6263,9 +6256,13 @@ function DashboardView({ tasks, setTasks, unreadEmailCount = 0, needsReviewCount
   const overdue = pending.filter(t=>t.due_date && t.due_date < todayISO);
   const todayTotal = doneToday + dueToday;
   const ringPct = todayTotal>0 ? doneToday/todayTotal : (pending.length===0 ? 1 : 1);
-  // "Needs you now" — mirrors the Needs Attention panel's totals
-  const oweReplyN = contacts.filter(c => { if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; if (c.comms_settled_at) return false;   // you declared this exchange finished
-    if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false; const lin = new Date(c.last_inbound_at).getTime(); const lout = c.last_outbound_at ? new Date(c.last_outbound_at).getTime() : 0; return lin > lout; }).length;
+  // "Needs you now" — mirrors the Needs Attention panel's totals. Uses the ONE
+  // canonical owesReply() rule (honors settle re-arm on a newer inbound) instead
+  // of a hand-rolled copy that treated any settle as permanent (the Scott bug).
+  const oweReplyN = contacts.filter(c => {
+    if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false;
+    return owesReply(c);
+  }).length;
   const reachN = contacts.filter(c => { const cad = c.cadence_days; if (!cad) return false; if (c.reachout_snooze_until && new Date(c.reachout_snooze_until) > new Date()) return false; const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); const ts = a.length ? Math.max(...a) : null; const ds = ts === null ? null : Math.floor((now - ts) / 86400000); return ds === null ? true : ds >= cad; }).length;
   const dueOrOverdue = pending.filter(t => t.due_date && t.due_date <= todayISO).length;
   const needsNow = oweReplyN + reachN + dueOrOverdue;

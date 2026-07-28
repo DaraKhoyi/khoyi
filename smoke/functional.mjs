@@ -96,6 +96,21 @@ for (const dev of want) {
 
   if (SHOTS) { try { await page.screenshot({ path: `/tmp/func-${dev}.png` }); } catch(_){} }
 
+  // ---- FEATURE: DISC/research display doesn't crash on edge-shaped data ----
+  // The string-where-an-array-was-expected crash (v1.04.87) took down the whole
+  // Insights tab. Open the first contact's detail and confirm no error boundary.
+  try {
+    const crashed = await page.evaluate(async () => {
+      // open contacts list, click first contact row if present
+      if (window.__setView) window.__setView('contacts');
+      await new Promise(r => setTimeout(r, 1200));
+      const row = document.querySelector('[data-contact-row], .contact-row, [role="listitem"]');
+      if (row) { row.click(); await new Promise(r => setTimeout(r, 1500)); }
+      return document.body.innerText.includes('This view ran into an error');
+    });
+    record(dev, 'Contact detail / Insights no-crash', !crashed, crashed ? 'ERROR BOUNDARY on contact detail' : '');
+  } catch (e) { record(dev, 'Contact detail / Insights no-crash', false, String(e).slice(0,60)); }
+
   // fatal page errors on this device?
   if (pageErrors.length) record(dev, 'no uncaught JS errors', false, pageErrors[0].slice(0,80));
   else record(dev, 'no uncaught JS errors', true);
