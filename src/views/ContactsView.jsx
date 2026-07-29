@@ -83,15 +83,28 @@ function describeSaveError(error, verb = 'save') {
   const base = `Couldn't ${verb} contact`;
   if (!error) return `${base}. Try again.`;
   const code = error.code || '';
+  const msg = error.message || '';
+  // Try to name the offending field so the fix is obvious. Postgres surfaces the
+  // column in "column \"x\"" or the type in "for type <t>: \"<value>\"".
+  const FIELD_LABELS = {
+    home_purchase_year: 'Home purchase year', business_zip: 'Business ZIP', home_zip: 'Home ZIP',
+    w9_collected_date: 'W-9 collected date', referred_by_contact_id: 'Referred by',
+    recruiting_estimated_annual_gci: 'Estimated GCI', cadence_days: 'Cadence days',
+    entity_type: 'Entity type', tax_id_type: 'Tax ID type', home_ownership: 'Own/Rent', priority: 'Priority',
+  };
+  const colMatch = msg.match(/column "([^"]+)"/i) || msg.match(/"([a-z_]+)" (?:violates|check)/i);
+  const namedField = colMatch && FIELD_LABELS[colMatch[1]] ? FIELD_LABELS[colMatch[1]] : null;
+  const typeMatch = msg.match(/for type (\w+): "([^"]*)"/i);  // e.g. integer: "abc"
   const map = {
-    '23514': 'a field has a value that isn’t allowed.',
+    '23514': namedField ? `${namedField} has a value that isn’t allowed.` : 'a field has a value that isn’t allowed.',
     '23503': 'a selected option no longer exists — refresh and try again.',
     '23505': 'a contact with that value already exists.',
-    '23502': 'a required field is missing.',
-    '22P02': 'a field has an invalid value.',
+    '23502': namedField ? `${namedField} is required.` : 'a required field is missing.',
+    '22P02': typeMatch ? `“${typeMatch[2]}” isn’t a valid ${typeMatch[1] === 'integer' ? 'number' : typeMatch[1]}${namedField ? ' for ' + namedField : ''}.` : (namedField ? `${namedField} has an invalid value.` : 'a field has an invalid value.'),
+    '22007': namedField ? `${namedField} isn’t a valid date.` : 'a date field isn’t valid.',
     '42501': 'you don’t have permission to change this contact.',
   };
-  const reason = map[code] || (error.message ? error.message : 'please try again.');
+  const reason = map[code] || (msg ? msg : 'please try again.');
   return `${base}: ${reason}`;
 }
 
@@ -314,7 +327,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
       home_state: homeState.trim() || null,
       home_zip: homeZip.trim() || null,
       home_ownership: homeOwnership || null,
-      home_purchase_year: homePurchaseYear ? Number(homePurchaseYear) : null,
+      home_purchase_year: (() => { const n = parseInt(homePurchaseYear, 10); return Number.isFinite(n) ? n : null; })(),
       business_address: businessAddress.trim() || null,
       business_city: businessCity.trim() || null,
       business_state: businessState.trim() || null,
