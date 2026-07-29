@@ -14751,6 +14751,47 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
     }
   };
 
+  const markDone = async (call, idx) => {
+    const it = call.items[idx];
+    const key = call.id + ':' + it._i;
+    if (working[key]) return;
+    if (!(it.title || '').trim()) return;
+    setWorking(w => ({ ...w, [key]: true }));
+    try {
+      const contact = call.contact_id ? contacts.find(x => x.id === call.contact_id) : null;
+      const qmap = { high: 'A', medium: 'B', low: 'C' };
+      const occurred = call.completed_at || call.op_created_at;
+      const whenStr = occurred ? new Date(occurred).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+      const ctxLine = `From ${String(call.direction || '').includes('out') ? 'a call you made' : 'a call'}${contact ? ` with ${contact.name}` : ''}${whenStr ? ` on ${whenStr}` : ''}. Marked done on review — already handled.`;
+      const notes = [it.note || '', ctxLine].filter(Boolean).join('\n\n');
+      // Record it as an already-COMPLETED task: it lives in your history (so
+      // "what did I get done" is accurate) without ever hitting the active list.
+      const nowIso = new Date().toISOString();
+      const row = {
+        user_id: userId, title: it.title.trim(), notes,
+        due_date: it.due_date || null,
+        priority: it.priority || 'medium', list: 'inbox', status: 'done', completed_at: nowIso,
+        priority_system: defaultSystem, eisenhower_quadrant: defaultSystem === 'eisenhower' ? (qmap[it.priority] || 'B') : null, eisenhower_rank: defaultSystem === 'eisenhower' ? 1 : null,
+        contact_id: call.contact_id || null,
+        waiting_on: it.owner === 'them' ? (contact ? contact.name : 'the other party') : null,
+      };
+      const { data, error } = await supabase.from('tasks').insert(row).select().single();
+      if (error) throw error;
+      if (call.contact_id && data?.id) {
+        await supabase.from('task_contacts').insert({ task_id: data.id, contact_id: call.contact_id, user_id: userId });
+      }
+      const full = fullArrayFor(call, call.items.map((x, i) => i === idx ? { ...x, status: 'approved' } : x));
+      await persist(call.id, full);
+      if (setTasks && data) setTasks(prev => [data, ...prev]);
+      if (window.__notify) window.__notify('Marked done' + (contact ? ' · ' + contact.name : ''), 'success');
+      setRows(rs => rs.map(c => c.id !== call.id ? c : { ...c, proposed_tasks: full, items: c.items.filter((_, i) => i !== idx) }).filter(c => c.items.length > 0));
+    } catch (e) {
+      if (window.__notify) window.__notify('Could not mark done: ' + (e.message || e), 'error');
+    } finally {
+      setWorking(w => { const n = { ...w }; delete n[key]; return n; });
+    }
+  };
+
   const dismiss = async (call, idx) => {
     const full = fullArrayFor(call, call.items.map((x, i) => i === idx ? { ...x, status: 'dismissed' } : x));
     await persist(call.id, full);
@@ -14811,6 +14852,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
                 {it.note && <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '8px' }}>{it.note}</div>}
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button className="btn btn-primary btn-sm" disabled={wk || !((it.title || '').trim())} onClick={() => approve(call, idx)}>{wk ? 'Adding…' : '+ Add task'}</button>
+                  <button className="btn btn-ghost btn-sm" disabled={wk || !((it.title || '').trim())} onClick={() => markDone(call, idx)} style={{ borderColor: 'var(--sage, #7fae8f)', color: 'var(--sage, #7fae8f)' }}>✓ Done</button>
                   <button className="btn btn-ghost btn-sm" disabled={wk} onClick={() => dismiss(call, idx)}>Dismiss</button>
                 </div>
               </div>

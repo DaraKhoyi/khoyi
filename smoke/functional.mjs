@@ -81,14 +81,19 @@ for (const dev of want) {
   try {
     const reachable = await page.evaluate(async () => {
       if (window.__openNewContact) window.__openNewContact();
-      await new Promise(r => setTimeout(r, 800));
-      // find a visible Create/Save button anywhere on screen
-      const btns = [...document.querySelectorAll('button')].filter(b => /create contact|save|create/i.test(b.textContent||''));
-      const visible = btns.some(b => { const r = b.getBoundingClientRect(); return r.width>0 && r.height>0 && r.top>=0 && r.bottom<=window.innerHeight+5; });
-      // close it
-      const x = [...document.querySelectorAll('button')].find(b => (b.textContent||'').trim()==='✕' || (b.getAttribute('aria-label')||'')==='Close');
+      const btnRe = /create contact|save changes|create|save/i;
+      // Poll for the modal to mount (up to ~3.5s) instead of a fixed wait — the
+      // modal animates in and a fixed delay raced it, causing flaky failures.
+      let btns = [];
+      for (let i = 0; i < 14; i++) {
+        await new Promise(r => setTimeout(r, 250));
+        btns = [...document.querySelectorAll('button')].filter(b => btnRe.test(b.textContent || ''));
+        if (btns.length) break;
+      }
+      const visible = btns.some(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight + 5; });
+      const x = [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '✕' || (b.getAttribute('aria-label') || '') === 'Close');
       if (x) x.click();
-      return { found: btns.length>0, visible };
+      return { found: btns.length > 0, visible };
     });
     record(dev, 'New-contact Save reachable', reachable.found && reachable.visible,
       !reachable.found ? 'no Save button' : (!reachable.visible ? 'Save OFF-SCREEN (iOS bug)' : ''));
