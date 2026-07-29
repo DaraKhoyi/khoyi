@@ -14,7 +14,7 @@ import ModeBar from './views/ModeBar';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
-import { PAGES, pageVisible, roleAllows } from './pages';
+import { PAGES, PAGE_GROUPS, pageVisible, roleAllows } from './pages';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
 import IdentifyRecording from './views/IdentifyRecording';
 // The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
@@ -5296,6 +5296,7 @@ const LESSONS = [
   { id:'up_brain', cat:'Using Prism', title:'Search your whole memory in Brain', body:'Brain is semantic search across everything Prism knows — ask in plain language ("what did I promise the Reyes family?") and it finds the answer across your notes, calls, and history, even if you don\'t remember the exact words. It\'s your second brain.', deeper:'Unlike a keyword search, semantic search understands meaning — it finds the right memory even when your query and the original note use different words. The more you capture, the more powerful Brain becomes. This is what turns "I think we discussed…" into "here\'s exactly what was said."' },
   { id:'up_docx', cat:'Using Prism', title:'Export a research report as a Word doc', body:'From any contact\'s research report, tap "Word report" and pick who it\'s for. The client dossier is a polished, shareable bio — no behavioral read, no coaching. The agent prep sheet adds the DISC read but still hides the rapport and things-to-avoid notes. Both come branded as Realty ONE Group Advantage.', deeper:'This is how research becomes something you can hand to a client, a co-agent, or a referral partner — a professional one-pager instead of a raw dump. The two modes matter: never share the coaching (how to work someone) with the person themselves. The doc is built on the fly, so it always reflects the latest research on file.' },
   { id:'up_multiparty', cat:'Using Prism', title:'Calls and meetings with 3+ people', body:'When a call or meeting has more than two people, Prism now identifies each extra person and attributes their commitments to them by name — not just "you" or "them." If someone else promised something, it lands as a follow-up on the right person. Review shows who owes what; tap the owner chip to correct it if the guess is off.', deeper:'Prism guesses who the third voice is from the conversation and matches them to your contacts. When the person on the hook is one of your agents, the task can route straight to their list — real delegation, not just a note to chase them. The correction is one tap: "You / the caller / + Someone else." Fix the owner once and the task follows the right person.' },
+  { id:'up_simplify', cat:'Using Prism', title:'Simplify PrismOS to just what you use', body:'Settings has a "Simplify PrismOS" panel that lists every page with an on/off switch, grouped by area. Turn off what you don\'t use and it disappears from every menu — the sidebar and the tab bar both. Your data stays put; flip a page back on any time. A couple of essentials (Today, Settings) can\'t be turned off so you never lock yourself out.', deeper:'This is how you make PrismOS feel light instead of overwhelming — an agent who only does listings can hide the recruiting and finance pages and never see them again. Hiding is per-person, so what you turn off doesn\'t affect anyone else. It\'s cosmetic, not a lock: a hidden page still works if Ari or a link sends you there.' },
   { id:'up_learn', cat:'Using Prism', title:'Keep leveling up in the Field Guide', body:'This is the Prism Field Guide — short lessons on both the craft of real estate and how to get the most from Prism. Work through them at your own pace or let them surface as tips while you work. Track your progress and earn milestones as you go.', deeper:'The lessons are the "why" behind the workflow — read one when you have a spare minute and it compounds. Tips also appear in context on the screens they relate to, one per visit, so you learn the app by using it. Set how often they surface in Settings → Learning pace.' },
 
   { id:'nba', cat:'Your day', title:'Do this next', body:'Top producers don\'t do more — they do the right thing next. Prism scans every signal (tasks, who owes you a reply, cadence, appointments, deals) and surfaces the single highest-leverage move, so you never open the app wondering where to start.', deeper:'The hardest part of this business isn\'t effort, it\'s decision fatigue — a hundred small "what should I do now?" moments that quietly burn your day. The one-tap next action removes that friction: when nothing is urgent, it pivots to the highest-value growth move instead of leaving you at a dead end. Trust it for a week and notice how much less you drift.' },
@@ -13608,6 +13609,53 @@ function CloudStorageSettings({ userId }) {
   );
 }
 
+// SimplifyPanel — every hideable page from the registry, grouped, each with a
+// show/hide toggle. Core pages appear as always-on (locked). Driven entirely by
+// pages.js so a new page shows up here automatically, and hiding here propagates
+// to every menu via pageVisible().
+function SimplifyPanel({ mv, role, onToggle }) {
+  const groups = {};
+  for (const g of PAGE_GROUPS) groups[g] = [];
+  for (const [id, p] of Object.entries(PAGES)) {
+    if (p.built === false) continue;
+    if (!roleAllows(role, p.minRole)) continue;   // don't show pages this user can't access anyway
+    (groups[p.group] || (groups[p.group] = [])).push({ id, ...p });
+  }
+  const Toggle = ({ on, disabled, onChange }) => (
+    <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:disabled?'not-allowed':'pointer',opacity:disabled?0.5:1,flex:'none'}}>
+      <input type="checkbox" checked={on} disabled={disabled} onChange={e=>!disabled&&onChange(e.target.checked)} style={{opacity:0,width:0,height:0}} />
+      <span style={{position:'absolute',top:0,left:0,right:0,bottom:0,background:on?'var(--accent)':'var(--border)',borderRadius:'24px',transition:'background .15s'}} />
+      <span style={{position:'absolute',top:'3px',left:on?'24px':'3px',width:'18px',height:'18px',background:'#fff',borderRadius:'50%',transition:'left .15s'}} />
+    </label>
+  );
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'18px'}}>
+      {PAGE_GROUPS.filter(g => groups[g] && groups[g].length).map(g => (
+        <div key={g}>
+          <div style={{fontSize:'10.5px',fontWeight:800,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--accent)',marginBottom:'8px'}}>{g}</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {groups[g].map(p => {
+              const on = p.core ? true : (mv[p.id] !== false);
+              return (
+                <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',padding:'9px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px',display:'flex',alignItems:'center',gap:'7px'}}>
+                      <Icon name={p.icon} size={14} style={{verticalAlign:'-2px',flex:'none'}} />
+                      <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.label}</span>
+                      {p.core && <span style={{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',color:'var(--text-3)',border:'1px solid var(--border)',borderRadius:'5px',padding:'1px 5px'}}>Essential</span>}
+                    </div>
+                  </div>
+                  <Toggle on={on} disabled={!!p.core} onChange={(v)=>onToggle(p.id, v)} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false }) {
   const [settingsTab, setSettingsTab] = useState(null);
   const [newPassword, setNewPassword] = useState('');
@@ -13978,62 +14026,13 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>
-          <div className="panel-header"><h3>Module visibility</h3></div>
+          <div className="panel-header"><h3>Simplify PrismOS</h3></div>
           <div className="panel-body">
             {moduleMsg && <div className={moduleMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{moduleMsg}</div>}
             <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
-              Hide modules from your sidebar if you don't use them. Your data stays — you can re-enable any time.
+              Turn off pages you don&rsquo;t use to declutter every menu. Your data stays — flip a page back on any time. A few essentials (Today, Settings) can&rsquo;t be turned off.
             </p>
-            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-                <div>
-                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="properties" size={14} style={{verticalAlign:'-2px'}} /> Properties</div>
-                  <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Real estate tracking module</div>
-                </div>
-                <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
-                  <input
-                    type="checkbox"
-                    checked={propsVisible}
-                    onChange={e => toggleModule('properties', e.target.checked)}
-                    style={{opacity:0,width:0,height:0}}
-                  />
-                  <span style={{
-                    position:'absolute',top:0,left:0,right:0,bottom:0,
-                    background: propsVisible ? 'var(--accent)' : 'var(--border)',
-                    borderRadius:'24px',transition:'background 0.15s',
-                  }} />
-                  <span style={{
-                    position:'absolute',top:'3px',left: propsVisible ? '24px' : '3px',
-                    width:'18px',height:'18px',background:'#fff',borderRadius:'50%',
-                    transition:'left 0.15s',
-                  }} />
-                </label>
-              </div>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'8px'}}>
-                <div>
-                  <div style={{fontWeight:600,color:'var(--text-1)',fontSize:'14px'}}><Icon name="dollar" size={14} style={{verticalAlign:'-2px'}} /> Investments</div>
-                  <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'2px'}}>Investment portfolio module</div>
-                </div>
-                <label style={{position:'relative',display:'inline-block',width:'46px',height:'24px',cursor:'pointer'}}>
-                  <input
-                    type="checkbox"
-                    checked={invVisible}
-                    onChange={e => toggleModule('investments', e.target.checked)}
-                    style={{opacity:0,width:0,height:0}}
-                  />
-                  <span style={{
-                    position:'absolute',top:0,left:0,right:0,bottom:0,
-                    background: invVisible ? 'var(--accent)' : 'var(--border)',
-                    borderRadius:'24px',transition:'background 0.15s',
-                  }} />
-                  <span style={{
-                    position:'absolute',top:'3px',left: invVisible ? '24px' : '3px',
-                    width:'18px',height:'18px',background:'#fff',borderRadius:'50%',
-                    transition:'left 0.15s',
-                  }} />
-                </label>
-              </div>
-            </div>
+            <SimplifyPanel mv={mv} role={isAdmin ? 'admin' : 'agent'} onToggle={toggleModule} />
           </div>
         </div>
         <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
@@ -18754,6 +18753,21 @@ function AppMain() {
     ] },
   ];
   assignMenuKeys(MENU, 'm');
+  // STAGE 1: prune pages the user has hidden (Simplify) — or later, isn't
+  // licensed for — from the primary menu tree, so hiding a page removes it from
+  // EVERY menu, not just the tab bar. A branch with no visible leaves is dropped.
+  // Uses the one registry predicate (pages.js). Entries with no `view` (group
+  // headers, placeholders, actions) are kept unless all their children vanish.
+  const pruneMenu = (nodes) => (nodes || []).map(n => {
+    if (n.children) {
+      const kids = pruneMenu(n.children);
+      if (!kids.length && !n.view) return null;   // empty group header → drop
+      return { ...n, children: kids };
+    }
+    if (n.view && PAGES[n.view] && !pageVisible(n.view, navCtx)) return null;
+    return n;
+  }).filter(Boolean);
+  const MENU_VISIBLE = pruneMenu(MENU);
   const menuCtx = { view, navigate, builtSet, byNavId, openPath,
     toggle: (depth, key) => setOpenPath(prev => prev[depth] === key ? prev.slice(0, depth) : [...prev.slice(0, depth), key]) };
 
@@ -18801,7 +18815,7 @@ function AppMain() {
           </div>
           <div className="sidebar-nav">
             <div className="nav-section-label">Menu</div>
-            {MENU.map((node, i) => <MenuNode key={node._key || i} node={node} depth={0} ctx={menuCtx} />)}
+            {MENU_VISIBLE.map((node, i) => <MenuNode key={node._key || i} node={node} depth={0} ctx={menuCtx} />)}
           </div>
           <div className="sidebar-footer">
             <div className="sidebar-user">
