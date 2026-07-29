@@ -14,6 +14,7 @@ import ModeBar from './views/ModeBar';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
+import { PAGES, pageVisible, roleAllows } from './pages';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
 import IdentifyRecording from './views/IdentifyRecording';
 // The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
@@ -18597,8 +18598,13 @@ function AppMain() {
 
   // Pass 2 Batch D — Finding #9: filter nav by user_settings.module_visibility.
   // Default is visible (per Q5=yes): only hide when explicitly set to false.
+  // STAGE 0: visibility now flows through the ONE registry predicate (pages.js)
+  // so the primary menu, mindset rooms, tab bar and (later) licensing all agree.
+  // Behavior is unchanged today — role + module_visibility, no entitlements yet.
   const mv = userSettings?.module_visibility || {};
-  const NAV = NAV_ALL.filter(item => mv[item.id] !== false);
+  const navRole = isAdmin ? 'admin' : isTeamLeader ? 'team_leader' : 'agent';
+  const navCtx = { role: navRole, moduleVisibility: mv, entitled: null, isImpersonating };
+  const NAV = NAV_ALL.filter(item => (PAGES[item.id] ? pageVisible(item.id, navCtx) : mv[item.id] !== false));
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
   const MORE_ORDER = ['briefing', 'pipeline', 'scoreboard', 'team', 'contact_types', 'recruiting', 'deals', 'investments', 'properties', 'tracker', 'playbooks', 'brain', 'prism', 'systems', 'knowledge', 'teams', 'actas', 'announcements', 'settings'];
