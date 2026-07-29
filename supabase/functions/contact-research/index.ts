@@ -31,11 +31,21 @@ function buildResearchPrompt(candidate, contact, scope, me, disc) {
   const socialLines = Object.entries(socials)
     .filter(([, v]) => v && String(v).trim())
     .map(([k, v]) => `- ${k.charAt(0).toUpperCase() + k.slice(1)}: ${v}`);
+  // Use ALL of the contact's emails, not just the primary scalar — a work vs a
+  // personal address can surface completely different public footprints. Fall
+  // back to the scalar email if the jsonb array isn't populated.
+  const emailArr = Array.isArray(contact.emails) ? contact.emails
+    .map((e) => (e && typeof e === "object" ? e.value : e))
+    .filter((v) => v && String(v).trim()) : [];
+  const allEmails = [...new Set([contact.email, ...emailArr].filter(Boolean).map((s) => String(s).trim()))];
+  const emailLine = allEmails.length
+    ? `- Email${allEmails.length > 1 ? "s" : ""}: ${allEmails.join(", ")}`
+    : null;
   const anchors = [
     `- Name: ${id.name || contact.name || "(unknown)"}`,
     (id.headline || contact.company || contact.role) ? `- Title / employer: ${id.headline || [contact.role, contact.company].filter(Boolean).join(" at ")}` : null,
     (id.location || contact.city) ? `- Location: ${id.location || contact.city}` : null,
-    contact.email ? `- Email: ${contact.email}` : null,
+    emailLine,
     contact.phone ? `- Phone: ${contact.phone}` : null,
     (contact.business_address || contact.home_address) ? `- Address: ${contact.business_address || contact.home_address}` : null,
     id.source_url ? `- Verified source: ${id.source_url}` : null,

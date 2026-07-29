@@ -1067,6 +1067,7 @@ function AnnouncementsAdmin({ userId, isAdmin = false }) {
   const [msg, setMsg] = React.useState('');
   const [audiences, setAudiences] = React.useState([]);
   const [audience, setAudience] = React.useState(isAdmin ? '' : '__none__');
+  const [expiresAt, setExpiresAt] = React.useState('');
 
   const load = React.useCallback(async () => {
     try { const { data } = await supabase.rpc('announcement_stats'); setList(Array.isArray(data) ? data : []); } catch (_) { setList([]); }
@@ -1088,9 +1089,12 @@ function AnnouncementsAdmin({ userId, isAdmin = false }) {
     setBusy(true); setMsg('');
     const team_id = (audience && audience !== '' && audience !== '__none__') ? audience : null;
     if (!isAdmin && !team_id) { setMsg('Please choose a team to post to.'); setBusy(false); return; }
-    const { error } = await supabase.from('announcements').insert({ title: title.trim() || null, body: body.trim(), created_by: userId, team_id });
+    // Optional "show until" — a time-bound notice (a meeting, a deadline) self-
+    // retires so it can't pop up for someone weeks later.
+    const expires_at = expiresAt ? new Date(expiresAt).toISOString() : null;
+    const { error } = await supabase.from('announcements').insert({ title: title.trim() || null, body: body.trim(), created_by: userId, team_id, expires_at });
     if (error) { setMsg('Error: ' + error.message); setBusy(false); return; }
-    setTitle(''); setBody(''); setMsg('Posted. Every agent will see it next time they open the app.'); setBusy(false); load();
+    setTitle(''); setBody(''); setExpiresAt(''); setMsg('Posted. Only agents already signed up will see it — new users who join later won\u2019t get this old notice.'); setBusy(false); load();
   }
   async function toggleActive(a) { try { await supabase.from('announcements').update({ is_active: !a.is_active }).eq('id', a.id); } catch (_) {} load(); }
   async function remove(a) { if (!window.confirm('Delete this announcement? This also removes its acknowledgements.')) return; try { await supabase.from('announcements').delete().eq('id', a.id); } catch (_) {} load(); }
@@ -1114,6 +1118,7 @@ function AnnouncementsAdmin({ userId, isAdmin = false }) {
               <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>{isAdmin ? 'Post to everyone, or narrow to a single team.' : 'You can post to your team.'}</div>
             </div>
             <div className="form-group"><label className="form-label">Message</label><textarea className="form-input" value={body} onChange={e => setBody(e.target.value)} rows={4} placeholder="What do you want every agent to see?" /></div>
+            <div className="form-group"><label className="form-label">Show until <span style={{ fontWeight: 400, color: 'var(--text-3)' }}>(optional — for meetings or deadlines, it hides itself after this)</span></label><input type="datetime-local" className="form-input" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} /></div>
             {msg && <div style={{ fontSize: '12.5px', marginBottom: '10px', color: msg.startsWith('Error') ? 'var(--red)' : 'var(--green)' }}>{msg}</div>}
             <button className="btn btn-primary" disabled={busy} onClick={post}>{busy ? 'Posting…' : 'Post announcement'}</button>
           </div>
