@@ -1237,14 +1237,33 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const FLABEL = { fontSize:'10px', color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:600, marginBottom:'6px' };
   const chipBtn = (on, color) => ({ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 11px', borderRadius:999, fontSize:12, fontWeight:700, cursor:'pointer', border:`1px solid ${on?color:'var(--border)'}`, background:on?color+'22':'transparent', color:on?color:'var(--text-2)' });
 
-  async function handleSave(data) {
+  async function handleSave(rawData) {
+    // Sanitize typed fields right before the DB call so no stray value can throw
+    // a 22P02 (invalid type), regardless of what the form or an import produced.
+    // This is the last line of defense — belt and suspenders over the form guards.
+    const sanitizeContact = (d) => {
+      const out = { ...d };
+      const intCols = ['home_purchase_year', 'cadence_days'];
+      const numCols = ['recruiting_estimated_annual_gci'];
+      const uuidCols = ['referred_by_contact_id', 'lead_gen_system_id', 'recruiting_source_system_id', 'team_id'];
+      const dateCols = ['w9_collected_date'];
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      for (const k of intCols) if (k in out) { const n = parseInt(out[k], 10); out[k] = Number.isFinite(n) ? n : null; }
+      for (const k of numCols) if (k in out) { const n = parseFloat(out[k]); out[k] = Number.isFinite(n) ? n : null; }
+      for (const k of uuidCols) if (k in out) { out[k] = (typeof out[k] === 'string' && uuidRe.test(out[k].trim())) ? out[k].trim() : (out[k] || null); if (out[k] === '') out[k] = null; }
+      for (const k of dateCols) if (k in out) { const v = (out[k] || '').toString().trim(); out[k] = /^\d{4}-\d{2}-\d{2}/.test(v) ? v : null; }
+      // any remaining empty strings on known-nullable text-ish fields → null
+      for (const k of Object.keys(out)) if (out[k] === '') out[k] = null;
+      return out;
+    };
+    const data = sanitizeContact(rawData);
     let savedRow = null;
     try {
     if (editContact) {
       const { data: updated, error } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
       if (error) {
         console.error('[contacts.update] save failed', { error, id: editContact.id, data });
-        notify(describeSaveError(error, 'save'), 'error');
+        notify(describeSaveError(error, 'save') + (error.message ? ' (' + error.message + ')' : ''), 'error');
         return;
       }
       savedRow = updated;
