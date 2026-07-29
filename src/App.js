@@ -14,7 +14,7 @@ import ModeBar from './views/ModeBar';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
-import { PAGES, PAGE_GROUPS, pageVisible, roleAllows } from './pages';
+import { PAGES, PAGE_GROUPS, pageVisible, roleAllows, makeEntitled, ALL_FEATURES } from './pages';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
 import IdentifyRecording from './views/IdentifyRecording';
 // The Next Best Action ranking. Lives INSIDE the robot-chat function directory on
@@ -5297,6 +5297,7 @@ const LESSONS = [
   { id:'up_docx', cat:'Using Prism', title:'Export a research report as a Word doc', body:'From any contact\'s research report, tap "Word report" and pick who it\'s for. The client dossier is a polished, shareable bio — no behavioral read, no coaching. The agent prep sheet adds the DISC read but still hides the rapport and things-to-avoid notes. Both come branded as Realty ONE Group Advantage.', deeper:'This is how research becomes something you can hand to a client, a co-agent, or a referral partner — a professional one-pager instead of a raw dump. The two modes matter: never share the coaching (how to work someone) with the person themselves. The doc is built on the fly, so it always reflects the latest research on file.' },
   { id:'up_multiparty', cat:'Using Prism', title:'Calls and meetings with 3+ people', body:'When a call or meeting has more than two people, Prism now identifies each extra person and attributes their commitments to them by name — not just "you" or "them." If someone else promised something, it lands as a follow-up on the right person. Review shows who owes what; tap the owner chip to correct it if the guess is off.', deeper:'Prism guesses who the third voice is from the conversation and matches them to your contacts. When the person on the hook is one of your agents, the task can route straight to their list — real delegation, not just a note to chase them. The correction is one tap: "You / the caller / + Someone else." Fix the owner once and the task follows the right person.' },
   { id:'up_simplify', cat:'Using Prism', title:'Simplify PrismOS to just what you use', body:'Settings has a "Simplify PrismOS" panel that lists every page with an on/off switch, grouped by area. Turn off what you don\'t use and it disappears from every menu — the sidebar and the tab bar both. Your data stays put; flip a page back on any time. A couple of essentials (Today, Settings) can\'t be turned off so you never lock yourself out.', deeper:'This is how you make PrismOS feel light instead of overwhelming — an agent who only does listings can hide the recruiting and finance pages and never see them again. Hiding is per-person, so what you turn off doesn\'t affect anyone else. It\'s cosmetic, not a lock: a hidden page still works if Ari or a link sends you there.' },
+  { id:'up_unlock', cat:'Using Prism', title:'Unlocking extra features', body:'Some PrismOS features are part of add-on packages. If your broker gives you an unlock code, go to Settings → Unlock features, enter it, and the pages turn on immediately. If you land on a locked page, the same code box is right there. Your base features are always yours — codes only add to what you already have.', deeper:'Brokers and owners generate these codes and can grant features to an agent directly. One code can unlock several features at once, and what you unlock is tied to your account, so it follows you. If a page you expected is missing, it\'s likely part of a package your plan doesn\'t include yet — ask your broker.' },
   { id:'up_learn', cat:'Using Prism', title:'Keep leveling up in the Field Guide', body:'This is the Prism Field Guide — short lessons on both the craft of real estate and how to get the most from Prism. Work through them at your own pace or let them surface as tips while you work. Track your progress and earn milestones as you go.', deeper:'The lessons are the "why" behind the workflow — read one when you have a spare minute and it compounds. Tips also appear in context on the screens they relate to, one per visit, so you learn the app by using it. Set how often they surface in Settings → Learning pace.' },
 
   { id:'nba', cat:'Your day', title:'Do this next', body:'Top producers don\'t do more — they do the right thing next. Prism scans every signal (tasks, who owes you a reply, cadence, appointments, deals) and surfaces the single highest-leverage move, so you never open the app wondering where to start.', deeper:'The hardest part of this business isn\'t effort, it\'s decision fatigue — a hundred small "what should I do now?" moments that quietly burn your day. The one-tap next action removes that friction: when nothing is urgent, it pivots to the highest-value growth move instead of leaving you at a dead end. Trust it for a week and notice how much less you drift.' },
@@ -13613,6 +13614,172 @@ function CloudStorageSettings({ userId }) {
 // show/hide toggle. Core pages appear as always-on (locked). Driven entirely by
 // pages.js so a new page shows up here automatically, and hiding here propagates
 // to every menu via pageVisible().
+// AdminLicensingPanel — the owner's control center (Settings, admin only):
+// the master enforcement switch, code generation, and the live code list.
+function AdminLicensingPanel({ userId }) {
+  const [enforced, setEnforced] = React.useState(null);
+  const [codes, setCodes] = React.useState([]);
+  const [feats, setFeats] = React.useState([]);
+  const [label, setLabel] = React.useState('');
+  const [maxR, setMaxR] = React.useState('');
+  const [msg, setMsg] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    try {
+      const [{ data: cfg }, { data: list }] = await Promise.all([
+        supabase.from('app_config').select('value').eq('key','licensing_enforced').maybeSingle(),
+        supabase.rpc('admin_list_codes'),
+      ]);
+      setEnforced(cfg?.value === true);
+      setCodes(Array.isArray(list) ? list : []);
+    } catch (_) {}
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const allFeatures = React.useMemo(() => ALL_FEATURES, []);
+  const toggleFeat = (f) => setFeats(fs => fs.includes(f) ? fs.filter(x => x !== f) : [...fs, f]);
+
+  const setEnforcement = async (on) => {
+    setBusy(true);
+    try {
+      await supabase.from('app_config').upsert({ key: 'licensing_enforced', value: on, updated_by: userId, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+      setEnforced(on);
+      setMsg({ ok: true, text: on ? 'Enforcement ON — users now see only what they\u2019re licensed for. Reload to apply.' : 'Enforcement OFF — all pages visible.' });
+    } catch (e) { setMsg({ ok: false, text: String(e.message || e) }); }
+    finally { setBusy(false); }
+  };
+
+  const createCode = async () => {
+    if (!feats.length) { setMsg({ ok: false, text: 'Pick at least one feature.' }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const { data, error } = await supabase.rpc('admin_create_code', { p_features: feats, p_label: label.trim() || null, p_max_redemptions: maxR ? parseInt(maxR) : null });
+      if (error || !data?.ok) { setMsg({ ok: false, text: (error?.message) || data?.message || 'Could not create code.' }); }
+      else { setMsg({ ok: true, text: `Code created: ${data.code}` }); setFeats([]); setLabel(''); setMaxR(''); await load(); }
+    } catch (e) { setMsg({ ok: false, text: String(e.message || e) }); }
+    finally { setBusy(false); }
+  };
+
+  const toggleActive = async (code, active) => { await supabase.rpc('admin_set_code_active', { p_code: code, p_active: active }); load(); };
+
+  return (
+    <div className="panel" style={{marginBottom:'18px'}}>
+      <div className="panel-header"><h3>Licensing (admin)</h3></div>
+      <div className="panel-body">
+        {msg && <div style={{marginBottom:12,fontSize:13,color:msg.ok?'var(--green,#7fae8f)':'var(--red)'}}>{msg.ok?'✓ ':''}{msg.text}</div>}
+
+        {/* master switch */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'12px 14px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:10,marginBottom:18}}>
+          <div>
+            <div style={{fontWeight:700,color:'var(--text-1)',fontSize:14}}>Enforce licensing</div>
+            <div style={{fontSize:11.5,color:'var(--text-3)',marginTop:2,lineHeight:1.5,maxWidth:420}}>
+              {enforced ? 'ON — everyone sees only base features plus what they\u2019ve been granted.' : 'OFF — every page is visible to everyone (nothing is locked). Turn on when you\u2019re ready to charge.'}
+            </div>
+          </div>
+          <label style={{position:'relative',display:'inline-block',width:46,height:24,cursor:busy?'wait':'pointer',flex:'none'}}>
+            <input type="checkbox" checked={enforced===true} disabled={busy} onChange={e=>setEnforcement(e.target.checked)} style={{opacity:0,width:0,height:0}} />
+            <span style={{position:'absolute',inset:0,background:enforced?'var(--accent)':'var(--border)',borderRadius:24,transition:'background .15s'}} />
+            <span style={{position:'absolute',top:3,left:enforced?24:3,width:18,height:18,background:'#fff',borderRadius:'50%',transition:'left .15s'}} />
+          </label>
+        </div>
+
+        {/* code generator */}
+        <div style={{fontSize:'10.5px',fontWeight:800,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--accent)',marginBottom:10}}>Create an unlock code</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+          {allFeatures.map(f => (
+            <button key={f} type="button" onClick={()=>toggleFeat(f)}
+              style={{fontSize:12,padding:'5px 10px',borderRadius:20,cursor:'pointer',border:'1px solid '+(feats.includes(f)?'var(--accent)':'var(--border)'),background:feats.includes(f)?'rgba(203,163,92,0.15)':'transparent',color:feats.includes(f)?'var(--accent)':'var(--text-2)',fontWeight:feats.includes(f)?700:500}}>
+              {feats.includes(f)?'✓ ':''}{f}
+            </button>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+          <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Label (e.g. Prism Pro)" style={{flex:'1 1 160px',minWidth:0,background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text-1)',padding:'8px 11px',fontSize:13}} />
+          <input value={maxR} onChange={e=>setMaxR(e.target.value.replace(/\D/g,''))} placeholder="Max uses (blank = ∞)" style={{flex:'0 1 150px',minWidth:0,background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text-1)',padding:'8px 11px',fontSize:13}} />
+          <button className="btn btn-primary" disabled={busy || !feats.length} onClick={createCode}>Generate</button>
+        </div>
+
+        {/* existing codes */}
+        {codes.length > 0 && (
+          <div style={{marginTop:8}}>
+            <div style={{fontSize:'10.5px',fontWeight:800,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--accent)',marginBottom:8}}>Codes</div>
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {codes.map(c => (
+                <div key={c.code} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'9px 12px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:8,opacity:c.active?1:0.55}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:700,color:'var(--text-1)',fontSize:13,letterSpacing:'.04em'}}>{c.code}{c.label?<span style={{fontWeight:500,color:'var(--text-3)',marginLeft:8}}>{c.label}</span>:null}</div>
+                    <div style={{fontSize:11,color:'var(--text-3)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(c.features||[]).join(', ')} · used {c.redemption_count}{c.max_redemptions?('/'+c.max_redemptions):''}</div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>toggleActive(c.code, !c.active)} style={{flex:'none'}}>{c.active?'Deactivate':'Activate'}</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// RedeemCodeBox — enter an unlock code, redeem it, refresh entitlements. Reused
+// on the locked-page panel and in Settings.
+function RedeemCodeBox({ onRedeemed, compact = false }) {
+  const [code, setCode] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState(null);
+  const redeem = async () => {
+    const c = code.trim();
+    if (!c) return;
+    setBusy(true); setMsg(null);
+    try {
+      const { data, error } = await supabase.rpc('redeem_unlock_code', { p_code: c });
+      if (error) { setMsg({ ok: false, text: error.message }); }
+      else if (data && data.ok) {
+        setMsg({ ok: true, text: data.message || 'Unlocked.' });
+        setCode('');
+        if (onRedeemed) await onRedeemed();
+      } else {
+        setMsg({ ok: false, text: (data && data.message) || 'That code could not be redeemed.' });
+      }
+    } catch (e) { setMsg({ ok: false, text: String(e.message || e) }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="Enter unlock code"
+          onKeyDown={e => { if (e.key === 'Enter') redeem(); }}
+          style={{ flex: '1 1 180px', minWidth: 0, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-1)', padding: '9px 12px', fontSize: 14, letterSpacing: '.04em', fontWeight: 600 }} />
+        <button className="btn btn-primary" disabled={busy || !code.trim()} onClick={redeem}>{busy ? 'Unlocking…' : 'Unlock'}</button>
+      </div>
+      {msg && <div style={{ marginTop: 8, fontSize: 13, color: msg.ok ? 'var(--green, #7fae8f)' : 'var(--red)' }}>{msg.ok ? '✓ ' : ''}{msg.text}</div>}
+    </div>
+  );
+}
+
+// LockedPage — shown when enforcement is on and the user opens a page they aren't
+// entitled to. An honest upsell, not a dead end: says what the page is and lets
+// them redeem a code on the spot.
+function LockedPage({ page, onRedeem, onSettings }) {
+  return (
+    <div style={{ maxWidth: 520, margin: '8vh auto 0', textAlign: 'center', padding: '0 20px' }}>
+      <div style={{ width: 64, height: 64, borderRadius: 18, margin: '0 auto 20px', display: 'grid', placeItems: 'center', background: 'rgba(203,163,92,0.1)', border: '1px solid rgba(203,163,92,0.3)' }}>
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#CBA35C" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      </div>
+      <div style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 6 }}>Locked feature</div>
+      <h2 style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 400, fontSize: 28, color: 'var(--text-1)', margin: '0 0 10px' }}>{page.label}</h2>
+      <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 24px' }}>
+        This page isn&rsquo;t part of your current plan. If you have an unlock code, enter it below and it&rsquo;ll turn on right away — otherwise reach out to your broker to add it.
+      </p>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, textAlign: 'left' }}>
+        <RedeemCodeBox onRedeemed={onRedeem} />
+      </div>
+      <button className="btn btn-ghost" style={{ marginTop: 18 }} onClick={onSettings}>Go to Settings</button>
+    </div>
+  );
+}
+
 function SimplifyPanel({ mv, role, onToggle }) {
   const groups = {};
   for (const g of PAGE_GROUPS) groups[g] = [];
@@ -13656,7 +13823,7 @@ function SimplifyPanel({ mv, role, onToggle }) {
   );
 }
 
-function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false }) {
+function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false, entitlements = null, reloadEntitlements = null, licensingEnforced = false }) {
   const [settingsTab, setSettingsTab] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -14035,6 +14202,21 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
             <SimplifyPanel mv={mv} role={isAdmin ? 'admin' : 'agent'} onToggle={toggleModule} />
           </div>
         </div>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Unlock features</h3></div>
+          <div className="panel-body">
+            <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
+              Have an unlock code from your broker? Enter it to turn on additional features on this account.
+            </p>
+            <RedeemCodeBox onRedeemed={reloadEntitlements} />
+            {Array.isArray(entitlements) && entitlements.length > 0 && (
+              <div style={{marginTop:'14px',fontSize:'12px',color:'var(--text-3)'}}>
+                Unlocked: {entitlements.join(', ')}
+              </div>
+            )}
+          </div>
+        </div>
+        {isAdmin && <AdminLicensingPanel userId={userId} />}
         <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
         <CubeACRPanel userId={userId} emailAccounts={emailAccounts || []} />
         <EmailAliasesPanel emailAliases={emailAliases || []} setEmailAliases={setEmailAliases} emailAccounts={emailAccounts || []} userId={userId} />
@@ -18034,7 +18216,24 @@ function AppMain() {
   // menus still pass entitled:null to pageVisible so nothing is hidden. This just
   // makes the data available so Stage 3 can flip enforcement on in one place.
   const [entitlements, setEntitlements] = useState(null);
-  useEffect(()=>{ if(!session) { setEntitlements(null); return; } let alive=true; (async()=>{ try{ const { data } = await supabase.rpc('get_my_entitlements'); if(alive) setEntitlements(Array.isArray(data) ? data.map(r=>r.feature) : []); }catch(_){ if(alive) setEntitlements([]); } })(); return ()=>{alive=false;}; },[session]);
+  const reloadEntitlements = React.useCallback(async () => {
+    try { const { data } = await supabase.rpc('get_my_entitlements'); setEntitlements(Array.isArray(data) ? data.map(r=>r.feature) : []); }
+    catch(_){ setEntitlements([]); }
+  }, []);
+  useEffect(()=>{ if(!session) { setEntitlements(null); return; } let alive=true; (async()=>{ await reloadEntitlements(); })(); return ()=>{alive=false;}; },[session, reloadEntitlements]);
+  // STAGE 3: the master enforcement switch (app_config.licensing_enforced),
+  // seeded OFF. Until Dara flips it, enforced=false → entitled stays null →
+  // nothing is licensed-away (protects the live beta). Everything else in Stage 3
+  // (redeem, admin code-gen, locked panels) is built and testable regardless.
+  const [licensingEnforced, setLicensingEnforced] = useState(false);
+  useEffect(()=>{ if(!session) return; let alive=true; (async()=>{ try{ const { data } = await supabase.from('app_config').select('value').eq('key','licensing_enforced').maybeSingle(); if(alive) setLicensingEnforced(data?.value === true); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
+  // The one entitlement predicate the menus + router use. Only ACTIVE when the
+  // master switch is on; otherwise null (no filtering — current behavior).
+  const entitled = React.useMemo(() => {
+    if (!licensingEnforced) return null;
+    const role = (appCtx?.is_admin) ? 'admin' : 'agent';
+    return makeEntitled(entitlements || [], appCtx?.role === 'owner' ? 'owner' : role);
+  }, [licensingEnforced, entitlements, appCtx]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('today');   // Today is home; Dashboard is retired
   // ── mindset-mode navigation ──────────────────────────────────────────────
@@ -18607,7 +18806,7 @@ function AppMain() {
   // Behavior is unchanged today — role + module_visibility, no entitlements yet.
   const mv = userSettings?.module_visibility || {};
   const navRole = isAdmin ? 'admin' : isTeamLeader ? 'team_leader' : 'agent';
-  const navCtx = { role: navRole, moduleVisibility: mv, entitled: null, isImpersonating };
+  const navCtx = { role: navRole, moduleVisibility: mv, entitled, isImpersonating };
   const NAV = NAV_ALL.filter(item => (PAGES[item.id] ? pageVisible(item.id, navCtx) : mv[item.id] !== false));
   // Primary tabs (top to bottom) + collapsible "More" group.
   const MAIN_ORDER = ['dashboard', 'numbers', 'chat', 'prospecting', 'tasks', 'calendar', 'contacts', 'inbox', 'journal', 'finance', 'mileage', 'quo'];
@@ -18853,7 +19052,9 @@ function AppMain() {
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
-                {view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
+                {(entitled && PAGES[view] && !pageVisible(view, navCtx) && !PAGES[view].core)
+                  ? <LockedPage page={PAGES[view]} onRedeem={reloadEntitlements} onSettings={()=>setView('settings')} />
+                : view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
                 : view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />
                 : view==='dashboard'   ? <DashboardHub
                     agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]}
@@ -18913,7 +19114,7 @@ function AppMain() {
               : view==='teams' ? <TeamsAdmin userId={user.id} />
               : view==='actas' ? <ActAsPicker userId={user.id} />
               : view==='announcements' ? <AnnouncementsAdmin userId={user.id} isAdmin={isAdmin} />
-              : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin}/>
+              : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin} entitlements={entitlements} reloadEntitlements={reloadEntitlements} licensingEnforced={licensingEnforced}/>
               : null}
                 </React.Suspense>
               </ViewErrorBoundary>
