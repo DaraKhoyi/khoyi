@@ -1250,7 +1250,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       for (const k of intCols) if (k in out) { const n = parseInt(out[k], 10); out[k] = Number.isFinite(n) ? n : null; }
       for (const k of numCols) if (k in out) { const n = parseFloat(out[k]); out[k] = Number.isFinite(n) ? n : null; }
-      for (const k of uuidCols) if (k in out) { out[k] = (typeof out[k] === 'string' && uuidRe.test(out[k].trim())) ? out[k].trim() : (out[k] || null); if (out[k] === '') out[k] = null; }
+      for (const k of uuidCols) if (k in out) { const v = (out[k] == null ? '' : String(out[k])).trim(); out[k] = uuidRe.test(v) ? v : null; }
       for (const k of dateCols) if (k in out) { const v = (out[k] || '').toString().trim(); out[k] = /^\d{4}-\d{2}-\d{2}/.test(v) ? v : null; }
       // any remaining empty strings on known-nullable text-ish fields → null
       for (const k of Object.keys(out)) if (out[k] === '') out[k] = null;
