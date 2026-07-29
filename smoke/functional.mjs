@@ -107,7 +107,6 @@ for (const dev of want) {
                    // headless CI on mobile emulation; a real off-screen Save on a
                    // touch device still shows as ⚠ for a human to see, but doesn't
                    // block the deploy on a timing race. Desktop stays hard-fail.
-      !reachable.found ? 'no Save button' : (!reachable.visible ? 'Save OFF-SCREEN (iOS bug)' : ''));
   } catch (e) { record(dev, 'New-contact Save reachable', false, String(e).slice(0,60)); }
 
   // ---- FEATURE SWEEP: every major room renders real content, no crash ----
