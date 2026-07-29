@@ -428,10 +428,24 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
 
   const createTaskFromItem = async (item, call) => {
     const note = [ctxNote(call), item.note].filter(Boolean).join(' ');
+    // If the responsible person is one of our agents (has a login), route the
+    // task onto THEIR list via assignee_email — real delegation, not just a
+    // "waiting on" chase. Only applies to a reassigned third party (owner_contact_id).
+    let assigneeEmail = null;
+    if (item.owner === 'them' && item.owner_contact_id) {
+      try {
+        const { data: oc } = await supabase.from('contacts').select('email,type').eq('id', item.owner_contact_id).maybeSingle();
+        if (oc && oc.email && oc.type === 'our_agent') {
+          const { data: ag } = await supabase.from('agents').select('email').ilike('email', oc.email).maybeSingle();
+          if (ag && ag.email) assigneeEmail = ag.email;
+        }
+      } catch (_) {}
+    }
     try {
       const { data: t, error } = await supabase.from('tasks').insert({
         user_id: userId, title: item.title, due_date: item.due_date || null, priority: item.priority || 'medium', notes: note,
         priority_system: defaultSystem || 'eisenhower', eisenhower_quadrant: quad(item.priority || 'medium'), completed: false,
+        ...(assigneeEmail ? { assignee_email: assigneeEmail, assignment_method: 'delegated' } : {}),
         // Someone else's promise: the app already speaks "waiting_on", so a
         // follow-up reads as a chase rather than as your own work.
         waiting_on: item.owner === 'them'
@@ -442,6 +456,7 @@ function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSystem = '
         // Link to the RESPONSIBLE person when you reassigned it; otherwise the call.
         const linkId = item.owner_contact_id || call.contact_id;
         if (linkId) { try { await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [linkId] }); } catch (_) {} }
+        if (assigneeEmail && window.__notify) window.__notify(`Delegated to ${nameOf(item.owner_contact_id) || assigneeEmail}`, 'success');
         return true;
       }
     } catch (_) {}

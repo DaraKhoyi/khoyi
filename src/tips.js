@@ -48,6 +48,8 @@ export const TIPS = [
     body: 'Drop a LinkedIn, Instagram, or Facebook on a contact (Details tab) and Prism uses it to <b>find the right person fast</b> — a profile URL pins identity far better than a name. Better in, better out.' },
   { id: 'research_docx', screen: 'contacts', label: 'Export research as a branded Word doc',
     body: 'Open a contact\'s research report and tap <b>⬇ Word report</b>. Pick <b>Client-facing dossier</b> (a polished bio to share — no behavioral read) or <b>Agent prep sheet</b> (adds the DISC read, still hides the rapport & things-to-avoid coaching). Branded Realty ONE Group Advantage.' },
+  { id: 'multiparty_calls', screen: 'briefing', label: 'Three-party calls & meetings',
+    body: 'Calls and meetings with 3+ people now attribute each commitment to the right person by name. If a third party owes something, it becomes a follow-up on <b>them</b> — and if they\'re one of your agents, it can route to their list. Tap the owner chip in review to correct any guess.' },
   // ── Deals / pipeline ────────────────────────────────────────────────────────
   { id: 'deals_stall', screen: 'deals', label: 'Catch a deal before it dies',
     body: 'Deals rarely blow up — they <b>go quiet</b>. Prism flags the ones that have stalled past their stage so you re-engage while it is still saveable, not at the post-mortem.' },

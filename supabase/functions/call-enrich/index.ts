@@ -124,9 +124,11 @@ serve(async (req) => {
 
         const sys =
           "You summarise a recorded phone call for the person who was on it. Reply with STRICT JSON only, no markdown fence.\n" +
-          '{ "summary": "...", "speaker_map": {"A":"contact"|"me","B":"contact"|"me"}, "confidence": "high"|"low" }\n' +
+          '{ "summary": "...", "speaker_map": {"A":"contact"|"me"|"other","B":"contact"|"me"|"other"}, "speaker_people": {"C":{"name":"who this third speaker is"}}, "confidence": "high"|"low" }\n' +
           "summary: 2-3 plain sentences on what was actually said and decided. Write it for the person who was there — no throat-clearing, no 'the call began with'. If a decision, number, date or commitment was made, it belongs in the summary.\n" +
-          "speaker_map: decide which diarizer label is the CONTACT and which is the person whose phone recorded this. Use the content: who called whom, who is asking vs answering, who owns the problem, names used. Set confidence low if it is genuinely ambiguous — a wrong attribution is worse than an admitted guess.";
+          "speaker_map: for EACH diarizer label present (A, B, C, D, …), decide its role: `me` = the person whose phone recorded this call, `contact` = the primary other party, `other` = an ADDITIONAL third person. EXACTLY ONE speaker is `me` (the phone owner — they are on almost every call). Most calls are just two people (`me` + `contact`). Only use `other` for a genuine additional voice, and never label ALL speakers `other` — the phone owner is always one of them. Note the phone owner may be addressed by a nickname or role (e.g. a family member calling them 'Dad').\n" +
+          "speaker_people: ONLY for labels you marked `other` — give your best guess of who that third person is by name, from the content (names used, roles). Omit any you cannot name. If there are no third parties, use an empty object {}.\n" +
+          "Use the content: who called whom, who is asking vs answering, who owns the problem, names used. Set confidence low if it is genuinely ambiguous — a wrong attribution is worse than an admitted guess.";
 
         const usr =
           `This is a ${direction} call ${direction === "inbound" ? "from" : "to"} ${otherName}` +
@@ -138,12 +140,38 @@ serve(async (req) => {
         let parsed: any = {};
         try { parsed = JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { parsed = {}; }
 
-        const map = parsed.speaker_map && parsed.speaker_map.A ? parsed.speaker_map : null;
+        let map = parsed.speaker_map && parsed.speaker_map.A ? parsed.speaker_map : null;
+        // Invariant: the phone owner is on the call, so exactly-one 'me' should
+        // exist. If the model labelled NO speaker 'me' (over-applying 'other'),
+        // the map is untrustworthy for attribution — drop it rather than store a
+        // map where the owner disappeared (which would mis-route every commitment).
+        if (map && !Object.values(map).includes("me")) map = null;
         const summary = (parsed.summary || "").trim() || null;
+        // Match any AI-named third parties to a contact by name (best-effort), and
+        // never clobber a human correction (source:'manual') already on the row.
+        let speakerPeople: Record<string, any> | null = null;
+        const sp = parsed.speaker_people;
+        if (sp && typeof sp === "object" && Object.keys(sp).length) {
+          const { data: cs2 } = await db.from("contacts").select("id,name").eq("user_id", call.user_id).not("name", "is", null).limit(1000);
+          const norm = (s: string) => String(s || "").trim().toLowerCase();
+          const existing = (call.speaker_people && typeof call.speaker_people === "object") ? call.speaker_people : {};
+          speakerPeople = { ...existing };
+          for (const [label, val] of Object.entries(sp)) {
+            if ((existing as any)[label]?.source === "manual") continue;
+            const name = String((val as any)?.name || "").trim();
+            if (!name) continue;
+            const exact = (cs2 || []).find((c: any) => norm(c.name) === norm(name));
+            const first = norm(name).split(/\s+/)[0];
+            const byFirst = (cs2 || []).filter((c: any) => norm(c.name).split(/\s+/)[0] === first);
+            const cid2 = exact ? exact.id : (byFirst.length === 1 ? byFirst[0].id : null);
+            speakerPeople[label] = { name: exact ? exact.name : (byFirst.length === 1 ? byFirst[0].name : name), contact_id: cid2, source: "ai" };
+          }
+        }
 
         await db.from("quo_calls").update({
           summary,
           speaker_map: map,
+          ...(speakerPeople ? { speaker_people: speakerPeople } : {}),
           direction,
           enriched_at: new Date().toISOString(),
         }).eq("id", call.id);

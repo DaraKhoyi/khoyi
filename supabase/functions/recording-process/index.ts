@@ -18,12 +18,12 @@ Shape:
   "non_english": true if the transcript contains ANY non-English speech (e.g. Farsi or Spanish), otherwise false,
   "labels_inverted": true if the "Me:"/"Them:" labels are backwards (see the ATTRIBUTION rule), otherwise false,
   "attribution_confidence": "high" | "low",
-  "action_items": [ { "owner": "me" | "them", "title": "short imperative task", "fuse": "immediate" | "near" | "distant", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
+  "action_items": [ { "owner": "me" | "them" | "other", "owner_name": "if other, the third person's name", "title": "short imperative task", "fuse": "immediate" | "near" | "distant", "due_date": "YYYY-MM-DD or null", "priority": "high" | "medium" | "low", "note": "brief context, optional" } ] }
 Rules:
 - call_summary + key_points carry the SUBSTANCE of the call (context, advice, decisions). This is where information is preserved, NOT in tasks. Be useful but concise: up to 5 key_points, fewer if the call was simple; return "key_points": [] if there is nothing beyond the summary.
 - action_items are ONLY concrete, real next steps someone actually committed to, each with a clear deliverable. BE STRICT: exclude vague intentions ("we should catch up sometime"), hypotheticals, general discussion, pleasantries, and anything already done during the call. If something is context or advice rather than a discrete to-do, keep it in key_points and do NOT make it a task. When in doubt, leave it out. Return at most 5 action_items; if nothing was truly committed, return [].
 - ATTRIBUTION — READ THIS BEFORE ASSIGNING ANY OWNER. The "Me:"/"Them:" labels were NOT produced by identifying anyone. They come from a positional guess about who spoke first, which is frequently WRONG — and when it is wrong, every label in the transcript is backwards. Do not trust them. Work out from the CONTENT who the account owner actually is: who introduces themselves by the owner's name, who is providing the real-estate service versus receiving it, who is being asked for information about listings, showings, contracts or commissions. If the content shows the labels are backwards, set "labels_inverted": true and assign owners according to the TRUE speaker, not the label. If you cannot tell who is who, set "attribution_confidence":"low".
-- "owner":"me" = something the ACCOUNT OWNER agreed to do. "owner":"them" = the other person's commitment (the owner should track/expect it). Include both.
+- "owner":"me" = something the ACCOUNT OWNER agreed to do. "owner":"them" = the primary other person's commitment. "owner":"other" = a THIRD person on the call (meetings often have 3+ people) — put their name in "owner_name". The owner should track/expect all of them. Include all.
 - Resolve relative dates to an absolute YYYY-MM-DD using the provided current date; else null.
 - Keep titles short and actionable. Do not invent commitments that were not discussed.
 - "fuse" classifies HOW SOON the promise comes due, which decides whether it is worth queuing at all:
@@ -174,10 +174,31 @@ serve(async (req) => {
       }
 
       const lowAttr = plan?.attribution_confidence === "low";
-      const proposed = items.map((a: any) => ({ title: String(a.title || "").slice(0, 200), owner: a.owner === "them" ? "them" : "me",
-        // Surfaced in review as "unsure" so a shaky attribution is visible rather
-        // than silently wrong — the reviewer can flip it in one tap.
-        attribution_confidence: lowAttr ? "low" : "high", due_date: a.due_date || null, priority: ["high", "medium", "low"].includes(a.priority) ? a.priority : "medium", note: String(a.note || "").slice(0, 300), status: "pending" }));
+      // For any 3rd-party ("other") action item, resolve the spoken name to a
+      // contact so it attributes to the specific person (and can be delegated).
+      const { data: rosterC } = await admin.from("contacts").select("id,name").eq("user_id", rec.user_id).not("name", "is", null).limit(1000);
+      const normN = (s: string) => String(s || "").trim().toLowerCase();
+      const resolveName = (name: string): string | null => {
+        if (!name) return null;
+        const exact = (rosterC || []).find((c: any) => normN(c.name) === normN(name));
+        if (exact) return exact.id;
+        const first = normN(name).split(/\s+/)[0];
+        const byFirst = (rosterC || []).filter((c: any) => normN(c.name).split(/\s+/)[0] === first);
+        return byFirst.length === 1 ? byFirst[0].id : null;
+      };
+      const proposed = items.map((a: any) => {
+        let owner = a.owner === "them" ? "them" : a.owner === "other" ? "other" : "me";
+        let owner_contact_id: string | null = null;
+        if (owner === "other") {
+          owner_contact_id = resolveName(a.owner_name || "");
+          if (owner_contact_id && owner_contact_id === rec.contact_id) { owner = "them"; owner_contact_id = null; }
+          else if (!owner_contact_id) { owner = "them"; }  // unresolvable → track as the counterparty's
+        }
+        return { title: String(a.title || "").slice(0, 200), owner, owner_contact_id,
+          // Surfaced in review as "unsure" so a shaky attribution is visible rather
+          // than silently wrong — the reviewer can flip it in one tap.
+          attribution_confidence: lowAttr ? "low" : "high", due_date: a.due_date || null, priority: ["high", "medium", "low"].includes(a.priority) ? a.priority : "medium", note: String(a.note || "").slice(0, 300), status: "pending" };
+      });
       actions += proposed.length;
       await admin.from("recordings").update({
         summary: (summary || keyPoints.length) ? [summary, ...keyPoints].filter(Boolean) : null, proposed_tasks: proposed, transcript_en: transcriptEn,
