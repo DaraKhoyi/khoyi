@@ -232,6 +232,9 @@ function VCardImportModal({ onClose, onParsed }) {
 }
 
 function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, contacts = [], setContacts, userId, canSeeRestricted = false }) {
+  // "Editing" only when this is a real saved row (has an id). A vCard import /
+  // prefill passes a partial `initial` with no id — that is a NEW contact.
+  const isEdit = !!(initial && initial.id);
 
   useBackClose(onClose);
   const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
@@ -365,11 +368,11 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
           <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
             <div style={{width:'48px',height:'48px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'17px',color:'var(--accent)'}}>{mInitials}</div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{initial ? 'Editing' : 'New contact'}</div>
-              <div style={{fontSize:'17px',fontWeight:800,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name || (initial ? initial.name : 'New contact')}</div>
+              <div style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{isEdit ? 'Editing' : 'New contact'}</div>
+              <div style={{fontSize:'17px',fontWeight:800,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name || (isEdit ? initial.name : 'New contact')}</div>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:'5px',flexShrink:0}}>
-              <button type="button" onClick={handleSubmit} title={initial ? 'Save changes' : 'Create contact'} style={{height:'32px',padding:'0 14px',borderRadius:'8px',border:'none',background:'var(--accent-2, #EBCB82)',color:'#1a1409',cursor:'pointer',fontSize:'12px',fontWeight:800}}>{initial ? 'Save' : 'Create'}</button>
+              <button type="button" onClick={handleSubmit} title={isEdit ? 'Save changes' : 'Create contact'} style={{height:'32px',padding:'0 14px',borderRadius:'8px',border:'none',background:'var(--accent-2, #EBCB82)',color:'#1a1409',cursor:'pointer',fontSize:'12px',fontWeight:800}}>{isEdit ? 'Save' : 'Create'}</button>
               {initial && onShowDetails && <button type="button" onClick={()=>onShowDetails(initial)} title="View details" style={{height:'32px',padding:'0 11px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:700}}>View →</button>}
               {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="trash" size={15} /></button>}
               <button type="button" onClick={onClose} title="Close" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'17px',lineHeight:1}}>×</button>
@@ -535,7 +538,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
           </div>
           <div className="modal-actions" style={{padding:'12px 16px calc(14px + env(safe-area-inset-bottom, 0px))',borderTop:'1px solid var(--border)',margin:0,flexShrink:0,position:'sticky',bottom:0,background:'var(--bg-card)',zIndex:2}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-primary" onClick={handleSubmit}>{initial ? 'Save changes' : 'Create contact'}</button>
+            <button type="button" className="btn btn-primary" onClick={handleSubmit}>{isEdit ? 'Save changes' : 'Create contact'}</button>
           </div>
         </form>
       </div>
@@ -1258,8 +1261,14 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     };
     const data = sanitizeContact(rawData);
     let savedRow = null;
+    // ROOT CAUSE of "undefined isn't a valid uuid": a vCard import and a prefill
+    // both load a partial object into editContact that has NO id. Keying the
+    // save branch off editContact truthiness then ran UPDATE ... .eq('id',
+    // undefined). Those are NEW contacts — only treat it as an edit when a real
+    // id is present; otherwise INSERT.
+    const isExistingEdit = !!(editContact && editContact.id);
     try {
-    if (editContact) {
+    if (isExistingEdit) {
       const { data: updated, error } = await supabase.from('contacts').update(data).eq('id', editContact.id).select().single();
       if (error) {
         console.error('[contacts.update] save failed', { error, id: editContact.id, data });
