@@ -156,3 +156,21 @@ export const ALL_FEATURES = [...new Set(Object.values(PAGES).map(p => p.feature)
 
 // The base-tier feature set (what everyone keeps when licensing ships).
 export const BASE_FEATURES = [...new Set(Object.values(PAGES).filter(p => p.tier === 'base').map(p => p.feature))].filter(f => f && f !== 'core').sort();
+
+// Build the `entitled(feature)` predicate for a user. A feature is available if:
+//   • it's core or base-tier (everyone keeps these — "drop to base"), or
+//   • the owner/admin is asking (they always have everything), or
+//   • the user has been granted it (an entitlement row / redeemed code).
+// grantedFeatures is the array from get_my_entitlements(); role bypass covers
+// owner + admins. This is what Stage 3 passes into pageVisible().
+export function makeEntitled(grantedFeatures, role) {
+  const granted = new Set(grantedFeatures || []);
+  const base = new Set([...BASE_FEATURES, 'core']);
+  const roleBypass = role === 'owner' || role === 'admin';
+  return (feature) => {
+    if (!feature || feature === 'core') return true;
+    if (base.has(feature)) return true;
+    if (roleBypass) return true;
+    return granted.has(feature);
+  };
+}

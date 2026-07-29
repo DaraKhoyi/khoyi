@@ -18030,6 +18030,11 @@ function AppMain() {
   const [session, setSession] = useState(null);
   const [appCtx, setAppCtx] = useState(null);
   useEffect(()=>{ if(!session) { setAppCtx(null); return; } let alive=true; (async()=>{ try{ try{ await supabase.rpc('claim_agent_profile'); }catch(_e){} const { data } = await supabase.functions.invoke('app-whoami'); if(alive && data && !data.error) setAppCtx(data); }catch(_){} })(); return ()=>{alive=false;}; },[session]);
+  // STAGE 2: load the user's granted (pro) entitlements. Not enforced yet — the
+  // menus still pass entitled:null to pageVisible so nothing is hidden. This just
+  // makes the data available so Stage 3 can flip enforcement on in one place.
+  const [entitlements, setEntitlements] = useState(null);
+  useEffect(()=>{ if(!session) { setEntitlements(null); return; } let alive=true; (async()=>{ try{ const { data } = await supabase.rpc('get_my_entitlements'); if(alive) setEntitlements(Array.isArray(data) ? data.map(r=>r.feature) : []); }catch(_){ if(alive) setEntitlements([]); } })(); return ()=>{alive=false;}; },[session]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('today');   // Today is home; Dashboard is retired
   // ── mindset-mode navigation ──────────────────────────────────────────────
