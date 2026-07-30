@@ -212,6 +212,7 @@ Mapping rules:
       }, 502);
     }
     const claudeData = await claudeResp.json();
+    try { await logAiUsage(adminClient, { userId: user?.id, fn: "parse-receipt", model: MODEL, usage: claudeData?.usage, usedOwn: false }); } catch (_) {}
     const rawText = claudeData?.content?.[0]?.text || '';
     // 5. Parse the JSON Claude returned (strip any accidental fences)
     let parsed = {};

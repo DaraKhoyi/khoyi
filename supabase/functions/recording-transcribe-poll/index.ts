@@ -19,6 +19,7 @@
 // into a Me/Them binary.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const AAI_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") || "";
@@ -76,7 +77,7 @@ async function identifySpeakers(utt: any[], owner: string, them: string | null) 
       }),
     });
     if (!r.ok) return { map: {}, confidence: "low" };
-    const d = await r.json();
+    const d = await r.json(); __rtpUsage = d?.usage || __rtpUsage;
     const raw = (d?.content || []).map((c: any) => c?.text || "").join("").replace(/```json|```/g, "").trim();
     const p = JSON.parse(raw);
     const ownerLetter = p?.owner_letter && letters.includes(p.owner_letter) ? p.owner_letter : null;
@@ -118,6 +119,7 @@ serve(async (req) => {
           const utt = Array.isArray(t.utterances) ? t.utterances : [];
           const { owner, them } = await context(admin, rec);
           const { map, confidence } = await identifySpeakers(utt, owner, them);
+          try { await logAiUsage(admin, { userId: rec?.user_id, fn: "recording-transcribe-poll", model: "claude-sonnet-4-6", usage: __rtpUsage, usedOwn: false }); } catch (_) {}
 
           let method = "content";
           let label: (sp: string) => string;

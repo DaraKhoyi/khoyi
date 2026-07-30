@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 // The SAME ranking the Dashboard's "Do this next" hero runs. Single source of
 // truth in _shared/nba.js — if this ever forks, the app and Ari start disagreeing
@@ -716,6 +717,7 @@ serve(async (req) => {
     try {
       for (let i = 0; i < MAX_TOOL_ITERS; i++) {
         const resp = await callClaude(system, loopMessages, tools);
+        try { await logAiUsage(supabase, { userId, fn: "robot-chat", model: MODEL, usage: resp?.usage, usedOwn: false }); } catch (_) {}
         usage = resp.usage || usage;
         const clientToolUses = (resp.content || []).filter((b) => b.type === "tool_use");
         if (resp.stop_reason === "tool_use" && clientToolUses.length) {

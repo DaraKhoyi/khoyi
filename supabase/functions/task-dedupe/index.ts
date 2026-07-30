@@ -3,6 +3,7 @@
 // so it catches semantically-equal tasks phrased differently across repeated calls.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODELS = ["claude-sonnet-4-6", "claude-3-5-sonnet-20241022"];
 
@@ -53,14 +54,16 @@ Only include tasks that genuinely might overlap. If none overlap, return an empt
 
     const key = Deno.env.get("ANTHROPIC_API_KEY");
     let raw = "";
+    let __tdUsage: any = null;
     for (const model of MODELS) {
       try {
         const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 700, messages: [{ role: "user", content: prompt }] }) });
         if (!r.ok) continue;
-        const d = await r.json(); raw = (d.content || []).map((c: any) => c.text || "").join(""); if (raw) break;
+        const d = await r.json(); __tdUsage = d?.usage || __tdUsage; raw = (d.content || []).map((c: any) => c.text || "").join(""); if (raw) break;
       } catch (_) {}
     }
     let parsed: any = { candidates: [] };
+    try { await logAiUsage(sb, { userId: uid, fn: "task-dedupe", model: MODELS[0], usage: __tdUsage, usedOwn: false }); } catch (_) {}
     try { const m = raw.match(/\{[\s\S]*\}/); parsed = JSON.parse(m ? m[0] : raw); } catch (_) {}
     const byId: Record<string, any> = {}; pool.forEach((t: any) => byId[t.id] = t);
     const candidates = (parsed.candidates || [])

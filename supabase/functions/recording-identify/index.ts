@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 // ── recording-identify ───────────────────────────────────────────────────────
 // Answers "who was in this recording?" for a face-to-face meeting that carries no
@@ -26,6 +27,7 @@ const cors = {
 };
 const MODEL = "claude-sonnet-4-6";
 
+let __riUsage: any = null;
 async function claude(key: string, system: string, user: string, maxTokens = 700) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -33,7 +35,7 @@ async function claude(key: string, system: string, user: string, maxTokens = 700
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
   });
   if (!r.ok) throw new Error(`claude ${r.status}: ${(await r.text()).slice(0, 140)}`);
-  const j = await r.json();
+  const j = await r.json(); __riUsage = j?.usage || __riUsage;
   return (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
 }
 
@@ -87,6 +89,7 @@ serve(async (req) => {
         const sys = "From a meeting transcript, list the FIRST NAMES of people who appear to be participants or are addressed directly. " +
           "Return a JSON array of lowercase first names only, e.g. [\"javier\",\"josh\"]. Exclude the narrator's self-references, brands, and places. If none, return [].";
         const raw = await claude(KEY, sys, text.slice(0, 8000), 200);
+        try { await logAiUsage(db, { userId: user_id, fn: "recording-identify", model: MODEL, usage: __riUsage, usedOwn: false }); } catch (_) {}
         spokenNames = JSON.parse(raw.replace(/```json|```/g, "").trim());
         if (!Array.isArray(spokenNames)) spokenNames = [];
       } catch { spokenNames = []; }

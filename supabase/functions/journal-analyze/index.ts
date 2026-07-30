@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,6 +25,7 @@ async function embed(text: string): Promise<number[] | null> {
     return j.data?.[0]?.embedding || null;
   } catch { return null; }
 }
+let __jaUsage: any = null;
 async function claudeJSON(system: string, user: string) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -31,7 +33,7 @@ async function claudeJSON(system: string, user: string) {
     body: JSON.stringify({ model: MODEL, max_tokens: 1200, system, messages: [{ role: "user", content: user }] }),
   });
   if (!r.ok) throw new Error("claude " + r.status);
-  const j = await r.json();
+  const j = await r.json(); __jaUsage = j?.usage || null;
   const txt = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   const clean = txt.replace(/```json|```/g, "").trim();
   try { return JSON.parse(clean); } catch { return { links: [], action_items: [], follow_ups: [] }; }
@@ -93,6 +95,7 @@ serve(async (req) => {
       const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
       const userMsg = `Today is ${today}.\n\nJOURNAL ENTRY:\n"""${text.slice(0, 4000)}"""\n\nCANDIDATES:\n${JSON.stringify(candidates)}`;
       analysis = await claudeJSON(system, userMsg);
+      try { await logAiUsage(supabase, { userId, fn: "journal-analyze", model: MODEL, usage: __jaUsage, usedOwn: false }); } catch (_) {}
     }
     const labelById: Record<string, string> = {};
     candidates.forEach((c) => { labelById[c.type + ":" + c.id] = c.label; });

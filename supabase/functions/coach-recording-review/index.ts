@@ -3,6 +3,7 @@
 // like a mentor who listened to the tape. The Phase D differentiator.
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -72,6 +73,7 @@ ${discKey && DISC_DELIVERY[discKey] ? DISC_DELIVERY[discKey] : "Keep it human."}
       body: JSON.stringify({ model: MODEL, max_tokens: 900, system, messages: [{ role: "user", content: `Here is the transcript. Coach me on it.\n\n${transcript}` }] }),
     });
     const data = await resp.json();
+    try { await logAiUsage(admin, { userId: uid, fn: "coach-recording-review", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
     const reply = (data.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim() || "I listened, but couldn't pull my notes together — try again.";
 
     await admin.from("coach_checkins").insert({ user_id: uid, kind: "recording_review", role: "coach", content: reply, data: { recording_id, title: rec.title, me_ratio: meRatio } });

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -60,6 +61,7 @@ For closing disclosure / settlement statements fill commission_total and commiss
     });
     if (!r.ok) throw new Error("Claude " + r.status + " " + (await r.text()).slice(0, 200));
     const data = await r.json();
+    try { await logAiUsage(db, { userId: uid, fn: "files-doc-extract", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
     let txt = (data.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n").trim();
     txt = txt.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
     const ai = JSON.parse(txt);

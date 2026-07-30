@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODEL = "claude-sonnet-4-6";
 const ANTHROPIC = () => Deno.env.get("ANTHROPIC_API_KEY")!;
@@ -17,10 +18,11 @@ function chunkText(text: string): string[] {
   for (const p of paras) { if ((cur + "\n\n" + p).length > MAX && cur) { chunks.push(cur); cur = cur.slice(Math.max(0, cur.length - OV)) + "\n\n" + p; } else { cur = cur ? cur + "\n\n" + p : p; } while (cur.length > MAX * 1.5) { chunks.push(cur.slice(0, MAX)); cur = cur.slice(MAX - OV); } }
   if (cur.trim()) chunks.push(cur.trim()); return chunks.length ? chunks : (text.trim() ? [text.trim()] : []);
 }
+let __ctkUsage: any = null;
 async function claudeEnrich(text: string): Promise<{ summary: string; tags: string[]; facts: any[]; entities: any[] }> {
   const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": ANTHROPIC(), "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
     body: JSON.stringify({ model: MODEL, max_tokens: 1500, messages: [{ role: "user", content: `This is a phone call transcript. Reply ONLY as JSON: {"summary":"1-2 sentences","tags":["3-6 lowercase tags"],"facts":[{"type":"date|amount|party|deadline|address|term","key":"short label","value_text":"as written","value_date":"YYYY-MM-DD or null","value_number":<number or null>}],"entities":[{"type":"contact|property|deal","name":"as spoken"}]}. Extract only real, explicit facts/entities.\n\nTRANSCRIPT:\n${text.slice(0, 14000)}` }] }) });
-  const j = await r.json(); const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+  const j = await r.json(); __ctkUsage = j?.usage || null; const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   try { const m = raw.match(/\{[\s\S]*\}/); const p = JSON.parse(m ? m[0] : raw); return { summary: p.summary || "", tags: Array.isArray(p.tags) ? p.tags.slice(0, 6) : [], facts: Array.isArray(p.facts) ? p.facts : [], entities: Array.isArray(p.entities) ? p.entities : [] }; } catch (_) { return { summary: "", tags: [], facts: [], entities: [] }; }
 }
 
@@ -56,6 +58,7 @@ serve(async (req) => {
           const rows = chunks.map((content, i) => ({ source_id: src.id, user_id: uid, scope: "private", team_id: null, chunk_index: i, content, token_count: Math.ceil(content.length / 4), embedding: "[" + embs[i].join(",") + "]" }));
           for (let i = 0; i < rows.length; i += 100) await sb.from("knowledge_chunks").insert(rows.slice(i, i + 100));
           const { summary, tags, facts, entities } = await claudeEnrich(text);
+          try { await logAiUsage(sb, { userId: uid, fn: "calls-to-knowledge", model: MODEL, usage: __ctkUsage, usedOwn: false }); } catch (_) {}
           if (Array.isArray(facts) && facts.length) {
             const fr = facts.slice(0, 40).map((fx: any) => ({ source_id: src.id, user_id: uid, scope: "private", team_id: null, fact_type: ["date", "amount", "party", "deadline", "address", "term"].includes(fx.type) ? fx.type : "other", fact_key: String(fx.key || "").slice(0, 200), value_text: fx.value_text != null ? String(fx.value_text).slice(0, 1000) : null, value_date: (typeof fx.value_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fx.value_date)) ? fx.value_date : null, value_number: (typeof fx.value_number === "number") ? fx.value_number : null, confidence: 0.75 }));
             try { await sb.from("knowledge_facts").insert(fr); } catch (_) {}

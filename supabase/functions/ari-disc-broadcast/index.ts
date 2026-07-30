@@ -19,6 +19,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-sonnet-4-6";
@@ -115,6 +116,7 @@ ${shape}`;
       return J({ error: `Anthropic ${r.status}: ${t.slice(0, 200)}` }, 502);
     }
     const j = await r.json();
+    try { await logAiUsage(supabase, { userId: user?.id, fn: "ari-disc-broadcast", model: MODEL, usage: j?.usage, usedOwn: false }); } catch (_) {}
     let raw = (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
     raw = raw.replace(/^```[a-z]*\s*/i, "").replace(/```$/i, "").trim();
     // Be tolerant: pull the outermost JSON object if there's any stray prose.

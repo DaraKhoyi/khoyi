@@ -18,6 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,6 +59,7 @@ function safeJSON(text: string) {
   return JSON.parse(c.slice(s, e + 1));
 }
 
+let __eniUsage: any = null;
 async function callClaude(userText: string) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -65,7 +67,7 @@ async function callClaude(userText: string) {
     body: JSON.stringify({ model: MODEL, max_tokens: 500, system: SYSTEM, messages: [{ role: "user", content: userText }] }),
   });
   if (!r.ok) throw new Error(`anthropic ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  const jr = await r.json();
+  const jr = await r.json(); __eniUsage = jr?.usage || null;
   return (jr.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
 }
 
@@ -205,7 +207,7 @@ serve(async (req) => {
             `FROM: ${m.from_name || ""} <${fromAddr}>\nSUBJECT: ${m.subject || "(none)"}\n` +
             `KNOWN_CONTACT: ${isVip ? "yes" : "no"}\nFIRST_TIME_SENDER: ${firstTime ? "yes" : "no"}\n\n${bodyTrim}`;
           let parsed: any;
-          try { parsed = safeJSON(await callClaude(userText)); aiCalls++; acctCap--; pool--; }
+          try { parsed = safeJSON(await callClaude(userText)); aiCalls++; acctCap--; pool--; try { await logAiUsage(supabase, { userId: uid, fn: "email-nightly-intel", model: MODEL, usage: __eniUsage, usedOwn: false }); } catch (_) {} }
           catch (_e) { acctCap--; pool--; continue; }
 
           const reasons: any = {};
