@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase, SUPABASE_URL } from '../dataService';
-import { CONDITION_SCALE, conditionFor, buildPresentationHTML } from '../listingPresentation';
+import { CONDITION_SCALE, conditionFor, buildPresentationHTML, reconcileValuation } from '../listingPresentation';
 import { TipFor } from '../App';
 
 const G = '#CBA35C', CHAMP = '#EBCB82', INK = '#100D09';
@@ -158,7 +158,7 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
     tiers: num(p.tiers), netsheet: num(p.netsheet),
   });
 
-  const generateHTML = (extra={}) => buildPresentationHTML({ ...payload(), agent_name: agentName, supabase_url: SUPABASE_URL, ...extra });
+  const generateHTML = (extra={}) => buildPresentationHTML({ ...payload(), agent_name: agentName, supabase_url: SUPABASE_URL, research_confidence: p._research?.confidence || null, ...extra });
 
   const save = async () => {
     setBusy(true);
@@ -271,7 +271,16 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
 
       {/* COMPS */}
       <div style={eyebrow}>Comparables</div>
-      {p.comps.map((c,i)=>(
+      {(() => { const recon = reconcileValuation(p.subject, p.comps, { research_confidence: p._research?.confidence }); return (
+      <>
+      {p.comps.map((c,i)=>{
+        const base = (c.adjustments||[]).reduce((s,a)=>s+Number(a.amount||0),0);
+        const agentAdj = Number(c.agent_adj||0);
+        const total = base + agentAdj;
+        const sale = Number(c.sale_price)||0;
+        const adjusted = sale + total;
+        const sliderMax = Math.max(20000, Math.round(sale*0.15/1000)*1000) || 50000;
+        return (
         <div key={i} style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:10, padding:12, marginBottom:8 }}>
           <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}><span style={{ fontSize:12, color:'var(--text-3)', fontWeight:700 }}>Comp {i+1}</span>{p.comps.length>1 && <button onClick={()=>rmComp(i)} style={{ background:'none', border:'none', color:'#e0794f', cursor:'pointer', fontSize:12 }}>Remove</button>}</div>
           <input style={{...fld, marginBottom:8}} value={c.address} onChange={e=>setComp(i,'address',e.target.value)} placeholder="Comp address" />
@@ -279,9 +288,46 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
             <input style={fld} value={c.sale_price} onChange={e=>setComp(i,'sale_price',e.target.value)} placeholder="Sale price" inputMode="numeric" />
             <input style={fld} value={c.gla} onChange={e=>setComp(i,'gla',e.target.value)} placeholder="GLA (sq ft)" inputMode="numeric" />
           </div>
+          {(c.adjustments||[]).length ? (
+            <div style={{ marginTop:8, display:'flex', flexWrap:'wrap', gap:'4px 12px' }}>
+              {(c.adjustments||[]).filter(a=>Number(a.amount)!==0).map((a,j)=>(
+                <span key={j} style={{ fontSize:11, whiteSpace:'nowrap' }}><span style={{color:'var(--text-3)'}}>{a.label}</span> <span style={{color:Number(a.amount)>=0?'#7fae8f':'#e0794f',fontWeight:600}}>{Number(a.amount)>=0?'+':'−'}${Math.abs(Number(a.amount)).toLocaleString()}</span></span>
+              ))}
+            </div>
+          ) : null}
+          {sale>0 ? (
+          <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid var(--border)' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:11, color:'var(--text-3)', marginBottom:4 }}>
+              <span>Your adjustment {agentAdj?<b style={{color:agentAdj>=0?'#7fae8f':'#e0794f'}}>{agentAdj>=0?'+':'−'}${Math.abs(agentAdj).toLocaleString()}</b>:<span style={{opacity:.6}}>drag to fine-tune</span>}</span>
+              <span>Adjusted <b style={{color:'var(--accent)'}}>${adjusted.toLocaleString()}</b></span>
+            </div>
+            <input type="range" min={-sliderMax} max={sliderMax} step={1000} value={agentAdj} onChange={e=>setComp(i,'agent_adj',Number(e.target.value))} style={{ width:'100%', accentColor:G }} />
+            {agentAdj ? <button onClick={()=>setComp(i,'agent_adj',0)} style={{ background:'none', border:'none', color:'var(--text-3)', cursor:'pointer', fontSize:10.5, marginTop:2, padding:0 }}>reset</button> : null}
+          </div>
+          ) : null}
         </div>
-      ))}
+      );})}
       <button onClick={addComp} style={{...btnGhost, marginBottom:4}}>+ Add comp</button>
+
+      {/* LIVE VALUATION + CONFIDENCE */}
+      {recon.reconciled ? (
+        <div style={{ marginTop:14, padding:'14px 16px', background:'rgba(203,163,92,.06)', border:'1px solid rgba(203,163,92,.22)', borderRadius:12 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:10 }}>
+            <div>
+              <div style={{ fontSize:10.5, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--accent)', fontWeight:700 }}>Reconciled valuation</div>
+              <div style={{ fontSize:26, fontWeight:800, color:'var(--text-1)', fontFamily:'Fraunces, serif', marginTop:2 }}>${recon.reconciled.toLocaleString()}</div>
+              <div style={{ fontSize:11, color:'var(--text-3)', marginTop:2 }}>{recon.tiers.fast?`$${recon.tiers.fast.toLocaleString()} – $${recon.tiers.opportunistic.toLocaleString()}`:''} · {recon.comps_used} of {recon.comps_total} comps used</div>
+            </div>
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontSize:10.5, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--accent)', fontWeight:700 }}>Confidence</div>
+              <div style={{ fontSize:20, letterSpacing:2, marginTop:2 }}>{Array.from({length:5},(_,k)=>(<span key={k} style={{color:k<recon.stars?G:'rgba(203,163,92,.25)'}}>★</span>))}</div>
+            </div>
+          </div>
+          <div style={{ fontSize:12, color:'var(--text-2)', marginTop:8, lineHeight:1.5 }}>{recon.confidence_label}. Tune any comp above and this updates live. Set explicit tier prices below to override.</div>
+        </div>
+      ) : null}
+      </>
+      );})()}
 
       {/* TIERS */}
       <div style={eyebrow}>Three-tier pricing</div>

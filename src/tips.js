@@ -23,6 +23,8 @@ export const TIPS = [
   // ── Listing Presentation ────────────────────────────────────────────────────
   { id: 'lp_autoresearch', screen: 'listing_presentation', label: 'Turn an address into a dossier',
     body: 'Type the property address and tap <b>Auto-research</b>. Prism pulls comparable sales, market speed, and property facts from public sources (Zillow, Realtor, Redfin, county records) and fills the form for you \u2014 a stand-in until your IDX feed is connected. <b>Always review the numbers before you present</b> \u2014 public data varies by address, so confirm the comps and market read against what you know.' },
+  { id: 'lp_adjust_confidence', screen: 'listing_presentation', label: 'Tune the comps, read the confidence',
+    body: 'Prism adjusts every comp <i>to your listing</i> \u2014 size, age, condition, time \u2014 and reconciles them into one value with a <b>5-star confidence rating</b> (more comps that agree = more stars). Disagree with a comp? Drag its <b>slider</b> to nudge it up or down and watch the valuation and stars update live. Your judgment, applied on top of the math \u2014 then it\u2019s <i>your</i> number, defensible line by line.' },
   // ── Brokerage: AI usage reports ─────────────────────────────────────────────
   { id: 'ai_reports_auto', screen: 'ai_usage_reports', label: 'Your AI bill, itemized — automatically',
     body: 'On the 1st of every month, Prism builds a per-agent AI cost report for the month just ended, emails it to the brokerage, and files it here in Excel. <b>The brokerage-account cost is what you could bill back.</b> No spreadsheet to assemble — it\u2019s already done.' },

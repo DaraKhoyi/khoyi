@@ -5,6 +5,71 @@
 // Prism Editorial: near-black #100D09, cream #F6F1E7, gold #CBA35C, champagne
 // #EBCB82, deep gold #9A8038. Fraunces headlines, Manrope body, Barlow eyebrows.
 
+// ── Valuation reconciliation + confidence (shared by the live editor AND the deck)
+// so the number the agent tunes on-screen is exactly the number the seller sees. ──
+// Each comp: { sale_price, gla, adjustments:[{label,amount}], agent_adj? }.
+// agent_adj is the agent's manual override slider (a signed $ nudge on that comp).
+export function reconcileValuation(subject, comps, opts = {}) {
+  const S = subject || {};
+  const list = (comps || []).map(c => {
+    const base = (c.adjustments || []).reduce((s, a) => s + Number(a.amount || 0), 0);
+    const agent = Number(c.agent_adj || 0);
+    const total = base + agent;
+    const sale = Number(c.sale_price || 0);
+    const adjusted = sale + total;
+    // Reliability is judged on the OBJECTIVE (computed) adjustments only — the agent's
+    // manual nudge reflects their judgment and shouldn't lower the comp's weight, so
+    // moving a slider always pushes the value in the direction the agent intends.
+    const grossBase = (c.adjustments || []).reduce((s, a) => s + Math.abs(Number(a.amount || 0)), 0);
+    const grossAll = grossBase + Math.abs(agent);
+    return { sale, adjusted, weight_gross_pct: sale ? (grossBase / sale) * 100 : 100, gross_pct: sale ? (grossAll / sale) * 100 : 100, net_pct: sale ? (total / sale) * 100 : 0, usable: adjusted > 0 && sale > 0 };
+  });
+  const usable = list.filter(c => c.usable);
+  // Prefer comps with objective gross adjustment <= 25% if enough exist (appraisal reliability rule).
+  const tight = usable.filter(c => c.weight_gross_pct <= 25);
+  const pool = tight.length >= 3 ? tight : usable;
+
+  let reconciled = null;
+  if (pool.length) {
+    let ws = 0, w = 0;
+    for (const c of pool) { const weight = 1 / (1 + Math.pow((c.weight_gross_pct || 25) / 10, 2)); ws += c.adjusted * weight; w += weight; }
+    reconciled = w ? ws / w : null;
+  }
+  const roundK = (n) => Math.round(n / 1000) * 1000;
+
+  // Confidence → 1–5 stars (RPR-style). Built from data quality, not vibes:
+  //  • comp count (3+ good, 5+ better)
+  //  • how tightly the ADJUSTED values cluster (coefficient of variation)
+  //  • whether subject GLA is known (needed for the biggest adjustment)
+  //  • median gross adjustment (smaller = more comparable comps)
+  //  • the research engine's own confidence read (high/med/low), if present
+  let score = 0;
+  const n = pool.length;
+  if (n >= 5) score += 1.4; else if (n >= 4) score += 1.1; else if (n >= 3) score += 0.8; else if (n >= 2) score += 0.4;
+  const advals = pool.map(c => c.adjusted);
+  if (advals.length >= 2 && reconciled) {
+    const mean = advals.reduce((a, b) => a + b, 0) / advals.length;
+    const sd = Math.sqrt(advals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / advals.length);
+    const cov = mean ? sd / mean : 1;           // lower = tighter cluster
+    if (cov <= 0.05) score += 1.6; else if (cov <= 0.08) score += 1.2; else if (cov <= 0.12) score += 0.8; else if (cov <= 0.18) score += 0.4;
+  }
+  if (S.gla) score += 0.8;
+  const medGross = advals.length ? [...pool].map(c => c.gross_pct).sort((a, b) => a - b)[Math.floor(pool.length / 2)] : 100;
+  if (medGross <= 8) score += 0.9; else if (medGross <= 15) score += 0.6; else if (medGross <= 25) score += 0.3;
+  const rc = (opts.research_confidence || '').toLowerCase();
+  if (rc === 'high') score += 0.5; else if (rc === 'medium') score += 0.25;
+  let stars = Math.max(1, Math.min(5, Math.round(score)));
+  if (!pool.length) stars = 1;
+
+  const label = ['', 'Low — verify before relying on it', 'Fair — treat as a starting point', 'Moderate — solid with local review', 'Strong — well-supported by comps', 'Very strong — tightly supported'][stars];
+
+  return {
+    reconciled: reconciled ? roundK(reconciled) : null,
+    tiers: reconciled ? { opportunistic: roundK(reconciled * 1.06), target: roundK(reconciled), fast: roundK(reconciled * 0.95) } : { opportunistic: null, target: null, fast: null },
+    stars, confidence_label: label, comps_used: pool.length, comps_total: list.length,
+  };
+}
+
 // ── Property Condition 1–10 ──────────────────────────────────────────────────
 // Each rank has a short catchy label + a one-line the agent can say to the seller
 // to place the home honestly. 1 = total rehab, 10 = buyer changes nothing.
@@ -68,29 +133,28 @@ export function buildPresentationHTML(p) {
     const other = Number(ns.other || 0);
     return price - commission - title - tax - payoff - other;
   };
-  // Pricing tiers. If the agent left them blank, derive a valuation from the comps
-  // so the presentation NEVER shows $0. Priority: explicit tier → comp-derived value.
-  const compPpsfList = comps.filter(c => Number(c.sale_price) && Number(c.gla)).map(c => Number(c.sale_price) / Number(c.gla));
-  const medianOf = (arr) => { if (!arr.length) return null; const a=[...arr].sort((x,y)=>x-y); const mid=Math.floor(a.length/2); return a.length%2 ? a[mid] : (a[mid-1]+a[mid])/2; };
+  // Reconciled valuation (respects each comp's base adjustments AND the agent's
+  // override slider) + confidence stars — the SAME engine the live editor uses.
+  const recon = reconcileValuation(s, comps, { research_confidence: p.research_confidence });
   const roundK = (n) => Math.round(n / 1000) * 1000;
-  let derivedBase = null;
-  const medPpsf = medianOf(compPpsfList);
-  if (medPpsf && Number(s.gla)) derivedBase = medPpsf * Number(s.gla);
-  else { const medSale = medianOf(comps.map(c => Number(c.sale_price)).filter(Boolean)); if (medSale) derivedBase = medSale; }
-  const tierPrice = (explicit, mult) => {
+  const tierPrice = (explicit, key, mult) => {
     const e = Number(explicit || 0);
-    if (e > 0) return e;
-    if (derivedBase && derivedBase > 0) return roundK(derivedBase * mult);
+    if (e > 0) return e;                                  // agent typed an explicit tier
+    if (recon.tiers && recon.tiers[key]) return recon.tiers[key];  // reconciled from comps
     return 0;
   };
   const tierRows = [
-    { key:'opportunistic', label:'Opportunistic', sub:'Test the ceiling', price: tierPrice(tiers.opportunistic, 1.06), dom:'Longer', prob:'Lower' },
-    { key:'target',        label:'Target Market', sub:'Priced to sell right', price: tierPrice(tiers.target, 1.0), dom:'Market pace', prob:'Strong' },
-    { key:'fast',          label:'Fast Sale',     sub:'Move it quickly', price: tierPrice(tiers.fast, 0.95), dom:'Fastest', prob:'Highest' },
+    { key:'opportunistic', label:'Opportunistic', sub:'Test the ceiling', price: tierPrice(tiers.opportunistic, 'opportunistic', 1.06), dom:'Longer', prob:'Lower' },
+    { key:'target',        label:'Target Market', sub:'Priced to sell right', price: tierPrice(tiers.target, 'target', 1.0), dom:'Market pace', prob:'Strong' },
+    { key:'fast',          label:'Fast Sale',     sub:'Move it quickly', price: tierPrice(tiers.fast, 'fast', 0.95), dom:'Fastest', prob:'Highest' },
   ];
+  // 5-star confidence markup (RPR-style): filled gold stars up to `stars`.
+  const starHtml = (n) => Array.from({length:5}, (_,i)=>`<span style="color:${i<n?'var(--gold)':'rgba(203,163,92,.25)'};font-size:20px">★</span>`).join('');
 
   const compRows = comps.map((c, i) => {
-    const items = (c.adjustments || []).filter(a => Number(a.amount) !== 0);
+    const items = (c.adjustments || []).filter(a => Number(a.amount) !== 0).slice();
+    const agentAdj = Number(c.agent_adj || 0);
+    if (agentAdj) items.push({ label: 'Agent adjustment', amount: agentAdj });
     const adj = items.reduce((sum, a) => sum + Number(a.amount || 0), 0);
     const adjusted = Number(c.sale_price || 0) + adj;
     const breakdown = items.length
@@ -284,6 +348,11 @@ export function buildPresentationHTML(p) {
     <div class="mod-num">05</div><div class="eyebrow">Strategic Pricing</div>
     <h2 class="title">Three ways to position — your call</h2>
     <p class="lead">There isn’t one right price; there’s a right price for <i>your</i> timeline. Here’s the trade-off between reaching for more and selling faster.</p>
+    ${recon.reconciled ? `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:18px 0 6px;padding:14px 18px;background:rgba(203,163,92,.06);border:1px solid rgba(203,163,92,.2);border-radius:12px">
+      <div><div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:700">Valuation confidence</div>
+      <div style="margin-top:2px">${starHtml(recon.stars)}</div></div>
+      <div style="flex:1;min-width:180px;color:var(--mut);font-size:13px;line-height:1.5">${esc(recon.confidence_label)} — reconciled from ${recon.comps_used} adjusted comparable${recon.comps_used===1?'':'s'}.</div>
+    </div>` : ''}
     <div class="tiers" style="margin-top:24px">
       ${tierRows.map(t=>`<div class="tier ${t.key==='target'?'target':''}">${t.key==='target'?'<div class="flag">Recommended</div>':''}
         <div class="tlab">${t.label}</div><div class="price">${t.price > 0 ? money(t.price) : '<span style="font-size:20px;color:var(--mut);font-weight:400">To be set</span>'}</div><div class="sub">${t.sub}</div>
