@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase, SUPABASE_URL } from '../dataService';
 import { CONDITION_SCALE, conditionFor, buildPresentationHTML } from '../listingPresentation';
+import { TipFor } from '../App';
 
 const G = '#CBA35C', CHAMP = '#EBCB82', INK = '#100D09';
 const money = (n) => (n || n === 0) ? '$' + Number(n).toLocaleString('en-US') : '';
@@ -42,6 +43,7 @@ export default function ListingPresentationView({ userId, agentName }) {
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '0 4px 40px' }}>
+      <TipFor screen="listing_presentation" />
       {notify && <div style={{ position:'fixed', bottom:20, left:'50%', transform:'translateX(-50%)', zIndex:5000, background: notify.ok?'#1a3a2a':'#3a1a1a', border:`1px solid ${notify.ok?'#7fae8f':'#e0794f'}`, color:'#fff', padding:'12px 18px', borderRadius:10, fontSize:14, maxWidth:'90vw' }}>{notify.t}</div>}
       <div style={{ marginBottom: 6 }}><span style={{ fontFamily:'Barlow Condensed,sans-serif', fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:G, fontSize:13 }}>Win the listing</span></div>
       <h1 style={{ fontFamily:'Fraunces,serif', fontWeight:400, fontSize:34, color:'var(--text-1)', margin:'0 0 6px' }}>Listing Presentations</h1>
@@ -81,6 +83,43 @@ const eyebrow = { fontFamily:'Barlow Condensed,sans-serif', fontWeight:700, lett
 
 function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify }) {
   const [p, setP] = useState(initial);
+  const [researching, setResearching] = useState(false);
+  const runResearch = async () => {
+    const addr = (p.address || '').trim();
+    if (!addr) { flash('Enter the property address first.', false); return; }
+    setResearching(true);
+    try {
+      const hint = [p.subject?.beds && `${p.subject.beds} bed`, p.subject?.baths && `${p.subject.baths} bath`, p.subject?.gla && `${p.subject.gla} sqft`].filter(Boolean).join(', ');
+      const { data, error } = await supabase.functions.invoke('property-research', { body: { user_id: userId, address: addr, subject_hint: hint } });
+      if (error || !data?.ok) { flash('Research came up empty — try again, or enter the numbers by hand below.', false); setResearching(false); return; }
+      const r = data.data;
+      setP(prev => {
+        const next = { ...prev };
+        // Subject: only fill blanks — never overwrite what the agent already typed.
+        next.subject = { ...prev.subject };
+        for (const k of ['gla','beds','baths','lot_size','year_built']) {
+          if ((prev.subject?.[k] === '' || prev.subject?.[k] == null) && r.subject?.[k] != null) next.subject[k] = r.subject[k];
+        }
+        // Market: fill blanks + set speed.
+        next.market = { ...prev.market };
+        if (r.market?.speed != null) next.market.speed = r.market.speed;
+        for (const [k, src] of [['moi','moi'],['list_to_sale','list_to_sale'],['active','active'],['pending','pending'],['closed','closed']]) {
+          if ((prev.market?.[k] === '' || prev.market?.[k] == null) && r.market?.[src] != null) next.market[k] = r.market[src];
+        }
+        // Comps: replace the empty starter row; otherwise append researched comps.
+        const found = (r.comps || []).map(c => ({ address: c.address || '', sale_price: c.sale_price || '', gla: c.gla || '', adjustments: [] }));
+        if (found.length) {
+          const hasReal = (prev.comps || []).some(c => (c.address || '').trim() || Number(c.sale_price) > 0);
+          next.comps = hasReal ? [...prev.comps, ...found] : found;
+        }
+        next._research = { sources: r.sources || [], notes: r.notes || '', confidence: r.confidence || 'low' };
+        return next;
+      });
+      const conf = r.confidence === 'high' ? 'strong' : r.confidence === 'medium' ? 'decent' : 'limited';
+      flash(`Pulled ${(r.comps||[]).length} comp(s) + market data from public sources (${conf} match). Review and adjust the numbers below before presenting.`, true);
+    } catch (_) { flash('Research failed — please try again.', false); }
+    setResearching(false);
+  };
   const [busy, setBusy] = useState(false);
   const [savedId, setSavedId] = useState(initial.id || null);
   const [shareUrl, setShareUrl] = useState(null);
@@ -159,10 +198,16 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
       <div style={{ marginBottom:12 }}><label style={lab}>Property address</label>
         <div style={{ display:'flex', gap:8 }}>
           <input style={{...fld, flex:1}} value={p.address} onChange={e=>set('address',e.target.value)} placeholder="4214 W Virginia Ave, Tampa, FL 33607" />
-          <button onClick={()=>flash('MLS auto-fill lights up as soon as your IDX feed is connected. Until then, enter comps and market numbers by hand below.', true)} title="Auto-fill comps & market from the MLS (available when your feed is connected)"
-            style={{ ...btnGhost, whiteSpace:'nowrap', opacity:0.6, cursor:'help' }}>✨ Auto-fill from MLS</button>
+          <button onClick={runResearch} disabled={researching} title="Research comps, market data & property facts from public sources (Zillow, Realtor, Redfin, county records)"
+            style={{ ...btnGhost, whiteSpace:'nowrap', opacity: researching ? 0.6 : 1, cursor: researching ? 'wait' : 'pointer' }}>{researching ? '⏳ Researching…' : '✨ Auto-research'}</button>
         </div>
-        <div style={{ fontSize:11, color:'var(--text-3)', marginTop:5 }}>Auto-fill from the MLS activates once your IDX feed is connected — it will pull comps, months-of-inventory, and market speed for you.</div>
+        <div style={{ fontSize:11, color:'var(--text-3)', marginTop:5 }}>Pulls comparable sales, market speed and property facts from public sources (Zillow, Realtor.com, Redfin, county records) — a stand-in until your IDX feed is connected. Always review the numbers before presenting.</div>
+        {p._research && (p._research.sources?.length || p._research.notes) ? (
+          <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6, padding:'8px 10px', background:'rgba(203,163,92,.06)', border:'1px solid rgba(203,163,92,.18)', borderRadius:8 }}>
+            <b style={{color:'var(--text-2)'}}>Research match: {p._research.confidence}.</b> {p._research.notes ? p._research.notes.slice(0,220) : ''}
+            {p._research.sources?.length ? <div style={{marginTop:4}}>Sources: {p._research.sources.slice(0,4).map((s,i)=>(<a key={i} href={s} target="_blank" rel="noreferrer" style={{color:'var(--accent)',marginRight:8}}>[{i+1}]</a>))}</div> : null}
+          </div>
+        ) : null}
       </div>
       <div style={{ marginBottom:12 }}><label style={lab}>Seller name (personalizes the cover)</label><input style={fld} value={p.seller_name} onChange={e=>set('seller_name',e.target.value)} placeholder="The Henderson Family" /></div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
