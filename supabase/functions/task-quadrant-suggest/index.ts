@@ -6,6 +6,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 
@@ -99,6 +100,7 @@ serve(async (req) => {
 
     if (!r.ok) throw new Error(`Anthropic error: ${r.status}`);
     const j = await r.json();
+    try { await logAiUsage(supabase, { userId: user.id, fn: "task-quadrant-suggest", model: "claude-sonnet-4-6", usage: j?.usage, usedOwn: false }); } catch (_) {}
     const text = j.content?.[0]?.text || "";
     const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
     const start = cleaned.indexOf("{");

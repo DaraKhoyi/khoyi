@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODEL = "claude-sonnet-4-6";
 
@@ -57,6 +58,7 @@ ${voiceBlock}`;
     throw new Error(`Anthropic API error ${r.status}: ${errText.slice(0, 200)}`);
   }
   const j = await r.json();
+  try { await logAiUsage(sb, { userId: uid, fn: "orchestrate-new-lead", model: MODEL, usage: j?.usage, usedOwn: false }); } catch (_) {}
   const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   let plan: any = {};
   try { const m = raw.match(/\{[\s\S]*\}/); plan = JSON.parse(m ? m[0] : raw); } catch (_) { plan = { summary: "Could not generate a plan.", cadence: [] }; }

@@ -16,6 +16,7 @@
 // Stateless; no DB access.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-sonnet-4-6";
@@ -31,7 +32,7 @@ const J = (b, s = 200) =>
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null, workingHours = null, constraints = "", pipeline = null, lightDay = false } = await req.json();
+    const { user_id = null, name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null, workingHours = null, constraints = "", pipeline = null, lightDay = false } = await req.json();
     const wh = { start: Number(workingHours?.start) || 8, end: Number(workingHours?.end) || 18 };
     const hhmm = (iso) => { try { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return ""; } };
 
@@ -127,6 +128,7 @@ Respond ONLY with strict JSON, no markdown:
     });
     if (!resp.ok) return J({ error: `AI error ${resp.status}` }, 502);
     const data = await resp.json();
+    try { const _sb = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")); await logAiUsage(_sb, { userId: user_id, fn: "plan-my-day", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
     let text = (data?.content || []).map((b) => (b.type === "text" ? b.text : "")).join("").trim();
     text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
     let parsed;

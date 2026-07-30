@@ -3965,7 +3965,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
 
       // #10 Light-day detection — thin task/reach-out/email load means the day is a pipeline risk.
       const lightDay = (payloadTasks.length + reachouts.length + unreadEmails.length) <= 4;
-      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits, workingHours: { start: 8, end: 18 }, constraints: effCon, pipeline: { contacts: pipelineContacts, systems: pipelineSystems }, lightDay } });
+      const { data, error } = await supabase.functions.invoke('plan-my-day', { body: { user_id: userId, name, date: today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), tasks: payloadTasks, events: ev, reachouts, unreadEmails, deals: dealsCtx, properties: propsCtx, journal: journalCtx, brain: brainCtx, gci, habits, workingHours: { start: 8, end: 18 }, constraints: effCon, pipeline: { contacts: pipelineContacts, systems: pipelineSystems }, lightDay } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (mounted.current) setState({ loading: false, mode: 'fresh', summary: data?.summary, plan: data?.plan || [], light: lightDay, constraint: effCon, flags: data?.flags || [] });

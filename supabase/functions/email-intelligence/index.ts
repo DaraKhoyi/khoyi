@@ -23,6 +23,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -79,6 +80,7 @@ async function buildSystemPrompt(supabase: any, userId: string): Promise<string>
   }
 }
 
+let __lastUsage: any = null;
 async function callClaude(systemPrompt: string, messages: any[]) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -94,6 +96,7 @@ async function callClaude(systemPrompt: string, messages: any[]) {
     throw new Error(`Anthropic ${r.status}: ${t.slice(0, 300)}`);
   }
   const j = await r.json();
+  __lastUsage = j?.usage || null;
   return (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
 }
 
@@ -133,6 +136,7 @@ serve(async (req) => {
       });
     }
     const userId = user.id;
+    const _logUsage = () => { try { logAiUsage(supabase, { userId, fn: "email-intelligence", model: MODEL, usage: __lastUsage, usedOwn: false }); } catch (_) {} };
 
     // Load the thread. Must belong to caller.
     const { data: thread, error: tErr } = await supabase
@@ -200,6 +204,7 @@ ${messageBlocks || "(no message bodies available)"}`;
 
     const systemPrompt = await buildSystemPrompt(supabase, userId);
     const raw = await callClaude(systemPrompt, [{ role: "user", content: userMsg }]);
+    _logUsage();
     const parsed = safeParseJSON(raw);
 
     // Validate enum values
