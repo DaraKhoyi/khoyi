@@ -363,20 +363,26 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   return (
     <div className="modal-overlay overlay-fade" onClick={e => e.target === e.currentTarget && onClose()} style={{padding:0,alignItems:'stretch',justifyContent:'center'}}>
       <div className="modal sheet-rise" style={{maxWidth:'640px',width:'100%',height:'100dvh',maxHeight:'100dvh',minHeight:0,margin:0,padding:0,borderRadius:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        {/* Header mirrors the contact sheet so editing feels like the same surface */}
-        <div style={{padding:'calc(14px + env(safe-area-inset-top, 0px)) 16px 14px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
-          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-            <div style={{width:'48px',height:'48px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'17px',color:'var(--accent)'}}>{mInitials}</div>
-            <div style={{flex:1,minWidth:0}}>
+        {/* Header mirrors the contact sheet so editing feels like the same surface.
+            Two rows on purpose: identity on top, actions on their own row below.
+            A single row (avatar + name + 4 buttons) overflowed narrow iPhones in
+            portrait — the Save button got pushed off-screen and the name slid under
+            the buttons. Separate rows guarantee both are always fully visible. */}
+        <div style={{padding:'calc(12px + env(safe-area-inset-top, 0px)) 16px 12px',borderBottom:'1px solid var(--border)',background:'linear-gradient(180deg,var(--bg-card),var(--bg-base))'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'10px'}}>
+            <div style={{width:'44px',height:'44px',borderRadius:'50%',flexShrink:0,background:'linear-gradient(135deg,var(--bg-hover),var(--bg-card))',border:'2px solid var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:'16px',color:'var(--accent)'}}>{mInitials}</div>
+            <div style={{flex:'1 1 0',minWidth:0}}>
               <div style={{fontSize:'10px',fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{isEdit ? 'Editing' : 'New contact'}</div>
               <div style={{fontSize:'17px',fontWeight:800,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name || (isEdit ? initial.name : 'New contact')}</div>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:'5px',flexShrink:0}}>
-              <button type="button" onClick={handleSubmit} title={isEdit ? 'Save changes' : 'Create contact'} style={{height:'32px',padding:'0 14px',borderRadius:'8px',border:'none',background:'var(--accent-2, #EBCB82)',color:'#1a1409',cursor:'pointer',fontSize:'12px',fontWeight:800}}>{isEdit ? 'Save' : 'Create'}</button>
-              {initial && onShowDetails && <button type="button" onClick={()=>onShowDetails(initial)} title="View details" style={{height:'32px',padding:'0 11px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:700}}>View →</button>}
-              {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="trash" size={15} /></button>}
-              <button type="button" onClick={onClose} title="Close" style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'17px',lineHeight:1}}>×</button>
-            </div>
+            {/* Close sits with the identity row, top-right, where users expect it. */}
+            <button type="button" onClick={onClose} title="Close" style={{flexShrink:0,width:'34px',height:'34px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'18px',lineHeight:1}}>×</button>
+          </div>
+          {/* Actions row — full width, Save gets the room it needs and can never be clipped. */}
+          <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+            <button type="button" onClick={handleSubmit} title={isEdit ? 'Save changes' : 'Create contact'} style={{flex:'1 1 0',minWidth:0,height:'40px',padding:'0 14px',borderRadius:'8px',border:'none',background:'var(--accent-2, #EBCB82)',color:'#1a1409',cursor:'pointer',fontSize:'14px',fontWeight:800}}>{isEdit ? 'Save changes' : 'Create contact'}</button>
+            {initial && onShowDetails && <button type="button" onClick={()=>onShowDetails(initial)} title="View details" style={{flexShrink:0,height:'40px',padding:'0 14px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',fontSize:'13px',fontWeight:700}}>View →</button>}
+            {initial && onDelete && <button type="button" onClick={()=>onDelete(initial)} title="Delete" style={{flexShrink:0,width:'40px',height:'40px',borderRadius:'8px',border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="trash" size={16} /></button>}
           </div>
         </div>
 
