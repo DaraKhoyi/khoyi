@@ -18852,6 +18852,7 @@ function AppMain() {
     { id: 'documents',   icon: '📁', label: 'Documents',   badge: null },
     { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
     { id: 'deals',       icon: '🤝', label: 'Files',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
+    { id: 'listing_presentation', icon: '🏛️', label: 'Listing Presentation', badge: null },
     { id: 'files',       icon: '📁', label: 'Files',       badge: files.filter(f=>f.side==='buyer' && !['closed','paid','cancelled'].includes(f.status)).length || null },
     ...((isAdmin||isTeamLeader) ? [{ id: 'agents',      icon: '👥', label: 'Brokerage',   badge: null }] : []),
     { id: 'mileage',     icon: '🚗', label: 'Mileage',     badge: null },
