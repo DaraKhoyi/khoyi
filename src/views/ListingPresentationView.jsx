@@ -5,6 +5,14 @@ import { CONDITION_SCALE, conditionFor, buildPresentationHTML } from '../listing
 const G = '#CBA35C', CHAMP = '#EBCB82', INK = '#100D09';
 const money = (n) => (n || n === 0) ? '$' + Number(n).toLocaleString('en-US') : '';
 const token = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 22);
+const timeAgo = (iso) => {
+  if (!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+};
 
 export default function ListingPresentationView({ userId, agentName }) {
   const [list, setList] = useState(null);
@@ -20,6 +28,7 @@ export default function ListingPresentationView({ userId, agentName }) {
 
   const blank = () => ({
     title: '', address: '', contact_id: null, deal_id: null, seller_tone: 'auto',
+    seller_name: '', hero_image_url: '', agent_video_url: '',
     subject: { gla:'', beds:'', baths:'', lot_size:'', year_built:'', condition_score:7, upgrades:'', hidden_changes:'', motivation:'' },
     market: { speed:55, moi:'', list_to_sale:'', active:'', pending:'', closed:'' },
     comps: [{ address:'', sale_price:'', gla:'', adjustments:[] }],
@@ -52,6 +61,8 @@ export default function ListingPresentationView({ userId, agentName }) {
                   {p.share_enabled ? ' · 🔗 shared' : ''}
                   {p.view_count ? ` · ${p.view_count} views` : ''}
                 </div>
+                {p.last_viewed_at && <div style={{ fontSize:12, color:'#7fae8f', marginTop:3, fontWeight:600 }}>👁 Seller viewed {timeAgo(p.last_viewed_at)}</div>}
+                {p.signed_at && <div style={{ fontSize:12, color:CHAMP, marginTop:3, fontWeight:700 }}>✍️ Signed {timeAgo(p.signed_at)}{p.signature?.name ? ` by ${p.signature.name}` : ''}</div>}
               </div>
               <div style={{ display:'flex', gap:6, flexShrink:0 }}>
                 <button onClick={()=>{ setEditing(p); setMode('edit'); }} style={btnGhost}>Open</button>
@@ -91,12 +102,13 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
     user_id: userId, contact_id: p.contact_id||null, deal_id: p.deal_id||null,
     title: p.title?.trim() || (p.address?.trim() ? p.address.trim()+' — Listing Presentation' : 'Untitled presentation'),
     address: p.address?.trim()||null, seller_tone: p.seller_tone,
+    seller_name: p.seller_name?.trim()||null, hero_image_url: p.hero_image_url?.trim()||null, agent_video_url: p.agent_video_url?.trim()||null,
     subject: num(p.subject), market: num(p.market),
     comps: (p.comps||[]).map(c=>({ ...c, sale_price:Number(c.sale_price)||0, gla:c.gla||null, adjustments:c.adjustments||[] })),
     tiers: num(p.tiers), netsheet: num(p.netsheet),
   });
 
-  const generateHTML = () => buildPresentationHTML({ ...payload(), agent_name: agentName });
+  const generateHTML = (extra={}) => buildPresentationHTML({ ...payload(), agent_name: agentName, supabase_url: SUPABASE_URL, ...extra });
 
   const save = async () => {
     setBusy(true);
@@ -117,9 +129,12 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
 
   const enableShare = async () => {
     const saved = await save(); if (!saved) return;
-    let tok = saved.share_token;
-    if (!tok) { tok = token(); }
-    const { data, error } = await supabase.from('listing_presentations').update({ share_token: tok, share_enabled: true }).eq('id', saved.id).select().single();
+    const tok = saved.share_token || token();
+    // Regenerate the deck in SELLER mode: personalized, with the sign-on-the-spot
+    // pad wired to this exact share token so the signature posts back correctly.
+    const sellerHtml = generateHTML({ sign_mode: true, share_token: tok });
+    const { data, error } = await supabase.from('listing_presentations')
+      .update({ share_token: tok, share_enabled: true, html: sellerHtml }).eq('id', saved.id).select().single();
     if (error) { flash('Could not enable sharing: ' + error.message, false); return; }
     const url = `${SUPABASE_URL}/functions/v1/listing-present?t=${data.share_token}`;
     setShareUrl(url);
@@ -141,7 +156,19 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
 
       {/* PROPERTY */}
       <div style={eyebrow}>The property</div>
-      <div style={{ marginBottom:12 }}><label style={lab}>Property address</label><input style={fld} value={p.address} onChange={e=>set('address',e.target.value)} placeholder="4214 W Virginia Ave, Tampa, FL 33607" /></div>
+      <div style={{ marginBottom:12 }}><label style={lab}>Property address</label>
+        <div style={{ display:'flex', gap:8 }}>
+          <input style={{...fld, flex:1}} value={p.address} onChange={e=>set('address',e.target.value)} placeholder="4214 W Virginia Ave, Tampa, FL 33607" />
+          <button onClick={()=>flash('MLS auto-fill lights up as soon as your IDX feed is connected. Until then, enter comps and market numbers by hand below.', true)} title="Auto-fill comps & market from the MLS (available when your feed is connected)"
+            style={{ ...btnGhost, whiteSpace:'nowrap', opacity:0.6, cursor:'help' }}>✨ Auto-fill from MLS</button>
+        </div>
+        <div style={{ fontSize:11, color:'var(--text-3)', marginTop:5 }}>Auto-fill from the MLS activates once your IDX feed is connected — it will pull comps, months-of-inventory, and market speed for you.</div>
+      </div>
+      <div style={{ marginBottom:12 }}><label style={lab}>Seller name (personalizes the cover)</label><input style={fld} value={p.seller_name} onChange={e=>set('seller_name',e.target.value)} placeholder="The Henderson Family" /></div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+        <div><label style={lab}>Hero photo URL</label><input style={fld} value={p.hero_image_url} onChange={e=>set('hero_image_url',e.target.value)} placeholder="https://…/front.jpg" /></div>
+        <div><label style={lab}>Agent welcome video</label><input style={fld} value={p.agent_video_url} onChange={e=>set('agent_video_url',e.target.value)} placeholder="YouTube / Vimeo / .mp4 link" /></div>
+      </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))', gap:10, marginBottom:12 }}>
         <div><label style={lab}>GLA (sq ft)</label><input style={fld} value={p.subject.gla} onChange={e=>set('subject.gla',e.target.value)} /></div>
         <div><label style={lab}>Beds</label><input style={fld} value={p.subject.beds} onChange={e=>set('subject.beds',e.target.value)} /></div>

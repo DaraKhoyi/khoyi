@@ -41,6 +41,21 @@ export function buildPresentationHTML(p) {
   const addr = esc(p.address || 'Your Property');
   const agent = esc(p.agent_name || '');
   const brokerage = 'Realty ONE Group Advantage';
+  // ── enhancement inputs ──
+  const sellerName = esc(p.seller_name || '');
+  const heroImg = (p.hero_image_url || '').trim();
+  const videoUrl = (p.agent_video_url || '').trim();
+  const signMode = !!p.sign_mode;          // seller-share renders the signature pad
+  const shareToken = esc(p.share_token || '');
+  const videoEmbed = (() => {
+    if (!videoUrl) return '';
+    const yt = videoUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([\w-]+)/);
+    if (yt) return `<iframe src="https://www.youtube.com/embed/${yt[1]}" allow="fullscreen" style="width:100%;aspect-ratio:16/9;border:0;border-radius:14px"></iframe>`;
+    const vim = videoUrl.match(/vimeo\.com\/(\d+)/);
+    if (vim) return `<iframe src="https://player.vimeo.com/video/${vim[1]}" allow="fullscreen" style="width:100%;aspect-ratio:16/9;border:0;border-radius:14px"></iframe>`;
+    if (/\.(mp4|webm|mov)(\?|$)/i.test(videoUrl)) return `<video src="${esc(videoUrl)}" controls playsinline style="width:100%;border-radius:14px;background:#000"></video>`;
+    return '';
+  })();
 
   // net-sheet math for the three tiers
   const commissionPct = Number(ns.commission_pct ?? 6) / 100;
@@ -95,7 +110,24 @@ export function buildPresentationHTML(p) {
   section{padding:76px 0;border-bottom:1px solid var(--line)}
   .mod-num{font-family:Fraunces,serif;font-size:15px;color:var(--dgold);letter-spacing:.1em}
   /* HERO */
-  .hero{min-height:78vh;display:flex;flex-direction:column;justify-content:center;background:radial-gradient(120% 90% at 80% -10%,rgba(203,163,92,.14),transparent 60%),linear-gradient(180deg,#0c0a07,var(--ink));border-bottom:1px solid var(--line)}
+  .hero{min-height:78vh;display:flex;flex-direction:column;justify-content:center;background:radial-gradient(120% 90% at 80% -10%,rgba(203,163,92,.14),transparent 60%),linear-gradient(180deg,#0c0a07,var(--ink));border-bottom:1px solid var(--line);position:relative}
+  .hero.has-photo{background-size:cover;background-position:center}
+  .printbtn{position:absolute;top:calc(18px + env(safe-area-inset-top,0px));right:20px;background:rgba(203,163,92,.14);border:1px solid var(--line);color:var(--gold);border-radius:100px;padding:8px 15px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.08em;font-size:14px;cursor:pointer}
+  @media print{.printbtn{display:none}}
+  /* equity over time */
+  .equity{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:0;margin-top:24px;font-size:15px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .equity>div{padding:14px 16px;border-bottom:1px solid rgba(203,163,92,.1)}
+  .equity .eh{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);font-size:13px;background:rgba(203,163,92,.06)}
+  .equity .er{color:#c9bfa9}.equity .en{color:var(--champ);font-weight:800;text-align:right}
+  .equity .ev{color:var(--cream);text-align:right}
+  /* signature pad */
+  .signwrap{max-width:560px}
+  .sigpad{background:#fff;border-radius:12px;touch-action:none;width:100%;height:170px;display:block;cursor:crosshair}
+  .sign-row{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  .sign-row input[type=text]{flex:1 1 200px;background:#0c0a07;border:1px solid var(--line);color:var(--cream);border-radius:10px;padding:11px 13px;font-size:15px}
+  .sign-consent{display:flex;gap:9px;align-items:flex-start;margin-top:12px;color:#c9bfa9;font-size:13px;line-height:1.5}
+  .sign-btn{background:var(--champ);color:var(--ink);border:none;border-radius:100px;padding:13px 26px;font-weight:800;font-size:15px;cursor:pointer}
+  .sign-clear{background:none;border:1px solid var(--line);color:var(--mut);border-radius:10px;padding:11px 16px;cursor:pointer;font-size:13px}
   .hero h1{font-size:clamp(40px,7vw,84px);color:var(--cream);margin:14px 0 8px}
   .hero .sub{font-family:Fraunces,serif;font-style:italic;color:var(--champ);font-size:clamp(20px,3vw,30px)}
   .brandline{display:flex;align-items:center;gap:10px;margin-top:34px;color:var(--mut);font-size:13px;letter-spacing:.06em}
@@ -158,8 +190,8 @@ export function buildPresentationHTML(p) {
   @media print{body{background:#fff;color:#111}.hero,section{border-color:#ddd}.card,.stat,.tier,.phase{background:#fafafa;border-color:#ddd}}
 </style></head>
 <body>
-  <header class="hero"><div class="wrap">
-    <div class="eyebrow">${esc(tone.eyebrow)}</div>
+  <header class="hero${heroImg ? ' has-photo' : ''}"${heroImg ? ` style="background-image:linear-gradient(180deg,rgba(16,13,9,.55),rgba(16,13,9,.92)),url('${esc(heroImg)}')"` : ''}><div class="wrap">
+    <div class="eyebrow">${sellerName ? 'Prepared exclusively for ' + sellerName : esc(tone.eyebrow)}</div>
     <h1>${addr}</h1>
     <div class="sub">Executive Listing Presentation</div>
     <div class="badges">${badges.map(([k,v])=>`<span class="badge"><b>${k}</b>${v}</span>`).join('')}</div>
@@ -167,7 +199,10 @@ export function buildPresentationHTML(p) {
       <svg class="fork" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v8a4 4 0 0 0 8 0V3M12 15v6"/></svg>
       <span>${brokerage} · powered by <i style="font-family:Fraunces,serif;color:var(--champ)">Prism</i>${agent?' · '+agent:''}</span>
     </div>
-  </div></header>
+  </div>
+  <button class="printbtn" onclick="window.print()" title="Save as PDF or print">⤓ PDF</button>
+  </header>
+  ${videoEmbed ? `<section style="padding-top:56px"><div class="wrap"><div class="eyebrow">A word from your agent</div><h2 class="title" style="margin-bottom:18px">${agent ? 'Hi'+(sellerName?' '+sellerName.split(' ')[0]:'')+' — a quick hello' : 'Welcome'}</h2><div class="card" style="padding:14px">${videoEmbed}</div></div></section>` : ''}
 
   <!-- MODULE 1 -->
   <section><div class="wrap">
@@ -238,7 +273,12 @@ export function buildPresentationHTML(p) {
   <section><div class="wrap">
     <div class="mod-num">06</div><div class="eyebrow">Your Net Proceeds</div>
     <h2 class="title">What you actually walk away with</h2>
-    <div class="card" style="margin-top:8px">
+    <p class="lead">Your equity is the price minus what you still owe. Here's how it lands at each pricing strategy — then try any number yourself.</p>
+    <div class="equity">
+      <div class="eh">Strategy</div><div class="eh en">Sale price</div><div class="eh en">Less payoff & costs</div><div class="eh en">Net to you</div>
+      ${tierRows.filter(t=>t.price).map(t=>{ const net = netFor(t.price); const costs = t.price - (net||0); return `<div class="er">${t.label}</div><div class="ev">${money(t.price)}</div><div class="ev">−${money(costs)}</div><div class="en">${money(net)}</div>`; }).join('')}
+    </div>
+    <div class="card" style="margin-top:20px">
       <div class="ns" id="nsTable"></div>
       <div class="calc">
         <label for="salePrice">Try any sale price</label>
@@ -246,6 +286,21 @@ export function buildPresentationHTML(p) {
       </div>
     </div>
   </div></section>
+  ${signMode ? `
+  <!-- SIGN ON THE SPOT (seller share only) -->
+  <section id="signSection"><div class="wrap">
+    <div class="mod-num">07</div><div class="eyebrow">Ready to move forward</div>
+    <h2 class="title">Sign to get started</h2>
+    <p class="lead">If you're ready to list with ${agent || 'us'}, sign below. This records your intent to proceed and notifies your agent right away — they'll follow up with the full agreement.</p>
+    <div class="signwrap card" style="margin-top:18px">
+      <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Sign here</div>
+      <canvas id="sigpad" class="sigpad"></canvas>
+      <div class="sign-row"><input id="sigName" type="text" placeholder="Type your full legal name"><button class="sign-clear" onclick="sigClear()">Clear</button></div>
+      <label class="sign-consent"><input type="checkbox" id="sigConsent" style="margin-top:3px"><span>I agree that this electronic signature reflects my intent to move forward with listing this property, and I understand my agent will contact me with the formal listing agreement.</span></label>
+      <div style="margin-top:16px"><button class="sign-btn" onclick="doSign()">Sign & notify my agent</button></div>
+      <div id="sigMsg" style="margin-top:12px;font-size:14px"></div>
+    </div>
+  </div></section>` : ''}
 
   <div class="cta"><div class="wrap">
     <div class="eyebrow">Ready when you are</div>
@@ -273,6 +328,36 @@ export function buildPresentationHTML(p) {
   function parse(v){ return Number(String(v).replace(/[^0-9.]/g,''))||0; }
   input.addEventListener('input', function(){ renderNet(parse(input.value)); });
   renderNet(parse(input.value));
+  ${signMode ? `
+  // signature pad
+  (function(){
+    var c = document.getElementById('sigpad'); if(!c) return;
+    function fit(){ var r=c.getBoundingClientRect(); c.width=r.width*2; c.height=r.height*2; var x=c.getContext('2d'); x.scale(2,2); x.lineWidth=2.2; x.lineCap='round'; x.strokeStyle='#111'; }
+    fit(); window.addEventListener('resize', fit);
+    var x=c.getContext('2d'), drawing=false, dirty=false, last=null;
+    function pos(e){ var r=c.getBoundingClientRect(); var t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left, y:t.clientY-r.top}; }
+    function down(e){ drawing=true; last=pos(e); e.preventDefault(); }
+    function move(e){ if(!drawing) return; var p=pos(e); x.beginPath(); x.moveTo(last.x,last.y); x.lineTo(p.x,p.y); x.stroke(); last=p; dirty=true; e.preventDefault(); }
+    function up(){ drawing=false; }
+    c.addEventListener('mousedown',down); c.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+    c.addEventListener('touchstart',down,{passive:false}); c.addEventListener('touchmove',move,{passive:false}); c.addEventListener('touchend',up);
+    window.sigClear=function(){ x.clearRect(0,0,c.width,c.height); dirty=false; };
+    window.doSign=async function(){
+      var msg=document.getElementById('sigMsg');
+      var name=(document.getElementById('sigName').value||'').trim();
+      var consent=document.getElementById('sigConsent').checked;
+      if(!dirty){ msg.style.color='#e0794f'; msg.textContent='Please sign in the box above.'; return; }
+      if(!name){ msg.style.color='#e0794f'; msg.textContent='Please type your full legal name.'; return; }
+      if(!consent){ msg.style.color='#e0794f'; msg.textContent='Please check the box to confirm.'; return; }
+      msg.style.color='#c9bfa9'; msg.textContent='Recording…';
+      try{
+        var res=await fetch('${p.supabase_url || ''}/functions/v1/listing-present?sign=1&t=${shareToken}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:name,drawn:c.toDataURL('image/png'),consent:consent,ua:navigator.userAgent})});
+        var j=await res.json();
+        if(j.ok){ msg.style.color='#7fae8f'; msg.textContent='✓ '+j.message; document.querySelector('.sign-btn').style.display='none'; }
+        else { msg.style.color='#e0794f'; msg.textContent=j.message||'Could not record the signature.'; }
+      }catch(e){ msg.style.color='#e0794f'; msg.textContent='Network issue — please try again.'; }
+    };
+  })();` : ''}
 </script>
 </body></html>`;
 }
