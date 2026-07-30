@@ -84,3 +84,25 @@ arithmetic, not a stall.
 
 When accepting one, record it here with the reason. "It's just telemetry" is a
 fine reason. "It looked hard" is not.
+
+---
+
+## Day 2 — 29 July 2026 (v1.05.20)
+
+Fixed — 10 user-action writes where a silent failure left the UI claiming success:
+
+| # | where | what it silently lost |
+|---|---|---|
+| 1 | `App.js` renameTeam | Renaming a team — RPC result discarded; list reloaded regardless. |
+| 2 | `App.js` deleteTeam | Deleting a team (and its team-only announcements). |
+| 3 | `App.js` addEval (knowledge) | Adding a knowledge eval question. |
+| 4 | `App.js` delEval | Deleting an eval. |
+| 5 | `App.js` confirmLink | Confirming a knowledge link. |
+| 6 | `App.js` removeLink | Removing a knowledge link. |
+| 7 | `App.js` resolveConflict | Resolving a knowledge conflict. |
+| 8 | `StaleDecide` doToday | "Move to today" on a stale task — optimistic patch ran even if the write failed; also collapsed a needless double-update into one. |
+| 9 | `StaleDecide` schedule | Rescheduling a stale task. |
+| 10 | `StaleDecide` drop | Dropping (decided-against) a stale task — losing this write means it returns as stale. |
+
+All now follow the fix shape: check `{ error }`, notify on failure, and apply the
+optimistic UI patch only on success.

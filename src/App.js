@@ -506,8 +506,8 @@ function TeamsAdmin({ userId }) {
     if (error) { setMsg('Error: ' + error.message); setBusy(false); return; }
     setNewName(''); setBusy(false); load();
   }
-  async function renameTeam(t) { const name = window.prompt('Rename team', t.name); if (name == null) return; try { await supabase.rpc('admin_rename_team', { p_team: t.id, p_name: name }); } catch (_) {} load(); }
-  async function deleteTeam(t) { if (!window.confirm('Delete "' + t.name + '"? Members are removed and any announcements sent only to this team are deleted.')) return; try { await supabase.rpc('admin_delete_team', { p_team: t.id }); } catch (_) {} load(); }
+  async function renameTeam(t) { const name = window.prompt('Rename team', t.name); if (name == null) return; { const { error } = await supabase.rpc('admin_rename_team', { p_team: t.id, p_name: name }); if (error) { if (window.__notify) window.__notify('Could not rename team: ' + (error.message || error), 'error'); return; } } load(); }
+  async function deleteTeam(t) { if (!window.confirm('Delete "' + t.name + '"? Members are removed and any announcements sent only to this team are deleted.')) return; { const { error } = await supabase.rpc('admin_delete_team', { p_team: t.id }); if (error) { if (window.__notify) window.__notify('Could not delete team: ' + (error.message || error), 'error'); return; } } load(); }
   async function addMember(t) { const sel = addSel[t.id] || {}; if (!sel.user) { setMsg('Pick someone to add.'); return; } try { await supabase.rpc('admin_add_member', { p_team: t.id, p_user: sel.user, p_role: sel.role || 'member' }); } catch (_) {} setAddSel(s => ({ ...s, [t.id]: { user: '', role: 'member' } })); load(); }
   async function setRole(t, m, role) { try { await supabase.rpc('admin_set_member_role', { p_team: t.id, p_user: m.user_id, p_role: role }); } catch (_) {} load(); }
   async function removeMember(t, m) { try { await supabase.rpc('admin_remove_member', { p_team: t.id, p_user: m.user_id }); } catch (_) {} load(); }
@@ -702,9 +702,9 @@ function KnowledgeView({ userId, isAdmin = false }) {
     setFeedback(helpful ? 'up' : 'down');
     try { await supabase.from('knowledge_usage').insert({ user_id: userId, surface: 'search', query: q.slice(0, 500), helpful, source_id: (ans && ans.citations && ans.citations[0] && ans.citations[0].source_id) || null }); } catch (_) {}
   }
-  async function confirmLink(l) { try { await supabase.from('knowledge_links').update({ confirmed: true }).eq('id', l.id); } catch (_) {} loadLib(); }
-  async function removeLink(l) { try { await supabase.from('knowledge_links').delete().eq('id', l.id); } catch (_) {} loadLib(); }
-  async function resolveConflict(id) { try { await supabase.from('knowledge_conflicts').update({ resolved: true }).eq('id', id); } catch (_) {} loadLib(); }
+  async function confirmLink(l) { const { error } = await supabase.from('knowledge_links').update({ confirmed: true }).eq('id', l.id); if (error) { if (window.__notify) window.__notify('Could not confirm: ' + (error.message || error), 'error'); return; } loadLib(); }
+  async function removeLink(l) { const { error } = await supabase.from('knowledge_links').delete().eq('id', l.id); if (error) { if (window.__notify) window.__notify('Could not remove: ' + (error.message || error), 'error'); return; } loadLib(); }
+  async function resolveConflict(id) { const { error } = await supabase.from('knowledge_conflicts').update({ resolved: true }).eq('id', id); if (error) { if (window.__notify) window.__notify('Could not resolve: ' + (error.message || error), 'error'); return; } loadLib(); }
   async function startRec() {
     setAddMsg('');
     try {
@@ -747,8 +747,8 @@ function KnowledgeView({ userId, isAdmin = false }) {
   async function reprocess(sc) { try { await supabase.functions.invoke('knowledge-ingest', { body: { reprocess: true, source_id: sc.id } }); if (window.__notify) window.__notify('Reprocessing…', 'success'); } catch (_) {} loadLib(); }
   const loadEvals = React.useCallback(async () => { try { const { data } = await supabase.from('knowledge_evals').select('*').order('created_at'); setEvals(Array.isArray(data) ? data : []); } catch (_) { setEvals([]); } }, []);
   React.useEffect(() => { if (tab === 'evals' && evals === null) loadEvals(); }, [tab, evals, loadEvals]);
-  async function addEval() { if (!evalQ.trim()) return; try { await supabase.from('knowledge_evals').insert({ user_id: userId, question: evalQ.trim(), expected: evalExp.trim() || null }); } catch (_) {} setEvalQ(''); setEvalExp(''); loadEvals(); }
-  async function delEval(id) { try { await supabase.from('knowledge_evals').delete().eq('id', id); } catch (_) {} loadEvals(); }
+  async function addEval() { if (!evalQ.trim()) return; { const { error } = await supabase.from('knowledge_evals').insert({ user_id: userId, question: evalQ.trim(), expected: evalExp.trim() || null }); if (error) { if (window.__notify) window.__notify('Could not add: ' + (error.message || error), 'error'); return; } } setEvalQ(''); setEvalExp(''); loadEvals(); }
+  async function delEval(id) { const { error } = await supabase.from('knowledge_evals').delete().eq('id', id); if (error) { if (window.__notify) window.__notify('Could not delete: ' + (error.message || error), 'error'); return; } loadEvals(); }
   async function runEvals() {
     if (!evals || !evals.length) return; setEvalRunning(true);
     for (const ev of evals) {
