@@ -142,3 +142,24 @@ produce a false "it worked":
   bookkeeping after the email already sent.
 - `QuoView` logCallIntent (473) — an early "owe a reply" signal logged after the
   call is already placed; the webhook backfills the real record.
+
+---
+
+## Day 4 — 30 July 2026 (v1.05.22)
+
+Fixed — 7 user-action writes on scheduling / review surfaces where a silent
+failure left the UI claiming success (supabase-js resolves with {error}, so the
+existing try/catch never fired):
+
+| # | where | what it silently lost |
+|---|---|---|
+| 1 | `CalendarView` reschedule (drag) | Dragging an event/task to a new time — showed "Pinned to new time" even if the write failed; now rolls the block back and flags it. |
+| 2 | `CalendarView` toggleBlockPin | Pin/unpin a task block — reverts the optimistic pin on failure. |
+| 3 | `JournalView` makeTask | "Make a task" from a journal action — the action was removed from the list and "Task created" shown even if the insert failed (double loss). |
+| 4 | `JournalView` deleteEntry | Deleting a journal entry — removed from the UI before the delete was confirmed. |
+| 5 | `CommitmentReview` accept | The commitments status→accepted update wasn't checked; task got created but the commitment stayed "proposed" and reappeared (risking a duplicate task on the next accept). |
+| 6 | `CommitmentReview` dismiss | Dismiss wrote status with no error check — a failed dismiss reappears. |
+| 7 | `CommitmentReview` doneAlready | Same as accept: the status→done update is now checked, so the commitment can't silently reappear after the task was logged. |
+
+All now check the result, surface the error, and keep the optimistic UI only on
+success.

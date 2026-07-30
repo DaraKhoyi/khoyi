@@ -201,15 +201,17 @@ function JournalView({ userId }) {
     if (link.interaction_id) await supabase.from('contact_interactions').delete().eq('id', link.interaction_id);
   }
   async function makeTask(entryId, action, idx) {
-    await supabase.from('tasks').insert({ user_id: userId, title: action.title, due_date: action.due_date || null, priority: 'medium', completed: false, notes: `From journal · ${day}` });
+    const { error } = await supabase.from('tasks').insert({ user_id: userId, title: action.title, due_date: action.due_date || null, priority: 'medium', completed: false, notes: `From journal · ${day}` });
+    if (error) { if (window.__notify) window.__notify('Could not create task: ' + (error.message || error), 'error'); return; }
     setActionsByEntry(prev => ({ ...prev, [entryId]: (prev[entryId] || []).filter((_, i) => i !== idx) }));
     if (window.__notify) window.__notify('Task created', 'success');
   }
   async function deleteEntry(entry) {
-    setEntries(prev => prev.filter(e => e.id !== entry.id));
     const ls = linksByEntry[entry.id] || [];
     for (const l of ls) { if (l.interaction_id) await supabase.from('contact_interactions').delete().eq('id', l.interaction_id); }
-    await supabase.from('journal_entries').delete().eq('id', entry.id);
+    const { error } = await supabase.from('journal_entries').delete().eq('id', entry.id);
+    if (error) { if (window.__notify) window.__notify('Could not delete entry: ' + (error.message || error), 'error'); return; }
+    setEntries(prev => prev.filter(e => e.id !== entry.id));
   }
   async function summarize() {
     setSummarizing(true);

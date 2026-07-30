@@ -572,12 +572,17 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, start_at:newStartISO, end_at:newEndISO } : e));
     if (setTasks) setTasks(prev => prev.map(t => t.id === ev.task_id ? { ...t, pin_at:newStartISO } : t));
     try {
-      await supabase.from('events').update({ start_at:newStartISO, end_at:newEndISO }).eq('id', ev.id);
-      await supabase.from('tasks').update({ pin_at:newStartISO }).eq('id', ev.task_id);
+      const { error: e1 } = await supabase.from('events').update({ start_at:newStartISO, end_at:newEndISO }).eq('id', ev.id);
+      if (e1) throw e1;
+      if (ev.task_id) { const { error: e2 } = await supabase.from('tasks').update({ pin_at:newStartISO }).eq('id', ev.task_id); if (e2) throw e2; }
       setFlash({ type:'success', text:'Pinned to new time — reflowing the rest…' });
       await refreshSchedule();
     } catch (e) {
-      setFlash({ type:'error', text:`Move failed: ${e.message}` });
+      // Roll the optimistic move back so the block doesn't sit at a time that
+      // never persisted (supabase-js resolves with {error}, it doesn't throw).
+      setEvents(prev => prev.map(x => x.id === ev.id ? { ...x, start_at:ev.start_at, end_at:ev.end_at } : x));
+      if (setTasks && ev.task_id) setTasks(prev => prev.map(t => t.id === ev.task_id ? { ...t, pin_at:ev.start_at } : t));
+      setFlash({ type:'error', text:`Move failed: ${e.message || e}` });
       setTimeout(()=>setFlash(null), 3500);
     }
   }
@@ -586,14 +591,17 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   async function toggleBlockPin(ev) {
     if (!ev.task_id) return;
     const t = (tasks || []).find(x => x.id === ev.task_id);
+    const prevPin = t?.pin_at ?? null;
     const newPin = t?.pin_at ? null : ev.start_at;
     if (setTasks) setTasks(prev => prev.map(x => x.id === ev.task_id ? { ...x, pin_at:newPin } : x));
     try {
-      await supabase.from('tasks').update({ pin_at:newPin }).eq('id', ev.task_id);
+      const { error } = await supabase.from('tasks').update({ pin_at:newPin }).eq('id', ev.task_id);
+      if (error) throw error;
       setFlash({ type:'success', text: newPin ? '📌 Pinned in place.' : 'Unpinned — free to reschedule.' });
       setTimeout(()=>setFlash(null), 2500);
     } catch (e) {
-      setFlash({ type:'error', text:`Pin failed: ${e.message}` });
+      if (setTasks) setTasks(prev => prev.map(x => x.id === ev.task_id ? { ...x, pin_at:prevPin } : x));
+      setFlash({ type:'error', text:`Pin failed: ${e.message || e}` });
       setTimeout(()=>setFlash(null), 3500);
     }
   }

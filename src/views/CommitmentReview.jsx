@@ -124,16 +124,18 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
           completed: false,
         }).select().single();
         if (error) throw error;
-        await supabase.from('commitments').update({ status: 'accepted', task_id: t.id, decided_at: new Date().toISOString() }).eq('id', c.id);
+        const { error: uErr } = await supabase.from('commitments').update({ status: 'accepted', task_id: t.id, decided_at: new Date().toISOString() }).eq('id', c.id);
+        if (uErr) throw uErr;
       } else {
         // Theirs: on the radar, not on the list. No task is created here — that
         // is the entire point. It becomes work only if they miss the date. But we
         // keep your edited title and the date you expect it by, so the waiting-on
         // card and the late-detection use your version.
-        await supabase.from('commitments').update({
+        const { error: uErr } = await supabase.from('commitments').update({
           status: 'accepted', title, due_date: e.due || c.due_date || null,
           decided_at: new Date().toISOString(),
         }).eq('id', c.id);
+        if (uErr) throw uErr;
       }
       await load(); onChanged && onChanged();
     } catch (e) { setErr(String(e.message || e)); }
@@ -142,7 +144,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
 
   async function dismiss(c) {
     setBusy(c.id);
-    await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', c.id);
+    const { error } = await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', c.id);
+    if (error) { setErr(String(error.message || error)); setBusy(null); return; }
     await load(); onChanged && onChanged(); setBusy(null);
   }
 
@@ -181,7 +184,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
         completed_at: new Date().toISOString(),
       }).select().single();
       if (error) throw error;
-      await supabase.from('commitments').update({ status: 'done', task_id: t.id, decided_at: new Date().toISOString() }).eq('id', c.id);
+      await supabase.from('commitments').update({ status: 'done', task_id: t.id, decided_at: new Date().toISOString() }).eq('id', c.id)
+        .then(({ error: uErr }) => { if (uErr) throw uErr; });
       await load(); onChanged && onChanged();
     } catch (e) { setErr(String(e.message || e)); }
     setBusy(null);
