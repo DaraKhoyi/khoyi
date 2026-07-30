@@ -4133,7 +4133,7 @@ function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId,
           gci = { goal, ytd: Math.round(ytd), paceTarget, behindBy: Math.max(0, paceTarget - Math.round(ytd)), status };
         }
       } catch (_e) {}
-      const { data, error } = await supabase.functions.invoke('day-review', { body: { name, date: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), doneCount: done.length, total, done: done.map(p => p.title), undone: undone.map(p => p.title), mood: review.mood, note: review.note, gci } });
+      const { data, error } = await supabase.functions.invoke('day-review', { body: { user_id: userId, name, date: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), doneCount: done.length, total, done: done.map(p => p.title), undone: undone.map(p => p.title), mood: review.mood, note: review.note, gci } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setReview(r => ({ ...r, loadingRecap: false, recap: data?.recap || '' }));

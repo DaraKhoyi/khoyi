@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -53,6 +54,7 @@ async function buildSystemPrompt(supabase: any, userId: string): Promise<string>
   }
 }
 
+let __pbUsage: any = null;
 async function callClaude(systemPrompt: string, playbookText: string): Promise<any[]> {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -73,6 +75,7 @@ async function callClaude(systemPrompt: string, playbookText: string): Promise<a
     throw new Error(`Anthropic error: ${r.status} ${t.slice(0, 300)}`);
   }
   const j = await r.json();
+  __pbUsage = j?.usage || null;
   const text = j.content?.[0]?.text || "";
   // Strip potential code fences
   const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
@@ -126,6 +129,7 @@ serve(async (req) => {
     const text = `Title: ${row.title}\n\n${row.content}`;
     const systemPrompt = await buildSystemPrompt(supabase, user_id);
     const steps = await callClaude(systemPrompt, text);
+    try { await logAiUsage(supabase, { userId: user_id, fn: "playbook-parse", model: "claude-sonnet-4-6", usage: __pbUsage, usedOwn: false }); } catch (_) {}
 
     // Replace existing steps for this playbook
     await supabase.from("playbook_steps").delete().eq("brain_entry_id", brain_entry_id);

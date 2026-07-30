@@ -3,6 +3,7 @@
 // 53-lesson curriculum, always ends in one concrete next action.
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -122,6 +123,7 @@ STYLE: Talk like a sharp, caring human coach texting their agent. Concise — a 
       body: JSON.stringify({ model: MODEL, max_tokens: 700, system, messages }),
     });
     const data = await resp.json();
+    try { await logAiUsage(admin, { userId: uid, fn: "coach-chat", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
     const reply = (data.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim() || "I'm here — say that again?";
 
     if (mode === "weekly") {

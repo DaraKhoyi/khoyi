@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODEL = "claude-sonnet-4-6";
 const TERMINAL = ["closed", "lost", "dead", "archived", "withdrawn", "cancelled", "sold"];
@@ -13,6 +14,7 @@ function etTime(iso: string): string { try { return new Date(iso).toLocaleString
 function daysAgo(n: number): string { return new Date(Date.now() - n * 864e5).toISOString(); }
 function dateAgo(n: number): string { return new Date(Date.now() - n * 864e5).toISOString().slice(0, 10); }
 
+let __cosUsage: any = null;
 async function planWithClaude(obligations: any[], growth: any[]): Promise<any> {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   const oLines = obligations.map((c) => `${c.idx} [${c.kind}] ${c.title} — ${c.context}`).join("\n") || "(none)";
@@ -32,6 +34,7 @@ ${gLines}`;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }) });
     const j = await r.json();
+    __cosUsage = j?.usage || null;
     const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
     const m = raw.match(/\{[\s\S]*\}/);
     const p = JSON.parse(m ? m[0] : raw);
@@ -96,6 +99,7 @@ async function generateForUser(sb: any, uid: string): Promise<number> {
   if (!obligations.length && !growth.length) { try { await sb.from("cos_runs").upsert({ user_id: uid, run_date: today, summary: "You're all clear right now — no fires and nothing queued. As calls, emails, and deadlines come in, I'll line up what's next." }, { onConflict: "user_id,run_date" }); } catch (_) {} return 0; }
 
   let plan = await planWithClaude(obligations, growth);
+  try { await logAiUsage(sb, { userId: uid, fn: "chief-of-staff", model: MODEL, usage: __cosUsage, usedOwn: false }); } catch (_) {}
   let plannedO = plan.obligations, plannedG = plan.growth, summary = plan.summary;
   if (!plannedO.length && !plannedG.length) { plannedO = obligations.slice(0, 10).sort((a, b) => a.base - b.base).map((c) => ({ idx: c.idx, why: c.context, priority: c.base })); plannedG = growth.slice(0, 3).map((c) => ({ idx: c.idx, why: c.context, priority: c.base })); }
   if (!summary) summary = `You have ${obligations.length} item${obligations.length === 1 ? "" : "s"} that need${obligations.length === 1 ? "s" : ""} you today${plannedG.length ? `, plus ${plannedG.length} growth play${plannedG.length === 1 ? "" : "s"} worth a look` : ""}.`;

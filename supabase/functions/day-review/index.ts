@@ -3,6 +3,8 @@
 // -> { recap }   // a short, warm end-of-day reflection that closes the loop
 // Stateless; no DB access. The client persists the recap (day_plans.review + journal).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-sonnet-4-6";
@@ -18,7 +20,7 @@ const J = (b, s = 200) =>
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { name, date, doneCount = 0, total = 0, done = [], undone = [], mood = "", note = "", gci = null } = await req.json();
+    const { user_id = null, name, date, doneCount = 0, total = 0, done = [], undone = [], mood = "", note = "", gci = null } = await req.json();
     const doneLines = (done || []).slice(0, 20).map((t) => `- ${String(t).slice(0, 140)}`).join("\n");
     const undoneLines = (undone || []).slice(0, 20).map((t) => `- ${String(t).slice(0, 140)}`).join("\n");
     const money = (n) => "$" + Math.round(Number(n) || 0).toLocaleString();
@@ -46,6 +48,7 @@ Respond ONLY with strict JSON: {"recap":"..."}`;
     });
     if (!resp.ok) return J({ error: `AI error ${resp.status}` }, 502);
     const data = await resp.json();
+    try { const _sb = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")); await logAiUsage(_sb, { userId: user_id, fn: "day-review", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
     let text = (data?.content || []).map((b) => (b.type === "text" ? b.text : "")).join("").trim();
     text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
     let recap = "";

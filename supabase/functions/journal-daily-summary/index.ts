@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -30,6 +31,7 @@ serve(async (req) => {
     });
     if (!r.ok) throw new Error("claude " + r.status);
     const j = await r.json();
+    try { await logAiUsage(supabase, { userId: userId, fn: "journal-daily-summary", model: "claude-sonnet-4-6", usage: j?.usage, usedOwn: false }); } catch (_) {}
     const txt = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").replace(/```json|```/g, "").trim();
     let parsed: any; try { parsed = JSON.parse(txt); } catch { parsed = { recap: txt }; }
     await supabase.from("journal_days").upsert({ user_id: userId, day, summary: parsed.recap || null, highlights: parsed, summary_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: "user_id,day" });
