@@ -38,9 +38,24 @@ fi
 
 EMAIL="smoke_$(date +%s)_$RANDOM@example.com"; PASSWORD="Smoke!$(date +%s)$RANDOM"
 echo "→ creating throwaway agent $EMAIL"
-SUID=$(curl -s -X POST "$SUPABASE_URL/auth/v1/admin/users" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"email_confirm\":true}" | python3 -c "import sys,json;print(json.load(sys.stdin).get('id',''))")
-[ -n "$SUID" ] || { echo "could not create smoke user"; exit 2; }
+# Retry: the Supabase auth admin API occasionally returns an empty/non-JSON body
+# on a transient blip. A single attempt piped into json.load nuked the whole gate
+# (JSONDecodeError) — the same failure mode the key-mint step already guards. Try
+# up to 3 times with backoff before giving up.
+SUID=""
+for attempt in 1 2 3; do
+  RESP=$(curl -s -w '\n%{http_code}' -X POST "$SUPABASE_URL/auth/v1/admin/users" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" -H "Content-Type: application/json" \
+    -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"email_confirm\":true}")
+  CODE=$(printf '%s' "$RESP" | tail -n1)
+  BODY=$(printf '%s' "$RESP" | sed '$d')
+  if [ "$CODE" = "200" ] || [ "$CODE" = "201" ]; then
+    SUID=$(printf '%s' "$BODY" | python3 -c "import sys,json;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+  fi
+  [ -n "$SUID" ] && break
+  echo "→ could not create smoke user (HTTP $CODE), attempt $attempt/3; retrying in $((attempt * 10))s"
+  sleep $((attempt * 10))
+done
+[ -n "$SUID" ] || { echo "✗ SMOKE GATE CANNOT RUN — could not create a throwaway agent from the Supabase auth API after 3 attempts (last HTTP $CODE). This is an upstream/transient issue, not a code failure; re-run the job."; exit 2; }
 curl -s -X POST "$SUPABASE_URL/rest/v1/user_settings" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" \
   -d "{\"user_id\":\"$SUID\",\"onboarding_complete\":true,\"display_name\":\"Smoke Test\"}" >/dev/null
 
