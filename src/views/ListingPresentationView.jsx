@@ -112,7 +112,14 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
           const hasReal = (prev.comps || []).some(c => (c.address || '').trim() || Number(c.sale_price) > 0);
           next.comps = hasReal ? [...prev.comps, ...found] : found;
         }
-        next._research = { sources: r.sources || [], notes: r.notes || '', confidence: r.confidence || 'low' };
+        // Valuation → pricing tiers. Fill any blank tier with the researched value so
+        // the presentation never renders $0.
+        const vt = r.valuation?.tiers || {};
+        next.tiers = { ...prev.tiers };
+        for (const k of ['opportunistic','target','fast']) {
+          if ((prev.tiers?.[k] === '' || prev.tiers?.[k] == null || Number(prev.tiers?.[k]) === 0) && vt[k] != null) next.tiers[k] = vt[k];
+        }
+        next._research = { sources: r.sources || [], notes: r.notes || '', confidence: r.confidence || 'low', valuation: r.valuation || null };
         return next;
       });
       const conf = r.confidence === 'high' ? 'strong' : r.confidence === 'medium' ? 'decent' : 'limited';

@@ -68,10 +68,25 @@ export function buildPresentationHTML(p) {
     const other = Number(ns.other || 0);
     return price - commission - title - tax - payoff - other;
   };
+  // Pricing tiers. If the agent left them blank, derive a valuation from the comps
+  // so the presentation NEVER shows $0. Priority: explicit tier → comp-derived value.
+  const compPpsfList = comps.filter(c => Number(c.sale_price) && Number(c.gla)).map(c => Number(c.sale_price) / Number(c.gla));
+  const medianOf = (arr) => { if (!arr.length) return null; const a=[...arr].sort((x,y)=>x-y); const mid=Math.floor(a.length/2); return a.length%2 ? a[mid] : (a[mid-1]+a[mid])/2; };
+  const roundK = (n) => Math.round(n / 1000) * 1000;
+  let derivedBase = null;
+  const medPpsf = medianOf(compPpsfList);
+  if (medPpsf && Number(s.gla)) derivedBase = medPpsf * Number(s.gla);
+  else { const medSale = medianOf(comps.map(c => Number(c.sale_price)).filter(Boolean)); if (medSale) derivedBase = medSale; }
+  const tierPrice = (explicit, mult) => {
+    const e = Number(explicit || 0);
+    if (e > 0) return e;
+    if (derivedBase && derivedBase > 0) return roundK(derivedBase * mult);
+    return 0;
+  };
   const tierRows = [
-    { key:'opportunistic', label:'Opportunistic', sub:'Test the ceiling', price: Number(tiers.opportunistic||0), dom:'Longer', prob:'Lower' },
-    { key:'target',        label:'Target Market', sub:'Priced to sell right', price: Number(tiers.target||0), dom:'Market pace', prob:'Strong' },
-    { key:'fast',          label:'Fast Sale',     sub:'Move it quickly', price: Number(tiers.fast||0), dom:'Fastest', prob:'Highest' },
+    { key:'opportunistic', label:'Opportunistic', sub:'Test the ceiling', price: tierPrice(tiers.opportunistic, 1.06), dom:'Longer', prob:'Lower' },
+    { key:'target',        label:'Target Market', sub:'Priced to sell right', price: tierPrice(tiers.target, 1.0), dom:'Market pace', prob:'Strong' },
+    { key:'fast',          label:'Fast Sale',     sub:'Move it quickly', price: tierPrice(tiers.fast, 0.95), dom:'Fastest', prob:'Highest' },
   ];
 
   const compRows = comps.map((c, i) => {
@@ -264,7 +279,7 @@ export function buildPresentationHTML(p) {
     <p class="lead">There isn’t one right price; there’s a right price for <i>your</i> timeline. Here’s the trade-off between reaching for more and selling faster.</p>
     <div class="tiers" style="margin-top:24px">
       ${tierRows.map(t=>`<div class="tier ${t.key==='target'?'target':''}">${t.key==='target'?'<div class="flag">Recommended</div>':''}
-        <div class="tlab">${t.label}</div><div class="price">${money(t.price)}</div><div class="sub">${t.sub}</div>
+        <div class="tlab">${t.label}</div><div class="price">${t.price > 0 ? money(t.price) : '<span style="font-size:20px;color:var(--mut);font-weight:400">To be set</span>'}</div><div class="sub">${t.sub}</div>
         <div class="meta"><span>Days on market: ${t.dom}</span><span>Sale odds: ${t.prob}</span></div></div>`).join('')}
     </div>
   </div></section>
