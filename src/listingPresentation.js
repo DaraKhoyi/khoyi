@@ -90,13 +90,17 @@ export function buildPresentationHTML(p) {
   ];
 
   const compRows = comps.map((c, i) => {
-    const adj = (c.adjustments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0);
+    const items = (c.adjustments || []).filter(a => Number(a.amount) !== 0);
+    const adj = items.reduce((sum, a) => sum + Number(a.amount || 0), 0);
     const adjusted = Number(c.sale_price || 0) + adj;
+    const breakdown = items.length
+      ? `<div class="adj-items">${items.map(a => `<span class="adj-item"><span class="adj-lab">${esc(a.label)}</span><span class="${Number(a.amount)>=0?'pos':'neg'}">${Number(a.amount)>=0?'+':'−'}${money(Math.abs(Number(a.amount)))}</span></span>`).join('')}</div>`
+      : '';
     return `<tr>
-      <td class="comp-addr">${esc(c.address || ('Comp ' + (i+1)))}</td>
+      <td class="comp-addr">${esc(c.address || ('Comp ' + (i+1)))}${breakdown}</td>
       <td>${money(c.sale_price)}</td>
       <td>${c.gla ? esc(c.gla)+' sf' : '—'}</td>
-      <td class="${adj>=0?'pos':'neg'}">${adj>=0?'+':''}${money(adj)}</td>
+      <td class="${adj>=0?'pos':'neg'}">${adj>=0?'+':'−'}${money(Math.abs(adj))}</td>
       <td class="adjusted">${money(adjusted)}</td>
     </tr>`;
   }).join('');
@@ -166,6 +170,9 @@ export function buildPresentationHTML(p) {
   th{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);font-size:13px;text-align:left;padding:12px 10px;border-bottom:1px solid var(--line)}
   td{padding:14px 10px;border-bottom:1px solid rgba(203,163,92,.1)}
   td.comp-addr{color:var(--cream);font-weight:600}
+  .adj-items{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-weight:400}
+  .adj-item{display:inline-flex;gap:5px;font-size:11px;white-space:nowrap}
+  .adj-item .adj-lab{color:var(--mut)}
   td.adjusted{color:var(--champ);font-weight:800}
   .pos{color:#7fae8f}.neg{color:#e0794f}
   /* condition strip */

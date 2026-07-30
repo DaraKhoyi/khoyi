@@ -107,7 +107,11 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
           if ((prev.market?.[k] === '' || prev.market?.[k] == null) && r.market?.[src] != null) next.market[k] = r.market[src];
         }
         // Comps: replace the empty starter row; otherwise append researched comps.
-        const found = (r.comps || []).map(c => ({ address: c.address || '', sale_price: c.sale_price || '', gla: c.gla || '', adjustments: [] }));
+        const found = (r.comps || []).map(c => ({
+          address: c.address || '', sale_price: c.sale_price || '', gla: c.gla || '',
+          beds: c.beds ?? '', baths: c.baths ?? '', year_built: c.year_built ?? '',
+          adjustments: Array.isArray(c.adjustments) ? c.adjustments.map(a => ({ label: a.label, amount: a.amount })) : [],
+        }));
         if (found.length) {
           const hasReal = (prev.comps || []).some(c => (c.address || '').trim() || Number(c.sale_price) > 0);
           next.comps = hasReal ? [...prev.comps, ...found] : found;
