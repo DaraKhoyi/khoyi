@@ -163,3 +163,20 @@ existing try/catch never fired):
 
 All now check the result, surface the error, and keep the optimistic UI only on
 success.
+
+---
+
+## Day 5 — 30 July 2026 (v1.05.23)
+
+Fixed — 6 user-action writes, led by the highest-risk one in the whole sweep:
+
+| # | where | what it silently lost |
+|---|---|---|
+| 1 | `ContactsView` mergeContacts (steps 3+4) | **Data-integrity risk.** The profile re-point/delete and the duplicate-contact delete weren't error-checked — a failure mid-merge left orphaned profiles or un-deleted duplicates while the merge reported success. Now each step throws, so a partial merge surfaces as an error instead of silent corruption. |
+| 2 | `TaskDelegation` accept | Mirror task got created but the delegation status→accepted update wasn't checked → it reappears as pending (re-accepting makes a duplicate task). |
+| 3 | `TaskDelegation` reclaim | Taking a delegated task back — no error check; on failure the "waiting on them" tracker keeps lying. |
+| 4 | `InboxView` email write-back | Writing an email onto a contact showed "Added … to contact record" even if the write failed (supabase-js doesn't throw). |
+| 5 | `NotesView` blank-note cleanup | An emptied note was removed from the list before its delete confirmed; now it's restored if the delete fails. |
+| 6 | (merge step 3 update branch counted with #1) | Profile re-point on failure. |
+
+All now check the result and surface/roll-back on failure.

@@ -199,9 +199,10 @@ export function DelegationInbox({ userId, onChanged }) {
         completed: false,
       }).select().single();
       if (error) throw error;
-      await supabase.from('task_delegations').update({
+      const { error: dErr } = await supabase.from('task_delegations').update({
         status: 'accepted', mirror_task_id: t.id, responded_at: new Date().toISOString(),
       }).eq('id', d.id);
+      if (dErr) throw dErr;
       await load(); onChanged && onChanged();
     } catch (e) { setErr(String(e.message || e)); }
     setBusy(null);
@@ -285,8 +286,9 @@ export function DelegationOutbox({ userId, onChanged }) {
   // again. Either way the tracker on your own task has to stop lying.
   async function reclaim(d) {
     setBusy(d.id);
-    await supabase.from('task_delegations')
+    const { error } = await supabase.from('task_delegations')
       .update({ status: 'cancelled', responded_at: new Date().toISOString() }).eq('id', d.id);
+    if (error) { if (window.__notify) window.__notify('Could not reclaim task: ' + (error.message || error), 'error'); setBusy(null); return; }
     if (d.task_id) await supabase.from('tasks').update({ waiting_on: null }).eq('id', d.task_id);
     await load(); onChanged && onChanged(); setBusy(null);
   }

@@ -328,10 +328,11 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
     setPendingNoEmail(null);
     // Best-effort write-back; non-blocking
     try {
-      await supabase.from('contacts').update({ email }).eq('id', c.id);
+      const { error } = await supabase.from('contacts').update({ email }).eq('id', c.id);
+      if (error) throw error;
       if (window.__notify) window.__notify(`Added ${email} to ${c.name}'s contact record.`, 'success');
     } catch (err) {
-      if (window.__notify) window.__notify('Email saved locally but could not be written back to the contact.', 'error');
+      if (window.__notify) window.__notify('Email saved for this message but could not be written back to the contact.', 'error');
     }
   }
 

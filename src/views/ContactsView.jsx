@@ -1814,15 +1814,18 @@ function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, 
         const { data: otherProfile } = await supabase.from('profiles').select('id').eq('contact_id', o.id).maybeSingle();
         if (!otherProfile) continue;
         if (canonicalProfile) {
-          await supabase.from('profiles').delete().eq('id', otherProfile.id);
+          const { error: pdErr } = await supabase.from('profiles').delete().eq('id', otherProfile.id);
+          if (pdErr) throw pdErr;
         } else {
-          await supabase.from('profiles').update({ contact_id: canonicalId }).eq('id', otherProfile.id);
+          const { error: puErr } = await supabase.from('profiles').update({ contact_id: canonicalId }).eq('id', otherProfile.id);
+          if (puErr) throw puErr;
         }
       }
 
       // Step 4: delete the duplicates
       for (const o of others) {
-        await supabase.from('contacts').delete().eq('id', o.id);
+        const { error: cdErr } = await supabase.from('contacts').delete().eq('id', o.id);
+        if (cdErr) throw cdErr;
       }
 
       // Step 5: refresh contacts in parent + remove this group from list

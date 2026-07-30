@@ -115,7 +115,13 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
     } else if (selected && !selected.draft && isBlank(editTitle, editBody)) {
       const id = selected.id;
       setNotes(prev => prev.filter(n => n.id !== id));
-      supabase.from('notes').delete().eq('id', id).then(() => {
+      supabase.from('notes').delete().eq('id', id).then(({ error }) => {
+        if (error) {
+          // delete didn't take — put it back rather than have it reappear on reload
+          setNotes(prev => prev.some(n => n.id === id) ? prev : [selected, ...prev]);
+          if (window.__notify) window.__notify('Could not remove the emptied note.', 'error');
+          return;
+        }
         supabase.from('entity_links').delete().eq('item_type', 'note').eq('item_id', id);
       });
     }
