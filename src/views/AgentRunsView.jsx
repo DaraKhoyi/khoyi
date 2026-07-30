@@ -41,7 +41,7 @@ export default function AgentRunsView({ userId, setView }) {
     } catch (_) {}
     setBusyId(null); load();
   }
-  async function dismiss(run) { setBusyId(run.id); try { await supabase.from('agent_runs').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', run.id); } catch (_) {} setBusyId(null); load(); }
+  async function dismiss(run) { setBusyId(run.id); const { error } = await supabase.from('agent_runs').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', run.id); if (error && window.__notify) window.__notify('Could not dismiss: ' + (error.message || error), 'error'); setBusyId(null); load(); }
 
   return (
     <div className="ww-prism" style={{ maxWidth: '720px', margin: '0 auto' }}>

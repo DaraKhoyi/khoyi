@@ -106,7 +106,7 @@ export function ViewerModal({ doc, userId, onClose, onDeleted }) {
     await supabase.from('documents').delete().eq('id', full.id);
     setBusy(false); onDeleted && onDeleted(full.id); onClose();
   };
-  const markHandled = async () => { setFull(f => ({ ...f, action_needed: false })); try { await supabase.from('documents').update({ action_needed: false }).eq('id', full.id); } catch (_) {} };
+  const markHandled = async () => { setFull(f => ({ ...f, action_needed: false })); const { error } = await supabase.from('documents').update({ action_needed: false }).eq('id', full.id); if (error) { if (window.__notify) window.__notify('Could not mark handled: ' + (error.message || error), 'error'); setFull(f => ({ ...f, action_needed: true })); } };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base)', borderTop: `2px solid ${GOLD}`, borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 680, maxHeight: '88vh', overflowY: 'auto', padding: 18 }}>

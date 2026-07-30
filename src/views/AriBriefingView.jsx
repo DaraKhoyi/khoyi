@@ -703,7 +703,8 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   // Snooze with a real duration: hide this person from reach-outs until the chosen date.
   const applySnooze = async (r, until) => {
     setSnoozeFor(null);
-    try { await supabase.from('contacts').update({ reachout_snooze_until: until.toISOString() }).eq('id', r.contact_id); } catch(e){}
+    const { error } = await supabase.from('contacts').update({ reachout_snooze_until: until.toISOString() }).eq('id', r.contact_id);
+    if (error) { if (window.__notify) window.__notify('Could not snooze: ' + (error.message || error), 'error'); return; }
     const np = reachouts.map(x => x.contact_id===r.contact_id ? { ...x, ...(edits[r.contact_id]||{}), status:'snoozed', snooze_until: until.toISOString() } : x);
     await persist(np);
     if (window.__notify) window.__notify(`Snoozed ${r.name} until ${until.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`, 'success');

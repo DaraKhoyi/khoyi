@@ -106,3 +106,39 @@ Fixed — 10 user-action writes where a silent failure left the UI claiming succ
 
 All now follow the fix shape: check `{ error }`, notify on failure, and apply the
 optimistic UI patch only on success.
+
+---
+
+## Day 3 — 29 July 2026 (v1.05.21)
+
+Fixed — 7 user-action writes where a silent failure left the UI claiming success
+(TodayView is the home screen, so those are the highest-traffic of the batch):
+
+| # | where | what it silently lost |
+|---|---|---|
+| 1 | `TodayView` saveLevel | Changing the automation dial — reverted silently on reload. |
+| 2 | `TodayView` bumpApprovals | The approvals counter behind the automation level. |
+| 3 | `TodayView` markBounceHandled | Marking an email bounce handled — the "Marked handled" toast fired even on failure (false success). |
+| 4 | `TodayView` undoGroom | Undo of a stale-task archive — silently did nothing on failure; user thinks tasks were restored. |
+| 5 | `AriBriefingView` applySnooze | Snoozing a person from reach-outs — the "Snoozed…" toast fired even if the write failed, and they reappear. |
+| 6 | `DocumentsView` markHandled | Marking a document's action_needed off — now rolls the optimistic flip back on failure. |
+| 7 | `AgentRunsView` dismiss | Dismissing an AI agent run — silent failure means it reappears. |
+
+## Accepted as best-effort (Day 3)
+
+Consciously NOT force-fixed — each is a derived/log write that happens AFTER the
+real user action already succeeded, so a lost write is tolerable and does not
+produce a false "it worked":
+
+- `AriBriefingView` logTouch / logOutreach (655/656/666) — logging an outreach
+  that already went out. Losing the interaction/telemetry record doesn't undo the
+  send.
+- `AriBriefingView` loadScore ari_attribute_outcomes (671) — a read/attribution
+  refresh, not a user mutation.
+- `AriBriefingView` set_task_contacts (458/471/743) — best-effort contact link
+  after the task itself is created-and-checked; a missing link is minor and
+  re-linkable.
+- `InboxView` post-send comms-timestamp update (2194) — derived last_outbound_at
+  bookkeeping after the email already sent.
+- `QuoView` logCallIntent (473) — an early "owe a reply" signal logged after the
+  call is already placed; the webhook backfills the real record.

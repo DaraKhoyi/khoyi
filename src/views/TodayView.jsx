@@ -47,11 +47,13 @@ export default function TodayView({
   }, [myUserId]);
   const saveLevel = async (n) => {
     setAutoLevel(n); setShowDial(false);
-    try { await supabase.from('user_settings').update({ automation_level: n }).eq('user_id', myUserId); } catch (_) {}
+    const { error } = await supabase.from('user_settings').update({ automation_level: n }).eq('user_id', myUserId);
+    if (error && window.__notify) window.__notify('Could not save automation level: ' + (error.message || error), 'error');
   };
   const bumpApprovals = useCallback(async (by = 1) => {
     const next = approvals + by; setApprovals(next);
-    try { await supabase.from('user_settings').update({ automation_approvals: next }).eq('user_id', myUserId); } catch (_) {}
+    const { error } = await supabase.from('user_settings').update({ automation_approvals: next }).eq('user_id', myUserId);
+    if (error && window.__notify) window.__notify('Could not update approvals: ' + (error.message || error), 'error');
   }, [approvals, myUserId]);
 
   // ── NBA signals (the same engine the dashboard + Ari use) ───────────────────
@@ -192,7 +194,8 @@ export default function TodayView({
     } catch (_) { setBounceRows([]); }
   };
   const markBounceHandled = async (id) => {
-    try { await supabase.from('email_bounces').update({ handled: true, handled_at: new Date().toISOString() }).eq('id', id); } catch (_) {}
+    const { error } = await supabase.from('email_bounces').update({ handled: true, handled_at: new Date().toISOString() }).eq('id', id);
+    if (error) { if (window.__notify) window.__notify('Could not mark handled: ' + (error.message || error), 'error'); return; }
     setBounceRows(r => (r || []).filter(x => x.id !== id));
     setBounceActions(a => a.filter(x => x.key !== 'bounce:' + id));
     if (window.__notify) window.__notify('Marked handled.', 'success');
@@ -219,9 +222,10 @@ export default function TodayView({
   const undoGroom = async () => {
     if (!lastBatch) return;
     try {
-      const { data } = await supabase.rpc('groom_undo', { p_batch_id: lastBatch });
-      if (data?.ok) { if (window.__notify) window.__notify(`Restored ${data.restored} tasks.`, 'success'); setLastBatch(null); loadGroom(); }
-    } catch (_) {}
+      const { data, error } = await supabase.rpc('groom_undo', { p_batch_id: lastBatch });
+      if (error || !data?.ok) { if (window.__notify) window.__notify('Could not undo: ' + (error?.message || data?.error || ''), 'error'); return; }
+      if (window.__notify) window.__notify(`Restored ${data.restored} tasks.`, 'success'); setLastBatch(null); loadGroom();
+    } catch (e) { if (window.__notify) window.__notify('Could not undo: ' + (e.message || e), 'error'); }
   };
 
   // Park the selected tasks in Someday/Maybe — kept, but off the active list.
