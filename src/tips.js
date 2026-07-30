@@ -20,6 +20,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const TIPS = [
+  // ── Brokerage: AI usage reports ─────────────────────────────────────────────
+  { id: 'ai_reports_auto', screen: 'ai_usage_reports', label: 'Your AI bill, itemized — automatically',
+    body: 'On the 1st of every month, Prism builds a per-agent AI cost report for the month just ended, emails it to the brokerage, and files it here in Excel. <b>The brokerage-account cost is what you could bill back.</b> No spreadsheet to assemble — it\u2019s already done.' },
   // ── The Library / knowledge ────────────────────────────────────────────────
   { id: 'library_one_store', screen: 'notes', label: 'One place, everything you know',
     body: 'Notes, journal, call transcripts, documents, filed emails — all one searchable library. Stop keeping four apps in your head. <b>Ask it anything and it answers from everything you own.</b>' },

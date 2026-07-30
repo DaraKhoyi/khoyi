@@ -59,6 +59,7 @@ async function embed(text: string): Promise<string | null> {
 }
 
 serve(async (req) => {
+  __deUsage = { input_tokens: 0, output_tokens: 0 };  // reset per request — module-scoped accumulator would otherwise bleed across warm invocations
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   let docId: string | null = null;
   const admin = createClient(SUPABASE_URL, SERVICE);

@@ -46,6 +46,16 @@ PRONOUNS (get these exactly right in the summary and notes):
 - For other people, use only the pronouns given under "Known participants" below. If a person's pronouns are not listed there, use they/them — never guess.`;
 
 let __recUsage: any = null;
+// Accumulate usage across BOTH Claude calls in this function (extraction AND
+// translation) — a recording that needs translating makes two billable calls.
+// Overwriting would have logged only the last one and lost the other's cost.
+function __recAcc(u: any) {
+  if (!u) return;
+  if (!__recUsage) __recUsage = { input_tokens: 0, output_tokens: 0, server_tool_use: { web_search_requests: 0 } };
+  __recUsage.input_tokens += u.input_tokens || 0;
+  __recUsage.output_tokens += u.output_tokens || 0;
+  __recUsage.server_tool_use.web_search_requests += (u.server_tool_use?.web_search_requests || 0);
+}
 async function callClaude(transcript: string, participants: string): Promise<any> {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   let lastErr = "";
@@ -53,7 +63,7 @@ async function callClaude(transcript: string, participants: string): Promise<any
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 1200, system: SYSTEM, messages: [{ role: "user", content: `Current date: ${estToday()}.${participants ? "\n\n" + participants : ""}\n\nTranscript:\n${transcript.slice(0, 14000)}` }] }) });
       if (!r.ok) { lastErr = `${model}: ${r.status}`; continue; }
-      const data = await r.json(); __recUsage = data?.usage || __recUsage;
+      const data = await r.json(); __recAcc(data?.usage);
       const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
       if (txt) { const m = txt.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : txt); }
     } catch (e) { lastErr = `${model}: ${e}`; }
@@ -68,7 +78,7 @@ async function translateToEnglish(transcript: string): Promise<string> {
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 4000, system: SYS, messages: [{ role: "user", content: transcript.slice(0, 14000) }] }) });
       if (!r.ok) continue;
-      const data = await r.json(); __recUsage = data?.usage || __recUsage;
+      const data = await r.json(); __recAcc(data?.usage);
       const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
       if (txt) return txt;
     } catch (_) {}
@@ -141,6 +151,7 @@ serve(async (req) => {
         if (pc?.name) participants += `\n- ${pc.name} — ${pc.pronouns ? pc.pronouns : "they/them (pronouns unknown — do not guess)"} (likely "them")`;
       }
       let plan: any = { call_summary: "", action_items: [] };
+      __recUsage = null;
       try { plan = await callClaude(transcript, participants); } catch (_) { continue; } // leave unprocessed to retry next run
       try { await logAiUsage(admin, { userId: rec?.user_id, fn: "recording-process", model: MODELS[0], usage: __recUsage, usedOwn: false }); } catch (_) {}
 

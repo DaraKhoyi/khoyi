@@ -16532,6 +16532,67 @@ function TeamView(){
   </div>);
 }
 
+function AiUsageReportsPanel(){
+  const [rows,setRows]=useState(null);
+  const [err,setErr]=useState('');
+  const [busyId,setBusyId]=useState(null);
+  useEffect(()=>{ (async()=>{
+    try {
+      const { data, error } = await supabase.rpc('list_usage_reports');
+      if(error){ setErr('Could not load reports.'); setRows([]); return; }
+      setRows(data||[]);
+    } catch(_) { setErr('Could not load reports.'); setRows([]); }
+  })(); },[]);
+  const download=async(r)=>{
+    setBusyId(r.id); setErr('');
+    try {
+      const { data, error } = await supabase.storage.from('usage-reports').createSignedUrl(r.storage_path, 120);
+      if(error||!data?.signedUrl){ setErr('Could not generate a download link — you may not have access.'); setBusyId(null); return; }
+      const a=document.createElement('a'); a.href=data.signedUrl; a.download=(r.storage_path.split('/').pop()||'usage-report.xlsx'); a.click();
+    } catch(_) { setErr('Download failed. Please try again.'); }
+    setBusyId(null);
+  };
+  return (
+    <div style={{marginTop:'12px',display:'grid',gap:'10px'}}>
+      <div className="panel" style={{padding:'14px 16px'}}>
+        <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--accent)'}}>Monthly AI usage &amp; cost</div>
+        <div style={{fontSize:'12.5px',color:'var(--text-2)',lineHeight:1.5,marginTop:'4px'}}>A per-agent AI cost report is generated automatically on the 1st of each month for the month just ended, emailed to the brokerage, and saved here. Excel format, brokerage-account cost you could bill back. Visible to brokerage admins only.</div>
+      </div>
+      {err && <div className="panel" style={{padding:'12px',color:'#e0a97a',fontSize:'12.5px'}}>{err}</div>}
+      {rows===null ? <div className="panel" style={{padding:'16px',color:'var(--text-3)',fontSize:'12px'}}>Loading reports…</div>
+        : rows.length===0 ? <div className="panel" style={{padding:'24px',textAlign:'center',color:'var(--text-2)',fontSize:'12.5px'}}>No monthly reports yet. The first one arrives on the 1st of next month.</div>
+        : (
+        <div className="panel" style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12.5px'}}>
+            <thead><tr style={{textAlign:'left',color:'var(--text-3)',borderBottom:'1px solid var(--border)'}}>
+              <th style={{padding:'8px'}}>Month</th>
+              <th style={{padding:'8px',textAlign:'right'}}>Brokerage cost</th>
+              <th style={{padding:'8px',textAlign:'right'}}>Agents</th>
+              <th style={{padding:'8px'}}>Emailed</th>
+              <th style={{padding:'8px',textAlign:'right'}}>Report</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(r=>(
+                <tr key={r.id} style={{borderBottom:'1px solid var(--border)'}}>
+                  <td style={{padding:'8px',fontWeight:600}}>{r.month_label}</td>
+                  <td style={{padding:'8px',textAlign:'right',color:'var(--accent)',fontWeight:700}}>${Number(r.total_cost_usd||0).toFixed(2)}</td>
+                  <td style={{padding:'8px',textAlign:'right'}}>{r.agent_count}</td>
+                  <td style={{padding:'8px',color:'var(--text-3)'}}>{r.emailed_at ? '✓ sent' : '—'}</td>
+                  <td style={{padding:'8px',textAlign:'right'}}>
+                    <button className="btn btn-ghost btn-sm" disabled={busyId===r.id} onClick={()=>download(r)}>
+                      <Icon name="download" size={13} fb="⬇"/> {busyId===r.id ? "Preparing…" : 'Download .xlsx'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <TipFor screen="ai_usage_reports" />
+    </div>
+  );
+}
 function AgentsView({ userId, user, appCtx, isAdmin }){
   const role = appCtx?.role; const myTeam = appCtx?.team||''; const ownerId = appCtx?.owner_id || userId; const canWrite = isAdmin || !!appCtx?.is_team_leader;
   const roleOpts = isAdmin ? AGENT_ROLES : AGENT_ROLES.filter(r=>['agent','team_leader'].includes(r.value));
@@ -16573,11 +16634,13 @@ function AgentsView({ userId, user, appCtx, isAdmin }){
         <button className="btn btn-sm" onClick={()=>setMode('leads')} style={{background:mode==='leads'?'var(--accent)':'transparent',color:mode==='leads'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Leads</button>
         <button className="btn btn-sm" onClick={()=>setMode('conversion')} style={{background:mode==='conversion'?'var(--accent)':'transparent',color:mode==='conversion'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Conversion</button>
         {isAdmin && <button className="btn btn-sm" onClick={()=>setMode('accounting')} style={{background:mode==='accounting'?'var(--accent)':'transparent',color:mode==='accounting'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>Accounting</button>}
+        {isAdmin && <button className="btn btn-sm" onClick={()=>setMode('aireports')} style={{background:mode==='aireports'?'var(--accent)':'transparent',color:mode==='aireports'?'#111':'var(--text-2)',border:'1px solid var(--accent)',fontWeight:600}}>AI Reports</button>}
         {(mode==='earnings'||mode==='profitshare') && <select className="form-input" value={year} onChange={e=>setYear(Number(e.target.value))} style={{width:'auto',marginLeft:'auto',padding:'4px 8px'}}>{[0,1,2,3].map(d=>{ const y=new Date().getFullYear()-d; return <option key={y} value={y}>{y}</option>; })}</select>}
       </div>
       {mode==='leads' && <LeadsBoard userId={userId} ownerId={ownerId} agents={agents} canWrite={canWrite} isAdmin={isAdmin} myTeam={myTeam}/>}
       {mode==='conversion' && <ConversionDashboard userId={userId} agents={agents}/>}
       {mode==='accounting' && <AccountingView userId={userId} ownerId={ownerId} agents={agents} isAdmin={isAdmin}/>}
+      {mode==='aireports' && isAdmin && <AiUsageReportsPanel />}
       {mode==='earnings' && (()=>{
         if(!ledger) return <div className="panel" style={{marginTop:'12px',color:'var(--text-2)'}}>Loading earnings…</div>;
         const rows=ledger.filter(r=>new Date(r.closed_on||r.created_at).getFullYear()===year);
