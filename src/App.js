@@ -91,6 +91,7 @@ const GroupMessageView = lazyWithReload(() => import('./views/GroupMessageView')
 const AppHealthView = lazyWithReload(() => import('./views/AppHealthView'));
 const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m => ({ default: m.GrowthView })));
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
+const ListingPresentationView = lazyWithReload(() => import('./views/ListingPresentationView'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
 const CalendarView = lazyWithReload(() => import('./views/CalendarView'));
 const InboxView = lazyWithReload(() => import('./views/InboxView'));
@@ -18861,6 +18862,7 @@ function AppMain() {
   const MENU = [
     // ── Top level — promoted daily drivers (Dara's order) ──
     { label: 'Today', view: 'today', icon: 'sparkles' },
+    { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     { label: 'Tasks', view: 'tasks', icon: 'tasks' },
     { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
@@ -19059,6 +19061,7 @@ function AppMain() {
                 <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
                 {(entitled && PAGES[view] && !pageVisible(view, navCtx) && !PAGES[view].core)
                   ? <LockedPage page={PAGES[view]} onRedeem={reloadEntitlements} onSettings={()=>setView('settings')} />
+                : view==='listing_presentation' ? <ListingPresentationView userId={user.id} agentName={appCtx?.name || user?.email || ''} />
                 : view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
                 : view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />
                 : view==='dashboard'   ? <DashboardHub
