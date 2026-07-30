@@ -14399,15 +14399,20 @@ function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts,
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>AI usage & cost — this month</h3></div>
           <div className="panel-body">
-            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Per-agent Claude usage on the <b>brokerage account</b> (what you could bill back). Agents on their own key are billed by Anthropic and shown separately.</p>
-            {usageRows === null ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>Loading…</div> : usageRows.length === 0 ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>No AI usage yet this month.</div> : (
+            <p style={{fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, marginTop:0}}>Per-agent Claude usage on the <b>brokerage account</b> (what you could bill back). Every agent with a login is listed; agents on their own key are billed by Anthropic and shown separately.</p>
+            {usageRows === null ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>Loading…</div> : usageRows.length === 0 ? <div style={{fontSize:'12px', color:'var(--text-3)'}}>No agents with logins yet.</div> : (
               <div style={{display:'flex', flexDirection:'column', gap:'2px'}}>
                 {usageRows.map((r,i)=>(
                   <div key={i} style={{display:'flex', justifyContent:'space-between', gap:'10px', fontSize:'12.5px', padding:'7px 0', borderBottom:'1px solid var(--border)'}}>
-                    <span style={{color:'var(--text-1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.email || 'Unknown'}</span>
-                    <span style={{flexShrink:0}}><span style={{color:'var(--accent)', fontWeight:700}}>${Number(r.platform_cost_usd||0).toFixed(2)}</span>{Number(r.own_key_cost_usd||0)>0 ? <span style={{color:'var(--text-3)'}}> (+${Number(r.own_key_cost_usd).toFixed(2)} own key)</span> : null}</span>
+                    <span style={{color: Number(r.platform_cost_usd||0)>0 ? 'var(--text-1)':'var(--text-3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.email || 'Unknown'}{Number(r.calls||0)>0 ? <span style={{color:'var(--text-3)', fontWeight:400}}> · {r.calls} calls</span> : null}</span>
+                    <span style={{flexShrink:0}}><span style={{color: Number(r.platform_cost_usd||0)>0 ? 'var(--accent)':'var(--text-3)', fontWeight:700}}>${Number(r.platform_cost_usd||0).toFixed(2)}</span>{Number(r.own_key_cost_usd||0)>0 ? <span style={{color:'var(--text-3)'}}> (+${Number(r.own_key_cost_usd).toFixed(2)} own key)</span> : null}</span>
                   </div>
                 ))}
+                <div style={{display:'flex', justifyContent:'space-between', gap:'10px', fontSize:'13px', padding:'10px 0 2px', marginTop:'2px', fontWeight:700}}>
+                  <span style={{color:'var(--text-2)'}}>Total ({usageRows.length} agents)</span>
+                  <span style={{color:'var(--accent-2)'}}>${usageRows.reduce((s,r)=>s+Number(r.platform_cost_usd||0),0).toFixed(2)}</span>
+                </div>
+                <p style={{fontSize:'11px', color:'var(--text-3)', lineHeight:1.5, marginTop:'8px', marginBottom:0}}>Costs reflect AI features that record usage. We're expanding logging so every AI action (briefings, planning, call &amp; recording analysis, orchestrations) is captured — until then, totals may run higher than shown.</p>
               </div>
             )}
           </div>
