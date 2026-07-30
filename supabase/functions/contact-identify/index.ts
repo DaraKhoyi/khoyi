@@ -15,6 +15,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -183,6 +184,8 @@ Important:
       else await supabase.from("profiles").insert({ contact_id: body.contact_id, user_id: contactUserId, subject_kind: "contact", ...fields });
     };
 
+    let __ciUsage: any = null;
+    const __accUsage = (u:any) => { if(!u) return; if(!__ciUsage){__ciUsage={input_tokens:0,output_tokens:0,server_tool_use:{web_search_requests:0}};} __ciUsage.input_tokens+=u.input_tokens||0; __ciUsage.output_tokens+=u.output_tokens||0; __ciUsage.server_tool_use.web_search_requests+=(u.server_tool_use?.web_search_requests||0); };
     const runIdentify = async () => {
       try {
         const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -195,7 +198,7 @@ Important:
           await writeIdentify({ identify_status: "error", identify_error: `Identity service error ${apiResp.status}. Please try again.`, identify_at: new Date().toISOString() });
           return { error: `Anthropic API error: ${apiResp.status}`, detail: errText.slice(0, 500) };
         }
-        const apiData = await apiResp.json();
+        const apiData = await apiResp.json(); __accUsage(apiData?.usage);
         const textBlocks = (apiData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
         // Robustly pull the JSON array. With web_search on, the model narrates its
         // search ("Let me look… I found…") BEFORE the JSON, so a naive
@@ -227,7 +230,7 @@ Important:
               headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
               body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1024, messages: [{ role: "user", content: `From the research notes below, output ONLY a JSON array (no prose, no fences) of the identified person as one object with keys: name, headline, location, source_url, distinguishing_note, match_strength. If no one was identified, output []. NOTES:\n\n${textBlocks.slice(0, 8000)}` }] }),
             });
-            if (fx.ok) { const fd = await fx.json(); const ft = (fd.content || []).filter(b => b.type === "text").map(b => b.text).join("\n"); candidates = extractCandidates(ft); }
+            if (fx.ok) { const fd = await fx.json(); __accUsage(fd?.usage); const ft = (fd.content || []).filter(b => b.type === "text").map(b => b.text).join("\n"); candidates = extractCandidates(ft); }
           } catch (_) { /* keep empty */ }
         }
         if (!Array.isArray(candidates)) candidates = [];
@@ -251,6 +254,7 @@ Important:
     }
 
     const r = await runIdentify();
+    try { await logAiUsage(supabase, { userId: user?.id, fn: "contact-identify", model: "claude-sonnet-4-6", usage: __ciUsage, usedOwn: false }); } catch (_) {}
     if (r.error) return new Response(JSON.stringify({ error: r.error, detail: r.detail }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     return new Response(JSON.stringify({ confidence: r.confidence, candidates: r.candidates, identifiers_used: identifiers, search_count: r.search_count }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 

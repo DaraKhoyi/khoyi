@@ -18,6 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -74,6 +75,7 @@ function safeJson(text: string): any {
   return JSON.parse(t);
 }
 
+let __quoUsage: any = null;
 async function callClaude(system: string, userMsg: string): Promise<string> {
   const models = [MODEL, ...FALLBACKS];
   let lastErr = "";
@@ -85,7 +87,7 @@ async function callClaude(system: string, userMsg: string): Promise<string> {
         body: JSON.stringify({ model, max_tokens: 1200, system, messages: [{ role: "user", content: userMsg }] }),
       });
       if (!r.ok) { lastErr = `${model}: ${r.status} ${await r.text()}`; continue; }
-      const data = await r.json();
+      const data = await r.json(); __quoUsage = data?.usage || __quoUsage;
       const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
       if (txt) return txt;
     } catch (e) { lastErr = `${model}: ${e}`; }
@@ -257,6 +259,7 @@ serve(async (req) => {
           transcript ? `\nTranscript:\n${transcript.slice(0, 12000)}` : "",
         ].filter(Boolean).join("\n");
         const out = safeJson(await callClaude(SYSTEM, userMsg));
+        try { await logAiUsage(admin, { userId: call?.user_id, fn: "quo-call-process", model: MODEL, usage: __quoUsage, usedOwn: false }); } catch (_) {}
         if (out.non_english) { try { const t = await translateToEnglish(transcript); if (t) transcriptEn = t; } catch (_) {} }
         if (Array.isArray(out.action_items)) {
           proposed = out.action_items

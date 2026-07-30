@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 
 // ── call-commitments ─────────────────────────────────────────────────────────
 // Pulls the promises out of a call. The whole design answers one question Dara
@@ -29,6 +30,7 @@ const cors = {
 };
 const MODEL = "claude-sonnet-4-6";
 
+let __lastUsage: any = null;
 async function claude(key: string, system: string, user: string) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -37,6 +39,7 @@ async function claude(key: string, system: string, user: string) {
   });
   if (!r.ok) throw new Error(`claude ${r.status}: ${(await r.text()).slice(0, 140)}`);
   const j = await r.json();
+  __lastUsage = j?.usage || null;
   return (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
 }
 
@@ -141,6 +144,7 @@ serve(async (req) => {
 
         const usr = `Call date: ${(call.op_created_at || "").slice(0, 10)}. Speakers are labelled by name.${multiParty ? " This call has THREE OR MORE speakers — attribute each commitment to the correct person." : ""}\n\n${script.slice(0, 14000)}`;
         const raw = await claude(KEY, sys, usr);
+        try { await logAiUsage(db, { userId: call?.user_id, fn: "call-commitments", model: MODEL, usage: __lastUsage, usedOwn: false }); } catch (_) {}
         let parsed: any = {};
         try { parsed = JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { parsed = { commitments: [] }; }
         const list = Array.isArray(parsed.commitments) ? parsed.commitments : [];

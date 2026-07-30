@@ -7,6 +7,7 @@
 // POST { document_id }  (auth: user JWT)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 import { encodeBase64 } from "https://deno.land/std@0.208.0/encoding/base64.ts";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 
@@ -17,6 +18,8 @@ const OPENAI = Deno.env.get("OPENAI_API_KEY") || "";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const J = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 
+let __deUsage: any = { input_tokens:0, output_tokens:0 };
+function __deAcc(u:any){ if(!u) return; __deUsage.input_tokens+=u.input_tokens||0; __deUsage.output_tokens+=u.output_tokens||0; }
 async function claudeMedia(base64: string, mediaType: string, isPdf: boolean): Promise<string> {
   const content: any = isPdf
     ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
@@ -29,7 +32,7 @@ async function claudeMedia(base64: string, mediaType: string, isPdf: boolean): P
     body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 8000, messages: [{ role: "user", content }] }),
   });
   if (!r.ok) throw new Error(`Claude OCR error ${r.status}: ${(await r.text()).slice(0, 300)}`);
-  const d = await r.json();
+  const d = await r.json(); __deAcc(d?.usage);
   return (d.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
 }
 
@@ -40,7 +43,7 @@ async function claudeSummarize(text: string): Promise<{ summary: string; doc_typ
       method: "POST", headers: { "x-api-key": ANTHROPIC, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 500, messages: [{ role: "user", content: `Document text:\n"""${text.slice(0, 14000)}"""\n\nReturn STRICT JSON only:\n{ "summary": "2-3 sentence summary of what this document is and its key points",\n  "doc_type": "one of: contract, disclosure, lease, agreement, id, invoice, statement, letter, report, flyer, note, other",\n  "signed_state": "signed | unsigned | na",\n  "action_needed": true or false,\n  "action_label": "a short imperative next step for the agent, or empty" }\nGuidance: signed_state='na' for non-signable docs (notes, flyers, statements, IDs). Set action_needed=true mainly when a contract/disclosure/lease/agreement appears UNSIGNED, or the document clearly implies a follow-up; otherwise false. Keep action_label short, specific, imperative (e.g. "Send the disclosure for signature").` }] }),
     });
-    const d = await r.json(); const t = (d.content || []).map((c: any) => c.text || "").join("");
+    const d = await r.json(); __deAcc(d?.usage); const t = (d.content || []).map((c: any) => c.text || "").join("");
     const p = JSON.parse(t.match(/\{[\s\S]*\}/)[0]);
     return { summary: p.summary || "", doc_type: p.doc_type || "other", signed_state: p.signed_state || "na", action_needed: !!p.action_needed, action_label: p.action_label || "" };
   } catch (_) { return fb; }
@@ -96,6 +99,7 @@ serve(async (req) => {
 
     text = (text || "").trim();
     const meta = text ? await claudeSummarize(text) : { summary: "", doc_type: "other", signed_state: "na", action_needed: false, action_label: "" };
+    try { await logAiUsage(admin, { userId: user?.id, fn: "document-extract", model: "claude-sonnet-4-6", usage: __deUsage, usedOwn: false }); } catch (_) {}
     const embedding = await embed(`${doc.title || ""}\n${meta.summary}\n${text}`);
 
     await admin.from("documents").update({

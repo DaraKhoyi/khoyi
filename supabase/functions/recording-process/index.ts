@@ -4,6 +4,7 @@
 // proposed_tasks (review_status='pending') for the user to approve. Idempotent via processed_at.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logAiUsage } from "../_shared/aiUsage.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-token", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -44,6 +45,7 @@ PRONOUNS (get these exactly right in the summary and notes):
 - NEVER infer anyone's gender from voice, pitch, tone, or first name.
 - For other people, use only the pronouns given under "Known participants" below. If a person's pronouns are not listed there, use they/them — never guess.`;
 
+let __recUsage: any = null;
 async function callClaude(transcript: string, participants: string): Promise<any> {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   let lastErr = "";
@@ -51,7 +53,7 @@ async function callClaude(transcript: string, participants: string): Promise<any
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 1200, system: SYSTEM, messages: [{ role: "user", content: `Current date: ${estToday()}.${participants ? "\n\n" + participants : ""}\n\nTranscript:\n${transcript.slice(0, 14000)}` }] }) });
       if (!r.ok) { lastErr = `${model}: ${r.status}`; continue; }
-      const data = await r.json();
+      const data = await r.json(); __recUsage = data?.usage || __recUsage;
       const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
       if (txt) { const m = txt.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : txt); }
     } catch (e) { lastErr = `${model}: ${e}`; }
@@ -66,7 +68,7 @@ async function translateToEnglish(transcript: string): Promise<string> {
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model, max_tokens: 4000, system: SYS, messages: [{ role: "user", content: transcript.slice(0, 14000) }] }) });
       if (!r.ok) continue;
-      const data = await r.json();
+      const data = await r.json(); __recUsage = data?.usage || __recUsage;
       const txt = (data.content || []).map((c: any) => c.text || "").join("").trim();
       if (txt) return txt;
     } catch (_) {}
@@ -140,6 +142,7 @@ serve(async (req) => {
       }
       let plan: any = { call_summary: "", action_items: [] };
       try { plan = await callClaude(transcript, participants); } catch (_) { continue; } // leave unprocessed to retry next run
+      try { await logAiUsage(admin, { userId: rec?.user_id, fn: "recording-process", model: MODELS[0], usage: __recUsage, usedOwn: false }); } catch (_) {}
 
       // The transcript's Me/Them labels are a positional guess (first_speaker
       // defaults to "me"), so a call the other person opened comes through
