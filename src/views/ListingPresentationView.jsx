@@ -110,6 +110,8 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
         const found = (r.comps || []).map(c => ({
           address: c.address || '', sale_price: c.sale_price || '', gla: c.gla || '',
           beds: c.beds ?? '', baths: c.baths ?? '', year_built: c.year_built ?? '',
+          sold_date: c.sold_date ?? null, lot_size: c.lot_size ?? null, garage: c.garage ?? null, pool: c.pool ?? null,
+          condition: c.condition ?? null, condition_basis: c.condition_basis ?? null,
           adjustments: Array.isArray(c.adjustments) ? c.adjustments.map(a => ({ label: a.label, amount: a.amount })) : [],
         }));
         if (found.length) {

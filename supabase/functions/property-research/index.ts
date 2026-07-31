@@ -42,7 +42,7 @@ SUBJECT PROPERTY: ${address}
 
 Do this:
 1. Find the subject's public facts: living area (GLA sqft), beds, baths, lot size, year built, last sold price/date if available, and current Zestimate/Redfin estimate if shown. IMPORTANT: individual listing pages on Zillow/Redfin are often blocked to automated access — so ALSO search the COUNTY PROPERTY APPRAISER / public tax-assessor records for this address (e.g. for Florida: the county Property Appraiser site, "[County] property appraiser [address]"), which publishes GLA, year built, beds/baths, lot size and last sale as open public record. Try the county records explicitly if the portals don't return the subject facts.
-2. Find 3-6 RECENT comparable SOLD homes (last ~6 months) near the subject — similar size, beds/baths, and area. For EACH comp gather as many of these as you can find: full address, sold price, sold date, GLA sqft, beds, baths, year built, lot size (sqft or acres), garage spaces, pool (yes/no), and a one-line condition/quality read (e.g. "updated kitchen, move-in", "dated but clean", "distressed/as-is"). These attributes are what let us adjust each comp to the subject line-by-line — get them where public data allows.
+2. Find 3-6 RECENT comparable SOLD homes (last ~6 months) near the subject — similar size, beds/baths, and area. For EACH comp gather as many of these as you can find: full address, sold price, sold date, GLA sqft, beds, baths, year built, lot size (sqft or acres), garage spaces, pool (yes/no). CONDITION FROM PHOTOS: when a comp's listing page (Zillow/Redfin/Realtor) is reachable, LOOK AT ITS PHOTOS and rate its condition the way an appraiser would — read the kitchen (updated / dated / original), bathrooms, flooring and finishes, curb appeal, and any visible deferred maintenance. Return a concise condition read (e.g. "updated kitchen & baths, move-in", "clean but dated ~2000s finishes", "original/tired, needs updating", "distressed/as-is") AND a "condition_basis" naming what in the photos drove it (e.g. "photos show renovated kitchen, new LVP flooring, refreshed baths"). If photos aren't reachable, infer from the listing description and say so in condition_basis. These attributes and the photo-read condition are what let us adjust each comp to the subject line-by-line.
 3. Assess the LOCAL market (that ZIP or submarket): approximate months of inventory, median list-to-sale ratio, and rough counts of active / pending / recently-closed listings. Estimate a "market speed" 0-100 where 0 = deep buyer's market, 50 = balanced, 100 = strong seller's market.
 4. VALUATION — this is the most important output. Using the comparable sales you found, estimate what the subject would sell for:
    - Compute each comp's price-per-sqft (sold price / GLA). Take the median (or a size-weighted read) and apply it to the subject's GLA to get a base market value. If the subject GLA is unknown, estimate it from the comps' typical size for that area and say so in notes.
@@ -65,7 +65,7 @@ Output a SINGLE json object (and nothing after it) in EXACTLY this shape:
 {
   "subject": { "gla": number|null, "beds": number|null, "baths": number|null, "lot_size": string|null, "year_built": number|null, "garage": number|null, "pool": boolean|null, "condition": string|null, "last_sold_price": number|null, "estimate": number|null },
   "market": { "speed": number, "moi": number|null, "list_to_sale": number|null, "active": number|null, "pending": number|null, "closed": number|null, "annual_appreciation_pct": number|null },
-  "comps": [ { "address": string, "sale_price": number, "sold_date": string, "gla": number|null, "beds": number|null, "baths": number|null, "year_built": number|null, "lot_size": string|null, "garage": number|null, "pool": boolean|null, "condition": string|null } ],
+  "comps": [ { "address": string, "sale_price": number, "sold_date": string, "gla": number|null, "beds": number|null, "baths": number|null, "year_built": number|null, "lot_size": string|null, "garage": number|null, "pool": boolean|null, "condition": string|null, "condition_basis": string|null } ],
   "valuation": { "estimate": number|null, "ppsf": number|null, "tiers": { "opportunistic": number|null, "target": number|null, "fast": number|null }, "basis": string },
   "sources": [ string ],
   "notes": string,
@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
       address: String(c.address).slice(0, 200), sale_price: num(c.sale_price)!, sold_date: c.sold_date ?? null,
       gla: num(c.gla), beds: num(c.beds), baths: num(c.baths), year_built: num(c.year_built),
       lot_size: c.lot_size ?? null, lot_sqft: lotToSqft(c.lot_size), garage: num(c.garage), pool: bool(c.pool),
-      condition: c.condition ?? null, adjustments: [] as { label: string; amount: number }[],
+      condition: c.condition ?? null, condition_basis: c.condition_basis ?? null, adjustments: [] as { label: string; amount: number }[],
     })) : [];
 
     const median = (arr: number[]) => { if (!arr.length) return null; const s = [...arr].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };

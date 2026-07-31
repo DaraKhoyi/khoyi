@@ -9,10 +9,109 @@
 // so the number the agent tunes on-screen is exactly the number the seller sees. ──
 // Each comp: { sale_price, gla, adjustments:[{label,amount}], agent_adj? }.
 // agent_adj is the agent's manual override slider (a signed $ nudge on that comp).
+// ── APPRAISAL ADJUSTMENT ENGINE (client-side, shared) ────────────────────────
+// The Sales Comparison Approach, computed HERE so every comp is adjusted no matter
+// its source (fresh research, manual entry, or an older saved deck). The property-
+// research edge function may supply richer inputs (a photo-read condition, verified
+// attributes); when it does, we use them — but the math lives in one place.
+//
+// Sign convention: adjust the COMP toward the SUBJECT. Subject superior on an
+// attribute -> comp gets a POSITIVE adjustment (it would have sold for more if it
+// were like the subject); subject inferior -> negative.
+const _median = (arr) => { if (!arr.length) return null; const a = [...arr].sort((x, y) => x - y); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+const _num = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
+const _lotSqft = (v) => { if (v == null) return null; const s = String(v).toLowerCase(); const n = parseFloat(s.replace(/[^0-9.]/g, '')); if (isNaN(n) || n <= 0) return null; const sf = /ac/.test(s) ? Math.round(n * 43560) : Math.round(n); return (sf >= 800 && sf <= 435600) ? sf : null; };
+export const CONDITION_WORDS = (txt) => {
+  if (!txt) return null; const t = String(txt).toLowerCase();
+  if (/(distress|as-is|as is|tear|gut|fixer|poor|dated and|needs)/.test(t)) return 2;
+  if (/(dated|original|tired|older|fair)/.test(t)) return 4;
+  if (/(clean|average|maintained|good|move-in|move in)/.test(t)) return 6;
+  if (/(updated|renovated|remodel|upgraded|newer)/.test(t)) return 8;
+  if (/(luxury|high-end|custom|premium|new construction|flawless|brand new)/.test(t)) return 10;
+  return 6;
+};
+
+// Adjust ALL comps to the subject; returns comps with .adjustments, .adjusted,
+// .gross_adj_pct, .net_adj_pct, and a plain-language .narrative. Idempotent-ish:
+// re-computes objective line items every time (drops any prior objective items),
+// but PRESERVES a manual { label:'Agent adjustment' } item if present.
+export function adjustComps(subject, comps, market = {}) {
+  const S = subject || {};
+  const list = (comps || []).map(c => ({ ...c }));
+  const priced = list.filter(c => _num(c.sale_price) && _num(c.gla));
+  const avgPpsf = _median(priced.map(c => Number(c.sale_price) / Number(c.gla))) || null;
+  // GLA contributes at a MARGINAL rate (~40% of avg $/sf), clamped to a sane band.
+  const marginalPpsf = avgPpsf ? Math.max(35, Math.min(140, avgPpsf * 0.40)) : 55;
+  const annualAppr = _num(market.annual_appreciation_pct);
+  const speed = Math.max(0, Math.min(100, _num(market.speed) ?? 50));
+  const monthlyApprPct = (annualAppr != null ? annualAppr : (2 + speed / 100 * 6)) / 100 / 12; // 2–8%/yr
+  const now = Date.now();
+  const monthsSince = (d) => { if (!d) return 0; const t = new Date(d).getTime(); if (isNaN(t)) return 0; return Math.max(0, Math.min(24, (now - t) / (1000 * 3600 * 24 * 30.4))); };
+  const sGla = _num(S.gla), sYear = _num(S.year_built), sBaths = _num(S.baths), sBeds = _num(S.beds);
+  const sGarage = _num(S.garage), sPool = (S.pool === true || S.pool === false) ? S.pool : null;
+  const sLot = _lotSqft(S.lot_size) ?? _num(S.lot_sqft);
+  const sCond = _num(S.condition_score) ?? CONDITION_WORDS(S.condition) ?? 6;
+  const money = (n) => '$' + Math.round(Math.abs(n)).toLocaleString('en-US');
+
+  return list.map(c => {
+    const sale = _num(c.sale_price) || 0;
+    let gla = _num(c.gla); if (gla != null && (gla < 300 || gla > 15000)) gla = null;
+    const cYear = _num(c.year_built), cBaths = _num(c.baths), cBeds = _num(c.beds);
+    const cGarage = _num(c.garage), cPool = (c.pool === true || c.pool === false) ? c.pool : null;
+    const cLot = _lotSqft(c.lot_size) ?? _num(c.lot_sqft);
+    const cCond = _num(c.condition_score) ?? CONDITION_WORDS(c.condition);
+    const cap = sale * 0.20; // no line item > ±20% of comp price
+    const items = [];
+    const notes = [];
+    const push = (label, amount, floor, note) => {
+      const a = Math.max(-cap, Math.min(cap, amount));
+      if (Math.abs(a) >= (floor || 1000)) { items.push({ label, amount: Math.round(a / 100) * 100 }); if (note) notes.push(note); }
+    };
+    if (sale > 0) {
+      const mo = monthsSince(c.sold_date);
+      if (mo > 0.5) push(`Market/time (+${mo.toFixed(1)} mo)`, sale * monthlyApprPct * mo, 500,
+        `closed ${mo.toFixed(0)} mo ago, so ${money(sale * monthlyApprPct * mo)} was added to bring it to today's market`);
+      if (sGla && gla) { const d = sGla - gla; push(`Size (${d >= 0 ? '+' : ''}${d} sf)`, d * marginalPpsf, 1000,
+        `${Math.abs(d)} sf ${d >= 0 ? 'smaller' : 'larger'} than the subject (${money(d * marginalPpsf)} at a $${Math.round(marginalPpsf)}/sf marginal rate)`); }
+      if (sYear && cYear) { const d = sYear - cYear; push(`Age (${d >= 0 ? 'newer' : 'older'} ${Math.abs(d)} yr)`, d * 700, 1000,
+        `${Math.abs(d)} years ${d >= 0 ? 'older' : 'newer'} than the subject`); }
+      if (sBaths && cBaths) { const d = sBaths - cBaths; push(`Baths (${d >= 0 ? '+' : ''}${d.toFixed(1)})`, d * 8000, 4000,
+        `${Math.abs(d)} ${d >= 0 ? 'fewer' : 'more'} bath${Math.abs(d) === 1 ? '' : 's'}`); }
+      if (sGarage != null && cGarage != null) { const d = sGarage - cGarage; push(`Garage (${d >= 0 ? '+' : ''}${d})`, d * 6000, 3000,
+        `${Math.abs(d)} ${d >= 0 ? 'fewer' : 'more'} garage bay${Math.abs(d) === 1 ? '' : 's'}`); }
+      if (sPool != null && cPool != null && sPool !== cPool) push(sPool ? 'Pool (subject has)' : 'Pool (comp has)', sPool ? 20000 : -20000, 1,
+        sPool ? 'subject has a pool, this comp does not' : 'this comp has a pool, the subject does not');
+      if (sLot && cLot && Math.abs(sLot - cLot) > 2000) { const d = sLot - cLot; push(`Lot (${d >= 0 ? '+' : ''}${Math.round(d / 1000)}k sf)`, d * 3, 3000,
+        `lot ${Math.abs(Math.round(d / 1000))}k sf ${d >= 0 ? 'smaller' : 'larger'}`); }
+      if (cCond != null && sCond != null && cCond !== sCond) { const d = sCond - cCond; push(`Condition (${d >= 0 ? '+' : ''}${d})`, d * (sale * 0.015), 2000,
+        `condition ${d >= 0 ? 'below' : 'above'} the subject by ${Math.abs(d)} point${Math.abs(d) === 1 ? '' : 's'}${c.condition_basis ? ` — from the photos: ${String(c.condition_basis).replace(/\.$/, '')}` : c.condition ? ` (${c.condition})` : ''}`); }
+    }
+    // Preserve a manual agent-override line if one was already attached.
+    const priorAgent = (c.adjustments || []).find(a => a && /agent adjustment/i.test(a.label || ''));
+    const agentAdj = _num(c.agent_adj) || (priorAgent ? Number(priorAgent.amount) : 0);
+    const objectiveNet = items.reduce((s, a) => s + a.amount, 0);
+    const totalNet = objectiveNet + agentAdj;
+    const gross = items.reduce((s, a) => s + Math.abs(a.amount), 0) + Math.abs(agentAdj);
+    const adjusted = sale + totalNet;
+    // Narrative: plain-language summary a reviewer can follow.
+    let narrative;
+    if (!sale) narrative = '';
+    else if (!notes.length && !agentAdj) narrative = `Sold ${money(sale)}. A near-identical match to the subject — no material differences called for an adjustment, which is exactly what makes it a strong comp.`;
+    else {
+      const dir = totalNet >= 0 ? 'up' : 'down';
+      narrative = `Sold ${money(sale)}. Adjusted ${dir} to ${money(adjusted)}: ${notes.slice(0, 4).join('; ')}${agentAdj ? `; plus your ${agentAdj >= 0 ? '+' : '−'}${money(agentAdj)} judgment nudge` : ''}. Net ${totalNet >= 0 ? '+' : '−'}${money(totalNet)} (${sale ? Math.round(Math.abs(totalNet) / sale * 100) : 0}%), gross ${sale ? Math.round(gross / sale * 100) : 0}% — ${gross / (sale || 1) <= 0.15 ? 'a tightly comparable sale' : gross / (sale || 1) <= 0.25 ? 'a solid, reliable comp' : 'a wider adjustment, so it carries less weight in the reconciliation'}.`;
+    }
+    return { ...c, adjustments: items.concat(agentAdj && !_num(c.agent_adj) ? [] : []), agent_adj: _num(c.agent_adj) || undefined,
+      _objective_adjustments: items, adjusted, gross_adj_pct: sale ? Math.round(gross / sale * 100) : null,
+      net_adj_pct: sale ? Math.round(totalNet / sale * 100) : null, narrative };
+  });
+}
+
 export function reconcileValuation(subject, comps, opts = {}) {
   const S = subject || {};
   const list = (comps || []).map(c => {
-    const base = (c.adjustments || []).reduce((s, a) => s + Number(a.amount || 0), 0);
+    const objItems = c._objective_adjustments || c.adjustments || [];
+    const base = objItems.reduce((s, a) => s + Number(a.amount || 0), 0);
     const agent = Number(c.agent_adj || 0);
     const total = base + agent;
     const sale = Number(c.sale_price || 0);
@@ -20,7 +119,7 @@ export function reconcileValuation(subject, comps, opts = {}) {
     // Reliability is judged on the OBJECTIVE (computed) adjustments only — the agent's
     // manual nudge reflects their judgment and shouldn't lower the comp's weight, so
     // moving a slider always pushes the value in the direction the agent intends.
-    const grossBase = (c.adjustments || []).reduce((s, a) => s + Math.abs(Number(a.amount || 0)), 0);
+    const grossBase = objItems.reduce((s, a) => s + Math.abs(Number(a.amount || 0)), 0);
     const grossAll = grossBase + Math.abs(agent);
     return { sale, adjusted, weight_gross_pct: sale ? (grossBase / sale) * 100 : 100, gross_pct: sale ? (grossAll / sale) * 100 : 100, net_pct: sale ? (total / sale) * 100 : 0, usable: adjusted > 0 && sale > 0 };
   });
@@ -100,7 +199,11 @@ const money = (n) => (n || n === 0) ? '$' + Number(n).toLocaleString('en-US', { 
 
 // The full self-contained HTML document.
 export function buildPresentationHTML(p) {
-  const s = p.subject || {}, m = p.market || {}, comps = p.comps || [], tiers = p.tiers || {}, ns = p.netsheet || {};
+  const s = p.subject || {}, m = p.market || {}, tiers = p.tiers || {}, ns = p.netsheet || {};
+  // Adjust EVERY comp to the subject here (Sales Comparison Approach), so a comp
+  // shows real line items no matter its source — fresh research, manual entry, or an
+  // older saved deck. This is the fix for comps that used to render "+$0".
+  const comps = adjustComps(s, p.comps || [], m);
   const cond = conditionFor(s.condition_score);
   const tone = TONE_FRAMING[p.seller_tone] || TONE_FRAMING.auto;
   const addr = esc(p.address || 'Your Property');
@@ -152,7 +255,7 @@ export function buildPresentationHTML(p) {
   const starHtml = (n) => Array.from({length:5}, (_,i)=>`<span style="color:${i<n?'var(--gold)':'rgba(203,163,92,.25)'};font-size:20px">★</span>`).join('');
 
   const compRows = comps.map((c, i) => {
-    const items = (c.adjustments || []).filter(a => Number(a.amount) !== 0).slice();
+    const items = (c._objective_adjustments || c.adjustments || []).filter(a => Number(a.amount) !== 0).slice();
     const agentAdj = Number(c.agent_adj || 0);
     if (agentAdj) items.push({ label: 'Agent adjustment', amount: agentAdj });
     const adj = items.reduce((sum, a) => sum + Number(a.amount || 0), 0);
@@ -160,8 +263,9 @@ export function buildPresentationHTML(p) {
     const breakdown = items.length
       ? `<div class="adj-items">${items.map(a => `<span class="adj-item"><span class="adj-lab">${esc(a.label)}</span><span class="${Number(a.amount)>=0?'pos':'neg'}">${Number(a.amount)>=0?'+':'−'}${money(Math.abs(Number(a.amount)))}</span></span>`).join('')}</div>`
       : '';
+    const narr = c.narrative ? `<div class="comp-narr">${esc(c.narrative)}</div>` : '';
     return `<tr>
-      <td class="comp-addr">${esc(c.address || ('Comp ' + (i+1)))}${breakdown}</td>
+      <td class="comp-addr">${esc(c.address || ('Comp ' + (i+1)))}${breakdown}${narr}</td>
       <td>${money(c.sale_price)}</td>
       <td>${c.gla ? esc(c.gla)+' sf' : '—'}</td>
       <td class="${adj>=0?'pos':'neg'}">${adj>=0?'+':'−'}${money(Math.abs(adj))}</td>
@@ -237,6 +341,7 @@ export function buildPresentationHTML(p) {
   .adj-items{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-weight:400}
   .adj-item{display:inline-flex;gap:5px;font-size:11px;white-space:nowrap}
   .adj-item .adj-lab{color:var(--mut)}
+  .comp-narr{margin-top:8px;font-size:12px;line-height:1.55;color:var(--text-2,#c8bfae);font-weight:400;max-width:70ch}
   td.adjusted{color:var(--champ);font-weight:800}
   .pos{color:#7fae8f}.neg{color:#e0794f}
   /* condition strip */
