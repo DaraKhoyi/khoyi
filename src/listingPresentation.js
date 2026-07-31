@@ -225,15 +225,23 @@ export function buildPresentationHTML(p) {
     return '';
   })();
 
-  // net-sheet math for the three tiers
-  const commissionPct = Number(ns.commission_pct ?? 6) / 100;
+  // net-sheet math for the three tiers. Each cost line can be a PERCENT of the sale
+  // price or a flat DOLLAR amount, per its unit (default: commission %, rest $ unless
+  // set). This is what fixes "2.4" being read as $2 instead of 2.4%.
+  const nsUnits = ns.units || { commission:'pct' };
+  const unitOf = (field, fallback) => (nsUnits[field] || fallback);
+  const costFor = (field, valueKey, price, fallbackUnit) => {
+    const v = Number(ns[valueKey] || 0);
+    return unitOf(field, fallbackUnit) === 'pct' ? price * v / 100 : v;
+  };
+  const commissionPct = Number(ns.commission_pct ?? 6);
   const netFor = (price) => {
     if (!price) return null;
-    const commission = price * commissionPct;
-    const title = Number(ns.title_fees || 0);
-    const tax = Number(ns.tax_proration || 0);
-    const payoff = Number(ns.mortgage_payoff || 0);
-    const other = Number(ns.other || 0);
+    const commission = unitOf('commission','pct') === 'pct' ? price * commissionPct / 100 : commissionPct;
+    const title = costFor('title_fees', 'title_fees', price, 'usd');
+    const tax = costFor('tax_proration', 'tax_proration', price, 'usd');
+    const payoff = costFor('mortgage_payoff', 'mortgage_payoff', price, 'usd');
+    const other = costFor('other', 'other', price, 'usd');
     return price - commission - title - tax - payoff - other;
   };
   // Reconciled valuation (respects each comp's base adjustments AND the agent's
@@ -506,15 +514,26 @@ export function buildPresentationHTML(p) {
   <footer><div class="wrap">${brokerage} · powered by <i style="font-family:Fraunces,serif;color:var(--champ)">Prism</i> · This presentation is confidential and prepared for the property owner.</div></footer>
 
 <script>
-  var NS = ${JSON.stringify({ commissionPct: commissionPct, title: Number(ns.title_fees||0), tax: Number(ns.tax_proration||0), payoff: Number(ns.mortgage_payoff||0), other: Number(ns.other||0) })};
+  var NS = ${JSON.stringify({
+    commission: commissionPct, commissionUnit: unitOf('commission','pct'),
+    title: Number(ns.title_fees||0), titleUnit: unitOf('title_fees','usd'),
+    tax: Number(ns.tax_proration||0), taxUnit: unitOf('tax_proration','usd'),
+    payoff: Number(ns.mortgage_payoff||0), payoffUnit: unitOf('mortgage_payoff','usd'),
+    other: Number(ns.other||0), otherUnit: unitOf('other','usd')
+  })};
+  function cost(val, unit, price){ return unit === 'pct' ? price * val / 100 : val; }
   function money(n){ return (n||n===0) ? '$'+Math.round(n).toLocaleString('en-US') : '—'; }
   function renderNet(price){
-    var commission = price*NS.commissionPct;
-    var net = price - commission - NS.title - NS.tax - NS.payoff - NS.other;
+    var commission = cost(NS.commission, NS.commissionUnit, price);
+    var title = cost(NS.title, NS.titleUnit, price);
+    var tax = cost(NS.tax, NS.taxUnit, price);
+    var payoff = cost(NS.payoff, NS.payoffUnit, price);
+    var other = cost(NS.other, NS.otherUnit, price);
+    var net = price - commission - title - tax - payoff - other;
     var rows = [
       ['Sale price', price], ['Brokerage commission', -commission],
-      ['Mortgage payoff', -NS.payoff], ['Title & closing', -NS.title],
-      ['Tax proration', -NS.tax], ['Other', -NS.other]
+      ['Mortgage payoff', -payoff], ['Title & closing', -title],
+      ['Tax proration', -tax], ['Other', -other]
     ].filter(function(r){ return r[1] !== 0 || r[0]==='Sale price'; });
     var html = rows.map(function(r){ return '<div class="row"><span class="lab">'+r[0]+'</span><span class="val">'+(r[1]<0?'−':'')+money(Math.abs(r[1]))+'</span></div>'; }).join('');
     html += '<div class="row net"><span class="lab">Estimated net to you</span><span class="val">'+money(net)+'</span></div>';

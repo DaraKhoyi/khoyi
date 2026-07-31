@@ -34,7 +34,8 @@ export default function ListingPresentationView({ userId, agentName }) {
     market: { speed:55, moi:'', list_to_sale:'', active:'', pending:'', closed:'' },
     comps: [{ address:'', sale_price:'', gla:'', adjustments:[] }],
     tiers: { opportunistic:'', target:'', fast:'' },
-    netsheet: { commission_pct:6, mortgage_payoff:'', title_fees:'', tax_proration:'', other:'' },
+    netsheet: { commission_pct:6, mortgage_payoff:'', title_fees:'', tax_proration:'', other:'',
+      units: { commission:'pct', title_fees:'pct', tax_proration:'usd', mortgage_payoff:'usd', other:'usd' } },
   });
 
   const flash = (t, ok=true) => { setNotify({ t, ok }); setTimeout(()=>setNotify(null), 4000); };
@@ -82,7 +83,15 @@ const lab = { display:'block', fontSize:11, fontWeight:700, letterSpacing:'.08em
 const eyebrow = { fontFamily:'Barlow Condensed,sans-serif', fontWeight:700, letterSpacing:'.16em', textTransform:'uppercase', color:G, fontSize:12, margin:'22px 0 10px' };
 
 function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify }) {
-  const [p, setP] = useState(initial);
+  // Backfill net-sheet units for presentations saved before the %/$ toggle existed:
+  // old flat fields were dollar amounts, commission was always a percent.
+  const withUnits = (init) => {
+    const ns = init.netsheet || {};
+    if (!ns.units) return { ...init, netsheet: { ...ns, units: { commission:'pct', title_fees:'usd', tax_proration:'usd', mortgage_payoff:'usd', other:'usd' } } };
+    return init;
+  };
+  const [p, setP] = useState(() => withUnits(initial));
+  const setUnit = (field, unit) => setP(prev => ({ ...prev, netsheet: { ...prev.netsheet, units: { ...(prev.netsheet.units||{}), [field]: unit } } }));
   const [researching, setResearching] = useState(false);
   const runResearch = async () => {
     const addr = (p.address || '').trim();
@@ -341,12 +350,34 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
 
       {/* NET SHEET */}
       <div style={eyebrow}>Seller net sheet</div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))', gap:10 }}>
-        <div><label style={lab}>Commission %</label><input style={fld} value={p.netsheet.commission_pct} onChange={e=>set('netsheet.commission_pct',e.target.value)} inputMode="numeric" /></div>
-        <div><label style={lab}>Mortgage payoff</label><input style={fld} value={p.netsheet.mortgage_payoff} onChange={e=>set('netsheet.mortgage_payoff',e.target.value)} inputMode="numeric" /></div>
-        <div><label style={lab}>Title & closing</label><input style={fld} value={p.netsheet.title_fees} onChange={e=>set('netsheet.title_fees',e.target.value)} inputMode="numeric" /></div>
-        <div><label style={lab}>Tax proration</label><input style={fld} value={p.netsheet.tax_proration} onChange={e=>set('netsheet.tax_proration',e.target.value)} inputMode="numeric" /></div>
-        <div><label style={lab}>Other</label><input style={fld} value={p.netsheet.other} onChange={e=>set('netsheet.other',e.target.value)} inputMode="numeric" /></div>
+      <div style={{ fontSize:11, color:'var(--text-3)', margin:'-4px 0 8px' }}>Tap <b>%</b> or <b>$</b> on each line to set how that number is read. A % is calculated against the sale price; a $ is a flat amount.</div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:10 }}>
+        {[
+          ['commission_pct','commission','Commission'],
+          ['mortgage_payoff','mortgage_payoff','Mortgage payoff'],
+          ['title_fees','title_fees','Title & closing'],
+          ['tax_proration','tax_proration','Tax proration'],
+          ['other','other','Other'],
+        ].map(([valKey, unitKey, label]) => {
+          const unit = (p.netsheet.units && p.netsheet.units[unitKey]) || (unitKey==='commission' ? 'pct' : 'usd');
+          const pill = (u) => ({ padding:'2px 9px', fontSize:12, fontWeight:800, cursor:'pointer', border:'1px solid var(--border)', background: unit===u ? G : 'transparent', color: unit===u ? '#100D09' : 'var(--text-3)', borderRadius: u==='pct'?'7px 0 0 7px':'0 7px 7px 0', lineHeight:'18px' });
+          return (
+            <div key={valKey}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                <label style={{ ...lab, margin:0 }}>{label}</label>
+                <div style={{ display:'inline-flex' }}>
+                  <button type="button" onClick={()=>setUnit(unitKey,'pct')} style={pill('pct')}>%</button>
+                  <button type="button" onClick={()=>setUnit(unitKey,'usd')} style={{ ...pill('usd'), borderLeft:'none' }}>$</button>
+                </div>
+              </div>
+              <div style={{ position:'relative' }}>
+                <span style={{ position:'absolute', left:11, top:'50%', transform:'translateY(-50%)', color:'var(--text-3)', fontSize:14, pointerEvents:'none' }}>{unit==='usd'?'$':''}</span>
+                <input style={{ ...fld, paddingLeft: unit==='usd'?22:11, paddingRight: unit==='pct'?24:11 }} value={p.netsheet[valKey]} onChange={e=>set('netsheet.'+valKey,e.target.value)} inputMode="decimal" placeholder={unit==='pct'?'2.4':'9200'} />
+                <span style={{ position:'absolute', right:11, top:'50%', transform:'translateY(-50%)', color:'var(--text-3)', fontSize:14, pointerEvents:'none' }}>{unit==='pct'?'%':''}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* ACTIONS */}
