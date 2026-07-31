@@ -285,10 +285,31 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
   };
 
   const preview = async () => {
-    const saved = await save(); if (!saved) return;
+    // iOS Safari blocks window.open() that happens AFTER an await (it no longer counts
+    // as a user gesture). So open the tab SYNCHRONOUSLY on the tap, show a tiny loading
+    // shell, then fill it once the save + HTML are ready. If the browser still blocks it
+    // (hardened pop-up settings), fall back to rendering in-place via a blob download.
     const w = window.open('', '_blank');
-    if (w) { w.document.write(saved.html || generateHTML()); w.document.close(); }
-    else flash('Allow pop-ups to preview, or use Share/Email.', false);
+    if (w) { try { w.document.write('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#100D09;color:#EBCB82;font-family:-apple-system,system-ui,sans-serif;display:grid;place-items:center;height:100vh"><div>Preparing your presentation…</div></body>'); } catch (_) {} }
+    const saved = await save();
+    if (!saved) { if (w) { try { w.close(); } catch (_) {} } return; }
+    const html = saved.html || generateHTML();
+    if (w && !w.closed) {
+      try { w.document.open(); w.document.write(html); w.document.close(); return; } catch (_) {}
+    }
+    // Pop-up was blocked or lost — hand them the deck without a pop-up: open a blob URL
+    // in this tab's context (works on iOS), which the OS renders or offers to open.
+    try {
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      flash('Opened your presentation in a new tab.');
+    } catch (_) {
+      flash('Preview was blocked. Use “Share with seller” to get a link instead.', false);
+    }
   };
 
   const enableShare = async () => {
