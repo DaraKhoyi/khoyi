@@ -413,7 +413,40 @@ export function buildPresentationHTML(p) {
   .cta .btn{display:inline-block;margin-top:22px;background:var(--champ);color:var(--ink);font-weight:800;padding:15px 34px;border-radius:100px;text-decoration:none;font-size:16px}
   footer{padding:40px 0;text-align:center;color:var(--mut);font-size:13px}
   .disc-note{margin-top:10px;font-size:13px;color:var(--mut);font-style:italic}
-  @media print{body{background:#fff;color:#111}.hero,section{border-color:#ddd}.card,.stat,.tier,.phase{background:#fafafa;border-color:#ddd}}
+  /* ── PRINT / PDF STANDARD ─────────────────────────────────────────────────
+     Prism print rule: WHITE background, near-black text, ALL motion frozen, the
+     moving-gold gradient becomes a STATIC gold (#C5A95E). Keep the serif+condensed
+     type pairing and gold hairlines so print still looks unmistakably Prism —
+     clean, professional, attractive on paper. */
+  @media print{
+    *{animation:none!important;transition:none!important;box-shadow:none!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    :root{--ink:#100D09;--cream:#100D09;--gold:#9A7B2E;--champ:#8A6E24;--dgold:#9A7B2E;--mut:#6B6355;--line:#D8CDB2;--card:#FBF8F1}
+    body{background:#fff!important;color:#100D09!important}
+    section{border-bottom:1px solid #E6DCC4;padding:34px 0;page-break-inside:avoid}
+    .printbtn,.calc,.signwrap,.sign-row,.sign-consent,.sign-btn,.sign-clear{display:none!important}
+    /* hero: kill the dark radial/photo wash, keep it clean on white */
+    .hero{min-height:auto!important;background:#fff!important;border-bottom:1px solid #E6DCC4;padding:20px 0 28px}
+    .hero.has-photo{background:#fff!important}
+    .hero h1,h1,h2,h3,h2.title,.cta h2,.tier .price,.hero .sub{color:#100D09!important}
+    .hero .sub{color:#8A6E24!important}
+    /* gold accents become STATIC gold; no gradients */
+    .eyebrow,.mod-num,.stat .v,.cond .dial,th,.tier .tlab,.equity .eh,.badge b,.fork{color:#9A7B2E!important;background-image:none!important;-webkit-text-fill-color:#9A7B2E!important}
+    .badge,.card,.stat,.tier,.phase{background:#FBF8F1!important;border:1px solid #E6DCC4!important}
+    .tier.target{border:1px solid #9A7B2E!important}
+    .flag,.cta .btn,.sign-btn{background:#9A7B2E!important;color:#fff!important}
+    .meter{background:linear-gradient(90deg,#7fae8f,#C5A95E,#e0794f)!important}  /* keep the one meaningful spectrum, static */
+    /* text bodies to readable dark on white */
+    .lead,.tier .sub,.tier .meta,.ns .lab,.ns .val,.equity .er,.equity .ev,.stat .k,.phase p,.comp-narr,td,td.comp-addr,.badge,footer,.brandline,.disc-note{color:#2A2118!important}
+    td.adjusted,.ns .row.net .val,.ns .row.net .lab{color:#8A6E24!important}
+    .adj-item .adj-lab,.stat .k,.tier .tlab{color:#6B6355!important}
+    .pos{color:#3f7a52!important}.neg{color:#b4531f!important}
+    /* hairlines stay gold-tinted but printable */
+    td,.equity>div,.ns .row,.equity .eh{border-color:#E6DCC4!important}
+    .ns .row.net{border-top:2px solid #9A7B2E!important}
+    a{color:#8A6E24!important}
+    /* the 12-month trend keeps its sage/orange line but on white */
+    .gph{border:1px solid #E6DCC4!important}
+  }
   .gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:4px}
   .gph{aspect-ratio:4/3;background-size:cover;background-position:center;border-radius:12px;border:1px solid var(--line)}
   .gph-lead{grid-column:span 2;grid-row:span 2}
