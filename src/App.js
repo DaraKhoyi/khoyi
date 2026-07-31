@@ -3794,6 +3794,12 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   const actions=React.useMemo(()=>{ const base=buildNextActions({contacts,tasks,events,deals,now,oweReplyMap,openSignals}); const all=[...base,...docActions,...bounceActions].sort((a,b)=>b.score-a.score); return filterSkipped(all); },[contacts,tasks,events,deals,oweReplyMap,openSignals,docActions,bounceActions,filterSkipped]);
   const growth=React.useMemo(()=>buildGrowthMoves({contacts,deals,gciGoal,now}),[contacts,deals,gciGoal]);
   const [idx,setIdx]=useState(0); const [showAll,setShowAll]=useState(false);
+  const [swipeDir,setSwipeDir]=useState(0);
+  const nbaGoTo=React.useCallback((delta)=>{ setSwipeDir(delta); setIdx(i=>{ const L=(list||[]).length; if(L<=1) return i; return ((i+delta)%L+L)%L; }); },[list]);
+  const nbaTouch=React.useRef({x:0,y:0,active:false});
+  const nbaTouchStart=(e)=>{ const t=e.touches[0]; nbaTouch.current={x:t.clientX,y:t.clientY,active:true}; };
+  const nbaTouchEnd=(e)=>{ if(!nbaTouch.current.active) return; nbaTouch.current.active=false; const t=e.changedTouches[0]; const dx=t.clientX-nbaTouch.current.x, dy=t.clientY-nbaTouch.current.y; if(Math.abs(dx)>44 && Math.abs(dx)>Math.abs(dy)*1.5) nbaGoTo(dx<0?1:-1); };
+  const nbaNavBtn={width:26,height:26,borderRadius:'50%',border:'1px solid rgba(203,163,92,0.4)',background:'rgba(203,163,92,0.08)',color:'#EBCB82',fontSize:17,lineHeight:'22px',cursor:'pointer',padding:0,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0};
   const urgent=actions.length>0; const list=urgent?actions:growth;
   const cur=list[Math.min(idx,list.length-1)]||null;
   const runCta=(cta)=>{ if(!cta) return; if(cta.kind==='task_done'){ const id=cta.payload;
@@ -3817,17 +3823,26 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
   if(!cur) return null;
   const tagColor=cur.tag==='bounce'?'var(--red)':cur.tag==='overdue'?'var(--red)':cur.tag==='reply'?'var(--yellow)':cur.tag==='appt'?'#06b6d4':cur.tag==='deal'?'#22c55e':'var(--accent)';
   return (
-    <div className="nba-card" style={{position:'relative',borderRadius:20,padding:'20px 18px 16px',marginBottom:22,background:'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)',border:'1px solid rgba(203,163,92,0.55)',boxShadow:'0 0 40px rgba(203,163,92,0.12)'}}>
+    <div className="nba-card" onTouchStart={nbaTouchStart} onTouchEnd={nbaTouchEnd} style={{position:'relative',borderRadius:20,padding:'20px 18px 16px',marginBottom:22,background:'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)',border:'1px solid rgba(203,163,92,0.55)',boxShadow:'0 0 40px rgba(203,163,92,0.12)',touchAction:'pan-y',overflow:'hidden'}}>
+      <style>{`@keyframes nbaSlideL{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}@keyframes nbaSlideR{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}`}</style>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9}}>
         <span style={{fontSize:11,fontWeight:800,letterSpacing:'0.18em',textTransform:'uppercase',color:'#EBCB82'}}>{urgent?'✦ Do this next':'✦ You are caught up — consider this'}</span>
-        {list.length>1 && <span style={{fontSize:10.5,color:'var(--text-3)',fontWeight:700}}>{Math.min(idx+1,list.length)} / {list.length}</span>}
+        {list.length>1 ? (
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <button aria-label="Previous" onClick={()=>nbaGoTo(-1)} style={nbaNavBtn}>‹</button>
+            <span style={{fontSize:10.5,color:'var(--text-3)',fontWeight:700,minWidth:34,textAlign:'center'}}>{Math.min(idx+1,list.length)} / {list.length}</span>
+            <button aria-label="Next" onClick={()=>nbaGoTo(1)} style={nbaNavBtn}>›</button>
+          </div>
+        ) : null}
       </div>
+      <div key={idx} style={{animation: swipeDir<0?'nbaSlideR 0.22s ease':'nbaSlideL 0.22s ease'}}>
       <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
         <div style={{width:38,height:38,borderRadius:11,flexShrink:0,background:'var(--bg-base)',border:'1px solid '+tagColor,display:'inline-flex',alignItems:'center',justifyContent:'center'}}><Icon name={cur.icon||'target'} size={18} style={{color:tagColor}}/></div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:20,fontFamily:'Fraunces, serif',fontWeight:300,letterSpacing:'-0.01em',color:'#F6F1E7',lineHeight:1.18,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.title}</div>
           <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:3,lineHeight:1.4,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.why}</div>
         </div>
+      </div>
       </div>
       <div style={{display:'flex',gap:8,marginTop:13,flexWrap:'wrap',alignItems:'center'}}>
         {cur.cta && <button className="btn btn-primary btn-sm" onClick={()=>runCta(cur.cta)}>{cur.cta.label}</button>}
@@ -3846,6 +3861,13 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
           </div>
         ))}
       </div>}
+      {!showAll && list.length>1 ? (
+        <div style={{display:'flex',justifyContent:'center',gap:6,marginTop:14}}>
+          {list.slice(0,8).map((_,i)=>(
+            <button key={i} aria-label={'Go to action '+(i+1)} onClick={()=>{setSwipeDir(i>idx?1:-1);setIdx(i);}} style={{width:i===idx?18:6,height:6,borderRadius:3,border:'none',padding:0,cursor:'pointer',transition:'all 0.2s',background:i===idx?'#CBA35C':'rgba(203,163,92,0.3)'}} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
