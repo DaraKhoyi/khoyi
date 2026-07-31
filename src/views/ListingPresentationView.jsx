@@ -29,9 +29,9 @@ export default function ListingPresentationView({ userId, agentName }) {
 
   const blank = () => ({
     title: '', address: '', contact_id: null, deal_id: null, seller_tone: 'auto',
-    seller_name: '', hero_image_url: '', agent_video_url: '',
-    subject: { gla:'', beds:'', baths:'', lot_size:'', year_built:'', condition_score:7, upgrades:'', hidden_changes:'', motivation:'' },
-    market: { speed:55, moi:'', list_to_sale:'', active:'', pending:'', closed:'' },
+    seller_name: '', hero_image_url: '', agent_video_url: '', photos: [],
+    subject: { gla:'', beds:'', baths:'', lot_size:'', year_built:'', condition_score:7, upgrades:'', hidden_changes:'', motivation:'', last_sold_price:'' },
+    market: { speed:55, moi:'', list_to_sale:'', active:'', pending:'', closed:'', annual_appreciation_pct:'', ppsf:'' },
     comps: [{ address:'', sale_price:'', gla:'', adjustments:[] }],
     tiers: { opportunistic:'', target:'', fast:'' },
     netsheet: { commission_pct:6, mortgage_payoff:'', title_fees:'', tax_proration:'', other:'',
@@ -135,6 +135,13 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
           if ((prev.tiers?.[k] === '' || prev.tiers?.[k] == null || Number(prev.tiers?.[k]) === 0) && vt[k] != null) next.tiers[k] = vt[k];
         }
         next._research = { sources: r.sources || [], notes: r.notes || '', confidence: r.confidence || 'low', valuation: r.valuation || null };
+        // Carry the extra researched signals into subject/market (fill blanks only) so
+        // the deck can surface them: last sale, market appreciation, price/sf.
+        next.subject = { ...next.subject };
+        if ((next.subject.last_sold_price == null || next.subject.last_sold_price === '') && r.subject?.last_sold_price != null) next.subject.last_sold_price = r.subject.last_sold_price;
+        next.market = { ...next.market };
+        if ((next.market.annual_appreciation_pct == null || next.market.annual_appreciation_pct === '') && r.market?.annual_appreciation_pct != null) next.market.annual_appreciation_pct = r.market.annual_appreciation_pct;
+        if ((next.market.ppsf == null || next.market.ppsf === '') && r.valuation?.ppsf != null) next.market.ppsf = r.valuation.ppsf;
         return next;
       });
       const conf = r.confidence === 'high' ? 'strong' : r.confidence === 'medium' ? 'decent' : 'limited';
@@ -167,6 +174,8 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
     subject: num(p.subject), market: num(p.market),
     comps: (p.comps||[]).map(c=>({ ...c, sale_price:Number(c.sale_price)||0, gla:c.gla||null, adjustments:c.adjustments||[] })),
     tiers: num(p.tiers), netsheet: num(p.netsheet),
+    photos: (p.photos || []).map(u => String(u).trim()).filter(Boolean),
+    research: p._research ? { sources: (p._research.sources||[]).slice(0,8), confidence: p._research.confidence || null } : null,
   });
 
   const generateHTML = (extra={}) => buildPresentationHTML({ ...payload(), agent_name: agentName, supabase_url: SUPABASE_URL, research_confidence: p._research?.confidence || null, ...extra });
@@ -234,6 +243,9 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
       <div style={{ marginBottom:12 }}><label style={lab}>Seller name (personalizes the cover)</label><input style={fld} value={p.seller_name} onChange={e=>set('seller_name',e.target.value)} placeholder="The Henderson Family" /></div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
         <div><label style={lab}>Hero photo URL</label><input style={fld} value={p.hero_image_url} onChange={e=>set('hero_image_url',e.target.value)} placeholder="https://…/front.jpg" /></div>
+        <div style={{ gridColumn:'1/-1' }}>
+          <label style={lab}>Gallery photo URLs <span style={{ textTransform:'none', letterSpacing:0, color:'var(--text-3)', fontWeight:500 }}>— one per line, shown as a gallery under the property profile</span></label>
+          <textarea style={{ ...fld, minHeight:76, resize:'vertical', fontFamily:'inherit' }} value={(p.photos||[]).join('\n')} onChange={e=>set('photos', e.target.value.split('\n').map(u=>u.trim()).filter(Boolean))} placeholder={"https://…/kitchen.jpg\nhttps://…/living.jpg\nhttps://…/pool.jpg"} /></div>
         <div><label style={lab}>Agent welcome video</label><input style={fld} value={p.agent_video_url} onChange={e=>set('agent_video_url',e.target.value)} placeholder="YouTube / Vimeo / .mp4 link" /></div>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))', gap:10, marginBottom:12 }}>

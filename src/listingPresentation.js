@@ -214,6 +214,33 @@ export function buildPresentationHTML(p) {
   const heroImg = (p.hero_image_url || '').trim();
   const videoUrl = (p.agent_video_url || '').trim();
   const signMode = !!p.sign_mode;          // seller-share renders the signature pad
+
+  // ── #2 Market trend: a 12-month price index from the measured appreciation rate.
+  // Honest by construction — it's the trend the data implies, drawn, not asserted.
+  const apprPct = Number(m.annual_appreciation_pct);
+  const trendSvg = (() => {
+    if (!isFinite(apprPct) || apprPct === 0) return '';
+    const months = 12, base = 100, monthly = apprPct / 100 / 12;
+    const pts = Array.from({ length: months + 1 }, (_, i) => base * Math.pow(1 + monthly, i));
+    const min = Math.min(...pts), max = Math.max(...pts), range = (max - min) || 1;
+    const W = 640, H = 120, pad = 8;
+    const xy = pts.map((v, i) => [pad + (i / months) * (W - pad * 2), H - pad - ((v - min) / range) * (H - pad * 2)]);
+    const line = xy.map((p2, i) => (i ? 'L' : 'M') + p2[0].toFixed(1) + ' ' + p2[1].toFixed(1)).join(' ');
+    const area = line + ` L${(W - pad).toFixed(1)} ${H - pad} L${pad} ${H - pad} Z`;
+    const up = apprPct > 0;
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:120px;display:block">
+      <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${up ? '#7fae8f' : '#e0794f'}" stop-opacity=".28"/><stop offset="1" stop-color="${up ? '#7fae8f' : '#e0794f'}" stop-opacity="0"/></linearGradient></defs>
+      <path d="${area}" fill="url(#tg)"/><path d="${line}" fill="none" stroke="${up ? '#7fae8f' : '#e0794f'}" stroke-width="2.5" stroke-linejoin="round"/>
+      <circle cx="${xy[xy.length - 1][0].toFixed(1)}" cy="${xy[xy.length - 1][1].toFixed(1)}" r="4" fill="${up ? '#7fae8f' : '#e0794f'}"/></svg>`;
+  })();
+
+  // ── #3 Photo gallery: agent-supplied URLs (hero + any extras), de-duplicated.
+  const gallery = [...new Set([heroImg, ...(Array.isArray(p.photos) ? p.photos : [])].map(u => (u || '').trim()).filter(Boolean))];
+
+  // ── #1 Sources trust line: the public sources the research actually drew from.
+  const sources = Array.isArray(p.research?.sources) ? p.research.sources.filter(Boolean).slice(0, 6) : [];
+  const lastSold = Number(s.last_sold_price) || 0;
+  const ppsf = Number(m.ppsf) || 0;
   const shareToken = esc(p.share_token || '');
   const videoEmbed = (() => {
     if (!videoUrl) return '';
@@ -387,6 +414,16 @@ export function buildPresentationHTML(p) {
   footer{padding:40px 0;text-align:center;color:var(--mut);font-size:13px}
   .disc-note{margin-top:10px;font-size:13px;color:var(--mut);font-style:italic}
   @media print{body{background:#fff;color:#111}.hero,section{border-color:#ddd}.card,.stat,.tier,.phase{background:#fafafa;border-color:#ddd}}
+  .gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:4px}
+  .gph{aspect-ratio:4/3;background-size:cover;background-position:center;border-radius:12px;border:1px solid var(--line)}
+  .gph-lead{grid-column:span 2;grid-row:span 2}
+  @media(max-width:640px){.gallery{grid-template-columns:repeat(2,1fr)}.gph-lead{grid-column:span 2;grid-row:auto}}
+  .valn-facts{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:center;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+  .vf{display:flex;flex-direction:column}
+  .vf-k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:700}
+  .vf-v{font-family:Fraunces,serif;font-size:24px;color:var(--cream);margin-top:2px}
+  .vf-src{flex:1;min-width:220px;color:var(--mut);font-size:12px;line-height:1.5}
+  .vf-src a{color:var(--gold);text-decoration:none;font-weight:700}
 </style></head>
 <body>
   <header class="hero${heroImg ? ' has-photo' : ''}"${heroImg ? ` style="background-image:linear-gradient(180deg,rgba(16,13,9,.55),rgba(16,13,9,.92)),url('${esc(heroImg)}')"` : ''}><div class="wrap">
@@ -423,6 +460,10 @@ export function buildPresentationHTML(p) {
     </div>
   </div></section>
 
+  ${gallery.length > 1 ? `<section style="padding-top:0"><div class="wrap">
+    <div class="gallery">${gallery.slice(0, 9).map((u, i) => `<div class="gph${i === 0 ? ' gph-lead' : ''}" style="background-image:url('${esc(u)}')"></div>`).join('')}</div>
+  </div></section>` : ''}
+
   <!-- MODULE 2 -->
   <section><div class="wrap">
     <div class="mod-num">02</div><div class="eyebrow">Micro-Market Dynamics</div>
@@ -434,6 +475,14 @@ export function buildPresentationHTML(p) {
       <div class="stat"><div class="k">List-to-Sale</div><div class="v">${m.list_to_sale ? esc(m.list_to_sale)+'%' : '—'}</div></div>
       <div class="stat"><div class="k">Active / Pending / Closed</div><div class="v" style="font-size:22px">${esc(m.active||'—')} / ${esc(m.pending||'—')} / ${esc(m.closed||'—')}</div></div>
     </div>
+    ${trendSvg ? `<div class="card" style="margin-top:22px;padding:18px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <div class="eyebrow" style="margin:0">12-month price trend</div>
+        <div style="font-family:Fraunces,serif;font-size:20px;color:${apprPct>0?'#7fae8f':'#e0794f'}">${apprPct>0?'+':''}${apprPct.toFixed(1)}% / yr</div>
+      </div>
+      ${trendSvg}
+      <div style="color:var(--mut);font-size:12.5px;margin-top:6px">Local values have ${apprPct>0?'appreciated':'softened'} about ${Math.abs(apprPct).toFixed(1)}% over the past year — the backdrop your pricing is set against.</div>
+    </div>` : ''}
   </div></section>
 
   <!-- MODULE 3 -->
@@ -442,6 +491,11 @@ export function buildPresentationHTML(p) {
     <h2 class="title">The math behind the price</h2>
     <p class="lead">These are the homes a buyer and their appraiser will measure yours against. We adjust line-by-line for the real differences — so the number is defensible, not a guess.</p>
     ${comps.length ? `<table><thead><tr><th>Comparable</th><th>Sold</th><th>Size</th><th>Adjustment</th><th>Adjusted</th></tr></thead><tbody>${compRows}</tbody></table>` : '<p style="color:var(--mut);margin-top:20px">Comparable properties will be added here.</p>'}
+    ${(lastSold || ppsf || sources.length) ? `<div class="valn-facts">
+      ${ppsf ? `<div class="vf"><span class="vf-k">Market price / sq ft</span><span class="vf-v">${money(ppsf)}</span></div>` : ''}
+      ${lastSold ? `<div class="vf"><span class="vf-k">Last sold</span><span class="vf-v">${money(lastSold)}</span></div>` : ''}
+      ${sources.length ? `<div class="vf-src">Data drawn from public records &amp; portals: ${sources.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noreferrer">[${i+1}]</a>`).join(' ')}</div>` : ''}
+    </div>` : ''}
   </div></section>
 
   <!-- MODULE 4 -->
