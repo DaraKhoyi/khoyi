@@ -79,6 +79,41 @@ function lazyWithReload(factory) {
     })
   );
 }
+
+// A Suspense fallback that stops spinning forever. If a lazy view chunk hasn't
+// resolved in ~14s (a hung import, usually a stale/partial cache after a deploy
+// on an installed PWA — the exact "app opens to a spinner and never loads"
+// failure), we surface a Refresh action instead of an endless spinner. A hung
+// import() promise never rejects, so lazyWithReload's catch and the error
+// boundary can't help here — only a timeout can.
+function ViewLoadingFallback() {
+  const [stuck, setStuck] = React.useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setStuck(true), 14000);
+    return () => clearTimeout(t);
+  }, []);
+  if (!stuck) return <div className="loading-screen" style={{ height: '60vh' }}><div className="spinner" /></div>;
+  const hardReload = () => {
+    try { sessionStorage.removeItem('__chunkReloadAt'); } catch (_) {}
+    // Clear caches + unregister SW so the next load is a clean fetch of the
+    // current build, then reload. Best-effort; reload regardless.
+    const done = () => window.location.reload();
+    try {
+      const jobs = [];
+      if (window.caches && caches.keys) jobs.push(caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))));
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) jobs.push(navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r => r.unregister()))));
+      Promise.all(jobs).then(done, done);
+      setTimeout(done, 2500);
+    } catch (_) { done(); }
+  };
+  return (
+    <div className="loading-screen" style={{ height: '60vh', flexDirection: 'column', gap: 14, textAlign: 'center', padding: '0 24px' }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-1)' }}>This screen is taking longer than usual</div>
+      <div style={{ fontSize: 13, color: 'var(--text-2)', maxWidth: 340, lineHeight: 1.5 }}>A new version may have just been deployed. Refresh to load the latest build.</div>
+      <button className="btn btn-primary" onClick={hardReload}>Refresh to update</button>
+    </div>
+  );
+}
 const FinanceView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.FinanceView })));
 const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
 const QuarterlyTaxBanner = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.QuarterlyTaxBanner })));
@@ -19127,7 +19162,7 @@ function AppMain() {
           {!dataLoaded
             ? <div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>
             : <ViewErrorBoundary key={view} viewName={view}>
-                <React.Suspense fallback={<div className="loading-screen" style={{height:'60vh'}}><div className="spinner"/></div>}>
+                <React.Suspense fallback={<ViewLoadingFallback />}>
                 {(entitled && PAGES[view] && !pageVisible(view, navCtx) && !PAGES[view].core)
                   ? <LockedPage page={PAGES[view]} onRedeem={reloadEntitlements} onSettings={()=>setView('settings')} />
                 : view==='listing_presentation' ? <ListingPresentationView userId={user.id} agentName={appCtx?.name || user?.email || ''} />
