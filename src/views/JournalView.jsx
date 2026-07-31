@@ -131,6 +131,9 @@ function JournalView({ userId }) {
   const [actionsByEntry, setActionsByEntry] = useState({});
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
+  const [editingId, setEditingId] = useState(null);   // journal entry currently being edited
+  const [draft, setDraft] = useState('');              // in-progress edited text
+  const [savingEdit, setSavingEdit] = useState(false);
   // Shared-into-app (Web Share Target): a link/text shared from another app.
   useEffect(() => {
     const d = window.__pendingSharedText;
@@ -212,6 +215,28 @@ function JournalView({ userId }) {
     const { error } = await supabase.from('journal_entries').delete().eq('id', entry.id);
     if (error) { if (window.__notify) window.__notify('Could not delete entry: ' + (error.message || error), 'error'); return; }
     setEntries(prev => prev.filter(e => e.id !== entry.id));
+  }
+  function startEdit(entry) { setEditingId(entry.id); setDraft(entry.content || ''); }
+  function cancelEdit() { setEditingId(null); setDraft(''); }
+  async function saveEdit(entry) {
+    const next = draft.trim();
+    if (!next) { if (window.__notify) window.__notify('Entry can’t be empty', 'warn'); return; }
+    if (next === (entry.content || '').trim()) { cancelEdit(); return; }
+    setSavingEdit(true);
+    // Re-analyze links/actions on edit (content changed), same as a fresh entry.
+    const { error } = await supabase.from('journal_entries')
+      .update({ content: next, analyzed: false, updated_at: new Date().toISOString() })
+      .eq('id', entry.id);
+    setSavingEdit(false);
+    if (error) { if (window.__notify) window.__notify('Could not save: ' + (error.message || error), 'error'); return; }
+    // Clear the now-stale links/actions in the UI; re-analysis will repopulate.
+    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, content: next, analyzed: false } : e));
+    setLinksByEntry(prev => { const n = { ...prev }; delete n[entry.id]; return n; });
+    setActionsByEntry(prev => { const n = { ...prev }; delete n[entry.id]; return n; });
+    cancelEdit();
+    if (window.__notify) window.__notify('Entry updated', 'success');
+    // Re-link/re-extract in the background (best-effort), then refresh this day.
+    try { await supabase.functions.invoke('journal-analyze', { body: { entry_id: entry.id } }); load(); } catch (_) {}
   }
   async function summarize() {
     setSummarizing(true);
@@ -355,11 +380,24 @@ function JournalView({ userId }) {
                 <div key={entry.id} className="panel" style={{ padding: '12px 14px', position: 'relative' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                     <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtJTime(entry.occurred_at)}</span>
-                    <span style={{ display:'inline-flex' }}><Icon name={entry.kind === 'voice' ? 'mic' : 'edit'} size={12} /></span>
+                    {entry.kind === 'voice'
+                      ? <span style={{ display:'inline-flex', opacity:0.6 }} title="Voice entry"><Icon name="mic" size={12} /></span>
+                      : <button onClick={() => (editingId === entry.id ? cancelEdit() : startEdit(entry))} title="Edit entry" style={{ display:'inline-flex', background:'none', border:'none', padding:0, cursor:'pointer', color: editingId === entry.id ? 'var(--accent)' : 'var(--text-3)' }}><Icon name="edit" size={12} /></button>}
                     <span style={{ flex: 1 }} />
                     <button onClick={() => deleteEntry(entry)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', opacity: 0.6 }}><Icon name="trash" size={14} /></button>
                   </div>
-                  <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
+                  {editingId === entry.id ? (
+                    <div>
+                      <textarea autoFocus value={draft} onChange={e => setDraft(e.target.value)} rows={Math.max(3, draft.split('\n').length + 1)}
+                        style={{ width:'100%', boxSizing:'border-box', background:'var(--bg-1,#100D09)', border:'1px solid var(--accent)', borderRadius:'8px', color:'var(--text-1)', padding:'10px 12px', fontSize:'14px', lineHeight:1.55, fontFamily:'inherit', resize:'vertical' }} />
+                      <div style={{ display:'flex', gap:'8px', marginTop:'8px', justifyContent:'flex-end' }}>
+                        <button onClick={cancelEdit} disabled={savingEdit} style={{ background:'none', border:'1px solid var(--border)', color:'var(--text-2)', borderRadius:'999px', padding:'6px 16px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>Cancel</button>
+                        <button onClick={() => saveEdit(entry)} disabled={savingEdit} style={{ background:'var(--accent)', border:'none', color:'#100D09', borderRadius:'999px', padding:'6px 18px', fontSize:'13px', fontWeight:800, cursor:'pointer', opacity: savingEdit ? 0.6 : 1 }}>{savingEdit ? 'Saving…' : 'Save'}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
+                  )}
                   {(links.length > 0 || actions.length > 0) && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
                       {links.map(l => <LinkChip key={l.id} link={l} onConfirm={() => confirmLink(entry, l)} onDismiss={() => dismissLink(entry, l)} />)}
