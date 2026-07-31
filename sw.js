@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-9d7832f'
+const VERSION = 'prismos-da7817f'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -129,20 +129,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets bundled with the app — try cache first, then network.
-  // Identified by hashed filenames in /static/ which CRA stamps for cache-busting.
+  // Static assets bundled with the app — hashed filenames in /static/ (Vite
+  // stamps a content hash, so a URL is immutable for its content). We go
+  // NETWORK-FIRST here, not cache-first: after a deploy, the fresh index.html
+  // references NEW hashes, and a cache-first policy could keep serving an old
+  // cached chunk whose siblings no longer exist — the classic "installed app
+  // stuck on a spinner after a deploy" failure. Network-first fetches the real
+  // file, caches it for offline, and only falls back to cache when offline.
   if (req.url.includes('/static/')) {
     event.respondWith(
-      caches.match(req).then(
-        (cached) => cached ||
-          fetch(req).then((res) => {
-            if (res.ok) {
-              const copy = res.clone();
-              caches.open(VERSION).then((c) => c.put(req, copy));
-            }
-            return res;
-          })
-      )
+      fetch(req).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(VERSION).then((c) => c.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req))
     );
     return;
   }
