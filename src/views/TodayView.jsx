@@ -159,6 +159,21 @@ export default function TodayView({
   const [heroIdx, setHeroIdx] = useState(0);
   const cur = actions[Math.min(heroIdx, Math.max(0, actions.length - 1))] || null;
   const totalOpen = actions.length;
+  const [swipeDir, setSwipeDir] = useState(0);
+  const goTo = useCallback((delta) => {
+    if (totalOpen <= 1) return;
+    setSwipeDir(delta);
+    setHeroIdx((i) => ((i + delta) % totalOpen + totalOpen) % totalOpen);
+  }, [totalOpen]);
+  const touchRef = React.useRef({ x: 0, y: 0, active: false });
+  const onHeroTouchStart = (e) => { const t = e.touches[0]; touchRef.current = { x: t.clientX, y: t.clientY, active: true }; };
+  const onHeroTouchEnd = (e) => {
+    if (!touchRef.current.active) return;
+    touchRef.current.active = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchRef.current.x, dy = t.clientY - touchRef.current.y;
+    if (Math.abs(dx) > 44 && Math.abs(dx) > Math.abs(dy) * 1.5) goTo(dx < 0 ? 1 : -1);
+  };
 
   // Act on a hero CTA (mirror of the dashboard's runCta, kept minimal here).
   const runCta = (cta) => {
@@ -273,6 +288,7 @@ export default function TodayView({
   };
 
   const tagColor = (t) => t === 'bounce' || t === 'overdue' ? 'var(--red)' : t === 'reply' ? 'var(--yellow)' : t === 'appt' ? '#06b6d4' : t === 'deal' ? '#22c55e' : 'var(--accent)';
+  const heroNavBtn = { width: 26, height: 26, borderRadius: '50%', border: '1px solid rgba(203,163,92,0.4)', background: 'rgba(203,163,92,0.08)', color: '#EBCB82', fontSize: 17, lineHeight: '22px', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
   const level = AUTO_LEVELS.find(l => l.n === autoLevel) || AUTO_LEVELS[1];
 
@@ -293,7 +309,9 @@ export default function TodayView({
 
   return (
     <div className="ww-prism" style={{ maxWidth: 720, margin: '0 auto' }}>
-      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:#2A2016;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;--accent:#CBA35C;}`}</style>
+      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:#2A2016;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;--accent:#CBA35C;}
+        @keyframes heroSlideL{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes heroSlideR{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}`}</style>
 
       {/* Calm header */}
       <div style={{ marginBottom: 6 }}>
@@ -327,18 +345,26 @@ export default function TodayView({
         </div>
       )}
 
-      {/* The one hero — Do this next */}
+      {/* The one hero — Do this next (swipe or tap the arrows to move through them) */}
       {cur ? (
-        <div style={{ position: 'relative', borderRadius: 20, padding: '22px 20px 18px', marginBottom: 18, background: 'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid rgba(203,163,92,0.55)', boxShadow: '0 0 40px rgba(203,163,92,0.12)' }}>
+        <div onTouchStart={onHeroTouchStart} onTouchEnd={onHeroTouchEnd} style={{ position: 'relative', borderRadius: 20, padding: '22px 20px 18px', marginBottom: 18, background: 'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid rgba(203,163,92,0.55)', boxShadow: '0 0 40px rgba(203,163,92,0.12)', touchAction: 'pan-y', overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#EBCB82' }}>✦ Do this next</span>
-            {totalOpen > 1 && <span style={{ fontSize: 10.5, color: 'var(--text-3)', fontWeight: 700 }}>{Math.min(heroIdx + 1, totalOpen)} / {totalOpen}</span>}
+            {totalOpen > 1 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button aria-label="Previous" onClick={() => goTo(-1)} style={heroNavBtn}>‹</button>
+                <span style={{ fontSize: 10.5, color: 'var(--text-3)', fontWeight: 700, minWidth: 34, textAlign: 'center' }}>{Math.min(heroIdx + 1, totalOpen)} / {totalOpen}</span>
+                <button aria-label="Next" onClick={() => goTo(1)} style={heroNavBtn}>›</button>
+              </div>
+            ) : null}
           </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid ' + tagColor(cur.tag), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>◆</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 21, fontFamily: 'Fraunces, serif', fontWeight: 300, letterSpacing: '-0.01em', color: '#F6F1E7', lineHeight: 1.18 }}>{cur.title}</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3, lineHeight: 1.4 }}>{cur.why}</div>
+          <div key={heroIdx} style={{ animation: swipeDir < 0 ? 'heroSlideR 0.22s ease' : 'heroSlideL 0.22s ease' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid ' + tagColor(cur.tag), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>◆</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 21, fontFamily: 'Fraunces, serif', fontWeight: 300, letterSpacing: '-0.01em', color: '#F6F1E7', lineHeight: 1.18 }}>{cur.title}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3, lineHeight: 1.4 }}>{cur.why}</div>
+              </div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -348,6 +374,13 @@ export default function TodayView({
             {totalOpen > 1 && <SnoozeMenu onPick={(when) => { skipAction(cur, when); setHeroIdx(0); }} />}
             {onOpenPlan && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => onOpenPlan()}>Plan my day</button>}
           </div>
+          {totalOpen > 1 ? (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 14 }}>
+              {actions.slice(0, 8).map((_, i) => (
+                <button key={i} aria-label={'Go to action ' + (i + 1)} onClick={() => { setSwipeDir(i > heroIdx ? 1 : -1); setHeroIdx(i); }} style={{ width: i === heroIdx ? 18 : 6, height: 6, borderRadius: 3, border: 'none', padding: 0, cursor: 'pointer', transition: 'all 0.2s', background: i === heroIdx ? '#CBA35C' : 'rgba(203,163,92,0.3)' }} />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div style={{ borderRadius: 20, padding: '28px 20px', marginBottom: 18, textAlign: 'center', background: 'linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid var(--border)' }}>
