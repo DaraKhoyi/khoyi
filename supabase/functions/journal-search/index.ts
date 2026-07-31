@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logEmbeddingUsage } from "../_shared/aiUsage.ts";
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -18,7 +19,9 @@ serve(async (req) => {
       body: JSON.stringify({ model: "text-embedding-3-small", input: query.trim().slice(0, 4000) }),
     });
     if (!r.ok) throw new Error("embed " + r.status);
-    const emb = (await r.json()).data?.[0]?.embedding;
+    const embJson = await r.json();
+    try { await logEmbeddingUsage(supabase, { userId: user.id, fn: "journal-search", model: "text-embedding-3-small", usage: embJson?.usage }); } catch (_) {}
+    const emb = embJson.data?.[0]?.embedding;
     if (!Array.isArray(emb)) throw new Error("no embedding");
     const { data, error } = await supabase.rpc("search_journal_semantic", { p_embedding: `[${emb.join(",")}]`, p_user_id: user.id, p_limit: Math.min(50, Number(limit) || 20), p_min_similarity: 0.12 });
     if (error) throw error;

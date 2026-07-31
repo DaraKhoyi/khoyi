@@ -3,6 +3,7 @@
 // ranks by full-text rank + cosine similarity.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logEmbeddingUsage } from "../_shared/aiUsage.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI = Deno.env.get("OPENAI_API_KEY") || "";
@@ -22,6 +23,7 @@ serve(async (req) => {
       try {
         const r = await fetch("https://api.openai.com/v1/embeddings", { method: "POST", headers: { Authorization: `Bearer ${OPENAI}`, "content-type": "application/json" }, body: JSON.stringify({ model: "text-embedding-3-small", input: query.slice(0, 8000) }) });
         const d = await r.json(); const v = d?.data?.[0]?.embedding; if (Array.isArray(v)) emb = `[${v.join(",")}]`;
+        try { await logEmbeddingUsage(admin, { userId: user.id, fn: "document-search", model: "text-embedding-3-small", usage: d?.usage }); } catch (_) {}
       } catch (_) {}
     }
     const { data, error } = await admin.rpc("search_documents", { p_user_id: user.id, p_query: query, p_embedding: emb, p_contact_id: b.contact_id || null, p_limit: b.limit || 20 });

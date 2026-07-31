@@ -12,6 +12,9 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logEmbeddingUsage } from "../_shared/aiUsage.ts";
+
+let __embedTokens = 0;   // tokens consumed by embedTexts in the current request
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,6 +44,7 @@ async function embedTexts(texts: string[]): Promise<number[][]> {
     throw new Error(`OpenAI embeddings: ${r.status} ${t.slice(0, 300)}`);
   }
   const j = await r.json();
+  __embedTokens += (j?.usage?.prompt_tokens || j?.usage?.total_tokens || 0);
   return (j.data || []).map((d: any) => d.embedding);
 }
 
@@ -53,6 +57,7 @@ function buildEmbedText(row: any): string {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  __embedTokens = 0;   // reset per request (guards against warm-instance bleed)
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -108,6 +113,7 @@ serve(async (req) => {
     if (embeddings.length !== toEmbed.length) {
       throw new Error(`Embedding count mismatch: got ${embeddings.length}, expected ${toEmbed.length}`);
     }
+    try { await logEmbeddingUsage(supabase, { userId, fn: "brain-embed", model: EMBED_MODEL, usage: { prompt_tokens: __embedTokens } }); } catch (_) {}
 
     // Write each back. Vector type expects the literal '[a,b,c]' format.
     let embedded = 0;

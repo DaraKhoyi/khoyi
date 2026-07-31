@@ -1,6 +1,18 @@
 // Shared AI-usage logger. ONE copy, imported everywhere — so the cost model and
 // the ai_usage_log write never drift across functions.
 //
+// ── STANDARD (Dara, standing instruction) ───────────────────────────────────
+// EVERY edge function that spends tokens or AI credits on a user's behalf MUST
+// attribute the cost to that user via one of the loggers here:
+//   • logAiUsage        — Anthropic /v1/messages calls (input/output tokens + web search)
+//   • logEmbeddingUsage — OpenAI /v1/embeddings calls
+// Resolve the billing user from the caller's JWT (auth.getUser) or an explicit
+// body.user_id for service-to-service calls; if it's genuinely unknown, the row is
+// skipped rather than mis-attributed. The ONLY exemptions are system/dev functions
+// with no billable agent action (ai-key-manage key-ping, crash-monitor, propose-patch,
+// ai-note-cleanup). When you add a new AI-calling function, wiring one of these in is
+// not optional — it's part of shipping the feature.
+//
 // Usage inside a function, right after you parse the Anthropic response:
 //   import { logAiUsage } from "../_shared/aiUsage.ts";
 //   const data = await resp.json();
@@ -18,6 +30,36 @@ const AI_RATES: Record<string, [number, number]> = {
   "claude-sonnet-4-6": [3, 15], "claude-sonnet-5": [3, 15],
   "claude-haiku-4-5": [1, 5], "claude-haiku-4-5-20251001": [1, 5],
 };
+
+// OpenAI embedding models bill a single per-input-token rate ($/million tokens).
+// Embeddings are cheap but real — attributing them keeps per-agent cost honest.
+const EMBED_RATES: Record<string, number> = {
+  "text-embedding-3-small": 0.02,
+  "text-embedding-3-large": 0.13,
+  "text-embedding-ada-002": 0.10,
+};
+
+// Log an OpenAI embedding call to the SAME ai_usage_log table, attributed to the
+// agent. Pass the `usage` object from the embeddings response (it carries
+// prompt_tokens / total_tokens). Skipped if userId is unknown — never mis-attribute.
+export async function logEmbeddingUsage(
+  supabase: any,
+  { userId, fn, model, usage }: { userId?: string | null; fn: string; model: string; usage?: any },
+): Promise<void> {
+  try {
+    if (!userId) return;
+    const inTok = usage?.prompt_tokens || usage?.total_tokens || 0;
+    const rate = EMBED_RATES[model] ?? 0.02;
+    const cost = (inTok / 1e6) * rate;
+    const { error } = await supabase.from("ai_usage_log").insert({
+      user_id: userId, fn, model, input_tokens: inTok, output_tokens: 0,
+      web_searches: 0, cost_usd: cost, used_own_key: false,
+    });
+    if (error) console.error(`[aiUsage] ${fn} embed log failed:`, error.message);
+  } catch (e) {
+    console.error(`[aiUsage] ${fn} embed log threw:`, e);
+  }
+}
 
 export async function logAiUsage(
   supabase: any,

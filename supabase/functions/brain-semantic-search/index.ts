@@ -9,6 +9,9 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logEmbeddingUsage } from "../_shared/aiUsage.ts";
+
+let __embedTokens = 0;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,11 +39,13 @@ async function embedQuery(text: string): Promise<number[]> {
     throw new Error(`OpenAI embeddings: ${r.status} ${t.slice(0, 300)}`);
   }
   const j = await r.json();
+  __embedTokens += (j?.usage?.prompt_tokens || j?.usage?.total_tokens || 0);
   return j.data?.[0]?.embedding;
 }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  __embedTokens = 0;
   try {
     const body = await req.json().catch(() => ({}));
     const { query, limit = 25, min_similarity = 0.15 } = body || {};
@@ -69,6 +74,7 @@ serve(async (req) => {
     const userId = user.id;
 
     const embedding = await embedQuery(query.trim().slice(0, 8000));
+    try { await logEmbeddingUsage(supabase, { userId, fn: "brain-semantic-search", model: EMBED_MODEL, usage: { prompt_tokens: __embedTokens } }); } catch (_) {}
     if (!Array.isArray(embedding)) throw new Error("Embedding failed");
     const vecStr = `[${embedding.join(",")}]`;
 
