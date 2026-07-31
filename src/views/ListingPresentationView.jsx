@@ -5,6 +5,100 @@ import { TipFor } from '../App';
 
 const G = '#CBA35C', CHAMP = '#EBCB82', INK = '#100D09';
 const money = (n) => (n || n === 0) ? '$' + Number(n).toLocaleString('en-US') : '';
+
+// Upload an image File to the public listing-photos bucket, return its public URL.
+// Path is {user_id}/{presentation-ish}/{uuid}.ext so RLS (own-folder write) holds.
+async function uploadListingPhoto(file, userId) {
+  if (!file) throw new Error('No file');
+  if (!file.type?.startsWith('image/')) throw new Error('That file isn’t an image');
+  if (file.size > 10 * 1024 * 1024) throw new Error('Image is over 10MB — try a smaller one');
+  const ext = (file.name?.split('.').pop() || file.type.split('/')[1] || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const key = `${userId}/${(crypto.randomUUID?.() || Math.random().toString(36).slice(2))}.${ext}`;
+  const { error } = await supabase.storage.from('listing-photos').upload(key, file, { contentType: file.type, upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from('listing-photos').getPublicUrl(key);
+  return data.publicUrl;
+}
+
+// Natural photo management: thumbnails + Browse / Camera / Paste. No URL typing.
+function PhotoUploader({ photos, hero, userId, onChange, onSetHero, notify }) {
+  const [busy, setBusy] = useState(false);
+  const [drag, setDrag] = useState(false);
+  const fileRef = React.useRef(null);
+  const camRef = React.useRef(null);
+  const list = Array.isArray(photos) ? photos : [];
+
+  const addFiles = useCallback(async (files) => {
+    const imgs = Array.from(files || []).filter(f => f.type?.startsWith('image/'));
+    if (!imgs.length) { notify?.('No images found to add', 'warn'); return; }
+    setBusy(true);
+    const added = [];
+    for (const f of imgs) {
+      try { added.push(await uploadListingPhoto(f, userId)); }
+      catch (e) { notify?.('Upload failed: ' + (e.message || e), 'error'); }
+    }
+    if (added.length) {
+      const next = [...list, ...added];
+      onChange(next);
+      if (!hero && added[0]) onSetHero?.(added[0]);   // first photo becomes the hero
+      notify?.(`${added.length} photo${added.length > 1 ? 's' : ''} added`, 'success');
+    }
+    setBusy(false);
+  }, [list, hero, userId, onChange, onSetHero, notify]);
+
+  // Paste an image straight from the clipboard.
+  const onPaste = useCallback((e) => {
+    const items = e.clipboardData?.items || [];
+    const files = [];
+    for (const it of items) { if (it.type?.startsWith('image/')) { const f = it.getAsFile(); if (f) files.push(f); } }
+    if (files.length) { e.preventDefault(); addFiles(files); }
+  }, [addFiles]);
+
+  const removeAt = (i) => {
+    const url = list[i];
+    const next = list.filter((_, j) => j !== i);
+    onChange(next);
+    if (hero === url) onSetHero?.(next[0] || '');
+  };
+
+  const btn = { display:'inline-flex', alignItems:'center', gap:6, padding:'8px 14px', borderRadius:999, border:'1px solid var(--border)', background:'var(--bg-1,#100D09)', color:'var(--text-1)', fontSize:13, fontWeight:700, cursor:'pointer' };
+
+  return (
+    <div>
+      <label style={lab}>Property photos <span style={{ textTransform:'none', letterSpacing:0, color:'var(--text-3)', fontWeight:500 }}>— optional. The first photo becomes the cover.</span></label>
+      <div
+        onDragOver={e => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={e => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer?.files); }}
+        onPaste={onPaste}
+        tabIndex={0}
+        style={{ border:`1.5px dashed ${drag ? 'var(--accent)' : 'var(--border)'}`, borderRadius:12, padding:14, background: drag ? 'rgba(203,163,92,.06)' : 'transparent', transition:'all .15s' }}
+      >
+        {list.length ? (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(84px,1fr))', gap:8, marginBottom:12 }}>
+            {list.map((url, i) => (
+              <div key={url + i} style={{ position:'relative', aspectRatio:'4/3', borderRadius:8, overflow:'hidden', border: hero === url ? '2px solid var(--accent)' : '1px solid var(--border)', backgroundImage:`url('${url}')`, backgroundSize:'cover', backgroundPosition:'center' }}>
+                {hero === url && <span style={{ position:'absolute', top:3, left:3, fontSize:9, fontWeight:800, letterSpacing:'.05em', background:'var(--accent)', color:'#100D09', padding:'1px 5px', borderRadius:4 }}>COVER</span>}
+                <button type="button" onClick={() => removeAt(i)} title="Remove" style={{ position:'absolute', top:3, right:3, width:20, height:20, borderRadius:'50%', border:'none', background:'rgba(16,13,9,.72)', color:'#fff', fontSize:13, lineHeight:'20px', cursor:'pointer', padding:0 }}>×</button>
+                {hero !== url && <button type="button" onClick={() => onSetHero?.(url)} title="Make cover" style={{ position:'absolute', bottom:3, left:3, fontSize:9, fontWeight:700, background:'rgba(16,13,9,.72)', color:'#fff', border:'none', borderRadius:4, padding:'2px 5px', cursor:'pointer' }}>Set cover</button>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ textAlign:'center', color:'var(--text-3)', fontSize:12.5, padding:'6px 0 12px' }}>Drag photos here, paste from clipboard, or use the buttons below.</div>
+        )}
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+          <button type="button" style={btn} disabled={busy} onClick={() => fileRef.current?.click()}>🖼️ Browse</button>
+          <button type="button" style={btn} disabled={busy} onClick={() => camRef.current?.click()}>📷 Camera</button>
+          <span style={{ ...btn, cursor:'default', color:'var(--text-3)', fontWeight:500 }}>⌘/Ctrl+V to paste</span>
+          {busy && <span style={{ alignSelf:'center', color:'var(--accent)', fontSize:12.5, fontWeight:700 }}>Uploading…</span>}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:'none' }} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+        <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+      </div>
+    </div>
+  );
+}
 const token = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 22);
 const timeAgo = (iso) => {
   if (!iso) return '';
@@ -241,12 +335,19 @@ function Editor({ initial, userId, agentName, onDone, onCancel, flash, notify })
         ) : null}
       </div>
       <div style={{ marginBottom:12 }}><label style={lab}>Seller name (personalizes the cover)</label><input style={fld} value={p.seller_name} onChange={e=>set('seller_name',e.target.value)} placeholder="The Henderson Family" /></div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-        <div><label style={lab}>Hero photo URL</label><input style={fld} value={p.hero_image_url} onChange={e=>set('hero_image_url',e.target.value)} placeholder="https://…/front.jpg" /></div>
-        <div style={{ gridColumn:'1/-1' }}>
-          <label style={lab}>Gallery photo URLs <span style={{ textTransform:'none', letterSpacing:0, color:'var(--text-3)', fontWeight:500 }}>— one per line, shown as a gallery under the property profile</span></label>
-          <textarea style={{ ...fld, minHeight:76, resize:'vertical', fontFamily:'inherit' }} value={(p.photos||[]).join('\n')} onChange={e=>set('photos', e.target.value.split('\n').map(u=>u.trim()).filter(Boolean))} placeholder={"https://…/kitchen.jpg\nhttps://…/living.jpg\nhttps://…/pool.jpg"} /></div>
-        <div><label style={lab}>Agent welcome video</label><input style={fld} value={p.agent_video_url} onChange={e=>set('agent_video_url',e.target.value)} placeholder="YouTube / Vimeo / .mp4 link" /></div>
+      <div style={{ marginBottom:12 }}>
+        <PhotoUploader
+          photos={p.photos}
+          hero={p.hero_image_url}
+          userId={userId}
+          onChange={(next) => set('photos', next)}
+          onSetHero={(url) => set('hero_image_url', url)}
+          notify={(m, t) => (window.__notify ? window.__notify(m, t) : null)}
+        />
+      </div>
+      <div style={{ marginBottom:12 }}>
+        <label style={lab}>Agent welcome video <span style={{ textTransform:'none', letterSpacing:0, color:'var(--text-3)', fontWeight:500 }}>— optional</span></label>
+        <input style={fld} value={p.agent_video_url} onChange={e=>set('agent_video_url',e.target.value)} placeholder="YouTube / Vimeo / .mp4 link" />
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))', gap:10, marginBottom:12 }}>
         <div><label style={lab}>GLA (sq ft)</label><input style={fld} value={p.subject.gla} onChange={e=>set('subject.gla',e.target.value)} /></div>
