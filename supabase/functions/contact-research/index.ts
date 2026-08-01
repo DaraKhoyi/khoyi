@@ -271,8 +271,13 @@ serve(async (req) => {
     // Resolve which Anthropic key to bill: the caller's own (BYOK) or the platform key.
     const billUserId = user?.id || contact.user_id;
     const { key: useKey, usedOwn } = await resolveKey(supabase, billUserId, apiKey);
-    const maxTokens = isOpus ? 8000 : (fast ? 5000 : 6000);
-    const maxUses = isOpus ? 10 : (fast ? 5 : 6);
+    // Cost control: web-search results are fed back as INPUT tokens on the next
+    // turn, so each search compounds cost heavily (it's ~90% of the AI bill). The
+    // background auto-research "fast" path (only ever set by agent-research-drip)
+    // doesn't need to be as exhaustive as a user-requested deep dive, so it runs
+    // leaner. User-initiated research (no `fast` flag) keeps full depth.
+    const maxTokens = isOpus ? 8000 : (fast ? 4000 : 6000);
+    const maxUses = isOpus ? 10 : (fast ? 3 : 6);   // fast/drip trimmed 5->3 searches
 
     const { data: prof } = await supabase.from("profiles").select("*").eq("contact_id", contact_id).maybeSingle();
     const disc = prof ? { primary: prof.baseline_primary || prof.primary_letter || prof.research_primary, secondary: prof.baseline_secondary || prof.secondary_letter || prof.research_secondary, confidence: prof.confidence || prof.research_confidence } : null;

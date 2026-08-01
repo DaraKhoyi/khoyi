@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
         signal: controller.signal,
-        body: JSON.stringify({ model: MODEL, max_tokens: 4500, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }], messages: [{ role: "user", content: PROMPT(address, hint) }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 4500, tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }], messages: [{ role: "user", content: PROMPT(address, hint) }] }),
       });
     } finally { clearTimeout(timer); }
     if (!apiResp.ok) {
