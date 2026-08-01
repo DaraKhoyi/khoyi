@@ -44,5 +44,19 @@ export async function ensureFreshSession() {
 const _invoke = supabase.functions.invoke.bind(supabase.functions);
 supabase.functions.invoke = async (name, options) => {
   await ensureFreshSession();
-  return _invoke(name, options);
+  try {
+    const res = await _invoke(name, options);
+    return res;
+  } catch (err) {
+    // A transient network failure on an edge call is a signal the backend may be
+    // unreachable — nudge the connection-health layer so the app can show a calm
+    // "reconnecting" state instead of a raw error. Loaded lazily to avoid a cycle.
+    try {
+      const msg = (err && (err.message || String(err))) || '';
+      if (/Failed to fetch|NetworkError|timeout|timed out|Load failed|aborted/i.test(msg)) {
+        import('./connection').then((m) => m.reportBackendTrouble()).catch(() => {});
+      }
+    } catch (_) {}
+    throw err;
+  }
 };

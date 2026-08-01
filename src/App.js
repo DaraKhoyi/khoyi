@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL } from './dataService';
+import { useConnectionHealth } from './connection';
 import { useNbaSkips, SnoozeMenu } from './nbaSkips';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
@@ -616,6 +617,40 @@ function TeamsAdmin({ userId }) {
 
 
 // ── "Act as user" (impersonation) ────────────────────────────
+// A calm connection-health banner. When the backend is unreachable it shows a
+// quiet "reconnecting" strip instead of letting raw errors surface, and it
+// clears itself the moment the connection returns — so an outage feels like a
+// brief pause, not a crash. Deliberately understated: no red, no alarm.
+function ConnectionBanner() {
+  const { status, retryNow } = useConnectionHealth();
+  if (status === 'online') return null;
+  const offline = status === 'offline';
+  return (
+    <div role="status" aria-live="polite" style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+      padding: '7px 14px', fontSize: 12.5, fontWeight: 600,
+      background: 'linear-gradient(180deg, #201811, #1A130C)',
+      color: '#EBCB82', borderBottom: '1px solid rgba(203,163,92,0.35)',
+      position: 'relative', zIndex: 40,
+    }}>
+      <span style={{
+        width: 8, height: 8, borderRadius: '50%', background: offline ? '#C98A3C' : '#CBA35C',
+        boxShadow: '0 0 0 0 rgba(203,163,92,0.6)', animation: 'connPulse 1.6s ease-in-out infinite', flexShrink: 0,
+      }} />
+      <span>{offline
+        ? 'You\u2019re offline \u2014 showing your last-loaded data. We\u2019ll refresh automatically when you\u2019re back.'
+        : 'Reconnecting\u2026 your work is safe; this will clear on its own.'}</span>
+      {!offline && (
+        <button onClick={retryNow} style={{
+          background: 'transparent', border: '1px solid rgba(203,163,92,0.4)', color: '#EBCB82',
+          borderRadius: 999, padding: '2px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+        }}>Retry now</button>
+      )}
+      <style>{`@keyframes connPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(203,163,92,0.5)}50%{opacity:.55;box-shadow:0 0 0 5px rgba(203,163,92,0)}}`}</style>
+    </div>
+  );
+}
+
 // Persistent banner shown whenever the current session is an impersonated one.
 function ImpersonationBanner() {
   const [imp] = React.useState(() => { try { return JSON.parse(localStorage.getItem('__impersonating') || 'null'); } catch (_) { return null; } });
@@ -18538,7 +18573,23 @@ function AppMain() {
   const onTaskViewModeChange = useCallback((v) => { setTaskViewMode(v); persistMetaPref('task_view_mode', v); }, [persistMetaPref]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setLoading(false); });
+    // Bootstrap the session. If the backend is briefly unreachable (as during
+    // an outage), retry a few times with backoff instead of dropping the user at
+    // a broken screen — most blips self-heal within seconds. getSession() reads
+    // the locally-persisted session, so a transient failure here is rare, but a
+    // cold token refresh can hit the network; we guard it either way.
+    (async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          setSession(session); setLoading(false);
+          return;
+        } catch (err) {
+          if (attempt === 2) { setLoading(false); break; }  // give up gracefully; UI shows login/reconnect
+          await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt)));
+        }
+      }
+    })();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => subscription.unsubscribe();
   }, []);
@@ -19110,6 +19161,7 @@ function AppMain() {
 
   return (
     <div className="app-shell" style={{flexDirection:'column'}}>
+      <ConnectionBanner />
       <InstallPwaPrompt />
       <UpdateBanner />
       <ImpersonationBanner />
