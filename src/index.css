@@ -1658,3 +1658,30 @@ input[type="radio"], input[type="range"], select, progress {
 
 /* Bottom-sheet slide-up (Word report picker + similar mobile sheets) */
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PRISM MOVING-GOLD BRANDING (shared, global — "the Edge" language)
+   One definition used across every page (Today, Contacts, …). Gold that feels
+   alive: the gradient's background-position glides outward so color moves
+   smoothly across the letters. Slow + eased + restrained = premium.
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes goldGlide { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+@keyframes prismFadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes prismLivePulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(203,163,92,.55); } 50% { opacity: .5; box-shadow: 0 0 0 5px rgba(203,163,92,0); } }
+.gold-move {
+  background: linear-gradient(100deg, #7A5020 0%, #C5A95E 25%, #EBCB82 45%, #F5E8B0 55%, #C5A95E 75%, #7A5020 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: goldGlide 5.5s linear infinite;
+}
+.fade-up   { animation: prismFadeUp .6s cubic-bezier(.22,.61,.36,1) both; }
+.fade-up-2 { animation: prismFadeUp .6s cubic-bezier(.22,.61,.36,1) .08s both; }
+.fade-up-3 { animation: prismFadeUp .6s cubic-bezier(.22,.61,.36,1) .16s both; }
+.live-dot  { width:7px; height:7px; border-radius:50%; background:#CBA35C; display:inline-block; animation: prismLivePulse 1.8s ease-in-out infinite; }
+.gold-hairline { height:1px; border:0; background:linear-gradient(90deg, transparent, #C5A95E 20%, #EBCB82 50%, #C5A95E 80%, transparent); background-size:200% auto; animation: goldGlide 7s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .gold-move, .gold-hairline { animation: none; }
+  .fade-up, .fade-up-2, .fade-up-3 { animation: none; }
+  .live-dot { animation: none; }
+}

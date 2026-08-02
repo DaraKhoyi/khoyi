@@ -1409,13 +1409,23 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         .ww-qempty{ padding:16px 14px; font-size:13.5px; color:#8C8475; text-align:center; }
       `}</style>
       <TipFor screen="contacts" />
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
-        <div style={{flex:1,minWidth:0}}><div style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:600,color:'var(--accent)',marginBottom:'3px'}}>Relationships</div><h2 style={{margin:'0 0 6px'}}>Your people.</h2><p style={{color:'var(--text-3)',fontSize:'13px'}}>{contacts.length} contacts{dueCount>0 && <> · <b style={{color:'var(--accent-2)',fontWeight:700}}>{dueCount} due</b> for a touch</>}</p></div>
-        <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
-          <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>
-          <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
+      <div className="page-header fade-up" style={{marginBottom:'2px'}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'2px'}}>
+              <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Relationships</span>
+              {dueCount>0 && <span className="live-dot" />}
+            </div>
+            <h2 style={{margin:'0'}}>Your people.</h2>
+          </div>
+          <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
+            <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>
+            <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
+          </div>
         </div>
+        <p style={{color:'var(--text-3)',fontSize:'13px',margin:'6px 0 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{contacts.length} contacts{dueCount>0 && <> · <b className="gold-move" style={{fontWeight:700}}>{dueCount} due</b> for a touch</>}</p>
+        <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
       </div>
 
       {tagMode && (
@@ -1451,8 +1461,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
 
       {!tagMode && !search.trim() && <Tip id="disc" label="Reading the room">That gold letter on a contact is their <b>behavioral style</b> (DISC). A <b>D</b> wants the bottom line, fast; an <b>S</b> wants warmth and reassurance. Match your delivery to how they're wired and rapport comes easy — Prism reads it for you, so you never have to be the expert.</Tip>}
       {!tagMode && !search.trim() && reachNext && (
-        <div className="ww-next">
-          <div className="lab">Reach out next</div>
+        <div className="ww-next fade-up-2">
+          <div className="lab gold-move" style={{display:'inline-block'}}>Reach out next</div>
           <div className="ww-nrow">
             <div className="ww-av">{(reachNext.c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
             <div className="nm">
