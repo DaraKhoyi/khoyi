@@ -18,8 +18,10 @@ export const MODES = [
     glyph: 'people',
     accent: '#8FB8A8',
     home: 'contacts',
-    bar: ['contacts', 'inbox', 'quo', 'journal'],
-    views: ['contacts', 'inbox', 'quo', 'journal', 'email_review', 'contact_types'],
+    // Dara's order (left→right): Contacts, Calls, Calendar, Tasks, Email, Journal.
+    // Six sections so the whole daily-communication surface is one tap apart.
+    bar: ['contacts', 'quo', 'calendar', 'tasks', 'inbox', 'journal'],
+    views: ['contacts', 'quo', 'calendar', 'tasks', 'inbox', 'journal', 'email_review', 'contact_types'],
   },
   {
     // THE LIBRARY as a first-class room. An agent is sometimes not working a
@@ -104,7 +106,7 @@ export const MODES = [
 // Labels + glyphs for the bottom-bar items (kept short — a bar is not a menu).
 export const VIEW_META = {
   briefing:   { label: 'Plan Day', glyph: 'sun' },
-  tasks:      { label: 'To-Do',    glyph: 'check' },
+  tasks:      { label: 'Tasks',    glyph: 'check' },
   review:     { label: 'Clear',    glyph: 'inbox' },
   calendar:   { label: 'Calendar', glyph: 'cal' },
   chief:      { label: 'Chief',    glyph: 'star' },

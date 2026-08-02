@@ -64,16 +64,9 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
       background: 'rgba(16,13,9,0.94)', backdropFilter: 'blur(12px)',
       borderTop: '1px solid rgba(203,163,92,0.28)', paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
       <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', alignItems: 'stretch' }}>
-        {/* home / back-to-hub — the always-present escape */}
-        <button onClick={onHome} aria-label="Dashboard"
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 3, padding: '9px 4px 8px', minWidth: 52, background: 'none', border: 'none', cursor: 'pointer',
-            borderRight: '1px solid rgba(203,163,92,0.18)' }}>
-          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke={GOLD} strokeWidth="1.7" strokeLinecap="round">
-            <path d="M4 11l8-7 8 7M6 9v10h12V9"/>
-          </svg>
-          <span style={{ fontSize: 9.5, color: GOLD, fontWeight: 700 }}>Home</span>
-        </button>
+        {/* Home removed from the bar (Dara): the sections ARE the bar. The escape
+            back to the hub/rooms still lives in the top nav (logo → menu, and the
+            Rooms button), so no one is stranded. */}
 
         {/* the mode's own sections — bar, not menu. A bar item is either a plain
             view id (string) or an object {view, sub, label, glyph} that deep-links
