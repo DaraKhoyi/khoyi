@@ -265,6 +265,15 @@ export default function TodayView({
   // .then(() => {}, () => {}) threw away BOTH outcomes and the card cleared
   // regardless — so a failed write looked exactly like a success and the item
   // reappeared later with no explanation. Same shape as the Skip bug.
+  // Open a person's contact record from the hero. A next action is about a
+  // PERSON — sometimes you want their whole record, not just the one email.
+  // Uses the ContactsView deep-link the rest of the app already uses.
+  const openContact = (contactId) => {
+    if (!contactId) return;
+    window.__pendingOpenContact = contactId;
+    setView && setView('contacts');
+  };
+
   const markReplied = async (contactId) => {
     if (!contactId) return;
     const { error } = await supabase.from('contact_interactions').insert({ user_id: myUserId, contact_id: contactId, direction: 'outbound', channel: 'manual', occurred_at: new Date().toISOString(), brief: 'Marked replied' });
@@ -381,10 +390,22 @@ export default function TodayView({
           </div>
           <div key={heroIdx} style={{ animation: swipeDir < 0 ? 'heroSlideR 0.22s ease' : 'heroSlideL 0.22s ease' }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid ' + tagColor(cur.tag), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>◆</div>
+              {(() => {
+                const person = cur.contactId ? (contacts.find(c => c.id === cur.contactId) || null) : null;
+                const initials = person && person.name ? person.name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() : null;
+                const avStyle = { width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid ' + tagColor(cur.tag), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: initials ? 14 : 18, fontFamily: initials ? 'Fraunces, serif' : 'inherit', color: initials ? '#EBCB82' : 'inherit', padding: 0 };
+                return cur.contactId
+                  ? <button type="button" onClick={() => openContact(cur.contactId)} title={person ? 'Open ' + person.name + '\u2019s contact record' : 'Open contact record'} aria-label="Open contact record" style={{ ...avStyle, cursor: 'pointer' }}>{initials || '\u25C6'}</button>
+                  : <div style={avStyle}>{'\u25C6'}</div>;
+              })()}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 21, fontFamily: 'Fraunces, serif', fontWeight: 300, letterSpacing: '-0.01em', color: '#F6F1E7', lineHeight: 1.18 }}>{cur.title}</div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3, lineHeight: 1.4 }}>{cur.why}</div>
+                {cur.contactId && (
+                  <button type="button" onClick={() => openContact(cur.contactId)} style={{ marginTop: 7, background: 'none', border: 'none', padding: 0, color: '#CBA35C', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    View contact <span aria-hidden="true">&rarr;</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

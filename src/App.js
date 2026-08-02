@@ -3876,6 +3876,7 @@ function NextBestAction({ contacts=[], setContacts, tasks=[], setTasks, events=[
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:20,fontFamily:'Fraunces, serif',fontWeight:300,letterSpacing:'-0.01em',color:'#F6F1E7',lineHeight:1.18,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.title}</div>
           <div style={{fontSize:12.5,color:'var(--text-2)',marginTop:3,lineHeight:1.4,overflowWrap:'anywhere',wordBreak:'break-word'}}>{cur.why}</div>
+          {cur.contactId && <button type="button" onClick={()=>{ window.__pendingOpenContact=cur.contactId; setView&&setView('contacts'); }} style={{marginTop:7,background:'none',border:'none',padding:0,color:'#CBA35C',fontSize:12,fontWeight:700,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}>View contact <span aria-hidden="true">&rarr;</span></button>}
         </div>
       </div>
       </div>
