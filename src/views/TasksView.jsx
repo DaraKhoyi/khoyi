@@ -650,12 +650,13 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             that used to live below the search. Layout is flex with flex-start
             alignment so the icons line up with the title baseline, not the
             "32 active" subtitle. */}
-        <div className="view-header" style={{
+        <div className="view-header fade-up" style={{
           display:'flex', alignItems:'flex-start', justifyContent:'space-between',
           gap:'12px', marginBottom:'10px',
         }}>
           <div style={{minWidth:0, flex:1}}>
-            <h2 style={{margin:'6px 0 2px',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} />Tasks</h2>
+            <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Focus</span>
+            <h2 style={{margin:'2px 0 2px',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} />Tasks</h2>
             <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>

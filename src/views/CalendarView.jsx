@@ -685,10 +685,12 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         .ww-cal .empty-state{ color:#8C8475; }
         .ww-cal .empty-icon{ color:#CBA35C; }
       `}</style>
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
+      <div className="page-header fade-up" style={{marginBottom:'2px'}}>
+       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
         <div style={{flex:1,minWidth:0}}>
-          <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'6px 0 4px'}}><Icon name="calendar" size={24} style={{color:'var(--accent)',flexShrink:0}} />Calendar</h2>
-          <p>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total{taskBlockCount>0?` · ${taskBlockCount} scheduled task block${taskBlockCount===1?'':'s'}`:''}</p>
+          <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Schedule</span>
+          <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'2px 0 0'}}><Icon name="calendar" size={24} style={{color:'var(--accent)',flexShrink:0}} />Calendar</h2>
+          <p style={{margin:'6px 0 0'}}>{monthEvents.length} events in {MONTH_NAMES[month]} · {events.length} total{taskBlockCount>0?` · ${taskBlockCount} scheduled task block${taskBlockCount===1?'':'s'}`:''}</p>
         </div>
         <div style={{display:'flex',gap:'6px',alignItems:'center',flexShrink:0}}>
           {viewMode==='day' && (
@@ -717,6 +719,8 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
           )}
           <button className="btn-add-circle btn-add-circle-sm" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}} title="New Event" aria-label="New Event">+</button>
         </div>
+       </div>
+       <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
       </div>
 
       <Tip id="blocking" label="Protect the money hours">Block time for prospecting <b>before</b> the day fills with everyone else's priorities. Top producers defend the one activity that grows income — put it on the calendar and it actually happens.</Tip>

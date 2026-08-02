@@ -514,9 +514,9 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
           system font; a single row of title-plus-buttons has collapsed three
           times before. */}
       <div style={{ marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+        <div className="fade-up" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
           <div style={{ minWidth: 0, flex: '1 1 0' }}>
-            <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--accent)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</div>
+            <span className="gold-move" style={{ fontSize: 11, letterSpacing: 2, fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</span>
             <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '2px 0 4px', overflowWrap: 'anywhere' }}>Your line.</h1>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2 }}>
@@ -524,6 +524,7 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
             <button className="btn btn-ghost btn-sm" onClick={() => setShowSetup(s => !s)} title="Number, sync & connection status">⚙</button>
           </div>
         </div>
+        <hr className="gold-hairline" style={{ margin: '12px 0 0' }} />
       </div>
 
       {/* Setup & status — tucked away; this is configuration, not daily use. */}

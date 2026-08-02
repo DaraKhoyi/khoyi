@@ -2491,9 +2491,10 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         </div>,
         document.body
       )}
-      <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
+      <div className="page-header fade-up" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
         <div>
-          <h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="inbox" size={26} style={{color:'var(--accent)',flexShrink:0}} />Inbox</h2>
+          <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700,display:'inline-block',marginBottom:'2px'}}>Correspondence</span>
+          <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'0 0 2px'}}><Icon name="inbox" size={26} style={{color:'var(--accent)',flexShrink:0}} />Inbox</h2>
           <p style={{fontSize:'13px'}}>
             {!accountSwitcher && <><strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>{' · '}</>}
             {unreadCount > 0 ? `${unreadCount} unread` : 'all caught up'}

@@ -261,8 +261,9 @@ function JournalView({ userId }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingBottom: '80px' }}>
       <TipFor screen="journal" />
       {/* Header */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+      <div className="fade-up">
+        <div className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 700, display: 'inline-block', marginBottom: '2px' }}>Mindset</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
           <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} />Daily Journal</h2>
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
