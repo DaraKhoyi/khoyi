@@ -311,20 +311,41 @@ export default function TodayView({
     <div className="ww-prism" style={{ maxWidth: 720, margin: '0 auto' }}>
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:#2A2016;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;--accent:#CBA35C;}
         @keyframes heroSlideL{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
-        @keyframes heroSlideR{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}`}</style>
+        @keyframes heroSlideR{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+        /* ── Moving-gold branding (the "Edge" language) ──────────────────────
+           Gold that feels ALIVE: the gradient's background-position glides
+           outward so the color moves smoothly across the letters. Slow + eased
+           = premium, never busy. */
+        @keyframes goldGlide{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes livePulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(203,163,92,.55)}50%{opacity:.5;box-shadow:0 0 0 5px rgba(203,163,92,0)}}
+        @keyframes shimmerSweep{0%{background-position:-140% 0}60%,100%{background-position:140% 0}}
+        .gold-move{background:linear-gradient(100deg,#7A5020 0%,#C5A95E 25%,#EBCB82 45%,#F5E8B0 55%,#C5A95E 75%,#7A5020 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:goldGlide 5.5s linear infinite;}
+        .fade-up{animation:fadeUp .6s cubic-bezier(.22,.61,.36,1) both;}
+        .fade-up-2{animation:fadeUp .6s cubic-bezier(.22,.61,.36,1) .08s both;}
+        .live-dot{width:7px;height:7px;border-radius:50%;background:#CBA35C;display:inline-block;animation:livePulse 1.8s ease-in-out infinite;}
+        .gold-hairline{height:1px;border:0;background:linear-gradient(90deg,transparent,#C5A95E 20%,#EBCB82 50%,#C5A95E 80%,transparent);background-size:200% auto;animation:goldGlide 7s linear infinite;}
+        @media (prefers-reduced-motion: reduce){.gold-move,.gold-hairline{animation:none}.fade-up,.fade-up-2{animation:none}.live-dot{animation:none}}`}</style>
 
-      {/* Calm header */}
-      <div style={{ marginBottom: 6 }}>
-        <div style={{ fontSize: 11, letterSpacing: 2, color: 'var(--accent)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif' }}>TODAY</div>
+      {/* Header — moving-gold eyebrow, live date, fade-up entrance */}
+      <div className="fade-up" style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <span className="gold-move" style={{ fontSize: 11.5, letterSpacing: 2.5, fontWeight: 800, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Today</span>
+          <span className="live-dot" />
+          <span style={{ fontSize: 10.5, letterSpacing: 1.5, color: 'var(--text-3)', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 32, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: 0 }}>
-            {greeting}{agentName ? ', ' + agentName.split(' ')[0] : ''}.
+          <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 33, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: 0 }}>
+            {greeting}{agentName ? ', ' : '.'}{agentName ? <span className="gold-move" style={{ fontFamily: 'Fraunces, serif', fontWeight: 400 }}>{agentName.split(' ')[0]}.</span> : ''}
           </h1>
           <button onClick={() => setShowDial(s => !s)} title="Automation level"
             style={{ flexShrink: 0, background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', borderRadius: 100, padding: '5px 12px', fontSize: 11.5, cursor: 'pointer' }}>
             ⚙ {level.label}
           </button>
         </div>
+        <hr className="gold-hairline" style={{ marginTop: 12, marginBottom: 0 }} />
       </div>
 
       {/* Automation dial */}
@@ -347,9 +368,9 @@ export default function TodayView({
 
       {/* The one hero — Do this next (swipe or tap the arrows to move through them) */}
       {cur ? (
-        <div onTouchStart={onHeroTouchStart} onTouchEnd={onHeroTouchEnd} style={{ position: 'relative', borderRadius: 20, padding: '22px 20px 18px', marginBottom: 18, background: 'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid rgba(203,163,92,0.55)', boxShadow: '0 0 40px rgba(203,163,92,0.12)', touchAction: 'pan-y', overflow: 'hidden' }}>
+        <div onTouchStart={onHeroTouchStart} onTouchEnd={onHeroTouchEnd} className="fade-up-2" style={{ position: 'relative', borderRadius: 20, padding: '22px 20px 18px', marginBottom: 18, background: 'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid rgba(203,163,92,0.55)', boxShadow: '0 0 40px rgba(203,163,92,0.12)', touchAction: 'pan-y', overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#EBCB82' }}>✦ Do this next</span>
+            <span className="gold-move" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase' }}>✦ Do this next</span>
             {totalOpen > 1 ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button aria-label="Previous" onClick={() => goTo(-1)} style={heroNavBtn}>‹</button>
