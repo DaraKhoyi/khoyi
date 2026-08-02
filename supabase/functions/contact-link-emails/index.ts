@@ -31,6 +31,11 @@ const SENDER_BLOCKLIST_PATTERNS = [
   /noreply/i, /no-reply/i, /notifications?@/i, /news(letters?)?@/i,
   /alerts?@/i, /updates?@/i, /digest@/i, /broadcast@/i,
   /donotreply/i, /info@.*\.(realtor|news|inman|cbre|nmrk)/i,
+  // Role mailboxes — never a personal correspondent (the local-part before @).
+  // Deliberately NOT blocking whole corporate domains, so real people like
+  // firstname.lastname@realtyonegroup.com are still linked; only role@ is skipped.
+  /^customer[-.]?care@/i, /^customer[-.]?service@/i, /^support@/i, /^helpdesk@/i,
+  /^marketing@/i, /^hello@/i, /^sales@/i, /^billing@/i, /^admin@/i, /^team@/i,
   // Bulk marketing platforms
   /mailchimpapp\.com$/i, /sendgrid\.net$/i, /mailgun\.org$/i,
   /mandrillapp\.com$/i, /amazonses\.com$/i, /mailjet\.com$/i,
