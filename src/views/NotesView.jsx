@@ -51,6 +51,7 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   const [editTitle, setEditTitle] = useState('');
   const [editBody, setEditBody] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);   // when the last successful auto-save completed
   const [section, setSection] = useState('all');
   const [q, setQ] = useState('');
   const [deepResults, setDeepResults] = useState(null);
@@ -157,6 +158,7 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
         }
       }
       setSaving(false);
+      setSavedAt(Date.now());
     }, 600);
   }
   const handleTitleChange = (e) => { setEditTitle(e.target.value); scheduleAutoSave(e.target.value, editBody); };
@@ -310,7 +312,7 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
                 style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'Fraunces, serif', fontSize: '19px', fontWeight: 400, background: 'transparent', border: '1px solid transparent', padding: '4px 6px' }}
                 onFocus={e => e.target.style.borderColor = 'var(--accent)'} onBlur={e => e.target.style.borderColor = 'transparent'} />
             )}
-            <KindLine kind={selected.kind} ro={ro} saving={saving} ts={selected.updated_at} />
+            <KindLine kind={selected.kind} ro={ro} saving={saving} savedAt={savedAt} ts={selected.updated_at} />
           </div>
           {!ro && <button onClick={e => deleteNote(selected, e)} title="Delete" style={{ flex: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4 }}><Icon name="trash" size={16} /></button>}
         </div>
@@ -406,12 +408,45 @@ function Meta({ kind, ts }) {
   );
 }
 
-function KindLine({ kind, ro, saving, ts }) {
+function KindLine({ kind, ro, saving, savedAt, ts }) {
   const label = { journal: 'Journal', recording: 'Call', document: 'Document' }[kind];
+  // Re-render every 20s so "Saved just now" ages to "Saved 1 min ago" etc.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (ro || !savedAt) return;
+    const i = setInterval(() => tick(t => t + 1), 20000);
+    return () => clearInterval(i);
+  }, [ro, savedAt]);
+
+  const savedLabel = () => {
+    if (!savedAt) return 'Saved';
+    const secs = Math.floor((Date.now() - savedAt) / 1000);
+    if (secs < 8) return 'Saved just now';
+    if (secs < 60) return 'Saved just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return 'Saved ' + mins + ' min ago';
+    return 'Saved ' + timeAgo(new Date(savedAt).toISOString());
+  };
+
   return (
     <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       {label && <span style={{ fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', fontSize: 9, color: TINT[kind] }}>{label}{ro ? ' · read-only' : ''}</span>}
-      <span>{ro ? 'Updated ' + timeAgo(ts) : (saving ? 'Saving…' : 'Saved')}</span>
+      {ro ? (
+        <span>{'Updated ' + timeAgo(ts)}</span>
+      ) : saving ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--text-3)' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#CBA35C', animation: 'noteSavePulse 1s ease-in-out infinite', display: 'inline-block' }} />
+          Saving…
+        </span>
+      ) : (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#CBA35C', fontWeight: 700 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <path d="M20 6L9 17l-5-5" stroke="#CBA35C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {savedLabel()}
+        </span>
+      )}
+      <style>{`@keyframes noteSavePulse{0%,100%{opacity:1}50%{opacity:.35}}`}</style>
     </div>
   );
 }
