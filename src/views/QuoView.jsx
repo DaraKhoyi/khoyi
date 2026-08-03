@@ -517,7 +517,7 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
         <div className="fade-up" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
           <div style={{ minWidth: 0, flex: '1 1 0' }}>
             <div style={{ marginBottom: '2px' }}><span className="gold-move" style={{ fontSize: 11, letterSpacing: '.22em', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</span></div>
-            <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '0', whiteSpace: 'nowrap' }}>My Line.</h1>
+            <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '0', display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}><Icon name="quo" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Line.</span></h1>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2 }}>
             <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>
