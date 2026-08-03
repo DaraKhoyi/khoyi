@@ -513,17 +513,13 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
           Title and actions sit on separate rows so the header holds at large
           system font; a single row of title-plus-buttons has collapsed three
           times before. */}
-      <div style={{ marginBottom: '2px' }}>
-        <div className="fade-up" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ minWidth: 0, flex: '1 1 0' }}>
-            <div style={{ marginBottom: '2px' }}><span className="gold-move" style={{ fontSize: 11, letterSpacing: '.22em', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</span></div>
-            <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '0', display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}><Icon name="quo" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Line.</span></h1>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2 }}>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowSetup(s => !s)} title="Number, sync & connection status">⚙</button>
-          </div>
+      <div className="fade-up" style={{ marginBottom: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, minHeight: '40px', marginBottom: '4px' }}>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowSetup(s => !s)} title="Number, sync & connection status">⚙</button>
         </div>
+        <div style={{ marginBottom: '2px' }}><span className="gold-move" style={{ fontSize: 11, letterSpacing: '.22em', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</span></div>
+        <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '0', display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}><Icon name="quo" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Line.</span></h1>
         <hr className="gold-hairline" style={{ margin: '12px 0 0' }} />
       </div>
 

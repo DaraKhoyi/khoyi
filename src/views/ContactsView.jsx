@@ -1410,20 +1410,16 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       `}</style>
       <TipFor screen="contacts" />
       <div className="page-header fade-up" style={{marginBottom:'2px'}}>
-        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px'}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'2px'}}>
-              <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Relationships</span>
-              {dueCount>0 && <span className="live-dot" />}
-            </div>
-            <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="contacts" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My People.</span></h2>
-          </div>
-          <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
-            <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>
-            <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
-          </div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'8px',minHeight:'40px',marginBottom:'4px'}}>
+          <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>
+          <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
         </div>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'2px'}}>
+          <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Relationships</span>
+          {dueCount>0 && <span className="live-dot" />}
+        </div>
+        <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="contacts" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My People.</span></h2>
         <p style={{color:'var(--text-3)',fontSize:'13px',margin:'6px 0 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{contacts.length} contacts{dueCount>0 && <> · <b className="gold-move" style={{fontWeight:700}}>{dueCount} due</b> for a touch</>}</p>
         <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
       </div>

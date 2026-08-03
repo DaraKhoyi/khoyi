@@ -2491,18 +2491,8 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         </div>,
         document.body
       )}
-      <div className="page-header fade-up" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div>
-          <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700,display:'inline-block',marginBottom:'2px'}}>Inbox</span>
-          <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'0',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="inbox" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Correspondence</span></h2>
-          <p style={{fontSize:'13px',margin:'6px 0 0'}}>
-            {!accountSwitcher && <><strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>{' · '}</>}
-            {unreadCount > 0 ? `${unreadCount} unread` : 'all caught up'}
-            {account.last_sync_at && <> · last sync: {timeAgo(account.last_sync_at)}</>}
-            {account.last_sync_error && <> · <span style={{color:'var(--red)'}}>sync error</span></>}
-          </p>
-        </div>
-        <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+      <div className="page-header fade-up" style={{marginBottom:'2px'}}>
+        <div style={{display:'flex',gap:'8px',alignItems:'center',justifyContent:'flex-end',flexWrap:'wrap',minHeight:'40px',marginBottom:'4px'}}>
           {syncMsg && <span style={{fontSize:'12px',color: syncMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)'}}>{syncMsg}</span>}
           {autoTriageProgress && (
             <span style={{fontSize:'11px',color:'var(--text-3)',display:'inline-flex',alignItems:'center',gap:'4px'}}>
@@ -2524,8 +2514,16 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           />
           <button className="btn btn-primary" onClick={openCompose} style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="edit" size={14} /> Compose</button>
         </div>
+        <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700,display:'inline-block',marginBottom:'2px'}}>Inbox</span>
+        <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'0',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="inbox" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Correspondence</span></h2>
+        <p style={{fontSize:'13px',margin:'6px 0 0'}}>
+          {!accountSwitcher && <><strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>{' · '}</>}
+          {unreadCount > 0 ? `${unreadCount} unread` : 'all caught up'}
+          {account.last_sync_at && <> · last sync: {timeAgo(account.last_sync_at)}</>}
+          {account.last_sync_error && <> · <span style={{color:'var(--red)'}}>sync error</span></>}
+        </p>
+        <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
       </div>
-      <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
 
       {accountSwitcher}
 

@@ -262,13 +262,12 @@ function JournalView({ userId }) {
       <TipFor screen="journal" />
       {/* Header */}
       <div className="fade-up">
-        <div className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 700, display: 'inline-block', marginBottom: '2px' }}>Daily Journal</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
-          <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px', minWidth:0 }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Mindset</span></h2>
-          <span style={{ flex: 1 }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minHeight: '40px', marginBottom: '4px' }}>
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
-            style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="search" size={16} /></button>
+            style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="search" size={16} /></button>
         </div>
+        <div className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 700, display: 'inline-block', marginBottom: '2px' }}>Daily Journal</div>
+        <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px', minWidth:0 }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Mindset</span></h2>
         <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
         <Tip id="capture" label="Capture beats recall">The best agents run on <b>captured</b> details, not remembered ones. A 20-second note today — what they said, what they want — turns a cold follow-up into a warm one next week. Everything you log trains Prism, too.</Tip>
         {!searchOpen && (

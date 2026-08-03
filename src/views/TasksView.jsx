@@ -650,16 +650,8 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             that used to live below the search. Layout is flex with flex-start
             alignment so the icons line up with the title baseline, not the
             "32 active" subtitle. */}
-        <div className="view-header fade-up" style={{
-          display:'flex', alignItems:'flex-start', justifyContent:'space-between',
-          gap:'12px', marginBottom:'2px', paddingTop:'4px',
-        }}>
-          <div style={{minWidth:0, flex:1}}>
-            <div style={{marginBottom:'2px'}}><span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Task List</span></div>
-            <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Focus</span></h2>
-            <p style={{fontSize:'13px',color:'var(--text-3)',margin:'6px 0 0'}}>{visibleTasks.filter(t => !t.completed).length} active</p>
-          </div>
-          <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
+        <div className="view-header fade-up" style={{ marginBottom:'2px' }}>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'8px', minHeight:'40px', marginBottom:'4px'}}>
             <HeaderSearchIcon
               value={taskSearch}
               open={searchOpen}
@@ -712,6 +704,9 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             </button>
             <button className="btn-add-circle" onClick={openNew} title="New Task" aria-label="New Task">+</button>
           </div>
+          <div style={{marginBottom:'2px'}}><span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Task List</span></div>
+          <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Focus</span></h2>
+          <p style={{fontSize:'13px',color:'var(--text-3)',margin:'6px 0 0'}}>{visibleTasks.filter(t => !t.completed).length} active</p>
         </div>
         <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
 
