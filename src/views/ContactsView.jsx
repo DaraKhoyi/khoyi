@@ -1416,7 +1416,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
               <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Relationships</span>
               {dueCount>0 && <span className="live-dot" />}
             </div>
-            <h2 style={{margin:'0'}}>Your people.</h2>
+            <h2 style={{margin:'0'}}>My People.</h2>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
             <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>

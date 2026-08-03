@@ -262,9 +262,9 @@ function JournalView({ userId }) {
       <TipFor screen="journal" />
       {/* Header */}
       <div className="fade-up">
-        <div className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 700, display: 'inline-block', marginBottom: '2px' }}>Mindset</div>
+        <div className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 700, display: 'inline-block', marginBottom: '2px' }}>Daily Journal</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-          <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} />Daily Journal</h2>
+          <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px' }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} />My Mindset</h2>
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSearchOpen(o => !o); setSearchResults(null); setSearchQ(''); }} title="Search all days"
             style={{ width: '36px', height: '36px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="search" size={16} /></button>
