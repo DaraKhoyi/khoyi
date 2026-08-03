@@ -2515,7 +2515,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           <button className="btn btn-primary" onClick={openCompose} style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="edit" size={14} /> Compose</button>
         </div>
         <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700,display:'inline-block',marginBottom:'2px'}}>Inbox</span>
-        <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'0',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="inbox" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Correspondence</span></h2>
+        <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'0',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="inbox" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Correspondence.</span></h2>
         <p style={{fontSize:'13px',margin:'6px 0 0'}}>
           {!accountSwitcher && <><strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>{' · '}</>}
           {unreadCount > 0 ? `${unreadCount} unread` : 'all caught up'}
