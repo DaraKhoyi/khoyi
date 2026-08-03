@@ -518,12 +518,12 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
   const cond = conditionFor(p.subject.condition_score);
 
   const detailStatus = useMemo(() => ([
-    { k:'Photos',       on: (p.photos || []).length > 0 || !!p.agent_video_url },
+    { k:'Video',        on: !!p.agent_video_url },
     { k:'Property',     on: filledCount(p.subject, ['lot_size','year_built','upgrades','hidden_changes','motivation']) > 0 },
     { k:'Market',       on: filledCount(p.market, ['moi','list_to_sale','active','pending','closed']) > 0 },
     { k:'Seller style', on: !!p.seller_tone && p.seller_tone !== 'auto' },
     { k:'Net sheet',    on: filledCount(p.netsheet, ['mortgage_payoff','title_fees','tax_proration','other']) > 0 },
-  ]), [p.photos, p.agent_video_url, p.subject, p.market, p.seller_tone, p.netsheet]);
+  ]), [p.agent_video_url, p.subject, p.market, p.seller_tone, p.netsheet]);
   const detailsDone = detailStatus.filter(d => d.on).length;
 
   const statusChip = saveState === 'saving' ? { t:'Saving\u2026', c:'var(--text-3)' }
@@ -549,8 +549,7 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
 
       {screen === 'details' ? (
         <DetailsScreen
-          p={p} set={set} setUnit={setUnit} userId={userId}
-          setPhotos={setPhotos} setHero={setHero} photoNotify={photoNotify}
+          p={p} set={set} setUnit={setUnit}
           onDone={() => { setScreen('main'); window.scrollTo(0, 0); }}
         />
       ) : (
@@ -579,6 +578,10 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
             <Field label="Beds" path="subject.beds" value={p.subject.beds} onSet={set} inputMode="numeric" />
             <Field label="Baths" path="subject.baths" value={p.subject.baths} onSet={set} inputMode="decimal" />
             <Field label="GLA (sq ft)" path="subject.gla" value={p.subject.gla} onSet={set} inputMode="numeric" />
+          </div>
+
+          <div style={wrapMt14}>
+            <PhotoUploader photos={p.photos} hero={p.hero_image_url} userId={userId} onChange={setPhotos} onSetHero={setHero} notify={photoNotify} />
           </div>
 
           {/* 2. CONDITION */}
@@ -628,9 +631,7 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
           {/* 5. MORE DETAILS */}
           <button onClick={() => { setScreen('details'); window.scrollTo(0, 0); }}
             style={{ display:'flex', alignItems:'center', gap:12, width:'100%', textAlign:'left', marginTop:22, background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:12, padding:'14px 16px', cursor:'pointer' }}>
-            {p.hero_image_url
-              ? <img src={p.hero_image_url} alt="" loading="lazy" decoding="async" style={{ width:44, height:44, borderRadius:8, objectFit:'cover', flexShrink:0 }} />
-              : <span style={{ width:44, height:44, borderRadius:8, background:'rgba(203,163,92,.10)', color:G, display:'grid', placeItems:'center', fontSize:19, flexShrink:0 }}>{'\u2699'}</span>}
+            <span style={{ width:44, height:44, borderRadius:8, background:'rgba(203,163,92,.10)', color:G, display:'grid', placeItems:'center', fontSize:19, flexShrink:0 }}>{'\u2699'}</span>
             <span style={{ flex:'1 1 0', minWidth:0 }}>
               <span style={{ display:'block', fontWeight:800, fontSize:15, color:'var(--text-1)' }}>More details</span>
               <span style={{ display:'block', fontSize:11.5, color:'var(--text-3)', marginTop:3, overflow:'hidden', textOverflow:'ellipsis' }}>
@@ -639,7 +640,7 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
             </span>
             <span style={{ flexShrink:0, fontSize:11, fontWeight:800, color:G, whiteSpace:'nowrap' }}>{detailsDone}/{detailStatus.length} {'\u203A'}</span>
           </button>
-          <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6, paddingLeft:2 }}>Photos, market numbers, seller style and the net sheet. Optional {'\u2014'} the deck builds without them.</div>
+          <div style={{ fontSize:11, color:'var(--text-3)', marginTop:6, paddingLeft:2 }}>Lot and year built, market numbers, seller style, the net sheet. Optional {'\u2014'} the deck builds without them.</div>
         </>
       )}
 
@@ -658,20 +659,17 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
 
 const wrapMb12 = { marginBottom:12 };
 const wrapMt12 = { marginTop:12 };
+const wrapMt14 = { marginTop:14 };
 const gridBeds = { display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(100px,1fr))', gap:10, marginBottom:4 };
 const gridTiers = { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 };
 const NEW_ROOF_PH = 'New roof (2024), quartz kitchen, impact windows, renovated primary bath\u2026';
 const MOTIV_PH = 'Relocating for work \u2014 needs to close by spring';
 
 /* -- More details screen -------------------------------------------------- */
-function DetailsScreen({ p, set, setUnit, userId, setPhotos, setHero, photoNotify, onDone }) {
+function DetailsScreen({ p, set, setUnit, onDone }) {
   return (
     <>
-      <div style={{ ...eyebrow, marginTop:0 }}>Photos & video</div>
-      <PhotoUploader photos={p.photos} hero={p.hero_image_url} userId={userId} onChange={setPhotos} onSetHero={setHero} notify={photoNotify} />
-      <Field label="Agent welcome video" hint="optional" path="agent_video_url" value={p.agent_video_url} onSet={set} placeholder="YouTube / Vimeo / .mp4 link" wrapStyle={wrapMt12} />
-
-      <div style={eyebrow}>Property details</div>
+      <div style={{ ...eyebrow, marginTop:0 }}>Property details</div>
       <div style={grid(120)}>
         <Field label="Lot size" path="subject.lot_size" value={p.subject.lot_size} onSet={set} />
         <Field label="Year built" path="subject.year_built" value={p.subject.year_built} onSet={set} inputMode="numeric" />
@@ -730,6 +728,9 @@ function DetailsScreen({ p, set, setUnit, userId, setPhotos, setHero, photoNotif
           );
         })}
       </div>
+
+      <div style={eyebrow}>Agent welcome video</div>
+      <Field label="Video link" hint="optional" path="agent_video_url" value={p.agent_video_url} onSet={set} placeholder="YouTube / Vimeo / .mp4 link" />
 
       <button onClick={onDone} style={{ marginTop:22, width:'100%', background:'transparent', border:`1px solid ${G}`, color:G, borderRadius:9, padding:'12px', fontWeight:800, fontSize:14, cursor:'pointer' }}>{'\u2190'} Back to essentials</button>
     </>
