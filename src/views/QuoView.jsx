@@ -513,11 +513,11 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
           Title and actions sit on separate rows so the header holds at large
           system font; a single row of title-plus-buttons has collapsed three
           times before. */}
-      <div style={{ marginBottom: 10 }}>
+      <div style={{ marginBottom: '2px' }}>
         <div className="fade-up" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
           <div style={{ minWidth: 0, flex: '1 1 0' }}>
-            <span className="gold-move" style={{ fontSize: 11, letterSpacing: 2, fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</span>
-            <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '2px 0 4px', overflowWrap: 'anywhere' }}>Your line.</h1>
+            <div style={{ marginBottom: '2px' }}><span className="gold-move" style={{ fontSize: 11, letterSpacing: '.22em', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</span></div>
+            <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '0', overflowWrap: 'anywhere' }}>My Line.</h1>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2 }}>
             <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>＋ New</button>

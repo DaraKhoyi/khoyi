@@ -652,12 +652,12 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             "32 active" subtitle. */}
         <div className="view-header fade-up" style={{
           display:'flex', alignItems:'flex-start', justifyContent:'space-between',
-          gap:'12px', marginBottom:'10px',
+          gap:'12px', marginBottom:'2px',
         }}>
           <div style={{minWidth:0, flex:1}}>
-            <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Task List</span>
-            <h2 style={{margin:'2px 0 2px',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} />My Focus</h2>
-            <span style={{fontSize:'12px',color:'var(--text-3)'}}>{visibleTasks.filter(t => !t.completed).length} active</span>
+            <div style={{marginBottom:'2px'}}><span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Task List</span></div>
+            <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="tasks" size={24} style={{color:'var(--accent)',flexShrink:0}} />My Focus</h2>
+            <p style={{fontSize:'13px',color:'var(--text-3)',margin:'6px 0 0'}}>{visibleTasks.filter(t => !t.completed).length} active</p>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'8px', flexShrink:0}}>
             <HeaderSearchIcon
