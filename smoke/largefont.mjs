@@ -23,7 +23,7 @@ const URL = process.env.SMOKE_URL || 'http://localhost:4173/';
 const EMAIL = process.env.SMOKE_EMAIL, PW = process.env.SMOKE_PASSWORD;
 const SCALE = Number(process.env.FONT_SCALE || 1.35);
 const VIEWS = (process.env.SMOKE_VIEWS ||
-  'dashboard,inbox,contacts,tasks,calendar,quo,chief,journal,brain,prospecting,settings,documents,my_prism,myvoice,app_health'
+  'dashboard,inbox,contacts,tasks,calendar,quo,chief,journal,brain,prospecting,settings,documents,my_prism,myvoice,app_health,listing_presentation'
 ).split(',').map(s => s.trim()).filter(Boolean);
 
 const PROBE = `(() => {
@@ -142,9 +142,62 @@ for (const view of VIEWS) {
       console.log(`✓ ${view.padEnd(14)} clean`);
     }
   } catch (e) {
-    bad++; console.log(`✗ ${view.padEnd(14)} probe failed — ${String(e.message || e).slice(0, 80)}`);
+    bad++; console.log(`✗ ${view.padEnd(14)} probe failed — ${String(e.message || e).slice(0, 400)}`);
   }
 }
+// ── The listing-presentation EDITOR ───────────────────────────────────────
+// The loop above can only reach screens addressable by name. The editor and its
+// More-details screen live behind two clicks, so they were never measured — and
+// the editor's header is exactly the shape that has shipped broken three times:
+// one flex row holding a long title plus a labelled control. Measured here for
+// the same reason the Ari shell is smoke-tested: it ships in this build.
+// No address is left in the field at the end, so the autosave never fires and
+// the run leaves no row behind.
+let extra = 0, extraTotal = 0;
+const probeStep = async (name) => {
+  extraTotal++;
+  const r = await page.evaluate(PROBE);
+  const problems = [];
+  if (r.docOverflow > 2) problems.push(`h-overflow ${r.docOverflow}px`);
+  if (r.clippedTotal) problems.push(`${r.clippedTotal} clipped`);
+  if (r.collisionsTotal) problems.push(`${r.collisionsTotal} overlapping`);
+  if (problems.length) {
+    extra++;
+    console.log(`✗ ${name.padEnd(14)} ${problems.join(', ')}`);
+    for (const c of r.clipped) console.log(`      clipped: "${c.text}"  <${c.tag} class="${c.cls}">`);
+    for (const c of r.collisions) console.log(`      overlap: "${c.a}" ↔ "${c.b}"  (${c.overlap}px)`);
+  } else {
+    console.log(`✓ ${name.padEnd(14)} clean`);
+  }
+};
+try {
+  await page.evaluate(() => window.__setView('listing_presentation'));
+  await page.waitForTimeout(1200);
+  // A first-run onboarding modal swallows pointer events on a fresh account.
+  for (let i = 0; i < 4; i++) {
+    if (!(await page.evaluate(() => !!document.querySelector('.modal-overlay')))) break;
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+  }
+  await page.evaluate(() => document.querySelectorAll('.modal-overlay').forEach(n => n.remove()));
+  await page.waitForTimeout(300);
+  await page.click('button:has-text("New Listing Presentation")');
+  await page.waitForTimeout(1200);
+  // The longest realistic address, not the average one — layout breaks on the
+  // long string (the same lesson that put long names into smoke/seed.mjs).
+  const addr = page.locator('input[placeholder*="4214 W Virginia"]');
+  await addr.fill('18430 Coats Street, Spring Hill, FL 34610');
+  await page.waitForTimeout(700);
+  await probeStep('lp_editor');
+  await addr.fill('');                       // keep autosave from writing a row
+  await page.click('text=More details');
+  await page.waitForTimeout(1200);
+  await probeStep('lp_details');
+} catch (e) {
+  extra++; extraTotal++;
+  console.log(`✗ ${'lp_editor'.padEnd(14)} probe failed — ${String(e.message || e).slice(0, 400)}`);
+}
+
 await browser.close();
-console.log(`\n==== LARGE FONT: ${VIEWS.length - bad}/${VIEWS.length} views clean ====`);
-process.exit(bad ? 1 : 0);
+console.log(`\n==== LARGE FONT: ${(VIEWS.length + extraTotal) - (bad + extra)}/${VIEWS.length + extraTotal} views clean ====`);
+process.exit((bad + extra) ? 1 : 0);
