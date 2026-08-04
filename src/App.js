@@ -19066,6 +19066,12 @@ function AppMain() {
   const MENU = [
     // ── Top level — promoted daily drivers (Dara's order) ──
     { label: 'Today', view: 'today', icon: 'sparkles' },
+    // My World is a ROOM, not a screen, so it is an action node rather than a
+    // view node: enterMode() applies the room's resume rule — Contacts on the
+    // first visit each day, then wherever you left off. Pointing it straight at
+    // 'contacts' would look identical here and silently throw that away.
+    { label: 'My World', icon: 'contacts',
+      action: () => { setSidebarOpen(false); enterMode('relationships'); } },
     { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     { label: 'Tasks', view: 'tasks', icon: 'tasks' },

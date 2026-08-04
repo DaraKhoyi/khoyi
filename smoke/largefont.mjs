@@ -107,6 +107,55 @@ const PROBE = `(() => {
   };
 })()`;
 
+
+// ── settling ────────────────────────────────────────────────────────────────
+// A fixed 1500ms wait was a guess, and on data-driven screens (Quo especially,
+// which lays out around call rows that arrive on their own schedule) the probe
+// sometimes fired mid-paint and reported an overlap that healed a moment later.
+// A gate that cries wolf trains you to ignore it, which is worse than no gate.
+//
+// So: wait for the layout to STOP MOVING rather than for a stopwatch. Sample a
+// cheap signature of the page; when two consecutive samples match, it has
+// settled. Cap it so a screen with a spinner that never stops cannot hang the run.
+const SIGNATURE = `(() => {
+  const de = document.documentElement;
+  const els = document.querySelectorAll('*');
+  let h = 0;
+  for (let i = 0; i < els.length; i += 7) {           // every 7th box is plenty
+    const r = els[i].getBoundingClientRect();
+    h = (h * 31 + Math.round(r.top) + Math.round(r.left) * 3 + Math.round(r.width) * 7 + Math.round(r.height) * 11) | 0;
+  }
+  return [els.length, de.scrollWidth, document.body.scrollHeight, h].join(':');
+})()`;
+
+async function settle(page, { maxMs = 6000, step = 350 } = {}) {
+  let last = null;
+  const until = Date.now() + maxMs;
+  while (Date.now() < until) {
+    await page.waitForTimeout(step);
+    let sig;
+    try { sig = await page.evaluate(SIGNATURE); } catch (_) { return false; }
+    if (sig === last) return true;
+    last = sig;
+  }
+  return false;                                        // never settled — measure anyway
+}
+
+// Measure once the page is still. If anything is wrong, let it settle again and
+// re-measure: a REAL layout break is stable and will report identically, while a
+// mid-load artefact disappears. This confirms failures, it does not hide them —
+// nothing that survives a second settled reading is ever suppressed.
+async function measure(page) {
+  await settle(page);
+  let r = await page.evaluate(PROBE);
+  const badNow = (x) => x.docOverflow > 2 || x.clippedTotal || x.collisionsTotal;
+  if (!badNow(r)) return { r, confirmed: false };
+  const first = r;
+  await settle(page, { maxMs: 4000 });
+  r = await page.evaluate(PROBE);
+  return { r, confirmed: true, healed: !badNow(r), first };
+}
+
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();
@@ -127,8 +176,9 @@ console.log(`\nLarge-font layout check — ${Math.round(SCALE * 100)}% type, 390
 for (const view of VIEWS) {
   try {
     await page.evaluate(v => window.__setView(v), view);
-    await page.waitForTimeout(1500);
-    const r = await page.evaluate(PROBE);
+    const m = await measure(page);
+    const r = m.r;
+    if (m.healed) console.log(`  (${view}: a transient during load cleared on re-measure — not reported)`);
     const problems = [];
     if (r.docOverflow > 2) problems.push(`h-overflow ${r.docOverflow}px`);
     if (r.clippedTotal) problems.push(`${r.clippedTotal} clipped`);
@@ -156,7 +206,9 @@ for (const view of VIEWS) {
 let extra = 0, extraTotal = 0;
 const probeStep = async (name) => {
   extraTotal++;
-  const r = await page.evaluate(PROBE);
+  const m = await measure(page);
+  const r = m.r;
+  if (m.healed) console.log(`  (${name}: a transient during load cleared on re-measure — not reported)`);
   const problems = [];
   if (r.docOverflow > 2) problems.push(`h-overflow ${r.docOverflow}px`);
   if (r.clippedTotal) problems.push(`${r.clippedTotal} clipped`);
@@ -190,7 +242,6 @@ try {
   // long string (the same lesson that put long names into smoke/seed.mjs).
   const addr = page.locator('input[placeholder*="4214 W Virginia"]');
   await addr.fill('18430 Coats Street, Spring Hill, FL 34610');
-  await page.waitForTimeout(700);
   await probeStep('lp_editor');
   await addr.fill('');                       // keep autosave from writing a row
   await page.click('text=More details');
