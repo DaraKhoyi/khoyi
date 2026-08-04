@@ -175,6 +175,53 @@ for (const dev of want) {
     record(dev, 'Contact detail / Insights no-crash', !crashed, crashed ? 'ERROR BOUNDARY on contact detail' : '');
   } catch (e) { record(dev, 'Contact detail / Insights no-crash', false, String(e).slice(0,60)); }
 
+  // ---- FEATURE: room resume — home on the first visit each day, then where
+  // you left off. Pure client-side state (localStorage + a date compare), so it
+  // has no server to fail loudly; it just silently lands you in the wrong place.
+  // Drives the real menu row so enterMode() is exercised, not a stub.
+  try {
+    const r = await page.evaluate(async () => {
+      const sleep = ms => new Promise(res => setTimeout(res, ms));
+      const spotKeys = () => Object.keys(localStorage).filter(k => k.startsWith('prism.room.spot.'));
+      const enter = async (label) => {
+        const row = [...document.querySelectorAll('.mm-row')].find(b => (b.innerText || '').includes(label));
+        if (!row) return false;
+        row.click();
+        await sleep(1400);
+        return true;
+      };
+      const now = () => (window.__getView ? window.__getView() : window.__currentView);
+
+      spotKeys().forEach(k => localStorage.removeItem(k));
+      window.__setView('today'); await sleep(600);
+      if (!(await enter('My World'))) return { err: 'no My World row in the menu' };
+      const first = now();
+
+      window.__setView('calendar'); await sleep(1200);   // move inside the room
+      window.__setView('today');    await sleep(700);    // step out
+      await enter('My World');
+      const second = now();
+
+      const key = spotKeys().find(k => k.endsWith('.relationships'));
+      if (!key) return { err: 'no bookmark written', first, second };
+      const rec = JSON.parse(localStorage.getItem(key));
+      rec.d = '2000-01-01';                              // pretend it is tomorrow
+      localStorage.setItem(key, JSON.stringify(rec));
+      window.__setView('today'); await sleep(700);
+      await enter('My World');
+      const nextDay = now();
+      return { first, second, nextDay, key };
+    });
+    if (r.err) {
+      record(dev, 'My World resume', false, r.err);
+    } else {
+      record(dev, 'My World opens on Contacts (first visit today)', r.first === 'contacts', r.first === 'contacts' ? '' : `got ${r.first}`);
+      record(dev, 'My World resumes where you left off', r.second === 'calendar', r.second === 'calendar' ? '' : `got ${r.second}`);
+      record(dev, 'My World resets to Contacts the next day', r.nextDay === 'contacts', r.nextDay === 'contacts' ? '' : `got ${r.nextDay}`);
+      record(dev, 'resume bookmark is per-user', /^prism\.room\.spot\.[0-9a-f-]{8,}\.relationships$/.test(r.key || ''), r.key ? '' : 'no key');
+    }
+  } catch (e) { record(dev, 'My World resume', false, String(e).slice(0, 70)); }
+
   // fatal page errors on this device?
   if (pageErrors.length) record(dev, 'no uncaught JS errors', false, pageErrors[0].slice(0,80));
   else record(dev, 'no uncaught JS errors', true);

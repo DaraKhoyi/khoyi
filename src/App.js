@@ -15,6 +15,7 @@ import ModeBar from './views/ModeBar';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
+import { rememberRoomSpot, roomResumeSpot } from './roomResume';
 import { PAGES, PAGE_GROUPS, pageVisible, roleAllows, makeEntitled, ALL_FEATURES } from './pages';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
 import IdentifyRecording from './views/IdentifyRecording';
@@ -18408,7 +18409,22 @@ function AppMain() {
   // bottom bar use. Entering a mode jumps to that room's home screen; Home
   // returns to the hub (the dashboard).
   const activeMode = view === 'dashboard' ? null : (VIEW_TO_MODE[view] || null);
-  const enterMode = (modeId) => { if (modeId === '__today__') { setView('today'); return; } const m = modeById(modeId); if (m) setView(m.home); };
+  // Entering a room resumes where you left off IN THAT ROOM, but only within the
+  // same day — the first visit each day opens the room's home screen (My World
+  // opens on Contacts). A stale bookmark pointing at a screen that no longer
+  // belongs to the room is ignored, so re-organising a room never strands anyone.
+  const enterMode = (modeId) => {
+    if (modeId === '__today__') { setView('today'); return; }
+    const m = modeById(modeId);
+    if (!m) return;
+    const spot = m.resume ? roomResumeSpot(session?.user?.id, modeId, todayISO(), m.views) : null;
+    if (spot) {
+      setView(spot.view);
+      if (spot.sub) setDeepLink(d => ({ view: spot.view, sub: spot.sub, n: d.n + 1 }));
+      return;
+    }
+    setView(m.home);
+  };
   const goHome = () => setView('today');   // Today replaces the Dashboard as home
   React.useEffect(() => {
     try {
@@ -18460,6 +18476,16 @@ function AppMain() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [openPath, setOpenPath] = useState([]);
   const [deepLink, setDeepLink] = useState({ view: null, sub: null, n: 0 });
+  // Drop a bookmark on every move inside a room. Cheap (one localStorage write),
+  // and it is what makes the room feel like a place you can step out of.
+  React.useEffect(() => {
+    if (!activeMode) return;
+    const m = modeById(activeMode);
+    if (!m || !m.resume) return;
+    rememberRoomSpot(session?.user?.id, activeMode, view,
+      deepLink.view === view ? deepLink.sub : null, todayISO());
+  }, [activeMode, view, deepLink, session]);
+
   const [tasks, setTasks] = useState([]);
   const [robots, setRobots] = useState([]);
   const [notes, setNotes] = useState([]);

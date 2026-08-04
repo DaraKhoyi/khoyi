@@ -13,11 +13,16 @@
 export const MODES = [
   {
     id: 'relationships',
-    label: 'Relationships',
-    tag: 'Who needs my attention',
-    glyph: 'people',
+    // "Relationships" undersold it: half this room is not people, it is the
+    // promises you made them (Tasks), when you see them (Calendar) and the record
+    // of what happened (Journal). My World holds all of it, and does not collide
+    // with the Contacts page inside it, which is titled "My People."
+    label: 'My World',
+    tag: 'My people, my day.',
+    glyph: 'globe',
     accent: '#8FB8A8',
     home: 'contacts',
+    resume: true,
     // Dara's order (left→right): Contacts, Calls, Calendar, Tasks, Email, Journal.
     // Six sections so the whole daily-communication surface is one tap apart.
     bar: ['contacts', 'quo', 'calendar', 'tasks', 'inbox', 'journal'],
@@ -40,6 +45,7 @@ export const MODES = [
     glyph: 'library',
     accent: '#8FB8A8',
     home: 'notes',
+    resume: true,
     bar: [
       { view: 'notes', sub: 'all',    label: 'All',    glyph: 'library' },
       { view: 'notes', sub: 'search', label: 'Search', glyph: 'search' },
@@ -55,6 +61,7 @@ export const MODES = [
     glyph: 'target',
     accent: '#C98A5E',
     home: 'prospecting',
+    resume: true,
     // Six sections, one complete hunt loop, left to right:
     //   pick a system -> work it today -> know what to say -> present -> see
     //   what paid -> steer the quarter.
@@ -85,6 +92,7 @@ export const MODES = [
     glyph: 'flow',
     accent: '#7FA6C9',
     home: 'pipeline',
+    resume: true,
     bar: ['pipeline', 'deals', 'files', 'properties'],
     views: ['pipeline', 'deals', 'files', 'properties'],
   },
@@ -95,6 +103,7 @@ export const MODES = [
     glyph: 'coin',
     accent: '#C9A84E',
     home: 'numbers',
+    resume: true,
     bar: ['numbers', 'briefing', 'scoreboard', 'finance'],
     // 'briefing' carries Outreach -> Results + the Goal Engine: performance
     // review, not daily planning. Visited weekly/monthly, deliberately.
@@ -109,6 +118,7 @@ export const MODES = [
     accent: '#B98BC9',
     adminOnly: true,
     home: 'agents',
+    resume: true,
     // Recruiting lives here now: growing the roster is a brokerage job.
     bar: ['agents', 'recruiting', 'agent_activity', 'app_health', 'announcements'],
     // 'systems' is the INFRASTRUCTURE health monitor (Online / Degraded /
