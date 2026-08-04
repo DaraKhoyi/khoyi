@@ -820,7 +820,7 @@ function ProspectingROI({ systems, transactions, timeEntries, completions, setti
 }
 
 
-function ProspectingView({ userId, initialSub = null, subNonce = 0 }) {
+function ProspectingView({ userId, initialSub = null, subNonce = 0, barDriven = false }) {
   const [sub, setSub] = useState('today');
   useEffect(() => { if (initialSub) setSub(initialSub); }, [initialSub, subNonce]);
   const [loading, setLoading] = useState(true);
@@ -881,9 +881,24 @@ function ProspectingView({ userId, initialSub = null, subNonce = 0 }) {
           <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Icon name="prospecting" size={24} style={{color:'var(--accent)',flexShrink:0}} />Prospecting</h2>
           {streak > 0 && <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.35)' }}>🔥 {streak}-day streak</span>}
           <span style={{ flex: 1 }} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{activeNonOverhead.length}/{maxSystems} systems active</span>
+          {/* When the room bar carries Today / Systems / ROI, the pill row below
+              would be a second tab strip saying the same three words on the same
+              screen. Hide it and keep Manage — the one section the bar does not
+              carry — reachable right here. */}
+          {barDriven && (
+            <button onClick={() => setSub(sub === 'systems' ? 'today' : 'systems')}
+              style={{ padding: '3px 11px', borderRadius: 999, fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                border: `1px solid ${sub === 'systems' ? 'var(--accent)' : 'var(--border)'}`,
+                background: sub === 'systems' ? 'var(--accent)' : 'transparent',
+                color: sub === 'systems' ? 'var(--bg-base)' : 'var(--text-2)' }}>
+              {sub === 'systems' ? 'Done' : 'Manage'}
+            </button>
+          )}
+          </span>
         </div>
-        <div style={{ display: 'flex', gap: '6px', paddingBottom: '2px' }}>
+        <div style={{ display: barDriven ? 'none' : 'flex', gap: '6px', paddingBottom: '2px' }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setSub(t.id)}
               style={{ flex: '1 1 0', minWidth: 0, padding: '8px 6px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap', cursor: 'pointer',

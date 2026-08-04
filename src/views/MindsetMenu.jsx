@@ -15,7 +15,11 @@ const glyphs = {
   flow: <><circle cx="5" cy="6" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="18" r="2"/><path d="M7 6h8M7 18h8M17 12H9"/></>,
   coin: <><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></>,
   building:<><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/></>,
+  // Without this the Library room fell through to the default and wore a sun.
+  library: <><path d="M4 5h4v14H4zM10 5h4v14h-4z"/><path d="M16 5l3.5 1-3 13L16 18z"/></>,
 };
+
+const PINNED = ['relationships', 'prospect'];
 
 const G = { gold: '#CBA35C', champ: '#EBCB82', cream: '#F6F1E7', ember: '#C9563F' };
 
@@ -50,21 +54,25 @@ function Row({ glyph, accent, label, tag, badge, active, onClick }) {
 }
 
 export default function MindsetMenu({ open, onClose, currentView, activeMode, isAdmin, onHome, onEnterMode, modeBadges = {}, userName, userEmail, onSignOut }) {
-  // Rooms ordered like the hub: anything urgent floats up, then the room that
-  // suits the hour (Plan in the morning, Money late afternoon), then the rest.
+  // A fixed spine, then the clock. Today sits above; Relationships and Prospect
+  // are pinned directly under it, in that order, because they are the two rooms
+  // an agent lives in every single day — a menu whose top entries move with the
+  // hour is a menu you have to read instead of aim at. Everything below them
+  // still floats: anything urgent first, then the room that suits the hour.
   const rooms = React.useMemo(() => {
     const hour = new Date().getHours();
     const list = MODES.filter(m => !m.adminOnly || isAdmin);
+    const pinned = PINNED.map(id => list.find(m => m.id === id)).filter(Boolean);
+    const rest = list.filter(m => !PINNED.includes(m.id));
     const weight = (m) => {
       const b = modeBadges[m.id] || 0;
       if (b > 0) return 100 + Math.min(b, 99);
       if (m.id === 'plan' && hour < 11) return 60;
-      if (m.id === 'prospect' && hour >= 9 && hour < 15) return 40;
       if (m.id === 'deals' && hour >= 10 && hour < 18) return 38;
       if (m.id === 'money' && hour >= 15) return 30;
       return 10;
     };
-    return [...list].sort((a, b) => weight(b) - weight(a));
+    return [...pinned, ...rest.sort((a, b) => weight(b) - weight(a))];
   }, [isAdmin, modeBadges]);
   return (
     <>

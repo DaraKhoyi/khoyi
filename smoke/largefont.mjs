@@ -179,7 +179,10 @@ try {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
   }
-  await page.evaluate(() => document.querySelectorAll('.modal-overlay').forEach(n => n.remove()));
+  // Hide it with CSS, never remove the nodes: ripping React-owned nodes out of
+  // the DOM makes React crash later on insertBefore, which looks exactly like a
+  // product bug and is not one.
+  await page.addStyleTag({ content: '.modal-overlay{display:none !important;}' });
   await page.waitForTimeout(300);
   await page.click('button:has-text("New Listing Presentation")');
   await page.waitForTimeout(1200);

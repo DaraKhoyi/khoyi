@@ -55,17 +55,28 @@ export const MODES = [
     glyph: 'target',
     accent: '#C98A5E',
     home: 'prospecting',
-    // The prospecting mindset lives almost entirely inside ProspectingView, which
-    // has its own sub-tabs. The bar deep-links into them so "Systems" opens the
-    // LEAD-GEN LIBRARY (browse + activate the 85 systems) — NOT the infrastructure
-    // health monitor, which is a different screen entirely.
+    // Six sections, one complete hunt loop, left to right:
+    //   pick a system -> work it today -> know what to say -> present -> see
+    //   what paid -> steer the quarter.
+    // Today / Systems / ROI deep-link into ProspectingView's own sub-tabs; the
+    // page hides its internal pill row when this bar is driving it, so there is
+    // never a second tab strip stacked on the same screen.
+    // Recruiting moved OUT to Brokerage - hiring agents is running the business,
+    // not hunting client work, and mixing the two is what made the old menu a pile.
     bar: [
-      { view: 'prospecting', sub: 'today', label: 'Today', glyph: 'target' },
-      { view: 'prospecting', sub: 'library', label: 'Systems', glyph: 'gear' },
+      // Six distinct glyphs on purpose. ROI and Growth both wanted the rising
+      // line; two identical icons in one bar is a bar you have to read.
+      { view: 'prospecting', sub: 'today',   label: 'Today',   glyph: 'target' },
+      { view: 'prospecting', sub: 'library', label: 'Systems', glyph: 'library' },
+      { view: 'prospecting', sub: 'roi',     label: 'ROI',     glyph: 'coin' },
+      { view: 'playbooks', label: 'Scripts', glyph: 'book' },
+      { view: 'listing_presentation', label: 'Present', glyph: 'doc' },
       { view: 'growth', label: 'Growth', glyph: 'up' },
-      { view: 'recruiting', label: 'Recruit', glyph: 'people' },
     ],
-    views: ['prospecting', 'systems', 'growth', 'recruiting', 'playbooks'],
+    // listing_presentation belonged to NO room, so it showed no bottom bar at
+    // all - the same gap Calendar and Tasks had. It is the screen where a seller
+    // lead becomes a listing, so it belongs in the hunting room.
+    views: ['prospecting', 'playbooks', 'listing_presentation', 'growth'],
   },
   {
     id: 'deals',
@@ -98,8 +109,12 @@ export const MODES = [
     accent: '#B98BC9',
     adminOnly: true,
     home: 'agents',
-    bar: ['agents', 'agent_activity', 'app_health', 'announcements'],
-    views: ['agents', 'agent_activity', 'app_health', 'announcements', 'teams', 'group_message', 'agentruns'],
+    // Recruiting lives here now: growing the roster is a brokerage job.
+    bar: ['agents', 'recruiting', 'agent_activity', 'app_health', 'announcements'],
+    // 'systems' is the INFRASTRUCTURE health monitor (Online / Degraded /
+    // Offline) - it was filed under Prospect, where an ops screen inherited the
+    // hunting bar. It is an operations tool, so it sits beside app_health.
+    views: ['agents', 'recruiting', 'agent_activity', 'app_health', 'announcements', 'teams', 'group_message', 'agentruns', 'systems'],
   },
 ];
 
@@ -123,6 +138,7 @@ export const VIEW_META = {
   growth:     { label: 'Growth',   glyph: 'up' },
   recruiting: { label: 'Recruit',  glyph: 'people' },
   playbooks:  { label: 'Scripts',  glyph: 'book' },
+  listing_presentation: { label: 'Present', glyph: 'doc' },
   pipeline:   { label: 'Pipeline', glyph: 'flow' },
   deals:      { label: 'Deals',    glyph: 'flow' },
   files:      { label: 'Files',    glyph: 'doc' },
