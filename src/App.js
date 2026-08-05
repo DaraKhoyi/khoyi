@@ -183,13 +183,19 @@ function MenuNode({ node, depth, ctx }) {
     : hasChildren ? menuDescendantBuilt(node, builtSet)
     : (leafView ? builtSet.has(leafView) : isAction ? true : false);
   const open = hasChildren && openPath[depth] === node._key;
-  const active = leafView === view && !hasChildren && !node.sub;
+  const active = leafView === view && !node.sub;
   const clickable = (built && leafView) || hasChildren || isAction;
+  // A node can be BOTH a destination and a parent (e.g. Ask Ari, which opens Ari
+  // yet also holds Listing Presentation). In that case the label navigates and the
+  // chevron expands — navigate() closes the menu, so firing both on one click would
+  // make the children unreachable. Pure groups (no view) toggle on the whole row.
+  const navigable = built && leafView;
   const handleClick = () => {
     if (isAction) { node.action(); return; }
-    if (built && leafView) navigate(leafView, node.sub || null);
+    if (navigable) { navigate(leafView, node.sub || null); return; }
     if (hasChildren) toggle(depth, node._key);
   };
+  const toggleOpen = (e) => { e.stopPropagation(); toggle(depth, node._key); };
   const indent = 14;
   return (
     <>
@@ -206,7 +212,7 @@ function MenuNode({ node, depth, ctx }) {
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}{node.ai && built && <AiMark />}</span>
         {!built && !hasChildren && <span style={{ fontSize: '8.5px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>soon</span>}
         {depth === 0 && leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-badge">{byNavId[leafView].badge}</span> : null}
-        {hasChildren && <span style={{ marginLeft: '6px', fontSize: depth === 0 ? '17px' : '15px', lineHeight: 1, color: 'var(--accent)', opacity: 0.9, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>▸</span>}
+        {hasChildren && <span onClick={navigable ? toggleOpen : undefined} style={{ marginLeft: '6px', fontSize: depth === 0 ? '17px' : '15px', lineHeight: 1, color: 'var(--accent)', opacity: 0.9, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, cursor: 'pointer', padding: navigable ? '4px 6px' : '0', margin: navigable ? '-4px 0 -4px 2px' : '0 0 0 6px' }}>▸</span>}
       </div>
       {hasChildren && open && (
         <div style={{ margin: depth === 0 ? '4px 10px 10px 34px' : '4px 8px 8px 24px', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderLeft: '3px solid var(--accent)', borderRadius: '12px', boxShadow: '0 16px 42px -14px rgba(0,0,0,0.75)', overflow: 'hidden', padding: '5px 0' }}>
@@ -19072,20 +19078,25 @@ function AppMain() {
     // 'contacts' would look identical here and silently throw that away.
     { label: 'My World', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
-    { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
-    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
-    { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
-    { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
-    { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
+    // ── Planning — the daily-drivers grouped: what to do, when, and with whom ──
+    { label: 'Planning', icon: 'calendar', children: [
+      { label: 'Tasks', view: 'tasks', icon: 'tasks' },
+      { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
+      { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
+      { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
+      { label: 'My Stats', view: 'numbers', icon: 'chart' },
+    ] },
     { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
     { label: 'Phone & Text', view: 'quo', icon: 'quo', ai: true },
     { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
     { label: 'Library', view: 'notes', icon: 'notes', ai: true },
     { label: 'Finance Dashboard', view: 'finance', icon: 'dollar' },
     { label: 'Mileage', view: 'mileage', icon: 'car' },
-    { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true },
-    { label: 'My Stats', view: 'numbers', icon: 'chart' },
+    // Ask Ari, with Listing Presentation nested beneath it.
+    { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true, children: [
+      { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
+    ] },
     // ── AI Agents ──
     { label: 'AI Agents', icon: 'sparkles', ai: true, children: [
       { label: 'Chief of Staff', view: 'chief', icon: 'briefing' },

@@ -56,7 +56,7 @@ export const MODES = [
   },
   {
     id: 'prospect',
-    label: 'Prospect',
+    label: 'Prospecting',
     tag: 'Find new business',
     glyph: 'target',
     accent: '#C98A5E',
