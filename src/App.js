@@ -19078,7 +19078,6 @@ function AppMain() {
     // 'contacts' would look identical here and silently throw that away.
     { label: 'My World', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
-    { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     // ── Planning — the daily-drivers grouped: what to do, when, and with whom ──
     { label: 'Planning', icon: 'calendar', children: [
       { label: 'Tasks', view: 'tasks', icon: 'tasks' },
@@ -19097,6 +19096,7 @@ function AppMain() {
     { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true, children: [
       { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
     ] },
+    { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     // ── AI Agents ──
     { label: 'AI Agents', icon: 'sparkles', ai: true, children: [
       { label: 'Chief of Staff', view: 'chief', icon: 'briefing' },
