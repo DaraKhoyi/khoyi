@@ -41,6 +41,23 @@ const PROBE = `(() => {
 
   const clipped = [];
   const collisions = [];
+  const escaped = [];
+
+  // Is this element inside something that legitimately puts content off-screen?
+  //   - a horizontal scroller (overflow-x auto/scroll) — carousels, chip rows
+  //   - a transformed ancestor — the mindset panel parks at translateX(-102%)
+  //   - a clipping ancestor that is itself off-screen
+  // Walking ancestors is what keeps this check from crying wolf, which is the
+  // only reason it is safe to add at all.
+  const parkedOffscreen = (el) => {
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (cs.overflowX === 'auto' || cs.overflowX === 'scroll') return true;
+      if (cs.transform && cs.transform !== 'none') return true;
+      if (cs.position === 'fixed' || cs.position === 'absolute') return true;
+    }
+    return false;
+  };
 
   for (const el of document.querySelectorAll('body *')) {
     if (!vis(el)) continue;
@@ -54,6 +71,22 @@ const PROBE = `(() => {
         cs.overflowX !== 'auto' && cs.overflowX !== 'scroll' &&
         el.scrollWidth > el.clientWidth + 2) {
       clipped.push({ tag: el.tagName.toLowerCase(), cls: (el.className || '').toString().slice(0, 40), text: ownText(el).slice(0, 46) });
+    }
+
+    // ESCAPED: the box extends past the right edge of the screen. When an
+    // ancestor has overflow-x:hidden this does NOT widen the document, so
+    // docOverflow stays 0 and the content is simply cut off with no scrollbar
+    // and no warning — invisible to every other check here. Found the hard way:
+    // a 900px div in a 390px viewport was reported clean.
+    if (ownText(el) &&
+        cs.position !== 'fixed' && cs.position !== 'absolute' &&
+        cs.transform === 'none' &&
+        !parkedOffscreen(el)) {
+      const r = el.getBoundingClientRect();
+      const over = Math.round(r.right - document.documentElement.clientWidth);
+      if (over > 8) {
+        escaped.push({ tag: el.tagName.toLowerCase(), cls: (el.className || '').toString().slice(0, 40), text: ownText(el).slice(0, 40), over });
+      }
     }
   }
 
@@ -104,6 +137,8 @@ const PROBE = `(() => {
     clippedTotal: clipped.length,
     collisions: collisions.slice(0, 8),
     collisionsTotal: collisions.length,
+    escaped: escaped.slice(0, 8),
+    escapedTotal: escaped.length,
   };
 })()`;
 
@@ -148,7 +183,7 @@ async function settle(page, { maxMs = 6000, step = 350 } = {}) {
 async function measure(page) {
   await settle(page);
   let r = await page.evaluate(PROBE);
-  const badNow = (x) => x.docOverflow > 2 || x.clippedTotal || x.collisionsTotal;
+  const badNow = (x) => x.docOverflow > 2 || x.clippedTotal || x.collisionsTotal || x.escapedTotal;
   if (!badNow(r)) return { r, confirmed: false };
   const first = r;
   await settle(page, { maxMs: 4000 });
@@ -183,11 +218,13 @@ for (const view of VIEWS) {
     if (r.docOverflow > 2) problems.push(`h-overflow ${r.docOverflow}px`);
     if (r.clippedTotal) problems.push(`${r.clippedTotal} clipped`);
     if (r.collisionsTotal) problems.push(`${r.collisionsTotal} overlapping`);
+    if (r.escapedTotal) problems.push(`${r.escapedTotal} off-screen`);
     if (problems.length) {
       bad++;
       console.log(`✗ ${view.padEnd(14)} ${problems.join(', ')}`);
       for (const c of r.clipped) console.log(`      clipped: "${c.text}"  <${c.tag} class="${c.cls}">`);
       for (const c of r.collisions) console.log(`      overlap: "${c.a}" ↔ "${c.b}"  (${c.overlap}px)`);
+    for (const c of (r.escaped || [])) console.log(`      off-screen by ${c.over}px: "${c.text}"  <${c.tag} class="${c.cls}">`);
     } else {
       console.log(`✓ ${view.padEnd(14)} clean`);
     }
@@ -213,11 +250,13 @@ const probeStep = async (name) => {
   if (r.docOverflow > 2) problems.push(`h-overflow ${r.docOverflow}px`);
   if (r.clippedTotal) problems.push(`${r.clippedTotal} clipped`);
   if (r.collisionsTotal) problems.push(`${r.collisionsTotal} overlapping`);
+  if (r.escapedTotal) problems.push(`${r.escapedTotal} off-screen`);
   if (problems.length) {
     extra++;
     console.log(`✗ ${name.padEnd(14)} ${problems.join(', ')}`);
     for (const c of r.clipped) console.log(`      clipped: "${c.text}"  <${c.tag} class="${c.cls}">`);
     for (const c of r.collisions) console.log(`      overlap: "${c.a}" ↔ "${c.b}"  (${c.overlap}px)`);
+    for (const c of (r.escaped || [])) console.log(`      off-screen by ${c.over}px: "${c.text}"  <${c.tag} class="${c.cls}">`);
   } else {
     console.log(`✓ ${name.padEnd(14)} clean`);
   }

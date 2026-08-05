@@ -34,6 +34,26 @@ function record(device, feature, ok, detail, soft = false) {
   console.log(`  ${tag} [${device}] ${feature}${detail ? ' — ' + detail : ''}`);
 }
 
+
+// page.evaluate() has NO default timeout: if a view wedges the main thread, the
+// promise never settles and the whole run hangs with no output — which is what
+// the tablet pass did, silently, for twenty minutes. One bad view must never be
+// able to cost us the other forty checks. Time-box every probe, and reload to
+// get a clean execution context before carrying on.
+const withTimeout = (promise, ms, tag) => Promise.race([
+  promise,
+  new Promise((_, rej) => setTimeout(() => rej(new Error(`timed out after ${ms}ms (${tag})`)), ms)),
+]);
+
+async function recoverPage(page) {
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForFunction(() => typeof window.__setView === 'function', { timeout: 30000 });
+    await page.waitForTimeout(1500);
+    return true;
+  } catch (_) { return false; }
+}
+
 async function login(page) {
   await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForSelector('input[type="email"]', { timeout: 20000 });
@@ -143,7 +163,7 @@ for (const dev of want) {
   ];
   for (const [view, label] of ROOMS) {
     try {
-      const res = await page.evaluate(async (v) => {
+      const res = await withTimeout(page.evaluate(async (v) => {
         if (window.__setView) window.__setView(v);
         await new Promise(r => setTimeout(r, 1100));
         const txt = document.body.innerText || '';
@@ -152,10 +172,16 @@ for (const dev of want) {
           // a real view has meaningful text; a blank shell is < ~40 chars of content
           contentLen: txt.replace(/\s+/g, ' ').trim().length,
         };
-      }, view);
+      }, view), 20000, view);
       const ok = !res.crash && res.contentLen > 40;
       record(dev, `Room: ${label}`, ok, res.crash ? 'ERROR BOUNDARY' : (res.contentLen <= 40 ? 'blank shell' : ''));
-    } catch (e) { record(dev, `Room: ${label}`, false, String(e).slice(0, 50)); }
+    } catch (e) {
+      const msg = String(e.message || e);
+      // A view that stops answering is a real finding, not a harness excuse —
+      // record it, then recover so the remaining checks still run.
+      record(dev, `Room: ${label}`, false, msg.includes('timed out') ? 'view stopped responding (20s)' : msg.slice(0, 50));
+      if (msg.includes('timed out')) await recoverPage(page);
+    }
   }
 
   if (SHOTS) { try { await page.screenshot({ path: `/tmp/func-${dev}.png` }); } catch(_){} }
