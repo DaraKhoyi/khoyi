@@ -60,3 +60,17 @@ supabase.functions.invoke = async (name, options) => {
     throw err;
   }
 };
+
+// Same guard for supabase.rpc(). RPCs like contact_production read auth.uid()
+// server-side; a stale iOS token makes auth.uid() null, so a broker silently
+// looks like a nobody (e.g. the production card returns linked:false and renders
+// blank). Freshening the token first fixes it everywhere rpc() is called without
+// touching a single call site. Mirrors the functions.invoke wrapper above.
+const _rpc = supabase.rpc.bind(supabase);
+supabase.rpc = (fn, params, opts) => {
+  // rpc() returns a thenable PostgrestBuilder (not a plain promise), so we can't
+  // simply await inside. Refresh first, then delegate and forward the builder's
+  // result. Callers still `await supabase.rpc(...)` exactly as before.
+  const p = ensureFreshSession().catch(() => false).then(() => _rpc(fn, params, opts));
+  return p;
+};

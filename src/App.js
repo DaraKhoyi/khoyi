@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, SUPABASE_URL } from './dataService';
+import { supabase, SUPABASE_URL, ensureFreshSession } from './dataService';
 import { useConnectionHealth } from './connection';
 import { useNbaSkips, SnoozeMenu } from './nbaSkips';
 import * as tus from 'tus-js-client';
@@ -18631,6 +18631,39 @@ function AppMain() {
     })();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => subscription.unsubscribe();
+  }, []);
+
+  // iOS wake recovery. A backgrounded Safari/PWA tab freezes its refresh timer,
+  // so the app can wake with an EXPIRED access token. Until it refreshes, every
+  // authenticated request sends a stale bearer: RPCs see auth.uid()=null (a broker
+  // silently looks like a nobody, so the production card renders blank) and edge
+  // calls 401 with nothing to show — which reads to the user as a "lock-up." On
+  // every return to foreground we proactively freshen the token, then re-sync the
+  // React session so anything gated on it re-renders with real data. Debounced so
+  // rapid focus/visibility churn can't stack refreshes.
+  useEffect(() => {
+    let busy = false, last = 0;
+    const wake = async () => {
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (busy || now - last < 4000) return;  // debounce
+      busy = true; last = now;
+      try {
+        await ensureFreshSession();
+        const { data: { session: fresh } } = await supabase.auth.getSession();
+        if (fresh) setSession(fresh);
+      } catch (_) { /* offline / transient — connection layer handles the UI */ }
+      finally { busy = false; }
+    };
+    const onVis = () => { if (document.visibilityState === 'visible') wake(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', wake);
+    window.addEventListener('pageshow', wake);   // iOS bfcache restore
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('pageshow', wake);
+    };
   }, []);
 
   // Back-button guard. On mount we push a sentinel history entry; every hardware/

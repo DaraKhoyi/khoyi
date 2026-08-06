@@ -109,7 +109,15 @@ export default function AgentProduction({ contactId, canEdit = false }) {
   const load = useCallback(async () => {
     if (!contactId) return;
     setLoading(true);
-    const { data, error } = await supabase.rpc('contact_production', { p_contact_id: contactId });
+    // One retry: on a cold iOS wake the very first call can still race the token
+    // refresh and come back empty/errored. A single short retry turns a blank
+    // card into a populated one without a visible flicker.
+    let data = null, error = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      ({ data, error } = await supabase.rpc('contact_production', { p_contact_id: contactId }));
+      if (!error && data && (data.linked || data.restricted)) break;
+      if (attempt === 0) await new Promise(r => setTimeout(r, 600));
+    }
     setLoading(false);
     if (error) { setP(null); return; }
     setP(data || null);
