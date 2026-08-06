@@ -45,7 +45,7 @@ export default function GroupMessageView({ contacts = [], profiles = [], userId 
   );
 
   return (
-    <div style={{ maxWidth: 780, margin: '0 auto', paddingBottom: 96 }}>
+    <div style={{ maxWidth: 780, margin: '0 auto', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 160px)' }}>
       <div style={{ marginBottom: 14 }}>
         <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9 }}><span>✨</span> Group message</h2>
         <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3, lineHeight: 1.5 }}>Pick a group. Write your message once. Each person receives a version tuned to their behavioral style — in your voice, with their name.</div>
@@ -114,8 +114,9 @@ export default function GroupMessageView({ contacts = [], profiles = [], userId 
         })}
       </div>
 
-      {/* Sticky action bar */}
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: '12px 16px calc(env(safe-area-inset-bottom, 0px) + 12px)', background: 'linear-gradient(180deg, transparent, var(--bg-base) 34%)', display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 40 }}>
+      {/* Sticky action bar — sits ABOVE the bottom tab bar (which is ~70px tall),
+          so the "Draft" button is reachable and not hidden behind the nav. */}
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)', padding: '12px 16px', background: 'linear-gradient(180deg, transparent, var(--bg-base) 34%)', display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 60 }}>
         <button disabled={selectedContacts.length === 0} onClick={() => setComposing(true)}
           style={{ pointerEvents: 'auto', maxWidth: 780, width: '100%', padding: '14px', borderRadius: 13, border: 'none', cursor: selectedContacts.length ? 'pointer' : 'default', fontSize: 15, fontWeight: 800, background: selectedContacts.length ? GOLD : 'var(--bg-card)', color: selectedContacts.length ? '#0d0f14' : 'var(--text-3)', boxShadow: selectedContacts.length ? '0 8px 26px -8px rgba(197,169,94,.6)' : 'none', transition: 'all .15s' }}>
           {selectedContacts.length ? `Draft ${channel === 'email' ? 'emails' : 'texts'} for ${selectedContacts.length} →` : 'Select people to message'}
