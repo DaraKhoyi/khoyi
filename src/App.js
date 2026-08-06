@@ -129,6 +129,7 @@ const AppHealthView = lazyWithReload(() => import('./views/AppHealthView'));
 const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m => ({ default: m.GrowthView })));
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const ListingPresentationView = lazyWithReload(() => import('./views/ListingPresentationView'));
+const AgentProduction = lazyWithReload(() => import('./views/AgentProduction'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
 const CalendarView = lazyWithReload(() => import('./views/CalendarView'));
 const InboxView = lazyWithReload(() => import('./views/InboxView'));
@@ -9573,6 +9574,11 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
 
         <div style={{flex:1,minHeight:0,overflowY:'auto',overflowX:'hidden',paddingRight:'4px',paddingBottom:'120px'}}>
           {tab==='overview' && (<>
+          {/* Production sits at the TOP of an agent's record on purpose: when you
+              open a producer, their numbers are the context for everything else
+              on the page. It renders nothing for non-agents and for agents with
+              no transactions, so it costs other contacts nothing. */}
+          <AgentProduction contactId={contact.id} canEdit={true} />
           <ContactKnowledge contactId={contact.id} />
           <PrepLeadButton contactId={contact.id} />
           {profile && (profile.primary_letter || hasBaseline) && (() => {
