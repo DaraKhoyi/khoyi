@@ -47,27 +47,44 @@ function Tile({ label, value, sub, accent, gold, broker }) {
   );
 }
 
-// A goal line with a pace notch: bar = progress, notch = where the calendar says
-// you should be today. Progress alone can't answer "am I on track" — the notch can.
-function GoalBar({ label, valueNode, goalNode, onTrack, progress, elapsed, foot, gold }) {
+// The GOAL HERO — the emotional centre of the card. Each goal gets a big
+// moving-gold headline (current pace toward target), a glowing gold track with a
+// pace notch (where the calendar says you should be today), and an honest
+// on-track / behind read. BOTH goals carry the moving gold — this is the thing an
+// agent should feel every time they open their record.
+function GoalHero({ label, currentNode, goalNode, unit, onTrack, progress, elapsed, projNode, footLeft }) {
+  const railGrad = `linear-gradient(90deg, ${DEEP}, ${G} 40%, ${CHAMP} 70%, ${G})`;
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ ...tileLab, color: G, fontSize: 10.5 }}>{label}</span>
-          {valueNode} <span style={{ opacity: .6 }}>of</span> {goalNode}
-        </div>
-        <div style={{ fontSize: 12, fontWeight: 800, color: onTrack ? GREEN : RED }}>
-          {onTrack ? '\u2713 On track' : 'Behind pace'}
-        </div>
+    <div style={{
+      position: 'relative', borderRadius: 14, padding: '15px 16px 14px',
+      background: 'linear-gradient(180deg, rgba(203,163,92,.09), rgba(203,163,92,.02))',
+      border: '1px solid rgba(203,163,92,.3)', overflow: 'hidden',
+    }}>
+      <div aria-hidden style={{ position: 'absolute', top: -40, right: -30, width: 150, height: 150, borderRadius: '50%', background: 'radial-gradient(circle, rgba(235,203,130,.14), transparent 70%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+        <span className="gold-move" style={{ fontFamily: 'Barlow Condensed,sans-serif', fontWeight: 700, letterSpacing: '.16em', textTransform: 'uppercase', fontSize: 11.5 }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.02em', color: onTrack ? GREEN : RED, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: onTrack ? GREEN : RED, boxShadow: `0 0 6px ${onTrack ? GREEN : RED}` }} />
+          {onTrack ? 'On track' : 'Behind pace'}
+        </span>
       </div>
-      <div style={{ position: 'relative', height: 10, borderRadius: 999, background: 'var(--bg-base)', border: '1px solid var(--border)', marginTop: 8, overflow: 'hidden' }}>
-        <div style={{ width: progress + '%', height: '100%', background: `linear-gradient(90deg, ${G}, ${CHAMP})`, backgroundSize: '200% auto', animation: gold ? 'goldGlide 6s linear infinite' : 'none', transition: 'width .5s ease' }} />
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
+        <span className="gold-move" style={{ fontFamily: 'Fraunces,serif', fontWeight: 300, fontSize: 34, lineHeight: 1, letterSpacing: '-.01em' }}>{currentNode}</span>
+        <span style={{ fontSize: 13, color: 'var(--text-3)' }}>of</span>
+        <span style={{ fontFamily: 'Fraunces,serif', fontWeight: 300, fontSize: 20, color: 'var(--text-1)', lineHeight: 1 }}>{goalNode}</span>
+        {unit ? <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{unit}</span> : null}
+        <span style={{ marginLeft: 'auto', fontFamily: 'Fraunces,serif', fontSize: 20, fontWeight: 300, color: onTrack ? GREEN : G }}>{progress}%</span>
       </div>
-      <div style={{ position: 'relative', height: 12, marginTop: -11 }}>
-        <div title="where the year is today" style={{ position: 'absolute', left: `calc(${elapsed}% - 1px)`, top: -1, width: 2, height: 12, background: onTrack ? GREEN : RED, borderRadius: 1 }} />
+      <div style={{ position: 'relative', height: 12, borderRadius: 999, background: 'rgba(0,0,0,.28)', border: '1px solid rgba(203,163,92,.18)', marginTop: 11, overflow: 'hidden' }}>
+        <div style={{ width: Math.max(progress, 1.5) + '%', height: '100%', borderRadius: 999, background: railGrad, backgroundSize: '220% auto', animation: 'goldGlide 6s linear infinite', boxShadow: '0 0 10px rgba(235,203,130,.4)' }} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text-3)', marginTop: 4 }}>{foot}</div>
+      <div style={{ position: 'relative', height: 14, marginTop: -13 }}>
+        <div title="where the year is today" style={{ position: 'absolute', left: `calc(${elapsed}% - 1px)`, top: -1, width: 2, height: 14, background: 'var(--text-1)', opacity: .85, borderRadius: 1, boxShadow: '0 0 3px rgba(0,0,0,.6)' }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text-3)', marginTop: 5, gap: 8 }}>
+        <span>{footLeft}</span>
+        <span>projecting <b style={{ color: onTrack ? GREEN : 'var(--text-2)', fontWeight: 700 }}>{projNode}</b></span>
+      </div>
     </div>
   );
 }
@@ -160,21 +177,21 @@ export default function AgentProduction({ contactId, canEdit = false }) {
         </div>
       )}
 
-      {/* ── GOALS + PACE — GCI goal carries the moving gold ── */}
-      <div style={{ marginTop: 14, paddingTop: 13, borderTop: '1px solid var(--border)', display: 'grid', gap: 16 }}>
+      {/* ── GOALS + PACE — BOTH goals carry the moving gold; this is the hero ── */}
+      <div style={{ marginTop: 14, paddingTop: 13, borderTop: '1px solid var(--border)', display: 'grid', gap: 12 }}>
         {gciGoal ? (
-          <GoalBar label="GCI Goal" gold
-            valueNode={<b className="gold-move" style={{ fontFamily: 'Fraunces,serif' }}>{compact(y.gci)}</b>}
-            goalNode={<b style={{ color: 'var(--text-1)' }}>{compact(gciGoal)}</b>}
+          <GoalHero label="GCI Goal"
+            currentNode={compact(y.gci)} goalNode={compact(gciGoal)}
             onTrack={g.gci_on_track} progress={gciProg} elapsed={elapsed}
-            foot={<><span>{gciProg}% of goal {'\u00B7'} {elapsed}% of year gone</span><span>projecting {compact(g.gci_projected)}</span></>} />
+            projNode={compact(g.gci_projected)}
+            footLeft={<>{elapsed}% of year elapsed</>} />
         ) : null}
         {salesGoal ? (
-          <GoalBar label="Sales Goal"
-            valueNode={<b style={{ color: 'var(--text-1)', fontFamily: 'Fraunces,serif' }}>{num(y.sales)}</b>}
-            goalNode={<b style={{ color: 'var(--text-1)' }}>{num(salesGoal)}</b>}
+          <GoalHero label="Sales Goal"
+            currentNode={num(y.sales)} goalNode={num(salesGoal)} unit="closings"
             onTrack={g.sales_on_track} progress={salesProg} elapsed={elapsed}
-            foot={<><span>{salesProg}% of goal {'\u00B7'} {num(y.sales)}/{num(salesGoal)} closings</span><span>projecting {num(g.sales_projected)}</span></>} />
+            projNode={num(g.sales_projected)}
+            footLeft={<>{num(y.sales)} of {num(salesGoal)} closings</>} />
         ) : null}
 
         {!hasGoals && !editing && (
