@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { supabase } from '../dataService';
+import { supabase, SUPABASE_URL } from '../dataService';
 
 // ── CallDetail ───────────────────────────────────────────────────────────────
 // A recorded call used to land in the timeline as 3,908 characters of
@@ -76,10 +76,17 @@ export default function CallDetail({ callId, contactName, onClose }) {
       // Streamed through call-audio so the Google token never reaches the
       // browser and nobody but the owner can pull a client's recorded call.
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${supabase.supabaseUrl}/functions/v1/call-audio?call_id=${encodeURIComponent(callId)}`,
-        { headers: { Authorization: `Bearer ${session?.access_token}` } }
-      );
+      // Guard the fetch with a timeout: on a flaky mobile connection a bare
+      // fetch can hang forever, leaving the spinner stuck (reads as a lock-up).
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      let res;
+      try {
+        res = await fetch(
+          `${SUPABASE_URL}/functions/v1/call-audio?call_id=${encodeURIComponent(callId)}`,
+          { headers: { Authorization: `Bearer ${session?.access_token}` }, signal: ctrl.signal }
+        );
+      } finally { clearTimeout(timer); }
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
       const blob = await res.blob();
       const u = URL.createObjectURL(blob);
