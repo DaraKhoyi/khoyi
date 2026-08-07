@@ -29,6 +29,7 @@ const want = (process.env.FUNC_DEVICES || 'iphone,android,tablet,desktop').split
 
 const results = [];
 function record(device, feature, ok, detail, soft = false) {
+  lastProgress = Date.now(); lastLabel = `${device} / ${feature}`;   // watchdog heartbeat
   results.push({ device, feature, ok, detail: detail || '', soft });
   const tag = ok ? '✓' : (soft ? '⚠' : '✗');
   console.log(`  ${tag} [${device}] ${feature}${detail ? ' — ' + detail : ''}`);
@@ -44,6 +45,27 @@ const withTimeout = (promise, ms, tag) => Promise.race([
   promise,
   new Promise((_, rej) => setTimeout(() => rej(new Error(`timed out after ${ms}ms (${tag})`)), ms)),
 ]);
+
+// Every page.evaluate in this file must be time-boxed, not just the room probes.
+// The 6 Aug hangs were NOT in the room loop -- that was already guarded -- so the
+// fix has to be structural rather than another patch on one call site.
+const ev = (page, fn, arg) => withTimeout(page.evaluate(fn, arg), 20000, 'evaluate');
+
+// Last line of defence. Locator calls respect setDefaultTimeout and evaluates go
+// through ev(), but anything either of those misses would still hang forever with
+// a silent log, which is exactly what a quiet gate looked like all day. If no
+// check has been recorded for a few minutes the run is wedged: say where, print
+// what we have, and fail fast. A gate that hangs is worse than one that fails,
+// because a hang blocks BOTH deploy paths and tells you nothing.
+let lastProgress = Date.now();
+let lastLabel = 'startup';
+const WATCHDOG_MS = Number(process.env.FUNC_WATCHDOG_MS || 240000);
+const watchdog = setInterval(() => {
+  if (Date.now() - lastProgress < WATCHDOG_MS) return;
+  console.log(`\n==== WEDGED: no progress for ${Math.round((Date.now()-lastProgress)/1000)}s after "${lastLabel}" ====`);
+  console.log(`${results.filter(r => r.ok).length}/${results.length} checks passed before the hang.`);
+  process.exit(1);
+}, 15000).unref?.() ?? null;
 
 async function recoverPage(page) {
   try {
@@ -77,6 +99,11 @@ for (const dev of want) {
     userAgent: `Mozilla/5.0 (${cfg.ua}) FunctionalTest`,
   });
   const page = await ctx.newPage();
+  // Locator and navigation calls get a hard ceiling. Playwright's default is 30s
+  // for some and INFINITE for others; relying on the default is what let a single
+  // wedged view swallow the whole run.
+  page.setDefaultTimeout(20000);
+  page.setDefaultNavigationTimeout(30000);
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String((e && e.message) || e)));
 
@@ -91,15 +118,15 @@ for (const dev of want) {
 
   // ---- FEATURE: navigate to Contacts and confirm it renders real content ----
   try {
-    await page.evaluate(() => window.__setView && window.__setView('contacts'));
+    await ev(page, () => window.__setView && window.__setView('contacts'));
     await page.waitForTimeout(1500);
-    const boundary = await page.evaluate(() => document.body.innerText.includes('This view ran into an error'));
+    const boundary = await ev(page, () => document.body.innerText.includes('This view ran into an error'));
     record(dev, 'Contacts view', !boundary, boundary ? 'ERROR BOUNDARY' : '');
   } catch (e) { record(dev, 'Contacts view', false, String(e).slice(0,60)); }
 
   // ---- FEATURE: the Save button on new-contact is reachable (the iOS bug) ----
   try {
-    const reachable = await page.evaluate(async () => {
+    const reachable = await ev(page, async () => {
       // Ensure Contacts is mounted so it registers __openNewContact, then wait
       // for the hook — running before the view mounts was the real flakiness.
       if (window.__setView) window.__setView('contacts');
@@ -190,7 +217,7 @@ for (const dev of want) {
   // The string-where-an-array-was-expected crash (v1.04.87) took down the whole
   // Insights tab. Open the first contact's detail and confirm no error boundary.
   try {
-    const crashed = await page.evaluate(async () => {
+    const crashed = await ev(page, async () => {
       // open contacts list, click first contact row if present
       if (window.__setView) window.__setView('contacts');
       await new Promise(r => setTimeout(r, 1200));
@@ -206,7 +233,7 @@ for (const dev of want) {
   // has no server to fail loudly; it just silently lands you in the wrong place.
   // Drives the real menu row so enterMode() is exercised, not a stub.
   try {
-    const r = await page.evaluate(async () => {
+    const r = await ev(page, async () => {
       const sleep = ms => new Promise(res => setTimeout(res, ms));
       const spotKeys = () => Object.keys(localStorage).filter(k => k.startsWith('prism.room.spot.'));
       const enter = async (label) => {
@@ -256,6 +283,7 @@ for (const dev of want) {
 }
 
 await browser.close();
+if (watchdog) clearInterval(watchdog);
 
 const failed = results.filter(r => !r.ok && !r.soft);
 const softFailed = results.filter(r => !r.ok && r.soft);
