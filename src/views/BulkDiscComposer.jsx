@@ -56,6 +56,8 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
   const [base, setBase] = useState('');
   const [baseSubject, setBaseSubject] = useState('');
   const [lockedLines, setLockedLines] = useState('');
+  const [attachments, setAttachments] = useState([]); // [{ filename, mime, content_base64, size }]
+  const [attachErr, setAttachErr] = useState('');
   const [step, setStep] = useState('compose'); // compose | review | sending | done
   const [gen, setGen] = useState(false);
   const [drafts, setDrafts] = useState({});
@@ -74,6 +76,33 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
     } catch (_) {}
   }
   const touchX = useRef(null);
+
+  // Attachments: read each picked file to base64 for gmail-send's multipart/mixed.
+  // Gmail caps a message at ~25MB; keep the total well under that.
+  const MAX_ATTACH_TOTAL = 20 * 1024 * 1024;
+  async function addFiles(fileList) {
+    setAttachErr('');
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    let running = attachments.reduce((n, a) => n + (a.size || 0), 0);
+    const next = [];
+    for (const f of files) {
+      if (running + f.size > MAX_ATTACH_TOTAL) { setAttachErr('Attachments must total under 20 MB.'); break; }
+      try {
+        const b64 = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result).split(',')[1] || '');
+          r.onerror = () => rej(new Error('read failed'));
+          r.readAsDataURL(f);
+        });
+        next.push({ filename: f.name, mime: f.type || 'application/octet-stream', content_base64: b64, size: f.size });
+        running += f.size;
+      } catch (_) { setAttachErr('Couldn’t read ' + f.name); }
+    }
+    if (next.length) setAttachments(a => [...a, ...next]);
+  }
+  const removeAttach = (i) => setAttachments(a => a.filter((_, j) => j !== i));
+  const fmtSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 
   const firstName = c => ((c.name || '').trim().split(/\s+/)[0]) || 'there';
   const personalize = (text, c) => (text || '').replace(/\{first[_\s]?name\}/gi, firstName(c)).replace(/\{name\}/gi, firstName(c));
@@ -138,7 +167,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
         if (isEmail) {
           const subject = personalize(d.subject, c) || '(no subject)';
           const extra = bId ? { track: true, variant: k, batch_id: bId, contact_id: c.id } : {};
-          const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', { body: { account_id: acc.id, to: c.email, subject, body_text: body, ...extra } });
+          const { data: sr, error: se } = await supabase.functions.invoke('gmail-send', { body: { account_id: acc.id, to: c.email, subject, body_text: body, ...(attachments.length ? { attachments } : {}), ...extra } });
           if (se) throw se; if (sr?.error) throw new Error(sr.error);
           await logSent(c, 'email', body, subject);
         } else {
@@ -199,6 +228,29 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
               <textarea value={lockedLines} onChange={e => setLockedLines(e.target.value)} rows={3} placeholder={"Your sign-off, a P.S. — Ari won't touch these.\ne.g. Thanks for being in this with me,\nDara"}
                 style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 13, lineHeight: 1.5, background: 'var(--bg-base)', border: '1px solid rgba(203,163,92,.3)', borderRadius: 10, color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
             </div>
+            {isEmail && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                    📎 Attach files
+                    <input type="file" multiple onChange={e => { addFiles(e.target.files); e.target.value = ''; }} style={{ display: 'none' }} />
+                  </label>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Same attachment(s) go to everyone.</span>
+                </div>
+                {attachErr && <div style={{ fontSize: 11.5, color: 'var(--red, #e0794f)', marginTop: 6 }}>{attachErr}</div>}
+                {attachments.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {attachments.map((a, i) => (
+                      <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 6px 4px 10px', borderRadius: 999, background: 'var(--bg-base)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-1)', maxWidth: 220 }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.filename}</span>
+                        <span style={{ color: 'var(--text-3)', flexShrink: 0 }}>{fmtSize(a.size)}</span>
+                        <button type="button" onClick={() => removeAttach(i)} aria-label={'Remove ' + a.filename} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
               <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
               <button className="btn btn-primary" disabled={!base.trim() || gen || eligible.length === 0} onClick={generate} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>

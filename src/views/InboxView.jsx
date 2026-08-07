@@ -3147,7 +3147,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               <div className="form-group">
                 <label className="form-label" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <span>To</span>
-                  {!showCcBcc && <button type="button" onClick={()=>setShowCcBcc(true)} className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px',color:'var(--accent)'}}>+ Cc/Bcc</button>}
+                  {!showCcBcc && <button type="button" onClick={()=>setShowCcBcc(true)} className="btn btn-ghost btn-sm" style={{padding:'4px 12px',fontSize:'12px',fontWeight:700,color:'var(--accent)',border:'1px solid var(--accent-dim, rgba(203,163,92,.4))',borderRadius:'999px'}}>+ Add Cc / Bcc</button>}
                 </label>
                 <RecipientPicker
                   value={composeTo}
