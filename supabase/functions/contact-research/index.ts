@@ -53,6 +53,28 @@ function buildResearchPrompt(candidate, contact, scope, me, disc) {
     ...socialLines,
   ].filter(Boolean).join("\n");
 
+  // What PrismOS already knows about the RELATIONSHIP, as opposed to the person.
+  // Section 5 is only worth reading if it is grounded in this; without it,
+  // "how to maintain" degenerates into a restatement of "how to build".
+  const knownSince = contact.created_at ? new Date(contact.created_at).toISOString().slice(0, 10) : null;
+  const lastComm = contact.last_communication_date
+    ? new Date(contact.last_communication_date).toISOString().slice(0, 10) : null;
+  const daysSince = lastComm
+    ? Math.floor((Date.now() - new Date(contact.last_communication_date).getTime()) / 86400000) : null;
+  const relFacts = [
+    contact.type ? `- Relationship type on file: ${contact.type}` : null,
+    knownSince ? `- In my contacts since: ${knownSince}` : null,
+    lastComm ? `- Last communication: ${lastComm} (${daysSince} days ago)${contact.last_communication_direction ? `, last message was ${contact.last_communication_direction === "inbound" ? "FROM them" : "FROM me"}` : ""}` : "- No logged communication yet",
+    contact.cadence_days ? `- Intended touch cadence: every ${contact.cadence_days} days` : null,
+    contact.birthday ? `- Birthday on file: ${contact.birthday}` : null,
+    contact.notes ? `- My notes on file: ${String(contact.notes).slice(0, 900)}` : null,
+  ].filter(Boolean).join("\n");
+
+  const relationshipBlock = `
+EXISTING RELATIONSHIP ON FILE (this is what I already know — use it, do not repeat it back to me as if it were a discovery):
+${relFacts}
+${daysSince != null && daysSince > 120 ? "NOTE: this relationship has gone quiet. Treat re-opening it as the first job, and make the re-open feel natural rather than apologetic." : ""}`;
+
   const scopeLine = scope === "personal"
     ? "Weight PERSONAL, publicly-shared sources (their own public social posts, community involvement, local press, alumni pages). Keep professional detail light."
     : scope === "business"
@@ -71,7 +93,7 @@ function buildResearchPrompt(candidate, contact, scope, me, disc) {
 
 SUBJECT ANCHORS (use these to confirm you have the RIGHT person):
 ${anchors}
-${meBlock}${discBlock}
+${meBlock}${discBlock}${relationshipBlock}
 
 RESEARCH SCOPE: ${scope.toUpperCase()}. ${scopeLine}
 
@@ -94,6 +116,19 @@ Communication style, what they emphasize, tempo and decision-making cues, how th
 
 ## 4. How to build a meaningful connection
 Specific conversation starters tied to real things they care about; topics to lean into and any to approach carefully; concrete ways I can add value to them (professionally or personally); thoughtful follow-up ideas after we meet. Tune to the behavioral read (decisive/analytical -> specifics + clear ask; relational/steady -> personal warmth, let them talk first).
+
+## 5. How best to maintain a relationship
+Assume I ALREADY know this person — this section is not about meeting them, it is about not losing them. Write it as a short, practical maintenance plan I could follow for the next twelve months. Ground it in the EXISTING RELATIONSHIP ON FILE above and in their behavioral read; if that section says the relationship has gone quiet, open with how to restart it without making it awkward.
+
+Cover:
+- **Rhythm** — how often to reach out, and say WHY that interval suits this particular person. A C personality resents noise; an I personality reads silence as disinterest. Give a concrete interval, not "stay in touch."
+- **Channel** — how they actually like to be reached (evidence-based, from how they communicate publicly), and what to never use for them.
+- **What a good touch looks like** — 3-4 specific, low-effort, non-transactional reasons to reach out that fit THIS person. Never "just checking in."
+- **Dates and moments that matter** — recurring things worth remembering (work anniversaries, seasonal business cycles, causes they show up for, events they attend annually). Only what is publicly evidenced or on file.
+- **What would damage it** — the specific ways someone like this quietly disengages, and the behaviours that would cause it.
+- **When to ask** — how to tell this person is receptive to a business conversation, and how to make the ask so it does not feel like the point of the friendship.
+
+Be concrete and personal to them. Generic relationship advice is worse than nothing here, because it reads as if I do not actually know them.
 
 === OUTPUT — PART B: a single json code block at the very end with this exact schema ===
 \`\`\`json
@@ -128,6 +163,17 @@ Specific conversation starters tied to real things they care about; topics to le
     "topics_avoid": ["only if observable reason; else empty"],
     "add_value": ["concrete ways I can help them"],
     "follow_ups": ["thoughtful post-meeting ideas"]
+  },
+  "maintenance_plan": {
+    "cadence_days": 0,
+    "cadence_reason": "why this interval suits THIS person",
+    "best_channel": "call | text | email | in-person | social",
+    "avoid_channel": "string or null",
+    "good_touches": ["specific, low-effort, non-transactional reasons to reach out"],
+    "moments_that_matter": ["recurring dates/cycles worth remembering, publicly evidenced only"],
+    "risks_to_relationship": ["how someone like this quietly disengages"],
+    "when_to_ask": "how to tell they are receptive, and how to make the ask",
+    "reopen_line": "if the relationship has gone quiet, one natural way to restart it; else null"
   },
   "overlaps_with_me": [{ "type": "school|geography|industry|interest|cause|mutual_connection", "detail": "...", "source": "..." }],
   "sources": [{ "label": "LinkedIn / Company site / Podcast", "url": "...", "date": "if known" }]
