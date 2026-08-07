@@ -131,6 +131,8 @@ const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const ListingPresentationView = lazyWithReload(() => import('./views/ListingPresentationView'));
 const AgentProduction = lazyWithReload(() => import('./views/AgentProduction'));
 const GoogleContactsView = lazyWithReload(() => import('./views/GoogleContactsView'));
+const CadenceReviewView = lazyWithReload(() => import('./views/CadenceReviewView'));
+const CadenceSuggestion = lazyWithReload(() => import('./views/CadenceSuggestion'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
 const CalendarView = lazyWithReload(() => import('./views/CalendarView'));
 const InboxView = lazyWithReload(() => import('./views/InboxView'));
@@ -9580,6 +9582,7 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               on the page. It renders nothing for non-agents and for agents with
               no transactions, so it costs other contacts nothing. */}
           <AgentProduction contactId={contact.id} canEdit={true} />
+          <CadenceSuggestion contactId={contact.id} />
           <ContactKnowledge contactId={contact.id} />
           <PrepLeadButton contactId={contact.id} />
           {profile && (profile.primary_letter || hasBaseline) && (() => {
@@ -19097,7 +19100,7 @@ function AppMain() {
   // the sidebar renders them greyed out and unclickable. Adding a MENU row is
   // not enough on its own — google_contacts shipped greyed for exactly that
   // reason.
-  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts']);
+  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts', 'cadence_review']);
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
@@ -19142,6 +19145,7 @@ function AppMain() {
     { label: 'My World', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
     { label: 'Google Contacts', view: 'google_contacts', icon: 'contacts' },
+    { label: 'Cadence Review', view: 'cadence_review', icon: 'clock' },
     // ── Planning — the daily-drivers grouped: what to do, when, and with whom ──
     { label: 'Planning', icon: 'calendar', children: [
       { label: 'Tasks', view: 'tasks', icon: 'tasks' },
@@ -19347,6 +19351,7 @@ function AppMain() {
                 <React.Suspense fallback={<ViewLoadingFallback />}>
                 {(entitled && PAGES[view] && !pageVisible(view, navCtx) && !PAGES[view].core)
                   ? <LockedPage page={PAGES[view]} onRedeem={reloadEntitlements} onSettings={()=>setView('settings')} />
+                : view==='cadence_review' ? <CadenceReviewView userId={user.id} />
                 : view==='google_contacts' ? <GoogleContactsView userId={user.id} setView={setView} />
                 : view==='listing_presentation' ? <ListingPresentationView userId={user.id} agentName={appCtx?.name || user?.email || ''} />
                 : view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
