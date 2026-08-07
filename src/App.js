@@ -130,6 +130,7 @@ const GrowthView = lazyWithReload(() => import('./views/AriBriefingView').then(m
 const ContactsView = lazyWithReload(() => import('./views/ContactsView'));
 const ListingPresentationView = lazyWithReload(() => import('./views/ListingPresentationView'));
 const AgentProduction = lazyWithReload(() => import('./views/AgentProduction'));
+const GoogleContactsView = lazyWithReload(() => import('./views/GoogleContactsView'));
 const PlaybooksView = lazyWithReload(() => import('./views/PlaybooksView'));
 const CalendarView = lazyWithReload(() => import('./views/CalendarView'));
 const InboxView = lazyWithReload(() => import('./views/InboxView'));
@@ -19136,6 +19137,7 @@ function AppMain() {
     // 'contacts' would look identical here and silently throw that away.
     { label: 'My World', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
+    { label: 'Google Contacts', view: 'google_contacts', icon: 'contacts' },
     // ── Planning — the daily-drivers grouped: what to do, when, and with whom ──
     { label: 'Planning', icon: 'calendar', children: [
       { label: 'Tasks', view: 'tasks', icon: 'tasks' },
@@ -19341,6 +19343,7 @@ function AppMain() {
                 <React.Suspense fallback={<ViewLoadingFallback />}>
                 {(entitled && PAGES[view] && !pageVisible(view, navCtx) && !PAGES[view].core)
                   ? <LockedPage page={PAGES[view]} onRedeem={reloadEntitlements} onSettings={()=>setView('settings')} />
+                : view==='google_contacts' ? <GoogleContactsView userId={user.id} />
                 : view==='listing_presentation' ? <ListingPresentationView userId={user.id} agentName={appCtx?.name || user?.email || ''} />
                 : view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
                 : view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />

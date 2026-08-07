@@ -26,7 +26,7 @@ export const MODES = [
     // Dara's order (left→right): Contacts, Calls, Calendar, Tasks, Email, Journal.
     // Six sections so the whole daily-communication surface is one tap apart.
     bar: ['contacts', 'quo', 'calendar', 'tasks', 'inbox', 'journal'],
-    views: ['contacts', 'quo', 'calendar', 'tasks', 'inbox', 'journal', 'email_review', 'contact_types'],
+    views: ['contacts', 'quo', 'calendar', 'tasks', 'inbox', 'journal', 'email_review', 'contact_types', 'google_contacts'],
   },
   {
     // THE LIBRARY as a first-class room. An agent is sometimes not working a
