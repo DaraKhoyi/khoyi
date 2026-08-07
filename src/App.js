@@ -19347,7 +19347,7 @@ function AppMain() {
                 <React.Suspense fallback={<ViewLoadingFallback />}>
                 {(entitled && PAGES[view] && !pageVisible(view, navCtx) && !PAGES[view].core)
                   ? <LockedPage page={PAGES[view]} onRedeem={reloadEntitlements} onSettings={()=>setView('settings')} />
-                : view==='google_contacts' ? <GoogleContactsView userId={user.id} />
+                : view==='google_contacts' ? <GoogleContactsView userId={user.id} setView={setView} />
                 : view==='listing_presentation' ? <ListingPresentationView userId={user.id} agentName={appCtx?.name || user?.email || ''} />
                 : view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
                 : view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />
