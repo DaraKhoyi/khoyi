@@ -4,6 +4,7 @@
 //   purpose='email'    -> Gmail scopes
 //   purpose='calendar' -> Calendar scopes
 //   purpose='both'     -> everything (single account doing both)
+//   purpose='contacts' -> Google Contacts (People API)
 //
 // Body: { return_to?: string, purpose?: 'email'|'calendar'|'both' }
 // Returns: { url: string, state: string }
@@ -33,12 +34,22 @@ const CALENDAR_SCOPES = [
 const DRIVE_SCOPES = [
   "https://www.googleapis.com/auth/drive.readonly",
 ];
+// Read AND write on purpose. Reading is all the importer needs today, but the
+// marker that tells you "this person has rich data in PrismOS" is a write back
+// to Google. Asking for read now and write later means dragging every agent
+// through a second consent screen, and a re-consent prompt is where adoption
+// dies. NOTE: this is a SENSITIVE scope — it must also be added to the OAuth
+// consent screen in Google Cloud, and may trigger re-verification. See below.
+const CONTACTS_SCOPES = [
+  "https://www.googleapis.com/auth/contacts",
+];
 
 function scopesForPurpose(purpose) {
   const set = new Set(IDENTITY_SCOPES);
   if (purpose === "email" || purpose === "both") GMAIL_SCOPES.forEach(s => set.add(s));
   if (purpose === "calendar" || purpose === "both") CALENDAR_SCOPES.forEach(s => set.add(s));
   if (purpose === "drive") DRIVE_SCOPES.forEach(s => set.add(s));
+  if (purpose === "contacts") CONTACTS_SCOPES.forEach(s => set.add(s));
   if (set.size === IDENTITY_SCOPES.length) GMAIL_SCOPES.forEach(s => set.add(s));
   return [...set];
 }

@@ -12762,16 +12762,25 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
     setEmailAccounts(prev => prev.map(a => a.id === id ? { ...a, is_active: false } : a));
   }
 
+  // One place decides how a purpose looks. Adding a fifth purpose should mean
+  // adding a row here, not hunting for three colour ternaries.
+  const PURPOSE_STYLE = {
+    calendar: { icon: 'calendar', label: 'calendar', fg: 'var(--accent)',  bg: 'rgba(197,169,94,0.15)', bd: 'var(--accent-dim)' },
+    email:    { icon: 'mail',     label: 'email',    fg: 'var(--green)',   bg: 'rgba(34,197,94,0.12)',  bd: '#22c55e' },
+    drive:    { icon: 'folder',   label: 'drive',    fg: 'var(--text-2)',  bg: 'rgba(255,255,255,0.06)', bd: 'var(--border)' },
+    contacts: { icon: 'contacts', label: 'contacts', fg: '#8FB8A8',        bg: 'rgba(143,184,168,0.14)', bd: '#8FB8A8' },
+  };
   function purposeBadges(purposes) {
     const list = purposes || [];
-    return list.map(p => (
-      <span key={p} className="pill" style={{
-        fontSize:'10px', padding:'2px 6px',
-        background: p === 'calendar' ? 'rgba(197,169,94,0.15)' : 'rgba(34,197,94,0.12)',
-        color: p === 'calendar' ? 'var(--accent)' : 'var(--green)',
-        border: `1px solid ${p === 'calendar' ? 'var(--accent-dim)' : '#22c55e'}`,
-      }}>{p === 'calendar' ? <><Icon name="calendar" size={12} /> calendar</> : <><Icon name="mail" size={12} /> email</>}</span>
-    ));
+    return list.map(p => {
+      const st = PURPOSE_STYLE[p] || PURPOSE_STYLE.email;
+      return (
+        <span key={p} className="pill" style={{
+          fontSize:'10px', padding:'2px 6px',
+          background: st.bg, color: st.fg, border: `1px solid ${st.bd}`,
+        }}><Icon name={st.icon} size={12} /> {st.label}</span>
+      );
+    });
   }
 
   return (
@@ -12839,7 +12848,17 @@ function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
           <button className="btn btn-ghost" onClick={() => startConnect('calendar')} disabled={connecting} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
             {connecting && connectingPurpose === 'calendar' ? 'Opening Google…' : '+ Connect Calendar'}
           </button>
+          <button className="btn btn-ghost" onClick={() => startConnect('contacts')} disabled={connecting} style={{borderColor:'var(--accent-dim)',color:'var(--accent)'}}>
+            {connecting && connectingPurpose === 'contacts' ? 'Opening Google…' : '+ Connect Contacts'}
+          </button>
         </div>
+        {/* Said plainly at the point of decision, not buried in a policy page.
+            Contacts is the connection people are most wary of granting. */}
+        <p style={{fontSize:'11.5px',color:'var(--text-3)',lineHeight:1.5,margin:'10px 0 0'}}>
+          <b style={{color:'var(--text-2)'}}>Contacts is read-and-write, and nothing is ever deleted.</b> PrismOS reads your
+          Google Contacts so it can suggest who is worth bringing in, and writes back only a small marker
+          on people you have already imported. Google stays your address book.
+        </p>
 
         <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1px solid var(--border)'}}>
           <div style={{fontSize:'13px',fontWeight:700,color:'var(--text-1)',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="calendar" size={14} style={{color:'var(--accent)'}} /> Sync to iPhone / Apple Calendar</div>

@@ -23,6 +23,10 @@ function purposesFromScopes(scopeStr) {
   if (scopes.some(s => s.includes("gmail"))) purposes.push("email");
   if (scopes.some(s => s.includes("calendar"))) purposes.push("calendar");
   if (scopes.some(s => s.includes("drive"))) purposes.push("drive");
+  // Only claim the purpose if Google actually GRANTED it. A user can untick a
+  // scope on the consent screen, and a badge that lies about what is connected
+  // is worse than no badge.
+  if (scopes.some(s => s.includes("auth/contacts"))) purposes.push("contacts");
   return purposes.length ? purposes : ["email"];
 }
 
