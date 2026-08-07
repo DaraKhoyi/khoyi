@@ -19093,7 +19093,11 @@ function AppMain() {
   const viewInMore = moreNav.some(i => i.id === view);
 
   // Master menu (mirrors the menu plan PDF). White = built & working; greyed "soon" = not built yet.
-  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster']);
+  // Views that are real screens but are not NAV entries must be listed here or
+  // the sidebar renders them greyed out and unclickable. Adding a MENU row is
+  // not enough on its own — google_contacts shipped greyed for exactly that
+  // reason.
+  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts']);
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
