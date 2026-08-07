@@ -438,6 +438,37 @@ serve(async (req) => {
           } catch (_) { /* non-fatal — fall through with what we have */ }
         }
         const disc2 = data.disc || {};
+
+        // ── CADENCE FROM DISC ────────────────────────────────────────────────
+        // Set the touch rhythm automatically, because a cadence nobody sets is a
+        // cadence that never fires. Prefer the model's own maintenance_plan
+        // number when it is sane; otherwise fall back to the DISC default. The
+        // mapping lives in SQL (disc_cadence_days) so the research path, the
+        // backfill and any future caller cannot drift apart.
+        //
+        // apply_disc_cadence NEVER overwrites a cadence a human chose — it
+        // records a suggestion instead. 87 of 252 contacts already carry a
+        // deliberate value, and trampling those is how an automation loses
+        // trust permanently.
+        try {
+          const mp = data.maintenance_plan || {};
+          let days = Number(mp.cadence_days);
+          if (!Number.isFinite(days) || days < 7 || days > 365) days = null;
+          const letter = (disc2.primary || (disc ? disc.primary : null) || "").toString().toUpperCase();
+          const second = (disc2.secondary || (disc ? disc.secondary : null) || null);
+          if (!days && letter) {
+            const { data: d } = await supabase.rpc("disc_cadence_days",
+              { p_primary: letter, p_secondary: second });
+            if (Number.isFinite(Number(d))) days = Number(d);
+          }
+          if (days) {
+            const reason = mp.cadence_reason
+              || (letter ? `DISC ${letter}${second ? "/" + second : ""} — every ${days} days suits how they prefer contact` : null);
+            await supabase.rpc("apply_disc_cadence",
+              { p_contact_id: contact_id, p_days: days, p_reason: reason });
+          }
+        } catch (_) { /* non-fatal: a missing cadence must never fail a report */ }
+
         const cleanReport = fullReport.replace(/```json\s*[\s\S]*?```/g, "").trim();
         const shortSummary = Array.isArray(disc2.key_evidence) ? disc2.key_evidence.map((e, i) => `${i + 1}. ${e}`).join("\n") : null;
         // ── IDENTITY GUARD ──────────────────────────────────────────────────
