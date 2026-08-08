@@ -1102,6 +1102,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
 
       {subView === 'dashboard' && (<>
         <BrokerageHeroStrip />
+        <CommissionSheetSettings />
         <FinanceDashboard
           userId={userId} settings={settings} setSettings={setSettings}
           ytdIncome={ytdIncome} ytdExpense={ytdExpense} ytdNet={ytdNet}
@@ -1319,6 +1320,97 @@ function compactMoney(n) {
   if (v >= 1e3) return '$' + Math.round(v / 1e3) + 'K';
   return '$' + Math.round(v);
 }
+// ── Commission Sheet link (Broker Settings) ───────────────────────────────
+// Paste the Google Sheet URL, map tabs → years, sync now, and swap the file at
+// year-end. The nightly `sheets-sync` reads whatever is configured here.
+function CommissionSheetSettings() {
+  const [cfg, setCfg] = useState(undefined);
+  const [isBroker, setIsBroker] = useState(false);
+  const [url, setUrl] = useState('');
+  const [rows, setRows] = useState([{ tab: 'Paid 2026', year: 2026 }, { tab: 'Paid 2025', year: 2025 }]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => { (async () => {
+    try {
+      const { data: dash } = await supabase.rpc('brokerage_dashboard');
+      if (!dash || !dash.allowed) { setIsBroker(false); setCfg(null); return; }
+      setIsBroker(true);
+      const { data } = await supabase.from('commission_sheet_config').select('*').eq('is_active', true).order('updated_at', { ascending: false }).limit(1);
+      const c = data?.[0] || null; setCfg(c);
+      if (c) { setUrl(c.sheet_url || ''); if (Array.isArray(c.tab_map) && c.tab_map.length) setRows(c.tab_map); }
+    } catch (_) { setIsBroker(false); setCfg(null); }
+  })(); }, []);
+
+  if (cfg === undefined) return null;
+  if (!isBroker) return null;
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const { data: idData } = await supabase.rpc('extract_sheet_id', { p_url: url });
+      const sid = idData || url;
+      const { data: u } = await supabase.auth.getUser();
+      const payload = { user_id: u?.user?.id, spreadsheet_id: sid, sheet_url: url, tab_map: rows, is_active: true, updated_at: new Date().toISOString() };
+      let res;
+      if (cfg?.id) res = await supabase.from('commission_sheet_config').update(payload).eq('id', cfg.id).select().single();
+      else res = await supabase.from('commission_sheet_config').insert(payload).select().single();
+      if (res.error) throw res.error;
+      setCfg(res.data); setMsg({ ok: true, t: 'Saved. The sheet will sync nightly.' });
+    } catch (e) { setMsg({ ok: false, t: 'Could not save: ' + (e.message || e) }); }
+    setBusy(false);
+  };
+
+  const syncNow = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('sheets-sync', { body: cfg?.id ? { config_id: cfg.id } : {} });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error || 'sync failed');
+      const s = (data.summary || []).map((x) => `${x.tab}: ${x.transactions ?? 0} txns${x.error ? ' (' + x.error + ')' : ''}`).join(' · ');
+      setMsg({ ok: true, t: 'Synced. ' + s });
+      const { data: fresh } = await supabase.from('commission_sheet_config').select('*').eq('id', cfg.id).single();
+      if (fresh) setCfg(fresh);
+    } catch (e) { setMsg({ ok: false, t: 'Sync failed: ' + (e.message || e) }); }
+    setBusy(false);
+  };
+
+  const lab = { fontSize: 10.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 };
+  const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-1)', padding: '9px 11px', fontSize: 13 };
+
+  return (
+    <div style={{ marginBottom: 16, padding: '15px 16px', borderRadius: 14, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.2em', fontSize: 11, fontWeight: 700 }}>Commission Sheet</span>
+        {cfg?.last_synced_at && <span style={{ fontSize: 10, color: 'var(--text-3)' }}>· last synced {new Date(cfg.last_synced_at).toLocaleString()}</span>}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>
+        Link the live Google Sheet. It reconciles nightly — edit a past row and Prism updates it. Swap the file here at year-end.
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={lab}>Google Sheet URL</div>
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…" style={inp} />
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={lab}>Tabs to sync</div>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+            <input value={r.tab} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, tab: e.target.value } : x))} placeholder="Tab name (e.g. Paid 2026)" style={{ ...inp, flex: '1 1 auto' }} />
+            <input value={r.year} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, year: parseInt(e.target.value) || '' } : x))} inputMode="numeric" placeholder="Year" style={{ ...inp, width: 84, flex: 'none' }} />
+            <button onClick={() => setRows(rows.filter((_, j) => j !== i))} style={{ ...inp, width: 40, flex: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>×</button>
+          </div>
+        ))}
+        <button onClick={() => setRows([...rows, { tab: '', year: new Date().getFullYear() }])} style={{ background: 'transparent', border: '1px dashed var(--border)', borderRadius: 8, color: 'var(--text-2)', padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>+ Add a tab</button>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button onClick={save} disabled={busy || !url} style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 800, cursor: busy ? 'default' : 'pointer', opacity: (busy || !url) ? .6 : 1 }}>{busy ? 'Working…' : 'Save link'}</button>
+        {cfg?.id && <button onClick={syncNow} disabled={busy} style={{ background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer' }}>Sync now</button>}
+        {msg && <span style={{ fontSize: 12, color: msg.ok ? '#22c55e' : '#ef4444' }}>{msg.t}</span>}
+      </div>
+    </div>
+  );
+}
+
 function BrokerageHeroStrip() {
   const [d, setD] = useState(undefined);
   useEffect(() => { (async () => {
