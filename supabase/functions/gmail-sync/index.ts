@@ -238,7 +238,7 @@ async function getProfile(accessToken) {
 }
 
 async function syncOneAccount(supabase, account, opts) {
-  const result = { account_id: account.id, email: account.email_address, new_messages: 0, new_threads: 0 };
+  const result = { account_id: account.id, email: account.email_address, new_messages: 0, new_threads: 0, new_inbound: 0 };
   try {
     const accessToken = await refreshAccessTokenIfNeeded(supabase, account);
 
@@ -434,6 +434,7 @@ async function syncOneAccount(supabase, account, opts) {
       });
       if (insertErr) continue;
       result.new_messages++;
+      if (direction === "inbound") result.new_inbound = (result.new_inbound || 0) + 1;
 
       // Insert attachment metadata
       if (attachments.length > 0) {
@@ -495,6 +496,37 @@ async function syncOneAccount(supabase, account, opts) {
       } catch (_) {
         // Non-fatal — backfill remains correct because the SQL backfill above ran once
       }
+    }
+
+    // Real-time nudge: if genuinely NEW inbound mail arrived (not a backfill),
+    // send ONE consolidated push. Guardrails: skip during a backfill (would spam
+    // on first connect), and observe quiet hours (only 8am–9pm in the user's tz)
+    // so nobody gets a 3am buzz. Dedupe is automatic — gmail-sync only sees
+    // messages past the history cursor, so each inbound is counted once.
+    if ((result.new_inbound || 0) > 0 && !opts.force_backfill) {
+      try {
+        // resolve the user's timezone (fall back to Eastern) for quiet-hours
+        let tz = "America/New_York";
+        try {
+          const { data: prof } = await supabase.from("ari_briefing_prefs").select("tz").eq("user_id", account.user_id).maybeSingle();
+          if (prof?.tz) tz = prof.tz;
+        } catch (_) {}
+        const localHour = parseInt(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hour12: false }).format(new Date()), 10);
+        if (localHour >= 8 && localHour < 21) {
+          const n = result.new_inbound;
+          await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/push-send`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: account.user_id,
+              title: n === 1 ? "New message" : `${n} new messages`,
+              body: n === 1 ? "You have a new email that may need a reply." : `You have ${n} new emails that may need a reply.`,
+              url: "https://darasapp.com/",
+              tag: "owe-reply",
+            }),
+          }).catch(() => {});
+        }
+      } catch (_) { /* push is best-effort; never block the sync */ }
     }
 
     // Persist sync cursor. During a backfill, don't advance historyId until the
