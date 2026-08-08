@@ -1356,7 +1356,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     }
   };
   return (
-    <div className="ww-contacts">
+    <div className="ww-contacts" style={tagMode ? {paddingBottom:'180px'} : undefined}>
       <style>{`
         .ww-contacts{
           --bg-base:#100D09; --bg-card:#1B1610; --bg-panel:#18130D; --bg-hover:#221B10;
@@ -1451,7 +1451,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       {source==='google' && <GoogleContactsView userId={userId} />}
       {source==='prism' && (<>
 
-        <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:60,background:'var(--bg-card)',borderTop:'1px solid var(--accent)',padding:'12px 16px calc(12px + env(safe-area-inset-bottom,0px))',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 20px rgba(0,0,0,0.45)'}}>
+        {tagMode && (
+        <div style={{position:'fixed',left:0,right:0,bottom:'calc(env(safe-area-inset-bottom,0px) + 66px)',zIndex:60,background:'var(--bg-card)',borderTop:'1px solid var(--accent)',padding:'12px 16px',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -8px 24px rgba(0,0,0,0.5)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,width:'100%',flexWrap:'wrap'}}>
             <span style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{selIds.size} selected</span>
             <button className="btn btn-ghost btn-sm" onClick={selectAllFiltered} title="Select every contact that matches your current filters">Select all ({sorted.length})</button>
@@ -1470,7 +1471,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
             <button className="btn btn-ghost btn-sm" onClick={exitTag}>Done</button>
           </div>
         </div>
-      )}
+        )}
 
       {/* Search input — always visible, first thing on the page. The × clears the text (no collapse). */}
       <HeaderSearchInput
