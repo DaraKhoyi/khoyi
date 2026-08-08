@@ -19140,7 +19140,8 @@ function AppMain() {
     { label: 'Agent DISC Read', view: 'disc_roster', icon: 'bulb' },
     { label: 'Agent Voice Cards', view: 'voice_roster', icon: 'mic' },
     { label: 'Contact Types', view: 'contact_types', icon: 'clipboard' },
-    { label: 'Brokerage Financials', view: 'finance', icon: 'finance' },
+    { label: 'Brokerage Dashboard', view: 'finance', sub: 'dashboard', icon: 'dashboard' },
+    { label: 'Brokerage Financials', view: 'finance', sub: 'reports', icon: 'finance' },
     { label: 'Teams', view: 'teams', icon: 'users' },
     ...(!isImpersonating ? [{ label: 'Act as a User', view: 'actas', icon: 'users' }] : []),
   ] };

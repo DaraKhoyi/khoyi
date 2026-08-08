@@ -146,9 +146,11 @@ export default function AgentProduction({ contactId, canEdit = false }) {
 
   const elapsed = Math.min(100, g.year_elapsed_pct || 0);
   const gciGoal = g.gci_goal, salesGoal = g.sales_goal;
+  const unitsGoal = g.units_goal;            // dollar volume goal ÷ avg sale price = target closings
+  const avgPriceUsed = g.avg_price_used;     // the price we divided by (agent's own or company avg)
   const gciProg = gciGoal ? Math.min(100, Math.round((y.gci / gciGoal) * 100)) : 0;
-  const salesProg = salesGoal ? Math.min(100, Math.round((y.sales / salesGoal) * 100)) : 0;
-  const hasGoals = gciGoal || salesGoal;
+  const salesProg = unitsGoal ? Math.min(100, Math.round((y.sales / unitsGoal) * 100)) : 0;
+  const hasGoals = gciGoal || unitsGoal;
 
   return (
     <div style={{ ...card, marginTop: 14 }} className="fade-up">
@@ -194,12 +196,12 @@ export default function AgentProduction({ contactId, canEdit = false }) {
             projNode={compact(g.gci_projected)}
             footLeft={<>{elapsed}% of year elapsed</>} />
         ) : null}
-        {salesGoal ? (
+        {unitsGoal ? (
           <GoalHero label="Sales Goal"
-            currentNode={num(y.sales)} goalNode={num(salesGoal)} unit="closings"
+            currentNode={num(y.sales)} goalNode={num(unitsGoal)} unit="closings"
             onTrack={g.sales_on_track} progress={salesProg} elapsed={elapsed}
             projNode={num(g.sales_projected)}
-            footLeft={<>{num(y.sales)} of {num(salesGoal)} closings</>} />
+            footLeft={<>{num(y.sales)} of {num(unitsGoal)} closings{avgPriceUsed ? <span style={{ opacity: .7 }}> {'\u00B7'} at {compact(avgPriceUsed)} avg</span> : null}</>} />
         ) : null}
 
         {!hasGoals && !editing && (
@@ -231,8 +233,8 @@ export default function AgentProduction({ contactId, canEdit = false }) {
                   style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-1)', padding: '9px 11px', fontSize: 14, marginTop: 4 }} />
               </label>
               <label style={{ flex: '1 1 130px', minWidth: 0 }}>
-                <span style={{ ...tileLab, color: G }}>Sales Goal (#)</span>
-                <input value={salesDraft} onChange={e => setSalesDraft(e.target.value)} inputMode="numeric" placeholder="e.g. 24"
+                <span style={{ ...tileLab, color: G }}>Sales Volume Goal ($)</span>
+                <input value={salesDraft} onChange={e => setSalesDraft(e.target.value)} inputMode="numeric" placeholder="e.g. 4000000"
                   style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-1)', padding: '9px 11px', fontSize: 14, marginTop: 4 }} />
               </label>
             </div>

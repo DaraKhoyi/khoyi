@@ -1100,7 +1100,8 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
         </div>
       </div>
 
-      {subView === 'dashboard' && (
+      {subView === 'dashboard' && (<>
+        <BrokerageHeroStrip />
         <FinanceDashboard
           userId={userId} settings={settings} setSettings={setSettings}
           ytdIncome={ytdIncome} ytdExpense={ytdExpense} ytdNet={ytdNet}
@@ -1111,7 +1112,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
           onGoBlueprint={() => setSubView('blueprint')}
           onGoSystems={() => setSubView('systems')}
         />
-      )}
+      </>)}
       {subView === 'blueprint' && (
         <FinanceBlueprint
           userId={userId} settings={settings} setSettings={setSettings}
@@ -1301,6 +1302,65 @@ function QuarterlyTaxBanner({ userId }) {
       <div style={{fontSize:'10px',color:'var(--text-3)',whiteSpace:'nowrap',textAlign:'right'}}>
         Annual proj. {fmt(projection.totalAnnualTax)}<br/>
         <span style={{color:'var(--text-3)'}}>open Reports → 💵 Quarterly Tax for breakdown</span>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Brokerage Dashboard hero strip ────────────────────────────────────────
+// Broker/owner only. Six hero tiles: the two Dara asked for (company avg sale
+// price + avg commission rate, both on last-12-mo deals with commission
+// $2,500–$45,000) plus four "north-star" tiles. Some of the four are live now;
+// the rest are marked "soon" so the vision is visible before it's fully built.
+function compactMoney(n) {
+  const v = Number(n) || 0;
+  if (v >= 1e6) return '$' + (v / 1e6).toFixed(v >= 1e7 ? 0 : 2) + 'M';
+  if (v >= 1e3) return '$' + Math.round(v / 1e3) + 'K';
+  return '$' + Math.round(v);
+}
+function BrokerageHeroStrip() {
+  const [d, setD] = useState(undefined);
+  useEffect(() => { (async () => {
+    try { const { data, error } = await supabase.rpc('brokerage_dashboard'); if (error) throw error; setD(data); }
+    catch (_) { setD(null); }
+  })(); }, []);
+  if (d === undefined) return <div style={{ padding: '18px 4px', color: 'var(--text-3)', fontSize: 12.5 }}>Loading brokerage numbers…</div>;
+  if (!d || !d.allowed) return null; // non-brokerage viewers see nothing
+
+  const G = '#C5A95E', CHAMP = '#EBCB82';
+  const tiles = [
+    { lab: 'Company Avg Sale Price', val: compactMoney(d.avg_price), sub: 'last 12 mo · $2.5K–$45K comm', live: true, hero: true },
+    { lab: 'Avg Commission Rate', val: (d.avg_rate != null ? d.avg_rate + '%' : '—'), sub: 'same qualified deals', live: true, hero: true },
+    { lab: 'Company Volume (YTD)', val: compactMoney(d.ytd_volume), sub: `${num(d.ytd_units)} closings · ${compactMoney(d.ytd_gci)} GCI`, live: true },
+    { lab: 'Agents On-Track', val: d.on_track ? `${d.on_track.on}/${d.on_track.total}` : '—', sub: 'hitting their GCI goal — who needs a nudge?', live: true },
+    { lab: 'Recruiting Pipeline', val: 'Soon', sub: 'projected GCI walking in the door', live: false },
+    { lab: 'Retention & Health', val: 'Soon', sub: 'who\u2019s thriving, who\u2019s at risk', live: false },
+  ];
+
+  return (
+    <div className="fade-up" style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: 11, fontWeight: 700 }}>Brokerage Dashboard</span>
+        <span className="live-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+        <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>{d.year} · {num(d.producers)} producing / {num(d.roster)} roster</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10 }}>
+        {tiles.map((t, i) => (
+          <div key={i} style={{
+            position: 'relative', padding: '14px 15px', borderRadius: 14,
+            background: t.hero ? 'linear-gradient(155deg, rgba(197,169,94,.14), rgba(197,169,94,.03))' : 'var(--bg-card)',
+            border: '1px solid ' + (t.hero ? 'rgba(197,169,94,.45)' : 'var(--border)'),
+            opacity: t.live ? 1 : .62,
+          }}>
+            <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.lab}</span>
+              {!t.live && <span style={{ fontSize: 8.5, fontWeight: 800, color: G, border: '1px solid ' + G, borderRadius: 4, padding: '1px 4px' }}>SOON</span>}
+            </div>
+            <div className={t.hero ? 'gold-move' : ''} style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 26, lineHeight: 1, color: t.hero ? undefined : CHAMP, marginBottom: 5 }}>{t.val}</div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>{t.sub}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
