@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../dataService';
 import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, Icon, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, modal, notify, quoCall, quoNormPhone, owesReply, TipFor} from '../App';
 import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
+import GoogleContactsView from './GoogleContactsView';
 
 const CONTACT_TYPES = [
   // Clients & Leads
@@ -943,6 +944,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 
 function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, canSeeRestricted = false }) {
   const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
+  const [source, setSource] = useState('prism'); // 'prism' | 'google' — which contact book to view
   const [textTo, setTextTo] = useState(null); // { contact, phone } for the Quo text composer
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
@@ -1411,20 +1413,44 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       <TipFor screen="contacts" />
       <div className="page-header fade-up" style={{marginBottom:'2px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'8px',minHeight:'40px',marginBottom:'4px'}}>
+          {source==='prism' && <>
           <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
           <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>
           <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
+          </>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'2px'}}>
           <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Relationships</span>
           {dueCount>0 && <span className="live-dot" />}
         </div>
         <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="contacts" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My People.</span></h2>
-        <p style={{color:'var(--text-3)',fontSize:'13px',margin:'6px 0 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{contacts.length} contacts{dueCount>0 && <> · <b className="gold-move" style={{fontWeight:700}}>{dueCount} due</b> for a touch</>}</p>
+        <p style={{color:'var(--text-3)',fontSize:'13px',margin:'6px 0 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{source==='google' ? 'Your connected Google account' : <>{contacts.length} contacts{dueCount>0 && <> · <b className="gold-move" style={{fontWeight:700}}>{dueCount} due</b> for a touch</>}</>}</p>
         <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
       </div>
 
-      {tagMode && (
+      {/* Contact-book source switch — Prism (your CRM) vs Google (the connected
+          Google account). Default Prism; switch freely. Segmented control matches
+          the app's gold-selected pill pattern. */}
+      <div role="tablist" aria-label="Contact source" style={{display:'flex',gap:6,padding:4,background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:13,margin:'14px 0 4px'}}>
+        {[['prism','Prism Contacts','contacts'],['google','Google Contacts','contacts']].map(([id,label]) => {
+          const on = source===id;
+          return (
+            <button key={id} role="tab" aria-selected={on} onClick={()=>setSource(id)}
+              style={{flex:1,padding:'10px 8px',borderRadius:10,border:'none',cursor:'pointer',fontSize:13.5,fontWeight:on?800:600,
+                background:on?'var(--accent)':'transparent',color:on?'#0d0f14':'var(--text-2)',
+                display:'inline-flex',alignItems:'center',justifyContent:'center',gap:7,transition:'all .15s'}}>
+              {id==='google'
+                ? <svg width="15" height="15" viewBox="0 0 48 48" style={{flexShrink:0}}><path fill={on?'#0d0f14':'#4285F4'} d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill={on?'#0d0f14':'#34A853'} d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill={on?'#0d0f14':'#FBBC05'} d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/><path fill={on?'#0d0f14':'#EA4335'} d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
+                : <Icon name="contacts" size={15} style={{color:on?'#0d0f14':'var(--accent)'}} />}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {source==='google' && <GoogleContactsView userId={userId} />}
+      {source==='prism' && (<>
+
         <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:60,background:'var(--bg-card)',borderTop:'1px solid var(--accent)',padding:'12px 16px calc(12px + env(safe-area-inset-bottom,0px))',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',boxShadow:'0 -6px 20px rgba(0,0,0,0.45)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,width:'100%',flexWrap:'wrap'}}>
             <span style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>{selIds.size} selected</span>
@@ -1757,6 +1783,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           onMerged={(remainingGroups) => setDupeGroups(remainingGroups)}
         />
       )}
+      </>)}
     </div>
   );
 }
