@@ -56,24 +56,32 @@ function buildResearchPrompt(candidate, contact, scope, me, disc) {
   // What PrismOS already knows about the RELATIONSHIP, as opposed to the person.
   // Section 5 is only worth reading if it is grounded in this; without it,
   // "how to maintain" degenerates into a restatement of "how to build".
+  // Real column names. The first version of this block read
+  // contact.last_communication_date and contact.birthday — NEITHER EXISTS. The
+  // block silently produced nothing, so "How best to maintain a relationship"
+  // ran without the single input that makes it specific: how long it has been
+  // since you spoke. Verified against information_schema before rewriting.
   const knownSince = contact.created_at ? new Date(contact.created_at).toISOString().slice(0, 10) : null;
-  const lastComm = contact.last_communication_date
-    ? new Date(contact.last_communication_date).toISOString().slice(0, 10) : null;
-  const daysSince = lastComm
-    ? Math.floor((Date.now() - new Date(contact.last_communication_date).getTime()) / 86400000) : null;
+  const lastAt = contact.last_contact_at || contact.last_outbound_at || contact.last_inbound_at || null;
+  const lastComm = lastAt ? new Date(lastAt).toISOString().slice(0, 10) : null;
+  const daysSince = lastAt ? Math.floor((Date.now() - new Date(lastAt).getTime()) / 86400000) : null;
+  const lastIn = contact.last_inbound_at ? new Date(contact.last_inbound_at).toISOString().slice(0, 10) : null;
+  const lastOut = contact.last_outbound_at ? new Date(contact.last_outbound_at).toISOString().slice(0, 10) : null;
   const relFacts = [
     contact.type ? `- Relationship type on file: ${contact.type}` : null,
     knownSince ? `- In my contacts since: ${knownSince}` : null,
-    lastComm ? `- Last communication: ${lastComm} (${daysSince} days ago)${contact.last_communication_direction ? `, last message was ${contact.last_communication_direction === "inbound" ? "FROM them" : "FROM me"}` : ""}` : "- No logged communication yet",
+    lastComm ? `- Last contact: ${lastComm} (${daysSince} days ago)${contact.last_communication_channel ? ` by ${contact.last_communication_channel}` : ""}` : "- No logged communication yet",
+    lastIn ? `- They last reached out to ME: ${lastIn}` : (lastOut ? "- They have never initiated contact with me" : null),
+    lastOut ? `- I last reached out to THEM: ${lastOut}` : null,
     contact.cadence_days ? `- Intended touch cadence: every ${contact.cadence_days} days` : null,
-    contact.birthday ? `- Birthday on file: ${contact.birthday}` : null,
     contact.notes ? `- My notes on file: ${String(contact.notes).slice(0, 900)}` : null,
   ].filter(Boolean).join("\n");
 
   const relationshipBlock = `
 EXISTING RELATIONSHIP ON FILE (this is what I already know — use it, do not repeat it back to me as if it were a discovery):
 ${relFacts}
-${daysSince != null && daysSince > 120 ? "NOTE: this relationship has gone quiet. Treat re-opening it as the first job, and make the re-open feel natural rather than apologetic." : ""}`;
+${daysSince != null && daysSince > 120 ? "NOTE: this relationship has gone quiet. Treat re-opening it as the first job, and make the re-open feel natural rather than apologetic." : ""}
+${lastOut && !lastIn ? "NOTE: every logged contact has been me reaching out to them. Weigh that honestly when judging how warm this relationship really is." : ""}`;
 
   const scopeLine = scope === "personal"
     ? "Weight PERSONAL, publicly-shared sources (their own public social posts, community involvement, local press, alumni pages). Keep professional detail light."
