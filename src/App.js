@@ -9583,6 +9583,22 @@ function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfi
               on the page. It renders nothing for non-agents and for agents with
               no transactions, so it costs other contacts nothing. */}
           <AgentProduction contactId={contact.id} canEdit={true} />
+          {/* Roster card — the brokerage facts from the master roster. Shows only
+              for agent-type contacts that actually have roster data, so it costs
+              other contacts nothing. */}
+          {(contact.type==='our_agent' || contact.type==='agent_lost') && (contact.nrds_number || contact.date_hired || contact.access_code || contact.previous_brokerage || contact.license_no || contact.realtor_board) && (
+            <div style={{margin:'0 0 14px',padding:'14px 16px',background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:14}}>
+              <div className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:10.5,fontWeight:700,marginBottom:10}}>Roster</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'10px 18px'}}>
+                {[['Agent ID (NRDS)',contact.nrds_number],['Date hired',contact.date_hired],['License #',contact.license_no],['Access code',contact.access_code],['Previous brokerage',contact.previous_brokerage],['Board',contact.realtor_board]].filter(([,v])=>v).map(([k,v])=>(
+                  <div key={k} style={{minWidth:0}}>
+                    <div style={{fontSize:10.5,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:2}}>{k}</div>
+                    <div style={{fontSize:13.5,color:'var(--text-1)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis'}}>{String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <CadenceSuggestion contactId={contact.id} />
           <ContactKnowledge contactId={contact.id} />
           <PrepLeadButton contactId={contact.id} />
@@ -11162,6 +11178,9 @@ const SOCIAL_PLATFORMS = [
   { key: 'tiktok',    label: 'TikTok',    icon: 'tt', hint: '@handle',                    base: 'https://tiktok.com/@' },
   { key: 'x',         label: 'X / Twitter', icon: 'x', hint: '@handle',                   base: 'https://x.com/' },
   { key: 'youtube',   label: 'YouTube',   icon: 'yt', hint: 'channel URL or @handle',     base: 'https://youtube.com/@' },
+  { key: 'zillow',    label: 'Zillow',    icon: 'z',  hint: 'Zillow profile URL',         base: '' },
+  { key: 'realtor_com', label: 'Realtor.com', icon: 'rc', hint: 'Realtor.com profile URL', base: '' },
+  { key: 'google_business', label: 'Google Business', icon: 'gb', hint: 'Google Business Profile URL', base: '' },
   { key: 'website',   label: 'Website',   icon: 'w',  hint: 'https://…',                  base: '' },
 ];
 // Turn a handle or partial into a full URL for linking; leave real URLs alone.
