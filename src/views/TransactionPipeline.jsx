@@ -173,7 +173,7 @@ function TxnDetail({ id, onClose, onChanged }) {
         {err && <div style={{ background: 'rgba(239,68,68,.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, color: '#fecaca', marginBottom: 12 }}>{err}</div>}
 
         {/* financing toggle (only matters while live) */}
-        {st.deal_status === 'active' && (
+        {st.deal_status === 'active' && st.can_edit && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
             <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Financing:</span>
             {['cash', 'financed'].map(t => (
@@ -191,17 +191,21 @@ function TxnDetail({ id, onClose, onChanged }) {
             <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 8 }}>This stage</div>
             {curStageMs.map(m => {
               const done = m.status === 'done' || m.status === 'waived';
+              // broker-only steps (approve, ACH) are actionable only by the brokerage
+              const locked = m.broker_only && !st.viewer_is_broker;
+              const canTap = st.can_edit && !locked;
               return (
-                <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #1e1810' }}>
-                  <button disabled={busy} onClick={() => call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: done ? 'pending' : 'done' })}
-                    style={{ width: 22, height: 22, borderRadius: 6, flex: 'none', cursor: 'pointer',
+                <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #1e1810', opacity: locked ? .6 : 1 }}>
+                  <button disabled={busy || !canTap} onClick={() => canTap && call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: done ? 'pending' : 'done' })}
+                    style={{ width: 22, height: 22, borderRadius: 6, flex: 'none', cursor: canTap ? 'pointer' : 'default',
                       border: '1.5px solid ' + (done ? '#22c55e' : '#3a3020'),
                       background: done ? '#22c55e' : 'transparent', color: '#100D09', fontWeight: 900, fontSize: 13, lineHeight: 1 }}>{done ? '✓' : ''}</button>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: m.status === 'waived' ? 'line-through' : 'none' }}>{m.label}</div>
-                    {m.help && !done && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.help}</div>}
+                    {locked && !done && <div style={{ fontSize: 11, color: GOLD, marginTop: 1 }}>The brokerage handles this step</div>}
+                    {!locked && m.help && !done && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.help}</div>}
                   </div>
-                  {!done && <button disabled={busy} onClick={() => call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: 'waived' })}
+                  {canTap && !done && <button disabled={busy} onClick={() => call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: 'waived' })}
                     style={{ fontSize: 11, color: 'var(--text-3)', background: 'transparent', border: 'none', cursor: 'pointer' }}>N/A</button>}
                 </div>
               );
@@ -210,9 +214,9 @@ function TxnDetail({ id, onClose, onChanged }) {
         )}
 
         {/* stage controls */}
-        {st.deal_status === 'active' && (
+        {st.deal_status === 'active' && st.can_edit && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {NEXT[st.stage] && (
+            {NEXT[st.stage] && (NEXT[st.stage] !== 'closed' || st.viewer_is_broker) && (
               <button disabled={busy} onClick={() => call('advance_txn_stage', { p_id: id, p_to_stage: NEXT[st.stage] })}
                 style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
                 Move to {STAGE_LABEL[NEXT[st.stage]]} →
@@ -223,6 +227,9 @@ function TxnDetail({ id, onClose, onChanged }) {
               Mark dead
             </button>
           </div>
+        )}
+        {st.deal_status === 'active' && !st.can_edit && (
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)', fontStyle: 'italic' }}>You have view access to this deal.</div>
         )}
 
         {/* deal facts */}
