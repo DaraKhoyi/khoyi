@@ -138,6 +138,9 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
   const [editing, setEditing] = useState(false);
   const [deadOpen, setDeadOpen] = useState(false);
   const [tab, setTab] = useState('work');           // work | journey | history
+  const [extract, setExtract] = useState(null);      // review panel after AI extraction
+  const [extracting, setExtracting] = useState(false);
+  const [datesEmail, setDatesEmail] = useState(null);
   const fileRefs = useRef({});
 
   const refresh = useCallback(async () => {
@@ -183,6 +186,38 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
     ['other', 'Other'],
   ];
 
+  // Read the executed contract with AI and open a review panel (propose, don't auto-apply).
+  const runExtract = async (docId) => {
+    setExtracting(true); setErr(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('txn-contract-extract', { body: { transaction_id: id, document_id: docId } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setExtract(data);
+    } catch (e) { setErr('Could not read the contract: ' + (e.message || e)); }
+    setExtracting(false);
+  };
+  const applyExtract = async () => {
+    const ex = extract?.extracted || {};
+    const patch = {
+      buyer_name: (ex.buyers || []).join(' & ') || null, seller_name: (ex.sellers || []).join(' & ') || null,
+      purchase_price: ex.purchase_price || null, earnest_money: ex.earnest_money || null,
+      financing_type: ex.financing_type || null, loan_type: ex.loan_type || null,
+      effective_date: ex.effective_date || null, closing_date: ex.closing_date || null,
+      address: ex.property_address || null, key_dates: extract?.key_dates || [], contract_data: ex,
+    };
+    setExtract(null);
+    await call('apply_contract_extract', { p_id: id, p_data: patch, p_parties: extract?.parties || [] });
+  };
+  const openDatesEmail = async () => {
+    setErr(null);
+    try {
+      const { data } = await supabase.rpc('txn_dates_email', { p_id: id });
+      if (data?.error) throw new Error(data.error);
+      setDatesEmail(data);
+    } catch (e) { setErr('Could not build the email: ' + (e.message || e)); }
+  };
+
   if (!st) return null;
   const ms = st.milestones || [];
   const curStageMs = ms.filter(m => m.stage === st.stage);
@@ -207,6 +242,12 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
             {locked && !done && <div style={{ fontSize: 11, color: GOLD, marginTop: 1 }}>The brokerage handles this step</div>}
             {m.method && done && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{(FUND_METHODS.find(f => f[0] === m.method) || [null, m.method])[1]}{m.amount ? ' · ' + money(m.amount) : ''}</div>}
             {m.document_id && done && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 1 }}>Document on file ✓</div>}
+            {m.key === 'executed_contract' && m.document_id && st.can_edit && (
+              <button disabled={extracting || busy} onClick={() => runExtract(m.document_id)}
+                style={{ marginTop: 5, fontSize: 11.5, color: GOLD, background: 'transparent', border: '1px solid ' + GOLD, borderRadius: 7, padding: '4px 10px', fontWeight: 600, cursor: 'pointer' }}>
+                {extracting ? 'Reading contract…' : '✨ Extract details from contract'}
+              </button>
+            )}
             {!locked && m.help && !done && !isFunds && interactive && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.help}</div>}
           </div>
           {canTap && !done && m.wants_document && (<>
@@ -302,6 +343,29 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
           {/* editable deal facts */}
           <TxnFacts st={st} editing={editing} setEditing={setEditing} busy={busy} onSave={(patch) => { setEditing(false); call('update_txn_facts', { p_id: id, ...patch }); }} />
 
+          {/* key dates from the contract */}
+          {Array.isArray(st.key_dates) && st.key_dates.length > 0 && (
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #1e1810' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)' }}>Key dates</span>
+                {st.can_edit && <button onClick={openDatesEmail} style={{ background: CHAMP, color: '#100D09', border: 'none', fontSize: 11.5, borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Email the dates</button>}
+              </div>
+              {st.key_dates.map((d, i) => {
+                const dt = new Date(d.date + 'T00:00:00'); const today = new Date(); today.setHours(0, 0, 0, 0);
+                const days = Math.round((dt - today) / 86400000);
+                const soon = days >= 0 && days <= 3, past = days < 0;
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #1e1810' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{d.label}</span>
+                    <span style={{ fontSize: 13, color: past ? 'var(--text-3)' : soon ? '#EBCB82' : 'var(--text-1)', fontWeight: soon ? 700 : 500 }}>
+                      {dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{!past && days <= 14 ? ` · ${days}d` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* the transaction file */}
           <div style={{ marginTop: 18, paddingTop: 4 }}>
             <button onClick={() => setShowFile(v => !v)} style={{ background: 'transparent', border: 'none', color: GOLD, fontSize: 11.5, fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 700, cursor: 'pointer', padding: 0 }}>
@@ -316,6 +380,9 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
 
         {/* ── HISTORY: the audit timeline ── */}
         {tab === 'history' && <HistoryView events={events} STAGE_LABEL={STAGE_LABEL} />}
+
+        {extract && <ExtractReview extract={extract} busy={busy} onCancel={() => setExtract(null)} onApply={applyExtract} />}
+        {datesEmail && <DatesEmail data={datesEmail} onClose={() => setDatesEmail(null)} />}
       </div>
     </div>
   );
@@ -459,6 +526,79 @@ function DeadPicker({ busy, onPick, onCancel }) {
         </div>
       )}
       <button onClick={onCancel} style={{ marginTop: 10, background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 12, cursor: 'pointer', padding: 0 }}>Cancel</button>
+    </div>
+  );
+}
+
+// ── Contract extraction review (propose, then apply) ────────────────────────
+function ExtractReview({ extract, busy, onApply, onCancel }) {
+  const ex = extract.extracted || {};
+  const kd = extract.key_dates || [];
+  const parties = extract.parties || [];
+  const conf = ex.confidence || 'medium';
+  const money = (n) => n ? '$' + Number(n).toLocaleString() : '—';
+  const facts = [
+    ['Buyer', (ex.buyers || []).join(' & ') || '—'], ['Seller', (ex.sellers || []).join(' & ') || '—'],
+    ['Price', money(ex.purchase_price)], ['Earnest money', money(ex.earnest_money)],
+    ['Financing', ex.financing_type || '—'], ['Loan', ex.loan_type || '—'],
+  ];
+  return (
+    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 250, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base,#100D09)', width: '100%', maxWidth: 540, maxHeight: '88vh', overflowY: 'auto', borderRadius: '18px 18px 0 0', border: '1px solid #2a2016', padding: '18px 18px 34px' }}>
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 10.5, color: GOLD }}>From the contract</div>
+        <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 21, color: 'var(--text-1)', marginBottom: 2 }}>Here's what I found.</div>
+        <div style={{ fontSize: 12, color: conf === 'low' ? '#EBCB82' : 'var(--text-3)', marginBottom: 14 }}>
+          {conf === 'low' ? 'Low confidence — please double-check each field before applying.' : 'Review, then apply. Nothing is saved until you confirm.'}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 14px', marginBottom: 14 }}>
+          {facts.map(([k, v]) => <div key={k}><div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{k}</div><div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600, textTransform: k === 'Financing' || k === 'Loan' ? 'capitalize' : 'none' }}>{v}</div></div>)}
+        </div>
+        {kd.length > 0 && (<>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 6 }}>Critical dates</div>
+          <div style={{ marginBottom: 14 }}>{kd.map((d, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #1e1810' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{d.label}</span>
+              <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>{new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            </div>
+          ))}</div>
+        </>)}
+        {parties.length > 0 && (<>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 6 }}>Parties</div>
+          <div style={{ marginBottom: 16 }}>{parties.map((p, i) => (
+            <div key={i} style={{ fontSize: 12.5, color: 'var(--text-2)', padding: '3px 0' }}>
+              <span style={{ textTransform: 'capitalize', color: 'var(--text-3)' }}>{(p.role || '').replace(/_/g, ' ')}:</span> {p.name || p.email}{p.email && p.name ? ` · ${p.email}` : ''}
+            </div>
+          ))}</div>
+        </>)}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button disabled={busy} onClick={onApply} style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '11px 18px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Apply to deal</button>
+          <button onClick={onCancel} style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid #2a2016', borderRadius: 10, padding: '11px 16px', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Dates email — preview + open in mail ─────────────────────────────────────
+function DatesEmail({ data, onClose }) {
+  const to = (data.to || []).join(', ');
+  const mailto = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(data.subject || '')}&body=${encodeURIComponent(data.body || '')}`;
+  const copy = () => { try { navigator.clipboard.writeText((data.to?.length ? 'To: ' + to + '\n\n' : '') + 'Subject: ' + data.subject + '\n\n' + data.body); } catch (_) {} };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 250, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base,#100D09)', width: '100%', maxWidth: 540, maxHeight: '88vh', overflowY: 'auto', borderRadius: '18px 18px 0 0', border: '1px solid #2a2016', padding: '18px 18px 34px' }}>
+        <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 21, color: 'var(--text-1)', marginBottom: 2 }}>Key dates email.</div>
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 14 }}>Ready to send to everyone on the deal. Review and open in your mail app.</div>
+        {data.to?.length ? <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}><span style={{ color: 'var(--text-3)' }}>To:</span> {to}</div>
+          : <div style={{ fontSize: 12.5, color: '#EBCB82', marginBottom: 8 }}>No party emails on file yet — add them in the deal, or copy the text below.</div>}
+        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}><span style={{ color: 'var(--text-3)' }}>Subject:</span> {data.subject}</div>
+        <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: 'var(--text-1)', background: 'var(--bg-card,#1B1610)', border: '1px solid #2a2016', borderRadius: 10, padding: '12px 14px', marginBottom: 14, lineHeight: 1.5 }}>{data.body}</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <a href={mailto} style={{ background: CHAMP, color: '#100D09', textDecoration: 'none', borderRadius: 10, padding: '11px 18px', fontWeight: 800, fontSize: 14 }}>Open in mail</a>
+          <button onClick={copy} style={{ background: 'transparent', color: 'var(--text-2)', border: '1px solid #2a2016', borderRadius: 10, padding: '11px 16px', fontSize: 14, cursor: 'pointer' }}>Copy</button>
+          <button onClick={onClose} style={{ background: 'transparent', color: 'var(--text-3)', border: 'none', borderRadius: 10, padding: '11px 12px', fontSize: 14, cursor: 'pointer' }}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }
