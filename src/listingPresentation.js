@@ -215,6 +215,56 @@ export function buildPresentationHTML(p) {
   const videoUrl = (p.agent_video_url || '').trim();
   const signMode = !!p.sign_mode;          // seller-share renders the signature pad
 
+  // ── Local proof: real closings from OUR office's book — the credibility no
+  // generic MLS pull can match ("here's what Realty ONE Group Advantage actually
+  // closed near you"). Plus a positioning read tied to the real numbers.
+  const ls = p.localStats || null;
+  const lsMoney = (n) => (n || n === 0) ? '$' + Math.round(Number(n)).toLocaleString('en-US') : '—';
+  let localModule = '';
+  if (ls && (Number(ls.closings_12mo) > 0 || Number(ls.area_closings_total) > 0)) {
+    const trend = Number(ls.price_trend_pct);
+    const trendKnown = ls.price_trend_pct !== null && ls.price_trend_pct !== undefined && !Number.isNaN(trend);
+    const rising = trend > 1, softening = trend < -1;
+    // monthly pace bar strip
+    const months = Array.isArray(ls.monthly) ? ls.monthly : [];
+    const maxC = Math.max(1, ...months.map(x => Number(x.c) || 0));
+    const barStrip = months.length ? `<div style="display:flex;align-items:flex-end;gap:4px;height:64px;margin-top:8px">${months.map(x => {
+      const h = Math.max(6, Math.round((Number(x.c) || 0) / maxC * 60));
+      return `<div style="flex:1;text-align:center"><div style="height:${h}px;background:linear-gradient(180deg,var(--gold),#7A5020);border-radius:3px 3px 0 0"></div><div style="font-size:9px;color:var(--mut);margin-top:3px">${esc(x.m)}</div></div>`;
+    }).join('')}</div>` : '';
+    // nearby closings proof rows
+    const nearby = Array.isArray(ls.nearby) ? ls.nearby : [];
+    const nearbyRows = nearby.slice(0, 5).map(n => `<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px"><span style="color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.address)}</span><span style="color:var(--mut);white-space:nowrap">${lsMoney(n.price)} <span style="opacity:.6">· ${esc(n.when)}</span></span></div>`).join('');
+    // positioning read
+    const bandLine = (Number(ls.band_count) > 0)
+      ? `In the last 18 months our office closed <b>${ls.band_count}</b> home${ls.band_count === 1 ? '' : 's'} in your price range, at a median of <b>${lsMoney(ls.band_median)}</b>. That's the buyer pool your home competes for.`
+      : '';
+    const scopeCap = /^the /i.test(ls.scope) ? ls.scope.charAt(0).toUpperCase() + ls.scope.slice(1) : 'The ' + ls.scope;
+    const positioning = `${rising ? 'Prices in ' + esc(ls.scope) + ' have been climbing, which gives us room to reach — but buyers are still disciplined, so we price to the evidence and let competition lift the number.'
+      : softening ? 'Values in ' + esc(ls.scope) + ' have softened recently, so the winning move is to price sharply from day one — the first two weeks draw the most qualified buyers, and a fresh, well-priced listing captures them before they anchor elsewhere.'
+      : esc(scopeCap) + ' market is steady, which rewards a precise launch price: right at the meat of the comparable sales, dressed and marketed to look like the best value in its band.'}`;
+    localModule = `
+  <!-- LOCAL PROOF -->
+  <section><div class="wrap">
+    <div class="mod-num">02·5</div><div class="eyebrow">What our office is closing near you</div>
+    <h2 class="title">Real results in ${esc(ls.scope)} — from our own book.</h2>
+    <p class="lead">These aren't portal estimates. This is what <b>${brokerage}</b> has actually closed, so the read on your market is grounded in real transactions, not guesses.</p>
+    <div class="grid3" style="margin-top:24px">
+      <div class="stat"><div class="k">Homes we closed (12 mo)</div><div class="v">${ls.closings_12mo || '—'}</div></div>
+      <div class="stat"><div class="k">Our median sale</div><div class="v">${lsMoney(ls.median_sale)}</div></div>
+      <div class="stat"><div class="k">${trendKnown ? '6-mo price direction' : 'Closed volume'}</div><div class="v" style="color:${trendKnown ? (rising ? '#7fae8f' : softening ? '#e0794f' : 'var(--ink)') : 'var(--ink)'}">${trendKnown ? (trend > 0 ? '+' : '') + trend + '%' : lsMoney(ls.area_volume_total)}</div></div>
+    </div>
+    ${barStrip ? `<div class="card" style="margin-top:22px;padding:18px 20px"><div class="eyebrow" style="margin:0 0 4px">Our closings by month — when this market transacts</div>${barStrip}${ls.peak_month ? `<div style="color:var(--mut);font-size:12.5px;margin-top:10px">Our busiest closing month is <b>${esc(ls.peak_month)}</b>. Because a sale closes roughly 30–45 days after going under contract, the sweet spot to be <i>live</i> and drawing offers is about six to eight weeks ahead of it.</div>` : ''}</div>` : ''}
+    ${nearbyRows ? `<div class="card" style="margin-top:18px;padding:16px 20px"><div class="eyebrow" style="margin:0 0 8px">A sample of what we've closed</div>${nearbyRows}</div>` : ''}
+    <div class="card" style="margin-top:18px;padding:18px 20px;background:rgba(203,163,92,.06);border-color:rgba(203,163,92,.25)">
+      <div class="eyebrow" style="margin:0 0 6px">How we position <span style="text-transform:none;letter-spacing:0">your</span> home</div>
+      <p style="margin:0;color:var(--ink);font-size:14.5px;line-height:1.6">${positioning}</p>
+      ${bandLine ? `<p style="margin:10px 0 0;color:var(--mut);font-size:13px;line-height:1.6">${bandLine}</p>` : ''}
+    </div>
+    <div style="color:var(--mut);font-size:11.5px;margin-top:10px">Source: ${esc(ls.source)}${ls.used_town ? '' : ', across ' + esc(ls.scope)}.</div>
+  </div></section>`;
+  }
+
   // ── #2 Market trend: a 12-month price index from the measured appreciation rate.
   // Honest by construction — it's the trend the data implies, drawn, not asserted.
   const apprPct = Number(m.annual_appreciation_pct);
@@ -517,6 +567,8 @@ export function buildPresentationHTML(p) {
       <div style="color:var(--mut);font-size:12.5px;margin-top:6px">Local values have ${apprPct>0?'appreciated':'softened'} about ${Math.abs(apprPct).toFixed(1)}% over the past year — the backdrop your pricing is set against.</div>
     </div>` : ''}
   </div></section>
+
+  ${localModule}
 
   <!-- MODULE 3 -->
   <section><div class="wrap">

@@ -362,7 +362,18 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
     research: p._research ? { sources: (p._research.sources || []).slice(0, 8), confidence: p._research.confidence || null } : null,
   });
 
-  const generateHTML = (extra = {}) => buildPresentationHTML({ ...payload(), agent_name: agentName, supabase_url: SUPABASE_URL, research_confidence: (p._research && p._research.confidence) || null, ...extra });
+  const localStatsRef = useRef(null);
+  const ensureLocalStats = useCallback(async () => {
+    try {
+      const addr = (p.subject && p.subject.address) || p.address || '';
+      const price = Number((p.tiers && p.tiers.target) || (p.subject && p.subject.list_price) || 0) || null;
+      const { data } = await supabase.rpc('local_market_stats', { p_address: addr, p_price: price });
+      localStatsRef.current = data || null;
+    } catch (_) { localStatsRef.current = null; }
+    return localStatsRef.current;
+  }, [p.subject, p.tiers, p.address]);
+
+  const generateHTML = (extra = {}) => buildPresentationHTML({ ...payload(), agent_name: agentName, supabase_url: SUPABASE_URL, research_confidence: (p._research && p._research.confidence) || null, localStats: localStatsRef.current, ...extra });
 
   /* One write path for everything. `withHtml:false` is the autosave path -
      it skips rebuilding the 30KB deck, which is the expensive part.
@@ -464,6 +475,7 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
     const w = window.open('', '_blank');
     if (w) { try { w.document.write('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#100D09;color:#EBCB82;font-family:-apple-system,system-ui,sans-serif;display:grid;place-items:center;height:100vh"><div>Saving and preparing your presentation\u2026</div></body>'); } catch (_) {} }
     setBusy(true);
+    await ensureLocalStats();                            // real local-market data from our book
     const saved = await persist({ withHtml: true });     // preview always saves first
     setBusy(false);
     if (!saved) { if (w) { try { w.close(); } catch (_) {} } return; }
@@ -486,6 +498,7 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
 
   const enableShare = async () => {
     setBusy(true);
+    await ensureLocalStats();
     const saved = await persist({ withHtml: true });
     if (!saved) { setBusy(false); return; }
     const tok = saved.share_token || token();
