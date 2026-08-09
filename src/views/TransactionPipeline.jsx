@@ -195,6 +195,10 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
           <div style={{ fontSize: 15, fontWeight: 700, color: CHAMP }}>{st.next_action}</div>
         </div>
 
+        {st.stage === 'closing' && !st.viewer_is_broker && (
+          <div style={{ margin: '-6px 0 12px', fontSize: 12, color: 'var(--text-3)' }}>Submitted for disbursement. The brokerage takes it from here — you'll be notified when your commission is sent.</div>
+        )}
+
         {err && <div style={{ background: 'rgba(239,68,68,.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, color: '#fecaca', marginBottom: 12 }}>{err}</div>}
 
         {/* financing toggle (only matters while live) */}
@@ -261,7 +265,7 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
             {NEXT[st.stage] && (NEXT[st.stage] !== 'closed' || st.viewer_is_broker) && (
               <button disabled={busy} onClick={() => call('advance_txn_stage', { p_id: id, p_to_stage: NEXT[st.stage] })}
                 style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
-                Move to {STAGE_LABEL[NEXT[st.stage]]} →
+                {NEXT[st.stage] === 'closing' ? 'Submit for disbursement →' : 'Move to ' + STAGE_LABEL[NEXT[st.stage]] + ' →'}
               </button>
             )}
             <button disabled={busy} onClick={() => { const r = prompt('Why is this deal dead? (e.g. buyer walked, financing fell through)'); if (r) call('set_txn_dead', { p_id: id, p_reason: r }); }}
