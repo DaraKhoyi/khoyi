@@ -141,6 +141,8 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
   const [extract, setExtract] = useState(null);      // review panel after AI extraction
   const [extracting, setExtracting] = useState(false);
   const [datesEmail, setDatesEmail] = useState(null);
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [compliance, setCompliance] = useState(null);
   const fileRefs = useRef({});
 
   const refresh = useCallback(async () => {
@@ -216,6 +218,16 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
       if (data?.error) throw new Error(data.error);
       setDatesEmail(data);
     } catch (e) { setErr('Could not build the email: ' + (e.message || e)); }
+  };
+  const doExtend = (newClose, shiftAll) => { setExtendOpen(false); call('extend_txn_closing', { p_id: id, p_new_close: newClose, p_shift_all: shiftAll }); };
+  const seedPostClose = () => call('seed_post_close', { p_id: id });
+  const openCompliance = async () => {
+    setErr(null);
+    try {
+      const { data } = await supabase.rpc('txn_compliance', { p_id: id });
+      if (data?.error) throw new Error(data.error);
+      setCompliance(data);
+    } catch (e) { setErr('Could not build the summary: ' + (e.message || e)); }
   };
 
   if (!st) return null;
@@ -306,6 +318,13 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
 
         {/* ── WORK: current-stage actions ── */}
         {tab === 'work' && (<>
+          {isClosed && st.can_edit && (
+            <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(34,197,94,.06)', border: '1px solid rgba(34,197,94,.3)' }}>
+              <div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600, marginBottom: 2 }}>Closed. Keep the relationship warm.</div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 10 }}>Set up post-close follow-ups — a 30-day check-in, a 6-month touch, and the 1-year home anniversary (a natural moment to ask for a referral).</div>
+              <button disabled={busy} onClick={seedPostClose} style={{ background: '#22c55e', color: '#04140a', border: 'none', borderRadius: 8, padding: '8px 15px', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Set up follow-ups</button>
+            </div>
+          )}
           {st.deal_status === 'active' && st.can_edit && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
               <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Financing:</span>
@@ -348,7 +367,12 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #1e1810' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)' }}>Key dates</span>
-                {st.can_edit && <button onClick={openDatesEmail} style={{ background: CHAMP, color: '#100D09', border: 'none', fontSize: 11.5, borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Email the dates</button>}
+                {st.can_edit && st.deal_status === 'active' && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => setExtendOpen(true)} style={{ background: 'transparent', color: GOLD, border: '1px solid #2a2016', fontSize: 11.5, borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Extend</button>
+                    <button onClick={openDatesEmail} style={{ background: CHAMP, color: '#100D09', border: 'none', fontSize: 11.5, borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Email the dates</button>
+                  </div>
+                )}
               </div>
               {st.key_dates.map((d, i) => {
                 const dt = new Date(d.date + 'T00:00:00'); const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -371,7 +395,7 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
             <button onClick={() => setShowFile(v => !v)} style={{ background: 'transparent', border: 'none', color: GOLD, fontSize: 11.5, fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 700, cursor: 'pointer', padding: 0 }}>
               {showFile ? '− Hide file' : '+ Transaction file'}
             </button>
-            {showFile && <div style={{ marginTop: 8 }}><LinkedDocuments userId={userId} targetType="transaction" targetId={id} title="Documents" /></div>}
+            {showFile && <div style={{ marginTop: 8 }}><TxnFileWithClassify id={id} userId={userId} canEdit={st.can_edit && !isDead} onFiled={refresh} /></div>}
           </div>
         </>)}
 
@@ -379,10 +403,17 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
         {tab === 'journey' && <JourneyView st={st} STAGES={STAGES} STAGE_LABEL={STAGE_LABEL} row={MilestoneRow} />}
 
         {/* ── HISTORY: the audit timeline ── */}
-        {tab === 'history' && <HistoryView events={events} STAGE_LABEL={STAGE_LABEL} />}
+        {tab === 'history' && (<>
+          {st.viewer_is_broker && (
+            <button onClick={openCompliance} style={{ marginBottom: 12, background: 'transparent', color: GOLD, border: '1px solid ' + GOLD, borderRadius: 8, padding: '7px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>📄 Compliance summary</button>
+          )}
+          <HistoryView events={events} STAGE_LABEL={STAGE_LABEL} />
+        </>)}
 
         {extract && <ExtractReview extract={extract} busy={busy} onCancel={() => setExtract(null)} onApply={applyExtract} />}
         {datesEmail && <DatesEmail data={datesEmail} onClose={() => setDatesEmail(null)} />}
+        {extendOpen && <ExtendModal current={st.expected_close_date} busy={busy} onCancel={() => setExtendOpen(false)} onExtend={doExtend} />}
+        {compliance && <ComplianceSheet data={compliance} onClose={() => setCompliance(null)} />}
       </div>
     </div>
   );
@@ -526,6 +557,174 @@ function DeadPicker({ busy, onPick, onCancel }) {
         </div>
       )}
       <button onClick={onCancel} style={{ marginTop: 10, background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 12, cursor: 'pointer', padding: 0 }}>Cancel</button>
+    </div>
+  );
+}
+
+// ── Transaction file + document auto-classification ─────────────────────────
+// Shows the deal's documents and, for each, an "Identify & file to step" action
+// that classifies the doc (CD / inspection / appraisal …) and routes it to the
+// matching milestone. Assisted: the human taps to confirm; nothing self-files.
+function TxnFileWithClassify({ id, userId, canEdit, onFiled }) {
+  const [docs, setDocs] = useState([]);
+  const [working, setWorking] = useState(null);
+  const [suggest, setSuggest] = useState({}); // docId -> {milestone_key, milestone_label, label, confidence}
+  const [note, setNote] = useState(null);
+
+  const loadDocs = useCallback(async () => {
+    const { data: links } = await supabase.from('entity_links').select('item_id').eq('target_type', 'transaction').eq('target_id', id).eq('item_type', 'document');
+    const ids = (links || []).map(l => l.item_id);
+    if (!ids.length) { setDocs([]); return; }
+    const { data } = await supabase.from('documents').select('id, title, mime_type').in('id', ids);
+    setDocs(data || []);
+  }, [id]);
+  useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  const classify = async (docId) => {
+    setWorking(docId); setNote(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('txn-classify-doc', { body: { transaction_id: id, document_id: docId } });
+      if (error || !data?.ok) throw new Error(data?.error || 'Could not identify');
+      if (data.milestone_key) setSuggest(s => ({ ...s, [docId]: data }));
+      else setNote(`Looks like ${data.label || 'an other document'} — no matching step, it's filed in the transaction file.`);
+    } catch (e) { setNote('Could not identify: ' + (e.message || e)); }
+    setWorking(null);
+  };
+  const fileToStep = async (docId, s) => {
+    setWorking(docId);
+    try {
+      await supabase.rpc('set_txn_milestone', { p_id: id, p_key: s.milestone_key, p_status: 'done', p_document_id: docId });
+      setSuggest(rest => { const c = { ...rest }; delete c[docId]; return c; });
+      setNote(`Filed as ${s.milestone_label}.`);
+      onFiled && onFiled();
+    } catch (e) { setNote('Could not file: ' + (e.message || e)); }
+    setWorking(null);
+  };
+
+  return (
+    <div>
+      <LinkedDocuments userId={userId} targetType="transaction" targetId={id} title="Documents" />
+      {canEdit && docs.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 6 }}>Auto-file a document to its step</div>
+          {docs.map(d => {
+            const s = suggest[d.id];
+            return (
+              <div key={d.id} style={{ padding: '7px 0', borderBottom: '1px solid #1e1810' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{d.title}</span>
+                  {!s && <button disabled={working === d.id} onClick={() => classify(d.id)} style={{ fontSize: 11.5, color: GOLD, background: 'transparent', border: '1px solid ' + GOLD, borderRadius: 7, padding: '4px 10px', cursor: 'pointer', flex: 'none' }}>{working === d.id ? 'Reading…' : '✨ Identify'}</button>}
+                </div>
+                {s && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, color: '#EBCB82' }}>Looks like <strong>{s.label}</strong> → {s.milestone_label}</span>
+                    <button disabled={working === d.id} onClick={() => fileToStep(d.id, s)} style={{ fontSize: 11.5, color: '#100D09', background: CHAMP, border: 'none', borderRadius: 7, padding: '4px 11px', fontWeight: 700, cursor: 'pointer', flex: 'none' }}>File to step</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {note && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8 }}>{note}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Compliance summary (print-ready; print brand standard: white bg, static gold) ──
+function ComplianceSheet({ data, onClose }) {
+  const money = (n) => n ? '$' + Number(n).toLocaleString() : '—';
+  const dt = (s) => s ? new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  const dtt = (s) => s ? new Date(s).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  const printIt = () => {
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(document.getElementById('compliance-print').innerHTML);
+    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 260, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflowY: 'auto', padding: '20px 10px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 620 }}>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button onClick={printIt} style={{ background: '#C5A95E', color: '#100D09', border: 'none', borderRadius: 8, padding: '9px 16px', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Print / Save PDF</button>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,.1)', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>Close</button>
+        </div>
+        <div id="compliance-print" style={{ background: '#ffffff', color: '#100D09', borderRadius: 10, padding: '30px 32px', fontFamily: "'Barlow',system-ui,sans-serif" }}>
+          <style>{`@media print{@page{margin:1in}} #compliance-print h1{font-family:'Fraunces',Georgia,serif;font-weight:400}`}</style>
+          <div style={{ borderBottom: '2px solid #C5A95E', paddingBottom: 12, marginBottom: 18 }}>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 11, color: '#7A5020' }}>Transaction Compliance Summary</div>
+            <h1 style={{ fontSize: 24, margin: '4px 0 2px', color: '#100D09' }}>{data.address || 'Transaction'}</h1>
+            <div style={{ fontSize: 12.5, color: '#555' }}>File #{data.trans_id} · {data.year} · {(data.stage || '').replace(/_/g, ' ')} · Generated {dt(data.generated_at)}</div>
+          </div>
+          <table style={{ width: '100%', fontSize: 13, marginBottom: 20, borderCollapse: 'collapse' }}><tbody>
+            {[['Agent', data.agent], ['Buyer', data.buyer || '—'], ['Seller', data.seller || '—'], ['Financing', data.financing], ['Gross sale', money(data.gross_sale)], ['Commission', money(data.gross_commission)], ['Effective date', dt(data.effective_date)], ['Closing date', dt(data.closing_date)]].map(([k, v]) => (
+              <tr key={k}><td style={{ padding: '3px 12px 3px 0', color: '#777', width: 130, textTransform: 'capitalize' }}>{k}</td><td style={{ padding: '3px 0', fontWeight: 600, textTransform: k === 'Financing' ? 'capitalize' : 'none' }}>{v}</td></tr>
+            ))}
+          </tbody></table>
+
+          <SectionTitle>Milestones</SectionTitle>
+          <table style={{ width: '100%', fontSize: 12.5, marginBottom: 20, borderCollapse: 'collapse' }}><tbody>
+            {(data.milestones || []).map((m, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '5px 0' }}>{m.label}</td>
+                <td style={{ padding: '5px 0', textAlign: 'right', color: m.status === 'done' ? '#1a7f37' : m.status === 'waived' ? '#999' : '#b45309', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {m.status === 'done' ? '✓ Done' : m.status === 'waived' ? 'N/A' : 'Pending'}{m.has_document ? ' · doc' : ''}
+                </td>
+                <td style={{ padding: '5px 0 5px 12px', textAlign: 'right', color: '#777', whiteSpace: 'nowrap' }}>{m.completed_at ? dt(m.completed_at) + (m.by ? ' · ' + m.by : '') : ''}</td>
+              </tr>
+            ))}
+          </tbody></table>
+
+          {(data.documents || []).length > 0 && (<>
+            <SectionTitle>Documents on file ({data.documents.length})</SectionTitle>
+            <ul style={{ fontSize: 12.5, margin: '0 0 20px', paddingLeft: 18 }}>{data.documents.map((d, i) => <li key={i} style={{ padding: '2px 0' }}>{d.title} <span style={{ color: '#999' }}>· {dt(d.uploaded)}</span></li>)}</ul>
+          </>)}
+
+          {(data.parties || []).length > 0 && (<>
+            <SectionTitle>Parties</SectionTitle>
+            <ul style={{ fontSize: 12.5, margin: '0 0 20px', paddingLeft: 18 }}>{data.parties.map((p, i) => <li key={i} style={{ padding: '2px 0' }}><span style={{ textTransform: 'capitalize', color: '#777' }}>{(p.role || '').replace(/_/g, ' ')}:</span> {p.name}{p.email ? ' · ' + p.email : ''}</li>)}</ul>
+          </>)}
+
+          <SectionTitle>Audit trail</SectionTitle>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}><tbody>
+            {(data.timeline || []).map((e, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                <td style={{ padding: '4px 12px 4px 0', color: '#777', whiteSpace: 'nowrap', width: 150 }}>{dtt(e.at)}</td>
+                <td style={{ padding: '4px 0' }}>{e.kind === 'stage_change' ? 'Moved to ' + (e.to || '').replace(/_/g, ' ') : e.kind === 'milestone' ? (e.milestone || '').replace(/_/g, ' ') : e.note || e.kind}{e.by ? ' — ' + e.by : ''}</td>
+              </tr>
+            ))}
+          </tbody></table>
+          <div style={{ marginTop: 22, paddingTop: 10, borderTop: '1px solid #C5A95E', fontSize: 10.5, color: '#999', fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.1em' }}>Realty ONE Group Advantage · powered by Prism</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function SectionTitle({ children }) {
+  return <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.12em', fontSize: 12, fontWeight: 700, color: '#7A5020', borderBottom: '1px solid #C5A95E', paddingBottom: 3, marginBottom: 8 }}>{children}</div>;
+}
+
+// ── Extend closing ───────────────────────────────────────────────────────────
+function ExtendModal({ current, busy, onExtend, onCancel }) {
+  const [date, setDate] = useState(current || '');
+  const [shiftAll, setShiftAll] = useState(true);
+  const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-base,#0f0b07)', border: '1px solid #2a2016', borderRadius: 8, color: 'var(--text-1)', padding: '10px 12px', fontSize: 14, marginTop: 8 };
+  return (
+    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 250, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base,#100D09)', width: '100%', maxWidth: 460, borderRadius: '18px 18px 0 0', border: '1px solid #2a2016', padding: '20px 18px 32px' }}>
+        <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 21, color: 'var(--text-1)', marginBottom: 2 }}>Extend the closing.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 6 }}>Closing dates move — it's routine. Set the new date and, if you like, slide every downstream deadline by the same amount.</div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 8 }}>New closing date</div>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={shiftAll} onChange={e => setShiftAll(e.target.checked)} style={{ width: 17, height: 17 }} />
+          <span style={{ fontSize: 13, color: 'var(--text-2)' }}>Shift all other deadlines by the same number of days</span>
+        </label>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <button disabled={busy || !date} onClick={() => onExtend(date, shiftAll)} style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '11px 18px', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: (busy || !date) ? .6 : 1 }}>Extend closing</button>
+          <button onClick={onCancel} style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid #2a2016', borderRadius: 10, padding: '11px 16px', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
