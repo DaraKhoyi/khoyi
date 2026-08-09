@@ -38,6 +38,9 @@ export default function TransactionPipeline({ userId }) {
   const [deals, setDeals] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [view, setView] = useState('board');     // board | focus | closed
+  const [closed, setClosed] = useState(null);
+  const [q, setQ] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -47,10 +50,65 @@ export default function TransactionPipeline({ userId }) {
     } catch (_) { setDeals([]); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (view === 'closed' && closed === null) supabase.rpc('txn_pipeline_closed').then(({ data }) => setClosed(Array.isArray(data) ? data : [])); }, [view, closed]);
 
-  const byStage = (k) => (deals || []).filter(d => d.stage === k);
   const active = (deals || []).filter(d => d.deal_status === 'active');
+  const ql = q.trim().toLowerCase();
+  const match = (d) => !ql || (d.address || '').toLowerCase().includes(ql) || (d.agent_name || '').toLowerCase().includes(ql);
+  const shown = active.filter(match);
+  const byStage = (k) => shown.filter(d => d.stage === k);
   const attention = active.filter(d => d.health === 'stalled' || d.health === 'attention');
+
+  // nearest upcoming/overdue key date for a deal → a chip
+  const nearestDate = (d) => {
+    const kd = Array.isArray(d.key_dates) ? d.key_dates : [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let best = null;
+    kd.forEach(x => {
+      if (!x || !x.date || x.key === 'effective_date') return;
+      const days = Math.round((new Date(x.date + 'T00:00:00') - today) / 86400000);
+      if (days < -3) return;
+      if (!best || days < best.days) best = { days, label: x.label, date: x.date };
+    });
+    return best;
+  };
+  const DeadlineChip = ({ d }) => {
+    const nd = nearestDate(d); if (!nd) return null;
+    const over = nd.days < 0, soon = nd.days <= 3;
+    const c = over ? '#ef4444' : soon ? '#EBCB82' : 'var(--text-3)';
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: c, background: (over || soon) ? 'rgba(235,203,130,.08)' : 'transparent', border: '1px solid ' + ((over || soon) ? c + '55' : 'var(--line)'), borderRadius: 20, padding: '2px 8px', marginTop: 7, whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {nd.label}: {over ? Math.abs(nd.days) + 'd late' : nd.days === 0 ? 'today' : nd.days === 1 ? 'tomorrow' : new Date(nd.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+      </span>
+    );
+  };
+
+  const Card = ({ d, showStage }) => (
+    <div className="txn-card" onClick={() => setOpenId(d.id)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+        <span className="dot" style={{ background: (HEALTH[d.health] || HEALTH.done).c }} title={(HEALTH[d.health] || HEALTH.done).t} />
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{d.address || 'Untitled deal'}</span>
+        {showStage && <span style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', flex: 'none' }}>{STAGE_LABEL[d.stage]}</span>}
+      </div>
+      <div className="txn-next">→ {d.next_action}</div>
+      <DeadlineChip d={d} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--text-3)' }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '58%' }}>{d.agent_name || '—'}</span>
+        <span>{d.gross_sale ? money(d.gross_sale) : (d.days_in_stage + 'd in stage')}</span>
+      </div>
+    </div>
+  );
+
+  // Focus = one flat list, most-urgent first (health, then days in stage)
+  const focusList = [...shown].sort((a, b) => {
+    const rank = { stalled: 0, attention: 1, on_track: 2, done: 3 };
+    const r = (rank[a.health] ?? 2) - (rank[b.health] ?? 2);
+    return r !== 0 ? r : (b.days_in_stage || 0) - (a.days_in_stage || 0);
+  });
+
+  const tab = (k, label) => (
+    <button onClick={() => setView(k)} style={{ background: 'transparent', border: 'none', borderBottom: '2px solid ' + (view === k ? GOLD : 'transparent'), color: view === k ? 'var(--text-1)' : 'var(--text-3)', fontSize: 12.5, fontWeight: view === k ? 700 : 500, padding: '7px 12px', cursor: 'pointer' }}>{label}</button>
+  );
 
   return (
     <div className="ww-txn" style={{ paddingBottom: 90 }}>
@@ -63,11 +121,12 @@ export default function TransactionPipeline({ userId }) {
         .txn-card:hover{ border-color:${GOLD}; transform:translateY(-1px); }
         .txn-next{ color:${CHAMP}; font-size:13px; font-weight:600; line-height:1.25; }
         .dot{ width:8px; height:8px; border-radius:50%; display:inline-block; flex:none; }
+        .txn-search{ width:100%; box-sizing:border-box; background:var(--card); border:1px solid var(--line); border-radius:10px; color:var(--text-1); padding:8px 12px; font-size:13px; }
       `}</style>
 
       <div className="page-header fade-up" style={{ marginBottom: 8 }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm"
+          <button onClick={() => setCreating(true)}
             style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '8px 15px', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
             + New deal
           </button>
@@ -80,19 +139,34 @@ export default function TransactionPipeline({ userId }) {
           {(() => { const vol = active.reduce((s, d) => s + (Number(d.gross_sale) || 0), 0); return vol > 0 ? <> · {money(vol)} in the pipeline</> : null; })()}
         </div>
         <div className="gold-hairline" style={{ height: 1, background: 'linear-gradient(90deg,transparent,' + GOLD + '55,transparent)', margin: '10px 0' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '1px solid var(--line)', marginBottom: 12 }}>
+          {tab('board', 'Board')}{tab('focus', 'Focus')}{tab('closed', 'Closed')}
+        </div>
+        {view !== 'closed' && active.length > 0 && (
+          <input className="txn-search" placeholder="Search by address or agent…" value={q} onChange={e => setQ(e.target.value)} style={{ marginBottom: 12 }} />
+        )}
       </div>
 
       {deals === null ? (
         <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>Loading the pipeline…</div>
+      ) : view === 'closed' ? (
+        <ClosedList rows={closed} onOpen={setOpenId} />
       ) : active.length === 0 ? (
         <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--text-3)' }}>
           <div style={{ fontFamily: "'Fraunces',serif", fontSize: 20, color: 'var(--text-2)', marginBottom: 6 }}>No live deals yet.</div>
           <div style={{ fontSize: 13, marginBottom: 14 }}>Start one when an agent sends an offer on a property.</div>
-          <button onClick={() => setCreating(true)} className="btn btn-primary btn-sm" style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '9px 16px', fontWeight: 800, cursor: 'pointer' }}>+ New deal</button>
+          <button onClick={() => setCreating(true)} style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '9px 16px', fontWeight: 800, cursor: 'pointer' }}>+ New deal</button>
+        </div>
+      ) : shown.length === 0 ? (
+        <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No deals match “{q}”.</div>
+      ) : view === 'focus' ? (
+        <div style={{ padding: '0 2px' }}>
+          {attention.length > 0 && <div style={{ fontSize: 11, color: CHAMP, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>Sorted by what needs you most</div>}
+          {focusList.map(d => <Card key={d.id} d={d} showStage />)}
         </div>
       ) : (
         <div className="txn-rail">
-          {STAGES.filter(s => s.key !== 'closed' || byStage('closed').length).map(s => {
+          {STAGES.filter(s => s.key !== 'closed').map(s => {
             const col = byStage(s.key);
             return (
               <div key={s.key} className="txn-col">
@@ -102,27 +176,41 @@ export default function TransactionPipeline({ userId }) {
                 </div>
                 {col.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--text-3)', opacity: .5, padding: '8px 2px' }}>—</div>
-                ) : col.map(d => (
-                  <div key={d.id} className="txn-card" onClick={() => setOpenId(d.id)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
-                      <span className="dot" style={{ background: (HEALTH[d.health] || HEALTH.done).c }} title={(HEALTH[d.health] || HEALTH.done).t} />
-                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.address || 'Untitled deal'}</span>
-                    </div>
-                    <div className="txn-next">→ {d.next_action}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--text-3)' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{d.agent_name || '—'}</span>
-                      <span>{d.gross_sale ? money(d.gross_sale) : (d.days_in_stage + 'd')}</span>
-                    </div>
-                  </div>
-                ))}
+                ) : col.map(d => <Card key={d.id} d={d} />)}
               </div>
             );
           })}
         </div>
       )}
 
-      {openId && <TxnDetail id={openId} userId={userId} onClose={() => setOpenId(null)} onChanged={load} />}
+      {openId && <TxnDetail id={openId} userId={userId} onClose={() => setOpenId(null)} onChanged={() => { load(); setClosed(null); }} />}
       {creating && <NewDeal onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); load(); setOpenId(id); }} />}
+    </div>
+  );
+}
+
+// Closed & dead deals, most recent first.
+function ClosedList({ rows, onOpen }) {
+  if (rows === null) return <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>;
+  if (!rows.length) return <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>Nothing closed or dead in the last few months.</div>;
+  return (
+    <div style={{ padding: '0 2px' }}>
+      {rows.map(d => {
+        const dead = d.deal_status === 'dead';
+        return (
+          <div key={d.id} className="txn-card" onClick={() => onOpen(d.id)}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span className="dot" style={{ background: dead ? '#ef4444' : '#22c55e' }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{d.address || 'Untitled deal'}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-3)', flex: 'none' }}>{d.gross_sale ? money(d.gross_sale) : ''}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--text-3)' }}>
+              <span style={{ color: dead ? '#fca5a5' : '#22c55e' }}>{dead ? ('Dead' + (d.dead_reason ? ' · ' + d.dead_reason : '')) : 'Closed'}</span>
+              <span>{d.agent_name || '—'}{d.when ? ' · ' + new Date(d.when + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}</span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
