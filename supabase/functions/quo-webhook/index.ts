@@ -79,6 +79,34 @@ serve(async (req) => {
         raw: o,
       };
       await supabase.from("quo_messages").upsert(row, { onConflict: "op_id" });
+
+      // ── 5-Minute Lead Concierge ──────────────────────────────────────────
+      // A brand-new inbound (a lead reaching out) is the speed-to-lead moment.
+      // Fire the concierge: draft a first reply in the agent's voice + push them.
+      // Only on genuine INCOMING messages, and only for numbers that aren't an
+      // established contact (a known client texting isn't a "new lead").
+      if (row.direction === "incoming" && row.from_number) {
+        try {
+          const last10 = String(row.from_number).replace(/\D/g, "").slice(-10);
+          let contactId: string | null = null, leadName: string | null = null, isEstablished = false;
+          if (last10.length === 10) {
+            const { data: c } = await supabase.from("contacts")
+              .select("id, name, type, created_at, last_outbound_at")
+              .eq("user_id", owner).ilike("phone", "%" + last10 + "%").limit(1).maybeSingle();
+            if (c) {
+              contactId = c.id; leadName = c.name || null;
+              // "established" = we've reached out before, or it's a non-lead type
+              isEstablished = !!c.last_outbound_at || (c.type && !["lead", "prospect", "new"].includes(String(c.type).toLowerCase()));
+            }
+          }
+          if (!isEstablished) {
+            await supabase.functions.invoke("lead-concierge", { body: {
+              user_id: owner, contact_id: contactId, lead_name: leadName,
+              lead_phone: row.from_number, channel: "sms", inbound_text: row.body || null,
+            } });
+          }
+        } catch (_e) { /* concierge is best-effort; never block the webhook */ }
+      }
     } else if (type === "callSummary" || type === "call.summary.completed") {
       await supabase.from("quo_calls").update({
         summary: o.summary ?? null,
