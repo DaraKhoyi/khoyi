@@ -341,6 +341,7 @@ export default function TodayView({
         .gold-hairline{height:1px;border:0;background:linear-gradient(90deg,transparent,#C5A95E 20%,#EBCB82 50%,#C5A95E 80%,transparent);background-size:200% auto;animation:goldGlide 7s linear infinite;}
         @media (prefers-reduced-motion: reduce){.gold-move,.gold-hairline{animation:none}.fade-up,.fade-up-2{animation:none}.live-dot{animation:none}}`}</style>
 
+      <EnableNotifications myUserId={myUserId} />
       <MorningBrief setView={setView} />
       <LeadConcierge myUserId={myUserId} setView={setView} />
 
@@ -614,6 +615,112 @@ export default function TodayView({
           <button className="btn btn-ghost btn-sm" onClick={() => setLastBatch(null)}>Dismiss</button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Turn on notifications ─────────────────────────────────────────────────────
+// The multiplier: the Morning Brief and new-lead alerts only reach a phone if push
+// is on — and most agents never found the Settings toggle. This is the one-tap
+// front-and-center prompt. The critical fork is iOS: Safari only allows web push
+// once the app is INSTALLED to the Home Screen, so on an un-installed iPhone we
+// show the Add-to-Home-Screen steps instead of a permission request that can't work.
+const VAPID_PUBLIC_KEY = 'BF7IbYP2gbqaV5B3-iaX88-r08O9tLutgXxUadjJicDKjl4QU8xxu-Yfdgloej6DeUrtChNcT6gT5HlS4Ze6OJk';
+function b64ToU8(s) {
+  const pad = '='.repeat((4 - s.length % 4) % 4);
+  const b = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b); const a = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i);
+  return a;
+}
+function EnableNotifications({ myUserId }) {
+  const [state, setState] = useState('checking'); // checking | ready | ios_install | unsupported | on | busy | error
+  const [msg, setMsg] = useState('');
+  const [dismissed, setDismissed] = useState(false);
+
+  const isIOS = typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test(navigator.userAgent);
+  const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (typeof window !== 'undefined' && sessionStorage.getItem('hidePushPrompt') === '1') { setDismissed(true); return; }
+        const supported = 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined';
+        if (!supported) {
+          // iOS in a normal Safari tab can't do push until installed → guide to install
+          if (isIOS && !standalone) { setState('ios_install'); return; }
+          setState('unsupported'); return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub && Notification.permission === 'granted') {
+          // already on → make sure it's saved, then stay quiet
+          try { const j = sub.toJSON(); await supabase.from('push_subscriptions').upsert({ user_id: myUserId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' }); } catch (_) {}
+          setState('on'); return;
+        }
+        if (isIOS && !standalone) { setState('ios_install'); return; }
+        setState('ready');
+      } catch (_) { setState('ready'); }
+    })();
+  }, [myUserId, isIOS, standalone]);
+
+  const enable = async () => {
+    setState('busy'); setMsg('');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        setMsg(isIOS ? 'Still off. Open Settings › Notifications › PrismOS and allow, then tap again.' : 'Permission was blocked. Enable it in your browser\u2019s site settings, then tap again.');
+        setState('ready'); return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUBLIC_KEY) });
+      const j = sub.toJSON();
+      const { error } = await supabase.from('push_subscriptions').upsert({ user_id: myUserId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' });
+      if (error) { setMsg('Could not save this device: ' + error.message); setState('ready'); return; }
+      // fire a confirming push so they SEE it work
+      try { await supabase.functions.invoke('push-send', { body: { title: 'You\u2019re all set \u2600\ufe0f', body: 'Your morning brief and new-lead alerts will come here.', url: 'https://darasapp.com/' } }); } catch (_) {}
+      setState('on');
+    } catch (e) { setMsg('Could not enable: ' + (e.message || e)); setState('ready'); }
+  };
+  const hide = () => { try { sessionStorage.setItem('hidePushPrompt', '1'); } catch (_) {} setDismissed(true); };
+
+  if (dismissed || state === 'checking' || state === 'on' || state === 'unsupported') return null;
+
+  const wrap = { marginBottom: 14, background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))', border: '1px solid rgba(197,169,94,.5)', borderRadius: 16, padding: '15px 17px' };
+  const head = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <span style={{ fontSize: 15 }}>🔔</span>
+      <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>Don\u2019t miss a lead</span>
+      <button onClick={hide} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 17, cursor: 'pointer', lineHeight: 1 }}>×</button>
+    </div>
+  );
+
+  if (state === 'ios_install') {
+    return (
+      <div className="fade-up" style={wrap}>
+        {head}
+        <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 18, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 8 }}>Add PrismOS to your Home Screen to get alerts.</div>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
+          On iPhone, tap the <strong>Share</strong> button <span style={{ color: 'var(--accent)' }}>↑</span> in Safari, choose <strong>“Add to Home Screen,”</strong> then open PrismOS from your home screen and you\u2019ll see a one-tap “Turn on notifications” here.
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>It takes 15 seconds and it\u2019s how you get new-lead alerts and your morning brief on your phone.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fade-up" style={wrap}>
+      {head}
+      <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 18, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 4 }}>Get new-lead alerts the moment they come in.</div>
+      <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>Turn on notifications and PrismOS will ping you when a lead reaches out — plus your morning brief each day. This is how you answer first.</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button disabled={state === 'busy'} onClick={enable} style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 18px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+          {state === 'busy' ? 'Turning on…' : 'Turn on notifications'}
+        </button>
+        <button onClick={hide} style={{ background: 'transparent', color: 'var(--text-3)', border: 'none', fontSize: 12.5, cursor: 'pointer' }}>Not now</button>
+      </div>
+      {msg && <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 8 }}>{msg}</div>}
     </div>
   );
 }
