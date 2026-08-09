@@ -5,7 +5,7 @@ import CommitmentReview from './CommitmentReview';
 import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
 import { useNbaSkips, SnoozeMenu } from '../nbaSkips';
-import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from '../../supabase/functions/robot-chat/nba.js';
+import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, txnSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
 // One question, answered: "what do I do next?" Everything the agent must decide
@@ -60,6 +60,7 @@ export default function TodayView({
   const [openSignals, setOpenSignals] = useState({});
   const [docActions, setDocActions] = useState([]);
   const [bounceActions, setBounceActions] = useState([]);
+  const [txnActions, setTxnActions] = useState([]);
   const [commitments, setCommitments] = useState([]);
   const [flaggedEmail, setFlaggedEmail] = useState([]);
   const [pendingRec, setPendingRec] = useState(0);
@@ -98,6 +99,10 @@ export default function TodayView({
         if (go) setDocActions(docSignals(data || [], contacts));
       } catch (_) {}
       try {
+        const { data } = await supabase.rpc('txn_nba_feed');
+        if (go) setTxnActions(txnSignals(data || [], now));
+      } catch (_) {}
+      try {
         const { data } = await supabase.from('commitments')
           .select('id, title, owner, contact_name, status, due_date')
           .eq('status', 'proposed').order('created_at', { ascending: false }).limit(50);
@@ -115,9 +120,9 @@ export default function TodayView({
   const { skipAction, filterSkipped } = useNbaSkips(myUserId);
   const actions = useMemo(() => {
     const base = buildNextActions({ contacts, tasks, events, deals, now, oweReplyMap, openSignals });
-    const all = [...base, ...docActions, ...bounceActions].sort((a, b) => b.score - a.score);
+    const all = [...base, ...docActions, ...bounceActions, ...txnActions].sort((a, b) => b.score - a.score);
     return filterSkipped(all);   // a skip has to outlive a recompute
-  }, [contacts, tasks, events, deals, oweReplyMap, openSignals, docActions, bounceActions, now, filterSkipped]);
+  }, [contacts, tasks, events, deals, oweReplyMap, openSignals, docActions, bounceActions, txnActions, now, filterSkipped]);
 
   // ── Triage groups (the deck) ────────────────────────────────────────────────
   const owe = useMemo(() => Object.keys(oweReplyMap || {}).length, [oweReplyMap]);

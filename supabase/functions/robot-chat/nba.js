@@ -149,4 +149,61 @@ function docSignals(rows = [], contacts = []) {
   });
 }
 
-export { BOUNCE_SHORT, bounceSignals, docSignals };
+// ── Transaction lifecycle signals ────────────────────────────────────────────
+// Surfaces the live deal pipeline into "Do this next": imminent/overdue contract
+// deadlines (the sharpest — miss one and a contingency waives), stalled deals,
+// deals missing a financing type, and closings landing soon. Scored to sit among
+// the top actions because a blown contract deadline is as costly as it gets.
+// Deadlines carry the whole reason it exists — count from the effective date.
+function txnSignals(rows = [], now = Date.now()) {
+  const out = [];
+  const STAGE_LABEL = { offer_out: 'Offer out', under_negotiation: 'Negotiating', under_contract: 'Under contract', due_diligence: 'Due diligence', clear_to_close: 'Clear to close', closing: 'Closing' };
+  const startToday = new Date(now); startToday.setHours(0, 0, 0, 0); const todayMs = startToday.getTime();
+  (rows || []).forEach(t => {
+    if (!t || t.deal_status !== 'active') return;
+    const addr = t.address || 'a deal';
+    // 1) key-date deadlines — the highest-value transaction signal
+    let nearest = null;
+    (Array.isArray(t.key_dates) ? t.key_dates : []).forEach(d => {
+      if (!d || !d.date || d.key === 'effective_date') return;
+      const dMs = new Date(d.date + 'T00:00:00').getTime();
+      const days = Math.round((dMs - todayMs) / 86400000);
+      if (days > 10) return;                 // only surface once it's within reach
+      if (!nearest || days < nearest.days) nearest = { days, label: d.label, date: d.date };
+    });
+    if (nearest) {
+      const dz = nearest.days;
+      const overdue = dz < 0;
+      out.push({
+        key: 'txn-date:' + t.id + ':' + nearest.label,
+        score: 150 + (overdue ? 20 : softKnee(3 - dz, 12, 4)),   // overdue tops the board; then 0/1/3-day
+        tag: 'txn_deadline', icon: 'alert', contactId: null,
+        title: nearest.label + ' — ' + addr,
+        why: overdue ? (nearest.label + ' was due ' + Math.abs(dz) + 'd ago on this deal — act now, a missed deadline can waive a contingency')
+                     : (nearest.label + ' ' + (dz === 0 ? 'is TODAY' : dz === 1 ? 'is tomorrow' : 'is in ' + dz + ' days') + ' — every deadline counts from the effective date'),
+        cta: { label: 'Open deal', kind: 'view', payload: 'transactions' },
+      });
+    }
+    // 2) financing type not set — blocks the milestone path
+    if (t.financing_type === 'unknown' && ['under_contract', 'due_diligence'].includes(t.stage)) {
+      out.push({ key: 'txn-fin:' + t.id, score: 97, tag: 'txn', icon: 'dollar', contactId: null,
+        title: 'Set financing on ' + addr, why: 'Cash or financed? The deal\u2019s checklist branches on this \u2014 set it to see the right steps',
+        cta: { label: 'Open deal', kind: 'view', payload: 'transactions' } });
+    }
+    // 3) stalled — 21+ days in one stage
+    else if ((t.days_in_stage || 0) >= 21 && t.stage !== 'closed') {
+      out.push({ key: 'txn-stall:' + t.id, score: 90, tag: 'txn', icon: 'target', contactId: null,
+        title: 'Unstick ' + addr, why: (STAGE_LABEL[t.stage] || t.stage) + ' for ' + t.days_in_stage + ' days \u2014 this deal has gone quiet, give it a push',
+        cta: { label: 'Open deal', kind: 'view', payload: 'transactions' } });
+    }
+    // 4) blocked on the next milestone (and not already covered by a deadline)
+    else if (t.blocking_label && !nearest) {
+      out.push({ key: 'txn-block:' + t.id, score: 89, tag: 'txn', icon: 'target', contactId: null,
+        title: t.blocking_label + ' \u2014 ' + addr, why: 'Next step on this deal in ' + (STAGE_LABEL[t.stage] || t.stage),
+        cta: { label: 'Open deal', kind: 'view', payload: 'transactions' } });
+    }
+  });
+  return out;
+}
+
+export { BOUNCE_SHORT, bounceSignals, docSignals, txnSignals };

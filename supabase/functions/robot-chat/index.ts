@@ -5,7 +5,7 @@ import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 // The SAME ranking the Dashboard's "Do this next" hero runs. Single source of
 // truth in _shared/nba.js — if this ever forks, the app and Ari start disagreeing
 // about what matters most, which is worse than Ari not answering at all.
-import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals } from "./nba.js";
+import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, txnSignals } from "./nba.js";
 
 const MAX_IMAGE_EDGE = 1568;
 const corsHeaders = {
@@ -194,7 +194,7 @@ function buildToolSpecs() {
     { perm: "memory", def: { name: "remember", description: "Save a durable fact about the user for future conversations.", input_schema: { type: "object", properties: { content: { type: "string" } }, required: ["content"] } } },
     { perm: "journal", def: { name: "read_journal", description: "Read the user's daily journal entries. Use scope 'today', 'day' (with date), or 'range' (with start+end YYYY-MM-DD). Returns timestamped entries and what each is linked to.", input_schema: { type: "object", properties: { scope: { type: "string", enum: ["today", "day", "range"] }, date: { type: "string", description: "YYYY-MM-DD for scope=day" }, start: { type: "string", description: "YYYY-MM-DD for scope=range" }, end: { type: "string", description: "YYYY-MM-DD for scope=range" }, query: { type: "string", description: "optional keyword filter" } } } } },
     { perm: "journal", def: { name: "add_journal_entry", description: "Append a timestamped entry to TODAY's journal on the user's behalf. It will be auto-linked to people/projects/deals and may surface action items. Use when the user asks you to log/note something.", input_schema: { type: "object", properties: { content: { type: "string" } }, required: ["content"] } } },
-    { perm: "next_actions", defaultOn: true, def: { name: "next_actions", description: "THE most important tool. Answers 'what do I do next?', 'what should I work on?', 'what's my day look like?', 'what's most important?', 'what am I forgetting?' — anything about priorities or where to start. Runs the app's real Next Best Action ranking across every signal (bounced emails, owed replies, overdue tasks, appointments, cadence, stalled deals, documents needing action) and returns them in true priority order with the reason each one ranks where it does. ALWAYS use this instead of guessing from list_tasks — the ranking is the product. When nothing is urgent it returns growth moves instead, so it never dead-ends.", input_schema: { type: "object", properties: { limit: { type: "integer", description: "How many to return. Default 5. Use 1 when the user just wants the single next thing." } } } } },
+    { perm: "next_actions", defaultOn: true, def: { name: "next_actions", description: "THE most important tool. Answers 'what do I do next?', 'what should I work on?', 'what's my day look like?', 'what's most important?', 'what am I forgetting?' — anything about priorities or where to start. Runs the app's real Next Best Action ranking across every signal (bounced emails, owed replies, overdue tasks, appointments, cadence, stalled deals, documents needing action, and live transaction deadlines like inspection/financing/closing) and returns them in true priority order with the reason each one ranks where it does. ALWAYS use this instead of guessing from list_tasks — the ranking is the product. When nothing is urgent it returns growth moves instead, so it never dead-ends.", input_schema: { type: "object", properties: { limit: { type: "integer", description: "How many to return. Default 5. Use 1 when the user just wants the single next thing." } } } } },
     { perm: "web_search", server: true, def: { type: "web_search_20250305", name: "web_search", max_uses: 5 } }
   ];
 }
@@ -255,7 +255,7 @@ async function execTool(name, input, ctx) {
         const eventsFrom = new Date(nowMs - 86400000).toISOString();
         const eventsTo = new Date(nowMs + 14 * 86400000).toISOString();
 
-        const [contactsR, tasksR, eventsR, dealsR, bouncesR, docsR, trackR, finR] = await Promise.all([
+        const [contactsR, tasksR, eventsR, dealsR, bouncesR, docsR, trackR, finR, txnR] = await Promise.all([
           canContacts ? supabase.from("contacts").select("id,name,type,phone,email,last_contact_at,last_inbound_at,last_outbound_at,last_communication_direction,last_communication_channel,cadence_days,priority,pipeline_stage,pipeline_stage_changed_at,reachout_snooze_until,comms_settled_at,no_reply_needed_at").eq("user_id", userId).limit(5000) : Promise.resolve({ data: [] }),
           canTasks ? supabase.from("tasks").select("id,title,due_date,priority,completed").eq("user_id", userId).eq("completed", false).limit(500) : Promise.resolve({ data: [] }),
           canCal ? supabase.from("events").select("id,title,start_at,end_at,all_day,location").eq("user_id", userId).gte("start_at", eventsFrom).lte("start_at", eventsTo).limit(200) : Promise.resolve({ data: [] }),
@@ -264,6 +264,7 @@ async function execTool(name, input, ctx) {
           supabase.from("documents").select("id,title,doc_type,summary,action_label,signed_state,document_contacts(contact_id)").eq("user_id", userId).eq("action_needed", true).eq("status", "ready").order("created_at", { ascending: false }).limit(20),
           canContacts ? supabase.from("email_tracking").select("contact_id,confident_open_at,open_count").eq("user_id", userId).not("contact_id", "is", null).not("confident_open_at", "is", null).gte("confident_open_at", new Date(nowMs - 30 * 86400000).toISOString()).order("confident_open_at", { ascending: false }).limit(300) : Promise.resolve({ data: [] }),
           supabase.from("finance_settings").select("annual_gci_goal").eq("user_id", userId).maybeSingle(),
+          canPortfolio ? supabase.rpc("txn_nba_feed") : Promise.resolve({ data: [] }),
         ]);
 
         const contacts = contactsR.data || [];
@@ -288,7 +289,7 @@ async function execTool(name, input, ctx) {
         for (const r of (trackR.data || [])) { if (!openSignals[r.contact_id]) openSignals[r.contact_id] = r; }
 
         const base = buildNextActions({ contacts, tasks: tasksR.data || [], events: eventsR.data || [], deals: dealsR.data || [], now: nowMs, oweReplyMap, openSignals });
-        const actions = [...base, ...docSignals(docsR.data || [], contacts), ...bounceSignals(bouncesR.data || [])].sort((a, b) => b.score - a.score);
+        const actions = [...base, ...docSignals(docsR.data || [], contacts), ...bounceSignals(bouncesR.data || []), ...txnSignals(txnR.data || [], nowMs)].sort((a, b) => b.score - a.score);
 
         if (actions.length === 0) {
           const moves = buildGrowthMoves({ contacts, deals: dealsR.data || [], gciGoal: (finR.data && finR.data.annual_gci_goal) || 0, now: nowMs });
