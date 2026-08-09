@@ -77,6 +77,7 @@ export default function TransactionPipeline({ userId }) {
         <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
           {active.length} live {active.length === 1 ? 'deal' : 'deals'}
           {attention.length > 0 && <> · <span style={{ color: CHAMP }}>{attention.length} need{attention.length === 1 ? 's' : ''} attention</span></>}
+          {(() => { const vol = active.reduce((s, d) => s + (Number(d.gross_sale) || 0), 0); return vol > 0 ? <> · {money(vol)} in the pipeline</> : null; })()}
         </div>
         <div className="gold-hairline" style={{ height: 1, background: 'linear-gradient(90deg,transparent,' + GOLD + '55,transparent)', margin: '10px 0' }} />
       </div>
@@ -133,11 +134,19 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
   const [err, setErr] = useState(null);
   const [showFile, setShowFile] = useState(false);
   const [fundsFor, setFundsFor] = useState(null);   // milestone key being funded
+  const [events, setEvents] = useState([]);
+  const [editing, setEditing] = useState(false);
+  const [deadOpen, setDeadOpen] = useState(false);
+  const [tab, setTab] = useState('work');           // work | journey | history
   const fileRefs = useRef({});
 
   const refresh = useCallback(async () => {
     const { data } = await supabase.rpc('transaction_state', { p_id: id });
     setSt(data || null);
+    const { data: ev } = await supabase.from('txn_events')
+      .select('kind, from_stage, to_stage, milestone_key, actor_name, note, created_at')
+      .eq('transaction_id', id).order('created_at', { ascending: false }).limit(40);
+    setEvents(Array.isArray(ev) ? ev : []);
   }, [id]);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -147,7 +156,7 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
       const { data, error } = await supabase.rpc(fn, args);
       if (error) throw error;
       if (data && data.error) { setErr(data.blocked_by ? `Blocked: ${data.blocked_by}` : data.error); }
-      else if (data) { setSt(data); onChanged && onChanged(); }
+      else if (data) { setSt(data); onChanged && onChanged(); refresh(); }
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
   };
@@ -177,121 +186,279 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
   if (!st) return null;
   const ms = st.milestones || [];
   const curStageMs = ms.filter(m => m.stage === st.stage);
+  const isDead = st.deal_status === 'dead';
+  const isClosed = st.stage === 'closed';
+
+  // one milestone row, reused by Work + Journey
+  const MilestoneRow = (m, interactive) => {
+    const done = m.status === 'done' || m.status === 'waived';
+    const locked = m.broker_only && !st.viewer_is_broker;
+    const canTap = interactive && st.can_edit && !locked && !isDead;
+    const isFunds = m.key === 'funds_received';
+    return (
+      <div key={m.key} style={{ padding: '9px 0', borderBottom: '1px solid #1e1810', opacity: locked ? .6 : 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button disabled={busy || !canTap || (isFunds && !done)} onClick={() => { if (!canTap) return; if (isFunds && !done) { setFundsFor(fundsFor === m.key ? null : m.key); return; } call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: done ? 'pending' : 'done' }); }}
+            style={{ width: 22, height: 22, borderRadius: 6, flex: 'none', cursor: canTap ? 'pointer' : 'default',
+              border: '1.5px solid ' + (done ? '#22c55e' : '#3a3020'),
+              background: done ? '#22c55e' : 'transparent', color: '#100D09', fontWeight: 900, fontSize: 13, lineHeight: 1 }}>{done ? '✓' : ''}</button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: m.status === 'waived' ? 'line-through' : 'none' }}>{m.label}</div>
+            {locked && !done && <div style={{ fontSize: 11, color: GOLD, marginTop: 1 }}>The brokerage handles this step</div>}
+            {m.method && done && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{(FUND_METHODS.find(f => f[0] === m.method) || [null, m.method])[1]}{m.amount ? ' · ' + money(m.amount) : ''}</div>}
+            {m.document_id && done && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 1 }}>Document on file ✓</div>}
+            {!locked && m.help && !done && !isFunds && interactive && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.help}</div>}
+          </div>
+          {canTap && !done && m.wants_document && (<>
+            <input ref={el => (fileRefs.current[m.key] = el)} type="file" style={{ display: 'none' }} onChange={e => uploadFor(m.key, e.target.files)} />
+            <button disabled={busy} onClick={() => fileRefs.current[m.key] && fileRefs.current[m.key].click()}
+              style={{ fontSize: 11.5, color: '#100D09', background: CHAMP, border: 'none', borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Upload</button>
+          </>)}
+          {canTap && !done && isFunds && (
+            <button disabled={busy} onClick={() => setFundsFor(fundsFor === m.key ? null : m.key)}
+              style={{ fontSize: 11.5, color: '#100D09', background: CHAMP, border: 'none', borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Record</button>
+          )}
+          {canTap && !done && !m.wants_document && !isFunds && <button disabled={busy} onClick={() => call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: 'waived' })}
+            style={{ fontSize: 11, color: 'var(--text-3)', background: 'transparent', border: 'none', cursor: 'pointer' }}>N/A</button>}
+        </div>
+        {isFunds && fundsFor === m.key && !done && interactive && (
+          <FundsForm methods={FUND_METHODS} busy={busy} onCancel={() => setFundsFor(null)}
+            onSave={(method, amount, note) => { setFundsFor(null); call('set_txn_milestone', { p_id: id, p_key: 'funds_received', p_status: 'done', p_method: method, p_amount: amount, p_note: note }); }} />
+        )}
+      </div>
+    );
+  };
+
+  const tabBtn = (k, label) => (
+    <button onClick={() => setTab(k)} style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: '2px solid ' + (tab === k ? GOLD : 'transparent'), color: tab === k ? 'var(--text-1)' : 'var(--text-3)', fontSize: 12.5, fontWeight: tab === k ? 700 : 500, padding: '9px 0', cursor: 'pointer' }}>{label}</button>
+  );
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base,#100D09)', width: '100%', maxWidth: 560, maxHeight: '92vh', overflowY: 'auto', borderRadius: '18px 18px 0 0', border: '1px solid #2a2016', borderBottom: 'none', padding: '18px 18px 40px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 10.5, color: GOLD }}>#{st.trans_id} · {STAGE_LABEL[st.stage] || st.stage}</div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 10.5, color: isDead ? '#ef4444' : GOLD }}>#{st.trans_id} · {isDead ? 'Dead' : (STAGE_LABEL[st.stage] || st.stage)}</div>
             <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 23, color: 'var(--text-1)', lineHeight: 1.15 }}>{st.address || 'Untitled deal'}</div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', border: '1px solid #2a2016', color: 'var(--text-2)', borderRadius: 8, width: 34, height: 34, flex: 'none', cursor: 'pointer' }}>×</button>
         </div>
 
         {/* next action banner */}
-        <div style={{ margin: '14px 0', padding: '12px 14px', borderRadius: 12, background: 'linear-gradient(155deg,rgba(197,169,94,.14),rgba(197,169,94,.03))', border: '1px solid rgba(197,169,94,.4)' }}>
-          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 3 }}>Next action</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: CHAMP }}>{st.next_action}</div>
+        <div style={{ margin: '14px 0', padding: '12px 14px', borderRadius: 12, background: isDead ? 'rgba(239,68,68,.08)' : 'linear-gradient(155deg,rgba(197,169,94,.14),rgba(197,169,94,.03))', border: '1px solid ' + (isDead ? 'rgba(239,68,68,.4)' : 'rgba(197,169,94,.4)') }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 3 }}>{isDead ? 'Status' : 'Next action'}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: isDead ? '#fca5a5' : CHAMP }}>{st.next_action}</div>
         </div>
 
-        {st.stage === 'closing' && !st.viewer_is_broker && (
+        {st.stage === 'closing' && !st.viewer_is_broker && !isDead && (
           <div style={{ margin: '-6px 0 12px', fontSize: 12, color: 'var(--text-3)' }}>Submitted for disbursement. The brokerage takes it from here — you'll be notified when your commission is sent.</div>
         )}
 
         {err && <div style={{ background: 'rgba(239,68,68,.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, color: '#fecaca', marginBottom: 12 }}>{err}</div>}
 
-        {/* financing toggle (only matters while live) */}
-        {st.deal_status === 'active' && st.can_edit && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Financing:</span>
-            {['cash', 'financed'].map(t => (
-              <button key={t} disabled={busy} onClick={() => call('set_txn_financing', { p_id: id, p_type: t })}
-                style={{ fontSize: 12, textTransform: 'capitalize', padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
-                  border: '1px solid ' + (st.financing_type === t ? GOLD : '#2a2016'),
-                  background: st.financing_type === t ? GOLD : 'transparent', color: st.financing_type === t ? '#100D09' : 'var(--text-2)', fontWeight: st.financing_type === t ? 700 : 500 }}>{t}</button>
-            ))}
-          </div>
-        )}
-
-        {/* milestones for the current stage */}
-        {curStageMs.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 8 }}>This stage</div>
-            {curStageMs.map(m => {
-              const done = m.status === 'done' || m.status === 'waived';
-              const locked = m.broker_only && !st.viewer_is_broker;
-              const canTap = st.can_edit && !locked;
-              const isFunds = m.key === 'funds_received';
-              return (
-                <div key={m.key} style={{ padding: '9px 0', borderBottom: '1px solid #1e1810', opacity: locked ? .6 : 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <button disabled={busy || !canTap || (isFunds && !done)} onClick={() => { if (!canTap) return; if (isFunds && !done) { setFundsFor(fundsFor === m.key ? null : m.key); return; } call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: done ? 'pending' : 'done' }); }}
-                      style={{ width: 22, height: 22, borderRadius: 6, flex: 'none', cursor: canTap ? 'pointer' : 'default',
-                        border: '1.5px solid ' + (done ? '#22c55e' : '#3a3020'),
-                        background: done ? '#22c55e' : 'transparent', color: '#100D09', fontWeight: 900, fontSize: 13, lineHeight: 1 }}>{done ? '✓' : ''}</button>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: m.status === 'waived' ? 'line-through' : 'none' }}>{m.label}</div>
-                      {locked && !done && <div style={{ fontSize: 11, color: GOLD, marginTop: 1 }}>The brokerage handles this step</div>}
-                      {!locked && m.method && done && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{(FUND_METHODS.find(f => f[0] === m.method) || [null, m.method])[1]}{m.amount ? ' · ' + money(m.amount) : ''}</div>}
-                      {!locked && m.document_id && done && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 1 }}>Document on file ✓</div>}
-                      {!locked && m.help && !done && !isFunds && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.help}</div>}
-                    </div>
-                    {canTap && !done && m.wants_document && (<>
-                      <input ref={el => (fileRefs.current[m.key] = el)} type="file" style={{ display: 'none' }} onChange={e => uploadFor(m.key, e.target.files)} />
-                      <button disabled={busy} onClick={() => fileRefs.current[m.key] && fileRefs.current[m.key].click()}
-                        style={{ fontSize: 11.5, color: '#100D09', background: CHAMP, border: 'none', borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Upload</button>
-                    </>)}
-                    {canTap && !done && isFunds && (
-                      <button disabled={busy} onClick={() => setFundsFor(fundsFor === m.key ? null : m.key)}
-                        style={{ fontSize: 11.5, color: '#100D09', background: CHAMP, border: 'none', borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Record</button>
-                    )}
-                    {canTap && !done && !m.wants_document && !isFunds && <button disabled={busy} onClick={() => call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: 'waived' })}
-                      style={{ fontSize: 11, color: 'var(--text-3)', background: 'transparent', border: 'none', cursor: 'pointer' }}>N/A</button>}
-                  </div>
-                  {isFunds && fundsFor === m.key && !done && (
-                    <FundsForm methods={FUND_METHODS} busy={busy} onCancel={() => setFundsFor(null)}
-                      onSave={(method, amount, note) => { setFundsFor(null); call('set_txn_milestone', { p_id: id, p_key: 'funds_received', p_status: 'done', p_method: method, p_amount: amount, p_note: note }); }} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* stage controls */}
-        {st.deal_status === 'active' && st.can_edit && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {NEXT[st.stage] && (NEXT[st.stage] !== 'closed' || st.viewer_is_broker) && (
-              <button disabled={busy} onClick={() => call('advance_txn_stage', { p_id: id, p_to_stage: NEXT[st.stage] })}
-                style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
-                {NEXT[st.stage] === 'closing' ? 'Submit for disbursement →' : 'Move to ' + STAGE_LABEL[NEXT[st.stage]] + ' →'}
-              </button>
-            )}
-            <button disabled={busy} onClick={() => { const r = prompt('Why is this deal dead? (e.g. buyer walked, financing fell through)'); if (r) call('set_txn_dead', { p_id: id, p_reason: r }); }}
-              style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid #2a2016', borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>
-              Mark dead
-            </button>
-          </div>
-        )}
-        {st.deal_status === 'active' && !st.can_edit && (
-          <div style={{ fontSize: 12.5, color: 'var(--text-3)', fontStyle: 'italic' }}>You have view access to this deal.</div>
-        )}
-
-        {/* deal facts */}
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #1e1810', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 14px' }}>
-          {[['Agent', st.agent_name], ['Gross sale', st.gross_sale ? money(st.gross_sale) : '—'], ['Commission', st.gross_commission ? money(st.gross_commission) : '—'], ['Days in stage', st.days_in_stage]].map(([k, v]) => (
-            <div key={k}><div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{k}</div><div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600 }}>{v ?? '—'}</div></div>
-          ))}
+        {/* tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #1e1810', marginBottom: 14 }}>
+          {tabBtn('work', 'Work')}
+          {tabBtn('journey', 'Journey')}
+          {tabBtn('history', 'History')}
         </div>
-        {/* the transaction file — every document in one place */}
-        <div style={{ marginTop: 18, paddingTop: 4 }}>
-          <button onClick={() => setShowFile(v => !v)} style={{ background: 'transparent', border: 'none', color: GOLD, fontSize: 11.5, fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-            {showFile ? '− Hide file' : '+ Transaction file'}
-          </button>
-          {showFile && <div style={{ marginTop: 8 }}><LinkedDocuments userId={userId} targetType="transaction" targetId={id} title="Documents" /></div>}
+
+        {/* ── WORK: current-stage actions ── */}
+        {tab === 'work' && (<>
+          {st.deal_status === 'active' && st.can_edit && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Financing:</span>
+              {['cash', 'financed'].map(t => (
+                <button key={t} disabled={busy} onClick={() => call('set_txn_financing', { p_id: id, p_type: t })}
+                  style={{ fontSize: 12, textTransform: 'capitalize', padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+                    border: '1px solid ' + (st.financing_type === t ? GOLD : '#2a2016'),
+                    background: st.financing_type === t ? GOLD : 'transparent', color: st.financing_type === t ? '#100D09' : 'var(--text-2)', fontWeight: st.financing_type === t ? 700 : 500 }}>{t}</button>
+              ))}
+            </div>
+          )}
+          {curStageMs.length > 0 && !isDead && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 8 }}>This stage</div>
+              {curStageMs.map(m => MilestoneRow(m, true))}
+            </div>
+          )}
+          {st.deal_status === 'active' && st.can_edit && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {NEXT[st.stage] && (NEXT[st.stage] !== 'closed' || st.viewer_is_broker) && (
+                <button disabled={busy} onClick={() => call('advance_txn_stage', { p_id: id, p_to_stage: NEXT[st.stage] })}
+                  style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>
+                  {NEXT[st.stage] === 'closing' ? 'Submit for disbursement →' : 'Move to ' + STAGE_LABEL[NEXT[st.stage]] + ' →'}
+                </button>
+              )}
+              {!deadOpen && <button disabled={busy} onClick={() => setDeadOpen(true)}
+                style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid #2a2016', borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>Mark dead</button>}
+            </div>
+          )}
+          {deadOpen && <DeadPicker busy={busy} onCancel={() => setDeadOpen(false)} onPick={(reason) => { setDeadOpen(false); call('set_txn_dead', { p_id: id, p_reason: reason }); }} />}
+          {st.deal_status === 'active' && !st.can_edit && (
+            <div style={{ fontSize: 12.5, color: 'var(--text-3)', fontStyle: 'italic' }}>You have view access to this deal.</div>
+          )}
+
+          {/* editable deal facts */}
+          <TxnFacts st={st} editing={editing} setEditing={setEditing} busy={busy} onSave={(patch) => { setEditing(false); call('update_txn_facts', { p_id: id, ...patch }); }} />
+
+          {/* the transaction file */}
+          <div style={{ marginTop: 18, paddingTop: 4 }}>
+            <button onClick={() => setShowFile(v => !v)} style={{ background: 'transparent', border: 'none', color: GOLD, fontSize: 11.5, fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+              {showFile ? '− Hide file' : '+ Transaction file'}
+            </button>
+            {showFile && <div style={{ marginTop: 8 }}><LinkedDocuments userId={userId} targetType="transaction" targetId={id} title="Documents" /></div>}
+          </div>
+        </>)}
+
+        {/* ── JOURNEY: every milestone by stage ── */}
+        {tab === 'journey' && <JourneyView st={st} STAGES={STAGES} STAGE_LABEL={STAGE_LABEL} row={MilestoneRow} />}
+
+        {/* ── HISTORY: the audit timeline ── */}
+        {tab === 'history' && <HistoryView events={events} STAGE_LABEL={STAGE_LABEL} />}
+      </div>
+    </div>
+  );
+}
+
+// ── Editable deal facts ──────────────────────────────────────────────────────
+function TxnFacts({ st, editing, setEditing, busy, onSave }) {
+  const [f, setF] = useState({});
+  const [agents, setAgents] = useState([]);
+  useEffect(() => { if (editing) {
+    setF({ gross_sale: st.gross_sale || '', gross_commission: st.gross_commission || '', buyer: st.buyer_name || '', seller: st.seller_name || '', co_agent: st.co_agent || '', expected_close: st.expected_close_date || '', address: st.address || '', agent_id: st.agent_id || '' });
+    if (st.viewer_is_broker) supabase.rpc('txn_agent_options').then(({ data }) => setAgents(Array.isArray(data) ? data : []));
+  } }, [editing, st]);
+  const num = (v) => v === '' || v == null ? null : Number(String(v).replace(/[^0-9.]/g, ''));
+  const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-base,#0f0b07)', border: '1px solid #2a2016', borderRadius: 8, color: 'var(--text-1)', padding: '9px 11px', fontSize: 13, marginTop: 4 };
+  const lab = { fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' };
+
+  if (!editing) {
+    const facts = [
+      ['Agent', st.agent_name], ['Gross sale', st.gross_sale ? money(st.gross_sale) : '—'],
+      ['Commission', st.gross_commission ? money(st.gross_commission) : '—'],
+      ['Expected close', st.expected_close_date || '—'],
+      ['Buyer', st.buyer_name || '—'], ['Seller', st.seller_name || '—'],
+    ];
+    return (
+      <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #1e1810' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)' }}>Deal details</span>
+          {st.can_edit && st.deal_status !== 'closed' && <button onClick={() => setEditing(true)} style={{ background: 'transparent', border: '1px solid #2a2016', color: GOLD, fontSize: 11.5, borderRadius: 7, padding: '4px 11px', cursor: 'pointer' }}>Edit</button>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 14px' }}>
+          {facts.map(([k, v]) => <div key={k}><div style={lab}>{k}</div><div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600 }}>{v ?? '—'}</div></div>)}
         </div>
       </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #1e1810' }}>
+      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 4 }}>Edit deal details</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px' }}>
+        <div><div style={lab}>Gross sale ($)</div><input value={f.gross_sale} onChange={e => setF({ ...f, gross_sale: e.target.value })} inputMode="decimal" style={inp} /></div>
+        <div><div style={lab}>Commission ($)</div><input value={f.gross_commission} onChange={e => setF({ ...f, gross_commission: e.target.value })} inputMode="decimal" style={inp} /></div>
+        <div><div style={lab}>Buyer</div><input value={f.buyer} onChange={e => setF({ ...f, buyer: e.target.value })} style={inp} /></div>
+        <div><div style={lab}>Seller</div><input value={f.seller} onChange={e => setF({ ...f, seller: e.target.value })} style={inp} /></div>
+        <div><div style={lab}>Co-agent</div><input value={f.co_agent} onChange={e => setF({ ...f, co_agent: e.target.value })} style={inp} /></div>
+        <div><div style={lab}>Expected close</div><input value={f.expected_close} onChange={e => setF({ ...f, expected_close: e.target.value })} type="date" style={inp} /></div>
+      </div>
+      <div style={{ marginTop: 6 }}><div style={lab}>Address</div><input value={f.address} onChange={e => setF({ ...f, address: e.target.value })} style={inp} /></div>
+      {st.viewer_is_broker && agents.length > 0 && (
+        <div style={{ marginTop: 6 }}><div style={lab}>Agent</div>
+          <select value={f.agent_id || ''} onChange={e => setF({ ...f, agent_id: e.target.value })} style={inp}>
+            <option value="">— unassigned —</option>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button disabled={busy} onClick={() => onSave({ p_gross_sale: num(f.gross_sale), p_gross_commission: num(f.gross_commission), p_buyer: f.buyer || null, p_seller: f.seller || null, p_co_agent: f.co_agent || null, p_expected_close: f.expected_close || null, p_address: f.address || null, p_agent_id: (st.viewer_is_broker && f.agent_id) ? f.agent_id : null })}
+          style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 8, padding: '9px 16px', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Save details</button>
+        <button onClick={() => setEditing(false)} style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid #2a2016', borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Journey: every milestone across every stage ──────────────────────────────
+function JourneyView({ st, STAGES, STAGE_LABEL, row }) {
+  const ms = st.milestones || [];
+  const order = STAGES.map(s => s.key);
+  const curIdx = order.indexOf(st.stage);
+  const stagesWithMs = STAGES.filter(s => ms.some(m => m.stage === s.key));
+  return (
+    <div>
+      {stagesWithMs.map(s => {
+        const idx = order.indexOf(s.key);
+        const stMs = ms.filter(m => m.stage === s.key);
+        const allDone = stMs.every(m => m.status === 'done' || m.status === 'waived');
+        const isCur = s.key === st.stage;
+        const state = st.deal_status === 'closed' || allDone ? 'done' : isCur ? 'current' : idx < curIdx ? 'done' : 'upcoming';
+        return (
+          <div key={s.key} style={{ marginBottom: 14, opacity: state === 'upcoming' ? .55 : 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: state === 'done' ? '#22c55e' : state === 'current' ? GOLD : '#3a3020' }} />
+              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.12em', fontSize: 12, fontWeight: 700, color: state === 'current' ? GOLD : 'var(--text-2)' }}>{STAGE_LABEL[s.key]}</span>
+              {isCur && <span style={{ fontSize: 10, color: GOLD }}>· you are here</span>}
+            </div>
+            <div style={{ paddingLeft: 15 }}>{stMs.map(m => row(m, isCur && st.deal_status === 'active'))}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── History: the audit timeline ──────────────────────────────────────────────
+function HistoryView({ events, STAGE_LABEL }) {
+  if (!events || events.length === 0) return <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '8px 0' }}>No history yet.</div>;
+  const when = (t) => { const d = new Date(t); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
+  const line = (e) => {
+    if (e.kind === 'created') return 'Deal created';
+    if (e.kind === 'stage_change') return 'Moved to ' + (STAGE_LABEL[e.to_stage] || (e.to_stage || '').replace(/_/g, ' '));
+    if (e.kind === 'milestone') return (e.milestone_key || '').replace(/_/g, ' ') + (e.note && e.note !== 'done' ? ' — ' + e.note : '');
+    return e.note || e.kind;
+  };
+  return (
+    <div style={{ position: 'relative', paddingLeft: 4 }}>
+      {events.map((e, i) => (
+        <div key={i} style={{ display: 'flex', gap: 11, paddingBottom: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none' }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: e.kind === 'stage_change' ? GOLD : e.kind === 'created' ? '#22c55e' : '#5a4d33', marginTop: 3 }} />
+            {i < events.length - 1 && <span style={{ width: 1, flex: 1, background: '#2a2016', marginTop: 3 }} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, color: 'var(--text-1)', textTransform: 'capitalize' }}>{line(e)}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{when(e.created_at)}{e.actor_name ? ' · ' + e.actor_name : ''}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Mark-dead reason picker ──────────────────────────────────────────────────
+function DeadPicker({ busy, onPick, onCancel }) {
+  const [other, setOther] = useState('');
+  const [showOther, setShowOther] = useState(false);
+  const reasons = ['Buyer walked', 'Financing fell through', 'Inspection issues', 'Appraisal came in low', 'Contract expired'];
+  return (
+    <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--bg-card,#1B1610)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 10 }}>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Why is this deal dead?</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {reasons.map(r => (
+          <button key={r} disabled={busy} onClick={() => onPick(r)} style={{ fontSize: 12, background: 'transparent', border: '1px solid #2a2016', color: 'var(--text-2)', borderRadius: 20, padding: '6px 12px', cursor: 'pointer' }}>{r}</button>
+        ))}
+        <button disabled={busy} onClick={() => setShowOther(v => !v)} style={{ fontSize: 12, background: 'transparent', border: '1px solid #2a2016', color: 'var(--text-2)', borderRadius: 20, padding: '6px 12px', cursor: 'pointer' }}>Other…</button>
+      </div>
+      {showOther && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <input autoFocus value={other} onChange={e => setOther(e.target.value)} placeholder="Reason" style={{ flex: 1, background: 'var(--bg-base,#0f0b07)', border: '1px solid #2a2016', borderRadius: 8, color: 'var(--text-1)', padding: '8px 11px', fontSize: 13 }} />
+          <button disabled={busy || !other.trim()} onClick={() => onPick(other.trim())} style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Mark dead</button>
+        </div>
+      )}
+      <button onClick={onCancel} style={{ marginTop: 10, background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 12, cursor: 'pointer', padding: 0 }}>Cancel</button>
     </div>
   );
 }
