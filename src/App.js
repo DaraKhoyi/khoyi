@@ -117,6 +117,7 @@ function ViewLoadingFallback() {
   );
 }
 const FinanceView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.FinanceView })));
+const TransactionPipeline = lazyWithReload(() => import('./views/TransactionPipeline'));
 const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
 const QuarterlyTaxBanner = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.QuarterlyTaxBanner })));
 const TasksView = lazyWithReload(() => import('./views/TasksView'));
@@ -19141,6 +19142,7 @@ function AppMain() {
     { label: 'Agent Voice Cards', view: 'voice_roster', icon: 'mic' },
     { label: 'Contact Types', view: 'contact_types', icon: 'clipboard' },
     { label: 'Brokerage Dashboard', view: 'finance', sub: 'dashboard', icon: 'dashboard' },
+    { label: 'Transactions', view: 'transactions', icon: 'file' },
     { label: 'Brokerage Financials', view: 'finance', sub: 'reports', icon: 'finance' },
     { label: 'Teams', view: 'teams', icon: 'users' },
     ...(!isImpersonating ? [{ label: 'Act as a User', view: 'actas', icon: 'users' }] : []),
@@ -19417,6 +19419,7 @@ function AppMain() {
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
               : view==='finance'     ? <FinanceView userId={user.id} initialSub={deepLink.view==='finance'?deepLink.sub:null} subNonce={deepLink.n}/>
+              : view==='transactions' ? <TransactionPipeline userId={user.id}/>
               : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events} contacts={contacts}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks} focusEventId={focusEventId} setFocusEventId={setFocusEventId}/>
