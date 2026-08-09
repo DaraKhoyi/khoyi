@@ -825,6 +825,39 @@ function MessageAttachments({ message, account }) {
   const [atts, setAtts] = useState(null);
   const [busy, setBusy] = useState(null);
   const [filing, setFiling] = useState(false);
+  const [txnPick, setTxnPick] = useState(null); // null | { candidates, all }
+
+  // Suggest which deal these attachments belong to (address + party match), then
+  // let the person confirm — we never silently file money documents. Falls back
+  // to a full picker when nothing matches.
+  async function openTxnPicker() {
+    setFiling(true);
+    try {
+      const to = Array.isArray(message.to_addresses) ? message.to_addresses : (message.to_addresses ? [message.to_addresses] : []);
+      const { data: matches } = await supabase.rpc('match_email_to_txn', {
+        p_subject: message.subject || '', p_body: message.body_text || message.snippet || '',
+        p_from: message.from_address || '', p_to: to,
+      });
+      const { data: all } = await supabase.rpc('txn_pipeline');
+      setTxnPick({ candidates: Array.isArray(matches) ? matches : [], all: Array.isArray(all) ? all : [] });
+    } catch (e) {
+      notifyError('Could not look up deals: ' + (e?.message || e));
+    } finally { setFiling(false); }
+  }
+
+  async function fileToTxn(txnId) {
+    setFiling(true); setTxnPick(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('email-file-to-library', {
+        body: { account_id: account.id, message_id: message.id, links: [{ target_type: 'transaction', target_id: txnId }] },
+      });
+      if (error || data?.error) throw new Error(data?.error || error?.message || 'Could not file');
+      if (data.filed === 0) notify(data.note || 'Nothing fileable on this message.', 'info');
+      else notify(`Filed ${data.filed} to the transaction file.`, 'success');
+    } catch (e) {
+      notifyError('Could not file to the deal: ' + (e?.message || e));
+    } finally { setFiling(false); }
+  }
 
   // File the message's PDF/image/doc attachments into the shared library — one
   // tap, server-side, OCR'd and searchable, and auto-linked to the sender. This
@@ -889,12 +922,16 @@ function MessageAttachments({ message, account }) {
         <span style={{ fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', flex: '1 1 auto' }}>
           <Icon name="paperclip" size={12} /> {atts.length} attachment{atts.length !== 1 ? 's' : ''}
         </span>
-        {atts.some(a => /^(application\/pdf|image\/|application\/(msword|vnd)|text\/plain)/.test(a.mime_type || '') && (a.size_bytes || 0) >= 3000) && (
+        {atts.some(a => /^(application\/pdf|image\/|application\/(msword|vnd)|text\/plain)/.test(a.mime_type || '') && (a.size_bytes || 0) >= 3000) && (<>
           <button className="btn btn-ghost btn-sm" style={{ flex: 'none' }} disabled={filing} onClick={fileToLibrary}
             title="Save these to your searchable library, linked to the sender">
             {filing ? 'Filing…' : '＋ File to library'}
           </button>
-        )}
+          <button className="btn btn-ghost btn-sm" style={{ flex: 'none' }} disabled={filing} onClick={openTxnPicker}
+            title="File these to the matching transaction">
+            ＋ File to a deal
+          </button>
+        </>)}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {atts.map(att => (
@@ -908,6 +945,41 @@ function MessageAttachments({ message, account }) {
             <span style={{ fontSize: '14px', color: 'var(--accent)', flexShrink: 0 }}>↓</span>
           </button>
         ))}
+      </div>
+      {txnPick && <TxnFilePicker pick={txnPick} onClose={() => setTxnPick(null)} onChoose={fileToTxn} />}
+    </div>
+  );
+}
+
+// Suggest-first transaction picker: matched deals up top with the reason, then a
+// searchable list of every active deal as a fallback. The person always confirms.
+function TxnFilePicker({ pick, onClose, onChoose }) {
+  const [qy, setQy] = useState('');
+  const matchedIds = new Set((pick.candidates || []).map(c => c.id));
+  const others = (pick.all || []).filter(d => !matchedIds.has(d.id) && (!qy || (d.address || '').toLowerCase().includes(qy.toLowerCase())));
+  const Row = ({ d, reason }) => (
+    <button onClick={() => onChoose(d.id)} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'var(--bg-card,#1B1610)', border: '1px solid ' + (reason ? 'rgba(197,169,94,.5)' : 'var(--border,#2a2016)'), borderRadius: 10, padding: '11px 13px', marginBottom: 8, cursor: 'pointer' }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{d.address || 'Untitled deal'}</div>
+      <div style={{ fontSize: 11.5, color: reason ? '#EBCB82' : 'var(--text-3)', marginTop: 2 }}>
+        {reason ? '✓ ' + reason : `${d.agent_name || d.agent_name_raw || '—'} · ${(d.stage || '').replace(/_/g, ' ')}`}
+      </div>
+    </button>
+  );
+  const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-base,#0f0b07)', border: '1px solid #2a2016', borderRadius: 8, color: 'var(--text-1)', padding: '10px 12px', fontSize: 14, marginBottom: 12 };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 240, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base,#100D09)', width: '100%', maxWidth: 500, maxHeight: '80vh', overflowY: 'auto', borderRadius: '18px 18px 0 0', border: '1px solid #2a2016', padding: '18px 18px 34px' }}>
+        <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 21, color: 'var(--text-1)', marginBottom: 3 }}>File to a deal.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 14 }}>These attachments will be filed into the transaction you pick.</div>
+        {pick.candidates && pick.candidates.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: '#C5A95E', marginBottom: 8 }}>Best match</div>
+            {pick.candidates.map(c => <Row key={c.id} d={c} reason={c.addr_reason || c.party_reason} />)}
+          </div>
+        )}
+        <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 8 }}>{pick.candidates && pick.candidates.length ? 'Or another deal' : 'Pick a deal'}</div>
+        <input value={qy} onChange={e => setQy(e.target.value)} placeholder="Search by address…" style={inp} />
+        {others.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>No other active deals.</div> : others.slice(0, 30).map(d => <Row key={d.id} d={d} />)}
       </div>
     </div>
   );
