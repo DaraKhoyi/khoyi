@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
+import { uploadDocuments } from './DocumentsView';
+import LinkedDocuments from './LinkedDocuments';
 
 // ── Transaction Pipeline ─────────────────────────────────────────────────────
 // The brokerage's live deals, from offer-out to paid. Every deal card leads with
@@ -32,7 +34,7 @@ const money = (n) => {
   return '$' + Math.round(v);
 };
 
-export default function TransactionPipeline() {
+export default function TransactionPipeline({ userId }) {
   const [deals, setDeals] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -118,17 +120,20 @@ export default function TransactionPipeline() {
         </div>
       )}
 
-      {openId && <TxnDetail id={openId} onClose={() => setOpenId(null)} onChanged={load} />}
+      {openId && <TxnDetail id={openId} userId={userId} onClose={() => setOpenId(null)} onChanged={load} />}
       {creating && <NewDeal onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); load(); setOpenId(id); }} />}
     </div>
   );
 }
 
 // ── Detail panel ─────────────────────────────────────────────────────────────
-function TxnDetail({ id, onClose, onChanged }) {
+function TxnDetail({ id, userId, onClose, onChanged }) {
   const [st, setSt] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [showFile, setShowFile] = useState(false);
+  const [fundsFor, setFundsFor] = useState(null);   // milestone key being funded
+  const fileRefs = useRef({});
 
   const refresh = useCallback(async () => {
     const { data } = await supabase.rpc('transaction_state', { p_id: id });
@@ -148,6 +153,26 @@ function TxnDetail({ id, onClose, onChanged }) {
   };
 
   const NEXT = { offer_out: 'under_negotiation', under_negotiation: 'under_contract', under_contract: 'due_diligence', due_diligence: 'clear_to_close', clear_to_close: 'closing', closing: 'closed' };
+
+  // Upload a document for a milestone: files it to the transaction's library AND
+  // marks the milestone done, carrying the document id so the file is reachable.
+  const uploadFor = async (key, files) => {
+    if (!files || !files.length) return;
+    setBusy(true); setErr(null);
+    try {
+      const made = await uploadDocuments(Array.from(files), userId, [], [{ target_type: 'transaction', target_id: id }]);
+      const docId = made && made[0] && made[0].id;
+      await call('set_txn_milestone', { p_id: id, p_key: key, p_status: 'done', p_document_id: docId || null });
+    } catch (e) { setErr(e.message || String(e)); setBusy(false); }
+  };
+
+  const FUND_METHODS = [
+    ['wire', 'Wire from title company'],
+    ['agent_check', 'Check from agent to deposit'],
+    ['agent_deposit', 'Agent deposited to our account'],
+    ['mailed_check', 'Check mailed to us'],
+    ['other', 'Other'],
+  ];
 
   if (!st) return null;
   const ms = st.milestones || [];
@@ -191,22 +216,39 @@ function TxnDetail({ id, onClose, onChanged }) {
             <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 8 }}>This stage</div>
             {curStageMs.map(m => {
               const done = m.status === 'done' || m.status === 'waived';
-              // broker-only steps (approve, ACH) are actionable only by the brokerage
               const locked = m.broker_only && !st.viewer_is_broker;
               const canTap = st.can_edit && !locked;
+              const isFunds = m.key === 'funds_received';
               return (
-                <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #1e1810', opacity: locked ? .6 : 1 }}>
-                  <button disabled={busy || !canTap} onClick={() => canTap && call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: done ? 'pending' : 'done' })}
-                    style={{ width: 22, height: 22, borderRadius: 6, flex: 'none', cursor: canTap ? 'pointer' : 'default',
-                      border: '1.5px solid ' + (done ? '#22c55e' : '#3a3020'),
-                      background: done ? '#22c55e' : 'transparent', color: '#100D09', fontWeight: 900, fontSize: 13, lineHeight: 1 }}>{done ? '✓' : ''}</button>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: m.status === 'waived' ? 'line-through' : 'none' }}>{m.label}</div>
-                    {locked && !done && <div style={{ fontSize: 11, color: GOLD, marginTop: 1 }}>The brokerage handles this step</div>}
-                    {!locked && m.help && !done && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.help}</div>}
+                <div key={m.key} style={{ padding: '9px 0', borderBottom: '1px solid #1e1810', opacity: locked ? .6 : 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button disabled={busy || !canTap || (isFunds && !done)} onClick={() => { if (!canTap) return; if (isFunds && !done) { setFundsFor(fundsFor === m.key ? null : m.key); return; } call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: done ? 'pending' : 'done' }); }}
+                      style={{ width: 22, height: 22, borderRadius: 6, flex: 'none', cursor: canTap ? 'pointer' : 'default',
+                        border: '1.5px solid ' + (done ? '#22c55e' : '#3a3020'),
+                        background: done ? '#22c55e' : 'transparent', color: '#100D09', fontWeight: 900, fontSize: 13, lineHeight: 1 }}>{done ? '✓' : ''}</button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, color: done ? 'var(--text-3)' : 'var(--text-1)', textDecoration: m.status === 'waived' ? 'line-through' : 'none' }}>{m.label}</div>
+                      {locked && !done && <div style={{ fontSize: 11, color: GOLD, marginTop: 1 }}>The brokerage handles this step</div>}
+                      {!locked && m.method && done && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{(FUND_METHODS.find(f => f[0] === m.method) || [null, m.method])[1]}{m.amount ? ' · ' + money(m.amount) : ''}</div>}
+                      {!locked && m.document_id && done && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 1 }}>Document on file ✓</div>}
+                      {!locked && m.help && !done && !isFunds && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{m.help}</div>}
+                    </div>
+                    {canTap && !done && m.wants_document && (<>
+                      <input ref={el => (fileRefs.current[m.key] = el)} type="file" style={{ display: 'none' }} onChange={e => uploadFor(m.key, e.target.files)} />
+                      <button disabled={busy} onClick={() => fileRefs.current[m.key] && fileRefs.current[m.key].click()}
+                        style={{ fontSize: 11.5, color: '#100D09', background: CHAMP, border: 'none', borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Upload</button>
+                    </>)}
+                    {canTap && !done && isFunds && (
+                      <button disabled={busy} onClick={() => setFundsFor(fundsFor === m.key ? null : m.key)}
+                        style={{ fontSize: 11.5, color: '#100D09', background: CHAMP, border: 'none', borderRadius: 7, padding: '5px 11px', fontWeight: 700, cursor: 'pointer' }}>Record</button>
+                    )}
+                    {canTap && !done && !m.wants_document && !isFunds && <button disabled={busy} onClick={() => call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: 'waived' })}
+                      style={{ fontSize: 11, color: 'var(--text-3)', background: 'transparent', border: 'none', cursor: 'pointer' }}>N/A</button>}
                   </div>
-                  {canTap && !done && <button disabled={busy} onClick={() => call('set_txn_milestone', { p_id: id, p_key: m.key, p_status: 'waived' })}
-                    style={{ fontSize: 11, color: 'var(--text-3)', background: 'transparent', border: 'none', cursor: 'pointer' }}>N/A</button>}
+                  {isFunds && fundsFor === m.key && !done && (
+                    <FundsForm methods={FUND_METHODS} busy={busy} onCancel={() => setFundsFor(null)}
+                      onSave={(method, amount, note) => { setFundsFor(null); call('set_txn_milestone', { p_id: id, p_key: 'funds_received', p_status: 'done', p_method: method, p_amount: amount, p_note: note }); }} />
+                  )}
                 </div>
               );
             })}
@@ -238,12 +280,40 @@ function TxnDetail({ id, onClose, onChanged }) {
             <div key={k}><div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{k}</div><div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600 }}>{v ?? '—'}</div></div>
           ))}
         </div>
+        {/* the transaction file — every document in one place */}
+        <div style={{ marginTop: 18, paddingTop: 4 }}>
+          <button onClick={() => setShowFile(v => !v)} style={{ background: 'transparent', border: 'none', color: GOLD, fontSize: 11.5, fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+            {showFile ? '− Hide file' : '+ Transaction file'}
+          </button>
+          {showFile && <div style={{ marginTop: 8 }}><LinkedDocuments userId={userId} targetType="transaction" targetId={id} title="Documents" /></div>}
+        </div>
       </div>
     </div>
   );
 }
 
-// ── New deal ─────────────────────────────────────────────────────────────────
+// ── Funds-received form ──────────────────────────────────────────────────────
+function FundsForm({ methods, busy, onSave, onCancel }) {
+  const [method, setMethod] = useState('wire');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-base,#0f0b07)', border: '1px solid #2a2016', borderRadius: 8, color: 'var(--text-1)', padding: '9px 11px', fontSize: 13, marginTop: 6 };
+  return (
+    <div style={{ margin: '10px 0 4px 32px', padding: '12px 14px', background: 'var(--bg-card,#1B1610)', border: '1px solid #2a2016', borderRadius: 10 }}>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>How did the money arrive?</div>
+      <select value={method} onChange={e => setMethod(e.target.value)} style={inp}>
+        {methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+      <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" placeholder="Amount received ($)" style={inp} />
+      {method === 'other' && <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note" style={inp} />}
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button disabled={busy} onClick={() => onSave(method, amount ? Number(String(amount).replace(/[^0-9.]/g, '')) : null, note || null)}
+          style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 8, padding: '8px 15px', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Record funds</button>
+        <button onClick={onCancel} style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid #2a2016', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
 function NewDeal({ onClose, onCreated }) {
   const [addr, setAddr] = useState('');
   const [buyer, setBuyer] = useState('');
