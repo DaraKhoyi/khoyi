@@ -339,6 +339,7 @@ function TxnDetail({ id, userId, onClose, onChanged }) {
           {curStageMs.length > 0 && !isDead && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 8 }}>This stage</div>
+              {st.viewer_is_broker && st.stage === 'closing' && <BrokerDocRollup id={id} />}
               {curStageMs.map(m => MilestoneRow(m, true))}
             </div>
           )}
@@ -570,6 +571,9 @@ function TxnFileWithClassify({ id, userId, canEdit, onFiled }) {
   const [working, setWorking] = useState(null);
   const [suggest, setSuggest] = useState({}); // docId -> {milestone_key, milestone_label, label, confidence}
   const [note, setNote] = useState(null);
+  const [splitFor, setSplitFor] = useState(null); // {docId, page_count, documents:[...]}
+  const [splitting, setSplitting] = useState(false);
+  const [checks, setChecks] = useState({}); // docId -> {status, result}
 
   const loadDocs = useCallback(async () => {
     const { data: links } = await supabase.from('entity_links').select('item_id').eq('target_type', 'transaction').eq('target_id', id).eq('item_type', 'document');
@@ -577,8 +581,45 @@ function TxnFileWithClassify({ id, userId, canEdit, onFiled }) {
     if (!ids.length) { setDocs([]); return; }
     const { data } = await supabase.from('documents').select('id, title, mime_type').in('id', ids);
     setDocs(data || []);
+    const { data: revs } = await supabase.from('txn_doc_reviews').select('document_id, status, result').eq('transaction_id', id);
+    if (revs) { const m = {}; revs.forEach(r => { m[r.document_id] = { status: r.status, result: r.result }; }); setChecks(m); }
   }, [id]);
   useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  const checkDoc = async (docId) => {
+    setWorking(docId); setNote(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('txn-doc-completeness', { body: { transaction_id: id, document_id: docId } });
+      if (error || data?.error) throw new Error(data?.error || 'Could not check');
+      setChecks(c => ({ ...c, [docId]: { status: data.status, result: data.result } }));
+    } catch (e) { setNote('Could not check completeness: ' + (e.message || e)); }
+    setWorking(null);
+  };
+
+  const detectSplit = async (docId) => {
+    setWorking(docId); setNote(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('txn-split-pdf', { body: { transaction_id: id, document_id: docId, mode: 'detect' } });
+      if (error || data?.error) throw new Error(data?.error || 'Could not read the bundle');
+      if (data.single) { setNote('This looks like a single document — nothing to split.'); }
+      else setSplitFor({ docId, page_count: data.page_count, documents: data.documents });
+    } catch (e) { setNote('Could not split: ' + (e.message || e)); }
+    setWorking(null);
+  };
+  const applySplit = async (segments) => {
+    setSplitting(true); setNote(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('txn-split-pdf', { body: { transaction_id: id, document_id: splitFor.docId, mode: 'apply', segments } });
+      if (error || data?.error) throw new Error(data?.error || 'Split failed');
+      const ok = (data.pieces || []).filter(p => p.ok);
+      // auto-file pieces that matched a milestone
+      for (const p of ok) if (p.milestone_key) { try { await supabase.rpc('set_txn_milestone', { p_id: id, p_key: p.milestone_key, p_status: 'done', p_document_id: p.document_id }); } catch (_) {} }
+      setSplitFor(null);
+      setNote(`Split into ${ok.length} document${ok.length === 1 ? '' : 's'}${ok.some(p => p.milestone_key) ? ', and filed the ones that matched a step' : ''}.`);
+      loadDocs(); onFiled && onFiled();
+    } catch (e) { setNote('Split failed: ' + (e.message || e)); }
+    setSplitting(false);
+  };
 
   const classify = async (docId) => {
     setWorking(docId); setNote(null);
@@ -613,8 +654,15 @@ function TxnFileWithClassify({ id, userId, canEdit, onFiled }) {
               <div key={d.id} style={{ padding: '7px 0', borderBottom: '1px solid #1e1810' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 12.5, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{d.title}</span>
-                  {!s && <button disabled={working === d.id} onClick={() => classify(d.id)} style={{ fontSize: 11.5, color: GOLD, background: 'transparent', border: '1px solid ' + GOLD, borderRadius: 7, padding: '4px 10px', cursor: 'pointer', flex: 'none' }}>{working === d.id ? 'Reading…' : '✨ Identify'}</button>}
+                  {!s && (
+                    <div style={{ display: 'flex', gap: 6, flex: 'none' }}>
+                      {(d.mime_type === 'application/pdf') && <button disabled={working === d.id} onClick={() => detectSplit(d.id)} style={{ fontSize: 11.5, color: 'var(--text-2)', background: 'transparent', border: '1px solid #2a2016', borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>{working === d.id ? '…' : '✂ Split'}</button>}
+                      <button disabled={working === d.id} onClick={() => checkDoc(d.id)} style={{ fontSize: 11.5, color: 'var(--text-2)', background: 'transparent', border: '1px solid #2a2016', borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>{working === d.id ? '…' : '✓ Check'}</button>
+                      <button disabled={working === d.id} onClick={() => classify(d.id)} style={{ fontSize: 11.5, color: GOLD, background: 'transparent', border: '1px solid ' + GOLD, borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>{working === d.id ? 'Reading…' : '✨ Identify'}</button>
+                    </div>
+                  )}
                 </div>
+                {checks[d.id] && <CompletenessResult check={checks[d.id]} />}
                 {s && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 12, color: '#EBCB82' }}>Looks like <strong>{s.label}</strong> → {s.milestone_label}</span>
@@ -627,6 +675,91 @@ function TxnFileWithClassify({ id, userId, canEdit, onFiled }) {
           {note && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8 }}>{note}</div>}
         </div>
       )}
+      {splitFor && <SplitReview info={splitFor} busy={splitting} onCancel={() => setSplitFor(null)} onApply={applySplit} />}
+    </div>
+  );
+}
+
+// Completeness result for one document — a per-item checklist, advisory.
+function CompletenessResult({ check }) {
+  const r = check.result || {};
+  const flagged = (r.items || []).filter(i => i.status === 'empty' && i.requirement === 'required');
+  const ok = check.status === 'complete';
+  return (
+    <div style={{ marginTop: 6, marginLeft: 2, padding: '8px 11px', borderRadius: 8, background: ok ? 'rgba(34,197,94,.06)' : 'rgba(235,203,130,.07)', border: '1px solid ' + (ok ? 'rgba(34,197,94,.3)' : 'rgba(235,203,130,.35)') }}>
+      <div style={{ fontSize: 12.5, color: ok ? '#22c55e' : '#EBCB82', fontWeight: 700 }}>
+        {ok ? '✓ Looks complete' : '⚠ Needs attention'}
+        {r.confidence === 'low' && <span style={{ color: 'var(--text-3)', fontWeight: 400 }}> · low confidence, please verify</span>}
+      </div>
+      {r.summary && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 3 }}>{r.summary}</div>}
+      {flagged.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          {flagged.slice(0, 8).map((i, k) => (
+            <div key={k} style={{ fontSize: 11.5, color: 'var(--text-2)', padding: '2px 0' }}>
+              • {i.page ? `Page ${i.page}: ` : ''}{i.label}{i.who ? ` (${i.who})` : ''} <span style={{ color: '#EBCB82' }}>empty</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {r.parties_signed && (r.parties_signed.all_buyers_signed === false || r.parties_signed.all_sellers_signed === false) && (
+        <div style={{ fontSize: 11.5, color: '#EBCB82', marginTop: 5 }}>
+          {r.parties_signed.all_buyers_signed === false && 'Not all buyers have signed. '}
+          {r.parties_signed.all_sellers_signed === false && 'Not all sellers have signed.'}
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 6 }}>Advisory check — verify against the document before relying on it.</div>
+    </div>
+  );
+}
+
+// Broker-facing roll-up on the approval step: how many docs are complete vs flagged.
+function BrokerDocRollup({ id }) {
+  const [sum, setSum] = useState(null);
+  useEffect(() => { supabase.rpc('txn_doc_review_summary', { p_id: id }).then(({ data }) => setSum(data || null)); }, [id]);
+  if (!sum || !sum.total) return null;
+  const clean = sum.needs_attention === 0;
+  return (
+    <div style={{ margin: '4px 0 10px', padding: '9px 12px', borderRadius: 9, background: clean ? 'rgba(34,197,94,.06)' : 'rgba(235,203,130,.07)', border: '1px solid ' + (clean ? 'rgba(34,197,94,.3)' : 'rgba(235,203,130,.35)') }}>
+      <span style={{ fontSize: 12.5, color: clean ? '#22c55e' : '#EBCB82', fontWeight: 700 }}>
+        {clean ? `✓ All ${sum.total} checked document${sum.total === 1 ? '' : 's'} look complete` : `⚠ ${sum.complete} of ${sum.total} documents complete · ${sum.needs_attention} need${sum.needs_attention === 1 ? 's' : ''} signatures or fields`}
+      </span>
+    </div>
+  );
+}
+
+// Review the detected segments before cutting: adjust a boundary, drop a piece, then split.
+function SplitReview({ info, busy, onApply, onCancel }) {
+  const [segs, setSegs] = useState(info.documents.map(d => ({ ...d })));
+  const setSeg = (i, patch) => setSegs(s => s.map((x, j) => j === i ? { ...x, ...patch } : x));
+  const drop = (i) => setSegs(s => s.filter((_, j) => j !== i));
+  const num = { width: 46, background: 'var(--bg-base,#0f0b07)', border: '1px solid #2a2016', borderRadius: 6, color: 'var(--text-1)', padding: '5px 6px', fontSize: 12.5, textAlign: 'center' };
+  return (
+    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 260, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base,#100D09)', width: '100%', maxWidth: 540, maxHeight: '88vh', overflowY: 'auto', borderRadius: '18px 18px 0 0', border: '1px solid #2a2016', padding: '18px 18px 34px' }}>
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 10.5, color: GOLD }}>Split the bundle</div>
+        <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 21, color: 'var(--text-1)', marginBottom: 2 }}>I found {segs.length} document{segs.length === 1 ? '' : 's'}.</div>
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 14 }}>{info.page_count} pages total. Adjust a page range or drop a piece, then split — each becomes its own file and files to its step.</div>
+        {segs.map((s, i) => (
+          <div key={i} style={{ padding: '10px 0', borderBottom: '1px solid #1e1810' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input value={s.title} onChange={e => setSeg(i, { title: e.target.value })} style={{ flex: 1, minWidth: 0, background: 'var(--bg-base,#0f0b07)', border: '1px solid #2a2016', borderRadius: 7, color: 'var(--text-1)', padding: '7px 10px', fontSize: 13 }} />
+              <button onClick={() => drop(i)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 16, cursor: 'pointer', flex: 'none' }}>×</button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Pages</span>
+              <input type="number" min={1} max={info.page_count} value={s.start_page} onChange={e => setSeg(i, { start_page: +e.target.value })} style={num} />
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>to</span>
+              <input type="number" min={1} max={info.page_count} value={s.end_page} onChange={e => setSeg(i, { end_page: +e.target.value })} style={num} />
+              {s.type && s.type !== 'other' && <span style={{ fontSize: 11, color: GOLD, marginLeft: 4, textTransform: 'capitalize' }}>{(s.type || '').replace(/_/g, ' ')}</span>}
+              {s.confidence === 'low' && <span style={{ fontSize: 11, color: '#EBCB82', marginLeft: 'auto' }}>check this one</span>}
+            </div>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <button disabled={busy || !segs.length} onClick={() => onApply(segs)} style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '11px 18px', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: (busy || !segs.length) ? .6 : 1 }}>{busy ? 'Splitting…' : `Split & file ${segs.length}`}</button>
+          <button onClick={onCancel} style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid #2a2016', borderRadius: 10, padding: '11px 16px', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
