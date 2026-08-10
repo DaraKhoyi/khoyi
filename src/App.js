@@ -18619,6 +18619,17 @@ function AppMain() {
   const [oweReplyMap, setOweReplyMap] = useState({});
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Desktop keeps the sidebar permanently visible; mobile only when opened. We use
+  // this to avoid rendering the ~30-node menu tree on every app render when it's
+  // closed on a phone — that churn was the iPhone menu lag.
+  const [wideScreen, setWideScreen] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(min-width: 900px)').matches : true));
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(min-width: 900px)');
+    const on = () => setWideScreen(mq.matches);
+    mq.addEventListener ? mq.addEventListener('change', on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); };
+  }, []);
   const [mindsetOpen, setMindsetOpen] = useState(false); // the mindset menu (upper-right)
   // Live badge for the nightly email-review queue (open items needing action).
   useEffect(() => {
@@ -19300,6 +19311,9 @@ function AppMain() {
     return n;
   }).filter(Boolean);
   const MENU_VISIBLE = pruneMenu(MENU);
+  // menuCtx must stay a plain object here (this code runs after the app-shell
+  // guards, so no hooks). The perf win comes from MenuNode being React.memo'd and
+  // the tree only rendering when the drawer is open — see the render site.
   const menuCtx = { view, navigate, builtSet, byNavId, openPath,
     toggle: (depth, key) => setOpenPath(prev => prev[depth] === key ? prev.slice(0, depth) : [...prev.slice(0, depth), key]) };
 
@@ -19348,7 +19362,7 @@ function AppMain() {
           </div>
           <div className="sidebar-nav">
             <div className="nav-section-label">Menu</div>
-            {MENU_VISIBLE.map((node, i) => <MenuNode key={node._key || i} node={node} depth={0} ctx={menuCtx} />)}
+            {(sidebarOpen || wideScreen) && MENU_VISIBLE.map((node, i) => <MenuNode key={node._key || i} node={node} depth={0} ctx={menuCtx} />)}
           </div>
           <div className="sidebar-footer">
             <div className="sidebar-user">
