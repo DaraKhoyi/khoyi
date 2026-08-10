@@ -23,6 +23,9 @@ const PROMPT = `You are reading an executed U.S. residential real-estate purchas
   "buyers": ["full legal name", ...],
   "sellers": ["full legal name", ...],
   "property_address": "full street address",
+  "property_city": "city",
+  "property_state": "2-letter state",
+  "property_zip": "5-digit ZIP",
   "purchase_price": number,
   "earnest_money": number,
   "financing_type": "cash" | "financed" | null,
@@ -109,6 +112,11 @@ Deno.serve(async (req) => {
       purchase_price: ex.purchase_price || null,
       earnest_money: ex.earnest_money || null,
       loan_type: ex.loan_type || null,
+      // going-forward loop: structured locality parsed straight off the contract, so
+      // new deals give the local-market module true city/ZIP cuts with no geocoding.
+      city: ex.property_city || null,
+      state: ex.property_state || null,
+      zip: (ex.property_zip ? String(ex.property_zip).slice(0, 5) : null),
       contract_extracted_at: new Date().toISOString(),
     }).eq("id", transaction_id);
 
