@@ -159,8 +159,10 @@ body {
     box-shadow: 4px 0 24px rgba(0,0,0,0.5);
     z-index: 1000;                 /* sit well above the overlay on iOS */
     -webkit-overflow-scrolling: touch;
+    will-change: transform;        /* promote to its own layer so the slide is instant on iOS */
+    transform: translateX(-100%) translateZ(0);
   }
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open { transform: translateX(0) translateZ(0); }
   /* iOS Safari: give the nav its own stacking context so taps land on the items,
      not the blurred overlay behind them. */
   .sidebar .sidebar-nav { position: relative; z-index: 2; }

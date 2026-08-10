@@ -179,7 +179,7 @@ function AiMark({ size = 13 }) {
     </svg>
   );
 }
-function MenuNode({ node, depth, ctx }) {
+const MenuNode = React.memo(function MenuNode({ node, depth, ctx }) {
   const { view, navigate, builtSet, byNavId, openPath, toggle } = ctx;
   const hasChildren = !!(node.children && node.children.length);
   const leafView = node.view || null;
@@ -226,7 +226,7 @@ function MenuNode({ node, depth, ctx }) {
       )}
     </>
   );
-}
+});
 
 // Touch BUILD_VERSION so webpack includes it (changes bundle hash on every version bump)
 if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
@@ -18961,7 +18961,16 @@ function AppMain() {
     setDataLoaded(false);
   }
 
-  const navigate = (id, sub = null) => { setView(id); if (sub) setDeepLink(d => ({ view: id, sub, n: d.n + 1 })); setSidebarOpen(false); };
+  const navigate = (id, sub = null) => {
+    // Close the drawer FIRST so the tap feels instant, then let the heavy view
+    // mount on the next frame. Switching view synchronously while the drawer is
+    // still open locks the main thread on a phone (multi-second freeze).
+    setSidebarOpen(false);
+    requestAnimationFrame(() => {
+      setView(id);
+      if (sub) setDeepLink(d => ({ view: id, sub, n: d.n + 1 }));
+    });
+  };
   // Global "compose an email in-app" helper: any Email affordance can call
   // window.__composeEmail(address) to open the PrismOS composer instead of the OS/Gmail app.
   useEffect(() => {
