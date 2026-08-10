@@ -157,8 +157,13 @@ body {
     top: 0; left: 0; bottom: 0;
     transform: translateX(-100%);
     box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+    z-index: 1000;                 /* sit well above the overlay on iOS */
+    -webkit-overflow-scrolling: touch;
   }
   .sidebar.open { transform: translateX(0); }
+  /* iOS Safari: give the nav its own stacking context so taps land on the items,
+     not the blurred overlay behind them. */
+  .sidebar .sidebar-nav { position: relative; z-index: 2; }
 
   .mobile-header {
     display: flex;
@@ -188,8 +193,7 @@ body {
     display: block;
     position: fixed; inset: 0;
     background: rgba(0,0,0,0.6);
-    z-index: 199;
-    backdrop-filter: blur(2px);
+    z-index: 900;                  /* below the sidebar (1000) so it never covers the menu */
   }
 
   .cards-row { grid-template-columns: 1fr 1fr !important; }
@@ -226,6 +230,9 @@ body {
   color: var(--text-2); cursor: pointer;
   transition: background 0.12s, color 0.12s;
   border-left: 3px solid transparent;
+  position: relative; z-index: 1;          /* above any sibling layer */
+  touch-action: manipulation;              /* iOS: no 300ms delay, reliable tap */
+  -webkit-tap-highlight-color: rgba(203,163,92,0.18);
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
 .nav-item.active { background: var(--accent-glow); color: var(--accent); border-left-color: var(--accent); }
