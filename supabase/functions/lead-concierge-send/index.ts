@@ -36,7 +36,36 @@ Deno.serve(async (req) => {
     const message = (text && String(text).trim()) || lc.draft;
     if (!message) return new Response(JSON.stringify({ error: "no message" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 
-    // sender line
+    // ── EMAIL path ────────────────────────────────────────────────────────────
+    if (lc.channel === "email") {
+      const ctx = lc.email_context || {};
+      // resolve the sending account: the one the lead emailed, else the user's default
+      let accountId = ctx.account_id || null;
+      if (!accountId) {
+        const { data: acct } = await admin.from("email_accounts").select("id").eq("user_id", lc.user_id).order("is_default", { ascending: false }).limit(1).maybeSingle();
+        accountId = acct && acct.id;
+      }
+      if (!accountId || !lc.lead_email) {
+        await admin.from("lead_concierge").update({ status: "failed" }).eq("id", id);
+        return new Response(JSON.stringify({ error: "No connected email account to send from." }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      const subject = (b.subject && String(b.subject)) || lc.draft_subject || "Thanks for reaching out";
+      const { data: sendRes, error: sendErr } = await admin.functions.invoke("gmail-send", { body: {
+        account_id: accountId, to: lc.lead_email, subject,
+        body_text: message,
+        reply_to_message_id: ctx.provider_message_id || undefined,
+        in_reply_to_thread_id: ctx.provider_thread_id || undefined,
+      } });
+      if (sendErr || (sendRes && sendRes.error)) {
+        await admin.from("lead_concierge").update({ status: "failed" }).eq("id", id);
+        return new Response(JSON.stringify({ error: "Email send failed: " + ((sendRes && sendRes.error) || sendErr?.message || "unknown") }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      await admin.from("lead_concierge").update({ status: auto ? "auto_sent" : "sent", sent_text: message, sent_at: new Date().toISOString(), sent_by: auto ? "auto" : "agent" }).eq("id", id);
+      if (auto) { try { await admin.functions.invoke("push-send", { body: { user_id: lc.user_id, title: "Auto-replied to a new lead", body: message.slice(0, 120), url: "https://darasapp.com/?concierge=" + id, tag: "concierge" } }); } catch (_) {} }
+      return new Response(JSON.stringify({ ok: true, sent: true, channel: "email" }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // ── SMS path (OpenPhone / Quo) ──────────────────────────────────────────────
     const { data: qs } = await admin.from("quo_settings").select("active_number, active_phone_number_id").eq("user_id", lc.user_id).maybeSingle();
     const from = qs?.active_number;
     const apiKey = Deno.env.get("QUO_API_KEY");

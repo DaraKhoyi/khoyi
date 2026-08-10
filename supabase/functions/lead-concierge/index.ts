@@ -27,29 +27,35 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const b = await req.json();
-    const { user_id, contact_id, lead_phone, channel } = b;
+    const { user_id, contact_id, lead_phone, lead_email, channel, email_context } = b;
     let { lead_name, inbound_text } = b;
-    if (!user_id || !lead_phone) return new Response(JSON.stringify({ error: "user_id and lead_phone required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    const isEmail = channel === "email";
+    const leadHandle = isEmail ? lead_email : lead_phone;
+    if (!user_id || !leadHandle) return new Response(JSON.stringify({ error: "user_id and a phone or email required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 
     // respect the agent's on/off switch
     const { data: st } = await admin.from("lead_concierge_settings").select("enabled").eq("user_id", user_id).maybeSingle();
     if (st && st.enabled === false) return new Response(JSON.stringify({ ok: true, skipped: "disabled" }), { headers: { ...cors, "Content-Type": "application/json" } });
 
-    // de-dupe: if we already have a pending concierge for this phone today, don't double up
+    // de-dupe: one pending concierge per lead handle per 12h
     const since = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
-    const { data: existing } = await admin.from("lead_concierge").select("id").eq("user_id", user_id).eq("lead_phone", lead_phone).eq("status", "pending").gte("created_at", since).limit(1);
+    const dupeCol = isEmail ? "lead_email" : "lead_phone";
+    const { data: existing } = await admin.from("lead_concierge").select("id").eq("user_id", user_id).eq(dupeCol, leadHandle).eq("status", "pending").gte("created_at", since).limit(1);
     if (existing && existing.length) return new Response(JSON.stringify({ ok: true, skipped: "already_pending" }), { headers: { ...cors, "Content-Type": "application/json" } });
 
     const { voice, name } = await loadVoice(admin, user_id);
     const firstName = (lead_name || "").trim().split(/\s+/)[0] || null;
 
+    const channelLine = isEmail
+      ? `Write the agent's FIRST reply to a brand-new lead who EMAILED in. Warm, human, and helpful: greet them by first name if known, engage with what they asked, and move toward a conversation (offer to help, ask one easy question, or suggest a quick call). 2-5 sentences — an email, not a text, but still concise and personal. No signature (the app adds it). Return ONLY the email body text.`
+      : `Write the agent's FIRST reply to a brand-new lead who TEXTED. 1-3 short sentences, like a real person texting. No subject line, no signature, no emojis unless the agent's voice uses them. Return ONLY the message text.`;
+
     const sys = (voice
-      ? `You write text messages for ${name || "a real-estate agent"}, in their own voice, captured here and authoritative on tone, phrasing, and word choice:\n"""${voice}"""\n`
-      : `You write text messages for ${name || "a real-estate agent"}. Voice: warm, human, plain, confident — never salesy, never AI-sounding.\n`) +
-      `Write the agent's FIRST reply to a brand-new lead. Goals, in order: acknowledge them warmly by first name if known, answer or engage with what they asked, and move toward a conversation (offer to help, ask one easy question, or suggest a quick call). Keep it to 1-3 short sentences, like a real person texting. No subject line, no signature, no emojis unless the agent's voice uses them. Return ONLY the message text.`;
+      ? `You write ${isEmail ? "emails" : "text messages"} for ${name || "a real-estate agent"}, in their own voice, captured here and authoritative on tone, phrasing, and word choice:\n"""${voice}"""\n`
+      : `You write ${isEmail ? "emails" : "text messages"} for ${name || "a real-estate agent"}. Voice: warm, human, plain, confident — never salesy, never AI-sounding.\n`) + channelLine;
 
     const usr = (firstName ? `The lead's name is ${firstName}. ` : "The lead's name is unknown. ") +
-      (inbound_text ? `They just texted: "${String(inbound_text).slice(0, 400)}"` : `They just called and missed you (no message). Reach out proactively.`);
+      (inbound_text ? `They just ${isEmail ? "emailed" : "texted"}: "${String(inbound_text).slice(0, 600)}"` : `They just reached out (no message). Reach out proactively.`);
 
     let draft = firstName ? `Hi ${firstName}! Thanks for reaching out — happy to help. What can I tell you?` : `Hi there! Thanks for reaching out — happy to help. What can I tell you?`;
     try {
@@ -64,9 +70,18 @@ Deno.serve(async (req) => {
       try { await logAiUsage(admin, { userId: user_id, fn: "lead-concierge", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
     } catch (_) { /* keep the safe fallback draft */ }
 
+    // reply subject for the email path ("Re: ..." off the lead's subject)
+    let draftSubject: string | null = null;
+    if (isEmail) {
+      const s = (email_context && email_context.subject) || "";
+      draftSubject = s ? (/^re:/i.test(s) ? s : "Re: " + s) : (firstName ? `Hi ${firstName} — following up` : "Thanks for reaching out");
+    }
+
     const { data: row, error } = await admin.from("lead_concierge").insert({
-      user_id, contact_id: contact_id || null, lead_name: lead_name || null, lead_phone,
-      channel: channel || "sms", inbound_text: inbound_text || null, draft, status: "pending",
+      user_id, contact_id: contact_id || null, lead_name: lead_name || null,
+      lead_phone: isEmail ? null : lead_phone, lead_email: isEmail ? lead_email : null,
+      channel: channel || "sms", inbound_text: inbound_text || null,
+      draft, draft_subject: draftSubject, email_context: email_context || null, status: "pending",
     }).select("id").single();
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
 

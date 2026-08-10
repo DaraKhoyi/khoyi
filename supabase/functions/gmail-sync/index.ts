@@ -239,6 +239,7 @@ async function getProfile(accessToken) {
 
 async function syncOneAccount(supabase, account, opts) {
   const result = { account_id: account.id, email: account.email_address, new_messages: 0, new_threads: 0, new_inbound: 0 };
+  const conciergeCandidates = [];   // new inbound emails to consider for the Lead Concierge
   try {
     const accessToken = await refreshAccessTokenIfNeeded(supabase, account);
 
@@ -434,7 +435,14 @@ async function syncOneAccount(supabase, account, opts) {
       });
       if (insertErr) continue;
       result.new_messages++;
-      if (direction === "inbound") result.new_inbound = (result.new_inbound || 0) + 1;
+      if (direction === "inbound") {
+        result.new_inbound = (result.new_inbound || 0) + 1;
+        // stash for the Lead Concierge pass after the loop (email path)
+        try {
+          conciergeCandidates.push({ from_address: fromObj.email, from_name: fromObj.name, subject: subject || null,
+            snippet: (bodies.text || msg.snippet || "").slice(0, 600), provider_message_id: msg.id, provider_thread_id: msg.threadId, labels });
+        } catch (_) {}
+      }
 
       // Insert attachment metadata
       if (attachments.length > 0) {
@@ -545,6 +553,36 @@ async function syncOneAccount(supabase, account, opts) {
       .from("email_accounts")
       .update(updates)
       .eq("id", account.id);
+
+    // ── 5-Minute Lead Concierge (email path) ────────────────────────────────
+    // A new inbound email from someone who isn't an established contact is a lead
+    // reaching out. Draft a first reply in the agent's voice + push them. Same
+    // speed-to-lead moment as the SMS path, but for the channel the beta actually
+    // uses. Skips automated/no-reply senders and anyone we already email with.
+    try {
+      const seen = new Set();
+      for (const c of conciergeCandidates) {
+        const addr = (c.from_address || "").toLowerCase().trim();
+        if (!addr || seen.has(addr)) continue;
+        seen.add(addr);
+        // skip obvious non-humans
+        if (/no-?reply|do-?not-?reply|notification|mailer-daemon|postmaster|automated|@.*(mailchimp|sendgrid|amazonses|constantcontact)/i.test(addr)) continue;
+        if (addr === (account.email_address || "").toLowerCase()) continue;
+        // established contact? (we've emailed them, or they're a non-lead type)
+        const { data: contact } = await supabase.from("contacts")
+          .select("id, name, type, last_outbound_at").eq("user_id", account.user_id)
+          .ilike("email", addr).limit(1).maybeSingle();
+        const established = contact && (contact.last_outbound_at || (contact.type && !["lead", "prospect", "new"].includes(String(contact.type).toLowerCase())));
+        if (established) continue;
+        await supabase.functions.invoke("lead-concierge", { body: {
+          user_id: account.user_id, contact_id: contact ? contact.id : null,
+          lead_name: (contact && contact.name) || c.from_name || null,
+          lead_email: c.from_address, channel: "email",
+          inbound_text: (c.subject ? "Subject: " + c.subject + "\n\n" : "") + (c.snippet || ""),
+          email_context: { account_id: account.id, provider_message_id: c.provider_message_id, provider_thread_id: c.provider_thread_id, subject: c.subject },
+        } });
+      }
+    } catch (_) { /* concierge is best-effort; never block the sync */ }
 
     return result;
   } catch (err) {
