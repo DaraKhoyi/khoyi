@@ -253,6 +253,7 @@ export default function InvestorPipeline({ userId }) {
   const [buyers, setBuyers] = useState(null);
   const [matches, setMatches] = useState(null);
   const [properties, setProperties] = useState(null);
+  const [broker, setBroker] = useState(null);
   const [editing, setEditing] = useState(null);   // buyer object or 'new'
   const [adding, setAdding] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
@@ -279,7 +280,10 @@ export default function InvestorPipeline({ userId }) {
   const loadProps = useCallback(async () => {
     try { const { data } = await supabase.rpc('investor_my_properties'); setProperties(Array.isArray(data) ? data : []); } catch (_) { setProperties([]); }
   }, []);
-  useEffect(() => { loadBuyers(); loadMatches(); loadProps(); }, [loadBuyers, loadMatches, loadProps]);
+  const loadBroker = useCallback(async () => {
+    try { const { data } = await supabase.rpc('investor_broker_dashboard'); setBroker(data || { is_broker: false }); } catch (_) { setBroker({ is_broker: false }); }
+  }, []);
+  useEffect(() => { loadBuyers(); loadMatches(); loadProps(); loadBroker(); }, [loadBuyers, loadMatches, loadProps, loadBroker]);
 
   const act = async (mid, status) => {
     try { await supabase.rpc('investor_match_status', { p_match_id: mid, p_status: status }); loadMatches(); } catch (_) {}
@@ -305,6 +309,7 @@ export default function InvestorPipeline({ userId }) {
         {tabBtn('investors', 'My Investors', (buyers || []).length)}
         {tabBtn('matches', 'Matches', newMatchCount || null)}
         {tabBtn('property', 'Add Property')}
+        {broker && broker.is_broker ? tabBtn('pool', 'Pool') : null}
       </div>
 
       {/* MY INVESTORS */}
@@ -411,6 +416,88 @@ export default function InvestorPipeline({ userId }) {
           </div>
         )
       )}
+
+      {/* BROKER POOL DASHBOARD */}
+      {tab === 'pool' && broker && broker.is_broker && (() => {
+        const k = broker.kpis || {}, pl = broker.pipeline || {}, wp = broker.warm_pipeline || {};
+        const stat = (v, l, accent) => (
+          <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px' }}>
+            <div style={{ fontFamily: "'Fraunces',serif", fontSize: 24, color: accent || 'var(--text-1)', lineHeight: 1.1 }}>{v}</div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 }}>{l}</div>
+          </div>
+        );
+        return (
+          <div>
+            <div style={{ background: 'linear-gradient(135deg,rgba(203,163,92,.18),rgba(203,163,92,.04))', border: '1px solid rgba(203,163,92,.4)', borderRadius: 16, padding: '16px 18px', marginBottom: 14 }}>
+              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 11, fontWeight: 700, color: GOLD }}>Pipeline the pool is sourcing</div>
+              <div style={{ fontFamily: "'Fraunces',serif", fontSize: 34, color: CHAMP, margin: '4px 0 0' }}>{money(pl.potential_buy_gci)}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>potential buy-side GCI · {money(pl.value)} in matched value across {pl.matched_properties || 0} propert{pl.matched_properties === 1 ? 'y' : 'ies'}</div>
+              {wp.count > 0 && <div style={{ fontSize: 12, color: '#7fae8f', marginTop: 6 }}>🔥 {money(wp.potential_gci)} of that is warm — {wp.count} buyer{wp.count === 1 ? '' : 's'} marked interested</div>}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              {stat(k.active_buyers || 0, 'Investors')}
+              {stat(k.pooled_properties || 0, 'Properties')}
+              {stat(k.total_matches || 0, 'Matches', CHAMP)}
+              {stat(k.participating_agents || 0, 'Agents in')}
+            </div>
+
+            {(broker.demand_markets || []).length > 0 && (
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '13px 15px', marginBottom: 12 }}>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: GOLD, marginBottom: 8 }}>Where the demand is</div>
+                {broker.demand_markets.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < broker.demand_markets.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <span style={{ flex: 1, fontSize: 13.5, color: 'var(--text-1)' }}>{m.market}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{m.buyers_want} buyer{m.buyers_want === 1 ? '' : 's'}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: m.inventory === 0 ? '#e0794f' : '#7fae8f', minWidth: 78, textAlign: 'right' }}>{m.inventory === 0 ? 'no inventory' : m.inventory + ' in pool'}</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>Markets with demand but no inventory are where to point your agents' hunting.</div>
+              </div>
+            )}
+
+            {(broker.leaderboard || []).length > 0 && (
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '13px 15px', marginBottom: 12 }}>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: GOLD, marginBottom: 8 }}>Who's driving it</div>
+                <div style={{ display: 'flex', fontSize: 10.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', paddingBottom: 6 }}>
+                  <span style={{ flex: 1 }}>Agent</span><span style={{ width: 54, textAlign: 'center' }}>Buyers</span><span style={{ width: 54, textAlign: 'center' }}>Props</span><span style={{ width: 62, textAlign: 'center' }}>Matches</span>
+                </div>
+                {broker.leaderboard.map((a, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
+                    <span style={{ flex: 1, color: 'var(--text-1)', fontWeight: i === 0 ? 700 : 500 }}>{i === 0 ? '★ ' : ''}{a.agent}</span>
+                    <span style={{ width: 54, textAlign: 'center', color: 'var(--text-2)' }}>{a.buyers}</span>
+                    <span style={{ width: 54, textAlign: 'center', color: 'var(--text-2)' }}>{a.properties}</span>
+                    <span style={{ width: 62, textAlign: 'center', color: a.matches_sourced > 0 ? CHAMP : 'var(--text-3)', fontWeight: a.matches_sourced > 0 ? 700 : 400 }}>{a.matches_sourced}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(broker.recent_matches || []).length > 0 && (
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '13px 15px' }}>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: GOLD, marginBottom: 8 }}>Recent matches</div>
+                {broker.recent_matches.map((m, i) => (
+                  <div key={i} style={{ padding: '9px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600 }}>{m.property}</span>
+                      <span style={{ fontSize: 12.5, color: CHAMP }}>{money(m.price)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>
+                      {m.buyer_agent}'s buyer <b>{m.buyer}</b> ← {m.inventory_agent}'s listing
+                      {m.cross_agent ? <span style={{ marginLeft: 6, fontSize: 10.5, background: 'rgba(203,163,92,.18)', color: CHAMP, borderRadius: 20, padding: '1px 7px', fontWeight: 700 }}>cross-agent</span> : null}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{m.status}{m.reason ? ' · ' + m.reason : ''}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(k.active_buyers || 0) === 0 && (k.pooled_properties || 0) === 0 && (
+              <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-3)', fontSize: 13 }}>The pool is empty so far. As agents add investors and properties, the whole market shows up here.</div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
