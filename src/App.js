@@ -18580,8 +18580,11 @@ function AppMain() {
     try { v = new URLSearchParams(window.location.search).get('view'); } catch (_) { return; }
     if (!v) return;
     const ALLOWED = ['dashboard','prospecting','tasks','calendar','contacts','inbox','quo',
-                     'journal','numbers','chat','finance','documents','mileage','production'];
-    if (ALLOWED.includes(v)) setView(v);
+                     'journal','numbers','chat','finance','documents','mileage','production','investor_pipeline'];
+    if (ALLOWED.includes(v)) {
+      setView(v);
+      try { const tb = new URLSearchParams(window.location.search).get('tab'); if (tb) window.__investorTab = tb; } catch (_) {}
+    }
     try { window.history.replaceState({}, '', '/'); } catch (_) {}
   }, []);
 

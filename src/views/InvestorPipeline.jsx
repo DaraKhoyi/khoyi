@@ -246,12 +246,29 @@ function PropertyForm({ onSaved, onCancel }) {
 
 // ── Main view ────────────────────────────────────────────────────────────────
 export default function InvestorPipeline({ userId }) {
-  const [tab, setTab] = useState('investors');
+  const [tab, setTab] = useState(() => {
+    try { const t = window.__investorTab; if (t) { delete window.__investorTab; if (['investors', 'matches', 'property'].includes(t)) return t; } } catch (_) {}
+    return 'investors';
+  });
   const [buyers, setBuyers] = useState(null);
   const [matches, setMatches] = useState(null);
   const [properties, setProperties] = useState(null);
   const [editing, setEditing] = useState(null);   // buyer object or 'new'
   const [adding, setAdding] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+
+  const shareIntake = async () => {
+    setLinkBusy(true);
+    try {
+      const { data } = await supabase.rpc('investor_my_intake_link');
+      const url = data && data.url;
+      if (!url) { alert('Could not build your link.'); setLinkBusy(false); return; }
+      const msg = "I'd love to send you off-market opportunities that actually fit. Take 2 minutes to share what you're looking for and I'll match you to real deals: " + url;
+      if (navigator.share) { try { await navigator.share({ title: 'Investor preferences', text: msg }); } catch (_) {} }
+      else { try { await navigator.clipboard.writeText(url); alert('Your intake link is copied — paste it to any investor.'); } catch (_) { prompt('Your investor intake link:', url); } }
+    } catch (e) { alert('Could not build your link: ' + (e.message || e)); }
+    setLinkBusy(false);
+  };
 
   const loadBuyers = useCallback(async () => {
     try { const { data } = await supabase.rpc('investor_my_buyers'); setBuyers(Array.isArray(data) ? data : []); } catch (_) { setBuyers([]); }
@@ -297,7 +314,11 @@ export default function InvestorPipeline({ userId }) {
             onSaved={() => { setEditing(null); loadBuyers(); loadMatches(); }} />
         ) : (
           <div>
-            <button onClick={() => setEditing('new')} style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', marginBottom: 14 }}>+ Add investor</button>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+              <button onClick={() => setEditing('new')} style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>+ Add investor</button>
+              <button onClick={shareIntake} disabled={linkBusy} style={{ background: 'transparent', color: CHAMP, border: '1px solid ' + GOLD, borderRadius: 10, padding: '10px 16px', fontWeight: 700, fontSize: 13.5, cursor: 'pointer' }}>{linkBusy ? '…' : '🔗 Share intake link'}</button>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 14, marginTop: -4 }}>Send the link to an investor and they fill their own buy-box — it lands here, private to you.</div>
             {buyers === null ? <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading…</div>
               : buyers.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '30px 16px', color: 'var(--text-3)' }}>
