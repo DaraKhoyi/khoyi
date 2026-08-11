@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
-
-const GOLD = '#CBA35C', CHAMP = '#EBCB82';
-const money = (n) => (n || n === 0) ? '$' + Math.round(Number(n)).toLocaleString('en-US') : '—';
+import { GOLD, CHAMP, money } from '../theme';
+import { Chip } from '../ui';
 
 const TYPES = [
   ['fix_flip', 'Fix & Flip'], ['wholesaler', 'Wholesaler'], ['rental', 'Buy & Hold'],
@@ -14,15 +13,6 @@ const PROP_TYPES = [
 ];
 const CONDITIONS = [['turnkey', 'Turnkey'], ['light', 'Light cosmetic'], ['full_rehab', 'Full rehab'], ['teardown', 'Teardown']];
 
-function Chip({ on, label, onClick }) {
-  return (
-    <button type="button" onClick={onClick}
-      style={{ border: '1px solid ' + (on ? GOLD : 'var(--border)'), background: on ? 'rgba(203,163,92,.16)' : 'transparent',
-        color: on ? CHAMP : 'var(--text-2)', borderRadius: 20, padding: '6px 12px', fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: 'pointer', margin: '0 6px 6px 0' }}>
-      {label}
-    </button>
-  );
-}
 const field = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', padding: '10px 12px', fontSize: 13.5, marginBottom: 10 };
 const label = { fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', margin: '4px 0 5px', fontWeight: 600 };
 
