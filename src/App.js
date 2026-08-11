@@ -118,6 +118,7 @@ function ViewLoadingFallback() {
 }
 const FinanceView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.FinanceView })));
 const TransactionPipeline = lazyWithReload(() => import('./views/TransactionPipeline'));
+const InvestorPipeline = lazyWithReload(() => import('./views/InvestorPipeline'));
 const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
 const QuarterlyTaxBanner = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.QuarterlyTaxBanner })));
 const TasksView = lazyWithReload(() => import('./views/TasksView'));
@@ -19070,6 +19071,7 @@ function AppMain() {
 
   const NAV_ALL = [
     { id: 'today',       icon: '✦', label: 'Today' },
+    { id: 'investor_pipeline', icon: '🏦', label: 'Investor Pipeline' },
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
     { id: 'review',      icon: '📥', label: 'Review',      badge: reviewCount || null },
     { id: 'coach',       icon: '🎯', label: 'Coach' },
@@ -19187,6 +19189,7 @@ function AppMain() {
     // 'contacts' would look identical here and silently throw that away.
     { label: 'My World', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
+    { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },
     { label: 'Google Contacts', view: 'google_contacts', icon: 'contacts' },
     { label: 'Cadence Review', view: 'cadence_review', icon: 'clock' },
     // ── Planning — the daily-drivers grouped: what to do, when, and with whom ──
@@ -19443,6 +19446,7 @@ function AppMain() {
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
               : view==='finance'     ? <FinanceView userId={user.id} initialSub={deepLink.view==='finance'?deepLink.sub:null} subNonce={deepLink.n}/>
               : view==='transactions' ? <TransactionPipeline userId={user.id}/>
+              : view==='investor_pipeline' ? <InvestorPipeline userId={user.id}/>
               : view==='brain'       ? <BrainView brain={brain} setBrain={setBrain} userId={user.id} tasks={tasks} events={events} contacts={contacts}/>
               : view==='playbooks'   ? <PlaybooksView brain={brain} playbookSteps={playbookSteps} setPlaybookSteps={setPlaybookSteps} playbookRuns={playbookRuns} setPlaybookRuns={setPlaybookRuns} tasks={tasks} setTasks={setTasks} userId={user.id} setView={setView} setTaskFilter={onTaskFilterChange} events={events}/>
               : view==='calendar'    ? <CalendarView events={events} setEvents={setEvents} userId={user.id} brain={brain} contacts={contacts} emailAccounts={emailAccounts} properties={properties} tasks={tasks} setTasks={setTasks} focusEventId={focusEventId} setFocusEventId={setFocusEventId}/>
