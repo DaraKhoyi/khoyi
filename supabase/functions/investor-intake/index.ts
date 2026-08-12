@@ -293,9 +293,20 @@ Deno.serve(async (req) => {
     } catch (_) { /* fall through to not-active page */ }
   }
 
-  if (!ownerId) return html(notActivePage());
+  // JSON mode: the static page at darasapp.com/investor.html calls ?json=1 to get the
+  // agent's name (and whether the token is valid) so it can personalize + submit.
+  const wantsJson = url.searchParams.get("json") === "1" || (req.headers.get("accept") || "").includes("application/json");
 
-  if (req.method === "GET") return html(formPage(agentName));
+  if (!ownerId) {
+    if (wantsJson) return new Response(JSON.stringify({ ok: false }), { headers: JSON_HEADERS });
+    return html(notActivePage());
+  }
+
+  if (req.method === "GET") {
+    if (wantsJson) return new Response(JSON.stringify({ ok: true, agent_name: agentName }), { headers: JSON_HEADERS });
+    // Direct hits on the function URL still get a fully-rendered form as a fallback.
+    return html(formPage(agentName));
+  }
 
   if (req.method === "POST") {
     try {
