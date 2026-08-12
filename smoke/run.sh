@@ -19,6 +19,12 @@ python3 smoke/hooks_check.py
 echo "→ static scope check"
 node smoke/scope_check.mjs
 
+# Static guard: App.js size ratchet. Keeps the strangle-the-monolith win permanent —
+# App.js can shrink or hold but never balloon, and new screens cannot be jammed into
+# it (they belong in their own file). See smoke/appjs_budget.mjs.
+echo "→ App.js size ratchet"
+node smoke/appjs_budget.mjs
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 
