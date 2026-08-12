@@ -22,9 +22,12 @@ Deno.serve(async (req) => {
     const priceStr = prop && prop.price ? " · $" + Math.round(Number(prop.price)).toLocaleString("en-US") : "";
 
     // fresh, un-notified matches for this property, joined to the buyer name
+    // status='unassigned' buyers still MATCH (the pipeline isn't lost when an agent
+    // leaves) but must not ALERT -- nobody is there to service the deal yet.
     const { data: matches } = await admin.from("investor_matches")
-      .select("id, buyer_owner_user_id, buyer_id, notified_at, investor_buyers!inner(name, freq_cap_per_week)")
-      .eq("property_id", property_id).eq("status", "new");
+      .select("id, buyer_owner_user_id, buyer_id, notified_at, investor_buyers!inner(name, freq_cap_per_week, status)")
+      .eq("property_id", property_id).eq("status", "new")
+      .eq("investor_buyers.status", "active");
     if (!matches || !matches.length) return new Response(JSON.stringify({ ok: true, notified: 0 }), { headers: { ...cors, "Content-Type": "application/json" } });
 
     // Respect each buyer's weekly cadence cap. The cap throttles the ALERT only —

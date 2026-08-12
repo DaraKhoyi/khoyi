@@ -72,8 +72,13 @@ function BuyerForm({ initial, onSaved, onCancel }) {
       close_speed_days: f.close_speed_days, freq_cap_per_week: f.freq_cap_per_week,
       contact_pref: f.contact_pref,
     };
-    try { await supabase.rpc('investor_save_buyer', { p: payload }); onSaved(); }
-    catch (e) { alert('Could not save: ' + (e.message || e)); }
+    try {
+      const { data, error } = await supabase.rpc('investor_save_buyer', { p: payload });
+      if (error) { alert('Could not save: ' + error.message); setBusy(false); return; }
+      if (data && data.ok === false) { alert(data.error || 'Could not save.'); setBusy(false); return; }
+      if (data && data.already_in_pool) alert(data.message);
+      onSaved();
+    } catch (e) { alert('Could not save: ' + (e.message || e)); }
     setBusy(false);
   };
 
@@ -374,7 +379,15 @@ export default function InvestorPipeline({ userId }) {
                     <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', flex: 1 }}>{b.name || 'Unnamed investor'}</span>
                     {b.match_count > 0 && <span style={{ fontSize: 11.5, background: 'rgba(203,163,92,.18)', color: CHAMP, borderRadius: 20, padding: '2px 9px', fontWeight: 700 }}>{b.match_count} match{b.match_count === 1 ? '' : 'es'}</span>}
                     {b.status === 'paused' && <span style={{ fontSize: 11, color: 'var(--text-3)' }}>paused</span>}
+                    {b.status === 'unassigned' && <span style={{ ...pillWarn, marginLeft: 0 }}>unassigned</span>}
                   </div>
+                  {(b.shared || !b.is_primary) && (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 4 }}>
+                      {b.is_primary
+                        ? 'Shared with another agent · you are primary — matches route to you'
+                        : 'Shared · you are not primary — matches route to their chosen agent'}
+                    </div>
+                  )}
                   <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 4 }}>
                     {(b.investor_types || []).map(t => (TYPES.find(x => x[0] === t) || [, t])[1]).join(', ') || '—'}
                     {b.price_max ? ' · up to ' + money(b.price_max) : ''}

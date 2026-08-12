@@ -120,12 +120,14 @@ button:disabled{filter:grayscale(.3) brightness(.85);cursor:default}
 
 const FORK = `<svg class="fork" viewBox="0 0 24 24" fill="none" stroke="#C5A95E" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v7a4 4 0 0 0 8 0V3"/><path d="M12 14v7"/></svg>`;
 
-function thanksPage(agentName: string): string {
+function thanksPage(agentName: string, portalUrl = ""): string {
   const inner = `<div class="card" style="text-align:center;padding:40px 22px">
 <div style="font-size:46px;line-height:1">&#10003;</div>
 <h1 style="margin-top:6px">Thank you.</h1>
 <p class="sub" style="max-width:420px;margin:0 auto">Your buy-box is now with <b style="color:var(--champ)">${esc(agentName)}</b>. The moment a matching off-market or coming-soon deal shows up, you&rsquo;ll hear about it &mdash; directly, no spam.</p>
-<p class="sub" style="color:var(--text-3);font-size:13px;margin-top:16px">You can close this window.</p></div>`;
+${portalUrl ? `<a href="${esc(portalUrl)}" style="display:inline-block;margin-top:22px;background:var(--champ);color:var(--ink);text-decoration:none;border-radius:12px;padding:14px 24px;font-weight:800">Open my profile</a>
+<p class="sub" style="color:var(--text-3);font-size:12.5px;margin-top:16px;max-width:420px;margin-left:auto;margin-right:auto">Bookmark that page &mdash; it&rsquo;s your private link to update what you&rsquo;re looking for any time. Keep it to yourself: anyone with the link can see your profile.</p>`
+      : `<p class="sub" style="color:var(--text-3);font-size:13px;margin-top:16px">You can close this window.</p>`}</div>`;
   return shell(inner, "Thank you");
 }
 
@@ -315,14 +317,21 @@ Deno.serve(async (req) => {
       if (error || !data || !data.ok) {
         return new Response(JSON.stringify({ ok: false, error: (data && data.error) || (error && error.message) || "Could not save your preferences." }), { headers: JSON_HEADERS });
       }
+      const shared = Number(data.agent_count || 1) > 1;
       try {
         await admin.functions.invoke("push-send", { body: {
-          user_id: ownerId, title: "\uD83C\uDFAF New investor signed up",
-          body: (body.name || "An investor") + " shared their buy-box with you. Tap to review.",
+          user_id: ownerId,
+          title: data.is_new ? "\uD83C\uDFAF New investor signed up" : "\uD83C\uDFAF Investor updated their buy-box",
+          body: (body.name || "An investor") + (shared
+            ? " is already in the brokerage pool \u2014 you've been added as a contact."
+            : " shared their buy-box with you. Tap to review."),
           url: "https://darasapp.com/?view=investor_pipeline&tab=investors", tag: "investor-intake",
         } });
       } catch (_) { /* best-effort */ }
-      return new Response(JSON.stringify({ ok: true, html: thanksPage(agentName) }), { headers: JSON_HEADERS });
+      const portalUrl = data.portal_token
+        ? "https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/investor-portal?t=" + data.portal_token
+        : "";
+      return new Response(JSON.stringify({ ok: true, portal_url: portalUrl, html: thanksPage(agentName, portalUrl) }), { headers: JSON_HEADERS });
     } catch (err) {
       return new Response(JSON.stringify({ ok: false, error: String(err) }), { headers: JSON_HEADERS });
     }
