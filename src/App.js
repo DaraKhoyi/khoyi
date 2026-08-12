@@ -30,18 +30,9 @@ import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, BOUNCE_S
 // A modal calls useBackClose(onClose) to register its close handler in a shared LIFO
 // stack while it is mounted. The SINGLE back/popstate handler (the app-root guard, see
 // __prismModalCloseStack usage below) closes the top registered modal on back and only
-// asks to exit the app when no modals are open. The hook itself does NOT touch history or
-// add its own popstate listener — that avoids the old double-handler conflict where
-// closing a modal via the UI spuriously triggered the "Exit Prism?" prompt.
-export const __prismModalCloseStack = [];
-export function useBackClose(onClose) {
-  const __cb = useRef(onClose); __cb.current = onClose;
-  useEffect(() => {
-    const entry = { close: () => { try { __cb.current && __cb.current(); } catch (_e) {} } };
-    __prismModalCloseStack.push(entry);
-    return () => { const i = __prismModalCloseStack.lastIndexOf(entry); if (i !== -1) __prismModalCloseStack.splice(i, 1); };
-  }, []);
-}
+// asks to exit the app when no modals are open. Stack + hook now live in ./backClose;
+// App.js re-exports useBackClose for the views that import it from '../App'.
+import { __prismModalCloseStack, useBackClose } from './backClose';
 import { logJournalEntry } from './lib/journalLog';
 import { BUILD_VERSION } from './version';
 import './index.css';

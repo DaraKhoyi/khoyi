@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import LinkedNotes from './LinkedNotes';
 import { Icon } from '../icons';
-import { useBackClose, ActivityTimeline, PropertyModal } from '../App';
+import { ActivityTimeline, PropertyModal } from '../App';
+import { useBackClose } from '../backClose';
 import { confirmDialog } from '../notify';
 import { modal } from '../helpers';
 
