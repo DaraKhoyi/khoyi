@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { useBackClose, ActivityTimeline, ContactPicker, confirmDialog, modal, notify } from '../App';
+import { useBackClose, ActivityTimeline, ContactPicker, confirmDialog, notify } from '../App';
+import { modal } from '../helpers';
 
 function InvestmentModal({ onClose, onSave, onDelete, initial, properties, contacts = [], userId }) {
 

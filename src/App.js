@@ -242,7 +242,7 @@ if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 // renders blank. To migrate more of the app off emoji over time, add the
 // concept here and render <Icon name="…" />.
 import { Icon, ICON_PATHS } from './icons';
-import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num } from './helpers';
+import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num, pickerInitials, owesReply, modal, lbl } from './helpers';
 
 // Rainbow PRISM wordmark — DISC palette (D red, I amber, S green, C blue) + violet 5th
 const PRISM_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6'];
@@ -2066,15 +2066,7 @@ export function decodeEntities(str) {
 //
 // Both dismissals are timestamp-compared, never truthiness: they clear what is
 // on the table now, and a genuinely NEWER inbound re-opens the question.
-export function owesReply(c) {
-  if (!c) return false;
-  if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
-  const lin = new Date(c.last_inbound_at).getTime();
-  if (!Number.isFinite(lin)) return false;
-  if (c.comms_settled_at && new Date(c.comms_settled_at).getTime() >= lin) return false;
-  if (c.no_reply_needed_at && new Date(c.no_reply_needed_at).getTime() >= lin) return false;
-  return true;
-}
+
 
 export function PriorityField({ system, priority, onChange, style, className = 'form-select', disabled }) {
   const eis = (system || 'eisenhower') === 'eisenhower';
@@ -3288,13 +3280,7 @@ function DatePickerModal({ initial, onCancel, onPick }) {
 // ─────────────────────────────────────────
 // Pass 4 Batch D: email triage display metadata.
 // One source of truth for icons, colors, and labels used by InboxView.
-function pickerInitials(name, email) {
-  const s = (name || email || '?').trim();
-  if (!s) return '?';
-  const parts = s.replace(/[<>"]/g, '').split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return s.slice(0, 2).toUpperCase();
-}
+
 
 function NeedsAttention({ contacts = [], tasks = [], setTasks, setView }) {
   const now = Date.now();
@@ -15844,7 +15830,7 @@ function LeadsBoard({ userId, ownerId, agents, canWrite, isAdmin, myTeam }){
 }
 
 const ovl={ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:2000, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'24px 12px', overflowY:'auto' };
-const modal={ width:'100%', maxWidth:'460px', padding:'18px' };
+
 
 function LeadDetail({ lead, agents, acts, appts, canWrite, onClose, patch, assignAgent, logActivity, bookAppt }){
   const [tab,setTab]=useState('activity');
@@ -15953,7 +15939,7 @@ function LeadDetail({ lead, agents, acts, appts, canWrite, onClose, patch, assig
     </div>
   );
 }
-const lbl={ display:'flex', flexDirection:'column', gap:'3px', fontSize:'10px', color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'.04em', fontWeight:700 };
+
 
 function ScoreboardView({ userId, appCtx, setView }){
   const ownerId = (appCtx && appCtx.owner_id) || userId;

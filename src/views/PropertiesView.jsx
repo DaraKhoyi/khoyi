@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import LinkedNotes from './LinkedNotes';
 import { Icon } from '../icons';
-import { useBackClose, ActivityTimeline, PropertyModal, confirmDialog, modal } from '../App';
+import { useBackClose, ActivityTimeline, PropertyModal, confirmDialog } from '../App';
+import { modal } from '../helpers';
 
 function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, userId }) {
 

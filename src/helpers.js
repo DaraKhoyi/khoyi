@@ -67,3 +67,25 @@ export function money(n){ if(n===null||n===undefined||n==='') return '—'; cons
 
 export function num(v){ return v===''||v===null||v===undefined||isNaN(Number(v))?null:Number(v); }
 
+// batch 2 — pure standalone helpers + shared style constants
+export function pickerInitials(name, email) {
+  const s = (name || email || '?').trim();
+  if (!s) return '?';
+  const parts = s.replace(/[<>"]/g, '').split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return s.slice(0, 2).toUpperCase();
+}
+
+export function owesReply(c) {
+  if (!c) return false;
+  if (c.last_communication_direction !== 'inbound' || !c.last_inbound_at) return false;
+  const lin = new Date(c.last_inbound_at).getTime();
+  if (!Number.isFinite(lin)) return false;
+  if (c.comms_settled_at && new Date(c.comms_settled_at).getTime() >= lin) return false;
+  if (c.no_reply_needed_at && new Date(c.no_reply_needed_at).getTime() >= lin) return false;
+  return true;
+}
+
+export const modal={ width:'100%', maxWidth:'460px', padding:'18px' };
+
+export const lbl={ display:'flex', flexDirection:'column', gap:'3px', fontSize:'10px', color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'.04em', fontWeight:700 };

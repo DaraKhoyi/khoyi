@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { useBackClose, ContactPicker, confirmDialog, modal, notify, TipFor } from '../App';
+import { useBackClose, ContactPicker, confirmDialog, notify, TipFor } from '../App';
+import { modal } from '../helpers';
 
 function BrainEntryModal({ onClose, onSave, onDelete, initial, defaultType, contacts = [] }) {
 
