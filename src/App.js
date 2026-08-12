@@ -235,7 +235,7 @@ if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 // renders blank. To migrate more of the app off emoji over time, add the
 // concept here and render <Icon name="…" />.
 import { Icon, ICON_PATHS } from './icons';
-import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num, pickerInitials, owesReply, modal, lbl } from './helpers';
+import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num, pickerInitials, owesReply, modal, lbl, splitQuotedReply } from './helpers';
 
 // Rainbow PRISM wordmark — DISC palette (D red, I amber, S green, C blue) + violet 5th
 const PRISM_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6'];
@@ -15024,29 +15024,6 @@ function ForkTuningOverlay({ contactName, discLabel }) {
 // Deliberately conservative: if no boundary is recognised the whole text is
 // treated as the body. Failing to split is a minor annoyance; splitting in the
 // wrong place would silently drop what someone wrote.
-export function splitQuotedReply(text) {
-  const src = String(text || '');
-  if (!src.trim()) return { body: src, quoted: '' };
-  const lines = src.split('\n');
-  const MARKERS = [
-    /^\s*On .{4,120}\bwrote:\s*$/i,          // Gmail / Apple: "On <date>, <name> wrote:"
-    /^\s*-{2,}\s*Original Message\s*-{2,}/i, // Outlook
-    /^\s*-{2,}\s*Forwarded message\s*-{2,}/i,
-    /^\s*_{5,}\s*$/,                          // Outlook's underscore rule
-    /^\s*From:\s*.+/i,                        // Outlook header block
-    /^\s*Sent from my \w+/i,                  // signature that precedes a quote
-  ];
-  let cut = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
-    if (MARKERS.some(re => re.test(ln))) { cut = i; break; }
-    // A run of quoted lines counts too, but one stray ">" does not — a single
-    // line could easily be an arrow or a fragment the user typed themselves.
-    if (/^\s*>/.test(ln) && /^\s*>/.test(lines[i + 1] || '')) { cut = i; break; }
-  }
-  if (cut < 0) return { body: src, quoted: '' };
-  return { body: lines.slice(0, cut).join('\n'), quoted: lines.slice(cut).join('\n') };
-}
 
 function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText, contactId, textareaRef }) {
   const [busy, setBusy] = useState(false);

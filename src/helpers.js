@@ -89,3 +89,28 @@ export function owesReply(c) {
 export const modal={ width:'100%', maxWidth:'460px', padding:'18px' };
 
 export const lbl={ display:'flex', flexDirection:'column', gap:'3px', fontSize:'10px', color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'.04em', fontWeight:700 };
+
+// email reply splitter — separates a freshly-typed reply from the quoted thread below it
+export function splitQuotedReply(text) {
+  const src = String(text || '');
+  if (!src.trim()) return { body: src, quoted: '' };
+  const lines = src.split('\n');
+  const MARKERS = [
+    /^\s*On .{4,120}\bwrote:\s*$/i,          // Gmail / Apple: "On <date>, <name> wrote:"
+    /^\s*-{2,}\s*Original Message\s*-{2,}/i, // Outlook
+    /^\s*-{2,}\s*Forwarded message\s*-{2,}/i,
+    /^\s*_{5,}\s*$/,                          // Outlook's underscore rule
+    /^\s*From:\s*.+/i,                        // Outlook header block
+    /^\s*Sent from my \w+/i,                  // signature that precedes a quote
+  ];
+  let cut = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (MARKERS.some(re => re.test(ln))) { cut = i; break; }
+    // A run of quoted lines counts too, but one stray ">" does not — a single
+    // line could easily be an arrow or a fragment the user typed themselves.
+    if (/^\s*>/.test(ln) && /^\s*>/.test(lines[i + 1] || '')) { cut = i; break; }
+  }
+  if (cut < 0) return { body: src, quoted: '' };
+  return { body: lines.slice(0, cut).join('\n'), quoted: lines.slice(cut).join('\n') };
+}
