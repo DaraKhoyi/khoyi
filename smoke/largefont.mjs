@@ -23,7 +23,7 @@ const URL = process.env.SMOKE_URL || 'http://localhost:4173/';
 const EMAIL = process.env.SMOKE_EMAIL, PW = process.env.SMOKE_PASSWORD;
 const SCALE = Number(process.env.FONT_SCALE || 1.35);
 const VIEWS = (process.env.SMOKE_VIEWS ||
-  'dashboard,inbox,contacts,tasks,calendar,quo,chief,journal,brain,prospecting,settings,documents,my_prism,myvoice,app_health,listing_presentation,google_contacts,cadence_review'
+  'dashboard,inbox,contacts,tasks,calendar,quo,chief,journal,brain,prospecting,settings,documents,my_prism,myvoice,app_health,listing_presentation,google_contacts,cadence_review,coach,knowledge'
 ).split(',').map(s => s.trim()).filter(Boolean);
 
 const PROBE = `(() => {
