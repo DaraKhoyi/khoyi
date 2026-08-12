@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { modal, todayISO } from '../helpers';
-import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, NotesView, TaskModal, emailAssignTask, TipFor } from '../App';
+import { ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, NotesView, TaskModal, emailAssignTask } from '../App';
+import { Tip, TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
 
 const QUADS = ['A', 'B', 'C', 'D'];

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { lbl, modal, money } from '../helpers';
-import { useBackClose, ActivityTimeline, MileageView, RecruitingKpiTile, SingleContactPicker, stageMeta, TipFor } from '../App';
+import { useBackClose, ActivityTimeline, MileageView, RecruitingKpiTile, SingleContactPicker, stageMeta } from '../App';
+import { TipFor } from '../tipsUi';
 import { confirmDialog } from '../notify';
 
 function ListingPresentationButton({ dealId }) {

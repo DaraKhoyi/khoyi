@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { modal, pad2, ymd } from '../helpers';
-import { Tip, useBackClose, TaskModal, emailAssignTask, TipFor } from '../App';
+import { useBackClose, TaskModal, emailAssignTask } from '../App';
+import { Tip, TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
 
 function startOfMonthGrid(year, month) {

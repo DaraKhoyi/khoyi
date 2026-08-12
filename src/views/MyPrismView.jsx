@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { Tip } from '../App';
+import { Tip } from '../tipsUi';
 
 const PRIMARY_WORD = { D: 'decisiveness', I: 'connection', S: 'steadiness', C: 'precision' };
 const PRIMARY_LINE = {

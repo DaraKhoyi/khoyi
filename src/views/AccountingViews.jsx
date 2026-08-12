@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
-import { Tip, useBackClose, HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile } from '../App';
+import { useBackClose, HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile } from '../App';
+import { Tip } from '../tipsUi';
 import { confirmDialog } from '../notify';
 
 const TIER_BANDS = [

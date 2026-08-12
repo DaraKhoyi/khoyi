@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase, SUPABASE_URL } from '../dataService';
 import { conditionFor, buildPresentationHTML, reconcileValuation } from '../listingPresentation';
-import { TipFor } from '../App';
+import { TipFor } from '../tipsUi';
 
 const G = '#CBA35C', CHAMP = '#EBCB82', INK = '#100D09';
 const money = (n) => (n || n === 0) ? '$' + Number(n).toLocaleString('en-US') : '';

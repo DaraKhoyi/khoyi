@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { TipFor } from '../App';
+import { TipFor } from '../tipsUi';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { UploadButton, DocCard, ViewerModal, useDocPolling, uploadDocuments } from './DocumentsView';
 

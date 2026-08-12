@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { useBackClose, ContactPicker, TipFor } from '../App';
+import { useBackClose, ContactPicker } from '../App';
+import { TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
 import { modal } from '../helpers';
 
