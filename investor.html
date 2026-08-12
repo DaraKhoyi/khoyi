@@ -64,11 +64,15 @@ function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"
 function fn(path,opts){opts=opts||{};opts.headers=Object.assign({"apikey":ANON,"Authorization":"Bearer "+ANON},opts.headers||{});return fetch(SUPA+"/functions/v1/investor-intake"+path,opts);}
 function chips(name,opts){return '<div class="chips">'+opts.map(function(o){return '<label class="chip"><input type="checkbox" name="'+name+'" value="'+o[0]+'"><span>'+o[1]+'</span></label>';}).join("")+'</div>';}
 
-function showThanks(agent){
+function showThanks(agent,portalUrl){
   document.getElementById('app').innerHTML='<div class="card center"><div style="font-size:46px;line-height:1">&#10003;</div>'+
   '<h1 style="margin-top:6px">Thank you.</h1><p class="sub" style="max-width:420px;margin:0 auto">Your buy-box is now with <b style="color:var(--champ)">'+esc(agent)+
   '</b>. The moment a matching off-market or coming-soon deal shows up, you&rsquo;ll hear about it &mdash; directly, no spam.</p>'+
-  '<p class="sub" style="color:var(--text-3);font-size:13px;margin-top:16px">You can close this window.</p></div>';
+  (portalUrl
+    ? '<a href="'+esc(portalUrl)+'" style="display:inline-block;margin-top:22px;background:var(--champ);color:var(--ink);text-decoration:none;border-radius:12px;padding:14px 24px;font-weight:800">Open my profile</a>'+
+      '<p class="sub" style="color:var(--text-3);font-size:12.5px;margin-top:16px;max-width:420px;margin-left:auto;margin-right:auto">Bookmark that page &mdash; it&rsquo;s your private link to update what you&rsquo;re looking for any time. Keep it to yourself: anyone with the link can see your profile.</p>'
+    : '<p class="sub" style="color:var(--text-3);font-size:13px;margin-top:16px">You can close this window.</p>')+
+  '</div>';
   window.scrollTo(0,0);
 }
 function showInactive(){
@@ -138,7 +142,7 @@ function render(agent){
     btn.disabled=true;btn.textContent='Sending\u2026';
     fn("?t="+encodeURIComponent(tok()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .then(function(r){return r.json();})
-      .then(function(d){if(d&&d.ok){showThanks(agent);}else{err.textContent=(d&&d.error)||'Something went wrong. Please try again.';btn.disabled=false;btn.textContent='Send my preferences';}})
+      .then(function(d){if(d&&d.ok){showThanks(agent,d.portal_url);}else{err.textContent=(d&&d.error)||'Something went wrong. Please try again.';btn.disabled=false;btn.textContent='Send my preferences';}})
       .catch(function(){err.textContent='Network error \u2014 please check your connection and try again.';btn.disabled=false;btn.textContent='Send my preferences';});
   });
 }
