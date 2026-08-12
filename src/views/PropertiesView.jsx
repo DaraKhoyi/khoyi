@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import LinkedNotes from './LinkedNotes';
 import { Icon } from '../icons';
-import { ActivityTimeline } from '../App';
+import ActivityTimeline from './ActivityTimeline';
 import PropertyModal from './PropertyModal';
 import { useBackClose } from '../backClose';
 import { confirmDialog } from '../notify';
