@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { useBackClose, notify, quoCall, quoNormPhone } from '../App';
+import { quoNormPhone } from '../helpers';
+import { useBackClose, notify, quoCall } from '../App';
 
 // ─────────────────────────────────────────
 // BULK DISC COMPOSER

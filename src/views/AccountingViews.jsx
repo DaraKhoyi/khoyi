@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { Tip, useBackClose, HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile, confirmDialog, modal, money, num, todayISO, today_ymd, ymd } from '../App';
+import { money, num, todayISO, today_ymd, ymd } from '../helpers';
+import { Tip, useBackClose, HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile, confirmDialog, modal } from '../App';
 
 const TIER_BANDS = [
   { id: 'rookie',       label: 'Rookie',       color: '#cd7f32' },

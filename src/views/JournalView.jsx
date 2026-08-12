@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { Tip, lbl, today_ymd, useDictation, ymd, TipFor } from '../App';
+import { today_ymd, ymd } from '../helpers';
+import { Tip, lbl, useDictation, TipFor } from '../App';
 import { logJournalEntry, mirrorJournalToTimeline } from '../lib/journalLog';
 
 const JLINK_META = {

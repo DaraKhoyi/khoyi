@@ -242,6 +242,7 @@ if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 // renders blank. To migrate more of the app off emoji over time, add the
 // concept here and render <Icon name="…" />.
 import { Icon, ICON_PATHS } from './icons';
+import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num } from './helpers';
 
 // Rainbow PRISM wordmark — DISC palette (D red, I amber, S green, C blue) + violet 5th
 const PRISM_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6'];
@@ -2105,18 +2106,8 @@ function sortTasks(tasks) {
     return 0;
   });
 }
-function priorityLabel(t) {
-  if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
-    return `${t.eisenhower_quadrant}${t.eisenhower_rank ?? ''}`;
-  }
-  return t.priority || '';
-}
-function priorityClass(t) {
-  if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
-    return `priority-${t.eisenhower_quadrant}`;
-  }
-  return `priority-${t.priority || 'medium'}`;
-}
+
+
 // "Top priority" = anything in quadrant A OR simple-system high
 function isTopPriority(t) {
   if (t.priority_system === 'eisenhower') return t.eisenhower_quadrant === 'A';
@@ -2126,11 +2117,7 @@ function isTopPriority(t) {
 // Guards date <input> values: a missing or implausible date (year < 2015 or
 // > 2100, usually a mis-scrolled year wheel) renders as empty so the native
 // picker opens on the current month instead of getting "stuck" in the past.
-function todayISO() {
-  const d = new Date();
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
-}
+
 const DATE_FILTERS = [
   { id:'all',       label:'All',        hint:'Everything not done' },
   { id:'past',      label:'Past Due',   hint:'Overdue tasks' },
@@ -12118,8 +12105,8 @@ function PropertyModal({ onClose, onSave, onDelete, initial }) {
   );
 }
 
-function pad2(n){ return String(n).padStart(2,'0'); }
-function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+
+
 const SYS_RANK = { down: 4, degraded: 3, unknown: 2, unconfigured: 1, healthy: 0 };
 
 async function sysCheckDatabase() {
@@ -12362,36 +12349,11 @@ async function quoCall(path, { method = 'GET', query, body } = {}) {
   }
   return data.data; // { data: [...] } | { data: {...} }
 }
-function quoNormPhone(raw) {
-  if (!raw) return '';
-  const d = String(raw).replace(/[^\d]/g, '');
-  if (raw.toString().trim().startsWith('+')) return '+' + d;
-  if (d.length === 10) return '+1' + d;
-  if (d.length === 11 && d[0] === '1') return '+' + d;
-  return d ? '+' + d : '';
-}
-function quoFmtPhone(e164) {
-  if (!e164) return '';
-  const d = String(e164).replace(/[^\d]/g, '');
-  if (d.length === 11 && d[0] === '1') return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
-  return e164;
-}
-function quoLast10(raw) { return String(raw || '').replace(/[^\d]/g, '').slice(-10); }
-function quoFmtWhen(ts) {
-  if (!ts) return '';
-  const d = new Date(ts), now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const yest = new Date(now); yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-function quoFmtDur(sec) {
-  if (!sec && sec !== 0) return '';
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return m ? `${m}m ${s}s` : `${s}s`;
-}
+
+
+
+
+
 
 function QuoCallDetail({ callId }) {
   const [summary, setSummary] = useState(null);
@@ -12445,7 +12407,7 @@ function QuoCallDetail({ callId }) {
 // Compact, self-loading live feed of Quo activity (messages + calls), used both
 // inside the Quo module and on the Systems board. Subscribes to realtime so new
 // texts and calls appear the instant the webhook lands.
-const today_ymd = () => new Date().toISOString().slice(0, 10);
+
 
 // ─── FinanceView — root component ────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
@@ -15583,7 +15545,7 @@ const FARBAR_BUYER_CHECKLIST = [
 function logFileEvent(fileId, userId, kind, detail, meta){
   return supabase.from('file_events').insert({ file_id:fileId, user_id:userId, kind, detail:detail||null, meta:meta||{} }).then(()=>{}).catch(()=>{});
 }
-function money(n){ if(n===null||n===undefined||n==='') return '—'; const v=Number(n); if(isNaN(v)) return '—'; return '$'+v.toLocaleString(undefined,{maximumFractionDigits:0}); }
+
 function shortDate(d){ if(!d) return '—'; try{ return new Date(d+(d.length<=10?'T00:00:00':'')).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
 function StatusPill({ status }){ const m=STATUS_META[status]||{label:status,color:'var(--text-3)'}; return <span style={{fontSize:'10px',fontWeight:700,padding:'2px 9px',borderRadius:'999px',background:m.color,color:'#fff',whiteSpace:'nowrap'}}>{m.label}</span>; }
 
@@ -15639,7 +15601,7 @@ const AGENT_ROLES = [
 ];
 const ROLE_LABEL = Object.fromEntries(AGENT_ROLES.map(r=>[r.value,r.label]));
 
-function num(v){ return v===''||v===null||v===undefined||isNaN(Number(v))?null:Number(v); }
+
 function pctOf(b,p){ const v=num(p); return v?b*v/100:0; }
 const LEAD_STAGES = [
   { id:'new', label:'New', color:'#8b8b8b' },

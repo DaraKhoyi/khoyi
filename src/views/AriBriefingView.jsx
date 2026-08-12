@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import OwnerPicker from './OwnerPicker';
 import { Icon } from '../icons';
-import { PrismThinking, useBackClose, QuoTextModal, TaskModal, PriorityField, money } from '../App';
+import { money } from '../helpers';
+import { PrismThinking, useBackClose, QuoTextModal, TaskModal, PriorityField } from '../App';
 
 function ActionHubModal({ contactId, userId, onClose }) {
 
