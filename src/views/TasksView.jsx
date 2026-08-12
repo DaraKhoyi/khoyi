@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { modal, todayISO } from '../helpers';
-import { ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, NotesView, TaskModal, emailAssignTask } from '../App';
+import { ContactsView, HeaderSearchIcon, HeaderSearchInput, NotesView, emailAssignTask } from '../App';
+import DatePickerModal from './DatePickerModal';
+import TaskModal from './TaskModal';
 import { Tip, TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
 

@@ -195,3 +195,11 @@ export function isTopPriority(t) {
   if (t.priority_system === 'eisenhower') return t.eisenhower_quadrant === 'A';
   return t.priority === 'high';
 }
+
+// Eisenhower quadrant labels for the priority picker
+export const QUADRANTS = [
+  { letter:'A', label:'A — Urgent & Important',     short:'Do now' },
+  { letter:'B', label:'B — Important, Not Urgent',  short:'Schedule' },
+  { letter:'C', label:'C — Urgent, Not Important',  short:'Delegate' },
+  { letter:'D', label:'D — Neither',                short:'Drop' },
+];
