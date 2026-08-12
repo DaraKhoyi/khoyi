@@ -33,6 +33,7 @@ import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, BOUNCE_S
 // asks to exit the app when no modals are open. Stack + hook now live in ./backClose;
 // App.js re-exports useBackClose for the views that import it from '../App'.
 import { __prismModalCloseStack, useBackClose } from './backClose';
+import { quoCall } from './quo';
 import { logJournalEntry } from './lib/journalLog';
 import { BUILD_VERSION } from './version';
 import './index.css';
@@ -12198,17 +12199,6 @@ const SYSTEMS = [
 // All Quo API traffic goes through the quo-proxy edge function; the API key
 // lives only as a server-side secret and never enters this public bundle.
 // ─────────────────────────────────────────────────────────────────────────
-async function quoCall(path, { method = 'GET', query, body } = {}) {
-  const { data, error } = await supabase.functions.invoke('quo-proxy', { body: { path, method, query, body } });
-  if (error) throw new Error(error.message || 'quo-proxy unreachable');
-  if (!data) throw new Error('No response from Quo');
-  if (data.ok === false && data.error) throw new Error(data.error);
-  if (typeof data.status === 'number' && data.status >= 400) {
-    const d = data.data || {};
-    throw new Error(d.message || d.errors?.[0]?.message || `Quo error ${data.status}`);
-  }
-  return data.data; // { data: [...] } | { data: {...} }
-}
 
 
 
