@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { quoNormPhone } from '../helpers';
-import { ContactDetailModal, HeaderSearchInput, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue } from '../App';
+import { ContactDetailModal, HeaderSearchInput, MultiValueField, PropertyModal, SingleContactPicker, cadenceDue } from '../App';
+import QuoTextModal from './QuoTextModal';
 import { quoCall } from '../quo';
 import { useBackClose } from '../backClose';
 import { Tip, TipFor } from '../tipsUi';

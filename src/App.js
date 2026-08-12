@@ -34,6 +34,9 @@ import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, BOUNCE_S
 // App.js re-exports useBackClose for the views that import it from '../App'.
 import { __prismModalCloseStack, useBackClose } from './backClose';
 import { quoCall } from './quo';
+import ForkTuningOverlay from './views/ForkTuningOverlay';
+import AriRewriteButton from './views/AriRewriteButton';
+import QuoTextModal from './views/QuoTextModal';
 import QuoCallDetail from './views/QuoCallDetail';
 import { logJournalEntry } from './lib/journalLog';
 import { BUILD_VERSION } from './version';
@@ -7042,82 +7045,7 @@ function TemplatesModal({ userId, templates, setTemplates, onClose, onPick }) {
 // straight from the app (contact card, contacts list, daily briefing), so no
 // copy/paste into a phone's Messages app. Logs the text to the contact timeline.
 // ─────────────────────────────────────────
-function QuoTextModal({ contact, userId, defaultText = '', phone, onClose, onSent }) {
-  useBackClose(onClose);
-  const name = contact?.name || 'this contact';
-  const phoneRaw = phone || contact?.phone || contact?.mobile || '';
-  const [text, setText] = useState(defaultText || '');
-  const [sending, setSending] = useState(false);
-  const [err, setErr] = useState('');
-  const [sent, setSent] = useState(false);
-  const toDigits = (phoneRaw || '').replace(/[^\d+]/g, '');
 
-  async function send() {
-    const msg = text.trim();
-    if (!msg || sending) return;
-    if (!phoneRaw) { setErr('This contact has no phone number on file.'); return; }
-    setSending(true); setErr('');
-    const to = quoNormPhone(phoneRaw);
-    try {
-      let from = null;
-      const { data: st } = await supabase.from('quo_settings').select('active_number').eq('user_id', userId).maybeSingle();
-      from = st?.active_number || null;
-      if (!from) throw new Error('No Quo number is selected for your account yet. Open the Text & Phone screen and pick YOUR number before sending.');
-      await quoCall('/v1/messages', { method: 'POST', body: { content: msg, from, to: [to] } });
-      if (contact?.id) {
-        try {
-          await supabase.from('contact_interactions').insert({
-            user_id: userId, contact_id: contact.id, channel: 'text', kind: 'text', direction: 'outbound',
-            occurred_at: new Date().toISOString(), body: msg, brief: msg.slice(0, 140), mentions: [contact.id], tags: ['text'],
-          });
-          await supabase.from('contacts').update({ last_contact_at: new Date().toISOString(), last_outbound_at: new Date().toISOString(), last_communication_direction: 'outbound' }).eq('id', contact.id);
-        } catch (_) {}
-      }
-      setSent(true);
-      if (typeof notify === 'function') notify('Text sent via Quo to ' + name, 'success');
-      if (onSent) onSent(msg);
-      setTimeout(() => onClose && onClose(), 700);
-    } catch (e) {
-      setErr('Couldn’t send via Quo: ' + (e.message || e));
-    } finally { setSending(false); }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={() => !sending && onClose && onClose()} style={{ zIndex: 1300 }}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '460px', width: '94%' }}>
-        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', margin: 0 }}><Icon name="message" size={15} style={{ color: 'var(--accent)' }} /> Text {name}</h3>
-          <button className="btn btn-ghost btn-sm" onClick={() => !sending && onClose && onClose()}>✕</button>
-        </div>
-        <div style={{ padding: '16px' }}>
-          <div style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '8px' }}>
-            {phoneRaw ? <>To <span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{phoneRaw}</span> · sent from your Quo number</> : 'No phone number on file for this contact.'}
-          </div>
-          <AriRewriteButton text={text} onRewrite={setText} contactName={name} contactId={contact?.id} />
-          <textarea value={text} onChange={e => setText(e.target.value)} autoFocus rows={5}
-            placeholder={`Write a text to ${name}…`}
-            style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: '14px', lineHeight: 1.5, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{text.length} characters</span>
-            {sent && <span style={{ fontSize: '12px', color: 'var(--green)', fontWeight: 600 }}>✓ Sent</span>}
-          </div>
-          {err && (
-            <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--red)' }}>
-              {err}
-              {toDigits && <> · <a href={`sms:${toDigits}?body=${encodeURIComponent(text)}`} style={{ color: 'var(--accent)' }}>open Messages instead</a></>}
-            </div>
-          )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-            <button className="btn btn-ghost" onClick={() => !sending && onClose && onClose()}>Cancel</button>
-            <button className="btn btn-primary" disabled={sending || sent || !text.trim() || !phoneRaw} onClick={send} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-              <Icon name="quo" size={14} /> {sending ? 'Sending…' : 'Send via Quo'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function FollowupDraftModal({ entry, contacts, defaultContact, recentNotes, userId, onClose, onLogged, onSent }) {
 
@@ -14985,31 +14913,7 @@ function ResearchProgress({ contactName, phase = 'researching' }) {
   );
 }
 
-function ForkTuningOverlay({ contactName, discLabel }) {
-  const name = (contactName && contactName !== 'the recipient') ? contactName : null;
-  const d = (discLabel || '').trim();
-  return createPortal(
-    <div className="fork-ov" role="status" aria-live="polite">
-      <div className="fork-ov-inner">
-        <div className="fork-stage">
-          <span className="fork-glow" />
-          <span className="fork-ring fr1" />
-          <span className="fork-ring fr2" />
-          <span className="fork-ring fr3" />
-          <svg className="fork-ico" viewBox="0 0 40 40" fill="none" aria-hidden="true">
-            <g stroke="#EBCB82" strokeWidth="1.1" strokeLinecap="round" fill="none" opacity="0.55"><path d="M30 11 Q34 17 30 23"/><path d="M10 11 Q6 17 10 23"/></g>
-            <g stroke="#CBA35C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g>
-            <circle cx="20" cy="37.4" r="2" fill="#EBCB82"/>
-          </svg>
-        </div>
-        <div className="fork-eyebrow">✦ Ari is tuning</div>
-        <div className="fork-title">{name ? `Tuning to ${name}` : 'Tuning your message'}</div>
-        <div className="fork-sub">{d ? `Matching your voice to their ${d} style` : `Matching your voice to how ${name || 'they'} read best`}</div>
-      </div>
-    </div>,
-    document.body
-  );
-}
+
 
 
 // ── splitQuotedReply ─────────────────────────────────────────────────────────
@@ -15025,70 +14929,7 @@ function ForkTuningOverlay({ contactName, discLabel }) {
 // treated as the body. Failing to split is a minor annoyance; splitting in the
 // wrong place would silently drop what someone wrote.
 
-function AriRewriteButton({ text, onRewrite, contactName, discLabel, sourceText, contactId, textareaRef }) {
-  const [busy, setBusy] = useState(false);
-  const [prev, setPrev] = useState(null);
-  const [err, setErr] = useState(null);
-  const [scope, setScope] = useState(null); // remembers a selection-only rewrite for undo
-  const [note, setNote] = useState(null);   // says what was actually rewritten
-  const go = async () => {
-    if (!text || !text.trim()) { setErr('Write a draft first.'); return; }
-    // If the user has highlighted part of the draft, rewrite ONLY that — leave
-    // the rest (e.g. a forwarded message below) untouched. Otherwise rewrite all.
-    const ta = textareaRef && textareaRef.current;
-    let selStart = -1, selEnd = -1, selected = '';
-    if (ta && typeof ta.selectionStart === 'number' && ta.selectionEnd > ta.selectionStart) {
-      selStart = ta.selectionStart; selEnd = ta.selectionEnd;
-      selected = text.slice(selStart, selEnd);
-    }
-    // Precedence: an explicit highlight wins (most specific intent), otherwise
-    // rewrite only the newly-composed part and leave the quoted thread alone.
-    const usingSelection = selected.trim().length > 0;
-    const split = usingSelection ? null : splitQuotedReply(text);
-    if (!usingSelection && split && split.quoted && !split.body.trim()) {
-      setErr('Write your reply above the quoted thread first.');
-      return;
-    }
-    const autoScoped = !usingSelection && !!(split && split.quoted && split.body.trim());
-    const toRewrite = usingSelection ? selected : (autoScoped ? split.body : text);
-    setErr(null); setNote(null); setBusy(true);
-    const { data, error } = await supabase.functions.invoke('ari-rewrite', { body:{ draft: toRewrite, contact_name:contactName||'the recipient', contact_id:contactId, disc_label:discLabel||'', source_text:sourceText||'' } });
-    setBusy(false);
-    if (error || data?.error || !data?.message) { setErr('Rewrite failed — try again.'); return; }
-    setPrev(text);
-    if (usingSelection) {
-      // splice the rewritten selection back into the full draft, preserving
-      // leading/trailing whitespace so surrounding text stays intact
-      const rewritten = String(data.message);
-      const next = text.slice(0, selStart) + rewritten + text.slice(selEnd);
-      setScope({ start: selStart, len: rewritten.length });
-      onRewrite(next);
-      // restore a caret/selection around the rewritten span after render
-      setTimeout(() => {
-        if (ta) { try { ta.focus(); ta.setSelectionRange(selStart, selStart + rewritten.length); } catch (_) {} }
-      }, 0);
-    } else if (autoScoped) {
-      // Reattach the thread exactly as it was — not re-generated, not reflowed.
-      const rewritten = String(data.message).replace(/\s+$/, '');
-      setScope(null);
-      onRewrite(rewritten + '\n' + split.quoted);
-      setNote('Rewrote your message — the quoted thread below was left untouched.');
-    } else {
-      setScope(null);
-      onRewrite(data.message);
-    }
-  };
-  const undo = () => { if (prev==null) return; onRewrite(prev); setPrev(null); setScope(null); };
-  return (
-    <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',marginBottom:'6px'}}>
-      {busy && <ForkTuningOverlay contactName={contactName} discLabel={discLabel} />}
-      {err && <span style={{fontSize:'10px',color:'var(--red)',marginRight:'auto'}}>{err}</span>}
-      {!err && note && <span style={{fontSize:'10px',color:'var(--text-3)',marginRight:'auto'}}>{note}</span>}
-      {prev!=null && <button type="button" className="btn btn-ghost btn-sm" style={{padding:'2px 8px',fontSize:'11px'}} onClick={undo}>Undo</button>}
-      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={go} title="Rewrite in your voice. Highlight part of the draft to rewrite only that." style={{padding:'2px 9px',fontSize:'11px',color:'var(--accent)',border:'1px solid var(--accent-dim)'}}>{busy?'✨ Ari is writing…':'✨ Ari rewrite'}</button>
-    </div>
-  );
-}
+
 
 // ─────────────────────────────────────────
 // MAIN APP

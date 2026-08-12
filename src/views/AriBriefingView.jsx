@@ -3,7 +3,8 @@ import { supabase } from '../dataService';
 import OwnerPicker from './OwnerPicker';
 import { Icon } from '../icons';
 import { money } from '../helpers';
-import { PrismThinking, QuoTextModal, TaskModal, PriorityField } from '../App';
+import { PrismThinking, TaskModal, PriorityField } from '../App';
+import QuoTextModal from './QuoTextModal';
 import { useBackClose } from '../backClose';
 
 function ActionHubModal({ contactId, userId, onClose }) {
