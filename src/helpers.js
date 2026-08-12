@@ -203,3 +203,23 @@ export const QUADRANTS = [
   { letter:'C', label:'C — Urgent, Not Important',  short:'Delegate' },
   { letter:'D', label:'D — Neither',                short:'Drop' },
 ];
+
+// task ordering (priority quadrant, due date, created)
+export function taskSortKey(t) {
+  if (t.priority_system === 'eisenhower' && t.eisenhower_quadrant) {
+    const qIdx = { A:0, B:1, C:2, D:3 }[t.eisenhower_quadrant] ?? 4;
+    return [0, qIdx, t.eisenhower_rank ?? 999];
+  }
+  const pIdx = { high:0, medium:1, low:2 }[t.priority] ?? 3;
+  return [1, pIdx, t.simple_rank ?? 999];
+}
+
+export function sortTasks(tasks) {
+  return [...tasks].sort((a, b) => {
+    const ka = taskSortKey(a), kb = taskSortKey(b);
+    for (let i = 0; i < ka.length; i++) {
+      if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    }
+    return 0;
+  });
+}
