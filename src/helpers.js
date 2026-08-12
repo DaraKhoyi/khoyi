@@ -189,3 +189,9 @@ export async function resolveSendAccount(fields = 'id,email_address') {
   if (!accs.length) return null;
   return accs.find(a => a.is_default) || accs.find(a => a.is_active !== false) || accs[0];
 }
+
+// task priority test (A-quadrant / top rank)
+export function isTopPriority(t) {
+  if (t.priority_system === 'eisenhower') return t.eisenhower_quadrant === 'A';
+  return t.priority === 'high';
+}
