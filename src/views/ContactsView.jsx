@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { quoNormPhone } from '../helpers';
-import { ContactDetailModal, HeaderSearchInput, MultiValueField, PropertyModal, SingleContactPicker, cadenceDue } from '../App';
+import { ContactDetailModal, HeaderSearchInput, MultiValueField, cadenceDue } from '../App';
+import SingleContactPicker from './SingleContactPicker';
+import PropertyModal from './PropertyModal';
 import QuoTextModal from './QuoTextModal';
 import { quoCall } from '../quo';
 import { useBackClose } from '../backClose';
