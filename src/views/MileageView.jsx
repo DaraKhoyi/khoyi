@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, Icon, RecruitingKpiTile, SingleContactPicker, confirmDialog, modal } from '../App';
+import { Icon } from '../icons';
+import { useBackClose, RecruitingKpiTile, SingleContactPicker, confirmDialog, modal } from '../App';
 
 const MILEAGE_CATEGORIES = [
   { id: 'business', label: 'Business',  color: 'var(--accent)' },

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { Tip, useBackClose, Icon, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd, TipFor} from '../App';
+import { Icon } from '../icons';
+import { Tip, useBackClose, TaskModal, confirmDialog, emailAssignTask, modal, notify, pad2, ymd, TipFor } from '../App';
 
 function startOfMonthGrid(year, month) {
   // month: 0-indexed. Returns the Sunday on/before the 1st.

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { Icon, TrackerTaskModal, lbl, priorityClass, priorityLabel, sortTasks, todayISO } from '../App';
+import { Icon } from '../icons';
+import { TrackerTaskModal, lbl, priorityClass, priorityLabel, sortTasks, todayISO } from '../App';
 import LinkedDocuments from './LinkedDocuments';
 import LinkedNotes from './LinkedNotes';
 

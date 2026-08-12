@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, DealsView, Icon, RecruitingKpiTile, modal, stageMeta } from '../App';
+import { Icon } from '../icons';
+import { useBackClose, DealsView, RecruitingKpiTile, modal, stageMeta } from '../App';
 
 const RECRUITING_STAGES = [
   { id: 'lead',         label: 'Lead',         color: '#9499b0', help: 'Spotted / cold / not contacted yet' },

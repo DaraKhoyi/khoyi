@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon } from '../App';
+import { Icon } from '../icons';
 
 const DISC = { D: '#ef4444', I: '#f59e0b', S: '#22c55e', C: '#3b82f6', '?': 'var(--text-3)' };
 const PLAN_LABEL = { new_lead: 'New-lead plan', post_close: 'Post-close plan', new_listing: 'New-listing plan', listing_presentation: 'Listing presentation' };

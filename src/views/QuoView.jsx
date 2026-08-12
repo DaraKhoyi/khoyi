@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon, QuoCallDetail, CallFollowupsPanel, modal, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../App';
+import { Icon } from '../icons';
+import { QuoCallDetail, CallFollowupsPanel, modal, quoCall, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../App';
 
 // At-a-glance health of the Quo (OpenPhone) integration: live API connection,
 // active number, webhooks, texting, and calls — with a clear fix path when call

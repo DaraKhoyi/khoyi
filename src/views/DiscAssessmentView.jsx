@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Icon } from '../App';
+import { Icon } from '../icons';
 import { supabase } from '../dataService';
 
 /* ============================================================

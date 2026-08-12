@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { useBackClose, ActivityTimeline, Icon, MileageView, RecruitingKpiTile, SingleContactPicker, confirmDialog, lbl, modal, money, stageMeta, TipFor} from '../App';
+import { Icon } from '../icons';
+import { useBackClose, ActivityTimeline, MileageView, RecruitingKpiTile, SingleContactPicker, confirmDialog, lbl, modal, money, stageMeta, TipFor } from '../App';
 
 function ListingPresentationButton({ dealId }) {
   const [busy, setBusy] = useState(false);

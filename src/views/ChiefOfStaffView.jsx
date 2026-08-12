@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon } from '../App';
+import { Icon } from '../icons';
 
 const KIND_LABEL = { task: 'Task', call: 'Call follow-up', deadline: 'Deadline', deal: 'Deal', appointment: 'Appointment', reply: 'Reply', reengage: 'Reconnect', review_ask: 'Review & referral', recruit: 'Recruiting', agent_plan: 'New-lead plan', owe_reply: 'Owe a reply' };
 const ACT_LABEL = { open_task: 'Open', create_task: 'Add task', review_call: 'Review', review_deal: 'Open deal', open_event: 'View', review: 'Open', open_agentruns: 'Review', reply_contact: 'Reply' };

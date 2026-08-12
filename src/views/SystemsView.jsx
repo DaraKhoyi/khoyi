@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
-import { Icon, QuoCallDetail, SYSTEMS, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10 } from '../App';
+import { Icon } from '../icons';
+import { QuoCallDetail, SYSTEMS, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10 } from '../App';
 
 const SYS_STATUS = {
   healthy:      { label: 'Online',    pill: 'pill-green',  dot: 'var(--green)'  },

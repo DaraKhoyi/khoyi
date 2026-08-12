@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
-import { Tip, AriRewriteButton, ForkTuningOverlay, HeaderSearchIcon, HeaderSearchInput, Icon, PriorityField, RecruitingView, confirmDialog, modal, notify, notifyError, pickerInitials , decodeEntities } from '../App';
+import { Icon } from '../icons';
+import { Tip, AriRewriteButton, ForkTuningOverlay, HeaderSearchIcon, HeaderSearchInput, PriorityField, RecruitingView, confirmDialog, modal, notify, notifyError, pickerInitials, decodeEntities } from '../App';
 
 const TRIAGE_CATEGORIES = {
   urgent:            { icon: <Icon name="alert" size={13} />, label: 'Urgent',            color: '#ef4444' },

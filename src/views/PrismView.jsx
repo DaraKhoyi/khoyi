@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { Icon } from '../App';
+import { Icon } from '../icons';
 
 const DISC_LETTERS = ['D', 'I', 'S', 'C'];
 

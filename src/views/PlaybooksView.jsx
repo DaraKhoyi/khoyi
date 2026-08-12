@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../dataService';
-import { Icon, SYSTEMS, modal } from '../App';
+import { Icon } from '../icons';
+import { SYSTEMS, modal } from '../App';
 
 function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, setPlaybookRuns, tasks, setTasks, userId, setView, setTaskFilter, events = [] }) {
   const playbooks = brain.filter(b => b.type === 'playbook');
