@@ -297,6 +297,9 @@ export default function InvestorPipeline({ userId }) {
   const [matches, setMatches] = useState(null);
   const [properties, setProperties] = useState(null);
   const [broker, setBroker] = useState(null);
+  const [queue, setQueue] = useState(null);
+  const [reassigning, setReassigning] = useState(null);
+  const [pick, setPick] = useState({});
   const [editing, setEditing] = useState(null);   // buyer object or 'new'
   const [adding, setAdding] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
@@ -326,7 +329,23 @@ export default function InvestorPipeline({ userId }) {
   const loadBroker = useCallback(async () => {
     try { const { data } = await supabase.rpc('investor_broker_dashboard'); setBroker(data || { is_broker: false }); } catch (_) { setBroker({ is_broker: false }); }
   }, []);
-  useEffect(() => { loadBuyers(); loadMatches(); loadProps(); loadBroker(); }, [loadBuyers, loadMatches, loadProps, loadBroker]);
+  const loadQueue = useCallback(async () => {
+    try { const { data } = await supabase.rpc('investor_unassigned_queue'); setQueue(data || { is_broker: false, buyers: [], agents: [] }); }
+    catch (_) { setQueue({ is_broker: false, buyers: [], agents: [] }); }
+  }, []);
+  useEffect(() => { loadBuyers(); loadMatches(); loadProps(); loadBroker(); loadQueue(); }, [loadBuyers, loadMatches, loadProps, loadBroker, loadQueue]);
+
+  const reassign = async (buyerId, agentId) => {
+    if (!agentId) return;
+    setReassigning(buyerId);
+    try {
+      const { data, error } = await supabase.rpc('investor_reassign', { p_buyer: buyerId, p_agent: agentId });
+      if (error) { alert('Could not reassign: ' + error.message); }
+      else if (data && data.ok === false) { alert(data.error || 'Could not reassign.'); }
+      else { await Promise.all([loadQueue(), loadBuyers(), loadMatches()]); }
+    } catch (e) { alert('Could not reassign: ' + (e.message || e)); }
+    setReassigning(null);
+  };
 
   const act = async (mid, status) => {
     try { await supabase.rpc('investor_match_status', { p_match_id: mid, p_status: status }); loadMatches(); } catch (_) {}
@@ -353,6 +372,7 @@ export default function InvestorPipeline({ userId }) {
         {tabBtn('matches', 'Matches', newMatchCount || null)}
         {tabBtn('property', 'Add Property')}
         {broker && broker.is_broker ? tabBtn('pool', 'Pool') : null}
+        {queue && queue.is_broker ? tabBtn('reassign', 'Reassign', (queue.buyers || []).length || null) : null}
       </div>
 
       {/* MY INVESTORS */}
@@ -564,6 +584,70 @@ export default function InvestorPipeline({ userId }) {
           </div>
         );
       })()}
+
+      {/* REASSIGN — broker only. The server gate in investor_unassigned_queue is
+          what actually protects this; hiding the tab is only cosmetic. */}
+      {tab === 'reassign' && queue && queue.is_broker && (
+        <div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 14 }}>
+            Investors whose agent left the brokerage. They're held by the house — still being matched, but no alerts go out until you hand them to someone. Nothing is auto-assigned on purpose.
+          </div>
+
+          {(queue.buyers || []).length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '30px 16px', color: 'var(--text-3)', fontSize: 13 }}>
+              Nobody is waiting. When an agent leaves, their investors land here.
+            </div>
+          ) : (queue.buyers || []).map(b => {
+            const attached = (b.still_attached || []).filter(a => a.agent_user_id);
+            return (
+              <div key={b.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, marginBottom: 11 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                    <div style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 2 }}>
+                      {(b.investor_types || []).map(t => (TYPES.find(x => x[0] === t) || [, t])[1]).join(', ') || '—'}
+                      {b.price_max ? ' · up to ' + money(b.price_max) : ''}
+                      {(b.markets || []).length ? ' · ' + b.markets.slice(0, 3).join(', ') : ''}
+                    </div>
+                  </div>
+                  {b.match_count ? <span style={pillOk}>{b.match_count} waiting</span> : null}
+                </div>
+
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>
+                  Left with {b.released_from}
+                  {b.released_at ? ' · ' + new Date(b.released_at).toLocaleDateString() : ''}
+                  {b.proof_of_funds ? ' · POF ready' : ''}
+                  {b.close_speed_days ? ' · closes in ' + b.close_speed_days + 'd' : ''}
+                </div>
+
+                {attached.length > 0 && (
+                  <div style={{ fontSize: 11.5, color: CHAMP, marginTop: 6 }}>
+                    Already knows {attached.map(a => a.name).join(', ')} — usually the right handoff.
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 11 }}>
+                  <select
+                    value={pick[b.id] || ''}
+                    onChange={e => setPick(p => Object.assign({}, p, { [b.id]: e.target.value }))}
+                    style={{ flex: '1 1 160px', minWidth: 0, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', padding: '10px 11px', fontSize: 14, fontFamily: 'inherit' }}>
+                    <option value="">Assign to…</option>
+                    {(queue.agents || []).map(a => (
+                      <option key={a.agent_user_id} value={a.agent_user_id}>{a.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => reassign(b.id, pick[b.id])}
+                    disabled={!pick[b.id] || reassigning === b.id}
+                    style={{ background: pick[b.id] ? CHAMP : 'transparent', color: pick[b.id] ? '#100D09' : 'var(--text-3)', border: pick[b.id] ? 'none' : '1px solid var(--border)', borderRadius: 10, padding: '10px 18px', fontWeight: 800, fontSize: 14, cursor: pick[b.id] ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+                    {reassigning === b.id ? 'Assigning…' : 'Assign'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
