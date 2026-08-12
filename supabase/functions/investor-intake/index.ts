@@ -42,6 +42,7 @@ textarea{min-height:70px}
 button{width:100%;margin-top:24px;background:var(--champ);color:var(--ink);border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:800;cursor:pointer}
 .priv{background:rgba(203,163,92,.06);border:1px solid rgba(203,163,92,.22);border-radius:12px;padding:11px 14px;font-size:13px;color:#C8BFAE;margin-bottom:20px}
 .err{color:#ef7d7d;font-size:13px;margin-top:8px;min-height:16px}
+.hint{font-size:12px;color:#8C8475;line-height:1.5;margin-top:6px}
 .cond{display:none}
 </style></head><body><div class="wrap">
 <div class="eyebrow">Investor Preferences</div>
@@ -73,8 +74,27 @@ button{width:100%;margin-top:24px;background:var(--champ);color:var(--ink);borde
   <div class="cond" id="capWrap"><label class="f">Minimum cap rate you need (%)</label><input type="number" name="cap_rate_min" step="0.1" placeholder="7"></div>
   <div class="cond" id="flipWrap"><div class="row"><div><label class="f">Min flip margin (%)</label><input type="number" name="flip_margin_min" placeholder="20"></div><div><label class="f">Max rehab budget ($)</label><input type="number" name="rehab_budget_max" placeholder="60000"></div></div></div>
 
+  <label class="f">Absolute dealbreakers (comma-separated)</label>
+  <input type="text" name="dealbreakers" placeholder="flood zone, HOA, 55+, mobile home">
+  <div class="hint">These are a hard filter — we will never send you anything matching them. Only list things you'd truly never buy.</div>
+
+  <label class="f">How do you buy?</label>
+  <div class="chips">${chips("financing", [["cash", "Cash"], ["hard_money", "Hard money"], ["conventional", "Conventional"], ["dscr", "DSCR"], ["seller_finance", "Seller finance"], ["1031", "1031 exchange"]])}</div>
+
+  <div class="row">
+    <div><label class="f">Proof of funds ready?</label>
+      <select name="proof_of_funds"><option value="">Prefer not to say</option><option value="true">Yes</option><option value="false">Not yet</option></select></div>
+    <div><label class="f">You can close in (days)</label><input type="number" name="close_speed_days" placeholder="14"></div>
+  </div>
+
   <label class="f">Will you pay a buyer's-agent commission?</label>
   <select name="pays_buyer_comp"><option value="">Prefer not to say</option><option value="true">Yes</option><option value="false">Expect the listing side to offer it</option></select>
+
+  <div class="row">
+    <div><label class="f">Deals per week you want to see</label><input type="number" name="freq_cap_per_week" placeholder="5"></div>
+    <div><label class="f">Best way to reach you</label>
+      <select name="contact_pref"><option value="">No preference</option><option value="text">Text</option><option value="call">Call</option><option value="email">Email</option></select></div>
+  </div>
 
   <label class="f">Anything else we should know?</label>
   <textarea name="notes" placeholder="Timeline, financing, dealbreakers, how many you're looking to do…"></textarea>
@@ -99,7 +119,10 @@ document.getElementById('f').addEventListener('submit',function(e){e.preventDefa
   investor_types:multi('investor_types'),property_types:multi('property_types'),condition_tolerance:multi('condition_tolerance'),
   markets:fd.get('markets'),price_min:fd.get('price_min'),price_max:fd.get('price_max'),
   beds_min:fd.get('beds_min'),baths_min:fd.get('baths_min'),occupancy_ok:fd.get('occupancy_ok'),
-  deal_metrics:dm,pays_buyer_comp:fd.get('pays_buyer_comp')||null,notes:fd.get('notes')};
+  deal_metrics:dm,pays_buyer_comp:fd.get('pays_buyer_comp')||null,notes:fd.get('notes'),
+  dealbreakers:fd.get('dealbreakers'),financing:multi('financing'),
+  proof_of_funds:fd.get('proof_of_funds')||null,close_speed_days:fd.get('close_speed_days'),
+  freq_cap_per_week:fd.get('freq_cap_per_week'),contact_pref:fd.get('contact_pref')};
  if(!payload.name){err.textContent='Please add your name.';return;}
  btn.disabled=true;btn.textContent='Sending…';
  fetch(location.pathname+location.search,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})

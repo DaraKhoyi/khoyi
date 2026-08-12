@@ -23,19 +23,43 @@ Deno.serve(async (req) => {
 
     // fresh, un-notified matches for this property, joined to the buyer name
     const { data: matches } = await admin.from("investor_matches")
-      .select("id, buyer_owner_user_id, buyer_id, notified_at, investor_buyers!inner(name)")
+      .select("id, buyer_owner_user_id, buyer_id, notified_at, investor_buyers!inner(name, freq_cap_per_week)")
       .eq("property_id", property_id).eq("status", "new");
     if (!matches || !matches.length) return new Response(JSON.stringify({ ok: true, notified: 0 }), { headers: { ...cors, "Content-Type": "application/json" } });
 
+    // Respect each buyer's weekly cadence cap. The cap throttles the ALERT only —
+    // the match is still created and still shows in the agent's Matches tab. We
+    // mark suppressed matches notified so they don't re-queue on the next run.
+    const since = new Date(Date.now() - 7 * 86400000).toISOString();
+    const buyerIds = [...new Set(matches.map((m) => m.buyer_id))];
+    const { data: recent } = await admin.from("investor_matches")
+      .select("buyer_id").in("buyer_id", buyerIds).gte("notified_at", since);
+    const sentThisWeek = new Map<string, number>();
+    for (const r of recent || []) sentThisWeek.set(r.buyer_id, (sentThisWeek.get(r.buyer_id) || 0) + 1);
+
     // group by owning agent (one push per agent even if several of their buyers matched)
     const byAgent = new Map<string, { count: number; name: string; ids: string[] }>();
+    const suppressed: string[] = [];
     for (const m of matches) {
       if (m.notified_at) continue;
+      const b = (m.investor_buyers || {}) as any;
+      const cap = Number(b.freq_cap_per_week) || 0;
+      if (cap > 0) {
+        const used = sentThisWeek.get(m.buyer_id) || 0;
+        if (used >= cap) { suppressed.push(m.id); continue; }
+        sentThisWeek.set(m.buyer_id, used + 1);
+      }
       const uid = m.buyer_owner_user_id;
-      const nm = (m.investor_buyers && (m.investor_buyers as any).name) || "your investor";
+      const nm = b.name || "your investor";
       const cur = byAgent.get(uid) || { count: 0, name: nm, ids: [] };
       cur.count++; cur.ids.push(m.id);
       byAgent.set(uid, cur);
+    }
+
+    if (suppressed.length) {
+      const { error: supErr } = await admin.from("investor_matches")
+        .update({ notified_at: new Date().toISOString() }).in("id", suppressed);
+      if (supErr) console.error("cap-suppress update failed", supErr.message);
     }
 
     let notified = 0;
@@ -53,7 +77,7 @@ Deno.serve(async (req) => {
       // mark these matches notified so re-runs don't double-ping
       await admin.from("investor_matches").update({ notified_at: new Date().toISOString() }).in("id", info.ids);
     }
-    return new Response(JSON.stringify({ ok: true, notified }), { headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, notified, suppressed: suppressed.length }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   }

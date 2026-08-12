@@ -12,9 +12,18 @@ const PROP_TYPES = [
   ['multi', '5+ Multifamily'], ['manufactured', 'Manufactured'], ['land', 'Land'], ['commercial', 'Commercial'],
 ];
 const CONDITIONS = [['turnkey', 'Turnkey'], ['light', 'Light cosmetic'], ['full_rehab', 'Full rehab'], ['teardown', 'Teardown']];
+const FINANCING = [
+  ['cash', 'Cash'], ['hard_money', 'Hard money'], ['conventional', 'Conventional'],
+  ['dscr', 'DSCR'], ['seller_finance', 'Seller finance'], ['1031', '1031 exchange'],
+];
+const CONTACT_PREFS = [['text', 'Text'], ['call', 'Call'], ['email', 'Email']];
 
 const field = { width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', padding: '10px 12px', fontSize: 13.5, marginBottom: 10 };
 const label = { fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', margin: '4px 0 5px', fontWeight: 600 };
+const pillBase = { fontSize: 11, borderRadius: 20, padding: '2px 8px', fontWeight: 700, whiteSpace: 'nowrap' };
+const pillOk = { ...pillBase, background: 'rgba(203,163,92,.18)', color: CHAMP };
+const pillMuted = { ...pillBase, background: 'var(--bg-base)', color: 'var(--text-3)', fontWeight: 600, border: '1px solid var(--border)' };
+const pillWarn = { ...pillBase, background: 'transparent', color: 'var(--text-3)', border: '1px solid var(--border)', fontWeight: 600 };
 
 // ── Investor buy-box form (the questionnaire) ────────────────────────────────
 function BuyerForm({ initial, onSaved, onCancel }) {
@@ -30,6 +39,12 @@ function BuyerForm({ initial, onSaved, onCancel }) {
     rehab_budget_max: initial?.deal_metrics?.rehab_budget_max || '',
     pays_buyer_comp: initial?.pays_buyer_comp ?? null, buyer_comp: initial?.buyer_comp || '',
     exit_strategy: initial?.exit_strategy || '', notes: initial?.notes || '',
+    dealbreakers: (initial?.dealbreakers || []).join(', '),
+    financing: initial?.financing || [],
+    proof_of_funds: initial?.proof_of_funds ?? null,
+    close_speed_days: initial?.close_speed_days || '',
+    freq_cap_per_week: initial?.freq_cap_per_week || '',
+    contact_pref: initial?.contact_pref || '',
   }));
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF(o => ({ ...o, [k]: v }));
@@ -52,6 +67,10 @@ function BuyerForm({ initial, onSaved, onCancel }) {
       markets: f.markets.split(',').map(s => s.trim()).filter(Boolean),
       deal_metrics, pays_buyer_comp: f.pays_buyer_comp, buyer_comp: f.buyer_comp,
       exit_strategy: f.exit_strategy, notes: f.notes,
+      dealbreakers: f.dealbreakers.split(',').map(s => s.trim()).filter(Boolean),
+      financing: f.financing, proof_of_funds: f.proof_of_funds,
+      close_speed_days: f.close_speed_days, freq_cap_per_week: f.freq_cap_per_week,
+      contact_pref: f.contact_pref,
     };
     try { await supabase.rpc('investor_save_buyer', { p: payload }); onSaved(); }
     catch (e) { alert('Could not save: ' + (e.message || e)); }
@@ -108,6 +127,35 @@ function BuyerForm({ initial, onSaved, onCancel }) {
           <div style={{ flex: 1 }}><div style={label}>Max rehab ($)</div><input style={field} type="number" value={f.rehab_budget_max} onChange={e => set('rehab_budget_max', e.target.value)} placeholder="60000" /></div>
         </div>
       )}
+
+      <div style={label}>Absolute dealbreakers (comma-separated)</div>
+      <input style={field} value={f.dealbreakers} onChange={e => set('dealbreakers', e.target.value)} placeholder="flood zone, HOA, 55+, mobile home" />
+      <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.5, margin: '-4px 0 12px' }}>
+        Hard filter — any property whose type or notes mention these is never shown to them. Keep it to true never-buys.
+      </div>
+
+      <div style={label}>How they buy</div>
+      <div>{FINANCING.map(([v, l]) => <Chip key={v} label={l} on={f.financing.includes(v)} onClick={() => toggle('financing', v)} />)}</div>
+
+      <div style={label}>Proof of funds ready?</div>
+      <div>
+        {[['y', 'Yes', true], ['n', 'Not yet', false]].map(([k, l, val]) =>
+          <Chip key={k} label={l} on={f.proof_of_funds === val} onClick={() => set('proof_of_funds', f.proof_of_funds === val ? null : val)} />)}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+        <div style={{ flex: 1 }}><div style={label}>Can close in (days)</div><input style={field} type="number" value={f.close_speed_days} onChange={e => set('close_speed_days', e.target.value)} placeholder="14" /></div>
+        <div style={{ flex: 1 }}><div style={label}>Deals/week cap</div><input style={field} type="number" value={f.freq_cap_per_week} onChange={e => set('freq_cap_per_week', e.target.value)} placeholder="5" /></div>
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.5, margin: '-4px 0 12px' }}>
+        The cap throttles push alerts only — every match still lands in your Matches tab.
+      </div>
+
+      <div style={label}>Best way to reach them</div>
+      <div>
+        {CONTACT_PREFS.map(([v, l]) =>
+          <Chip key={v} label={l} on={f.contact_pref === v} onClick={() => set('contact_pref', f.contact_pref === v ? '' : v)} />)}
+      </div>
 
       <div style={label}>Will they pay a buyer-agent commission?</div>
       <div>
@@ -332,6 +380,14 @@ export default function InvestorPipeline({ userId }) {
                     {b.price_max ? ' · up to ' + money(b.price_max) : ''}
                     {(b.markets || []).length ? ' · ' + b.markets.slice(0, 3).join(', ') : ''}
                   </div>
+                  {(b.proof_of_funds || b.close_speed_days || (b.financing || []).length || (b.dealbreakers || []).length) ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 7 }}>
+                      {b.proof_of_funds && <span style={pillOk}>POF ready</span>}
+                      {(b.financing || []).slice(0, 3).map(x => <span key={x} style={pillMuted}>{(FINANCING.find(y => y[0] === x) || [, x])[1]}</span>)}
+                      {b.close_speed_days ? <span style={pillMuted}>closes in {b.close_speed_days}d</span> : null}
+                      {(b.dealbreakers || []).length ? <span style={pillWarn}>{b.dealbreakers.length} dealbreaker{b.dealbreakers.length === 1 ? '' : 's'}</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               ))}
           </div>
@@ -356,6 +412,13 @@ export default function InvestorPipeline({ userId }) {
                   <span style={{ fontSize: 13, color: CHAMP, fontWeight: 700 }}>{money(p.price)}</span>
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 4 }}>For <b>{m.buyer_name}</b> · {m.reason}</div>
+                {(m.buyer_pof || m.buyer_close_days || (m.buyer_financing || []).length) ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                    {m.buyer_pof && <span style={pillOk}>POF ready</span>}
+                    {(m.buyer_financing || []).slice(0, 3).map(x => <span key={x} style={pillMuted}>{(FINANCING.find(y => y[0] === x) || [, x])[1]}</span>)}
+                    {m.buyer_close_days ? <span style={pillMuted}>closes in {m.buyer_close_days}d</span> : null}
+                  </div>
+                ) : null}
                 <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 10 }}>
                   {(PROP_TYPES.find(x => x[0] === p.type) || [, p.type])[1]}{p.beds ? ' · ' + p.beds + 'bd' : ''}{p.baths ? '/' + p.baths + 'ba' : ''}
                   {p.cap_rate ? ' · ' + p.cap_rate + '% cap' : ''}{p.condition ? ' · ' + (CONDITIONS.find(x => x[0] === p.condition) || [, p.condition])[1] : ''}
