@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { HeaderSearchIcon, HeaderSearchInput, PriorityField, RecruitingView, decodeEntities } from '../App';
+import { HeaderSearchIcon, HeaderSearchInput, PriorityField, RecruitingView } from '../App';
+import { decodeEntities } from '../helpers';
 import AriRewriteButton from './AriRewriteButton';
 import ForkTuningOverlay from './ForkTuningOverlay';
 import { Tip } from '../tipsUi';

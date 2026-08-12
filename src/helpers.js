@@ -1,6 +1,7 @@
 // ── Pure formatting / date / phone helpers ─ extracted from App.js (strangle) ──
 // No React, no app state — safe to import anywhere. App.js re-exports these for
 // back-compat so existing '../App' imports keep working during the migration.
+import { supabase } from './dataService';
 
 export function todayISO() {
   const d = new Date();
@@ -113,4 +114,78 @@ export function splitQuotedReply(text) {
   }
   if (cut < 0) return { body: src, quoted: '' };
   return { body: lines.slice(0, cut).join('\n'), quoted: lines.slice(cut).join('\n') };
+}
+
+// HTML entity decoding — used across email/notes rendering
+export const HTML_ENTITIES = {
+  lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ensp: ' ', emsp: ' ', thinsp: ' ',
+  ndash: '\u2013', mdash: '\u2014', lsquo: '\u2018', rsquo: '\u2019',
+  ldquo: '\u201C', rdquo: '\u201D', hellip: '\u2026', bull: '\u2022',
+  middot: '\u00B7', copy: '\u00A9', reg: '\u00AE', trade: '\u2122',
+  deg: '\u00B0', eacute: '\u00E9', egrave: '\u00E8', uuml: '\u00FC',
+  ouml: '\u00F6', auml: '\u00E4', ccedil: '\u00E7', ntilde: '\u00F1',
+  laquo: '\u00AB', raquo: '\u00BB', euro: '\u20AC', pound: '\u00A3', yen: '\u00A5',
+};
+export function cpToStr(cp) {
+  // Reject surrogates and out-of-range values rather than throwing on bad input.
+  if (!Number.isFinite(cp) || cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return '';
+  try { return String.fromCodePoint(cp); } catch (_) { return ''; }
+}
+export function decodeEntities(str) {
+  if (typeof str !== 'string' || str.indexOf('&') === -1) return str;
+  return str
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => cpToStr(parseInt(h, 16)) || m)
+    .replace(/&#(\d+);/g, (m, d) => cpToStr(parseInt(d, 10)) || m)
+    .replace(/&([a-z][a-z0-9]*);/gi, (m, n) => {
+      const k = n.toLowerCase();
+      return k === 'amp' ? m : (HTML_ENTITIES[k] !== undefined ? HTML_ENTITIES[k] : m);
+    })
+    .replace(/&amp;/gi, '&');
+}
+
+// merge fields + send-account resolution (moved with the email modals)
+export const MERGE_FIELDS = [
+  { token: 'first_name', label: 'First name' },
+  { token: 'last_name', label: 'Last name' },
+  { token: 'full_name', label: 'Full name' },
+  { token: 'company', label: 'Company' },
+  { token: 'role', label: 'Role/title' },
+  { token: 'email', label: 'Email' },
+  { token: 'phone', label: 'Phone' },
+  { token: 'property_address', label: 'Property address' },
+  { token: 'deal_name', label: 'File name' },
+  { token: 'my_name', label: 'Your name' },
+  { token: 'today', label: "Today's date" },
+];
+
+export function applyMergeFields(text, { contact, deal, property, senderName } = {}) {
+  if (!text) return text || '';
+  const nm = (contact?.name || '').trim();
+  const parts = nm ? nm.split(/\s+/) : [];
+  const map = {
+    first_name: parts[0] || '',
+    last_name: parts.length > 1 ? parts[parts.length - 1] : '',
+    full_name: nm,
+    company: contact?.company || '',
+    role: contact?.role || '',
+    email: contact?.email || '',
+    phone: contact?.phone || '',
+    property_address: property?.address || deal?.address || '',
+    deal_name: deal?.name || '',
+    my_name: senderName || 'Dara',
+    today: new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }),
+  };
+  return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, key) => {
+    const k = key.toLowerCase();
+    return (k in map) ? map[k] : m;
+  });
+}
+
+export async function resolveSendAccount(fields = 'id,email_address') {
+  const sel = fields.includes('is_default') ? fields : fields + ',is_default';
+  const { data } = await supabase.from('email_accounts')
+    .select(sel).contains('purposes', ['email']).order('created_at');
+  const accs = data || [];
+  if (!accs.length) return null;
+  return accs.find(a => a.is_default) || accs.find(a => a.is_active !== false) || accs[0];
 }
