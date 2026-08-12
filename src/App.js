@@ -42,6 +42,11 @@ import SingleContactPicker from './views/SingleContactPicker';
 import TemplatesModal from './views/TemplatesModal';
 import FollowupDraftModal from './views/FollowupDraftModal';
 import ActivityTimeline from './views/ActivityTimeline';
+import DownloadResearchDocx from './views/DownloadResearchDocx';
+import PrepLeadButton from './views/PrepLeadButton';
+import RelationshipIntel from './views/RelationshipIntel';
+import ContactKnowledge from './views/ContactKnowledge';
+import SocialLinksPanel from './views/SocialLinksPanel';
 import QuoCallDetail from './views/QuoCallDetail';
 import { logJournalEntry } from './lib/journalLog';
 import { BUILD_VERSION } from './version';
@@ -6875,263 +6880,22 @@ function ContactRecordingsSection({ contact, userId, onTranscribed }) {
 
 
 
-function RIChip({ children, tone }) {
-  return <span style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '999px', border: `1px solid ${tone === 'gold' ? 'var(--accent-dim)' : 'var(--border)'}`, background: tone === 'gold' ? 'var(--accent-glow)' : 'var(--bg-card)', color: tone === 'gold' ? 'var(--accent)' : 'var(--text-2)' }}>{children}</span>;
-}
-function RISection({ label, children, hint }) {
-  return (
-    <div style={{ marginTop: '14px' }}>
-      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: '6px' }}>{label}{hint ? <span style={{ color: 'var(--text-3)', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}> · {hint}</span> : null}</div>
-      {children}
-    </div>
-  );
-}
-function RIList({ items, num }) {
-  // Coerce defensively: extraction can occasionally return a string where an
-  // array is expected. A bare string becomes a single item; anything else that
-  // isn't an array is dropped — never call .filter on a non-array (that throws).
-  const arr = (Array.isArray(items) ? items : (typeof items === 'string' && items.trim() ? [items] : [])).filter(Boolean);
-  if (!arr.length) return <div style={{ fontSize: '12px', color: 'var(--text-3)' }}>—</div>;
-  return (
-    <ul style={{ margin: 0, paddingLeft: num ? '20px' : '16px', display: 'flex', flexDirection: 'column', gap: '5px', listStyle: num ? 'decimal' : 'disc' }}>
-      {arr.map((x, i) => <li key={i} style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}>{typeof x === 'string' ? x : (x.detail || x.text || '')}</li>)}
-    </ul>
-  );
-}
-function RIChips({ items, tone }) {
-  const arr = (Array.isArray(items) ? items : (typeof items === 'string' && items.trim() ? [items] : [])).filter(Boolean);
-  if (!arr.length) return null;
-  return <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{arr.map((x, i) => <RIChip key={i} tone={tone}>{typeof x === 'string' ? x : (x.detail || '')}</RIChip>)}</div>;
-}
+
+
+
+
 // Downloads a cleaned-up, branded Word (.docx) research report. Two modes:
 // "client" (factual dossier to share — no DISC, no coaching) and "agent" (adds
 // the DISC behavioral read; still excludes the rapport/things-to-avoid coaching).
 // The docx is built server-side (research-report-docx) so it works on every
 // device, including iPhone.
-function DownloadResearchDocx({ contactId, contactName }) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  async function download(mode) {
-    setBusy(true); setOpen(false);
-    try {
-      const { data, error } = await supabase.functions.invoke('research-report-docx', { body: { contact_id: contactId, mode } });
-      if (error || !data || !data.base64) throw new Error((error && error.message) || (data && data.error) || 'Could not generate the report');
-      // base64 → Blob → download
-      const bin = atob(data.base64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = data.filename || 'research.docx';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      if (window.__notify) window.__notify('Word report downloaded.', 'success');
-    } catch (e) {
-      if (window.__notify) window.__notify('Report failed: ' + (e.message || 'unknown error'), 'error');
-    } finally { setBusy(false); }
-  }
-  return (
-    <>
-      <button className="btn btn-ghost btn-sm" disabled={busy} onClick={(e) => { e.stopPropagation(); e.preventDefault(); setOpen(true); }} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-        {busy ? 'Building…' : '⬇ Word report'}
-      </button>
-      {open && createPortal(
-        <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 3000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: '#1a1510', border: '1px solid rgba(203,163,92,0.4)', borderRadius: '18px 18px 0 0',
-            width: '100%', maxWidth: '460px', padding: '8px 8px calc(18px + env(safe-area-inset-bottom,0px))',
-            boxShadow: '0 -8px 40px rgba(0,0,0,0.6)', animation: 'sheetUp .22s ease-out',
-          }}>
-            <div style={{ width: 40, height: 4, borderRadius: 4, background: 'rgba(203,163,92,0.5)', margin: '6px auto 12px' }} />
-            <div style={{ padding: '0 12px 10px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '.16em', textTransform: 'uppercase', color: '#EBCB82', marginBottom: 4 }}>Download Word report</div>
-              <div style={{ fontSize: '13px', color: '#FFFFFF' }}>Who is this for? Pick what it should include.</div>
-            </div>
-            <button onClick={() => download('client')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(203,163,92,0.35)', color: '#FFFFFF', padding: '14px 16px', borderRadius: '12px', cursor: 'pointer', marginBottom: '10px' }}>
-              <div style={{ fontWeight: 800, fontSize: '15px', color: '#FFFFFF' }}>Client-facing dossier</div>
-              <div style={{ fontSize: '12.5px', color: '#E8E0D2', marginTop: '4px', lineHeight: 1.5 }}>A polished bio to share with the person or a referral partner. No behavioral read, no coaching.</div>
-            </button>
-            <button onClick={() => download('agent')} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(203,163,92,0.35)', color: '#FFFFFF', padding: '14px 16px', borderRadius: '12px', cursor: 'pointer' }}>
-              <div style={{ fontWeight: 800, fontSize: '15px', color: '#FFFFFF' }}>Agent prep sheet</div>
-              <div style={{ fontSize: '12.5px', color: '#E8E0D2', marginTop: '4px', lineHeight: 1.5 }}>Adds the DISC behavioral read. Still excludes the rapport and things-to-avoid coaching.</div>
-            </button>
-            <button onClick={() => setOpen(false)} style={{ display: 'block', width: '100%', textAlign: 'center', background: 'none', border: 'none', color: '#FFFFFF', padding: '14px', marginTop: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: 600 }}>Cancel</button>
-          </div>
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
 
-function RelationshipIntel({ profile, onPurge, onConfirm }) {
-  if (!profile || !profile.research_taken_at) return null;
-  const p = profile.research_profile || {};
-  const per = profile.research_personal || {};
-  const plan = profile.research_connection_plan || {};
-  const overlaps = profile.research_overlaps || [];
-  const sources = profile.research_sources || [];
-  const idc = profile.research_identity_confidence;
-  const idcColor = idc === 'high' ? 'var(--green)' : idc === 'low' ? 'var(--red)' : 'var(--yellow)';
-  const overlapIcon = { school: <Icon name="school" size={12} />, geography: <Icon name="pin" size={12} />, industry: <Icon name="building" size={12} />, interest: <Icon name="bulb" size={12} />, cause: <Icon name="heart" size={12} />, mutual_connection: <Icon name="users" size={12} /> };
 
-  return (
-    <div style={{ marginBottom: '14px', border: '1px solid var(--accent-dim)', borderRadius: '12px', overflow: 'hidden', background: 'linear-gradient(180deg, var(--accent-glow), transparent 120px)' }}>
-      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px' }}><Icon name="brain" size={14} style={{verticalAlign:'-2px'}} /> Relationship Intelligence</div>
-          {idc && <span style={{ fontSize: '10px', fontWeight: 700, color: idcColor, border: `1px solid ${idcColor}`, borderRadius: '999px', padding: '2px 8px' }}>identity: {idc}</span>}
-        </div>
-        {profile.research_headline && <div style={{ fontSize: '14px', color: 'var(--text-1)', marginTop: '8px', lineHeight: 1.4, fontWeight: 500 }}>{profile.research_headline}</div>}
-        {idc === 'low' && <div style={{ fontSize: '11px', color: 'var(--yellow)', marginTop: '6px' }}>⚠ Identity match is uncertain — verify before relying on these details.</div>}
-        {profile.research_needs_confirmation && (
-          <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)' }}>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--yellow)', marginBottom: '3px' }}>⚠ Confirm this is the right person</div>
-            <div style={{ fontSize: '11.5px', color: 'var(--text-2)', lineHeight: 1.5 }}>
-              The web match was only <b>{idc || 'medium'}</b> confidence, so this write-up hasn't been folded into the DISC read. Confirm it's them to fold it in, or purge it if it's the wrong person.
-            </div>
-            {onConfirm && (
-              <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button onClick={() => onConfirm(profile.contact_id)}
-                  style={{ background: 'var(--accent-2, #EBCB82)', border: 'none', color: '#1a1409', fontSize: '12px', fontWeight: 700, borderRadius: '8px', padding: '7px 14px', cursor: 'pointer' }}>
-                  ✓ Yes, this is them
-                </button>
-                {onPurge && (
-                  <button onClick={() => onPurge(profile.contact_id)}
-                    style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: '12px', borderRadius: '8px', padding: '7px 14px', cursor: 'pointer' }}>
-                    ✕ No, wrong person — purge
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        {onPurge && !profile.research_needs_confirmation && (
-          <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={() => onPurge(profile.contact_id)} title="Remove this research and DISC write-up from the profile (reversible)"
-              style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: '11px', borderRadius: '8px', padding: '4px 10px', cursor: 'pointer' }}>
-              Purge this research
-            </button>
-          </div>
-        )}
-      </div>
 
-      <div style={{ padding: '4px 16px 16px' }}>
-        {overlaps.length > 0 && (
-          <RISection label={<><Icon name="link" size={11} /> You two have in common</>}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              {overlaps.map((o, i) => <div key={i} style={{ fontSize: '12.5px', color: 'var(--text-1)' }}>{overlapIcon[o.type] || '•'} {o.detail}</div>)}
-            </div>
-          </RISection>
-        )}
 
-        {plan.conversation_starters?.length > 0 && (
-          <RISection label={<><Icon name="message" size={11} /> Conversation starters</>}>
-            <RIList items={plan.conversation_starters} num />
-          </RISection>
-        )}
 
-        {(plan.topics_lean_in?.length > 0 || plan.topics_avoid?.length > 0) && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '14px' }}>
-            <div>
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--green)', marginBottom: '6px' }}>Lean into</div>
-              <RIChips items={plan.topics_lean_in} />
-            </div>
-            {plan.topics_avoid?.length > 0 && (
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--yellow)', marginBottom: '6px' }}>Approach with care</div>
-                <RIChips items={plan.topics_avoid} />
-              </div>
-            )}
-          </div>
-        )}
 
-        {plan.add_value?.length > 0 && (
-          <RISection label={<><Icon name="gift" size={11} /> How I can add value</>}>
-            <RIList items={plan.add_value} />
-          </RISection>
-        )}
 
-        {plan.follow_ups?.length > 0 && (
-          <RISection label="↩ Thoughtful follow-ups">
-            <RIList items={plan.follow_ups} />
-          </RISection>
-        )}
-
-        {(per.hobbies?.length > 0 || per.family_context || per.geo_cultural_ties?.length > 0 || per.recurring_themes?.length > 0 || per.recent_excitement?.length > 0) && (
-          <RISection label={<><Icon name="heart" size={11} /> Personal context</>}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {per.hobbies?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Hobbies & passions: </span><RIChips items={per.hobbies} /></div>}
-              {per.family_context && <div style={{ fontSize: '12.5px', color: 'var(--text-1)' }}><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Family (public): </span>{per.family_context}</div>}
-              {per.geo_cultural_ties?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Ties: </span><RIChips items={per.geo_cultural_ties} /></div>}
-              {per.recent_excitement?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Excited about lately: </span><RIList items={per.recent_excitement} /></div>}
-              {per.recurring_themes?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Recurring themes: </span><RIChips items={per.recurring_themes} /></div>}
-              {per.comms_preference && <div style={{ fontSize: '12px', color: 'var(--text-2)' }}><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Comms style: </span>{per.comms_preference}</div>}
-            </div>
-          </RISection>
-        )}
-
-        {(p.background_education || p.career || p.expertise?.length > 0 || p.community_media?.length > 0 || p.interests_values?.length > 0) && (
-          <RISection label={<><Icon name="clipboard" size={11} /> Professional profile</>}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {p.background_education && <div style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}><b style={{ color: 'var(--text-2)' }}>Background: </b>{p.background_education}</div>}
-              {p.career && <div style={{ fontSize: '12.5px', color: 'var(--text-1)', lineHeight: 1.45 }}><b style={{ color: 'var(--text-2)' }}>Career: </b>{p.career}</div>}
-              {p.expertise?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Expertise: </span><RIChips items={p.expertise} /></div>}
-              {p.interests_values?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Values & interests: </span><RIChips items={p.interests_values} /></div>}
-              {p.community_media?.length > 0 && <div><span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Community / media: </span><RIList items={p.community_media} /></div>}
-            </div>
-          </RISection>
-        )}
-
-        {sources.length > 0 && (
-          <RISection label={<><Icon name="search" size={11} /> Sources</>} hint={`${sources.length} cited`}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {sources.map((s, i) => s.url
-                ? <a key={i} href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: 'var(--accent)', border: '1px solid var(--accent-dim)', borderRadius: '999px', padding: '3px 9px', textDecoration: 'none' }}>{s.label || 'source'}{s.date ? ` · ${s.date}` : ''} ↗</a>
-                : <RIChip key={i}>{s.label || 'source'}</RIChip>)}
-            </div>
-          </RISection>
-        )}
-
-        <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
-          For relationship-building only — not a background check, and not for tenant/employment/credit screening.
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PrepLeadButton({ contactId }) {
-  const [busy, setBusy] = React.useState(false);
-  const [done, setDone] = React.useState(false);
-  async function run() {
-    setBusy(true);
-    try { await supabase.functions.invoke('orchestrate-new-lead', { body: { contact_id: contactId } }); setDone(true); if (window.__notify) window.__notify('First-contact plan prepared — see "Prepared by AI"', 'success'); }
-    catch (_) { if (window.__notify) window.__notify('Could not prepare a plan right now', 'error'); }
-    setBusy(false);
-  }
-  return <button className="btn btn-ghost btn-sm" disabled={busy || done} onClick={run} style={{ marginBottom: '10px' }}>{busy ? 'Preparing plan…' : done ? '✓ Plan prepared' : '\uD83E\uDD16 Prep new-lead plan'}</button>;
-}
-
-function ContactKnowledge({ contactId }) {
-  const [rows, setRows] = React.useState(null);
-  React.useEffect(() => { let alive = true; (async () => { try { const { data } = await supabase.rpc('contact_knowledge', { p_contact_id: contactId }); if (alive) setRows(Array.isArray(data) ? data : []); } catch (_) { if (alive) setRows([]); } })(); return () => { alive = false; }; }, [contactId]);
-  if (rows === null || rows.length === 0) return null;
-  const facts = rows.filter(r => r.kind === 'fact');
-  const sources = rows.filter(r => r.kind === 'source');
-  return (
-    <div className="panel" style={{ marginBottom: '12px', border: '1px solid var(--accent)' }}>
-      <div className="panel-body">
-        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}><span>📚</span>What you know</div>
-        {facts.map((fx, i) => (
-          <div key={'f' + i} style={{ fontSize: '12.5px', color: 'var(--text-2)', marginBottom: '3px' }}><span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{fx.label}:</span> {fx.detail}{fx.value_date ? <span style={{ color: 'var(--accent)' }}> ({fx.value_date})</span> : ''}</div>
-        ))}
-        {sources.length > 0 && <div style={{ marginTop: facts.length ? '8px' : 0, fontSize: '11px', color: 'var(--text-3)' }}>From: {sources.map(x => x.label).filter(Boolean).join(' · ')}</div>}
-      </div>
-    </div>
-  );
-}
 
 function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [], setContacts }) {
 
@@ -9339,113 +9103,11 @@ function MultiContactPicker({ value, onChange, contacts, setContacts, currentCon
 // research as identity anchors (a LinkedIn URL is the single strongest anchor —
 // far better than name+email). Covers every person-type (lead, recruit, agent)
 // because they're all contacts rows.
-const SOCIAL_PLATFORMS = [
-  { key: 'linkedin',  label: 'LinkedIn',  icon: 'in', hint: 'profile URL or /in/handle', base: 'https://www.linkedin.com/in/' },
-  { key: 'facebook',  label: 'Facebook',  icon: 'f',  hint: 'profile URL or username',    base: 'https://facebook.com/' },
-  { key: 'instagram', label: 'Instagram', icon: 'ig', hint: '@handle',                    base: 'https://instagram.com/' },
-  { key: 'tiktok',    label: 'TikTok',    icon: 'tt', hint: '@handle',                    base: 'https://tiktok.com/@' },
-  { key: 'x',         label: 'X / Twitter', icon: 'x', hint: '@handle',                   base: 'https://x.com/' },
-  { key: 'youtube',   label: 'YouTube',   icon: 'yt', hint: 'channel URL or @handle',     base: 'https://youtube.com/@' },
-  { key: 'zillow',    label: 'Zillow',    icon: 'z',  hint: 'Zillow profile URL',         base: '' },
-  { key: 'realtor_com', label: 'Realtor.com', icon: 'rc', hint: 'Realtor.com profile URL', base: '' },
-  { key: 'google_business', label: 'Google Business', icon: 'gb', hint: 'Google Business Profile URL', base: '' },
-  { key: 'website',   label: 'Website',   icon: 'w',  hint: 'https://…',                  base: '' },
-];
+
 // Turn a handle or partial into a full URL for linking; leave real URLs alone.
-function socialToUrl(platform, raw) {
-  const v = String(raw || '').trim();
-  if (!v) return '';
-  if (/^https?:\/\//i.test(v)) return v;
-  const p = SOCIAL_PLATFORMS.find(x => x.key === platform);
-  const handle = v.replace(/^@/, '');
-  if (platform === 'website') return 'https://' + v.replace(/^\/+/, '');
-  return (p?.base || '') + handle;
-}
-function SocialGlyph({ icon }) {
-  return (
-    <span style={{ flex: 'none', width: 26, height: 26, borderRadius: 7, background: 'var(--bg-card)', border: '1px solid var(--border)',
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: 'var(--accent)', textTransform: 'lowercase' }}>{icon}</span>
-  );
-}
-function SocialLinksPanel({ contact, contacts = [], setContacts }) {
-  const [socials, setSocials] = useState(contact.socials || {});
-  const [editing, setEditing] = useState(null);   // platform key being edited
-  const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
 
-  async function save(platform, value) {
-    setBusy(true);
-    const next = { ...socials };
-    const v = String(value || '').trim();
-    if (v) next[platform] = v; else delete next[platform];
-    const { error } = await supabase.from('contacts').update({ socials: next }).eq('id', contact.id);
-    setBusy(false);
-    if (error) { notify("Couldn't save that link.", 'error'); return; }
-    setSocials(next);
-    contact.socials = next;
-    if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, socials: next } : c));
-    setEditing(null); setDraft('');
-  }
 
-  const filled = SOCIAL_PLATFORMS.filter(p => socials[p.key]);
-  const empty = SOCIAL_PLATFORMS.filter(p => !socials[p.key]);
 
-  return (
-    <div>
-      {filled.length === 0 && editing === null && (
-        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 10 }}>No social profiles yet. Add them — Prism uses them to research this person more accurately.</div>
-      )}
-      {filled.map(p => {
-        const url = socialToUrl(p.key, socials[p.key]);
-        const isEd = editing === p.key;
-        return (
-          <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-            <SocialGlyph icon={p.icon} />
-            {isEd ? (
-              <>
-                <input autoFocus className="form-input" value={draft} onChange={e => setDraft(e.target.value)} placeholder={p.hint}
-                  onKeyDown={e => { if (e.key === 'Enter') save(p.key, draft); if (e.key === 'Escape') { setEditing(null); setDraft(''); } }}
-                  style={{ flex: 1, margin: 0, padding: '5px 8px', fontSize: 12.5 }} />
-                <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => save(p.key, draft)}>Save</button>
-              </>
-            ) : (
-              <>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)' }}>{p.label}</div>
-                  <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{socials[p.key]}</a>
-                </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(p.key); setDraft(socials[p.key]); }} style={{ fontSize: 11 }}>Edit</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => save(p.key, '')} style={{ fontSize: 11, color: 'var(--text-3)' }}>✕</button>
-              </>
-            )}
-          </div>
-        );
-      })}
-
-      {empty.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-          {empty.map(p => (
-            editing === p.key ? (
-              <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 0' }}>
-                <SocialGlyph icon={p.icon} />
-                <input autoFocus className="form-input" value={draft} onChange={e => setDraft(e.target.value)} placeholder={`${p.label} — ${p.hint}`}
-                  onKeyDown={e => { if (e.key === 'Enter') save(p.key, draft); if (e.key === 'Escape') { setEditing(null); setDraft(''); } }}
-                  style={{ flex: 1, margin: 0, padding: '5px 8px', fontSize: 12.5 }} />
-                <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => save(p.key, draft)}>Save</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(null); setDraft(''); }}>✕</button>
-              </div>
-            ) : (
-              <button key={p.key} onClick={() => { setEditing(p.key); setDraft(''); }}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 100, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', fontSize: 12, cursor: 'pointer' }}>
-                + {p.label}
-              </button>
-            )
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function CustomFieldsPanel({ userId, contact, contacts = [], setContacts }) {
   const [definitions, setDefinitions] = useState([]);
