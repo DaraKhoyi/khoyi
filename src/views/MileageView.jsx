@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { useBackClose, RecruitingKpiTile, SingleContactPicker, confirmDialog } from '../App';
+import { useBackClose, RecruitingKpiTile, SingleContactPicker } from '../App';
+import { confirmDialog } from '../notify';
 import { modal } from '../helpers';
 
 const MILEAGE_CATEGORIES = [

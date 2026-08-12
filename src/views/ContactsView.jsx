@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { quoNormPhone } from '../helpers';
-import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, confirmDialog, notify, quoCall, TipFor } from '../App';
+import { Tip, useBackClose, ContactDetailModal, HeaderSearchInput, MultiValueField, PropertyModal, QuoTextModal, SingleContactPicker, cadenceDue, quoCall, TipFor } from '../App';
+import { confirmDialog, notify } from '../notify';
 import { modal, owesReply } from '../helpers';
 import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
 import GoogleContactsView from './GoogleContactsView';

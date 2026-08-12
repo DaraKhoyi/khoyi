@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { modal, todayISO } from '../helpers';
-import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, NotesView, TaskModal, confirmDialog, emailAssignTask, notify, TipFor } from '../App';
+import { Tip, ContactsView, DatePickerModal, HeaderSearchIcon, HeaderSearchInput, NotesView, TaskModal, emailAssignTask, TipFor } from '../App';
+import { confirmDialog, notify } from '../notify';
 
 const QUADS = ['A', 'B', 'C', 'D'];
 // Sort key for Eisenhower: A1 < A2 < B1 < ... Simple-system tasks sort after

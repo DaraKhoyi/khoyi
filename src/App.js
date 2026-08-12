@@ -2811,46 +2811,13 @@ function TaskModal({ onClose, onSave, onDelete, initial, defaultSystem, brain, c
 // Pass 1 Batch B addition: surface silent errors from optimistic-rollback
 // patterns. Batch C will expand uses across writes throughout the app.
 
-const __toastListeners = new Set();
-function notify(message, kind = 'info', action = null) {
-  // action: { label, onClick } — renders an inline button on the toast.
-  __toastListeners.forEach(fn => { try { fn({ id: Date.now() + Math.random(), message, kind, action }); } catch (_) {} });
-}
-// Export to window so non-React code paths can call too (cron retry hooks, etc.)
-if (typeof window !== 'undefined') {
-  window.__notify = notify;
-}
-
-function notifyError(message) { notify(message, 'error'); }
-
-// ── Branded confirm dialog (promise-based; replaces native window.confirm) ──
-const __confirmListeners = new Set();
-function confirmDialog(message, opts = {}) {
-  return new Promise(resolve => {
-    const payload = {
-      id: Date.now() + Math.random(),
-      message,
-      confirmLabel: opts.confirmLabel || 'Confirm',
-      cancelLabel: opts.cancelLabel || 'Cancel',
-      danger: opts.danger !== false,
-      resolve,
-    };
-    if (__confirmListeners.size === 0) {
-      // Fail safe: never silently skip a confirmation if no host is mounted.
-      resolve(typeof window !== 'undefined' ? window.confirm(message) : true);
-      return;
-    }
-    __confirmListeners.forEach(fn => { try { fn(payload); } catch (_) {} });
-  });
-}
-if (typeof window !== 'undefined') window.__confirmDialog = confirmDialog;
+// Toast + confirm registry now lives in ./notify (single shared instance).
+import { notify, notifyError, confirmDialog, subscribeToasts, subscribeConfirms } from './notify';
 
 function ConfirmHost() {
   const [dialog, setDialog] = useState(null);
   useEffect(() => {
-    function onConfirm(p) { setDialog(p); }
-    __confirmListeners.add(onConfirm);
-    return () => { __confirmListeners.delete(onConfirm); };
+    return subscribeConfirms((p) => setDialog(p));
   }, []);
   if (!dialog) return null;
   const done = (val) => { try { dialog.resolve(val); } catch (_) {} setDialog(null); };
@@ -2897,8 +2864,7 @@ function ToastHost() {
         // phone; 4s is fine for "Done — nice work" and far too short for Undo.
       }, t.action ? 9000 : (t.kind === 'error' ? 6500 : 4000));
     }
-    __toastListeners.add(onToast);
-    return () => { __toastListeners.delete(onToast); };
+    return subscribeToasts(onToast);
   }, []);
 
   if (toasts.length === 0) return null;
