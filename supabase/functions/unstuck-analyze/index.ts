@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
       .insert({ listing_id, user_id: billUserId, kind, status: "running", model: MODEL })
       .select("id").single();
     runId = run?.id ?? null;
-    await admin.from("unstuck_listings").update({ status: "analyzing" }).eq("id", listing_id);
+    await admin.from("unstuck_listings").update({ status: "analyzing" }).eq("id", listing_id).neq("status", "released");
 
     // Return NOW; keep working in the background. The gateway kills an idle
     // request at 150s and this reliably takes longer.
@@ -189,7 +189,7 @@ async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string,
     if (!resp.ok) {
       const msg = (data && (data.error?.message || data.message)) || ("HTTP " + resp.status);
       if (runId) await admin.from("unstuck_runs").update({ status: "failed", error: msg }).eq("id", runId);
-      await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id);
+      await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id).neq("status", "released");
       return;
     }
 
@@ -206,7 +206,7 @@ async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string,
     }
     if (!parsed) {
       if (runId) await admin.from("unstuck_runs").update({ status: "failed", error: "could not parse model output", raw: { text } }).eq("id", runId);
-      await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id);
+      await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id).neq("status", "released");
       return;
     }
 
@@ -249,8 +249,16 @@ async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string,
       if (fErr) console.error("finding insert failed", fErr.message);
     }
 
+    // NEVER stomp a released listing. status does double duty (workflow + release)
+    // and a re-run used to silently flip 'released' -> 'analyzed', darkening the
+    // seller's link. Under the Phase 3 weekly cron that would have killed every
+    // seller portal every week, invisibly.
     await admin.from("unstuck_listings")
-      .update({ status: "analyzed", updated_at: new Date().toISOString() }).eq("id", listing_id);
+      .update({ status: "analyzed", updated_at: new Date().toISOString() })
+      .eq("id", listing_id).neq("status", "released");
+    await admin.from("unstuck_listings")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", listing_id).eq("status", "released");
 
     try {
       await admin.functions.invoke("push-send", { body: {
@@ -265,6 +273,6 @@ async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string,
     if (runId) {
       try { await admin.from("unstuck_runs").update({ status: "failed", error: String(err) }).eq("id", runId); } catch (_) {}
     }
-    try { await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id); } catch (_) {}
+    try { await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id).neq("status", "released"); } catch (_) {}
   }
 }
