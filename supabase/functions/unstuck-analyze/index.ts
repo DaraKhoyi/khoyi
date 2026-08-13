@@ -67,7 +67,7 @@ THREE REGISTERS, because the seller reads one of these directly:
 
 A report that lists only fixable things is a comfortable report, not a true one. If there are uncorrectable defects, name them and convert them to a number.
 
-RETURN ONLY JSON, no preamble, no markdown fences:
+OUTPUT CONTRACT — THIS OVERRIDES EVERYTHING ELSE. Your entire reply must be ONE JSON object and nothing else. Do not narrate your searches. Do not summarise findings before the JSON. Do not write "Now I have enough data". Do not use markdown fences. The FIRST character you emit must be { and the LAST must be }. Keep agent_report under 900 words and seller_report under 600 words so the object is never truncated mid-string. Shape:
 {"diagnosis":"one sentence — the lead","triage_row":"no_showings|no_second|no_offers|dying_escrow","highest_leverage_action":"startable within a day","agent_report":"markdown","seller_report":"markdown","say_this":"2-3 sentences","public_sources":{"note":"how our view reconciles with Zestimate/Redfin/portal DOM"},"findings":[{"kind":"correctable_cheap|correctable_costly|uncorrectable|market|payment|insurability|exposure","title":"short","detail":"what and why","evidence":"SOURCED: ... | DERIVED: ... | ASSUMED: ...","severity":1-5,"dollar_impact":number|null,"effort":"e.g. under a week","seller_safe":true|false}]}`;
 
 function facts(l: any, comps: any[]): string {
@@ -172,7 +172,7 @@ async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string,
       headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 6000,
+        max_tokens: 16000,
         system: SYSTEM,
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 }],
         messages: [{ role: "user", content: "Diagnose why this listing is not selling.\n\n" + facts(l, comps || []) }],
