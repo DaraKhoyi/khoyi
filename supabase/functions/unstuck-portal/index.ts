@@ -149,7 +149,7 @@ ${k === "uncorrectable" ? `<p class="note">These are the parts of the property n
 <div class="eyebrow">Unstuck.</div>
 <h1>${esc(data.address)}</h1>
 <div class="sub">A working review of what's holding your sale up${data.city ? `, prepared by ${esc(data.agent_name)}` : ""}.</div>
-${reviewed ? `<p class="note" style="margin-top:10px">Last reviewed ${esc(reviewed)}.</p>` : ""}
+${reviewed ? `<p class="note" style="margin-top:10px">Last reviewed ${esc(reviewed)} &middot; refreshed weekly.</p>` : ""}
 
 <div class="hair"></div>
 ${md(data.seller_report || "")}
@@ -164,7 +164,7 @@ ${findings.length ? `<div class="hair"></div>
 ${findingsHtml}` : ""}
 
 <div class="hair"></div>
-<p class="note">Questions on any of this belong in a conversation, not an email — call ${esc(data.agent_name)} and talk it through. This page updates as the review is refreshed.</p>`;
+<p class="note">Questions on any of this belong in a conversation, not an email — call ${esc(data.agent_name)} and talk it through. This review is refreshed weekly, so this page stays current as the market moves.</p>`;
 
   return new Response(shell(inner, "Unstuck. — " + String(data.address || "")), { headers: HTML });
 });
