@@ -25,7 +25,7 @@ const APPJS = "src/App.js";
 
 // The ceiling. Currently sits a little above the real line count so ordinary
 // edits don't trip it; drop it whenever App.js shrinks to lock the gain in.
-const APPJS_BUDGET = 6000;
+const APPJS_BUDGET = 3950;
 
 // Root-shell + small glue components that are ALLOWED to live in App.js. This is
 // the composition root: the pieces that wire everything together and are not

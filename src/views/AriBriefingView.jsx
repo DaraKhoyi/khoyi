@@ -3,7 +3,7 @@ import { supabase } from '../dataService';
 import OwnerPicker from './OwnerPicker';
 import { Icon } from '../icons';
 import { money } from '../helpers';
-import { PriorityField } from '../App';
+import { PriorityField } from './TrackerPanels';
 import TaskModal from './TaskModal';
 import PrismThinking from './PrismThinking';
 import QuoTextModal from './QuoTextModal';
