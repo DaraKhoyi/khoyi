@@ -18,7 +18,7 @@ import CloudStorageSettings from './CloudStorageSettings';
 import AdminLicensingPanel from './AdminLicensingPanel';
 import RedeemCodeBox from './RedeemCodeBox';
 import SimplifyPanel from './SimplifyPanel';
-const QuarterlyTaxBanner = lazy(() => import('./AccountingViews').then(m => ({ default: m.QuarterlyTaxBanner })));
+const QuarterlyTaxBanner = lazy(() => import('./QuarterlyTaxBanner'));
 
 // push-subscription helpers (used only here)
 const VAPID_PUBLIC_KEY = 'BF7IbYP2gbqaV5B3-iaX88-r08O9tLutgXxUadjJicDKjl4QU8xxu-Yfdgloej6DeUrtChNcT6gT5HlS4Ze6OJk';

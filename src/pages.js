@@ -115,7 +115,6 @@ export const PAGES = {
   // ── Settings & Systems ─────────────────────────────────────────────────────
   settings:     { label: 'Settings',         icon: 'settings', room: null,            group: 'Settings & Systems', minRole: 'agent', feature: 'core',      tier: 'base', core: true },
   app_health:   { label: 'System Health',    icon: 'systems',  room: 'brokerage',     group: 'Settings & Systems', minRole: 'admin', feature: 'brokerage', tier: 'pro' },
-  classic_dashboard: { label: 'Classic Dashboard', icon: 'dashboard', room: null,     group: 'Settings & Systems', minRole: 'agent', feature: 'core',      tier: 'base' },
 };
 
 // Role rank for minRole comparisons.

@@ -85,7 +85,6 @@ import ChatMessageBubble from './views/ChatMessageBubble';
 import { notify, notifyError, confirmDialog, subscribeToasts, subscribeConfirms } from './notify';
 import { Tip } from './tipsUi';
 import ChatView from './views/ChatView';
-import { DashboardView } from './views/DashboardView';
 import { MyNumbersView } from './views/MetricsPanels';
 import { LockedPage, QuickLog } from './views/QuickLog';
 import { ScoreboardView, PipelineView } from './views/ScoreboardView';
@@ -183,7 +182,7 @@ const InvestorPipeline = lazyWithReload(() => import('./views/InvestorPipeline')
 const UnstuckView = lazyWithReload(() => import('./views/UnstuckView'));
 const AdoptionView = lazyWithReload(() => import('./views/AdoptionView'));
 const ProspectingView = lazyWithReload(() => import('./views/ProspectingView'));
-const QuarterlyTaxBanner = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.QuarterlyTaxBanner })));
+const QuarterlyTaxBanner = lazyWithReload(() => import('./views/QuarterlyTaxBanner'));
 const TasksView = lazyWithReload(() => import('./views/TasksView'));
 const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
 const ChiefOfStaffView = lazyWithReload(() => import('./views/ChiefOfStaffView'));
@@ -1988,7 +1987,6 @@ function AppMain() {
                     vitals={hubVitals}
                     modeState={hubModeState}
                     onEnterMode={enterMode} />
-                : view==='classic_dashboard' ? <DashboardView tasks={tasks} setTasks={setTasks} unreadEmailCount={unreadEmailCount} needsReviewCount={needsReviewCount} reviewCount={reviewCount} user={user} setView={setView} robots={robots} contacts={contacts} setContacts={setContacts} brain={brain} defaultSystem={priorityPref} properties={properties} events={events} onOpenPlan={()=>setPlanOpen(true)} deals={deals} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap}/>
                 : view==='production' ? <ProductionBoard year={2026} />
                 : view==='numbers'    ? <MyNumbersView tasks={tasks} contacts={contacts} events={events} deals={deals} unreadEmailCount={unreadEmailCount} setView={setView} userId={user.id} oweReplyMap={oweReplyMap} />
               : view==='chief'       ? <ChiefOfStaffView userId={user.id} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} onOpenPlan={()=>setPlanOpen(true)}/>

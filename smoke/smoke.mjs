@@ -9,11 +9,6 @@ import { chromium } from 'playwright';
 const URL = process.env.SMOKE_URL || 'http://localhost:4173/';
 const EMAIL = process.env.SMOKE_EMAIL;
 const PASSWORD = process.env.SMOKE_PASSWORD;
-// NOTE: 'classic_dashboard' is deliberately NOT in this list. It has a route but
-// no menu entry, is not in NAV/builtSet, and nothing calls setView on it — an
-// orphan reachable only by deep link. It trips the error boundary. Its component
-// (DashboardView, 629 lines) is a dead-code deletion candidate; decide that
-// deliberately rather than letting an unreachable route block every future gate.
 const VIEWS = (process.env.SMOKE_VIEWS ||
   'dashboard,inbox,contacts,tasks,calendar,quo,email_review,group_message,chief,agentruns,agent_activity,journal,brain,prospecting,settings,documents,my_prism,myvoice,app_health,listing_presentation,google_contacts,cadence_review,coach,knowledge,unstuck,today,numbers,scoreboard,pipeline,files,learn,teams,team,contact_types,announcements,review,tracker,agents,recruiting,systems,finance,deals,notes'
 ).split(',').map(s => s.trim()).filter(Boolean);
