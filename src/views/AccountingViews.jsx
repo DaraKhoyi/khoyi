@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
-import { HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile } from '../App';
+import { HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile } from './SharedUi';
 import { useBackClose } from '../backClose';
 import { Tip } from '../tipsUi';
 import { confirmDialog } from '../notify';

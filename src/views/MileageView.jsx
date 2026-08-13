@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { RecruitingKpiTile } from '../App';
+import { RecruitingKpiTile } from './SharedUi';
 import SingleContactPicker from './SingleContactPicker';
 import { useBackClose } from '../backClose';
 import { confirmDialog } from '../notify';

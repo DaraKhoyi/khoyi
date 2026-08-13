@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10 } from '../helpers';
-import { SYSTEMS } from '../App';
+import { SYSTEMS } from '../systemHealth';
 import QuoCallDetail from './QuoCallDetail';
 
 const SYS_STATUS = {

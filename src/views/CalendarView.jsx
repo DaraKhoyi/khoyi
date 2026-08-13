@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { modal, pad2, ymd } from '../helpers';
-import { emailAssignTask } from '../App';
+import { emailAssignTask } from './SharedUi';
 import TaskModal from './TaskModal';
 import { useBackClose } from '../backClose';
 import { Tip, TipFor } from '../tipsUi';

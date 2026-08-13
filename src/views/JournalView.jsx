@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { lbl, today_ymd, ymd } from '../helpers';
-import { useDictation } from '../App';
+import { useDictation } from './SharedUi';
 import { Tip, TipFor } from '../tipsUi';
 import { logJournalEntry, mirrorJournalToTimeline } from '../lib/journalLog';
 

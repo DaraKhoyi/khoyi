@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { SYSTEMS } from '../App';
+import { SYSTEMS } from '../systemHealth';
 import { modal } from '../helpers';
 
 function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, setPlaybookRuns, tasks, setTasks, userId, setView, setTaskFilter, events = [] }) {

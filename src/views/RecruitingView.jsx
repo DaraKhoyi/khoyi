@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { DealsView, RecruitingKpiTile } from '../App';
+import DealsView from './DealsView';
+import { RecruitingKpiTile } from './SharedUi';
 import { stageMeta } from './LeadsBoard';
 import { useBackClose } from '../backClose';
 import { modal } from '../helpers';

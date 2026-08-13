@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { quoNormPhone } from '../helpers';
-import { HeaderSearchInput, MultiValueField } from '../App';
+import { HeaderSearchInput, MultiValueField } from './SharedUi';
 import { cadenceDue } from './LeadsBoard';
 import ContactDetailModal from './ContactDetailModal';
 import SingleContactPicker from './SingleContactPicker';
