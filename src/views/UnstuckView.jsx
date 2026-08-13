@@ -223,6 +223,26 @@ function Detail({ id, onBack, onEdit }) {
     } catch (e) { alert('Could not start the analysis: ' + (e.message || e)); setBusy(false); }
   };
 
+  const release = async (on) => {
+    if (on && !confirm('Share this report with the seller? They will see the seller report and the seller-safe findings — including anything that cannot be fixed. Walk them through it first if you can.')) return;
+    try {
+      const { data, error } = await supabase.rpc('unstuck_release', { p_id: id, p_release: on });
+      if (error) { alert('Could not update sharing: ' + error.message); return; }
+      if (data && data.ok === false) { alert(data.error || 'Could not update sharing.'); return; }
+      await load();
+      if (on && data.url) {
+        try { await navigator.clipboard.writeText(data.url); alert('Shared. The link is on your clipboard.'); }
+        catch (_) { alert('Shared. Link:\n\n' + data.url); }
+      }
+    } catch (e) { alert('Could not update sharing: ' + (e.message || e)); }
+  };
+
+  const copyLink = async () => {
+    const url = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/unstuck-portal?t=' + (d && d.listing ? d.listing.portal_token : '');
+    try { await navigator.clipboard.writeText(url); alert('Link copied.'); }
+    catch (_) { alert(url); }
+  };
+
   const markFinding = async (fid, status) => {
     try { await supabase.rpc('unstuck_set_finding', { p_id: fid, p_status: status }); load(); } catch (_) {}
   };
@@ -333,10 +353,31 @@ function Detail({ id, onBack, onEdit }) {
       )}
 
       {tab === 'seller' && last && last.seller_report && (
-        <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.55, marginTop: -4 }}>
-          Read this through before sending it. The seller portal arrives in a later release — for
-          now this is yours to deliver in person, which is the better way to hand over anything
-          that can't be fixed.
+        <div style={Object.assign({}, card, { borderColor: 'rgba(203,163,92,.45)' })}>
+          {l.status === 'released' ? (
+            <>
+              <div style={{ fontSize: 13.5, color: CHAMP, fontWeight: 700 }}>Shared with the seller</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.55 }}>
+                They can open their private page any time. Re-running the analysis updates what they see.
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
+                <button onClick={copyLink} style={btn}>Copy their link</button>
+                <button onClick={() => release(false)} style={ghost}>Stop sharing</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 700 }}>Not shared yet</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.55 }}>
+                Read it through first. Sharing gives the seller this report and the seller-safe
+                findings — including what can't be fixed. That lands far better in a conversation
+                than as a link they open alone on a Sunday morning.
+              </div>
+              <button onClick={() => release(true)} style={Object.assign({}, btn, { marginTop: 11 })}>
+                Share with the seller
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -67,6 +67,8 @@ THREE REGISTERS, because the seller reads one of these directly:
 
 A report that lists only fixable things is a comfortable report, not a true one. If there are uncorrectable defects, name them and convert them to a number.
 
+seller_safe MEANS ONE THING ONLY: is this a note about the SELLER or about strategy that would be awkward for them to read (that they are interviewing other agents, their unrealistic expectations, negotiation posture, competitive intel). seller_safe MUST be true for every finding about the PROPERTY ITSELF, including every uncorrectable defect. A busy road, a pond with no privacy, an ageing roof, a dated kitchen, a bad floor plan: the seller must see all of these. Never use seller_safe=false to spare the seller a hard truth about their own house — that is the exact failure this report exists to prevent.
+
 OUTPUT CONTRACT — THIS OVERRIDES EVERYTHING ELSE. Your entire reply must be ONE JSON object and nothing else. Do not narrate your searches. Do not summarise findings before the JSON. Do not write "Now I have enough data". Do not use markdown fences. The FIRST character you emit must be { and the LAST must be }. Keep agent_report under 900 words and seller_report under 600 words so the object is never truncated mid-string. Shape:
 {"diagnosis":"one sentence — the lead","triage_row":"no_showings|no_second|no_offers|dying_escrow","highest_leverage_action":"startable within a day","agent_report":"markdown","seller_report":"markdown","say_this":"2-3 sentences","public_sources":{"note":"how our view reconciles with Zestimate/Redfin/portal DOM"},"findings":[{"kind":"correctable_cheap|correctable_costly|uncorrectable|market|payment|insurability|exposure","title":"short","detail":"what and why","evidence":"SOURCED: ... | DERIVED: ... | ASSUMED: ...","severity":1-5,"dollar_impact":number|null,"effort":"e.g. under a week","seller_safe":true|false}]}`;
 
@@ -234,7 +236,13 @@ async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string,
         severity: Math.max(1, Math.min(5, Number(f.severity) || 3)),
         dollar_impact: (f.dollar_impact === null || f.dollar_impact === undefined || isNaN(Number(f.dollar_impact))) ? null : Number(f.dollar_impact),
         effort: f.effort || null,
-        seller_safe: f.seller_safe !== false,
+        // Backstop for the model's judgement: a truth about the PROPERTY is always
+        // seller-facing. Left to itself the model hid the roof, the pond and the
+        // dated-condition discount behind seller_safe=false, which is exactly the
+        // comfortable-report failure this feature exists to prevent.
+        seller_safe: ["uncorrectable", "correctable_cheap", "correctable_costly",
+                      "insurability", "payment", "exposure", "market"].indexOf(f.kind) > -1
+                     ? true : (f.seller_safe !== false),
         sort_order: i,
       }));
       const { error: fErr } = await admin.from("unstuck_findings").insert(rows);

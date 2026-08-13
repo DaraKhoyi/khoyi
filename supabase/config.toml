@@ -213,3 +213,6 @@ verify_jwt = false
 
 [functions.unstuck-analyze]
 verify_jwt = false
+
+[functions.unstuck-portal]
+verify_jwt = false
