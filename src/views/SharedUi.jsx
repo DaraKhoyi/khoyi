@@ -8,7 +8,7 @@
 // Extracted from App.js (strangle the monolith, step 27).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../dataService';
-import { resolveSendAccount } from '../helpers';
+import { canHover, resolveSendAccount } from '../helpers';
 import { Icon } from '../icons';
 import { confirmDialog, notify, notifyError, subscribeConfirms, subscribeToasts } from '../notify';
 import { TIPS_UNLOCK_AT, Tip, TipFor, effectivePace, setTipsEnabled, setTipsPace, tipCooldownMs, tipsAreEnabled, tipsLastShown, tipsPace, tipsSeenCount, tipsSeenList, tipsUnlocked } from '../tipsUi';
@@ -56,7 +56,7 @@ export function ContactPicker({ contacts = [], selectedIds = [], onChange, label
               <button key={c.id} type="button"
                 onClick={() => { onChange([...selectedIds, c.id]); setQuery(''); }}
                 style={{display:'block',width:'100%',textAlign:'left',padding:'6px 8px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',fontSize:'12px',color:'var(--text-1)'}}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                onMouseEnter={e  => { if (!canHover()) return; e.currentTarget.style.background = 'var(--bg-hover)'; }}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                 <div style={{fontWeight:600}}>{c.name}</div>
                 {(c.email || c.company) && (

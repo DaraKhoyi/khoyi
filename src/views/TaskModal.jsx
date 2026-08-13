@@ -2,7 +2,7 @@
 // Extracted from App.js (strangle).
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { QUADRANTS, todayISO } from '../helpers';
+import { QUADRANTS, canHover, todayISO } from '../helpers';
 import { Icon } from '../icons';
 import { useBackClose } from '../backClose';
 import AriRewriteButton from './AriRewriteButton';
@@ -169,7 +169,7 @@ export default function TaskModal({ onClose, onSave, onDelete, initial, defaultS
                     border:'1px solid '+(b.active ? b.tone : 'var(--border-strong)'),
                     background: b.active ? b.tint : 'transparent',
                     color: b.active ? b.tone : 'var(--text-2)'}}
-                  onMouseEnter={e=>{ e.currentTarget.style.color=b.tone; e.currentTarget.style.borderColor=b.tone; e.currentTarget.style.background=b.tint; }}
+                  onMouseEnter={e => { if (!canHover()) return; e.currentTarget.style.color=b.tone; e.currentTarget.style.borderColor=b.tone; e.currentTarget.style.background=b.tint; }}
                   onMouseLeave={e=>{ if(!b.active){ e.currentTarget.style.color='var(--text-2)'; e.currentTarget.style.borderColor='var(--border-strong)'; e.currentTarget.style.background='transparent'; } }}>
                   <span style={{flexShrink:0,display:'inline-flex'}}>{b.icon}</span>
                   <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{b.label}</span>
@@ -389,7 +389,7 @@ export default function TaskModal({ onClose, onSave, onDelete, initial, defaultS
                     <button key={c.id} type="button"
                       onClick={() => { setContactIds(prev => prev.includes(c.id) ? prev : [...prev, c.id]); setContactQuery(''); setContactPickerOpen(false); }}
                       style={{display:'block',width:'100%',textAlign:'left',padding:'6px 8px',background:'none',border:'none',cursor:'pointer',borderRadius:'4px',fontSize:'12px',color:'var(--text-1)'}}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                      onMouseEnter={e  => { if (!canHover()) return; e.currentTarget.style.background = 'var(--bg-hover)'; }}
                       onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                       <div style={{fontWeight:600}}>{c.name}</div>
                       {(c.email || c.company) && (

@@ -5,7 +5,7 @@
 import { CountUp } from '../uiPrimitives';
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../dataService';
-import { money, todayISO } from '../helpers';
+import { canHover, money, todayISO } from '../helpers';
 import { Icon } from '../icons';
 import { MyProduction } from '../views/ProductionViews';
 
@@ -362,7 +362,7 @@ export function DashboardROI({ userId, setView }) {
           return (
             <div key={r.sys.id} onClick={() => setView('prospecting')}
               style={{ background: 'linear-gradient(135deg, var(--accent-glow), var(--bg-card) 55%)', border: '1px solid var(--accent)', borderRadius: '14px', padding: '16px 18px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '14px', transition: 'box-shadow .12s' }}
-              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(197,169,94,0.20)'; }}
+              onMouseEnter={e  => { if (!canHover()) return; e.currentTarget.style.boxShadow = '0 6px 20px rgba(197,169,94,0.20)'; }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               {/* Header: rank + name (left), grade (right) */}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>

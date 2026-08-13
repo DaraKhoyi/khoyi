@@ -1,5 +1,6 @@
 import React from 'react';
 import { MODES } from '../modes';
+import { canHover } from '../helpers';
 
 // ── MindsetMenu ──────────────────────────────────────────────────────────────
 // The menu that opens from the tuning fork. Not the old 40-item stack — a clean
@@ -31,7 +32,7 @@ function Row({ glyph, accent, label, tag, badge, active, onClick }) {
         padding: '14px 16px', border: 'none', cursor: 'pointer', borderRadius: 14,
         background: active ? 'rgba(203,163,92,0.12)' : 'transparent',
         transition: 'background .15s' }}
-      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(203,163,92,0.06)'; }}
+      onMouseEnter={e  => { if (!canHover()) return; if (!active) e.currentTarget.style.background = 'rgba(203,163,92,0.06)'; }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
       <span className="mm-glyph" style={{ flex: 'none', width: 40, height: 40, borderRadius: 11, display: 'grid', placeItems: 'center',
         background: 'rgba(203,163,92,0.10)', border: '1px solid rgba(203,163,92,0.22)', color: accent || G.gold }}>

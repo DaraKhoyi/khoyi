@@ -6,7 +6,7 @@ import { normalizePayee, buildSuggester } from '../financeUtils';
 const CsvImportModal = React.lazy(() => import('./CsvImportModal').then(m => ({ default: m.CsvImportModal })));
 import { SE_TAX_2026, computeNetProfitFromData, computeQuarterlyTaxProjection, nextQuarterDueLabel } from '../taxMath';
 import { Icon } from '../icons';
-import { modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
+import { canHover, modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
 import { HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile } from './SharedUi';
 import { useBackClose } from '../backClose';
 import { Tip } from '../tipsUi';
@@ -4890,7 +4890,7 @@ function CashFlowForecast({ userId, settings }) {
                 width={plotW / chartData.length}
                 height={plotH}
                 fill="transparent"
-                onMouseEnter={() => setHoveredDay(p)}
+                onMouseEnter={() => { if (!canHover()) return; setHoveredDay(p); }}
                 onMouseLeave={() => setHoveredDay(null)}/>
             ))}
             {/* X-axis tick labels */}

@@ -2,7 +2,7 @@
 // Extracted from App.js (strangle).
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
-import { pickerInitials } from '../helpers';
+import { canHover, pickerInitials } from '../helpers';
 
 export default function SingleContactPicker({ value, onChange, contacts, setContacts, currentContactId, userId, refFilter, placeholder, defaultNewContactType = 'other' }) {
   const [inputText, setInputText] = useState('');
@@ -248,7 +248,7 @@ export default function SingleContactPicker({ value, onChange, contacts, setCont
           {suggestions.map((c, idx) => (
             <button key={c.id} type="button"
               onMouseDown={(e) => { e.preventDefault(); pick(c.id); }}
-              onMouseEnter={() => setHighlightIdx(idx)}
+              onMouseEnter={() => { if (!canHover()) return; setHighlightIdx(idx); }}
               style={{
                 width:'100%',padding:'8px 11px',
                 background: idx === highlightIdx ? 'var(--bg-hover)' : 'transparent',
@@ -279,7 +279,7 @@ export default function SingleContactPicker({ value, onChange, contacts, setCont
           {showCreateOption && (
             <button type="button"
               onMouseDown={(e) => { e.preventDefault(); createAndPick(); }}
-              onMouseEnter={() => setHighlightIdx(suggestions.length)}
+              onMouseEnter={() => { if (!canHover()) return; setHighlightIdx(suggestions.length); }}
               disabled={creating}
               style={{
                 width:'100%',padding:'9px 11px',

@@ -5,7 +5,7 @@ import { Icon } from '../icons';
 import RecruitingView from './RecruitingView';
 import { HeaderSearchIcon, HeaderSearchInput } from './SharedUi';
 import { PriorityField } from './TrackerPanels';
-import { decodeEntities } from '../helpers';
+import { canHover, decodeEntities } from '../helpers';
 import AriRewriteButton from './AriRewriteButton';
 import ForkTuningOverlay from './ForkTuningOverlay';
 import { Tip } from '../tipsUi';
@@ -590,7 +590,7 @@ function RecipientPicker({ value, onChange, contacts = [], profiles = [], placeh
                       commitRecipient(c.email, c.name, c.id);
                     }
                   }}
-                  onMouseEnter={() => setHighlightIdx(idx)}
+                  onMouseEnter={() => { if (!canHover()) return; setHighlightIdx(idx); }}
                   style={{
                     width:'100%', padding:'9px 11px',
                     background: isHi ? 'var(--bg-hover)' : 'transparent',

@@ -6,7 +6,7 @@ import ActivityTimeline from './ActivityTimeline';
 import PropertyModal from './PropertyModal';
 import { useBackClose } from '../backClose';
 import { confirmDialog } from '../notify';
-import { modal } from '../helpers';
+import { canHover, modal } from '../helpers';
 
 function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, userId }) {
 
@@ -175,7 +175,7 @@ function PropertyDetailModal({ property, contacts, onClose, onEdit, onDeleted, u
                   <div style={{fontSize:'11px',color:'var(--text-3)',padding:'4px',fontStyle:'italic'}}>No contacts {contactQuery ? 'match' : 'available to link'}.</div>
                 )}
                 {availableContacts.map(c => (
-                  <div key={c.id} onClick={() => addContactLink(c.id)} style={{padding:'6px 8px',cursor:'pointer',fontSize:'12px',borderRadius:'4px'}} onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <div key={c.id} onClick={() => addContactLink(c.id)} style={{padding:'6px 8px',cursor:'pointer',fontSize:'12px',borderRadius:'4px'}} onMouseEnter={e  => { if (!canHover()) return; e.currentTarget.style.background = 'var(--bg-hover)'; }} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     {c.name} {c.email && <span style={{color:'var(--text-3)'}}>· {c.email}</span>}
                   </div>
                 ))}

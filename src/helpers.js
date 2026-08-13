@@ -223,3 +223,21 @@ export function sortTasks(tasks) {
     return 0;
   });
 }
+
+// canHover — true only on devices with a REAL pointer (mouse/trackpad).
+//
+// iOS Safari requires a SECOND tap on any element whose first tap changed the
+// DOM or its styling. Inline onMouseEnter handlers that tint a row or set a
+// highlight index do exactly that, so on iPhone the first tap only "hovers" and
+// the second one actually clicks. Guarding those handlers with canHover() means
+// touch devices no-op on hover and single tap works, while desktop is unchanged.
+//
+// The CSS side of this is handled in index.css, where every :hover rule is
+// wrapped in @media (hover: hover) and (pointer: fine).
+export const canHover = () => {
+  try {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  } catch (_) { return false; }
+};
+

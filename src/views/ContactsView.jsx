@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
-import { quoNormPhone } from '../helpers';
+import { canHover, quoNormPhone } from '../helpers';
 import { HeaderSearchInput, MultiValueField } from './SharedUi';
 import { cadenceDue } from './LeadsBoard';
 import ContactDetailModal from './ContactDetailModal';
@@ -850,7 +850,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
                       ) : filteredContacts.map(c => (
                         <button key={c.id} onClick={() => { setPickerFor(null); linkSenderToContact(s.sender.email, s.sender.name, c.id, s.sender.last_seen); }}
                           style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',background:'transparent',border:'1px solid transparent',borderRadius:'4px',color:'var(--text-1)',fontSize:'13px',cursor:'pointer'}}
-                          onMouseEnter={e=>e.currentTarget.style.background='var(--bg-hover)'}
+                          onMouseEnter={e => { if (!canHover()) return; e.currentTarget.style.background='var(--bg-hover)'; }}
                           onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                           {c.name} <span style={{fontSize:'11px',color:'var(--text-3)'}}>· {CONTACT_TYPE_LABELS[c.type] || c.type}</span>
                         </button>
