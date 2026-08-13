@@ -31,6 +31,12 @@ node smoke/appjs_budget.mjs
 echo "→ menu reachability"
 node smoke/menu_reachable.mjs
 
+# Static guard: iOS single-tap. Every :hover rule must sit inside a hover-capability
+# media query, and every inline onMouseEnter must be gated by canHover(). Otherwise
+# iPhone users have to tap twice — the bug Josh hit, which affected the whole menu.
+echo "→ iOS tap guard"
+node smoke/hover_guard.mjs
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 
