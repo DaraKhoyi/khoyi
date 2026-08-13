@@ -6979,7 +6979,7 @@ function AppMain() {
   // the sidebar renders them greyed out and unclickable. Adding a MENU row is
   // not enough on its own — google_contacts shipped greyed for exactly that
   // reason.
-  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts', 'cadence_review']);
+  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts', 'cadence_review', 'unstuck', 'my_prism', 'production', 'transactions']);
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
