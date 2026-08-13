@@ -210,3 +210,6 @@ verify_jwt = false
 
 [functions.email-file-to-library]
 verify_jwt = false
+
+[functions.unstuck-analyze]
+verify_jwt = false
