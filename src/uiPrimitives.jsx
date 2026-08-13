@@ -1,7 +1,7 @@
 // uiPrimitives — tiny shared UI atoms used across several feature screens.
 // They lived in App.js, which forced extracted views to import from the monolith
 // (a view -> App.js circular edge). One small shared module removes that edge.
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export const TEMP_META = { hot:{label:'Hot',color:'#ef4444',icon:'flame'}, warm:{label:'Warm',color:'#f59e0b',icon:'signal'}, cold:{label:'Cold',color:'#3b82f6',icon:'clock'} };
 

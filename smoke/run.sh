@@ -25,6 +25,12 @@ node smoke/scope_check.mjs
 echo "→ App.js size ratchet"
 node smoke/appjs_budget.mjs
 
+# Every menu leaf with a route must be in builtSet, or the menu greys it out and
+# swallows the click. Unstuck. shipped unreachable behind a green 26/26 gate
+# because the smoke run navigates by view directly and never touches the menu.
+echo "→ menu reachability"
+node smoke/menu_reachable.mjs
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 

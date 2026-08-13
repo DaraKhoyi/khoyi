@@ -1,105 +1,96 @@
 #!/usr/bin/env node
-// ── App.js size ratchet ──────────────────────────────────────────────────────
-// The "strangle the monolith" refactor drove App.js from 19,539 lines down to a
-// thin composition root. This guard makes that gain PERMANENT: App.js may shrink
-// or hold, but it can never balloon again. Two rules, both fail the build:
+// ── File size ratchet ────────────────────────────────────────────────────────
+// App.js reached 19,539 lines because NOTHING MEASURED IT. Discipline and written
+// lessons both failed repeatedly here; a check that fails the build is what held.
+// So this guard is no longer App.js-specific: every file large enough to become
+// the next monolith gets a ceiling.
 //
-//   1) BUDGET: App.js must stay at or under APPJS_BUDGET lines. The budget is a
-//      ratchet — whenever App.js legitimately shrinks well below it, lower the
-//      budget to lock in the win. It should only ever go DOWN.
+// When this was generalised, AccountingViews.jsx and InboxView.jsx were BOTH
+// larger than the App.js we had just spent five steps shrinking, and neither was
+// guarded. That is the same story starting over.
 //
-//   2) NO NEW SCREENS INLINE: App.js must not gain new top-level components
-//      beyond a known allow-list. New screens/modals/panels belong in their own
-//      file under src/views/ (or a domain module), wired into App.js with a
-//      one-line lazy import — never typed directly into the master file.
+// Two rules, both fail the build:
+//   1) BUDGET — each file below stays at or under its ceiling. Budgets are a
+//      RATCHET: when a file legitimately shrinks, lower its number in the same
+//      commit to lock the win in. They should only ever go DOWN.
+//   2) NO NEW SCREENS INLINE (App.js only) — App.js must not gain top-level
+//      components beyond the allow-list. A new screen belongs in its own file,
+//      wired in with a one-line lazy import.
 //
-// Why a tool and not just discipline: "write the lesson down" failed repeatedly
-// in this codebase (see the large-font history). Measuring is what holds.
-//
-// To raise the budget on purpose (rare, and it should be a deliberate choice),
-// edit APPJS_BUDGET below in the same commit and say why.
+// Raising a budget should be rare and deliberate: edit it here in the same commit
+// and say why in the message.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+
+// file -> ceiling. Seeded with every file over ~1,200 lines so none can grow while
+// nobody is looking. Add an entry whenever a file crosses ~1,200.
+const BUDGETS = {
+  "src/App.js": 2150,
+  "src/views/AccountingViews.jsx": 6800,   // being split — drop hard as it shrinks
+  "src/views/InboxView.jsx": 3450,
+  "src/views/ContactsView.jsx": 2050,
+  "src/views/ContactDetailModal.jsx": 2000,
+  "src/views/TasksView.jsx": 1550,
+  "src/views/CalendarView.jsx": 1450,
+};
 
 const APPJS = "src/App.js";
 
-// The ceiling. Currently sits a little above the real line count so ordinary
-// edits don't trip it; drop it whenever App.js shrinks to lock the gain in.
-const APPJS_BUDGET = 2150;
-
-// Root-shell + small glue components that are ALLOWED to live in App.js. This is
-// the composition root: the pieces that wire everything together and are not
-// themselves feature screens. Adding a NEW name here should be a conscious,
-// reviewed decision — the default answer for a new component is a new file.
 const ALLOWED_INLINE = new Set([
   "AppMain",          // the root shell — wires routing, session, layout
   "App",              // the exported root
   "ErrorBoundary",    // top-level crash net (if/when added)
 ]);
 
-const src = readFileSync(APPJS, "utf8");
-const lines = src.split("\n");
-const n = lines.length;
-
 const problems = [];
+const report = [];
 
-// Rule 1 — budget
-if (n > APPJS_BUDGET) {
-  problems.push(
-    `App.js is ${n} lines — over the ${APPJS_BUDGET}-line budget by ${n - APPJS_BUDGET}.\n` +
-    `    New feature code belongs in its own file under src/views/ (or a domain module),\n` +
-    `    not in App.js. If this growth is genuinely part of the root shell, raise\n` +
-    `    APPJS_BUDGET in smoke/appjs_budget.mjs in this same commit and say why.`
-  );
+for (const [file, budget] of Object.entries(BUDGETS)) {
+  if (!existsSync(file)) continue;               // a split may remove a file entirely
+  const n = readFileSync(file, "utf8").split("\n").length;
+  report.push({ file, n, budget });
+  if (n > budget) {
+    problems.push(
+      `${file} is ${n} lines — over its ${budget}-line budget by ${n - budget}.\n` +
+      `    New feature code belongs in its own module, not appended here. If the\n` +
+      `    growth is genuinely structural, raise the budget in this same commit.`
+    );
+  }
 }
 
-// Rule 2 — no new top-level components inline beyond the allow-list.
-// Match top-level "function Name(" and "const Name = (props)=>" / "= function".
-const declRe = /^(?:export\s+)?(?:function\s+([A-Z]\w+)\s*\(|const\s+([A-Z]\w+)\s*=\s*(?:React\.)?(?:memo\(|forwardRef\(|function\b|\([^)]*\)\s*=>|[A-Za-z]))/;
-const found = [];
-for (let i = 0; i < lines.length; i++) {
-  const m = lines[i].match(declRe);
-  if (!m) continue;
-  const name = m[1] || m[2];
-  // Heuristic: is it a component (returns JSX) rather than a plain const object?
-  // We only care about function-style declarations here; a const assigned a
-  // lazy(import()) is a wiring line, not an inline component, so skip those.
-  if (/=\s*lazy(WithReload)?\s*\(/.test(lines[i])) continue;
-  found.push(name);
-}
-const offenders = found.filter((name) => !ALLOWED_INLINE.has(name));
-
-// We don't hard-fail on the CURRENT set (there are still mid-size components
-// mid-migration). Instead we freeze the current set as a baseline and fail only
-// when a NAME NOT already present appears — i.e. someone adds a brand-new screen
-// straight into App.js. The baseline lives in a sibling file so it's explicit.
-let baseline = new Set();
-try {
-  baseline = new Set(JSON.parse(readFileSync("smoke/appjs_components.json", "utf8")));
-} catch {
-  // First run: no baseline yet — the runner prints one to adopt.
-}
-
-const brandNew = offenders.filter((name) => !baseline.has(name));
-
-if (baseline.size === 0) {
-  console.log("APPJS RATCHET: no baseline yet. Adopt the current component set by writing");
-  console.log("  smoke/appjs_components.json with this array:");
-  console.log("  " + JSON.stringify([...new Set(offenders)].sort()));
-} else if (brandNew.length) {
-  problems.push(
-    `New top-level component(s) added directly to App.js: ${brandNew.join(", ")}.\n` +
-    `    New screens/modals/panels go in their own file under src/views/ and are\n` +
-    `    wired in with a one-line lazy import. If one of these really is root-shell\n` +
-    `    glue, add it to ALLOWED_INLINE (or the baseline) in this same commit.`
-  );
+if (existsSync(APPJS)) {
+  const lines = readFileSync(APPJS, "utf8").split("\n");
+  const declRe = /^(?:export\s+)?(?:function\s+([A-Z]\w+)\s*\(|const\s+([A-Z]\w+)\s*=\s*(?:React\.)?(?:memo\(|forwardRef\(|function\b|\([^)]*\)\s*=>|[A-Za-z]))/;
+  const found = [];
+  for (const line of lines) {
+    // `const Foo = lazyWithReload(() => import('./views/Foo'))` is the WIRING we
+    // want, not an inline component. Counting it would flag every correctly
+    // extracted screen as a violation.
+    if (/=\s*lazyWithReload\s*\(/.test(line)) continue;
+    const m = declRe.exec(line);
+    if (m) found.push(m[1] || m[2]);
+  }
+  let known = [];
+  try { known = JSON.parse(readFileSync("smoke/appjs_components.json", "utf8")); } catch { known = []; }
+  const allowed = new Set([...known, ...ALLOWED_INLINE]);
+  const added = found.filter((n) => !allowed.has(n));
+  if (added.length) {
+    problems.push(
+      `App.js gained ${added.length} new top-level component(s): ${added.join(", ")}\n` +
+      `    A new screen, modal or panel belongs in its own file under src/views/,\n` +
+      `    wired in with a one-line lazy import. If one genuinely belongs to the\n` +
+      `    root shell, add it to smoke/appjs_components.json.`
+    );
+  }
 }
 
 if (problems.length) {
-  console.error("\n==== APPJS RATCHET: FAIL ====");
+  console.error("\n==== FILE RATCHET: " + problems.length + " problem(s) ====");
   for (const p of problems) console.error("  ✗ " + p);
-  console.error("");
   process.exit(1);
 }
 
-console.log(`APPJS RATCHET: clean — App.js ${n}/${APPJS_BUDGET} lines, no new inline screens.`);
+const summary = report.sort((a, b) => b.n - a.n)
+  .map((r) => `${r.file.replace("src/views/", "").replace("src/", "")} ${r.n}/${r.budget}`)
+  .join(" · ");
+console.log(`FILE RATCHET: clean — ${summary}`);
