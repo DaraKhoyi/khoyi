@@ -165,7 +165,7 @@ const FinanceView = lazyWithReload(() => import('./views/AccountingViews').then(
 const TransactionPipeline = lazyWithReload(() => import('./views/TransactionPipeline'));
 const InvestorPipeline = lazyWithReload(() => import('./views/InvestorPipeline'));
 const AdoptionView = lazyWithReload(() => import('./views/AdoptionView'));
-const ProspectingView = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.ProspectingView })));
+const ProspectingView = lazyWithReload(() => import('./views/ProspectingView'));
 const QuarterlyTaxBanner = lazyWithReload(() => import('./views/AccountingViews').then(m => ({ default: m.QuarterlyTaxBanner })));
 const TasksView = lazyWithReload(() => import('./views/TasksView'));
 const AriBriefingView = lazyWithReload(() => import('./views/AriBriefingView'));
