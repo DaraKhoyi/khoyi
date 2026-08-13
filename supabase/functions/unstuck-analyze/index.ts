@@ -15,6 +15,12 @@
 //    the failure mode this whole feature exists to avoid.
 //  - AI cost is attributed to the billing agent via logAiUsage (standing rule).
 //
+//  - RUNS AS A BACKGROUND TASK. Claude + web search takes longer than the edge
+//    gateway's 150s idle timeout, so the request returns as soon as the run row
+//    exists and the analysis continues via EdgeRuntime.waitUntil(). The client
+//    polls the run's status. Doing this inline is what left the first test run
+//    wedged in 'running' forever with the listing stuck on 'analyzing'.
+//
 // verify_jwt: false — called with the agent's JWT from the app, and (Phase 3) by
 // pg_cron with the service role, which the gateway rejects when verify_jwt=true.
 
@@ -115,10 +121,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   let runId: string | null = null;
+  let body_listing_id: string | null = null;
 
   try {
     const body = await req.json();
-    const listing_id = body.listing_id;
+    const listing_id = body.listing_id; body_listing_id = listing_id;
     const kind = body.kind || "initial";
     if (!listing_id) return j({ ok: false, error: "listing_id required" });
 
@@ -131,20 +138,43 @@ Deno.serve(async (req) => {
     const { data: comps } = await admin.from("unstuck_competitors")
       .select("*").eq("listing_id", listing_id);
 
+    // any earlier run left wedged by a crash or timeout is superseded, not orphaned
+    await admin.from("unstuck_runs")
+      .update({ status: "failed", error: "superseded by a newer run" })
+      .eq("listing_id", listing_id).eq("status", "running");
+
     const { data: run } = await admin.from("unstuck_runs")
       .insert({ listing_id, user_id: billUserId, kind, status: "running", model: MODEL })
       .select("id").single();
     runId = run?.id ?? null;
     await admin.from("unstuck_listings").update({ status: "analyzing" }).eq("id", listing_id);
 
+    // Return NOW; keep working in the background. The gateway kills an idle
+    // request at 150s and this reliably takes longer.
+    const work = runAnalysis(admin, l, comps || [], listing_id, runId, billUserId);
+    // @ts-ignore EdgeRuntime is provided by the Supabase edge runtime
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(work);
+    else await work;
+    return j({ ok: true, run_id: runId, status: "running" });
+  } catch (err) {
+    if (runId) {
+      try { await admin.from("unstuck_runs").update({ status: "failed", error: String(err) }).eq("id", runId); } catch (_) {}
+      try { await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", body_listing_id!); } catch (_) {}
+    }
+    return j({ ok: false, error: String(err) });
+  }
+});
+
+async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string, runId: string | null, billUserId: string | null) {
+  try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 8000,
+        max_tokens: 6000,
         system: SYSTEM,
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 }],
         messages: [{ role: "user", content: "Diagnose why this listing is not selling.\n\n" + facts(l, comps || []) }],
       }),
     });
@@ -158,7 +188,7 @@ Deno.serve(async (req) => {
       const msg = (data && (data.error?.message || data.message)) || ("HTTP " + resp.status);
       if (runId) await admin.from("unstuck_runs").update({ status: "failed", error: msg }).eq("id", runId);
       await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id);
-      return j({ ok: false, error: msg });
+      return;
     }
 
     // Claude returns a mix of text and tool blocks when web search runs; take the text.
@@ -175,7 +205,7 @@ Deno.serve(async (req) => {
     if (!parsed) {
       if (runId) await admin.from("unstuck_runs").update({ status: "failed", error: "could not parse model output", raw: { text } }).eq("id", runId);
       await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id);
-      return j({ ok: false, error: "The analysis came back in an unexpected shape. Please try again." });
+      return;
     }
 
     await admin.from("unstuck_runs").update({
@@ -223,11 +253,10 @@ Deno.serve(async (req) => {
       } });
     } catch (_) { /* best-effort */ }
 
-    return j({ ok: true, run_id: runId, diagnosis: parsed.diagnosis, triage_row: parsed.triage_row });
   } catch (err) {
     if (runId) {
       try { await admin.from("unstuck_runs").update({ status: "failed", error: String(err) }).eq("id", runId); } catch (_) {}
     }
-    return j({ ok: false, error: String(err) });
+    try { await admin.from("unstuck_listings").update({ status: "draft" }).eq("id", listing_id); } catch (_) {}
   }
-});
+}

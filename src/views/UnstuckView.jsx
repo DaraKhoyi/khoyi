@@ -198,15 +198,29 @@ function Detail({ id, onBack, onEdit }) {
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
+  // The edge function returns as soon as the run row exists and finishes the work
+  // in the background — Claude + web search runs well past the gateway's 150s
+  // idle timeout. So we poll the run rather than awaiting the call.
   const analyze = async () => {
     setBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke('unstuck-analyze', { body: { listing_id: id, kind: 'initial' } });
-      if (error) alert('Analysis failed: ' + error.message);
-      else if (data && data.ok === false) alert(data.error || 'Analysis failed.');
+      if (error) { alert('Could not start the analysis: ' + error.message); setBusy(false); return; }
+      if (data && data.ok === false) { alert(data.error || 'Could not start the analysis.'); setBusy(false); return; }
       await load();
-    } catch (e) { alert('Analysis failed: ' + (e.message || e)); }
-    setBusy(false);
+      // poll up to ~6 minutes
+      for (let i = 0; i < 72; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        let res = null;
+        try { res = await supabase.rpc('unstuck_get', { p_id: id }); } catch (_) { continue; }
+        const d2 = res && res.data;
+        if (!d2 || !d2.ok) continue;
+        setD(d2);
+        const r0 = (d2.runs || [])[0];
+        if (r0 && r0.status !== 'running') { setBusy(false); return; }
+      }
+      setBusy(false);
+    } catch (e) { alert('Could not start the analysis: ' + (e.message || e)); setBusy(false); }
   };
 
   const markFinding = async (fid, status) => {
@@ -250,7 +264,8 @@ function Detail({ id, onBack, onEdit }) {
       </div>
       {busy && (
         <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.5 }}>
-          Searching current rates, insurance conditions and active competition. This takes a minute or two.
+          Searching current rates, insurance conditions and active competition. This runs in the
+          background and usually takes two to four minutes — you can leave this screen and come back.
         </div>
       )}
 
