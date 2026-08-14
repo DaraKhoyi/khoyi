@@ -243,6 +243,25 @@ function Detail({ id, onBack, onEdit }) {
     catch (_) { alert(url); }
   };
 
+  // Two documents on purpose. The client copy is handed to a homeowner in a
+  // listing presentation; the agent copy carries the say-this script, agent-only
+  // findings and evidence tags, none of which belong in a seller's hands.
+  const openReport = async (audience) => {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      if (!token) { alert('Please sign in again.'); return; }
+      const url = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/unstuck-report'
+        + '?t=' + encodeURIComponent(id) + '&audience=' + audience;
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+      const html = await res.text();
+      if (!res.ok) { alert(html.replace(/<[^>]*>/g, '').trim() || 'Could not build the report.'); return; }
+      const w = window.open('', '_blank');
+      if (!w) { alert('Please allow pop-ups to open the report.'); return; }
+      w.document.open(); w.document.write(html); w.document.close();
+    } catch (e) { alert('Could not build the report: ' + (e.message || e)); }
+  };
+
   const markFinding = async (fid, status) => {
     try { await supabase.rpc('unstuck_set_finding', { p_id: fid, p_status: status }); load(); } catch (_) {}
   };
@@ -342,6 +361,21 @@ function Detail({ id, onBack, onEdit }) {
               </div>
             );
           })
+      )}
+
+      {runs.length > 0 && last && last.status === 'done' && (
+        <div style={Object.assign({}, card, { borderColor: 'rgba(203,163,92,.45)' })}>
+          <div style={{ fontSize: 13.5, color: CHAMP, fontWeight: 700 }}>Printable report</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.55 }}>
+            The client copy is built for a listing presentation &mdash; it leads with the analysis and
+            closes with your actual production numbers. The agent copy adds your script, the
+            agent-only findings and the evidence tags. Don't hand the agent copy to a seller.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
+            <button onClick={() => openReport('client')} style={btn}>Client report (PDF)</button>
+            <button onClick={() => openReport('agent')} style={ghost}>Agent copy</button>
+          </div>
+        </div>
       )}
 
       {tab !== 'findings' && last && (
