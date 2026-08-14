@@ -37,6 +37,12 @@ node smoke/menu_reachable.mjs
 echo "→ iOS tap guard"
 node smoke/hover_guard.mjs
 
+# Static guard: a component defined INSIDE another is a new type every render, so
+# React remounts its subtree. With a text input inside, the caret jumps to 0 after
+# every keystroke — the note-editing bug Dara hit.
+echo "→ nested component guard"
+node smoke/nested_component_guard.mjs
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 

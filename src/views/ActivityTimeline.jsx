@@ -461,6 +461,16 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
     groups[groups.length - 1].items.push(e);
   }
 
+  // NOTE: this is deliberately CALLED as a function below, not rendered as
+  // <EntryCard/>. Defined inside ActivityTimeline, it is a NEW function on every
+  // render, so React treats it as a different component type and unmounts and
+  // remounts its whole subtree — including the note <textarea>, which has
+  // autoFocus. That is why editing a note put the caret back at position 0 after
+  // every keystroke: type a letter -> editBody changes -> parent re-renders ->
+  // brand-new EntryCard type -> textarea remounted -> autoFocus fires -> caret 0.
+  // Calling it inlines its output into this component's element tree, so the
+  // textarea keeps its identity. It uses no hooks, which is what makes this safe.
+  // If it ever needs hooks, hoist it to module scope and pass props instead.
   function EntryCard({ e, pinnedRail }) {
     const kk = ACTIVITY_KINDS[e.kind || 'note'] || ACTIVITY_KINDS.note;
     const edited = e.updated_at && new Date(e.updated_at).getTime() - new Date(e.occurred_at).getTime() > 60000
@@ -794,7 +804,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
           {pinned.length > 0 && (
             <div style={{ marginBottom: '10px' }}>
               <div style={{ fontSize: '10px', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '6px' }}><Icon name="pin" size={10} /> Pinned</div>
-              {pinned.map(e => <EntryCard key={e.id} e={e} />)}
+              {pinned.map(e => <React.Fragment key={e.id}>{EntryCard({ e })}</React.Fragment>)}
             </div>
           )}
           {groups.map(g => (
@@ -804,7 +814,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
                 <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
               </div>
               <div style={{ position: 'relative', borderLeft: '2px solid var(--border)', marginLeft: '12px', paddingLeft: '0' }}>
-                {g.items.map(e => <EntryCard key={e.id} e={e} />)}
+                {g.items.map(e => <React.Fragment key={e.id}>{EntryCard({ e })}</React.Fragment>)}
               </div>
             </div>
           ))}
