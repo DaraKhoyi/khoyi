@@ -958,6 +958,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [source, setSource] = useState('prism'); // 'prism' | 'google' — which contact book to view
   const [textTo, setTextTo] = useState(null); // { contact, phone } for the Quo text composer
+  // Acting on the "Reach out next" card should retire it. Kept undoable because
+  // Call fires a tel: link and we never learn whether it connected.
+  const [undoReach, setUndoReach] = useState(null); // { contact, prev, label }
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
   const [editFromDetail, setEditFromDetail] = useState(false);
@@ -1367,6 +1370,28 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       if (window.__notify) window.__notify('Could not clear: ' + error.message);
     }
   };
+  // The card asks you to reach out; doing so is what completes it. Before this,
+  // Call was a bare tel: link that recorded nothing, so the same person was still
+  // top of the list when you came back — you had to press Clear as well, which
+  // nobody does. Text and Email resolve on SEND (their composers report it), not
+  // on open, so cancelling a draft doesn't wrongly retire the card.
+  const reachoutDone = async (c, why, label) => {
+    const isOwe = /owe a reply/.test(why || '');
+    const prev = isOwe
+      ? { no_reply_needed_at: c.no_reply_needed_at ?? null }
+      : { reachout_snooze_until: c.reachout_snooze_until ?? null };
+    setUndoReach({ contact: c, prev, label: label || 'Handled' });
+    await clearReachout(c, why);
+  };
+  const undoReachout = async () => {
+    if (!undoReach) return;
+    const { contact, prev } = undoReach;
+    setUndoReach(null);
+    setContacts(prevList => prevList.map(x => x.id === contact.id ? { ...x, ...prev } : x));
+    const { error } = await supabase.from('contacts').update(prev).eq('id', contact.id);
+    if (error && window.__notify) window.__notify('Could not undo: ' + error.message, 'error');
+  };
+
   return (
     <div className="ww-contacts" style={tagMode ? {paddingBottom:'180px'} : undefined}>
       <style>{`
@@ -1507,12 +1532,24 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
             {(() => { const rp = profileByContact.get(reachNext.c.id); return rp?.primary_letter ? <span className="ww-disc" style={{fontSize:16}}>{rp.primary_letter}{rp.secondary_letter?'/'+rp.secondary_letter:''}</span> : null; })()}
           </div>
           <div className="ww-acts">
-            {reachNext.c.phone && <a className="p" href={`tel:${(reachNext.c.phone||'').replace(/[^\d+]/g,'')}`} onClick={e=>e.stopPropagation()}>Call</a>}
-            {reachNext.c.phone && <button onClick={()=>setTextTo({ contact: reachNext.c, phone: reachNext.c.phone })}>Text</button>}
-            {reachNext.c.email && <button onClick={()=>{ if(window.__composeEmail) window.__composeEmail(reachNext.c.email); }}>Email</button>}
+            {reachNext.c.phone && <a className="p" href={`tel:${(reachNext.c.phone||'').replace(/[^\d+]/g,'')}`} onClick={e=>{ e.stopPropagation(); const c=reachNext.c, w=reachNext.why; reachoutDone(c, w, 'Called ' + (c.name||'').split(' ')[0]); }}>Call</a>}
+            {reachNext.c.phone && <button onClick={()=>setTextTo({ contact: reachNext.c, phone: reachNext.c.phone, reachWhy: reachNext.why })}>Text</button>}
+            {reachNext.c.email && <button onClick={()=>{ const c=reachNext.c, w=reachNext.why; if(window.__composeEmail) window.__composeEmail(c.email); reachoutDone(c, w, 'Emailed ' + (c.name||'').split(' ')[0]); }}>Email</button>}
             <button onClick={()=>setDetailContact(reachNext.c)}>Open</button>
             <button className="ww-clear" title={/owe a reply/.test(reachNext.why) ? 'Mark handled — clears the reply you owe' : 'Not now — snooze this touch'} onClick={()=>clearReachout(reachNext.c, reachNext.why)}>Clear</button>
           </div>
+        </div>
+      )}
+
+      {undoReach && (
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+          background:'rgba(203,163,92,.10)',border:'1px solid rgba(203,163,92,.35)',
+          borderRadius:12,padding:'10px 14px',marginBottom:12}}>
+          <span style={{fontSize:13,color:'var(--text-2)',flex:'1 1 auto',minWidth:0}}>
+            {undoReach.label} — cleared from Reach out next.
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={undoReachout}>Undo</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setUndoReach(null)} style={{color:'var(--text-3)'}}>Dismiss</button>
         </div>
       )}
 
@@ -1738,7 +1775,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           }
         </div>
       </div>
-      {textTo && <QuoTextModal contact={textTo.contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
+      {textTo && <QuoTextModal contact={textTo.contact} phone={textTo.phone} userId={userId}
+        onSent={()=>{ if (textTo.reachWhy) reachoutDone(textTo.contact, textTo.reachWhy, 'Texted ' + (textTo.contact.name||'').split(' ')[0]); }}
+        onClose={()=>setTextTo(null)} />}
       {bulkChannel && (
         <BulkDiscComposer
           contacts={contacts.filter(c=>selIds.has(c.id))}
