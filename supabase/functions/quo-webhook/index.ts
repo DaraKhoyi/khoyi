@@ -36,9 +36,16 @@ serve(async (req) => {
   // message/call; the owner is the user who has that line selected in their
   // quo_settings. This is what prevents one agent's calls/recordings from being
   // filed under another agent's account on a shared workspace.
-  let owner: string | null = Deno.env.get("QUO_OWNER_USER_ID") || null;
+  //
+  // ORDER MATTERS. QUO_OWNER_USER_ID used to be read FIRST, which silently
+  // defeated all of the per-line logic below — every event on every line landed
+  // in one account no matter whose line it was. It is now the LAST resort, used
+  // only when we genuinely cannot tell which line an event came in on (e.g.
+  // traffic from a line that has since been deleted from the workspace, which
+  // has really happened here). Per-line attribution wins whenever it can answer.
+  let owner: string | null = null;
   const pnId: string | null = o.phoneNumberId || null;
-  if (!owner && pnId) {
+  if (pnId) {
     const { data: byLine } = await supabase.from("quo_settings")
       .select("user_id").eq("active_phone_number_id", pnId).limit(1).maybeSingle();
     owner = byLine?.user_id || null;
@@ -52,6 +59,13 @@ serve(async (req) => {
       const hit = (rows || []).find((r: any) => _last10(r.active_number) === cand);
       owner = hit?.user_id || null;
     }
+  }
+  // Configured fallback — an explicit "when in doubt, file it here" for a single
+  // -operator workspace. Logged loudly, because if this fires often it means a
+  // line needs mapping in quo_settings, not that the fallback is doing its job.
+  if (!owner) {
+    owner = Deno.env.get("QUO_OWNER_USER_ID") || null;
+    if (owner) console.warn("quo-webhook: no line mapping for phoneNumberId=", pnId, "— falling back to QUO_OWNER_USER_ID. Map this line in quo_settings.");
   }
   // Last resort: if we still can't tell whose line it is, DROP the event rather
   // than misattribute it to an arbitrary account. Silent misfiling (the old
@@ -162,9 +176,19 @@ serve(async (req) => {
         op_created_at: o.createdAt || new Date().toISOString(),
         raw: o,
       };
-      // call.recording.completed carries recording media
-      const media = o.media || o.recording || o.recordingUrl;
-      if (media) row.recording_url = typeof media === "string" ? media : (media.url || media.media || null);
+      // call.recording.completed carries the audio. Quo/OpenPhone sends it as
+      // `recordings` — PLURAL, an ARRAY of { id, url, type, duration, startTime }.
+      // We used to look for `media` / `recording` / `recordingUrl`, none of which
+      // Quo has ever sent, so recording_url was NULL on every row ever written
+      // while the URL sat unread in raw.recordings[0].url. Keep the singular
+      // fallbacks for safety, but read the real field FIRST.
+      const recArr = Array.isArray(o.recordings) ? o.recordings : null;
+      const media = (recArr && recArr.length ? recArr[0] : null) || o.media || o.recording || o.recordingUrl;
+      const mediaUrl = typeof media === "string" ? media : (media?.url || media?.media || null);
+      // Only WRITE the url when we have one. A later call.* event for the same
+      // call (e.g. call.completed arriving after call.recording.completed) must
+      // not blank out a recording we already captured.
+      if (mediaUrl) row.recording_url = mediaUrl;
       // Link to a contact by phone (last 10 digits) so EVERY call attaches to the
       // right person — even plain calls with no recording/transcript.
       const key10 = _last10(external);

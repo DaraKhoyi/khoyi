@@ -4,6 +4,7 @@ import { Icon } from '../icons';
 import { modal, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../helpers';
 import { CallFollowupsPanel } from './ReviewPanels';
 import QuoCallDetail from './QuoCallDetail';
+import QuoRecording from './QuoRecording';
 import { quoCall } from '../quo';
 
 // At-a-glance health of the Quo (OpenPhone) integration: live API connection,
@@ -500,7 +501,7 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
   const feed = useMemo(() => {
     const rows = [];
     for (const m of msgs) rows.push({ k: 'text', id: m.id, at: m.op_created_at || m.created_at, dir: m.direction, body: m.body, who: m.direction === 'incoming' ? m.from_number : m.to_number, status: m.status });
-    for (const c of calls) rows.push({ k: 'call', id: c.id, at: c.op_created_at || c.created_at, dir: c.direction, who: c.participant, dur: c.duration, status: c.status, summary: c.summary, next_steps: c.next_steps, transcript: c.transcript, transcript_en: c.transcript_en, op_id: c.op_id });
+    for (const c of calls) rows.push({ k: 'call', id: c.id, at: c.op_created_at || c.created_at, dir: c.direction, who: c.participant, dur: c.duration, status: c.status, summary: c.summary, next_steps: c.next_steps, transcript: c.transcript, transcript_en: c.transcript_en, op_id: c.op_id, recording_url: c.recording_url });
     return rows.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
   }, [msgs, calls]);
 
@@ -804,12 +805,7 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
                     <span style={{ fontSize: 11, color: 'var(--accent)' }}>{open ? '▲' : '▼'}</span>
                   </div>
                   {open && <div style={{ padding: '0 14px 14px 40px' }}>
-                    {c.recording_url && (
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>▶ RECORDING</div>
-                        <audio controls preload="none" src={c.recording_url} style={{ width: '100%', height: 36 }} />
-                      </div>
-                    )}
+                    <QuoRecording call={c} />
                     {(c.summary || (c.transcript && c.transcript.length)) ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {c.summary && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>SUMMARY</div>{Array.isArray(c.summary) ? <ul style={{ margin: '2px 0 0 16px', fontSize: 13 }}>{c.summary.map((s, i) => <li key={i}>{s}</li>)}</ul> : <div style={{ fontSize: 13 }}>{c.summary}</div>}</div>}
@@ -857,6 +853,7 @@ function QuoFeedRows({ feed, nameFor, openCall, setOpenCall }) {
                 <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{quoFmtWhen(it.at)}</span>
               </div>
               {open && <div style={{ padding: '0 14px 14px 40px' }}>
+                <QuoRecording call={it} />
                 {(it.summary || (it.transcript && it.transcript.length)) ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {it.summary && <div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>SUMMARY</div>{Array.isArray(it.summary) ? <ul style={{ margin: '2px 0 0 16px', fontSize: 13 }}>{it.summary.map((s, i) => <li key={i}>{s}</li>)}</ul> : <div style={{ fontSize: 13 }}>{it.summary}</div>}</div>}
