@@ -167,3 +167,31 @@ export function buildSuggester(categorizedTransactions) {
 // Auto-suggests tax category + lead-gen system per row from payee history,
 // then lets the user accept all or adjust per row, plus a "match this
 // payee to all similar rows" shortcut. Single batched UPDATE on save.
+
+// Shared by the finance shell AND the budget/forecast screens, so it lives here
+// rather than in either — a static import from one into the other would defeat the
+// lazy split.
+export function getProrata(settings) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const yearStart = new Date(y, 0, 1);
+  const yearEnd = new Date(y, 11, 31);
+  const daysInYear = Math.round((new Date(y + 1, 0, 1) - yearStart) / 86400000);
+  const enabled = !!(settings && settings.prorate_first_year && settings.activation_date);
+  let activeStart = yearStart;
+  if (enabled) {
+    const a = new Date(settings.activation_date + 'T00:00:00');
+    if (!isNaN(a) && a.getFullYear() === y && a > yearStart) activeStart = a;
+  }
+  const activeDays = Math.round((yearEnd - activeStart) / 86400000) + 1;
+  const factor = enabled ? Math.min(1, activeDays / daysInYear) : 1;
+  const elapsed = Math.floor((now - activeStart) / 86400000) + 1;
+  const activeDaysElapsed = Math.max(1, Math.min(activeDays, elapsed));
+  return {
+    active: enabled && factor < 1,
+    factor, activeStart, activeDays, daysInYear, activeDaysElapsed,
+    weeksActive: activeDays / 7,
+    pct: Math.round(factor * 100),
+    startLabel: activeStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+  };
+}
