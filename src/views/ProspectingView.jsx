@@ -7,6 +7,7 @@
 // chunk now.
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
+import { noteProspecting } from '../screenNotes';
 import { Icon } from '../icons';
 import { modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
 import { useBackClose } from '../backClose';
@@ -152,6 +153,10 @@ function ProspectingToday({ userId, settings, setSettings, systems, completions,
       });
     });
   });
+  // One line for the ALT-TAB switcher card (phrasing in screenNotes.js).
+  useEffect(() => { noteProspecting(userId, todaysTasks); },
+    [userId, todaysTasks.length, todaysTasks.map(x => x.todayCount).join(',')]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // Group tasks by system, preserving systems order
   const taskGroups = [];
   systems.forEach(sys => {

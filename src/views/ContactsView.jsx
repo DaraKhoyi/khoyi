@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
+import { noteContacts } from '../screenNotes';
 import { Icon } from '../icons';
 import { canHover, quoNormPhone } from '../helpers';
 import { HeaderSearchInput, MultiValueField } from './SharedUi';
@@ -1244,6 +1245,12 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     }
     return 0;
   });
+
+  // One line for the ALT-TAB switcher card. Phrasing lives in screenNotes.js so
+  // this file stops absorbing feature code — the ratchet caught it inline.
+  useEffect(() => {
+    noteContacts(userId, { search, typeFilter, shown: sorted.length });
+  }, [userId, search, typeFilter, sorted.length]);
 
   // Counts for filter chips (across the whole book so the user sees the universe)
   const discCounts = useMemo(() => {
