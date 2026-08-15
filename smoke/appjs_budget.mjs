@@ -26,7 +26,16 @@ import { readFileSync, existsSync } from "node:fs";
 // nobody is looking. Add an entry whenever a file crosses ~1,200.
 const BUDGETS = {
   "src/App.js": 2150,
-  "src/views/AccountingViews.jsx": 1400,   // being split — drop hard as it shrinks
+  // The accounting split is DONE: 6,745 -> ~650. These budgets are what keep it
+  // that way — the file only reached 6,745 because nothing measured it, and the
+  // pieces will drift back together the same way if nothing measures them either.
+  "src/views/AccountingViews.jsx": 700,
+  "src/views/FinanceLedger.jsx": 1150,
+  "src/views/TaxReports.jsx": 1400,
+  "src/views/BudgetForecast.jsx": 1550,
+  "src/views/CsvImportModal.jsx": 1200,
+  "src/views/FinanceReports.jsx": 750,
+  "src/views/ProspectingView.jsx": 950,   // being split — drop hard as it shrinks
   "src/views/InboxView.jsx": 3450,
   "src/views/ContactsView.jsx": 2050,
   "src/views/ContactDetailModal.jsx": 2000,
