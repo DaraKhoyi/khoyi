@@ -247,12 +247,12 @@ for (const dev of want) {
 
       spotKeys().forEach(k => localStorage.removeItem(k));
       window.__setView('today'); await sleep(600);
-      if (!(await enter('My World'))) return { err: 'no My World row in the menu' };
+      if (!(await enter('Nerve Center CRM'))) return { err: 'no Nerve Center CRM row in the menu' };
       const first = now();
 
       window.__setView('calendar'); await sleep(1200);   // move inside the room
       window.__setView('today');    await sleep(700);    // step out
-      await enter('My World');
+      await enter('Nerve Center CRM');
       const second = now();
 
       const key = spotKeys().find(k => k.endsWith('.relationships'));
@@ -261,19 +261,19 @@ for (const dev of want) {
       rec.d = '2000-01-01';                              // pretend it is tomorrow
       localStorage.setItem(key, JSON.stringify(rec));
       window.__setView('today'); await sleep(700);
-      await enter('My World');
+      await enter('Nerve Center CRM');
       const nextDay = now();
       return { first, second, nextDay, key };
     });
     if (r.err) {
-      record(dev, 'My World resume', false, r.err);
+      record(dev, 'Nerve Center resume', false, r.err);
     } else {
-      record(dev, 'My World opens on Contacts (first visit today)', r.first === 'contacts', r.first === 'contacts' ? '' : `got ${r.first}`);
-      record(dev, 'My World resumes where you left off', r.second === 'calendar', r.second === 'calendar' ? '' : `got ${r.second}`);
-      record(dev, 'My World resets to Contacts the next day', r.nextDay === 'contacts', r.nextDay === 'contacts' ? '' : `got ${r.nextDay}`);
+      record(dev, 'Nerve Center opens on Contacts (first visit today)', r.first === 'contacts', r.first === 'contacts' ? '' : `got ${r.first}`);
+      record(dev, 'Nerve Center resumes where you left off', r.second === 'calendar', r.second === 'calendar' ? '' : `got ${r.second}`);
+      record(dev, 'Nerve Center resets to Contacts the next day', r.nextDay === 'contacts', r.nextDay === 'contacts' ? '' : `got ${r.nextDay}`);
       record(dev, 'resume bookmark is per-user', /^prism\.room\.spot\.[0-9a-f-]{8,}\.relationships$/.test(r.key || ''), r.key ? '' : 'no key');
     }
-  } catch (e) { record(dev, 'My World resume', false, String(e).slice(0, 70)); }
+  } catch (e) { record(dev, 'Nerve Center resume', false, String(e).slice(0, 70)); }
 
   // fatal page errors on this device?
   if (pageErrors.length) record(dev, 'no uncaught JS errors', false, pageErrors[0].slice(0,80));

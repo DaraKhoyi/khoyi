@@ -1035,7 +1035,7 @@ function AppMain() {
   // returns to the hub (the dashboard).
   const activeMode = view === 'dashboard' ? null : (VIEW_TO_MODE[view] || null);
   // Entering a room resumes where you left off IN THAT ROOM, but only within the
-  // same day — the first visit each day opens the room's home screen (My World
+  // same day — the first visit each day opens the room's home screen (Nerve Center
   // opens on Contacts). A stale bookmark pointing at a screen that no longer
   // belongs to the room is ignored, so re-organising a room never strands anyone.
   const enterMode = (modeId) => {
@@ -1756,11 +1756,11 @@ function AppMain() {
   const MENU = [
     // ── Top level — promoted daily drivers (Dara's order) ──
     { label: 'Today', view: 'today', icon: 'sparkles' },
-    // My World is a ROOM, not a screen, so it is an action node rather than a
+    // Nerve Center CRM is a ROOM, not a screen, so it is an action node rather than a
     // view node: enterMode() applies the room's resume rule — Contacts on the
     // first visit each day, then wherever you left off. Pointing it straight at
     // 'contacts' would look identical here and silently throw that away.
-    { label: 'My World', icon: 'contacts',
+    { label: 'Nerve Center CRM', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
     { label: 'Unstuck.', view: 'unstuck', icon: 'properties', ai: true },
     { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },

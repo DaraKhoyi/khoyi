@@ -15,9 +15,12 @@ export const MODES = [
     id: 'relationships',
     // "Relationships" undersold it: half this room is not people, it is the
     // promises you made them (Tasks), when you see them (Calendar) and the record
-    // of what happened (Journal). My World holds all of it, and does not collide
-    // with the Contacts page inside it, which is titled "My People."
-    label: 'My World',
+    // of what happened (Journal). The room holds all of it, and its name must not
+    // collide with the Contacts page inside it, which is titled "My People."
+    // Renamed from "My World" at Dara's request. The room's stored identity is the
+    // id 'relationships' — resume state and mode preference key off that, never the
+    // label — so renaming is safe and orphans no saved state.
+    label: 'Nerve Center CRM',
     tag: 'My people, my day.',
     glyph: 'globe',
     accent: '#8FB8A8',
