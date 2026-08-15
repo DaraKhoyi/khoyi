@@ -41,6 +41,13 @@ const BUDGETS = {
   "src/views/ContactDetailModal.jsx": 2000,
   "src/views/TasksView.jsx": 1550,
   "src/views/CalendarView.jsx": 1450,
+  // Crossed the ~1,000-line mark since the last sweep. Guarded now rather than
+  // after they become the next thing that needs a five-step split — which is the
+  // whole lesson of App.js and AccountingViews.
+  "src/views/AriBriefingView.jsx": 1150,
+  "src/views/TransactionPipeline.jsx": 1120,
+  "src/views/TodayView.jsx": 1100,
+  "src/views/DealsView.jsx": 1040,
 };
 
 const APPJS = "src/App.js";
