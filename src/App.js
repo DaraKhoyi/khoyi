@@ -1756,11 +1756,11 @@ function AppMain() {
   const MENU = [
     // ── Top level — promoted daily drivers (Dara's order) ──
     { label: 'Today', view: 'today', icon: 'sparkles' },
-    // Nerve Center CRM is a ROOM, not a screen, so it is an action node rather than a
+    // Nerve Center is a ROOM, not a screen, so it is an action node rather than a
     // view node: enterMode() applies the room's resume rule — Contacts on the
     // first visit each day, then wherever you left off. Pointing it straight at
     // 'contacts' would look identical here and silently throw that away.
-    { label: 'Nerve Center CRM', icon: 'contacts',
+    { label: 'Nerve Center', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
     { label: 'Unstuck.', view: 'unstuck', icon: 'properties', ai: true },
     { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },

@@ -247,12 +247,12 @@ for (const dev of want) {
 
       spotKeys().forEach(k => localStorage.removeItem(k));
       window.__setView('today'); await sleep(600);
-      if (!(await enter('Nerve Center CRM'))) return { err: 'no Nerve Center CRM row in the menu' };
+      if (!(await enter('Nerve Center'))) return { err: 'no Nerve Center row in the menu' };
       const first = now();
 
       window.__setView('calendar'); await sleep(1200);   // move inside the room
       window.__setView('today');    await sleep(700);    // step out
-      await enter('Nerve Center CRM');
+      await enter('Nerve Center');
       const second = now();
 
       const key = spotKeys().find(k => k.endsWith('.relationships'));
@@ -261,7 +261,7 @@ for (const dev of want) {
       rec.d = '2000-01-01';                              // pretend it is tomorrow
       localStorage.setItem(key, JSON.stringify(rec));
       window.__setView('today'); await sleep(700);
-      await enter('Nerve Center CRM');
+      await enter('Nerve Center');
       const nextDay = now();
       return { first, second, nextDay, key };
     });

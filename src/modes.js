@@ -20,7 +20,7 @@ export const MODES = [
     // Renamed from "My World" at Dara's request. The room's stored identity is the
     // id 'relationships' — resume state and mode preference key off that, never the
     // label — so renaming is safe and orphans no saved state.
-    label: 'Nerve Center CRM',
+    label: 'Nerve Center',
     tag: 'My people, my day.',
     glyph: 'globe',
     accent: '#8FB8A8',
