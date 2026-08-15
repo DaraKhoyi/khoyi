@@ -26,7 +26,7 @@ import { readFileSync, existsSync } from "node:fs";
 // nobody is looking. Add an entry whenever a file crosses ~1,200.
 const BUDGETS = {
   "src/App.js": 2150,
-  "src/views/AccountingViews.jsx": 5350,   // being split — drop hard as it shrinks
+  "src/views/AccountingViews.jsx": 3980,   // being split — drop hard as it shrinks
   "src/views/InboxView.jsx": 3450,
   "src/views/ContactsView.jsx": 2050,
   "src/views/ContactDetailModal.jsx": 2000,
