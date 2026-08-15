@@ -85,6 +85,9 @@ import ChatMessageBubble from './views/ChatMessageBubble';
 import { notify, notifyError, confirmDialog, subscribeToasts, subscribeConfirms } from './notify';
 import { Tip } from './tipsUi';
 import ChatView from './views/ChatView';
+import ScreenSwitcher from './views/ScreenSwitcher';
+import { touchScreen, previousScreen } from './openScreens';
+import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
 import { MyNumbersView } from './views/MetricsPanels';
 import { LockedPage, QuickLog } from './views/QuickLog';
 import { ScoreboardView, PipelineView } from './views/ScoreboardView';
@@ -1203,6 +1206,29 @@ function AppMain() {
     return () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); };
   }, []);
   const [mindsetOpen, setMindsetOpen] = useState(false); // the mindset menu (upper-right)
+
+  // ── ALT-TAB switcher ──────────────────────────────────────────────────────
+  // Declared HERE, after view/deepLink/sidebarOpen/mindsetOpen, deliberately:
+  // everything below references those, and an earlier placement put them in the
+  // temporal dead zone — the whole app failed to mount with "Cannot access before
+  // initialization". esbuild builds that happily; only the boot check catches it.
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const goToScreen = React.useCallback((sc) => {
+    if (!sc) return;
+    setView(sc.view);
+    if (sc.sub) setDeepLink(d => ({ view: sc.view, sub: sc.sub, n: d.n + 1 }));
+  }, []);
+  const flipBack = React.useCallback(() => {
+    goToScreen(previousScreen(session?.user?.id, view, null));
+  }, [goToScreen, session, view]);
+  // Two-finger tap anywhere -> flip. NOT double-tap-anywhere: on iOS that is zoom
+  // outside touch-action:manipulation, and select-a-word inside every text field.
+  React.useEffect(() => attachTwoFingerFlip(flipBack), [flipBack]);
+  // Remember the screen we are on so the switcher has something to flip to.
+  React.useEffect(() => {
+    const uid = session?.user?.id; if (!uid || !view) return;
+    touchScreen(uid, view, null, { label: (PAGES[view] && PAGES[view].label) || view });
+  }, [view, session]);
   // Live badge for the nightly email-review queue (open items needing action).
   useEffect(() => {
     if (!dataLoaded) return; let alive = true;
@@ -1906,7 +1932,7 @@ function AppMain() {
       {false && <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />}
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo" onClick={() => setSidebarOpen(true)} style={{cursor:"pointer"}} role="button" aria-label="Menu"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
+        <div className="mobile-header-logo" {...forkHandlers({ onFlip: flipBack, onSwitcher: () => setSwitcherOpen(true), onMenu: () => setSidebarOpen(true) })} style={{cursor:"pointer",touchAction:"manipulation"}} role="button" aria-label="Menu — double-tap to flip back, hold to switch"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
           {/* Persistent Library search — the whole knowledge base is one tap from
               anywhere, which is what makes stored intelligence feel INSTANT rather
@@ -2091,6 +2117,11 @@ function AppMain() {
           contacts={contacts}
           onClose={(done) => { setSharedAudio(null); if (done) { try { loadData(); } catch (_) {} } }}
         />
+      )}
+      {switcherOpen && (
+        <ScreenSwitcher userId={session?.user?.id} currentView={view} currentSub={null}
+          onPick={(sc) => { setSwitcherOpen(false); goToScreen(sc); }}
+          onClose={() => setSwitcherOpen(false)} />
       )}
     </div>
   );
