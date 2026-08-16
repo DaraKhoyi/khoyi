@@ -143,7 +143,21 @@ serve(async (req) => {
               // submit transcription with speaker labels
               const sub = await fetch("https://api.assemblyai.com/v2/transcript", {
                 method: "POST", headers: { authorization: AAI_KEY, "content-type": "application/json" },
-                body: JSON.stringify({ audio_url: upUrl, speaker_labels: true }),
+                body: JSON.stringify({
+                  audio_url: upUrl,
+                  speaker_labels: true,
+                  // Dara's calls are occasionally Farsi or Spanish, often code-switched
+                  // with English. Without this AssemblyAI assumes English and returns
+                  // phonetic gibberish — which then becomes the summary and the DISC
+                  // signal, so an entire call silently turns into nonsense that reads
+                  // plausible enough that nobody checks it.
+                  //
+                  // This is the ROOT fix and the only one needed: quo-call-process
+                  // ALREADY detects a non-English transcript and writes transcript_en,
+                  // and QuoView already has the English/original toggle. Both were
+                  // being fed a transcript that was never really Farsi to begin with.
+                  language_detection: true,
+                }),
               });
               if (!sub.ok) { failed++; continue; }
               const tid = (await sub.json()).id;

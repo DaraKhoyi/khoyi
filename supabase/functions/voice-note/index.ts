@@ -21,7 +21,7 @@ async function transcribe(bytes: Uint8Array, aaiKey: string): Promise<string> {
   // 2) submit for transcription
   const sub = await fetch("https://api.assemblyai.com/v2/transcript", {
     method: "POST", headers: { authorization: aaiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ audio_url: upJson.upload_url, speech_model: "universal" }),
+    body: JSON.stringify({ audio_url: upJson.upload_url, speech_model: "universal" , language_detection: true }),
   });
   const subJson = await sub.json();
   if (!subJson.id) throw new Error("transcript submit failed");
