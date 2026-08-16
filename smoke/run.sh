@@ -113,3 +113,10 @@ SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWOR
 # let a broken research flow ship green and embarrass the beta.
 echo "→ running functional gate (multi-device)"
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/functional.mjs
+
+# Prove failed writes are actually reported. supabase-js resolves with { error }
+# instead of throwing, so a discarded mutation is invisible; dataService.js wraps
+# from() to catch that. This drives a REAL failing write and asserts it surfaced —
+# a reporting layer that quietly does nothing is worse than none.
+echo "→ mutation-error reporting"
+SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/mutation_guard.mjs

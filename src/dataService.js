@@ -74,3 +74,69 @@ supabase.rpc = (fn, params, opts) => {
   const p = ensureFreshSession().catch(() => false).then(() => _rpc(fn, params, opts));
   return p;
 };
+
+// ── Central mutation-error reporting ─────────────────────────────────────────
+// supabase-js RESOLVES with { error } instead of throwing, so
+// `try { await supabase.from('x').update(...) } catch (_) {}` never fires. The
+// analyzer found 247 mutating calls across 67 files whose result is discarded —
+// usually behind an optimistic UI update that already told the user it worked.
+//
+// Patching 247 call sites by hand would take days, and half would be reintroduced
+// within a month; nothing would stop that happening. One wrapper here means no
+// mutation can fail invisibly again, including in code not yet written. Same
+// approach as the ensureFreshSession wrappers above: fix it once, at the seam.
+//
+// DELIBERATELY DOES NOT NOTIFY THE USER. Many call sites already handle their own
+// errors and show a message; a second toast from here would double up. What this
+// removes is SILENCE — every failed mutation now reaches the console and
+// public.client_errors, so a lost write is visible to us the moment it happens
+// instead of surfacing days later as "my task disappeared". User-facing messages
+// remain a per-site judgement, and the ledger tracks which sites still need one.
+const MUTATIONS = ['insert', 'update', 'upsert', 'delete'];
+let _mutSeen = 0;
+
+function reportMutationError(table, op, error) {
+  if (!error) return;
+  // Cap the reporting, not the checking — a broken table would otherwise spam
+  // client_errors with thousands of identical rows during one outage.
+  _mutSeen++;
+  const msg = `[supabase] ${op} on ${table} failed: ${error.message || error}`;
+  try { console.error(msg, error); } catch (_) {}
+  if (_mutSeen > 25) return;
+  try {
+    if (typeof window !== 'undefined' && typeof window.__logClientError === 'function') {
+      window.__logClientError({ kind: 'supabase_mutation', message: msg, table, op, code: error.code || null });
+    }
+  } catch (_) {}
+}
+
+// Exposed for the smoke gate, which needs to prove the wrapper below actually
+// fires — a reporting layer that silently does nothing is worse than none,
+// because it looks like coverage. Harmless: the client is already reachable from
+// any devtools console, and it carries no secret the anon key does not.
+try { if (typeof window !== 'undefined') window.__supabase = supabase; } catch (_) {}
+
+const _from = supabase.from.bind(supabase);
+supabase.from = (table) => {
+  const qb = _from(table);
+  for (const op of MUTATIONS) {
+    const orig = qb[op];
+    if (typeof orig !== 'function') continue;
+    qb[op] = (...args) => {
+      const builder = orig.apply(qb, args);
+      // The builder is a thenable, not a promise. Wrapping .then lets us observe
+      // the resolved { error } while leaving the caller's usage identical —
+      // including .select(), .eq() and the rest of the chain, which return the
+      // same builder we have already patched.
+      if (builder && typeof builder.then === 'function') {
+        const _then = builder.then.bind(builder);
+        builder.then = (onOk, onErr) => _then((res) => {
+          if (res && res.error) reportMutationError(table, op, res.error);
+          return onOk ? onOk(res) : res;
+        }, onErr);
+      }
+      return builder;
+    };
+  }
+  return qb;
+};

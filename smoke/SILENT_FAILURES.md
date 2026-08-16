@@ -1,20 +1,36 @@
 # Silent-failure cleanup — progress ledger
 
-`smoke/silent_failures.mjs` finds mutating Supabase calls whose result is
-discarded. supabase-js **resolves** with `{ error }` rather than throwing, so
-`try { await ...insert() } catch (_) {}` never fires and the failure is invisible
-— usually behind an optimistic UI update that already told the user it worked.
+## STATUS: solved centrally as of v1.06.82 — read this before patching call sites
 
-Dara's plan: **10 per day until all of them are processed.** "Processed" means
-either fixed, or consciously accepted as best-effort with a reason written down.
-A finding that is neither is not done.
+`supabase-js` RESOLVES with `{ error }` rather than throwing, so
+`try { await supabase.from('x').update(...) } catch (_) {}` never fires. With an
+optimistic UI update in front of it, the user is told the write worked and the
+truth surfaces days later as "my task disappeared".
 
-Run the tool:
+The analyzer finds **247** unchecked mutating calls across 67 files, 93 of them
+inside an empty catch. Patching those by hand was the original plan: it ran at
+about 8 sites a day, would have taken weeks, and — the fatal part — **nothing
+would have stopped the 248th being written next month.**
 
-```bash
-node smoke/silent_failures.mjs          # human-readable
-SF_JSON=1 node smoke/silent_failures.mjs   # machine-readable, for triage
-```
+So it is fixed at the seam instead. `src/dataService.js` wraps `supabase.from()`
+so every failed insert / update / upsert / delete is reported to the console and
+to `public.client_errors`. That covers all 247 sites AND every site not yet
+written. `smoke/mutation_guard.mjs` drives a real failing write in a real browser
+and fails the build if nothing is reported, so the wrapper cannot rot.
+
+**What this does NOT do:** it does not show the user a message, and it does not
+roll back an optimistic update. Those remain per-site judgements. What it removes
+is SILENCE — a lost write is now visible to us the moment it happens.
+
+### What is still worth doing per-site
+- **Roll back the optimistic UI** where a failed write leaves the screen lying.
+- **Tell the user** on writes they would notice: sending, saving a note, marking done.
+- Telemetry and best-effort writes need neither; leaving those unchecked is correct.
+
+The analyzer remains useful for finding sites in those first two categories.
+Run `SF_JSON=1 node smoke/silent_failures.mjs` for the machine-readable list.
+
+---
 
 ## Triage order
 
