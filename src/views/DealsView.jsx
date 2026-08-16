@@ -485,6 +485,11 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
 
   // Repeating-amount editor for splits / fees / referrals.
   // Each line: { label, amount, paid_to (optional) }
+  // CALLED as a function below, never rendered as an element. Defined inside
+  // another component, it would be a NEW component type on every render, so React
+  // would remount its subtree — and it holds text inputs, so the caret would jump
+  // to position 0 after every keystroke. Same defect as the contact note editor.
+  // Safe to call because it uses no hooks; if it ever needs one, hoist it instead.
   function LineItemEditor({ value, onChange, addLabel, placeholder }) {
     const arr = Array.isArray(value) ? value : [];
     function update(i, patch) {
@@ -734,21 +739,15 @@ function DealDetailModal({ deal, contacts, setContacts, properties, leadGenSyste
 
         <div className="form-group">
           <label className="form-label">Splits paid (brokerage, franchise, etc.)</label>
-          <LineItemEditor value={splitsPaid}
-            onChange={(next) => { setSplitsPaid(next); commit('splits_paid', next); }}
-            addLabel="+ Add split" placeholder="e.g. Realty ONE franchise fee"/>
+          {LineItemEditor({ value: splitsPaid, onChange: (next) => { setSplitsPaid(next); commit('splits_paid', next); }, addLabel: "+ Add split", placeholder: "e.g. Realty ONE franchise fee" })}
         </div>
         <div className="form-group">
           <label className="form-label">Other fees paid (E&O, transaction fees, etc.)</label>
-          <LineItemEditor value={feesPaid}
-            onChange={(next) => { setFeesPaid(next); commit('fees_paid', next); }}
-            addLabel="+ Add fee" placeholder="e.g. Transaction coordinator"/>
+          {LineItemEditor({ value: feesPaid, onChange: (next) => { setFeesPaid(next); commit('fees_paid', next); }, addLabel: "+ Add fee", placeholder: "e.g. Transaction coordinator" })}
         </div>
         <div className="form-group">
           <label className="form-label">Referral fees paid out</label>
-          <LineItemEditor value={refsPaid}
-            onChange={(next) => { setRefsPaid(next); commit('referral_fees_paid', next); }}
-            addLabel="+ Add referral fee out" placeholder="e.g. Referred by Agent X"/>
+          {LineItemEditor({ value: refsPaid, onChange: (next) => { setRefsPaid(next); commit('referral_fees_paid', next); }, addLabel: "+ Add referral fee out", placeholder: "e.g. Referred by Agent X" })}
         </div>
 
         {/* Net rollup */}

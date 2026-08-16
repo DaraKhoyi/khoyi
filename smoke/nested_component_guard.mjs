@@ -31,23 +31,13 @@ const walk = (dir, out = []) => {
   return out;
 };
 
-// PRE-EXISTING at the time this guard was written. They are NOT approved — each
-// is a latent version of the same bug and should be fixed or cleared. They are
-// listed so the guard can block NEW ones today while keeping the backlog visible
-// (it prints them every run). Delete a line once the component is fixed.
-// Several are low-risk in practice: a nested component holding only a checkbox or
-// a select loses no caret. The ones holding TEXT inputs are the real ones.
-const KNOWN = new Set([
-  "src/views/AriBriefingView.jsx:Tile",
-  "src/views/AriBriefingView.jsx:Funnel",
-  "src/views/CoachView.jsx:Row",
-  "src/views/DealsView.jsx:LineItemEditor",
-  "src/views/InboxView.jsx:Row",
-  "src/views/SignPortal.jsx:Shell",
-  "src/views/SimplifyPanel.jsx:Toggle",
-  "src/views/TransactionPipeline.jsx:DeadlineChip",
-  "src/views/TransactionPipeline.jsx:Card",
-]);
+// Empty, and that is the point. The original backlog held nine entries; a look-ahead
+// window was reporting form controls that merely appeared BELOW one-line arrow
+// components. With the extent measured properly only ONE was real —
+// DealsView's LineItemEditor, which held two text inputs and would have jumped the
+// caret to 0 on every keystroke exactly like the contact note editor did. It is
+// fixed; the rest were never bugs. Add an entry here only with a written reason.
+const KNOWN = new Set([]);
 
 const problems = [];
 const known = [];
@@ -70,7 +60,16 @@ for (const file of walk("src")) {
     if (/use(Memo|Callback|Ref|State)\s*\(/.test(lines[i])) continue;
     const head = lines.slice(i, i + 3).join(" ");
     if (!/=>|function/.test(head)) continue;
-    const body = lines.slice(i, i + 120).join("\n");
+    // Measure the component's ACTUAL extent by brace balance. A fixed look-ahead
+    // window reports any form control that merely appears BELOW a one-line arrow
+    // component, which produced three false entries on the original backlog — and
+    // a guard with false positives trains people to ignore it.
+    let depth = 0, seen = false, end = i;
+    for (let k = i; k < lines.length && k < i + 400; k++) {
+      for (const ch of lines[k]) { if (ch === "{") { depth++; seen = true; } else if (ch === "}") depth--; }
+      if (seen && depth <= 0) { end = k; break; }
+    }
+    const body = lines.slice(i, end + 1).join("\n");
     if (!/<(input|textarea|select)\b/.test(body)) continue;
     // only a problem if it is RENDERED as an element somewhere
     if (!new RegExp(`<${name}[\\s/>]`).test(src)) continue;
