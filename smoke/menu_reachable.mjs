@@ -17,9 +17,14 @@
 //
 // The rule: every menu leaf that has a route must be in builtSet.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 
-const src = readFileSync("src/App.js", "utf8");
+// App.js holds builtSet and the routes; the MENU itself moved to menuConfig.js.
+// Read BOTH — when the menu moved, this guard silently dropped from 53 leaves to
+// 14 and would have passed while seeing almost nothing. A guard that stops
+// looking is worse than no guard, because it still reports success.
+const src = readFileSync("src/App.js", "utf8")
+  + "\n" + (existsSync("src/menuConfig.js") ? readFileSync("src/menuConfig.js", "utf8") : "");
 
 // builtSet = [...NAV.map(i => i.id), ...extras]
 const bm = src.match(/const builtSet = new Set\(\[\.\.\.NAV\.map\(i => i\.id\)([^\]]*)\]\)/);

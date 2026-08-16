@@ -25,7 +25,8 @@ import { readFileSync, existsSync } from "node:fs";
 // file -> ceiling. Seeded with every file over ~1,200 lines so none can grow while
 // nobody is looking. Add an entry whenever a file crosses ~1,200.
 const BUDGETS = {
-  "src/App.js": 2150,
+  "src/App.js": 2060,
+  "src/menuConfig.js": 200,
   // The accounting split is DONE: 6,745 -> ~650. These budgets are what keep it
   // that way — the file only reached 6,745 because nothing measured it, and the
   // pieces will drift back together the same way if nothing measures them either.

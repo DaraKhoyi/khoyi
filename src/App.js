@@ -85,6 +85,7 @@ import ChatMessageBubble from './views/ChatMessageBubble';
 import { notify, notifyError, confirmDialog, subscribeToasts, subscribeConfirms } from './notify';
 import { Tip } from './tipsUi';
 import ChatView from './views/ChatView';
+import { buildMenu } from './menuConfig';
 import ScreenSwitcher from './views/ScreenSwitcher';
 import { touchScreen, previousScreen } from './openScreens';
 import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
@@ -1779,125 +1780,7 @@ function AppMain() {
       { label: 'Oversight Accountability', built: false, icon: 'eye' },
     ] },
   ] };
-  const MENU = [
-    // ── Top level — promoted daily drivers (Dara's order) ──
-    { label: 'Today', view: 'today', icon: 'sparkles' },
-    // Nerve Center is a ROOM, not a screen, so it is an action node rather than a
-    // view node: enterMode() applies the room's resume rule — Contacts on the
-    // first visit each day, then wherever you left off. Pointing it straight at
-    // 'contacts' would look identical here and silently throw that away.
-    { label: 'Nerve Center', icon: 'contacts',
-      action: () => { setSidebarOpen(false); enterMode('relationships'); } },
-    { label: 'Unstuck.', view: 'unstuck', icon: 'properties', ai: true },
-    { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },
-    { label: 'Google Contacts', view: 'google_contacts', icon: 'contacts' },
-    { label: 'Cadence Review', view: 'cadence_review', icon: 'clock' },
-    // ── Planning — the daily-drivers grouped: what to do, when, and with whom ──
-    { label: 'Planning', icon: 'calendar', children: [
-      { label: 'Tasks', view: 'tasks', icon: 'tasks' },
-      { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
-      { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
-      { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
-      { label: 'My Stats', view: 'numbers', icon: 'chart' },
-    ] },
-    { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
-    { label: 'Phone & Text', view: 'quo', icon: 'quo', ai: true },
-    { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
-    { label: 'Library', view: 'notes', icon: 'notes', ai: true },
-    { label: 'Finance Dashboard', view: 'finance', icon: 'dollar' },
-    { label: 'Mileage', view: 'mileage', icon: 'car' },
-    // Ask Ari, with Listing Presentation nested beneath it.
-    { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true, children: [
-      { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
-    ] },
-    { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
-    // ── AI Agents ──
-    { label: 'AI Agents', icon: 'sparkles', ai: true, children: [
-      { label: 'Chief of Staff', view: 'chief', icon: 'briefing' },
-      { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
-      { label: 'Agent Activity', view: 'agent_activity', icon: 'brain' },
-      ...(isAdmin ? [{ label: 'App Health', view: 'app_health', icon: 'brain' }] : []),
-    ] },
-    // ── Pipeline & Growth ──
-    { label: 'Pipeline & Growth', icon: 'target', children: [
-      { label: 'Transaction Pipeline', view: 'pipeline', icon: 'chart' },
-      { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
-      { label: 'Lead-Gen Systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
-      { label: "How I'm Doing", view: 'scoreboard', icon: 'target' },
-      { label: 'Growth', view: 'growth', icon: 'chart' },
-      ...(isAdmin ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
-    ] },
-    // ── Communications ──
-    { label: 'Communications', icon: 'message', children: [
-      { label: 'Inbox', view: 'inbox', icon: 'inbox' },
-      { label: 'Email Review', view: 'email_review', icon: 'mail', ai: true },
-      { label: 'Phone & Text (Quo)', view: 'quo', icon: 'quo' },
-      { label: 'Group Message', view: 'group_message', icon: 'message', ai: true },
-      { label: 'Journal', view: 'journal', icon: 'journal' },
-      { label: 'Drip Campaigns', built: false, icon: 'signal' },
-    ] },
-    // ── Deals & Property ──
-    { label: 'Deals & Property', icon: 'briefcase', children: [
-      { label: 'Transaction Pipeline', view: 'deals', icon: 'deals' },
-      { label: 'Contract Management', view: 'files', icon: 'folder', ai: true, children: [
-        { label: 'View Transactions', view: 'tracker', icon: 'tracker' },
-        { label: 'Upload Trans. Docs', built: false, icon: 'folder' },
-        { label: 'Upload Recordings', built: false, icon: 'mic' },
-      ] },
-      { label: 'Documents', view: 'documents', icon: 'folder' },
-      { label: 'Residential', view: 'properties', icon: 'properties', children: [
-        { label: 'Create Trans.', built: false, icon: 'plus' },
-        { label: 'Upload Trans. Docs', built: false, icon: 'folder' },
-        { label: 'Upload Recordings', built: false, icon: 'mic' },
-      ] },
-      { label: 'Commercial', built: false, icon: 'building', children: [
-        { label: 'Create Trans.', built: false, icon: 'plus' },
-        { label: 'Upload Trans. Docs', built: false, icon: 'folder' },
-        { label: 'Upload Recordings', built: false, icon: 'mic' },
-      ] },
-      { label: 'Rentals', built: false, icon: 'properties', children: [
-        { label: 'Create Trans.', built: false, icon: 'plus' },
-      ] },
-      { label: 'My Projects', view: 'tracker', icon: 'tracker' },
-      { label: 'My Investments', view: 'investments', icon: 'investments' },
-    ] },
-    // ── Finance ──
-    { label: 'Finance', icon: 'dollar', children: [
-      { label: 'Finance Dashboard', view: 'finance', icon: 'finance', children: [
-        { label: 'Data Entry', view: 'finance', sub: 'ledger', icon: 'camera' },
-        { label: 'Blueprint (Budget)', view: 'finance', sub: 'blueprint', icon: 'compass' },
-        { label: 'Financial Records', view: 'finance', sub: 'reports', icon: 'chart' },
-      ] },
-      { label: 'Mileage', view: 'mileage', icon: 'car' },
-    ] },
-    // ── Learn & Coaching ──
-    { label: 'Learn & Coaching', icon: 'library', children: [
-      { label: 'Brain', view: 'brain', icon: 'brain', ai: true },
-      { label: 'Playbooks', view: 'playbooks', icon: 'playbooks' },
-      { label: 'AI Notes', view: 'notes', icon: 'notes', ai: true },
-      { label: 'Knowledge', view: 'knowledge', icon: 'library' },
-      { label: 'Training', icon: 'school', children: [
-        { label: 'DISC Learning', built: false, icon: 'bulb' },
-        { label: 'Coaching', built: false, icon: 'megaphone' },
-        { label: 'Accountability Partner', built: false, icon: 'users' },
-      ] },
-    ] },
-    // ── My Prism Identity ──
-    { label: 'My Prism Identity', icon: 'prism', children: [
-      { label: 'My Prism Profile', view: 'my_prism', icon: 'prism' },
-      { label: 'DISC / Grit Test', view: 'disc_test', icon: 'bulb' },
-      { label: 'My Voice (Voice Card)', view: 'myvoice', icon: 'mic' },
-      { label: 'Get Started / Onboarding', icon: 'star', action: () => { try { window.__openOnboarding && window.__openOnboarding(); } catch (_) {} } },
-      { label: 'Business Plan', built: false, icon: 'clipboard' },
-    ] },
-    // ── Brokerage (admin -> Brokerage, team leader -> Team, agent -> neither) ──
-    ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
-    // ── Settings & Systems ──
-    { label: 'Settings & Systems', icon: 'settings', children: [
-      { label: 'Settings', view: 'settings', icon: 'settings' },
-      { label: 'System Health', view: 'app_health', icon: 'systems' },
-    ] },
-  ];
+  const MENU = buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, setSidebarOpen, enterMode });
   assignMenuKeys(MENU, 'm');
   // STAGE 1: prune pages the user has hidden (Simplify) — or later, isn't
   // licensed for — from the primary menu tree, so hiding a page removes it from
