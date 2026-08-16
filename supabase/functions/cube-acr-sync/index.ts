@@ -137,6 +137,21 @@ serve(async (req) => {
               if (!dr.ok) { failed++; continue; }
               const bytes = new Uint8Array(await dr.arrayBuffer());
               // upload to AssemblyAI
+              // Resolve the contact BEFORE submitting, because who you are talking to
+              // decides how the audio should be transcribed.
+              const meta = parseName(f.name);
+              let contactId: string | null = null;
+              let forcedLang: string | null = null;
+              const last10 = (p: string | null) => (p ? p.replace(/\D/g, "").slice(-10) : "");
+              if (meta.phone || meta.name) {
+                const { data: cs } = await admin.from("contacts").select("id,name,phone,spoken_language").eq("user_id", s.user_id);
+                const list = cs || [];
+                let hit: any = null;
+                if (meta.phone) hit = list.find((c: any) => last10(c.phone) === last10(meta.phone)) || null;
+                if (!hit && meta.name) { const nm = meta.name.toLowerCase(); hit = list.find((c: any) => String(c.name || "").toLowerCase() === nm) || null; }
+                if (hit) { contactId = hit.id; forcedLang = hit.spoken_language || null; }
+              }
+
               const up = await fetch("https://api.assemblyai.com/v2/upload", { method: "POST", headers: { authorization: AAI_KEY }, body: bytes });
               if (!up.ok) { failed++; continue; }
               const upUrl = (await up.json()).upload_url;
@@ -156,26 +171,22 @@ serve(async (req) => {
                   // ALREADY detects a non-English transcript and writes transcript_en,
                   // and QuoView already has the English/original toggle. Both were
                   // being fed a transcript that was never really Farsi to begin with.
-                  language_detection: true,
+                  // Auto-detect UNLESS we know what this person speaks. Detection is
+                  // not good enough on its own for code-switched calls: the 15 Aug
+                  // call with Anvar is mostly Farsi with English mixed in, and
+                  // AssemblyAI returned "en" at 0.67 confidence and rendered the
+                  // Farsi as Arabic script. Who is on the call is information the
+                  // audio detector does not have, and we do.
+                  ...(forcedLang ? { language_code: forcedLang } : { language_detection: true }),
                 }),
               });
               if (!sub.ok) { failed++; continue; }
               const tid = (await sub.json()).id;
-              const meta = parseName(f.name);
-              // resolve a contact up front (by phone, else by name) so name-only files still link
-              let contactId: string | null = null;
-              const last10 = (p: string | null) => (p ? p.replace(/\D/g, "").slice(-10) : "");
-              if (meta.phone || meta.name) {
-                const { data: cs } = await admin.from("contacts").select("id,name,phone").eq("user_id", s.user_id);
-                const list = cs || [];
-                if (meta.phone) { const hit = list.find((c: any) => last10(c.phone) === last10(meta.phone)); if (hit) contactId = hit.id; }
-                if (!contactId && meta.name) { const nm = meta.name.toLowerCase(); const hit = list.find((c: any) => String(c.name || "").toLowerCase() === nm); if (hit) contactId = hit.id; }
-              }
               await admin.from("quo_calls").insert({
                 user_id: s.user_id, op_id: `cube:${f.id}`, direction: "inbound",
                 participant: meta.phone, from_number: meta.phone, contact_id: contactId,
                 op_created_at: f.createdTime || new Date().toISOString(), transcript: null, processed_at: null,
-                raw: { cube: { drive_file_id: f.id, file_name: f.name, account_id: s.account_id, stt_status: "transcribing", transcript_id: tid, source: "cube_acr" } },
+                raw: { cube: { drive_file_id: f.id, file_name: f.name, account_id: s.account_id, stt_status: "transcribing", transcript_id: tid, source: "cube_acr", forced_language: forcedLang } },
               });
               submitted++;
             } catch { failed++; }

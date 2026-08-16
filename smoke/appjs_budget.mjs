@@ -38,7 +38,11 @@ const BUDGETS = {
   "src/views/FinanceReports.jsx": 750,
   "src/views/ProspectingView.jsx": 950,   // being split — drop hard as it shrinks
   "src/views/InboxView.jsx": 3450,
-  "src/views/ContactsView.jsx": 2050,
+  // Raised 2050 -> 2075 on 2026-08-16, deliberately: the "Language on calls"
+  // picker is a real new field on the contact form, and a form field belongs on
+  // the form. The option list was moved to src/languages.js first — the budget
+  // was only raised for what genuinely had to stay.
+  "src/views/ContactsView.jsx": 2075,
   "src/views/ContactDetailModal.jsx": 2000,
   "src/views/TasksView.jsx": 1550,
   "src/views/CalendarView.jsx": 1450,

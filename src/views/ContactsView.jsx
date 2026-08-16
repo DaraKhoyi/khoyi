@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
 import { noteContacts } from '../screenNotes';
+import { CALL_LANGUAGES } from '../languages';
 import { Icon } from '../icons';
 import { canHover, quoNormPhone } from '../helpers';
 import { HeaderSearchInput, MultiValueField } from './SharedUi';
@@ -271,6 +272,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const [company, setCompany] = useState(initial?.company || '');
   const [role, setRole] = useState(initial?.role || '');
   const [profession, setProfession] = useState(initial?.profession || '');
+  const [spokenLanguage, setSpokenLanguage] = useState(initial?.spoken_language || '');
   const [referredById, setReferredById] = useState(initial?.referred_by_contact_id || '');
   const [origin, setOrigin] = useState(initial?.origin ?? (initial ? '' : 'manual'));
   const [originDetail, setOriginDetail] = useState(initial?.origin_detail || '');
@@ -335,6 +337,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
       // derives them from the default entries in the arrays.
       company: company.trim() || null, role: role.trim() || null,
       profession: profession.trim() || null,
+      spoken_language: spokenLanguage || null,
       referred_by_contact_id: referredById || null,
       origin: origin || null,
       origin_detail: originDetail.trim() || null,
@@ -432,7 +435,15 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                 <div className="form-group"><label className="form-label">Company</label><input className="form-input" value={company} onChange={e=>setCompany(e.target.value)} /></div>
                 <div className="form-group"><label className="form-label">Role / Title</label><input className="form-input" value={role} onChange={e=>setRole(e.target.value)} /></div>
               </div>
-              <div className="form-group" style={{marginBottom:0}}><label className="form-label">Profession</label><input className="form-input" value={profession} onChange={e=>setProfession(e.target.value)} placeholder="e.g. Realtor, Attorney, Jeweler, Doctor…" /></div>
+              <div className="form-group"><label className="form-label">Profession</label><input className="form-input" value={profession} onChange={e=>setProfession(e.target.value)} placeholder="e.g. Realtor, Attorney, Jeweler, Doctor…" /></div>
+              {/* Language list lives in src/languages.js — see there for why this exists. */}
+              <div className="form-group" style={{marginBottom:0}}>
+                <label className="form-label">Language on calls</label>
+                <select className="form-input" value={spokenLanguage} onChange={e=>setSpokenLanguage(e.target.value)}>
+                  {CALL_LANGUAGES.map(([c,l]) => <option key={c||'auto'} value={c}>{l}</option>)}
+                </select>
+                <div style={{fontSize:'11.5px',color:'var(--text-3)',marginTop:'4px',lineHeight:1.5}}>Set this when someone usually speaks another language on the phone — automatic detection guesses wrong on calls that switch between two languages.</div>
+              </div>
             </EditSection>
 
             <EditSection icon="message" title="Reach" open={openSec.reach} onToggle={()=>tog('reach')} hint="Star one of each as the default — that’s what the Call / Text / Email buttons use." summary={[emails.filter(e=>e.value).length+' email'+(emails.filter(e=>e.value).length===1?'':'s'), phones.filter(p=>p.value).length+' phone'+(phones.filter(p=>p.value).length===1?'':'s')].join(' · ')}>
