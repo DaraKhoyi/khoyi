@@ -86,17 +86,53 @@ supabase.rpc = (fn, params, opts) => {
 // mutation can fail invisibly again, including in code not yet written. Same
 // approach as the ensureFreshSession wrappers above: fix it once, at the seam.
 //
-// DELIBERATELY DOES NOT NOTIFY THE USER. Many call sites already handle their own
-// errors and show a message; a second toast from here would double up. What this
-// removes is SILENCE — every failed mutation now reaches the console and
-// public.client_errors, so a lost write is visible to us the moment it happens
-// instead of surfacing days later as "my task disappeared". User-facing messages
-// remain a per-site judgement, and the ledger tracks which sites still need one.
+// IT ALSO TELLS THE USER, AND OFFERS TO PUT THE SCREEN RIGHT.
+//
+// Reporting to the console alone fixes OUR blindness, not the user's problem. Two
+// things still bit them:
+//
+//   1. NOBODY TOLD THEM. The write failed, the UI had already been updated
+//      optimistically, and they walked away believing it saved.
+//   2. THE SCREEN STAYED WRONG. A rollback cannot be done from here — this layer
+//      has no idea what local state a caller changed before writing. But the
+//      screen can be made TRUE again by reloading from the server, which reaches
+//      the same end: what you see matches what is stored.
+//
+// So a failed mutation now raises a toast with a "Reload" action. That is honest
+// (it never claims the save worked), it is universal (no call site has to
+// remember), and it converts a silent data-loss into a visible, recoverable event.
+//
+// Deduped per table+op so one broken screen cannot spam a wall of toasts. The
+// smoke gate asserts BOTH paths fire — the console line and the user-facing
+// toast with its Reload action — because a failure only we can see is still a
+// failure the agent walks away from.
 const MUTATIONS = ['insert', 'update', 'upsert', 'delete'];
 let _mutSeen = 0;
 
+const _toastSeen = new Map();   // table+op -> last time we bothered the user
+const TOAST_GAP_MS = 15000;
+
+function tellUser(table, op, error) {
+  // Never interrupt over a permission error on a background/telemetry write —
+  // RLS denials on best-effort inserts are expected and not the user's problem.
+  const code = String(error && error.code || '');
+  if (code === '42501' || /row-level security/i.test(error && error.message || '')) return;
+  const key = table + ':' + op;
+  const now = Date.now();
+  if (now - (_toastSeen.get(key) || 0) < TOAST_GAP_MS) return;
+  _toastSeen.set(key, now);
+  const verb = op === 'delete' ? "That didn't delete" : "That didn't save";
+  try {
+    if (typeof window !== 'undefined' && typeof window.__notify === 'function') {
+      window.__notify(verb + " — your last change wasn't stored. Reload to see what's actually saved.",
+        'error', { label: 'Reload', onClick: () => { try { window.location.reload(); } catch (_) {} } });
+    }
+  } catch (_) {}
+}
+
 function reportMutationError(table, op, error) {
   if (!error) return;
+  tellUser(table, op, error);
   // Cap the reporting, not the checking — a broken table would otherwise spam
   // client_errors with thousands of identical rows during one outage.
   _mutSeen++;

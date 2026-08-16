@@ -37,6 +37,15 @@ try {
 
   // A write that is guaranteed to fail: a column that does not exist. The point
   // is the caller DISCARDS the result, exactly like the 247 sites in the app.
+  // Capture what the USER is shown, not just the console. Reporting a failure to
+  // devtools fixes our blindness; it does not stop an agent walking away thinking
+  // their change saved.
+  await page.evaluate(() => {
+    window.__toasts = [];
+    const orig = window.__notify;
+    window.__notify = (msg, kind, action) => { window.__toasts.push({ msg, kind, hasAction: !!action }); if (orig) return orig(msg, kind, action); };
+  });
+
   const outcome = await page.evaluate(async () => {
     try {
       await window.__supabase.from('tasks').update({ __no_such_column__: 1 }).eq('id', '00000000-0000-0000-0000-000000000000');
@@ -49,6 +58,14 @@ try {
   if (!reported.length) {
     failed = 'a mutation failed and NOTHING was reported — the wrapper in dataService.js is not firing';
   }
+  const toasts = await page.evaluate(() => window.__toasts || []);
+  const shown = toasts.filter((t) => t.kind === 'error');
+  if (!failed && !shown.length) {
+    failed = 'the failure was logged but the USER was never told — tellUser() in dataService.js is not firing';
+  }
+  if (!failed && !shown.some((t) => t.hasAction)) {
+    failed = 'the user was told but given no way to fix the screen — the Reload action is missing';
+  }
 } catch (err) {
   failed = String(err).slice(0, 200);
 }
@@ -59,4 +76,4 @@ if (failed) {
   console.error('  ✗ ' + failed);
   process.exit(1);
 }
-console.log(`MUTATION GUARD: clean — failed writes are reported (${reported.length} caught, e.g. ${reported[0].slice(0, 90)})`);
+console.log(`MUTATION GUARD: clean — failed writes are reported (${reported.length}) AND surfaced to the user with a Reload action`);
