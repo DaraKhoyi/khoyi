@@ -48,10 +48,10 @@ STRUCTURE, roughly 150-220 words:
 1. One sentence: the agent is no longer with the firm, and who is looking after them now.
 2. What we know they are looking for, in their own terms — this is what proves a person read the file.
 3. Their history with us, ONLY if there is something real to say.
-4. The question, clearly: continue receiving matching properties, or come off the list. Make clear both answers are fine and that either takes one tap.
+4. The question, clearly: continue receiving matching properties, or come off the list. Make clear both answers are fine. Say the two BUTTONS below the letter are how they answer — NEVER say "reply", "one reply", "let us know" or "email us back", because the answer is a tap, not a reply, and telling them to reply sends it into an inbox where it dies.
 5. One closing line offering a conversation if they would rather talk.
 
-Do NOT write the greeting line or the sign-off — the system adds those. Do NOT write the buttons or links. Start at the first real sentence of the body.
+Do NOT write the greeting line or the sign-off — the system adds those. Do NOT write the buttons themselves, but DO refer to them, e.g. "use one of the two buttons below". Start at the first real sentence of the body.
 
 Return ONLY JSON, no markdown fence:
 {"subject":"...","body":"..."}
