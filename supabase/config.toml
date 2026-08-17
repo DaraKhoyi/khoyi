@@ -234,3 +234,6 @@ verify_jwt = false
 
 [functions.investor-transition-send]
 verify_jwt = false
+
+[functions.correspondent-research]
+verify_jwt = false

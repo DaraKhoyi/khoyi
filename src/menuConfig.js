@@ -34,6 +34,7 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     { label: 'Autonomous', icon: 'sparkles', ai: true, children: [
       { label: 'Unstuck.', view: 'unstuck', icon: 'properties', ai: true },
       { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
+      { label: 'The Correspondent', view: 'correspondent', icon: 'notes', ai: true },
     ] },
     { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },
     // Brokerage-only: the company tells departing agents' investors, so this is not
