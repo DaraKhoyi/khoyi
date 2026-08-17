@@ -10,7 +10,7 @@ const URL = process.env.SMOKE_URL || 'http://localhost:4173/';
 const EMAIL = process.env.SMOKE_EMAIL;
 const PASSWORD = process.env.SMOKE_PASSWORD;
 const VIEWS = (process.env.SMOKE_VIEWS ||
-  'dashboard,inbox,contacts,tasks,calendar,quo,email_review,group_message,chief,agentruns,agent_activity,journal,brain,prospecting,settings,documents,my_prism,myvoice,app_health,listing_presentation,google_contacts,cadence_review,coach,knowledge,unstuck,today,numbers,scoreboard,pipeline,files,learn,teams,team,contact_types,announcements,review,tracker,agents,recruiting,systems,finance,deals,notes,investor_pipeline,adoption,transactions,production,properties,investments,briefing,prism,growth,mileage,playbooks,someday,disc_test,disc_roster,voice_roster,chat,actas'
+  'dashboard,inbox,contacts,tasks,calendar,quo,email_review,group_message,chief,agentruns,agent_activity,journal,brain,prospecting,settings,documents,my_prism,myvoice,app_health,listing_presentation,google_contacts,cadence_review,coach,knowledge,unstuck,today,numbers,scoreboard,pipeline,files,learn,teams,team,contact_types,announcements,review,tracker,agents,recruiting,systems,finance,deals,notes,investor_pipeline,adoption,transactions,production,properties,investments,briefing,prism,growth,mileage,playbooks,someday,disc_test,disc_roster,voice_roster,chat,actas,tags'
 ).split(',').map(s => s.trim()).filter(Boolean);
 
 const BOUNDARY = 'This view ran into an error';

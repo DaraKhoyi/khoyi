@@ -139,6 +139,7 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
     // ── Settings & Systems ──
     { label: 'Settings & Systems', icon: 'settings', children: [
+      { label: 'Tags', view: 'tags', icon: 'notes' },
       { label: 'Settings', view: 'settings', icon: 'settings' },
       { label: 'System Health', view: 'app_health', icon: 'systems' },
     ] },

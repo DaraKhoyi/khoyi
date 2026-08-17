@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../dataService';
 import { noteContacts } from '../screenNotes';
 import { CALL_LANGUAGES } from '../languages';
+import TagInput, { useTagVocabulary } from './TagInput';
 import { Icon } from '../icons';
 import { canHover, quoNormPhone } from '../helpers';
 import { HeaderSearchInput, MultiValueField } from './SharedUi';
@@ -273,6 +274,8 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const [role, setRole] = useState(initial?.role || '');
   const [profession, setProfession] = useState(initial?.profession || '');
   const [spokenLanguage, setSpokenLanguage] = useState(initial?.spoken_language || '');
+  const [tags, setTags] = useState(Array.isArray(initial?.tags) ? initial.tags : []);
+  const { tags: tagVocab, reload: reloadTags } = useTagVocabulary();
   const [referredById, setReferredById] = useState(initial?.referred_by_contact_id || '');
   const [origin, setOrigin] = useState(initial?.origin ?? (initial ? '' : 'manual'));
   const [originDetail, setOriginDetail] = useState(initial?.origin_detail || '');
@@ -338,6 +341,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
       company: company.trim() || null, role: role.trim() || null,
       profession: profession.trim() || null,
       spoken_language: spokenLanguage || null,
+      tags: tags.length ? tags : null,
       referred_by_contact_id: referredById || null,
       origin: origin || null,
       origin_detail: originDetail.trim() || null,
@@ -443,6 +447,15 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                   {CALL_LANGUAGES.map(([c,l]) => <option key={c||'auto'} value={c}>{l}</option>)}
                 </select>
                 <div style={{fontSize:'11.5px',color:'var(--text-3)',marginTop:'4px',lineHeight:1.5}}>Set this when someone usually speaks another language on the phone — automatic detection guesses wrong on calls that switch between two languages.</div>
+              </div>
+              {/* Tags live on the FIRST screen on purpose: tagging happens while you
+                  still remember why, not three screens later. */}
+              <div className="form-group" style={{marginTop:'12px',marginBottom:0}}>
+                <label className="form-label">Tags</label>
+                <TagInput value={tags} onChange={setTags} vocabulary={tagVocab} onVocabularyChange={reloadTags} />
+                <div style={{fontSize:'11.5px',color:'var(--text-3)',marginTop:'4px',lineHeight:1.5}}>
+                  Tab or comma to add. Gold ◆ tags are the brokerage's — everyone can use them, only the brokerage can change them.
+                </div>
               </div>
             </EditSection>
 
