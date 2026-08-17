@@ -225,3 +225,6 @@ verify_jwt = false
 
 [functions.google-connection-watch]
 verify_jwt = false
+
+[functions.investor-transition-draft]
+verify_jwt = false
