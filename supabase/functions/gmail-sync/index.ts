@@ -437,6 +437,29 @@ async function syncOneAccount(supabase, account, opts) {
       result.new_messages++;
       if (direction === "inbound") {
         result.new_inbound = (result.new_inbound || 0) + 1;
+        // A REPLY ENDS THE AUTOMATION. Any inbound message halts every pending
+        // Correspondent note to that person and hands the relationship back to the
+        // human. A machine that keeps talking after someone answered is the single
+        // clearest tell that it was never a person, and it is not recoverable.
+        //
+        // Done HERE, in the one place inbound mail is already resolved to a contact,
+        // rather than in a separate poller — a second implementation of "did they
+        // reply" is exactly the drift this codebase pays for repeatedly.
+        try {
+          if (contact && contact.id) {
+            const nowIso = new Date().toISOString();
+            // Stamp anything already sent, so the reply is on the record.
+            await supabase.from("correspondent_sends")
+              .update({ replied_at: nowIso })
+              .eq("contact_id", contact.id).is("replied_at", null).not("sent_at", "is", null);
+            // Kill anything still queued for them. Not paused — cancelled. The agent
+            // is now in a conversation and the machine's turn is over.
+            await supabase.from("correspondent_sends")
+              .update({ status: "halted_by_reply", suppressed_reason: "they replied — handed back to you" })
+              .eq("contact_id", contact.id).in("status", ["drafted", "approved"]);
+          }
+        } catch (_) { /* never let this break the mail sync */ }
+
         // stash for the Lead Concierge pass after the loop (email path)
         try {
           conciergeCandidates.push({ from_address: fromObj.email, from_name: fromObj.name, subject: subject || null,
