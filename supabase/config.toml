@@ -237,3 +237,9 @@ verify_jwt = false
 
 [functions.correspondent-research]
 verify_jwt = false
+
+[functions.correspondent-personalize]
+verify_jwt = false
+
+[functions.correspondent-send]
+verify_jwt = false

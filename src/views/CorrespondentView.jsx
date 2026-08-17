@@ -28,6 +28,7 @@ export default function CorrespondentView({ userId }) {
   const [pieces, setPieces] = useState([]);
   const [open, setOpen] = useState(null);
   const [audience, setAudience] = useState(null);
+  const [sends, setSends] = useState([]);
   const [tags, setTags] = useState([]);
 
   const load = useCallback(async () => {
@@ -71,6 +72,55 @@ export default function CorrespondentView({ userId }) {
     if (error) { if (window.__notify) window.__notify(error.message, 'error'); return; }
     if (window.__notify) window.__notify('Published. The notes can go out now.');
     await load(); setOpen({ ...p, status: 'published' });
+  };
+
+  // Personalize, then approve, then send — in that order, and each step refuses
+  // to run before the one before it. The order is the safety.
+  const personalize = async (p) => {
+    setBusy('personalize');
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
+      const res = await fetch('https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/correspondent-personalize', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ piece_id: p.id }),
+      });
+      const d = await res.json();
+      if (!d.ok) { if (window.__notify) window.__notify(d.error || 'Could not draft the notes.', 'error'); }
+      else if (window.__notify) window.__notify(
+        d.personal + ' personal note' + (d.personal === 1 ? '' : 's') + ', ' + d.newsletter_only +
+        ' as newsletter (no specific fact on file — not faked).');
+      await loadSends(p.id);
+    } catch (e) { if (window.__notify) window.__notify(String(e), 'error'); }
+    setBusy(null);
+  };
+
+  const loadSends = async (pid) => {
+    const { data } = await supabase.from('correspondent_sends').select('*').eq('piece_id', pid).order('tier');
+    setSends(Array.isArray(data) ? data : []);
+  };
+
+  const approve = async (p) => {
+    const { data, error } = await supabase.rpc('correspondent_approve', { p_piece: p.id });
+    if (error || data?.ok === false) { if (window.__notify) window.__notify(data?.error || error.message, 'error'); return; }
+    if (window.__notify) window.__notify('Approved — ' + data.approved_personal + ' personal, ' + data.approved_newsletter + ' newsletter. Nothing has sent yet.');
+    await load(); await loadSends(p.id); setOpen({ ...p, status: 'approved' });
+  };
+
+  const send = async (p) => {
+    if (!window.confirm('Send now?\n\nThis goes out from your own email address, one message at a time. Only the notes you approved will send.')) return;
+    setBusy('send');
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const res = await fetch('https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/correspondent-send', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + sess?.session?.access_token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ piece_id: p.id }),
+      });
+      const d = await res.json();
+      if (window.__notify) window.__notify(d.ok ? ('Sent ' + d.sent + (d.failed ? ', ' + d.failed + ' failed' : '')) : (d.error || 'Send failed'), d.ok ? 'info' : 'error');
+      await load(); await loadSends(p.id);
+    } catch (e) { if (window.__notify) window.__notify(String(e), 'error'); }
+    setBusy(null);
   };
 
   const sending = audience ? audience.filter(a => !a.suppressed) : [];
@@ -179,6 +229,19 @@ export default function CorrespondentView({ userId }) {
                 {open.status !== 'published'
                   ? <button onClick={() => publish(open)} style={btn}>Publish the piece</button>
                   : <span style={{ fontSize: 12.5, color: CHAMP, alignSelf: 'center' }}>Published — notes can go out</span>}
+                {open.published_at && (
+                  <button onClick={() => personalize(open)} disabled={busy === 'personalize'} style={ghost}>
+                    {busy === 'personalize' ? 'Writing notes…' : (sends.length ? 'Redraft the notes' : 'Draft the notes')}
+                  </button>
+                )}
+                {sends.some(x => x.status === 'drafted' || x.status === 'newsletter_only') && (
+                  <button onClick={() => approve(open)} style={btn}>Approve {sends.filter(x => x.status === 'drafted' || x.status === 'newsletter_only').length}</button>
+                )}
+                {sends.some(x => x.status === 'approved') && (
+                  <button onClick={() => send(open)} disabled={busy === 'send'} style={btn}>
+                    {busy === 'send' ? 'Sending…' : 'Send ' + sends.filter(x => x.status === 'approved').length}
+                  </button>
+                )}
                 <button onClick={() => setOpen(null)} style={ghost}>Close</button>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
