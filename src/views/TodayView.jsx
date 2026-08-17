@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { enqueue } from '../outbox';
 import { supabase } from '../dataService';
 import { CallFollowupsPanel } from './ReviewPanels';
 import CommitmentReview from './CommitmentReview';
@@ -342,7 +343,7 @@ export default function TodayView({
         @media (prefers-reduced-motion: reduce){.gold-move,.gold-hairline{animation:none}.fade-up,.fade-up-2{animation:none}.live-dot{animation:none}}`}</style>
 
       <EnableNotifications myUserId={myUserId} />
-      <VoiceNote setView={setView} />
+      <VoiceNote setView={setView} userId={myUserId} />
       <MorningBrief setView={setView} />
       <CallList />
       <LeadConcierge myUserId={myUserId} setView={setView} />
@@ -627,7 +628,7 @@ export default function TodayView({
 // #1 thing agents want — this is the "saves brainpower" feature they'll open the
 // app for between appointments. Records with MediaRecorder, transcribes + extracts
 // server-side, then hands back a review card. Nothing saves until they tap Apply.
-function VoiceNote({ setView }) {
+function VoiceNote({ setView, userId }) {
   const [phase, setPhase] = useState('idle');   // idle | recording | working | review | error
   const [secs, setSecs] = useState(0);
   const [result, setResult] = useState(null);
@@ -658,13 +659,26 @@ function VoiceNote({ setView }) {
   const cancel = () => { clearInterval(timerRef.current); try { recRef.current && recRef.current.stop(); } catch (_) {} chunksRef.current = []; setPhase('idle'); };
 
   const process = async (blob) => {
+    let b64 = null;
     try {
-      const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
+      b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
       const { data, error } = await supabase.functions.invoke('voice-note', { body: { audio_base64: b64 } });
       if (error || data?.error) throw new Error(data?.error || 'Could not process the note');
       if (data.empty) { setMsg('I couldn\u2019t hear anything — try again.'); setPhase('error'); return; }
       setTranscript(data.transcript || ''); setResult(data.result || null); setPhase('review');
-    } catch (e) { setMsg(e.message || 'Something went wrong'); setPhase('error'); }
+    } catch (e) {
+      // THE PARKING-GARAGE CASE. Before this, a failed upload showed an error and
+      // the recording was gone — and an agent who loses a twenty-second note once
+      // does not record a second one. The audio is kept on the phone and retried
+      // when signal returns, so the worst outcome is a delay, never a loss.
+      try {
+        await enqueue(userId, 'voice_note', { audio_base64: b64 }, 'Voice note (' + Math.round(blob.size / 1024) + 'KB)');
+        setMsg('No signal — the recording is saved on your phone and will send itself when you\u2019re back online.');
+      } catch (_) {
+        setMsg(e.message || 'Something went wrong');
+      }
+      setPhase('error');
+    }
   };
 
   const apply = async () => {

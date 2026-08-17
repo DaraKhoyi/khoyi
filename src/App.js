@@ -89,6 +89,7 @@ import { buildMenu } from './menuConfig';
 import ScreenSwitcher from './views/ScreenSwitcher';
 import { touchScreen, previousScreen } from './openScreens';
 import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
+import { startOutboxWatcher, pruneDrafts } from './outbox';
 import { MyNumbersView } from './views/MetricsPanels';
 import { LockedPage, QuickLog } from './views/QuickLog';
 import { ScoreboardView, PipelineView } from './views/ScoreboardView';
@@ -1228,6 +1229,23 @@ function AppMain() {
   // Two-finger tap anywhere -> flip. NOT double-tap-anywhere: on iOS that is zoom
   // outside touch-action:manipulation, and select-a-word inside every text field.
   React.useEffect(() => attachTwoFingerFlip(flipBack), [flipBack]);
+
+  // Drain anything captured while the signal was bad. Runs on reconnect, on
+  // foreground, and once a minute — the user never presses anything, because a
+  // retry the user has to trigger is a retry that does not happen.
+  React.useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    pruneDrafts();
+    return startOutboxWatcher({
+      voice_note: async (payload) => {
+        const { data, error } = await supabase.functions.invoke('voice-note', { body: payload });
+        // THROW to keep it queued. Returning quietly would delete the recording,
+        // which is the exact loss this exists to prevent.
+        if (error || data?.error) throw new Error(data?.error || error?.message || 'send failed');
+      },
+    }, uid);
+  }, [session]);   // eslint-disable-line react-hooks/exhaustive-deps
   // Remember the screen we are on so the switcher has something to flip to.
   React.useEffect(() => {
     const uid = session?.user?.id; if (!uid || !view) return;

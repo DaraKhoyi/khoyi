@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
+import { useDurableDraft } from './DurableDraft';
 import { Icon } from '../icons';
 import { TipFor } from '../tipsUi';
 import { confirmDialog, notify, notifyError } from '../notify';
@@ -59,6 +60,11 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   const [deepResults, setDeepResults] = useState(null);
   const [deepBusy, setDeepBusy] = useState(false);
   const saveTimer = useRef(null);
+
+  // The note body survives a failed save, a reload, a crash, or the phone dying —
+  // the autosave below writes to the SERVER, which is exactly what fails in a
+  // parking garage. This writes to the phone, and restores silently.
+  const bodyDraft = useDurableDraft('notes', 'body', selected?.id, editBody, setEditBody);
   const bodyRef = useRef(null);
 
   const searchInputRef = useRef(null);
@@ -161,6 +167,8 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
       }
       setSaving(false);
       setSavedAt(Date.now());
+      // The server has it; the local copy is no longer needed.
+      bodyDraft.done();
     }, 600);
   }
   const handleTitleChange = (e) => { setEditTitle(e.target.value); scheduleAutoSave(e.target.value, editBody); };
