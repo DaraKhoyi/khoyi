@@ -31,6 +31,7 @@
 // verify_jwt: false — called with the agent's JWT and scoped by it.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildNewsletterDocx } from "./docxNewsletter.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey" };
 const esc = (s: unknown) =>
@@ -61,7 +62,7 @@ function md(src: string): string {
   return out.join("\n");
 }
 
-function page(piece: any, agentName: string, forWord: boolean): string {
+function page(piece: any, agentName: string, forWord: boolean): string {   // forWord retained for the print path only
   const comp = piece.compliance || {};
   const passed = comp.pass !== false;
   const findings: any[] = Array.isArray(comp.findings) ? comp.findings : [];
@@ -184,19 +185,27 @@ Deno.serve(async (req) => {
   const { data: agent } = await asUser.from("agents").select("name").eq("auth_user_id", piece.user_id).maybeSingle();
   const agentName = agent?.name || "Realty ONE Group Advantage";
 
-  const forWord = format === "doc" || format === "docx" || format === "word";
-  const body = page(piece, agentName, forWord);
+  const safe = String(piece.slug || piece.title || "newsletter").replace(/[^a-z0-9\-]+/gi, "-").slice(0, 60);
 
-  if (forWord) {
-    const safe = String(piece.slug || piece.title || "newsletter").replace(/[^a-z0-9\-]+/gi, "-").slice(0, 60);
-    return new Response(body, {
-      headers: {
-        ...cors,
-        "content-type": "application/msword; charset=utf-8",
-        "content-disposition": `attachment; filename="${safe}.doc"`,
-        "cache-control": "no-store",
-      },
-    });
+  // A REAL .docx — genuine OOXML, not HTML wearing a Word extension. Word can edit
+  // it, Track Changes works, and it survives a re-save.
+  if (format === "docx" || format === "doc" || format === "word") {
+    try {
+      const bytes = await buildNewsletterDocx(piece, agentName);
+      return new Response(bytes, {
+        headers: {
+          ...cors,
+          "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "content-disposition": `attachment; filename="${safe}.docx"`,
+          "cache-control": "no-store",
+        },
+      });
+    } catch (err) {
+      // Never fall back to a fake .doc: a file that claims to be Word and is not
+      // is worse than an honest failure the agent can report.
+      return new Response(`<p>Could not build the Word file: ${esc(String(err).slice(0, 300))}</p>`, { status: 500, headers: html });
+    }
   }
-  return new Response(body, { headers: html });
+
+  return new Response(page(piece, agentName, false), { headers: html });
 });

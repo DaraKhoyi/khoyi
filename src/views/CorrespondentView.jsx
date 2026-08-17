@@ -83,11 +83,11 @@ export default function CorrespondentView({ userId }) {
         if (window.__notify) window.__notify(t.replace(/<[^>]*>/g, '').trim() || 'Could not build the newsletter.', 'error');
         return;
       }
-      if (format === 'doc') {
+      if (format === 'docx') {
         const blob = await res.blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = (p.slug || 'newsletter') + '.doc';
+        a.download = (p.slug || 'newsletter') + '.docx';
         document.body.appendChild(a); a.click();
         setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
         return;
@@ -270,7 +270,7 @@ export default function CorrespondentView({ userId }) {
                   </button>
                 )}
                 <button onClick={() => exportPiece(open, 'pdf')} style={ghost}>Newsletter (PDF)</button>
-                <button onClick={() => exportPiece(open, 'doc')} style={ghost}>Newsletter (Word)</button>
+                <button onClick={() => exportPiece(open, 'docx')} style={ghost}>Newsletter (Word)</button>
                 {sends.some(x => x.status === 'drafted' || x.status === 'newsletter_only') && (
                   <button onClick={() => approve(open)} style={btn}>Approve {sends.filter(x => x.status === 'drafted' || x.status === 'newsletter_only').length}</button>
                 )}
