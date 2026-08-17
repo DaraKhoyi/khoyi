@@ -46,6 +46,12 @@ const SYSTEM = `You write one short covering note from a real-estate agent to on
 
 WHAT THIS IS: the note is one-to-one. The PIECE is openly a publication and everyone gets the same one — that is fine and honest. The note is the part that is only for this person.
 
+WHOSE VOICE THIS IS — get this wrong and the note is unusable:
+You are writing AS the agent, in the agent's own first person. The clause you are given was extracted from the agent's own records and may be phrased in the second person about them ("You called Jorge to apologise..."). That is a note-to-self, not a sentence to send. Convert it to the agent's first person ("I'm sorry I'm going to miss..."). NEVER refer to the agent by name in the third person, and NEVER write the agent's own name alongside "I" — a line like "Dara and I are going to miss your event" tells the reader instantly that a machine wrote this in someone else's voice.
+
+THE CLAUSE IS ONE CLAUSE:
+You may be handed more context than you need. Use the SINGLE most relevant specific fact and discard the rest. If the clause contains several facts — an apology, a spouse, a third party, a business proposal — pick one. Stacking them is how a note stops reading like a person and starts reading like a file being read aloud. In particular, never repeat a business proposal or a pitch that appears in the clause: this note asks for nothing.
+
 THE ONE RULE THAT MATTERS: you are given ONE true clause about this person. Use it once, naturally, in the first two sentences. Do not embellish it, do not extend it into a paragraph, do not invent a second detail around it. If you find yourself adding colour that was not given to you, stop — that is the forgery this system exists to prevent.
 
 NEVER:
@@ -167,6 +173,20 @@ Deno.serve(async (req) => {
       try { p = JSON.parse(txt.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim()); }
       catch (_) { const i = txt.indexOf("{"), z = txt.lastIndexOf("}"); if (i > -1 && z > i) { try { p = JSON.parse(txt.slice(i, z + 1)); } catch (_) {} } }
       if (!p?.body) { out.push({ contact_id: cid, name: a.name, error: "draft shape unexpected" }); continue; }
+
+      // DETERMINISTIC VOICE CHECK. The prompt asks; this verifies. The clause is
+      // extracted in the second person about the agent ("You called Jorge..."), and
+      // a model handed that will sometimes write "Dara and I are going to miss your
+      // event" — the agent's own name beside "I", in a note supposedly from them.
+      // A reader spots that instantly and the whole system is finished.
+      // Held back rather than sent: a note that outs itself is worse than no note.
+      if (agentFirst && agentFirst.length > 1) {
+        const selfRef = new RegExp("\\b" + agentFirst + "\\b[^.!?]{0,40}\\b(and|&)\\s+I\\b|\\bI\\b[^.!?]{0,40}\\b(and|&)\\s+" + agentFirst + "\\b", "i");
+        if (selfRef.test(String(p.body))) {
+          out.push({ contact_id: cid, name: a.name, error: "held: the draft referred to the agent in the third person alongside 'I'" });
+          continue;
+        }
+      }
 
       usedClauses.add(String(p.body).split(/(?<=\.)\s/)[1] || String(p.body).slice(0, 90));
 
