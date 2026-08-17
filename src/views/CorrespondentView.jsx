@@ -66,6 +66,41 @@ export default function CorrespondentView({ userId }) {
     try { const { data } = await supabase.rpc('correspondent_audience', { p_piece: p.id }); setAudience(Array.isArray(data) ? data : []); } catch (_) { setAudience([]); }
   };
 
+  // The piece as a branded newsletter. PDF opens print-ready; Word downloads and
+  // opens editable. Both are produced server-side rather than from a print
+  // stylesheet, because the export has to carry the licensed brokerage disclosure
+  // and must refuse to make a failed compliance review look finished.
+  const exportPiece = async (p, format) => {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      if (!token) { if (window.__notify) window.__notify('Please sign in again.', 'error'); return; }
+      const url = 'https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/correspondent-export'
+        + '?t=' + encodeURIComponent(p.id) + '&format=' + format;
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) {
+        const t = await res.text();
+        if (window.__notify) window.__notify(t.replace(/<[^>]*>/g, '').trim() || 'Could not build the newsletter.', 'error');
+        return;
+      }
+      if (format === 'doc') {
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (p.slug || 'newsletter') + '.doc';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        return;
+      }
+      const html = await res.text();
+      const w = window.open('', '_blank');
+      if (!w) { if (window.__notify) window.__notify('Please allow pop-ups to open the newsletter.', 'error'); return; }
+      w.document.open(); w.document.write(html); w.document.close();
+    } catch (e) {
+      if (window.__notify) window.__notify('Could not build the newsletter: ' + (e.message || e), 'error');
+    }
+  };
+
   const publish = async (p) => {
     const { error } = await supabase.from('correspondent_pieces')
       .update({ status: 'published', published_at: new Date().toISOString() }).eq('id', p.id);
@@ -234,6 +269,8 @@ export default function CorrespondentView({ userId }) {
                     {busy === 'personalize' ? 'Writing notes…' : (sends.length ? 'Redraft the notes' : 'Draft the notes')}
                   </button>
                 )}
+                <button onClick={() => exportPiece(open, 'pdf')} style={ghost}>Newsletter (PDF)</button>
+                <button onClick={() => exportPiece(open, 'doc')} style={ghost}>Newsletter (Word)</button>
                 {sends.some(x => x.status === 'drafted' || x.status === 'newsletter_only') && (
                   <button onClick={() => approve(open)} style={btn}>Approve {sends.filter(x => x.status === 'drafted' || x.status === 'newsletter_only').length}</button>
                 )}
