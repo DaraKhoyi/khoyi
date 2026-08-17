@@ -84,7 +84,11 @@ Deno.serve(async (req) => {
   if (piece.status === "sent") return j({ ok: false, error: "already sent" });
 
   const { data: aud } = await asUser.rpc("correspondent_audience", { p_piece: pieceId });
-  const included = (Array.isArray(aud) ? aud : []).filter((a: any) => a.disposition === "included");
+  // The audience RPC returns `suppressed` (boolean), not a disposition string.
+  // I had this wrong first time and it silently produced an empty audience — the
+  // function returned ok:true with 0 recipients, which reads as "nothing to do"
+  // rather than "I looked at the wrong field".
+  const included = (Array.isArray(aud) ? aud : []).filter((a: any) => !a.suppressed);
 
   const { data: agent } = await asUser.from("agents").select("name").eq("auth_user_id", uid).maybeSingle();
   const agentFirst = String(agent?.name || "").split(" ")[0] || "your agent";
