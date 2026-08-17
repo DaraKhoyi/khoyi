@@ -185,6 +185,7 @@ const TransactionPipeline = lazyWithReload(() => import('./views/TransactionPipe
 const InvestorPipeline = lazyWithReload(() => import('./views/InvestorPipeline'));
 const UnstuckView = lazyWithReload(() => import('./views/UnstuckView'));
 const TagsView = lazyWithReload(() => import('./views/TagsView'));
+const InvestorTransition = lazyWithReload(() => import('./views/InvestorTransition'));
 const AdoptionView = lazyWithReload(() => import('./views/AdoptionView'));
 const ProspectingView = lazyWithReload(() => import('./views/ProspectingView'));
 const QuarterlyTaxBanner = lazyWithReload(() => import('./views/QuarterlyTaxBanner'));
@@ -1743,7 +1744,7 @@ function AppMain() {
   // the sidebar renders them greyed out and unclickable. Adding a MENU row is
   // not enough on its own — google_contacts shipped greyed for exactly that
   // reason.
-  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts', 'cadence_review', 'unstuck', 'tags', 'my_prism', 'production', 'transactions']);
+  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts', 'cadence_review', 'unstuck', 'tags', 'investor_transition', 'my_prism', 'production', 'transactions']);
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
@@ -1915,6 +1916,7 @@ function AppMain() {
               : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
               : view==='unstuck' ? <UnstuckView userId={user.id} />
               : view==='tags' ? <TagsView isAdmin={isAdmin} />
+              : view==='investor_transition' ? <InvestorTransition userId={user.id} />
               : view==='prospecting' ? <ProspectingView userId={user.id} initialSub={deepLink.view==='prospecting'?deepLink.sub:null} subNonce={deepLink.n} barDriven={activeMode==='prospect' && dataLoaded}/>
               : view==='tasks'       ? <div className="ww-tasks"><style>{`.ww-tasks{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-tasks .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-tasks .view-header h2,.ww-tasks .page-header h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;font-size:30px;} .ww-tasks .panel-header h3{font-family:'Fraunces',serif;font-weight:400;letter-spacing:-.01em;color:#F6F1E7;} .ww-tasks .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-tasks .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-tasks .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-tasks .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-tasks .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-tasks .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-tasks .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-tasks .task-item{border-color:rgba(203,163,92,.14);} .ww-tasks .task-text{color:#F6F1E7;} .ww-tasks .empty-state{color:#8C8475;} .ww-tasks .empty-icon{color:#CBA35C;}`}</style><TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}</div>
               : view==='email_review' ? <EmailReviewView userId={user.id} emailAccounts={emailAccounts} setView={setView} onCount={setNeedsReviewCount}/>

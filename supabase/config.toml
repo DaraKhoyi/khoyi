@@ -228,3 +228,9 @@ verify_jwt = false
 
 [functions.investor-transition-draft]
 verify_jwt = false
+
+[functions.investor-transition-answer]
+verify_jwt = false
+
+[functions.investor-transition-send]
+verify_jwt = false

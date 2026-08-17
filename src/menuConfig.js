@@ -36,6 +36,9 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
     ] },
     { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },
+    // Brokerage-only: the company tells departing agents' investors, so this is not
+    // an agent-facing screen. The RPCs are staff-gated regardless of the menu.
+    ...(isAdmin ? [{ label: 'Agent Departures', view: 'investor_transition', icon: 'building' }] : []),
     { label: 'Cadence Review', view: 'cadence_review', icon: 'clock' },
     // Planning deliberately repeats Tasks / Calendar / Contacts from above. They
     // are one tap away as daily drivers AND grouped here as planning tools; the
