@@ -108,6 +108,14 @@ function QuoTranscript({ call }) {
           </div>
         )}
       </div>
+      {/* Say so when the language guess was shaky, instead of presenting a possibly
+          wrong transcript as fact. A mostly-Farsi call once came back as "English"
+          at 0.67 confidence and read as plausible nonsense with nothing flagged. */}
+      {call?.raw?.cube?.language_uncertain && (
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6, lineHeight: 1.5 }}>
+          Language was unclear on this call{call?.raw?.cube?.language_code ? ` (best guess: ${String(call.raw.cube.language_code).toUpperCase()})` : ''} — if this reads wrong, set the language on that contact and it will transcribe correctly next time.
+        </div>
+      )}
       <div style={{ maxHeight: 220, overflowY: 'auto', fontSize: 12.5 }}>
         {hasEn && showEng
           ? <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: 'var(--text-1)' }}>{call.transcript_en}</div>
@@ -501,7 +509,7 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
   const feed = useMemo(() => {
     const rows = [];
     for (const m of msgs) rows.push({ k: 'text', id: m.id, at: m.op_created_at || m.created_at, dir: m.direction, body: m.body, who: m.direction === 'incoming' ? m.from_number : m.to_number, status: m.status });
-    for (const c of calls) rows.push({ k: 'call', id: c.id, at: c.op_created_at || c.created_at, dir: c.direction, who: c.participant, dur: c.duration, status: c.status, summary: c.summary, next_steps: c.next_steps, transcript: c.transcript, transcript_en: c.transcript_en, op_id: c.op_id, recording_url: c.recording_url });
+    for (const c of calls) rows.push({ k: 'call', id: c.id, at: c.op_created_at || c.created_at, dir: c.direction, who: c.participant, dur: c.duration, status: c.status, summary: c.summary, next_steps: c.next_steps, transcript: c.transcript, transcript_en: c.transcript_en, op_id: c.op_id, recording_url: c.recording_url, raw: c.raw });
     return rows.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
   }, [msgs, calls]);
 

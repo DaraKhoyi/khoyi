@@ -207,7 +207,21 @@ serve(async (req) => {
           if (t.status === "completed") {
             const text = diarize(t);
             const dur = t.audio_duration ? Math.round(t.audio_duration) : null;
-            const newRaw = { ...(call.raw || {}), cube: { ...(call.raw?.cube || {}), stt_status: "done", utterances: (t.utterances || []).map((u: any) => ({ speaker: u.speaker, text: u.text })) } };
+            // Record WHAT LANGUAGE was used and how sure the detector was. Without this a
+            // wrong transcription is indistinguishable from a bad speaker — the 15 Aug
+            // Farsi call came back as "en" at 0.67 and nothing anywhere said so.
+            //
+            // Low confidence is flagged rather than guessed at. Forcing a language we
+            // are not sure of is how you corrupt the calls that were fine: most calls
+            // with a bilingual contact are in English, and only some switch.
+            const detLang = String(t.language_code || "").toLowerCase() || null;
+            const detConf = typeof t.language_confidence === "number" ? t.language_confidence : null;
+            const forced = call?.raw?.cube?.forced_language || null;
+            const uncertain = !forced && detConf !== null && detConf < 0.75;
+            const newRaw = { ...(call.raw || {}), cube: { ...(call.raw?.cube || {}), stt_status: "done",
+              language_code: detLang, language_confidence: detConf,
+              language_uncertain: uncertain || undefined,
+              utterances: (t.utterances || []).map((u: any) => ({ speaker: u.speaker, text: u.text })) } };
             await admin.from("quo_calls").update({ transcript: text || "(no speech detected)", duration: dur, raw: newRaw, updated_at: new Date().toISOString() }).eq("id", call.id);
             ingested++;
           } else if (t.status === "error") {
