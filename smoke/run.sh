@@ -43,6 +43,12 @@ node smoke/hover_guard.mjs
 echo "→ nested component guard"
 node smoke/nested_component_guard.mjs
 
+# Static guard: no edge function may trust an identity supplied in the request
+# body while running as service role. Three security holes shipped this week in
+# exactly that shape, all invisible to a gate that only drives the browser.
+echo "→ edge function auth guard"
+node smoke/edge_auth.mjs
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 

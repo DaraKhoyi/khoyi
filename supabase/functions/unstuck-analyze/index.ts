@@ -134,6 +134,29 @@ Deno.serve(async (req) => {
     const { data: l } = await admin.from("unstuck_listings").select("*").eq("id", listing_id).maybeSingle();
     if (!l) return j({ ok: false, error: "listing not found" });
 
+    // THE CALLER MUST OWN THE LISTING.
+    //
+    // This runs as service role, so the lookup above bypasses RLS. Without this
+    // check any signed-in agent could pass another agent's listing_id and start an
+    // analysis on it — spending Anthropic tokens on the brokerage's bill and
+    // writing runs into someone else's listing. They could not READ the result
+    // (unstuck_runs is RLS-scoped), which is why this was not a data leak, but
+    // triggering work on a stranger's record is not something to leave open.
+    //
+    // The weekly cron calls this with the service role and no user token; that
+    // path is allowed through deliberately.
+    const _auth = req.headers.get("Authorization") || "";
+    const _isService = _auth.includes(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "\u0000");
+    if (!_isService) {
+      const asUser = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: _auth } },
+      });
+      const { data: who } = await asUser.auth.getUser();
+      if (!who?.user?.id || who.user.id !== l.user_id) {
+        return j({ ok: false, error: "that listing isn't yours" }, 403);
+      }
+    }
+
     // bill the owning agent; body.user_id only as a cron-side fallback
     const billUserId = l.user_id || body.user_id || null;
 
