@@ -32,6 +32,26 @@ const J = (b, s = 200) =>
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    // AUTHENTICATE, AND TAKE THE IDENTITY FROM THE TOKEN.
+    //
+    // This endpoint spends Anthropic tokens. With verify_jwt=false and user_id read
+    // from the body, anyone holding the PUBLIC anon key could call it repeatedly on
+    // the brokerage's bill and attribute the spend to any user they named — so the
+    // cost report would blame an innocent agent. Verified callable with nothing but
+    // the anon key before this fix.
+    //
+    // It does not read the database (the payload is supplied by the client), so this
+    // was never a data leak — it is a billing and attribution hole, which is why the
+    // fix is authentication rather than row scoping.
+    const _auth = req.headers.get("Authorization") || "";
+    const _asUser = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_ANON_KEY"), {
+      global: { headers: { Authorization: _auth } },
+    });
+    const { data: _who } = await _asUser.auth.getUser();
+    const _uid = _who?.user?.id || null;
+    if (!_uid) return new Response(JSON.stringify({ error: "not authenticated" }), {
+      status: 401, headers: { ...cors, "Content-Type": "application/json" },
+    });
     const { user_id = null, name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null, workingHours = null, constraints = "", pipeline = null, lightDay = false } = await req.json();
     const wh = { start: Number(workingHours?.start) || 8, end: Number(workingHours?.end) || 18 };
     const hhmm = (iso) => { try { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch { return ""; } };
@@ -128,7 +148,7 @@ Respond ONLY with strict JSON, no markdown:
     });
     if (!resp.ok) return J({ error: `AI error ${resp.status}` }, 502);
     const data = await resp.json();
-    try { const _sb = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")); await logAiUsage(_sb, { userId: user_id, fn: "plan-my-day", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
+    try { const _sb = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")); await logAiUsage(_sb, { userId: _uid, fn: "plan-my-day", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
     let text = (data?.content || []).map((b) => (b.type === "text" ? b.text : "")).join("").trim();
     text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
     let parsed;

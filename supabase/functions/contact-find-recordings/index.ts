@@ -32,9 +32,30 @@ serve(async (req) => {
 
   try {
     const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { contact_id, user_id } = await req.json();
-    if (!contact_id || !user_id) return J({ error: "need contact_id, user_id" }, 400);
+    const { contact_id } = await req.json();
+    if (!contact_id) return J({ error: "need contact_id" }, 400);
 
+    // IDENTITY COMES FROM THE TOKEN, NEVER FROM THE BODY.
+    //
+    // This previously read user_id out of the request and passed it to a SERVICE
+    // ROLE client, which bypasses RLS entirely. Any signed-in agent could name any
+    // other agent's user_id and read their contacts, call transcripts and meeting
+    // recordings. Verified exploitable before this fix: a brand-new account
+    // retrieved one of the owner's contacts by asking for it.
+    //
+    // The platform's verify_jwt only proves SOME valid token was presented. It says
+    // nothing about WHOSE. Anything running as service role has to establish the
+    // caller itself.
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader) return J({ error: "not authenticated" }, 401);
+    const asUser = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: who, error: whoErr } = await asUser.auth.getUser();
+    const user_id = who?.user?.id;
+    if (whoErr || !user_id) return J({ error: "not authenticated" }, 401);
+
+    // Scoped to the caller: a contact belonging to anyone else simply is not found.
     const { data: contact } = await db.from("contacts").select("id,name,phone").eq("id", contact_id).eq("user_id", user_id).maybeSingle();
     if (!contact) return J({ error: "no such contact" }, 404);
 

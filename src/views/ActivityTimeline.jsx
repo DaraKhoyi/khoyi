@@ -235,7 +235,9 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
     setFindingRecs('working'); setRecCandidates(null);
     try {
       const { data, error } = await supabase.functions.invoke('contact-find-recordings', {
-        body: { contact_id: contact.id, user_id: userId },
+        // No user_id: the function takes identity from the token. Sending one here
+        // would imply the server trusts it, which is the bug that was fixed.
+        body: { contact_id: contact.id },
       });
       if (error) throw error;
       setRecCandidates(data?.candidates || []);
