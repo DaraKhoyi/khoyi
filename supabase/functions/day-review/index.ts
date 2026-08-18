@@ -38,7 +38,7 @@ serve(async (req) => {
     const { data: _who } = await _asUser.auth.getUser();
     const _uid = _who?.user?.id || null;
     if (!_uid) return new Response(JSON.stringify({ error: "not authenticated" }), {
-      status: 401, headers: { ...cors, "Content-Type": "application/json" },
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
     const { user_id = null, name, date, doneCount = 0, total = 0, done = [], undone = [], mood = "", note = "", gci = null } = await req.json();
     const doneLines = (done || []).slice(0, 20).map((t) => `- ${String(t).slice(0, 140)}`).join("\n");

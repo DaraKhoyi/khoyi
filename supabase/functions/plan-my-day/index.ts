@@ -50,7 +50,7 @@ serve(async (req) => {
     const { data: _who } = await _asUser.auth.getUser();
     const _uid = _who?.user?.id || null;
     if (!_uid) return new Response(JSON.stringify({ error: "not authenticated" }), {
-      status: 401, headers: { ...cors, "Content-Type": "application/json" },
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
     const { user_id = null, name, date, tasks = [], events = [], reachouts = [], unreadEmails = [], deals = [], properties = [], journal = [], brain = [], gci = null, habits = null, workingHours = null, constraints = "", pipeline = null, lightDay = false } = await req.json();
     const wh = { start: Number(workingHours?.start) || 8, end: Number(workingHours?.end) || 18 };
