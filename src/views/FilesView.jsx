@@ -13,7 +13,9 @@ export function FilesView({ files, setFiles, contacts, setContacts, properties, 
   const [openId,setOpenId]=useState(null);
   const [statusFilter,setStatusFilter]=useState('all');
   const [progress,setProgress]=useState({});
-  const isAdmin = isAdminProp!==undefined ? isAdminProp : ((user?.email)||'').toLowerCase()==='khoyi1234@gmail.com';
+  // Role, not identity. The old email fallback made this owner-only regardless of
+  // what agents.role said. When the prop is absent, assume not admin.
+  const isAdmin = isAdminProp !== undefined ? !!isAdminProp : false;
   const buyerFiles = useMemo(()=> (files||[]).filter(f=>f.side==='buyer'), [files]);
   const idsKey = buyerFiles.map(f=>f.id).join(',');
 

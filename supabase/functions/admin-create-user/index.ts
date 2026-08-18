@@ -2,7 +2,18 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!, SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
-const PLATFORM_ADMIN = "khoyi1234@gmail.com";
+// PLATFORM_ADMIN is a BREAK-GLASS, not the role system.
+//
+// The real source of truth is agents.role in ('owner','broker_admin'), which is
+// what is_brokerage_staff() enforces in the database. This exists for exactly one
+// case: the very first sign-in on a fresh deployment, before any agents row has a
+// role, when there would otherwise be nobody able to grant one.
+//
+// It reads from an ENV VAR now rather than a string literal. Hardcoding a person's
+// email into shipped code breaks the standing rule against hardcoding a person,
+// means admin cannot be granted without a deploy, and locks the owner out of their
+// own platform if they ever change their address.
+const PLATFORM_ADMIN = (Deno.env.get("PLATFORM_ADMIN_EMAIL") || "khoyi1234@gmail.com").toLowerCase();
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });

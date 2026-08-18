@@ -45,11 +45,20 @@ export function sysFmtUntil(ts) {
   return `${Math.floor(h / 24)}d`;
 }
 
+/**
+ * Health of a connected mail account. Pass an address to check a specific one, or
+ * NULL for "this user's default", which is what every agent actually wants — the
+ * screen used to report on a named inbox that only one person owns, so it was
+ * green while someone else's was broken.
+ */
 export async function sysCheckGmailAccount(email) {
-  const { data, error } = await supabase.from('email_accounts')
-    .select('email_address, last_sync_at, last_sync_error, is_active')
-    .eq('email_address', email)
-    .maybeSingle();
+  let q = supabase.from('email_accounts')
+    .select('email_address, last_sync_at, last_sync_error, is_active');
+  q = email
+    ? q.eq('email_address', email)
+    : q.order('is_default', { ascending: false }).order('created_at').limit(1);
+  const { data: rows, error } = await q;
+  const data = Array.isArray(rows) ? (rows[0] || null) : rows;
   if (error) return { status: 'down', detail: error.message };
   if (!data) return { status: 'unconfigured', detail: 'Account not connected' };
   // Sync is driven by a 5-min cron, so freshness is the heartbeat.
@@ -203,8 +212,11 @@ export async function sysCheckGitHub() {
 export const SYSTEMS = [
   { id: 'github',    icon: <Icon name="code" size={18} />, name: 'GitHub',          category: 'Deployment',  description: 'Repo & GitHub Pages hosting for darasapp.com', check: sysCheckGitHub },
   { id: 'supabase',  icon: <Icon name="zap" size={18} />, name: 'Supabase',        category: 'Backend',     description: 'Postgres database, auth & storage',            check: sysCheckDatabase },
-  { id: 'gmail_dara',  icon: <Icon name="mail" size={18} />, name: 'Gmail (dara@brokerdara.com)', category: 'Integration', description: 'Google email account & sync', check: () => sysCheckGmailAccount('dara@brokerdara.com') },
-  { id: 'gmail_khoyi', icon: <Icon name="mail" size={18} />, name: 'Gmail (khoyi1234@gmail.com)', category: 'Integration', description: 'Google email + calendar account & sync', check: () => sysCheckGmailAccount('khoyi1234@gmail.com') },
+
+  // Checks the signed-in user's DEFAULT mail account rather than a named address.
+  // Hardcoding one meant every other agent's health screen reported on an inbox
+  // that is not theirs — green when theirs was broken, red when it was fine.
+  { id: 'gmail_default', icon: <Icon name="mail" size={18} />, name: 'Gmail (your default account)', category: 'Integration', description: 'Google email + calendar account & sync', check: () => sysCheckGmailAccount(null) },
   { id: 'push',        icon: <Icon name="signal" size={18} />, name: 'Live Sync (Push)', category: 'Real-time', description: 'Gmail push notifications → instant sync (watch auto-renews daily)', check: sysCheckPush },
   { id: 'gcal',      icon: <Icon name="calendar" size={18} />, name: 'Google Calendar', category: 'Integration', description: 'Calendar event sync to Google',                 check: sysCheckCalendarSync },
   { id: 'anthropic', icon: <Icon name="sparkles" size={18} />,  name: 'Anthropic API',   category: 'AI',          description: 'Powers Ari, email triage & receipt parsing',   check: sysCheckAnthropic },

@@ -592,6 +592,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   const [err, setErr] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const [acct, setAcct] = useState(null);
+  const [accounts, setAccounts] = useState([]);
   const [edits, setEdits] = useState({});
   const [firstName, setFirstName] = useState('');
   const [busy, setBusy] = useState({});
@@ -638,7 +639,11 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
   useEffect(()=>{ load(false); }, []);   // eslint-disable-line
   useEffect(()=>{ loadScore(); }, []);   // eslint-disable-line
   useEffect(()=>{ (async ()=>{
-    const { data:a } = await supabase.from('email_accounts').select('id,email_address,is_default').contains('purposes',['email']).order('is_default',{ascending:false}).order('created_at').limit(1);
+    // Load ALL of this user's mail accounts, not just the default. Someone with a
+    // personal and a brokerage address is writing from both, and self-detection
+    // has to know about both or it treats their own replies as someone else's.
+    const { data:a } = await supabase.from('email_accounts').select('id,email_address,is_default').contains('purposes',['email']).order('is_default',{ascending:false}).order('created_at');
+    setAccounts(Array.isArray(a) ? a : []);
     setAcct((a&&a[0])||null);
     const nm = user?.user_metadata?.display_name?.trim() || user?.user_metadata?.full_name?.trim()?.split(/\s+/)[0] || (user?.email||'').split('@')[0] || 'there';
     setFirstName(nm);
@@ -682,7 +687,19 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     } catch(e){}
   };
   const emailOf = (x)=>{ const m=String(x||'').match(/<([^>]+)>/); return (m?m[1]:String(x||'')).trim().toLowerCase(); };
-  const selfEmails = [acct?.email_address, user?.email, 'dara@brokerdara.com', 'khoyi1234@gmail.com'].filter(Boolean).map(x=>String(x).toLowerCase());
+  // Which addresses are "me". Built from the signed-in user and their CONNECTED
+  // accounts — never from a literal. The two hardcoded addresses here meant that
+  // for every agent who is not Dara, self-detection silently failed and their own
+  // replies were counted as somebody else's.
+  const selfEmails = React.useMemo(() => {
+    const set = new Set();
+    const add = (v) => { const e = String(v || '').trim().toLowerCase(); if (e) set.add(e); };
+    add(user?.email);
+    add(acct?.email_address);
+    // every mail account this user has connected, not just the active one
+    (Array.isArray(accounts) ? accounts : []).forEach(a => add(a?.email_address));
+    return Array.from(set);
+  }, [user, acct, accounts]);
   const otherRecips = (r)=>{
     const all = [ ...((r.source&&r.source.to)||[]), ...((r.source&&r.source.cc)||[]) ];
     const seen=new Set(); const out=[];

@@ -1618,8 +1618,12 @@ function AppMain() {
   if (!session) return <AuthScreen />;
 
   const user = session.user;
-  const emailAdmin = ((user?.email)||'').toLowerCase()==='khoyi1234@gmail.com';
-  const isAdmin = appCtx ? !!appCtx.is_admin : emailAdmin;
+  // Admin comes from agents.role via app-whoami, never from an email address.
+  // Until it loads, assume NOT admin: showing admin controls to someone who turns
+  // out not to be one is worse than a second of missing buttons, and the old
+  // email fallback meant Josh and Alex — both broker_admin in the database — were
+  // denied admin in the app purely because they are not Dara.
+  const isAdmin = !!(appCtx && appCtx.is_admin);
   const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
   const isImpersonating = (() => { try { return !!localStorage.getItem('__impersonating'); } catch (_) { return false; } })();
   const openTaskCount = tasks.filter(t=>!t.completed).length;
