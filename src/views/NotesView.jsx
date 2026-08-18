@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { useDurableDraft } from './DurableDraft';
 import { Icon } from '../icons';
@@ -193,7 +193,44 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   }
 
   const query = q.trim().toLowerCase();
-  const matchNote = (n) => !query || (n.title || '').toLowerCase().includes(query) || (n.body || '').toLowerCase().includes(query);
+
+  // SERVER-SIDE FULL TEXT, not just a filter over what happens to be loaded.
+  //
+  // App.js fetches the 500 most recent notes, and this screen filtered THAT array
+  // with .includes(). Under 500 notes it looks correct; past 500 an older note
+  // simply cannot be found and nothing says so. Meanwhile notes.fts and its GIN
+  // index were fully populated (123 of 123 rows) and had never been read once —
+  // idx_scan was 0.
+  //
+  // The client filter stays for instant feedback as you type; this runs alongside
+  // and merges anything the loaded page did not contain.
+  const [ftsHits, setFtsHits] = useState([]);
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setFtsHits([]); return; }
+    let alive = true;
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await supabase.from('notes')
+          .select('*')
+          .textSearch('fts', term, { type: 'websearch', config: 'english' })
+          .order('updated_at', { ascending: false })
+          .limit(50);
+        if (alive) setFtsHits(Array.isArray(data) ? data : []);
+      } catch (_) { if (alive) setFtsHits([]); }
+    }, 250);
+    return () => { alive = false; clearTimeout(t); };
+  }, [q]);
+
+  // Loaded notes first (they matched instantly), then anything only the server found.
+  const searchPool = useMemo(() => {
+    if (!query) return notes;
+    const seen = new Set((notes || []).map(n => n.id));
+    return [...(notes || []), ...ftsHits.filter(h => !seen.has(h.id))];
+  }, [notes, ftsHits, query]);
+
+  const matchNote = (n) => !query || (n.title || '').toLowerCase().includes(query) || (n.body || '').toLowerCase().includes(query)
+    || ftsHits.some(h => h.id === n.id);
   const matchDoc  = (d) => !query || (d.title || '').toLowerCase().includes(query) || (d.summary || '').toLowerCase().includes(query);
 
   async function runDeepSearch() {
@@ -207,7 +244,7 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   }
   const clearDeep = () => setDeepResults(null);
 
-  const noteItems = (notes || []).filter(n => (section === 'all' || (n.kind || 'note') === section) && matchNote(n))
+  const noteItems = (searchPool || []).filter(n => (section === 'all' || (n.kind || 'note') === section) && matchNote(n))
     .map(n => ({ _t: 'note', id: n.id, kind: n.kind || 'note', title: n.title, body: n.body, pinned: n.pinned, ts: n.updated_at || n.created_at, raw: n }));
   const docItems = (docs || []).filter(() => section === 'all' || section === 'document').filter(matchDoc)
     .map(d => ({ _t: 'doc', id: d.id, kind: 'document', title: d.title, body: d.summary, status: d.status, ts: d.created_at, raw: d }));
