@@ -134,17 +134,20 @@ Deno.serve(async (req) => {
     const { data: l } = await admin.from("unstuck_listings").select("*").eq("id", listing_id).maybeSingle();
     if (!l) return j({ ok: false, error: "listing not found" });
 
-    // THE CALLER MUST OWN THE LISTING.
+    // WHO MAY ANALYSE THIS LISTING.
     //
-    // This runs as service role, so the lookup above bypasses RLS. Without this
-    // check any signed-in agent could pass another agent's listing_id and start an
-    // analysis on it — spending Anthropic tokens on the brokerage's bill and
-    // writing runs into someone else's listing. They could not READ the result
-    // (unstuck_runs is RLS-scoped), which is why this was not a data leak, but
-    // triggering work on a stranger's record is not something to leave open.
+    // Runs as service role, so the lookup above bypasses RLS and this function has
+    // to decide for itself. The rule lives in ONE place — unstuck_can_analyze — so
+    // it cannot drift between here and the UI:
+    //   owner            the agent whose listing it is
+    //   brokerage        owner / broker_admin, ANY property. The brokerage teaches
+    //                    and demonstrates with this, and a broker who cannot open
+    //                    an agent's file cannot coach from it.
+    //   team_lead        a team leader, their own team's listings only
     //
-    // The weekly cron calls this with the service role and no user token; that
-    // path is allowed through deliberately.
+    // The weekly cron presents the service role and skips the check entirely.
+    let accessReason = "cron";
+    let triggeredBy: string | null = null;
     const _auth = req.headers.get("Authorization") || "";
     const _isService = _auth.includes(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "\u0000");
     if (!_isService) {
@@ -152,9 +155,15 @@ Deno.serve(async (req) => {
         global: { headers: { Authorization: _auth } },
       });
       const { data: who } = await asUser.auth.getUser();
-      if (!who?.user?.id || who.user.id !== l.user_id) {
-        return j({ ok: false, error: "that listing isn't yours" }, 403);
+      triggeredBy = who?.user?.id || null;
+      if (!triggeredBy) return j({ ok: false, error: "not authenticated" }, 401);
+      const { data: verdict } = await asUser.rpc("unstuck_can_analyze", { p_listing: listing_id });
+      if (!verdict?.allowed) {
+        return j({ ok: false, error: verdict?.reason === "not yours"
+          ? "that listing isn't yours — ask the agent, or a broker can open it"
+          : (verdict?.reason || "not allowed") }, 403);
       }
+      accessReason = verdict.reason;
     }
 
     // bill the owning agent; body.user_id only as a cron-side fallback
@@ -169,7 +178,11 @@ Deno.serve(async (req) => {
       .eq("listing_id", listing_id).eq("status", "running");
 
     const { data: run } = await admin.from("unstuck_runs")
-      .insert({ listing_id, user_id: billUserId, kind, status: "running", model: MODEL })
+      // triggered_by + access_reason: when a broker or team leader opens an agent's
+      // listing, the run says so. Silent cross-agent access is how trust in a
+      // shared tool erodes, and cost stays attributable to the listing's owner.
+      .insert({ listing_id, user_id: billUserId, kind, status: "running", model: MODEL,
+                triggered_by: triggeredBy, access_reason: accessReason })
       .select("id").single();
     runId = run?.id ?? null;
     await admin.from("unstuck_listings").update({ status: "analyzing" }).eq("id", listing_id).neq("status", "released");
