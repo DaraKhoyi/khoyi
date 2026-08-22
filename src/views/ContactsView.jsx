@@ -1488,7 +1488,10 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           </>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'2px'}}>
-          <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Relationships</span>
+          {/* "Contacts", not "Relationships": the plain word a person is told ("it's in
+              your contacts") appeared nowhere on a screen also called Nerve Center and
+              My People. Calendar, Tasks and Inbox already do this. */}
+          <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Contacts</span>
           {dueCount>0 && <span className="live-dot" />}
         </div>
         <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="contacts" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My People.</span></h2>

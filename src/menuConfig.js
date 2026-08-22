@@ -32,7 +32,11 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     // driven. Listing Presentation moved here from under Ask Ari, where it sat as
     // a child of a chat screen it has nothing to do with.
     { label: 'Autonomous', icon: 'sparkles', ai: true, children: [
-      { label: 'Unstuck.', view: 'unstuck', icon: 'properties', ai: true },
+      // Menu labels are scanned for the JOB, not the brand. "Unstuck." contains no clue
+      // that it is about a listing, so an agent hunting for help with a stale listing
+      // passes straight over it. The name Unstuck. is kept as the page title inside the
+      // screen, where it is seen by someone who already knows what it does.
+      { label: 'Why It’s Not Selling', view: 'unstuck', icon: 'properties', ai: true },
       { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
       { label: 'The Correspondent', view: 'correspondent', icon: 'notes', ai: true },
     ] },
@@ -40,7 +44,9 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     // Brokerage-only: the company tells departing agents' investors, so this is not
     // an agent-facing screen. The RPCs are staff-gated regardless of the menu.
     ...(isAdmin ? [{ label: 'Agent Departures', view: 'investor_transition', icon: 'building' }] : []),
-    { label: 'Cadence Review', view: 'cadence_review', icon: 'clock' },
+    // "Cadence Review" does not say what is reviewed — a schedule, message frequency, or
+    // someone else's work. This says the job.
+    { label: 'Who to Contact Next', view: 'cadence_review', icon: 'clock' },
     // Planning deliberately repeats Tasks / Calendar / Contacts from above. They
     // are one tap away as daily drivers AND grouped here as planning tools; the
     // duplication is the point, not an oversight.
@@ -61,15 +67,18 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true },
     { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
     // ── AI Agents ──
-    { label: 'AI Agents', icon: 'sparkles', ai: true, children: [
+    { label: 'Automations', icon: 'sparkles', ai: true, children: [
       { label: 'Chief of Staff', view: 'chief', icon: 'briefing' },
       { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
       { label: 'Agent Activity', view: 'agent_activity', icon: 'brain' },
       ...(isAdmin ? [{ label: 'App Health', view: 'app_health', icon: 'brain' }] : []),
     ] },
     // ── Pipeline & Growth ──
-    { label: 'Pipeline & Growth', icon: 'target', children: [
-      { label: 'Transaction Pipeline', view: 'pipeline', icon: 'chart' },
+    // "Pipeline & Growth" held Transaction Pipeline alongside prospecting, so an
+    // agent looking for the deal they are working opened it, found lead-gen tools,
+    // and backed out. This group is about WINNING work; transactions are work
+    // already won and live under Deals & Property with the rest of them.
+    { label: 'Prospecting & Growth', icon: 'target', children: [
       { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
       { label: 'Lead-Gen Systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
       { label: "How I'm Doing", view: 'scoreboard', icon: 'target' },
@@ -85,11 +94,16 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Journal', view: 'journal', icon: 'journal' },
       { label: 'Drip Campaigns', built: false, icon: 'signal' },
     ] },
-    // ── Deals & Property ──
-    { label: 'Deals & Property', icon: 'briefcase', children: [
-      { label: 'Transaction Pipeline', view: 'deals', icon: 'deals' },
-      { label: 'Contract Management', view: 'files', icon: 'folder', ai: true, children: [
-        { label: 'View Transactions', view: 'tracker', icon: 'tracker' },
+    // ── Transactions & Property ──
+    // One word for one concept: the file is a TRANSACTION, the view of many is the
+    // PIPELINE. "Deals" was a third word for the same thing, and "Contract
+    // Management" a fourth. Both views live here now, so an agent looking for work
+    // in progress has one place to look.
+    { label: 'Transactions & Property', icon: 'briefcase', children: [
+      { label: 'My Transactions', view: 'deals', icon: 'deals' },
+      { label: 'Transaction Pipeline', view: 'pipeline', icon: 'chart' },
+      { label: 'Transaction Documents', view: 'files', icon: 'folder', ai: true, children: [
+        { label: 'All Transactions', view: 'tracker', icon: 'tracker' },
         { label: 'Upload Trans. Docs', built: false, icon: 'folder' },
         { label: 'Upload Recordings', built: false, icon: 'mic' },
       ] },
@@ -132,7 +146,7 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       ] },
     ] },
     // ── My Prism Identity ──
-    { label: 'My Prism Identity', icon: 'prism', children: [
+    { label: 'My Profile & Style', icon: 'prism', children: [
       { label: 'My Prism Profile', view: 'my_prism', icon: 'prism' },
       { label: 'DISC / Grit Test', view: 'disc_test', icon: 'bulb' },
       { label: 'My Voice (Voice Card)', view: 'myvoice', icon: 'mic' },
