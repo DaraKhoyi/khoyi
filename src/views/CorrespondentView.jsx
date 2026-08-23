@@ -15,6 +15,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { canHover } from '../helpers';
+import FirstOpen from './FirstOpen';
 
 const GOLD = '#C5A95E', CHAMP = '#EBCB82';
 const card = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 15, marginBottom: 12 };
@@ -163,6 +164,7 @@ export default function CorrespondentView({ userId }) {
 
   return (
     <div className="ww-corr" style={{ padding: '18px 16px 100px' }}>
+      <FirstOpen id="correspondent">Give it a ZIP code, a tag, or a subject. It researches a real story, publishes it under your name, and drafts a separate note to each person — you review everything before anything sends. Takes a few minutes.</FirstOpen>
       <style>{`.ww-corr{--bg-base:#100D09;--bg-card:#1B1610;--border:rgba(203,163,92,.20);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%}`}</style>
 
       <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: 11, fontWeight: 700, color: GOLD }}>Autonomous</div>

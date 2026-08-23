@@ -7,6 +7,7 @@
 // feed yet, so nothing here claims realtime.
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
+import FirstOpen from './FirstOpen';
 
 const GOLD = '#C5A95E', CHAMP = '#EBCB82';
 
@@ -76,6 +77,7 @@ function Intake({ initial, onSaved, onCancel }) {
 
   return (
     <div>
+      <FirstOpen id="unstuck">Enter a listing that is not moving. It researches the market around it and tells you why, with a version you can hand the seller and a version only you see.</FirstOpen>
       <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 10, lineHeight: 1.55 }}>
         Leave anything you don't know blank — a gap is more useful than a guess, and the analysis
         will tell you which gaps actually matter.

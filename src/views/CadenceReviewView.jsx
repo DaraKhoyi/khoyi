@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
+import FirstOpen from './FirstOpen';
 
 // ── CadenceReviewView ───────────────────────────────────────────────────────
 // Clear the whole pile of cadence suggestions in one sitting.
@@ -61,6 +62,7 @@ export default function CadenceReviewView({ userId }) {
 
   return (
     <div style={{ maxWidth:820, margin:'0 auto', padding:'0 4px 40px' }}>
+      <FirstOpen id="cadence">The people you have not spoken to in a while, ordered by who matters most. Nothing sends from here — it is a list of who to call.</FirstOpen>
       <div style={{ marginBottom:6 }}><span style={eyebrow}>Touch rhythm</span></div>
       <h1 style={{ fontFamily:'Fraunces,serif', fontWeight:400, fontSize:32, color:'var(--text-1)', margin:'0 0 6px' }}>Cadence Review</h1>
       <p style={{ color:'var(--text-2)', fontSize:14.5, margin:'0 0 18px', maxWidth:'62ch', lineHeight:1.5 }}>
