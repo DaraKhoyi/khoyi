@@ -97,11 +97,15 @@ export function OnboardingModal({ userId, userEmail, onComplete, onClose, initia
               type="text"
               value={profession}
               onChange={e => setProfession(e.target.value)}
-              placeholder="e.g. Real estate broker, Doctor, Engineer, Designer"
+              placeholder="e.g. Listing agent, Buyer's agent, Team lead, Broker"
             />
             <p style={{margin: '4px 0 0', fontSize: '11px', color: 'var(--text-3)'}}>
               Helps your AI assistant calibrate what's important and what's urgent for you.
             </p>
+            {/* Every person who reaches this screen works at a real estate brokerage.
+                Offering "Doctor, Engineer, Designer" as examples told an agent the
+                tool was bought off a shelf and not built for them — which is the
+                opposite of true, and it was the second thing they ever read. */}
           </div>
 
           <div className="form-group">
@@ -166,9 +170,9 @@ export function OnboardingModal({ userId, userEmail, onComplete, onClose, initia
                 }
                 onComplete();
               }}
-              style={{fontSize: '12px', color: 'var(--text-3)'}}
+              style={{fontSize: '13.5px', color: 'var(--text-2)', textDecoration: 'underline'}}
               title="Save just your name and fill in the rest later in Settings">
-              Skip for now
+              Finish this later
             </button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Saving…' : 'Finish setup'}

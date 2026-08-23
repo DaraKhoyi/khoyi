@@ -1208,6 +1208,9 @@ function AppMain() {
   // initialization". esbuild builds that happily; only the boot check catches it.
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // True only for the session in which onboarding was just completed, so the
+  // tour and any announcement stand down and the agent lands on their own data.
+  const [justOnboarded, setJustOnboarded] = useState(false);
   const goToScreen = React.useCallback((sc) => {
     if (!sc) return;
     setView(sc.view);
@@ -1995,10 +1998,12 @@ function AppMain() {
           onClose={()=>setPlanOpen(false)}
         />
       )}
-      {/* Pass 2 Batch C: Blocking onboarding modal for new users (and existing
-          users on first run after this ships). Only mounts once user_settings
-          has been fetched (avoids flashing the modal before we know). */}
-      {dataLoaded && userSettings && userSettings.onboarding_complete === true && userSettings.first_look_done !== true && (
+      {/* ONE INTERSTITIAL BEFORE FIRST VALUE, NOT FOUR. A new agent met onboarding,
+          FirstLook, an announcement and the room picker before seeing a row of
+          their own data. The tour now waits for the SECOND session, when they have
+          a reason to care what it is showing them. */}
+      {dataLoaded && userSettings && userSettings.onboarding_complete === true
+        && userSettings.first_look_done !== true && !justOnboarded && (
         <FirstLook userId={user.id} setView={setView}
           onDone={() => setUserSettings(u => ({ ...(u || {}), first_look_done: true }))} />
       )}
@@ -2008,10 +2013,12 @@ function AppMain() {
           userEmail={user.email}
           initial={onboardingReopen ? userSettings : null}
           onClose={onboardingReopen && userSettings.onboarding_complete !== false ? () => setOnboardingReopen(false) : undefined}
-          onComplete={() => { setOnboardingReopen(false); loadData(); }}
+          onComplete={() => { setOnboardingReopen(false); setJustOnboarded(true); loadData(); }}
         />
       )}
-      {dataLoaded && user && userSettings && userSettings.onboarding_complete !== false && (
+      {/* An announcement is never why someone opened the app. Held back on the
+          first session; it will be waiting next time. */}
+      {dataLoaded && user && userSettings && userSettings.onboarding_complete !== false && !justOnboarded && (
         <AnnouncementModal userId={user.id} />
       )}
       {sharedAudio && user && (

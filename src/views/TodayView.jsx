@@ -322,6 +322,16 @@ export default function TodayView({
     );
   };
 
+  // FIRST RUN. A new agent landed here with no contacts, no tasks and no email
+  // connected, saw a screen of empty cards, and concluded the app was broken
+  // rather than empty. An empty state is the most-seen screen of anyone's first
+  // week, so this one asks for work instead of reporting its absence.
+  //
+  // Deliberately THREE things, in dependency order: connecting email is the one
+  // that unlocks Inbox, briefings, Cadence Review and the Correspondent all at
+  // once, so it is first and the reason is stated rather than assumed.
+  const isFirstRun = contacts.length === 0 && tasks.length === 0 && events.length === 0;
+
   return (
     <div className="ww-prism" style={{ maxWidth: 720, margin: '0 auto' }}>
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:#2A2016;--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;--accent:#CBA35C;}
@@ -360,6 +370,28 @@ export default function TodayView({
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
           <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 33, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: 0 }}>
             {greeting}{agentName ? ', ' : '.'}{agentName ? <span className="gold-move" style={{ fontFamily: 'Fraunces, serif', fontWeight: 400 }}>{agentName.split(' ')[0]}.</span> : ''}
+            {isFirstRun && (
+              <div style={{ marginTop: 18, background: 'var(--bg-card)', border: '1px solid rgba(203,163,92,.35)', borderRadius: 14, padding: '16px 16px 12px' }}>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 300, color: 'var(--text-1)', marginBottom: 4 }}>
+                  Nothing here yet — three things to start.
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55, marginBottom: 12 }}>
+                  Prism gets useful the moment it knows your people and your mail.
+                </div>
+                {[
+                  ['Connect your email', 'Fills your inbox, your briefing and who owes you a reply — all from one connection.', () => setView('settings')],
+                  ['Bring in your contacts', 'Import from Google, or add the ten people you speak to most.', () => setView('google_contacts')],
+                  ['Record a voice note', 'Say what happened after a showing. It files itself.', () => setView('today')],
+                ].map(([title, why, go], i) => (
+                  <button key={i} onClick={go} style={{ display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
+                    fontFamily: 'inherit', background: 'var(--bg-base)', border: '1px solid var(--border)',
+                    borderRadius: 10, padding: '11px 13px', marginBottom: 7 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: '#EBCB82' }}>{title}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 2, lineHeight: 1.5 }}>{why}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </h1>
           <button onClick={() => setShowDial(s => !s)} title="Automation level"
             style={{ flexShrink: 0, background: 'none', border: '1px solid var(--border)', color: 'var(--text-3)', borderRadius: 100, padding: '5px 12px', fontSize: 11.5, cursor: 'pointer' }}>
