@@ -89,6 +89,7 @@ import { buildMenu } from './menuConfig';
 import ScreenSwitcher from './views/ScreenSwitcher';
 import GlobalSearch from './views/GlobalSearch';
 import GestureHint from './views/GestureHint';
+import NotYourView from './views/NotYourView';
 import ViewLoadingFallback from './views/ViewLoadingFallback';
 import { touchScreen, previousScreen } from './openScreens';
 import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
@@ -1949,7 +1950,7 @@ function AppMain() {
               : view==='files'       ? <FilesView files={files} setFiles={setFiles} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id} user={user} isAdmin={isAdmin}/>
               : view==='team'        ? <TeamView/>
               : view==='contact_types' ? <ContactTypesAdmin isPrivileged={isAdmin || !!(appCtx&&appCtx.is_team_leader) || (appCtx&&appCtx.role==='owner')}/>
-              : view==='agents' && (isAdmin||isTeamLeader) ? <AgentsView userId={user.id} user={user} appCtx={appCtx} isAdmin={isAdmin}/>
+              : view==='agents' ? ((isAdmin||isTeamLeader) ? <AgentsView userId={user.id} user={user} appCtx={appCtx} isAdmin={isAdmin}/> : <NotYourView setView={setView} what="The agent roster" />)
               : view==='mileage'     ? <MileageView mileageEntries={mileageEntries} setMileageEntries={setMileageEntries} deals={deals} contacts={contacts} setContacts={setContacts} properties={properties} userId={user.id}/>
               : view==='properties'  ? <PropertiesView properties={properties} setProperties={setProperties} userId={user.id} contacts={contacts}/>
               : view==='investments' ? <InvestmentsView investments={investments} setInvestments={setInvestments} properties={properties} userId={user.id} contacts={contacts}/>
