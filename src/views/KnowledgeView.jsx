@@ -156,7 +156,13 @@ export default function KnowledgeView({ userId, isAdmin = false }) {
 
   async function del(s) {
     if (!window.confirm('Delete "' + (s.title || 'this item') + '" from your knowledge?')) return;
-    try { await supabase.from('knowledge_sources').delete().eq('id', s.id); } catch (_) {}
+    // The empty catch meant a failed delete looked identical to a successful one:
+    // the list reloaded, the row was still there, and nothing said why.
+    const { error } = await supabase.from('knowledge_sources').delete().eq('id', s.id);
+    if (error) {
+      if (window.__notify) window.__notify('Could not delete that — it is still in your knowledge.', 'error');
+      return;
+    }
     loadLib();
   }
 
@@ -272,7 +278,7 @@ export default function KnowledgeView({ userId, isAdmin = false }) {
                   <span style={{ fontSize: '10px', color: st[0], border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px', whiteSpace: 'nowrap' }}>{st[1]}</span>
                   <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-3)' }}>{s.scope}{s.scope !== 'private' ? '' : ''}</span>
                   <button onClick={() => reprocess(s)} style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>Reprocess</button>
-                  <button onClick={() => del(s)} style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Delete</button>
+                  <button onClick={() => del(s)} style={{ fontSize: '13px', padding: '10px 14px', minHeight: 44, borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Delete</button>
                 </div>
                 {s.summary && <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '5px' }}>{s.summary}</div>}
                 {s.error && <div style={{ fontSize: '12px', color: 'var(--red)', marginTop: '4px' }}>{s.error}</div>}

@@ -4,6 +4,7 @@ import { supabase } from '../dataService';
 import { Tip } from '../tipsUi';
 import PrismThinking from './PrismThinking';
 import DropboxFolderBrowser from './DropboxFolderBrowser';
+import { confirmDialog } from '../notify';
 
 export default function CloudStorageSettings({ userId }) {
   const [conns, setConns] = useState([]);
@@ -40,7 +41,20 @@ export default function CloudStorageSettings({ userId }) {
     load();
     if (window.__notify) window.__notify('Now watching ' + label, 'success');
   };
-  const removeFolder = async (id) => { try { await supabase.from('watched_folders').delete().eq('id', id); setFolders(fs => fs.filter(x => x.id !== id)); } catch (_) {} };
+  // Removing a watched folder stops every recording in it from ever reaching the
+  // app. It had NO confirmation and an empty catch, so a failed delete looked
+  // exactly like a successful one: the row vanished from the list while the
+  // folder was still watched. Both fixed — confirm before, and report failure.
+  const removeFolder = async (fd) => {
+    if (!await confirmDialog('Stop watching ' + (fd.path || 'this folder') + '?\n\nRecordings saved there will no longer reach Prism. Nothing already imported is deleted.')) return;
+    const { error } = await supabase.from('watched_folders').delete().eq('id', fd.id);
+    if (error) {
+      if (window.__notify) window.__notify('Could not stop watching that folder — it is still active.', 'error');
+      return;
+    }
+    setFolders(fs => fs.filter(x => x.id !== fd.id));
+    if (window.__notify) window.__notify('Stopped watching ' + (fd.path || 'that folder') + '.', 'success');
+  };
   const togglePersonal = async (fld) => { try { await supabase.from('watched_folders').update({ personal: !fld.personal }).eq('id', fld.id); setFolders(fs => fs.map(x => x.id === fld.id ? { ...x, personal: !x.personal } : x)); } catch (_) {} };
   return (
     <div className="panel" style={{ marginBottom: 18 }}>
@@ -66,8 +80,8 @@ export default function CloudStorageSettings({ userId }) {
                     <div key={fd.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', fontSize: 12 }}>
                       <span>📁</span>
                       <span style={{ flex: 1, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}>{fd.path}</span>
-                      <button onClick={() => togglePersonal(fd)} className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 8px', color: fd.personal ? '#EBCB82' : 'var(--text-3)' }} title="Personal folders are never enriched">{fd.personal ? '🔒 Personal' : 'Enrich'}</button>
-                      <button onClick={() => removeFolder(fd.id)} className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 8px' }}>Remove</button>
+                      <button onClick={() => togglePersonal(fd)} className="btn btn-ghost btn-sm" style={{ fontSize: 13, padding: '10px 12px', minHeight: 44, color: fd.personal ? '#EBCB82' : 'var(--text-3)' }} title="Personal folders are never enriched">{fd.personal ? '🔒 Personal' : 'Enrich'}</button>
+                      <button onClick={() => removeFolder(fd)} className="btn btn-ghost btn-sm" style={{ fontSize: 13, padding: '10px 12px', minHeight: 44 }}>Remove</button>
                     </div>
                   ))}
                   <button className="btn btn-ghost btn-sm" onClick={() => setBrowseConn(c.id)} style={{ fontSize: 11, marginTop: 4 }}>+ Choose folder to watch</button>
