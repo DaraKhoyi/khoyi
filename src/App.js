@@ -1009,15 +1009,31 @@ function AppMain() {
   // The room the current screen lives in (derived), and the helpers the hub +
   // bottom bar use. Entering a mode jumps to that room's home screen; Home
   // returns to the hub (the dashboard).
-  const activeMode = view === 'dashboard' ? null : (VIEW_TO_MODE[view] || null);
+  // THE ROOM IS STICKY. It was DERIVED from the current view, and VIEW_TO_MODE maps
+  // each screen to the FIRST room that claims it — so an agent in Prospecting who
+  // tapped a contact was silently moved to Nerve Center, because 'contacts' is
+  // claimed by that room. The room did not vanish; it changed without being asked
+  // to, which is worse, because the bar under their thumb quietly became a
+  // different bar.
+  //
+  // Now the chosen room persists until the agent chooses another or goes Home,
+  // exactly as a tab bar behaves: pushing a screen does not change your tab. When
+  // the current screen is outside the room, the bar still shows the room and its
+  // own name, so getting back is one tap and never ambiguous.
+  //
+  // Falls back to the derived room so arriving somewhere by deep-link or by the
+  // menu still puts you in a sensible room rather than none.
+  const [stickyMode, setStickyMode] = useState(null);
+  const activeMode = view === 'dashboard' ? null : (stickyMode || VIEW_TO_MODE[view] || null);
   // Entering a room resumes where you left off IN THAT ROOM, but only within the
   // same day — the first visit each day opens the room's home screen (Nerve Center
   // opens on Contacts). A stale bookmark pointing at a screen that no longer
   // belongs to the room is ignored, so re-organising a room never strands anyone.
   const enterMode = (modeId) => {
-    if (modeId === '__today__') { setView('today'); return; }
+    if (modeId === '__today__') { setStickyMode(null); setView('today'); return; }
     const m = modeById(modeId);
     if (!m) return;
+    setStickyMode(modeId);
     const spot = m.resume ? roomResumeSpot(session?.user?.id, modeId, todayISO(), m.views) : null;
     if (spot) {
       setView(spot.view);
@@ -1026,7 +1042,7 @@ function AppMain() {
     }
     setView(m.home);
   };
-  const goHome = () => setView('today');   // Today replaces the Dashboard as home
+  const goHome = () => { setStickyMode(null); setView('today'); };   // Home leaves the room as well as the screen
   React.useEffect(() => {
     try {
       const p = new URLSearchParams(window.location.search).get('dropbox');
@@ -1083,6 +1099,11 @@ function AppMain() {
     if (!activeMode) return;
     const m = modeById(activeMode);
     if (!m || !m.resume) return;
+    // Only bookmark screens that BELONG to the room. Now that the room is sticky,
+    // an agent can be standing on a screen outside it — bookmarking that would
+    // make re-entering the room open something it does not contain, which is the
+    // stale-bookmark problem this resume logic already guards against on read.
+    if (!m.views.includes(view)) return;
     rememberRoomSpot(session?.user?.id, activeMode, view,
       deepLink.view === view ? deepLink.sub : null, todayISO());
   }, [activeMode, view, deepLink, session]);
