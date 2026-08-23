@@ -70,6 +70,10 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Email Review', view: 'email_review', icon: 'inbox' },
       { label: 'Import from Google', view: 'google_contacts', icon: 'contacts' },
       { label: 'Manage Tags', view: 'tags', icon: 'notes' },
+      // DISC profiles across the whole sphere. It was routed but reachable from
+      // NOWHERE — no menu entry, no admin group, no setView anywhere in src/.
+      // 578 lines of working screen that no agent could open.
+      { label: 'DISC Profiles', view: 'prism', icon: 'prism' },
       ...(isAdmin ? [{ label: 'Agent Departures', view: 'investor_transition', icon: 'building' }] : []),
     ] },
 
@@ -134,6 +138,9 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'My Voice', view: 'myvoice', icon: 'mic' },
       { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
       { label: 'System Health', view: 'app_health', icon: 'health' },
+      // Also unreachable before this: 287 lines showing per-integration status.
+      // Distinct from App Health, which is the client-error view.
+      { label: 'Integrations Status', view: 'systems', icon: 'health' },
     ] },
 
     ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),

@@ -87,6 +87,7 @@ import { Tip } from './tipsUi';
 import ChatView from './views/ChatView';
 import { buildMenu } from './menuConfig';
 import ScreenSwitcher from './views/ScreenSwitcher';
+import GlobalSearch from './views/GlobalSearch';
 import ViewLoadingFallback from './views/ViewLoadingFallback';
 import { touchScreen, previousScreen } from './openScreens';
 import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
@@ -1185,6 +1186,7 @@ function AppMain() {
   // temporal dead zone — the whole app failed to mount with "Cannot access before
   // initialization". esbuild builds that happily; only the boot check catches it.
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const goToScreen = React.useCallback((sc) => {
     if (!sc) return;
     setView(sc.view);
@@ -1809,10 +1811,13 @@ function AppMain() {
       <div className="mobile-header">
         <div className="mobile-header-logo" {...forkHandlers({ onFlip: flipBack, onSwitcher: () => setSwitcherOpen(true), onMenu: () => setSidebarOpen(true) })} style={{cursor:"pointer",touchAction:"manipulation"}} role="button" aria-label="Menu — double-tap to flip back, hold to switch"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-          {/* Persistent Library search — the whole knowledge base is one tap from
-              anywhere, which is what makes stored intelligence feel INSTANT rather
-              than buried three menus deep. */}
-          <button className="hamburger" onClick={() => { setDeepLink({ view: 'notes', sub: 'search', n: Date.now() }); setView('notes'); }} aria-label="Search your library" title="Search your library">
+          {/* The header magnifier now searches EVERYTHING, not just the Library.
+              A magnifier in a header is the most conventional control in software
+              and every user expects it to search the whole app; scoping it to one
+              screen meant an agent who remembered a client's name but not whether
+              they wanted a note, a task or the contact had to search four screens
+              in turn. Library search is still on the Library screen. */}
+          <button className="hamburger" onClick={() => setSearchOpen(true)} aria-label="Search everything" title="Search everything">
             <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#CBA35C" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>
           </button>
           <button className="hamburger" onClick={() => setMindsetOpen(true)} aria-label="Mindset menu" title="Rooms">
@@ -1996,6 +2001,13 @@ function AppMain() {
           onClose={(done) => { setSharedAudio(null); if (done) { try { loadData(); } catch (_) {} } }}
         />
       )}
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)}
+        onPick={(hit) => {
+          setSearchOpen(false);
+          if (hit.contactId) setDeepLink({ view: 'contacts', sub: hit.contactId, n: Date.now() });
+          else if (hit.noteId) setDeepLink({ view: 'notes', sub: hit.noteId, n: Date.now() });
+          setView(hit.view);
+        }} />
       {switcherOpen && (
         <ScreenSwitcher userId={session?.user?.id} currentView={view} currentSub={null}
           onPick={(sc) => { setSwitcherOpen(false); goToScreen(sc); }}
