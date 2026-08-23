@@ -88,6 +88,7 @@ import ChatView from './views/ChatView';
 import { buildMenu } from './menuConfig';
 import ScreenSwitcher from './views/ScreenSwitcher';
 import GlobalSearch from './views/GlobalSearch';
+import GestureHint from './views/GestureHint';
 import ViewLoadingFallback from './views/ViewLoadingFallback';
 import { touchScreen, previousScreen } from './openScreens';
 import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
@@ -2036,6 +2037,9 @@ function AppMain() {
           else if (hit.noteId) setDeepLink({ view: 'notes', sub: hit.noteId, n: Date.now() });
           setView(hit.view);
         }} />
+      {/* Gestures have no affordance, so the flip nobody discovers is the same as
+          a flip nobody built. Shown once, after three screens. */}
+      <GestureHint />
       {switcherOpen && (
         <ScreenSwitcher userId={session?.user?.id} currentView={view} currentSub={null}
           onPick={(sc) => { setSwitcherOpen(false); goToScreen(sc); }}

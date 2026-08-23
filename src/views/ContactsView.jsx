@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
 import { noteContacts } from '../screenNotes';
+import ContactRowActions from './ContactRowActions';
 import { CALL_LANGUAGES } from '../languages';
 import TagInput, { useTagVocabulary } from './TagInput';
 import { Icon } from '../icons';
@@ -1792,6 +1793,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
                         <div className="ww-m">{[CONTACT_TYPE_LABELS[c.type]||c.type, c.role, c.company].filter(Boolean).join(' · ')}</div>
                       </div>
                       <div className="ww-right">
+                        <ContactRowActions contact={c} onText={(ct, ph) => setTextTo({ contact: ct, phone: ph })} />
                         {p?.primary_letter && <span className="ww-disc">{p.primary_letter}{p.secondary_letter?'/'+p.secondary_letter:''}</span>}
                         {touchLabel && <span className={'ww-touch'+(isDue?' due':'')}>{touchLabel}<span className={'ww-dot'+(isDue?' due':'')} /></span>}
                       </div>
