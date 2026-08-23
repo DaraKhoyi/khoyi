@@ -534,6 +534,26 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
         <div style={{ marginBottom: '2px' }}><span className="gold-move" style={{ fontSize: 11, letterSpacing: '.22em', fontWeight: 700, fontFamily: 'Barlow Condensed, sans-serif', textTransform: 'uppercase' }}>Phone &amp; Text</span></div>
         <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 30, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: '0', display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}><Icon name="quo" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Line.</span></h1>
         <hr className="gold-hairline" style={{ margin: '12px 0 0' }} />
+        {/* NOT CONNECTED YET. The Inbox has a dedicated connect screen for exactly
+            this; Phone & Text never got one, so an agent with no number saw an
+            empty page with a New button and no way to know what was missing. The
+            most common reason a screen is empty is that something upstream is not
+            connected, and the app already knows which. */}
+        {!loadingNums && numbers.length === 0 && (
+          <div style={{ marginTop: 16, background: 'rgba(203,163,92,.08)', border: '1px solid rgba(203,163,92,.32)',
+            borderRadius: 14, padding: '16px 16px 14px' }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 300, color: 'var(--text-1)', marginBottom: 5 }}>
+              No phone number connected yet.
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55, marginBottom: 12 }}>
+              Connect your Quo number and your calls and texts appear here — recorded,
+              transcribed, and filed against the right contact automatically.
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowSetup(true)}>
+              Connect a number
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Setup & status — tucked away; this is configuration, not daily use. */}
