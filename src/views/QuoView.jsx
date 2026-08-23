@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
+import OtherChannels from './OtherChannels';
 import { Icon } from '../icons';
 import { modal, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } from '../helpers';
 import { CallFollowupsPanel } from './ReviewPanels';
@@ -790,6 +791,11 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
                 <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:'10px', minWidth:0 }}>{narrow && <button onClick={() => setSelected(null)} aria-label="Back to conversations" style={{ background:'none', border:'none', color:'var(--accent)', fontSize:'22px', lineHeight:1, cursor:'pointer', padding:'0 4px 0 0', flexShrink:0 }}>‹</button>}<div style={{ minWidth:0 }}><div style={{ fontWeight: 700, fontSize: 15, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{selected.name}</div><div style={{ fontSize: 12, color: 'var(--text-3)' }}>{quoFmtPhone(selected.participant)}</div></div></div>
                   <button className="btn btn-primary btn-sm" onClick={() => quoDial(selected.participant)}><Icon name="quo" size={14} /> Call</button>
+                </div>
+                <div style={{ padding: '10px 16px 0' }}>
+                  <OtherChannels contactId={(phoneToContact[quoLast10(selected.participant)] || {}).id}
+                    exclude="text"
+                    onOpen={() => { const c = phoneToContact[quoLast10(selected.participant)]; if (c && window.__openContact) window.__openContact(c.id); }} />
                 </div>
                 <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {thread.length === 0 ? <div style={{ color: 'var(--text-3)', fontSize: 13, margin: 'auto' }}>No messages yet. Say hello 👋</div>

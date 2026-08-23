@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
+import OtherChannels from './OtherChannels';
 import { Icon } from '../icons';
 import RecruitingView from './RecruitingView';
 import { HeaderSearchIcon, HeaderSearchInput } from './SharedUi';
@@ -1142,6 +1143,26 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           .select('status,confident_open_at,last_open_at,open_count,apple_mpp,sent_at')
           .in('to_address', emails).order('sent_at', { ascending: false }).limit(1);
         if (alive && data && data.length) setThreadTracking(data[0]);
+      } catch (_) {}
+    })();
+    return () => { alive = false; };
+  }, [selectedThread]);
+
+  // Which contact this thread is with, so the cross-channel line can ask about
+  // them. Resolved from the participant emails because a thread carries
+  // addresses, not a contact_id.
+  const [threadContactId, setThreadContactId] = useState(null);
+  useEffect(() => {
+    setThreadContactId(null);
+    if (!selectedThread) return;
+    const emails = (selectedThread.participants || [])
+      .map(p => String((p && (p.email || p.address)) || '').toLowerCase()).filter(Boolean);
+    if (!emails.length) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('contacts').select('id,email').in('email', emails).limit(1);
+        if (alive && data && data.length) setThreadContactId(data[0].id);
       } catch (_) {}
     })();
     return () => { alive = false; };
@@ -2978,6 +2999,8 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               <h3 style={{margin:0,fontSize:'17px',fontWeight:600,color:'var(--text-1)',lineHeight:1.35,wordBreak:'break-word'}}>
                 {selectedThread.subject || '(no subject)'}
               </h3>
+              <OtherChannels contactId={threadContactId} exclude="email"
+                onOpen={() => window.__openContact && window.__openContact(threadContactId)} />
               {threadTracking && (() => {
                 const seen = threadTracking.status === 'likely_seen';
                 const machine = threadTracking.status === 'opened_machine';
