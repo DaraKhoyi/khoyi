@@ -51,7 +51,10 @@ const BUDGETS = {
   // extracted to ContactRowActions.jsx FIRST — that took the file from 2099 to
   // 2076 — and the single line that remains is the component call itself, which
   // has to live here. Extract before raising; this is what is left after.
-  "src/views/ContactsView.jsx": 2080,
+  // 2080 -> 2090 on 2026-08-23: the oweOnly filter that makes the Morning Brief's
+  // "owed replies" row work. Five lines of filter state and one predicate; the rule
+  // itself (oweReplyFn) already existed. Comments trimmed twice before raising.
+  "src/views/ContactsView.jsx": 2090,
   "src/views/ContactDetailModal.jsx": 2000,
   "src/views/TasksView.jsx": 1550,
   "src/views/CalendarView.jsx": 1450,
@@ -59,14 +62,18 @@ const BUDGETS = {
   // AccountingViews — that file only reached 6,745 because nothing measured it.
   "src/views/AriBriefingView.jsx": 1150,
   "src/views/TransactionPipeline.jsx": 1120,
-  "src/views/TodayView.jsx": 1100,
+  // 1100 -> 1110 on 2026-08-23: splitting the Morning Brief payload so two dead
+  // rows navigate. Five lines of handler replacing a one-line handler that was wrong.
+  "src/views/TodayView.jsx": 1110,
   "src/views/DealsView.jsx": 1040,
   // Crossed the ~1,000-line mark since the last sweep. Guarded now rather than
   // after they become the next thing that needs a five-step split — which is the
   // whole lesson of App.js and AccountingViews.
   "src/views/AriBriefingView.jsx": 1150,
   "src/views/TransactionPipeline.jsx": 1120,
-  "src/views/TodayView.jsx": 1100,
+  // 1100 -> 1110 on 2026-08-23: splitting the Morning Brief payload so two dead
+  // rows navigate. Five lines of handler replacing a one-line handler that was wrong.
+  "src/views/TodayView.jsx": 1110,
   "src/views/DealsView.jsx": 1040,
 };
 

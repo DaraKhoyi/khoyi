@@ -997,8 +997,15 @@ function MorningBrief({ setView }) {
       <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 19, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: (brief.items && brief.items.length) ? 12 : 0 }}>
         {brief.headline}
       </div>
+      {/* setView was handed the WHOLE payload, so 'contacts:owe' set a view id that
+          does not exist and two of the three brief rows were dead. Split on the colon. */}
       {Array.isArray(brief.items) && brief.items.map((it, i) => (
-        <button key={i} onClick={() => setView && setView(it.payload)}
+        <button key={i} onClick={() => {
+            const [v, sub] = String(it.payload || '').split(':');
+            if (!v) return;
+            if (sub && window.__deepLink) window.__deepLink({ view: v, sub, n: Date.now() });
+            if (setView) setView(v);
+          }}
           style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginTop: i ? 8 : 0, cursor: 'pointer' }}>
           <span style={{ fontSize: 15 }}>{ICON[it.icon] || '•'}</span>
           <span style={{ flex: 1, fontSize: 13.5, color: 'var(--text-1)' }}>{it.label}</span>

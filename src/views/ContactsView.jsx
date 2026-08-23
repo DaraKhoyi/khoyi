@@ -980,7 +980,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 }
 
 
-function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, canSeeRestricted = false }) {
+function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, canSeeRestricted = false, initialSub = null }) {
   const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [source, setSource] = useState('prism'); // 'prism' | 'google' — which contact book to view
   const [textTo, setTextTo] = useState(null); // { contact, phone } for the Quo text composer
@@ -1035,6 +1035,13 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [recencyFilter, setRecencyFilter] = useState('any');            // any · never · 30 · 60 · 90
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added' | 'cadence_due'
   const [dueOnly, setDueOnly] = useState(false);
+  // Morning Brief's "49 owed replies" pointed at view id 'contacts:owe', which does
+  // not exist. The rule existed (oweReplyFn); no way to filter the list by it did.
+  const [oweOnly, setOweOnly] = useState(false);
+  useEffect(() => {
+    if (initialSub === 'owe') { setOweOnly(true); setDueOnly(false); }
+    else if (initialSub === 'due') { setDueOnly(true); setOweOnly(false); }
+  }, [initialSub]);
   const [search, setSearch] = useState('');
   // Render only a window of the (potentially thousands-long) contact list so the
   // page paints and scrolls fast on mobile; "Show more" extends it. The window
@@ -1214,9 +1221,17 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   }
   const dueForOutreachCount = contacts.filter(c => { const s = cadenceDue(c); return s && s.due; }).length;
 
+  // honoured no_reply_needed_at but not comms_settled_at, so a Settled contact
+  // still headlined "you owe a reply" here. The one-day grace and the snooze are
+  // this screen's own additions on top of the shared rule.
+  const oweReplyFn = (c) => owesReply(c)
+    && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1
+    && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date());
+
   const filtered = contacts.filter(c => {
     if (typeFilter !== 'all' && c.type !== typeFilter) return false;
     if (dueOnly) { const s = cadenceDue(c); if (!s || !s.due) return false; }
+    if (oweOnly && !oweReplyFn(c)) return false;
     if (discFilter.size) { const dl = dominantDiscLetter(profileByContact.get(c.id)) || 'none'; if (!discFilter.has(dl)) return false; }
     if (leadSourceFilter) {
       if (leadSourceFilter === 'unassigned') { if (c.lead_gen_system_id) return false; }
@@ -1288,7 +1303,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     contacts.forEach(c => { const k = c.priority || 'normal'; if (m[k]!=null) m[k]++; });
     return m;
   }, [contacts]);
-  const activeFilterCount = (typeFilter!=='all'?1:0) + (dueOnly?1:0) + (discFilter.size?1:0) + (leadSourceFilter?1:0) + (priorityFilter.size?1:0) + (reachFilter!=='any'?1:0) + (recencyFilter!=='any'?1:0);
+  const activeFilterCount = (typeFilter!=='all'?1:0) + (dueOnly?1:0) + (oweOnly?1:0) + (discFilter.size?1:0) + (leadSourceFilter?1:0) + (priorityFilter.size?1:0) + (reachFilter!=='any'?1:0) + (recencyFilter!=='any'?1:0);
   const clearAllFilters = () => { setTypeFilter('all'); setDueOnly(false); setDiscFilter(new Set()); setLeadSourceFilter(''); setPriorityFilter(new Set()); setReachFilter('any'); setRecencyFilter('any'); };
   const selectAllFiltered = () => setSelIds(new Set(sorted.map(c => c.id)));
   const toggleSetVal = (setter, val) => setter(prev => { const nx = new Set(prev); nx.has(val) ? nx.delete(val) : nx.add(val); return nx; });
@@ -1369,12 +1384,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   }
 
   // Shared definition — this used to re-derive the rule and had drifted: it
-  // honoured no_reply_needed_at but not comms_settled_at, so a Settled contact
-  // still headlined "you owe a reply" here. The one-day grace and the snooze are
-  // this screen's own additions on top of the shared rule.
-  const oweReplyFn = (c) => owesReply(c)
-    && (Date.now()-new Date(c.last_inbound_at))/86400000 >= 1
-    && !(c.reachout_snooze_until && new Date(c.reachout_snooze_until)>new Date());
   const dueCount = useMemo(() => contacts.filter(c => { const cd = cadenceDue(c); return (cd && cd.due && !cd.snoozed) || oweReplyFn(c); }).length, [contacts]);
   const reachNext = useMemo(() => {
     const owe = contacts.find(oweReplyFn);
