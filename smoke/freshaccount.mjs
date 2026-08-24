@@ -27,7 +27,6 @@
 // deleted afterwards whatever happens.
 
 import { chromium } from "playwright";
-import { createClient } from "@supabase/supabase-js";
 
 const URL = process.env.SMOKE_URL || "http://localhost:4173/";
 const SUPA = process.env.SUPABASE_URL;
@@ -35,7 +34,22 @@ const SERVICE = process.env.SUPABASE_SERVICE_KEY;
 
 if (!SUPA || !SERVICE) { console.log("FRESH ACCOUNT: skipped (no SUPABASE_URL / SUPABASE_SERVICE_KEY)"); process.exit(0); }
 
-const admin = createClient(SUPA, SERVICE);
+// Raw fetch against the auth admin API rather than supabase-js. Creating a
+// supabase-js client here threw on CI ("Node.js 20 detected without native
+// WebSocket support") because the client spins up a realtime socket we never
+// use — green locally on Node 22, red on the runner. Every other stage in this
+// gate already talks to the API over plain fetch; this one now matches.
+const authHeaders = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" };
+const adminCreateUser = async (body) => {
+  const r = await fetch(`${SUPA}/auth/v1/admin/users`, { method: "POST", headers: authHeaders, body: JSON.stringify(body) });
+  let json = null;
+  try { json = await r.json(); } catch (_) {}
+  if (!r.ok) return { data: null, error: new Error((json && (json.msg || json.message || json.error_description)) || `HTTP ${r.status}`) };
+  return { data: { user: json }, error: null };
+};
+const adminDeleteUser = async (id) => {
+  await fetch(`${SUPA}/auth/v1/admin/users/${id}`, { method: "DELETE", headers: authHeaders });
+};
 const stamp = Date.now();
 const email = `fresh_gate_${stamp}@example.com`;
 const password = `Fg!${stamp}xY`;
@@ -45,7 +59,7 @@ let userId = null;
 let failed = 0;
 
 try {
-  const { data: made, error: mkErr } = await admin.auth.admin.createUser({
+  const { data: made, error: mkErr } = await adminCreateUser({
     email, password, email_confirm: true,
   });
   if (mkErr) throw new Error("could not create the throwaway account: " + mkErr.message);
@@ -119,7 +133,7 @@ try {
   failed = 1;
 } finally {
   // Always clean up, including when the walk threw.
-  if (userId) { try { await admin.auth.admin.deleteUser(userId); } catch (_) {} }
+  if (userId) { try { await adminDeleteUser(userId); } catch (_) {} }
 }
 
 process.exit(failed);
