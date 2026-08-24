@@ -17,6 +17,17 @@ import { SenderLink, EmailDetailPanel } from './EmailShared';
 // Long inbound messages get folded rather than truncated. A 2,700-character
 // email cut at 160 characters is not a preview, it is a guess — and deciding
 // whether to reply is exactly when you need the rest of the sentence.
+// The card is handed two versions of what they wrote: inbound_text (what the
+// lead pipeline stored, capped ~700 chars) and full_body (the real message off
+// email_messages). Neither is reliably the longer one — a short email has no
+// full_body worth using, a long one is truncated in inbound_text — so take
+// whichever actually has more of the sentence in it.
+function fullest(it) {
+  const a = (it && it.inbound_text) || '';
+  const b = (it && it.full_body) || '';
+  return b.length > a.length ? b : a;
+}
+
 function InboundMessage({ text }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
@@ -94,7 +105,12 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
             <div style={{ marginBottom: 2 }}>
               <SenderLink contact={contact} name={label} address={it.lead_email} size={15} />
             </div>
-            <InboundMessage text={it.inbound_text} />
+            {/* inbound_text is capped around 700 characters at ingest — 72 of
+                Dara's rows sit at 695-705 with the tail cut mid-sentence. The RPC
+                also hands back full_body (the real message, up to 118k chars) and
+                nothing used it, so "Show the whole message" was showing the whole
+                STORED text, not the whole message. Prefer whichever is longer. */}
+            <InboundMessage text={fullest(it)} />
             {isEmail && it.draft_subject && !editing && <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}><span style={{ color: 'var(--text-2)' }}>Subject:</span> {it.draft_subject}</div>}
             {/* The email itself: whole thread, and the way to clear it out of the
                 inbox once handled. Dismiss only clears the CARD — it always left
