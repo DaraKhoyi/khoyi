@@ -952,7 +952,7 @@ function EnableNotifications({ myUserId }) {
   const head = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
       <span style={{ fontSize: 15 }}>🔔</span>
-      <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>Don\u2019t miss a lead</span>
+      <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>Don’t miss a lead</span>
       <button onClick={hide} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 17, cursor: 'pointer', lineHeight: 1 }}>×</button>
     </div>
   );
@@ -963,9 +963,9 @@ function EnableNotifications({ myUserId }) {
         {head}
         <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 18, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 8 }}>Add PrismOS to your Home Screen to get alerts.</div>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          On iPhone, tap the <strong>Share</strong> button <span style={{ color: 'var(--accent)' }}>↑</span> in Safari, choose <strong>“Add to Home Screen,”</strong> then open PrismOS from your home screen and you\u2019ll see a one-tap “Turn on notifications” here.
+          On iPhone, tap the <strong>Share</strong> button <span style={{ color: 'var(--accent)' }}>↑</span> in Safari, choose <strong>“Add to Home Screen,”</strong> then open PrismOS from your home screen and you’ll see a one-tap “Turn on notifications” here.
         </div>
-        <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>It takes 15 seconds and it\u2019s how you get new-lead alerts and your morning brief on your phone.</div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>It takes 15 seconds and it’s how you get new-lead alerts and your morning brief on your phone.</div>
       </div>
     );
   }

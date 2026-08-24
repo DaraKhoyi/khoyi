@@ -98,8 +98,8 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
           <div key={it.id} style={{ background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))', border: '1px solid rgba(197,169,94,.5)', borderRadius: 16, padding: '14px 16px', marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span className="live-dot" />
-              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>New lead \u00B7 reply ready</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')} \u00B7 {timeAgo(it.first_seen_at)}</span>
+              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>{'New lead \u00B7 reply ready'}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{(isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')) + ' \u00B7 ' + timeAgo(it.first_seen_at)}</span>
             </div>
             {/* The name is the way into the person, not decoration. */}
             <div style={{ marginBottom: 2 }}>

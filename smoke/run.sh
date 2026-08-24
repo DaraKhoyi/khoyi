@@ -43,6 +43,14 @@ node smoke/hover_guard.mjs
 echo "→ nested component guard"
 node smoke/nested_component_guard.mjs
 
+# Static guard: a \uXXXX escape inside JSX TEXT is not an escape — JSX text is
+# not a string literal, so the user sees the seven characters "\u00B7". Dara
+# photographed exactly that in production ("NEW LEAD \u00B7 REPLY READY"), and
+# its first run found five more live instances including the iOS push-setup
+# copy every iPhone agent reads.
+echo "→ JSX escape guard"
+node smoke/jsx_escapes.mjs
+
 # Static guard: no edge function may trust an identity supplied in the request
 # body while running as service role. Three security holes shipped this week in
 # exactly that shape, all invisible to a gate that only drives the browser.

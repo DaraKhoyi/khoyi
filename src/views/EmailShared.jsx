@@ -453,7 +453,7 @@ export function EmailThreadPanel({ threadId, providerThreadId, providerMessageId
   }, [threadId, providerThreadId, providerMessageId, contactEmail, accountId, maxMessages, onResolved]);
 
   if (state.phase === 'loading') {
-    return <div style={{ fontSize: '12px', color: 'var(--text-3)', padding: '10px 0' }}>Loading the conversation\u2026</div>;
+    return <div style={{ fontSize: '12px', color: 'var(--text-3)', padding: '10px 0' }}>Loading the conversation…</div>;
   }
   if (state.phase === 'error') {
     return <div style={{ fontSize: '12px', color: '#ef4444', padding: '10px 0' }}>{state.err}</div>;

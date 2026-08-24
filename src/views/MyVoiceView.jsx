@@ -214,7 +214,7 @@ export default function MyVoiceView({ userId, user, voiceCards, setVoiceCards })
             {err && <div className="mv-err">{err}</div>}
             <div className="mv-nav">
               <button className="mv-btn2" onClick={startOver}>Start over</button>
-              <button className={'mv-btn' + (justSaved ? ' saved' : '')} onClick={activate} disabled={saving || (existing?.is_active && !dirty && !justSaved)}>{saving ? 'Saving\u2026' : justSaved ? '\u2713 Saved' : (existing?.is_active ? 'Save changes' : 'Activate this voice')}{!saving && !justSaved && <span className="mv-arrow">\u2192</span>}</button>
+              <button className={'mv-btn' + (justSaved ? ' saved' : '')} onClick={activate} disabled={saving || (existing?.is_active && !dirty && !justSaved)}>{saving ? 'Saving\u2026' : justSaved ? '\u2713 Saved' : (existing?.is_active ? 'Save changes' : 'Activate this voice')}{!saving && !justSaved && <span className="mv-arrow">→</span>}</button>
             </div>
             {existing?.is_active && <div className="mv-note">Your voice is active and layered on top of The Concierge. Edit anytime.</div>}
           </div>

@@ -9,6 +9,23 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const QUO_BASE = "https://api.openphone.com";
 
+// functions.invoke() throws away the callee's error body and leaves only
+// "Edge Function returned a non-2xx status code". The real reason is in
+// err.context, which is a Response. Read it so the card can show something true.
+async function explain(res: any, err: any): Promise<string> {
+  if (res && res.error) return String(res.error);
+  if (!err) return "unknown";
+  try {
+    const ctx = err.context;
+    if (ctx && typeof ctx.text === "function") {
+      const t = await ctx.text();
+      try { const j = JSON.parse(t); if (j && j.error) return String(j.error); } catch (_) {}
+      if (t) return t.slice(0, 200);
+    }
+  } catch (_) {}
+  return err.message || String(err);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -50,15 +67,35 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "No connected email account to send from." }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
       }
       const subject = (b.subject && String(b.subject)) || lc.draft_subject || "Thanks for reaching out";
+      // user_id is REQUIRED here. gmail-send authenticates the caller and only
+      // accepts a service-role call when the body names the user it is acting
+      // for; without it every send 401'd, which is why no lead email has ever
+      // gone out. lc.user_id comes from the row we just loaded by id, never from
+      // the request, so this cannot be used to send as someone else.
       const { data: sendRes, error: sendErr } = await admin.functions.invoke("gmail-send", { body: {
-        account_id: accountId, to: lc.lead_email, subject,
+        account_id: accountId, user_id: lc.user_id,
+        to: lc.lead_email, subject,
         body_text: message,
         reply_to_message_id: ctx.provider_message_id || undefined,
         in_reply_to_thread_id: ctx.provider_thread_id || undefined,
       } });
       if (sendErr || (sendRes && sendRes.error)) {
-        await admin.from("lead_concierge").update({ status: "failed" }).eq("id", id);
-        return new Response(JSON.stringify({ error: "Email send failed: " + ((sendRes && sendRes.error) || sendErr?.message || "unknown") }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+        // supabase-js reports "Edge Function returned a non-2xx status code" and
+        // hides the real reason in the response body. Dig it out — a message the
+        // agent cannot act on is the same as no message.
+        let detail = await explain(sendRes, sendErr);
+        // A revoked Google grant is the most common real cause and the only one
+        // the agent can actually fix. Google's wording ("invalid_grant") means
+        // nothing to them; name the account and say what to do.
+        if (/invalid_grant|expired or revoked|No refresh_token/i.test(detail)) {
+          const { data: acct } = await admin.from("email_accounts").select("email_address").eq("id", accountId).maybeSingle();
+          detail = "Gmail needs reconnecting for " + ((acct && acct.email_address) || "your sending account") +
+                   " \u2014 open Settings \u2192 Email accounts and reconnect, then send again.";
+        }
+        // Only the cron marks a row failed. A person tapping Send wants to try
+        // again; parking the row as failed removed the card and dropped the lead.
+        if (auto) await admin.from("lead_concierge").update({ status: "failed" }).eq("id", id);
+        return new Response(JSON.stringify({ error: "Email send failed: " + detail }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
       }
       await admin.from("lead_concierge").update({ status: auto ? "auto_sent" : "sent", sent_text: message, sent_at: new Date().toISOString(), sent_by: auto ? "auto" : "agent" }).eq("id", id);
       if (auto) { try { await admin.functions.invoke("push-send", { body: { user_id: lc.user_id, title: "Auto-replied to a new lead", body: message.slice(0, 120), url: "https://darasapp.com/?concierge=" + id, tag: "concierge" } }); } catch (_) {} }

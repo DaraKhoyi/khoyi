@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     for (const to of recipients) {
       try {
         const { error } = await admin.functions.invoke("gmail-send", { body: {
-          account_id: acct.id, to, subject: "One quick step to get the latest PrismOS", body_text: BODY,
+          account_id: acct.id, user_id: uid, to, subject: "One quick step to get the latest PrismOS", body_text: BODY,
         } });
         if (!error) sent++;
       } catch (_) { /* keep going */ }
