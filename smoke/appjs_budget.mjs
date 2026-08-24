@@ -64,7 +64,10 @@ const BUDGETS = {
   "src/views/TransactionPipeline.jsx": 1120,
   // 1100 -> 1110 on 2026-08-23: splitting the Morning Brief payload so two dead
   // rows navigate. Five lines of handler replacing a one-line handler that was wrong.
-  "src/views/TodayView.jsx": 1110,
+  // 1110 -> 1115 on 2026-08-24: fixing two queries that referenced non-existent
+  // columns inside empty catches. Error handling replaced the swallow, which costs
+  // lines and is the entire point — these failed silently for months.
+  "src/views/TodayView.jsx": 1115,
   "src/views/DealsView.jsx": 1040,
   // Crossed the ~1,000-line mark since the last sweep. Guarded now rather than
   // after they become the next thing that needs a five-step split — which is the
@@ -73,7 +76,10 @@ const BUDGETS = {
   "src/views/TransactionPipeline.jsx": 1120,
   // 1100 -> 1110 on 2026-08-23: splitting the Morning Brief payload so two dead
   // rows navigate. Five lines of handler replacing a one-line handler that was wrong.
-  "src/views/TodayView.jsx": 1110,
+  // 1110 -> 1115 on 2026-08-24: fixing two queries that referenced non-existent
+  // columns inside empty catches. Error handling replaced the swallow, which costs
+  // lines and is the entire point — these failed silently for months.
+  "src/views/TodayView.jsx": 1115,
   "src/views/DealsView.jsx": 1040,
 };
 

@@ -103,17 +103,24 @@ export default function TodayView({
         const { data } = await supabase.rpc('txn_nba_feed');
         if (go) setTxnActions(txnSignals(data || [], now));
       } catch (_) {}
+      // Both queried columns that DO NOT EXIST (commitments.contact_name,
+      // recordings.status) inside empty catches, so they failed on every poll,
+      // silently, forever: 321 failed requests in a two-minute session. Both Today
+      // cards have been permanently empty for every user. supabase-js resolves with
+      // { error } rather than throwing, so try/catch could never have caught it.
       try {
-        const { data } = await supabase.from('commitments')
-          .select('id, title, owner, contact_name, status, due_date')
+        const { data, error } = await supabase.from('commitments')
+          .select('id, title, owner, contact_id, owner_contact_id, status, due_date')
           .eq('status', 'proposed').order('created_at', { ascending: false }).limit(50);
+        if (error) console.error('[today] commitments:', error.message);
         if (go) setCommitments(data || []);
-      } catch (_) {}
+      } catch (e) { console.error('[today] commitments threw:', e); }
       try {
-        const { data } = await supabase.from('recordings').select('id')
-          .in('status', ['pending', 'review', 'transcribing']).limit(200);
+        const { data, error } = await supabase.from('recordings').select('id')
+          .in('transcription_status', ['pending', 'processing', 'transcribing']).limit(200);
+        if (error) console.error('[today] recordings:', error.message);
         if (go) setPendingRec((data || []).length);
-      } catch (_) {}
+      } catch (e) { console.error('[today] recordings threw:', e); }
     })();
     return () => { go = false; };
   }, [contacts, now]);
