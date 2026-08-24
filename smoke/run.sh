@@ -49,14 +49,6 @@ node smoke/nested_component_guard.mjs
 echo "→ edge function auth guard"
 node smoke/edge_auth.mjs
 
-# A BARE account — no seed, no agents row, no settings — walked on a phone.
-# Every other stage seeds data first, so day-one was the one state nothing tested.
-# Its first run found two Today queries naming columns that do not exist, inside
-# empty catches, firing on every poll: two cards that had never worked for anyone.
-# Runs BEFORE seed.mjs deliberately; seeding first would hide exactly this.
-echo "→ fresh-account walk"
-node smoke/freshaccount.mjs
-
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 
@@ -73,6 +65,28 @@ if [ -z "$CHROME_PATH" ] || [ ! -e "$CHROME_PATH" ]; then
   echo "" >&2
   exit 2
 fi
+
+# The web server must be up BEFORE any stage that drives a browser. The
+# fresh-account walk below is one of them: it used to sit above this line and
+# could therefore never pass (ERR_CONNECTION_REFUSED), which held v1.07.24 and
+# v1.07.25 out of production. SUID is still empty here; cleanup tolerates that.
+cleanup() {
+  kill "${SRV:-}" 2>/dev/null || true
+  [ -n "${SUID:-}" ] && curl -s -X DELETE "$SUPABASE_URL/auth/v1/admin/users/$SUID" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" >/dev/null || true
+}
+trap cleanup EXIT
+
+python3 -m http.server 4173 --directory build >/tmp/smoke_httpd.log 2>&1 & SRV=$!
+sleep 2
+
+# A BARE account — no seed, no agents row, no settings — walked on a phone.
+# Every other stage seeds data first, so day-one was the one state nothing tested.
+# Its first run found two Today queries naming columns that do not exist, inside
+# empty catches, firing on every poll: two cards that had never worked for anyone.
+# Runs BEFORE seed.mjs deliberately; seeding first would hide exactly this.
+# (It creates and deletes its own bare user, separate from the smoke agent.)
+echo "→ fresh-account walk"
+node smoke/freshaccount.mjs
 
 EMAIL="smoke_$(date +%s)_$RANDOM@example.com"; PASSWORD="Smoke!$(date +%s)$RANDOM"
 echo "→ creating throwaway agent $EMAIL"
@@ -104,14 +118,6 @@ curl -s -X POST "$SUPABASE_URL/rest/v1/user_settings" -H "apikey: $SUPABASE_SERV
 echo "→ seeding the throwaway agent"
 SEED_USER_ID="$SUID" node smoke/seed.mjs || { echo "seed failed — the run below would prove nothing"; exit 2; }
 
-cleanup() {
-  kill "${SRV:-}" 2>/dev/null || true
-  curl -s -X DELETE "$SUPABASE_URL/auth/v1/admin/users/$SUID" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" >/dev/null || true
-}
-trap cleanup EXIT
-
-python3 -m http.server 4173 --directory build >/tmp/smoke_httpd.log 2>&1 & SRV=$!
-sleep 2
 echo "→ running smoke check"
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/smoke.mjs
 

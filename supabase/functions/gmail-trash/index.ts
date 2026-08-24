@@ -3,8 +3,11 @@
 // This is the standard "delete" behavior — true permanent delete is intentionally
 // not exposed because it's irreversible.
 //
-// POST body: { account_id, thread_id?: provider_thread_id, message_id?: provider_message_id }
-// One of thread_id or message_id required. If thread_id, trashes the entire thread.
+// POST body: { account_id, thread_id?: provider_thread_id, message_id?: provider_message_id,
+//              mode?: "trash" | "untrash" }
+// One of thread_id or message_id required. If thread_id, acts on the entire thread.
+// mode=untrash reverses it (this is what the in-app Undo calls). Permanent
+// delete is still intentionally not exposed — it is irreversible.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -44,6 +47,7 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const { account_id, thread_id, message_id } = body || {};
+    const mode = (body && body.mode) === "untrash" ? "untrash" : "trash";
     if (!account_id || (!thread_id && !message_id)) {
       return new Response(JSON.stringify({ error: "account_id and one of thread_id/message_id required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -88,29 +92,43 @@ serve(async (req) => {
     // Call Gmail trash endpoint
     let url, dbCleanup;
     if (thread_id) {
-      url = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${thread_id}/trash`;
+      url = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${thread_id}/${mode}`;
       dbCleanup = async () => {
-        // Mark thread as trashed locally: remove INBOX, add TRASH
+        // Mirror the label change locally so the UI matches Gmail immediately.
         const { data: thread } = await supabase
           .from("email_threads").select("id, labels")
           .eq("account_id", account_id).eq("provider_thread_id", thread_id).maybeSingle();
         if (thread) {
-          const newLabels = (thread.labels || []).filter(l => l !== "INBOX");
-          if (!newLabels.includes("TRASH")) newLabels.push("TRASH");
+          let newLabels;
+          if (mode === "untrash") {
+            // Put it back the way Gmail does: out of TRASH and into INBOX.
+            newLabels = (thread.labels || []).filter(l => l !== "TRASH");
+            if (!newLabels.includes("INBOX")) newLabels.push("INBOX");
+          } else {
+            newLabels = (thread.labels || []).filter(l => l !== "INBOX");
+            if (!newLabels.includes("TRASH")) newLabels.push("TRASH");
+          }
+          const patch = mode === "untrash" ? { labels: newLabels } : { labels: newLabels, has_unread: false };
           await supabase.from("email_threads")
-            .update({ labels: newLabels, has_unread: false })
+            .update(patch)
             .eq("id", thread.id);
         }
       };
     } else {
-      url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message_id}/trash`;
+      url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message_id}/${mode}`;
       dbCleanup = async () => {
         const { data: msg } = await supabase
           .from("email_messages").select("id, labels, thread_id")
           .eq("account_id", account_id).eq("provider_message_id", message_id).maybeSingle();
         if (msg) {
-          const newLabels = (msg.labels || []).filter(l => l !== "INBOX");
-          if (!newLabels.includes("TRASH")) newLabels.push("TRASH");
+          let newLabels;
+          if (mode === "untrash") {
+            newLabels = (msg.labels || []).filter(l => l !== "TRASH");
+            if (!newLabels.includes("INBOX")) newLabels.push("INBOX");
+          } else {
+            newLabels = (msg.labels || []).filter(l => l !== "INBOX");
+            if (!newLabels.includes("TRASH")) newLabels.push("TRASH");
+          }
           await supabase.from("email_messages").update({ labels: newLabels }).eq("id", msg.id);
         }
       };
@@ -122,7 +140,7 @@ serve(async (req) => {
     });
     if (!r.ok) {
       const t = await r.text();
-      return new Response(JSON.stringify({ error: `Gmail trash failed: ${r.status}`, detail: t.slice(0, 300) }), {
+      return new Response(JSON.stringify({ error: `Gmail ${mode} failed: ${r.status}`, detail: t.slice(0, 300) }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

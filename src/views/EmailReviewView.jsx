@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../dataService';
+import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, useContactByEmail } from './EmailShared';
 
 // ── palette / helpers ────────────────────────────────────────────────
 const CAT = {
@@ -31,7 +32,8 @@ function reasonChips(reasons = {}) {
 }
 
 // ── main view ────────────────────────────────────────────────────────
-export default function EmailReviewView({ userId, emailAccounts = [], setView, onCount }) {
+export default function EmailReviewView({ userId, emailAccounts = [], contacts = [], setView, onCount }) {
+  const findContact = useContactByEmail(contacts);
   const [tab, setTab] = useState('review');
   const [items, setItems] = useState([]);
   const [senders, setSenders] = useState([]);
@@ -71,32 +73,26 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
     if (onCount) onCount(prev.filter(r => r.id !== row.id && r.needs_review).length);
     notify(status === 'done' ? 'Marked done' : 'Dismissed');
   };
-  // Delete: move the email to Gmail Trash (recoverable ~30 days) and clear it
-  // from review. Falls back to just resolving if no provider id is on file.
-  const deleteItem = async (row) => {
-    setBusy(b => ({ ...b, [row.id]: true }));
+  // Archive/Delete are now handled by the shared EmailActionBar (one
+  // implementation, and both reversible). All this has to do is clear the row
+  // from the review queue once Gmail has confirmed the change — and put it BACK
+  // if the person hits Undo, otherwise the undo would restore the email but
+  // leave the review card gone.
+  const onEmailActed = (row) => async (action) => {
+    // 'open' is the live queue status — writing anything else here would make
+    // the card vanish permanently, which is exactly what an Undo must not do.
+    const undone = action === 'untrash' || action === 'unarchive';
+    const status = undone ? 'open' : (action === 'trash' ? 'deleted' : 'done');
     const prev = items;
-    setItems(list => list.filter(r => r.id !== row.id));
-    try {
-      if (row.provider_thread_id || row.provider_message_id) {
-        const { data, error } = await supabase.functions.invoke('gmail-trash', {
-          body: row.provider_thread_id
-            ? { account_id: row.account_id, thread_id: row.provider_thread_id }
-            : { account_id: row.account_id, message_id: row.provider_message_id },
-        });
-        if (error) throw error;
-        if (data && data.error) throw new Error(data.error);
-      }
-      await supabase.from('email_review_items').update({ status: 'deleted' }).eq('id', row.id);
-      setBusy(b => { const n = { ...b }; delete n[row.id]; return n; });
-      if (onCount) onCount(prev.filter(r => r.id !== row.id && r.needs_review).length);
-      notify('Deleted · moved to Gmail Trash');
-    } catch (e) {
-      setItems(prev);
-      setBusy(b => { const n = { ...b }; delete n[row.id]; return n; });
-      notify("Couldn't delete — try again.", 'error');
-    }
+    if (!undone) setItems(list => list.filter(r => r.id !== row.id));
+    // Write the status FIRST, then reload — reloading before the write would
+    // re-query while the row is still 'deleted' and bring back nothing.
+    const { error } = await supabase.from('email_review_items').update({ status }).eq('id', row.id);
+    if (error) { setItems(prev); notify("Couldn't update the review list — try again.", 'error'); return; }
+    if (undone) { await load(); return; }
+    if (onCount) onCount(prev.filter(r => r.id !== row.id && r.needs_review).length);
   };
+
   const setSenderStatus = async (row, status, openUrl) => {
     setBusy(b => ({ ...b, [row.id]: true }));
     if (openUrl && row.list_unsubscribe) { try { window.open(row.list_unsubscribe, '_blank', 'noopener'); } catch (_) {} }
@@ -138,7 +134,6 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
     border: `1px solid ${primary ? 'var(--accent)' : 'var(--border)'}`, background: primary ? 'var(--accent)' : 'transparent', color: primary ? 'var(--bg-base)' : 'var(--text-2)' });
   const tabBtn = (on) => ({ padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 800, cursor: 'pointer', border: 'none',
     background: on ? 'var(--accent)' : 'var(--bg-hover)', color: on ? 'var(--bg-base)' : 'var(--text-2)' });
-  const delBtn = { padding: '7px 13px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: '1px solid rgba(239,68,68,0.5)', background: 'transparent', color: '#ef4444' };
 
   return (
     <div className="ww-prism" style={{ maxWidth: 780, margin: '0 auto', padding: '4px 2px 40px' }}>
@@ -175,15 +170,28 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
                   <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{relTime(row.received_at)}</span>
                 </div>
                 <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-1)', lineHeight: 1.3 }}>{row.subject || '(no subject)'}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-3)', margin: '2px 0 6px' }}>
-                  {row.from_name ? `${row.from_name} · ` : ''}{row.from_address}{acctEmail[row.account_id] ? ` → ${acctEmail[row.account_id]}` : ''}
+                {/* The sender's NAME, not a string of text about them: if we know
+                    them it opens their record. */}
+                <div style={{ fontSize: 12, color: 'var(--text-3)', margin: '3px 0 6px', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <SenderLink contact={findContact(row.from_address)} name={row.from_name} address={row.from_address} size={12} />
+                  {acctEmail[row.account_id] ? <span>{'\u2192 ' + acctEmail[row.account_id]}</span> : null}
                 </div>
-                {row.summary && <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45, marginBottom: 10 }}>{row.summary}</div>}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {row.summary && <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45, marginBottom: 8 }}>{row.summary}</div>}
+                {/* The summary is Prism's read of the email. This is the email. */}
+                <div style={{ marginBottom: 10 }}>
+                  <ThreadDisclosure label="Read full thread">
+                    <EmailThreadPanel threadId={row.thread_id} providerThreadId={row.provider_thread_id}
+                      providerMessageId={row.provider_message_id} accountId={row.account_id} contacts={contacts} />
+                    <EmailIdRow messageId={row.provider_message_id} threadId={row.provider_thread_id} />
+                  </ThreadDisclosure>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button style={btn(true)} disabled={busy[row.id]} onClick={() => openEmail(row)}>Open</button>
                   <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'done')}>✓ Done</button>
                   <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'dismissed')}>Dismiss</button>
-                  <button style={delBtn} disabled={busy[row.id]} onClick={() => deleteItem(row)}>🗑 Delete</button>
+                  <EmailActionBar accountId={row.account_id} providerThreadId={row.provider_thread_id}
+                    providerMessageId={row.provider_message_id} disabled={!!busy[row.id]}
+                    onDone={onEmailActed(row)} />
                 </div>
               </div>
             );
@@ -203,11 +211,23 @@ export default function EmailReviewView({ userId, emailAccounts = [], setView, o
                       <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.subject || '(no subject)'}</span>
                       <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)', flexShrink: 0 }}>{relTime(row.received_at)}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <SenderLink contact={findContact(row.from_address)} name={row.from_name} address={row.from_address} size={11.5} showAdd={false} />
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                      <ThreadDisclosure label="Read full thread">
+                        <EmailThreadPanel threadId={row.thread_id} providerThreadId={row.provider_thread_id}
+                          providerMessageId={row.provider_message_id} accountId={row.account_id} contacts={contacts} />
+                        <EmailIdRow messageId={row.provider_message_id} threadId={row.provider_thread_id} />
+                      </ThreadDisclosure>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => openEmail(row)}>Open</button>
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'done')}>✓ Done</button>
                       <button style={btn(false)} disabled={busy[row.id]} onClick={() => setItemStatus(row, 'dismissed')}>Dismiss</button>
-                      <button style={delBtn} disabled={busy[row.id]} onClick={() => deleteItem(row)}>🗑 Delete</button>
+                      <EmailActionBar accountId={row.account_id} providerThreadId={row.provider_thread_id}
+                        providerMessageId={row.provider_message_id} disabled={!!busy[row.id]}
+                        onDone={onEmailActed(row)} compact />
                     </div>
                   </div>
                 );

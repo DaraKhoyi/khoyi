@@ -10,6 +10,7 @@ import { canHover, decodeEntities } from '../helpers';
 import AriRewriteButton from './AriRewriteButton';
 import ForkTuningOverlay from './ForkTuningOverlay';
 import { Tip } from '../tipsUi';
+import { EmailHtmlFrame, PlainTextBody, buildContactByEmail } from './EmailShared';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { modal, pickerInitials } from '../helpers';
 
@@ -996,132 +997,12 @@ function TxnFilePicker({ pick, onClose, onChoose }) {
 }
 
 
-function EmailHtmlFrame({ html }) {
-  const iframeRef = useRef(null);
-  const [height, setHeight] = useState(200);
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    // Wrap in a basic style so dark-mode email content stays readable.
-    // <base target="_blank"> ensures every link opens in a new tab instead of
-    // trying to navigate the (sandboxed) iframe itself.
-    const wrapped = `<!doctype html><html><head><meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <meta name="color-scheme" content="light only">
-      <base target="_blank" rel="noopener noreferrer">
-      <style>
-        /* Force LIGHT rendering: many emails (e.g. Google Calendar invites) ship
-           a prefers-color-scheme:dark stylesheet that turns text near-white. On a
-           phone in dark mode that produced white-on-white. Pinning light mode keeps
-           those dark-mode overrides from firing so the email shows as authored. */
-        :root, html { color-scheme: light only; }
-        /* Emails are authored for a white canvas — render them that way so the
-           sender's own text colors stay readable (dark-on-dark was the bug). */
-        html, body { margin: 0; padding: 0; background: #ffffff; }
-        body { padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; line-height: 1.6; color: #1a1a1a; background: #ffffff; word-wrap: break-word; overflow-wrap: anywhere; -webkit-text-size-adjust: 100%; }
-        a { color: #1a56db; word-break: break-word; }
-        a:visited { color: #6b3fa0; }
-        img { max-width: 100%; height: auto; display: inline-block; }
-        table { max-width: 100% !important; }
-        td, th { max-width: 100%; word-wrap: break-word; }
-        blockquote { border-left: 3px solid #d0d5dd; padding-left: 12px; color: #555; margin: 8px 0; }
-        pre { white-space: pre-wrap; word-wrap: break-word; }
-        * { max-width: 100%; box-sizing: border-box; }
-      </style></head><body>${html}</body></html>`;
-    iframe.srcdoc = wrapped;
-    const onLoad = () => {
-      try {
-        const doc = iframe.contentDocument;
-        if (doc) {
-          // Belt and suspenders: also patch any explicit target on links
-          // (some emails set target="_self" which would override <base>)
-          doc.querySelectorAll('a').forEach(a => {
-            a.setAttribute('target', '_blank');
-            a.setAttribute('rel', 'noopener noreferrer');
-          });
-          const h = Math.min(1200, Math.max(100, doc.body.scrollHeight + 24));
-          setHeight(h);
-        }
-      } catch (_) { /* cross-origin shouldn't happen with srcdoc */ }
-    };
-    iframe.addEventListener('load', onLoad);
-    return () => iframe.removeEventListener('load', onLoad);
-  }, [html]);
-  return (
-    <iframe
-      ref={iframeRef}
-      title="email-body"
-      // allow-popups + allow-popups-to-escape-sandbox so target="_blank" links open;
-      // allow-same-origin so we can read scrollHeight from the iframe document
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      style={{ width: '100%', height: `${height}px`, border: 'none', borderRadius: '8px', background: '#ffffff', colorScheme: 'light' }}
-    />
-  );
-}
-
-// Render plain-text email bodies with auto-linked URLs, markdown-style [text](url),
-// and angle-bracket <https://...> URLs. Each detected URL becomes a clickable link.
-
-function PlainTextBody({ text }) {
-  if (!text) return null;
-  // Parse the text into segments: plain text and links
-  // Three patterns to detect, in priority order:
-  //   1. [text](url)           — markdown link
-  //   2. <https://url>         — angle-bracketed URL
-  //   3. https://url           — bare URL
-  const segments = [];
-  const re = /(\[([^\]]+)\]\((https?:\/\/[^)\s]+)\))|<(https?:\/\/[^>\s]+)>|(https?:\/\/[^\s<>"')\]]+)/g;
-  let lastIdx = 0;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > lastIdx) {
-      segments.push({ type: 'text', value: text.substring(lastIdx, match.index) });
-    }
-    if (match[1]) {
-      // Markdown link [label](url)
-      segments.push({ type: 'link', label: match[2], url: match[3] });
-    } else if (match[4]) {
-      // <https://...>
-      segments.push({ type: 'link', label: match[4], url: match[4] });
-    } else if (match[5]) {
-      // Bare URL
-      segments.push({ type: 'link', label: match[5], url: match[5] });
-    }
-    lastIdx = re.lastIndex;
-  }
-  if (lastIdx < text.length) {
-    segments.push({ type: 'text', value: text.substring(lastIdx) });
-  }
-  return (
-    <div style={{fontSize:'14px',lineHeight:'1.7',color:'var(--text-1)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
-      {segments.map((s, i) => s.type === 'text'
-        ? <span key={i}>{s.value}</span>
-        : <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-            style={{color:'var(--accent)',wordBreak:'break-all'}}>{s.label}</a>
-      )}
-    </div>
-  );
-}
-
-
 function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases, setEmailAliases, profiles, contacts, userId, reloadData, defaultSystem = 'eisenhower', accountSwitcher = null }) {
   // A name in an email header is only useful if it gets you to the record. Built
   // once from the contact list rather than scanned per render — a long thread
   // renders this for every sender and every recipient.
-  const contactByEmail = React.useMemo(() => {
-    const m = new Map();
-    for (const c of (contacts || [])) {
-      if (c && c.email) m.set(String(c.email).trim().toLowerCase(), c);
-      // People have more than one address; the jsonb array is the real source.
-      if (Array.isArray(c?.emails)) {
-        for (const e of c.emails) {
-          const v = typeof e === 'string' ? e : (e && e.value);
-          if (v) m.set(String(v).trim().toLowerCase(), c);
-        }
-      }
-    }
-    return m;
-  }, [contacts]);
+  // Shared with Today + the review cards so a known sender is known everywhere.
+  const contactByEmail = React.useMemo(() => buildContactByEmail(contacts), [contacts]);
   const findContact = React.useCallback(
     (email) => (email ? contactByEmail.get(String(email).trim().toLowerCase()) || null : null),
     [contactByEmail]);

@@ -6,6 +6,7 @@ import CommitmentReview from './CommitmentReview';
 import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
 import { useNbaSkips, SnoozeMenu } from '../nbaSkips';
+import { HeroEmailPanel } from './EmailShared';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, txnSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
@@ -457,6 +458,8 @@ export default function TodayView({
                     View contact <span aria-hidden="true">&rarr;</span>
                   </button>
                 )}
+                <HeroEmailPanel action={cur} contacts={contacts}
+                  onActed={(a) => { if (a === 'trash' || a === 'archive') setHeroIdx(0); }} />
               </div>
             </div>
           </div>
