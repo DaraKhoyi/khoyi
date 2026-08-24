@@ -79,18 +79,15 @@ export default function EmailReviewView({ userId, emailAccounts = [], contacts =
   // if the person hits Undo, otherwise the undo would restore the email but
   // leave the review card gone.
   const onEmailActed = (row) => async (action) => {
-    // 'open' is the live queue status — writing anything else here would make
-    // the card vanish permanently, which is exactly what an Undo must not do.
+    // Record the outcome but LEAVE THE CARD ON SCREEN. Filtering it out here
+    // unmounts the action bar, and the Undo button lives inside it — the row
+    // would vanish while the email sat in Trash with no way back. The card
+    // clears on the next load, by which point the undo window is over.
     const undone = action === 'untrash' || action === 'unarchive';
     const status = undone ? 'open' : (action === 'trash' ? 'deleted' : 'done');
-    const prev = items;
-    if (!undone) setItems(list => list.filter(r => r.id !== row.id));
-    // Write the status FIRST, then reload — reloading before the write would
-    // re-query while the row is still 'deleted' and bring back nothing.
     const { error } = await supabase.from('email_review_items').update({ status }).eq('id', row.id);
-    if (error) { setItems(prev); notify("Couldn't update the review list — try again.", 'error'); return; }
-    if (undone) { await load(); return; }
-    if (onCount) onCount(prev.filter(r => r.id !== row.id && r.needs_review).length);
+    if (error) { notify("Couldn't update the review list — try again.", 'error'); return; }
+    if (onCount) onCount(items.filter(r => r.id !== row.id && r.needs_review).length);
   };
 
   const setSenderStatus = async (row, status, openUrl) => {

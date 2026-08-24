@@ -7,6 +7,7 @@ import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
 import { useNbaSkips, SnoozeMenu } from '../nbaSkips';
 import { HeroEmailPanel } from './EmailShared';
+import LeadConcierge from './LeadConcierge';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, txnSignals } from '../../supabase/functions/robot-chat/nba.js';
 
 // ── TodayView — the single calm command center ───────────────────────────────
@@ -364,7 +365,7 @@ export default function TodayView({
       <VoiceNote setView={setView} userId={myUserId} />
       <MorningBrief setView={setView} />
       <CallList />
-      <LeadConcierge myUserId={myUserId} setView={setView} />
+      <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
 
       {/* Header — moving-gold eyebrow, live date, fade-up entrance */}
       <div className="fade-up" style={{ marginBottom: 8 }}>
@@ -458,8 +459,7 @@ export default function TodayView({
                     View contact <span aria-hidden="true">&rarr;</span>
                   </button>
                 )}
-                <HeroEmailPanel action={cur} contacts={contacts}
-                  onActed={(a) => { if (a === 'trash' || a === 'archive') setHeroIdx(0); }} />
+                <HeroEmailPanel action={cur} contacts={contacts} />
               </div>
             </div>
           </div>
@@ -1039,89 +1039,3 @@ function MorningBrief({ setView }) {
   );
 }
 
-// ── 5-Minute Lead Concierge ──────────────────────────────────────────────────
-// A new lead texted or called; PrismOS already drafted the first reply in the
-// agent's voice. This banner is the send-it-now moment: edit if you want, then
-// one tap fires a real SMS. Speed to lead is the biggest lever there is.
-function LeadConcierge({ myUserId, setView }) {
-  const [items, setItems] = useState([]);
-  const [busy, setBusy] = useState(null);
-  const [editId, setEditId] = useState(null);
-  const [editText, setEditText] = useState('');
-  const [flash, setFlash] = useState(null);
-
-  const load = React.useCallback(async () => {
-    try { const { data } = await supabase.rpc('lead_concierge_pending'); setItems(Array.isArray(data) ? data : []); } catch (_) { setItems([]); }
-  }, []);
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 60000);           // refresh so new leads appear fast
-    return () => clearInterval(t);
-  }, [load]);
-
-  const send = async (it) => {
-    setBusy(it.id);
-    try {
-      const text = (editId === it.id ? editText : it.draft);
-      const { data, error } = await supabase.functions.invoke('lead-concierge-send', { body: { id: it.id, text } });
-      if (error || data?.error) throw new Error(data?.error || 'Send failed');
-      setFlash({ id: it.id, msg: 'Sent ✓' });
-      setItems(list => list.filter(x => x.id !== it.id));
-      setEditId(null);
-    } catch (e) { setFlash({ id: it.id, msg: (e.message || 'Send failed') }); }
-    setBusy(null);
-  };
-  const dismiss = async (it) => {
-    setBusy(it.id);
-    try { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); setItems(list => list.filter(x => x.id !== it.id)); } catch (_) {}
-    setBusy(null);
-  };
-
-  if (!items.length) return null;
-  return (
-    <div className="fade-up" style={{ marginBottom: 14 }}>
-      {items.map(it => {
-        const first = (it.lead_name || '').trim().split(/\s+/)[0];
-        const editing = editId === it.id;
-        const isEmail = it.channel === 'email';
-        return (
-          <div key={it.id} style={{ background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))', border: '1px solid rgba(197,169,94,.5)', borderRadius: 16, padding: '14px 16px', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span className="live-dot" />
-              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>New lead · reply ready</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')} · {timeAgo(it.first_seen_at)}</span>
-            </div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', marginBottom: 2 }}>{first || it.lead_email || it.lead_phone}</div>
-            {it.inbound_text && <div style={{ fontSize: 12.5, color: 'var(--text-3)', fontStyle: 'italic', marginBottom: 8 }}>“{it.inbound_text.slice(0, 160)}”</div>}
-            {isEmail && it.draft_subject && !editing && <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}><span style={{ color: 'var(--text-2)' }}>Subject:</span> {it.draft_subject}</div>}
-            {editing ? (
-              <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
-                style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, marginBottom: 10 }} />
-            ) : (
-              <div onClick={() => { setEditId(it.id); setEditText(it.draft); }} style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, marginBottom: 10, cursor: 'text' }}>
-                {it.draft}
-              </div>
-            )}
-            {flash && flash.id === it.id ? (
-              <div style={{ fontSize: 13, color: flash.msg.includes('✓') ? '#22c55e' : '#fca5a5', fontWeight: 600 }}>{flash.msg}</div>
-            ) : (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button disabled={busy === it.id} onClick={() => send(it)}
-                  style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 18px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
-                  {busy === it.id ? 'Sending…' : (editing ? 'Send this' : (isEmail ? 'Send email' : 'Send reply'))}
-                </button>
-                {!editing && <button onClick={() => { setEditId(it.id); setEditText(it.draft); }} style={{ background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>Edit</button>}
-                <button disabled={busy === it.id} onClick={() => dismiss(it)} style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--text-3)', border: 'none', fontSize: 12.5, cursor: 'pointer' }}>Dismiss</button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-function timeAgo(ts) {
-  if (!ts) return ''; const s = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 1000));
-  if (s < 60) return s + 's ago'; const m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
-  const h = Math.floor(m / 60); return h + 'h ago';
-}

@@ -552,19 +552,24 @@ export function EmailIdRow({ messageId, threadId }) {
 // from a mailbox row), so they carry no email id at all. This resolves the
 // newest thread from that person's address, then hands the identifiers back so
 // Archive/Delete can act on a real Gmail thread.
-export function HeroEmailPanel({ action, contacts, onActed }) {
+// The whole "this card is about an email" affordance in one place: read the full
+// thread, then archive or delete it, then the ids if you need them elsewhere.
+// Both the Today hero and the lead cards mount this, so the behaviour cannot
+// drift between them.
+//
+// Identifiers come in however the calling surface has them — a local thread uuid
+// (lead cards) or just the sender's address (hero cards). Whichever it is, the
+// panel resolves the rest and only then offers the actions, because Archive and
+// Delete need a real Gmail thread id and offering buttons that cannot work is
+// worse than not offering them.
+export function EmailDetailPanel({ threadId, contactEmail, contacts, onActed, label = 'Read full thread' }) {
   const [ident, setIdent] = useState(null);
   const onResolved = useCallback((r) => setIdent(r), []);
-  // Only email-shaped cards have a thread behind them. An overdue task or a
-  // closing deal does not, and offering "Read full thread" there would be a lie.
-  const emailish = action && (action.tag === 'reply' || action.tag === 'opened');
-  const person = emailish && action.contactId ? (contacts || []).find(c => c.id === action.contactId) : null;
-  const email = emailish ? ((action.cta && action.cta.email) || (person && person.email) || null) : null;
-  if (!email) return null;
+  if (!threadId && !contactEmail) return null;
   return (
     <div style={{ marginTop: 10 }}>
-      <ThreadDisclosure label="Read full thread">
-        <EmailThreadPanel contactEmail={email} contacts={contacts} onResolved={onResolved} />
+      <ThreadDisclosure label={label}>
+        <EmailThreadPanel threadId={threadId} contactEmail={contactEmail} contacts={contacts} onResolved={onResolved} />
         {ident && ident.accountId ? (
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
             <EmailActionBar accountId={ident.accountId} providerThreadId={ident.providerThreadId}
@@ -577,3 +582,13 @@ export function HeroEmailPanel({ action, contacts, onActed }) {
   );
 }
 
+// The Today hero's entry point. Only email-shaped cards have a thread behind
+// them; an overdue task or a closing deal does not, and offering "Read full
+// thread" there would be a lie.
+export function HeroEmailPanel({ action, contacts, onActed }) {
+  const emailish = action && (action.tag === 'reply' || action.tag === 'opened');
+  const person = emailish && action.contactId ? (contacts || []).find(c => c.id === action.contactId) : null;
+  const email = emailish ? ((action.cta && action.cta.email) || (person && person.email) || null) : null;
+  if (!email) return null;
+  return <EmailDetailPanel contactEmail={email} contacts={contacts} onActed={onActed} />;
+}
