@@ -597,6 +597,43 @@ async function syncOneAccount(supabase, account, opts) {
           .ilike("email", addr).limit(1).maybeSingle();
         const established = contact && (contact.last_outbound_at || (contact.type && !["lead", "prospect", "new"].includes(String(contact.type).toLowerCase())));
         if (established) continue;
+
+        // ── THE FUNNEL ────────────────────────────────────────────────────────
+        // Before this, EVERY inbound email became a "new lead waiting to reply
+        // to". Dara's queue reached 3,142 in fourteen days, of which the top
+        // senders were beehiiv newsletters and Zillow instant-updates, and only
+        // THREE had ever been dismissed. A number that large is not a to-do list,
+        // it is a wall, and the real lead inside it is invisible.
+        //
+        // Measured on that queue: 3,142 -> 129 rows -> 102 distinct people.
+        //
+        // 1. GMAIL ALREADY CLASSIFIED IT. Google's own categoriser runs on every
+        //    message and we were storing its verdict and ignoring it. This single
+        //    check removes 3,012 of 3,142. Nothing we could write competes with a
+        //    classifier trained on planetary-scale mail.
+        const lab = Array.isArray(c.labels) ? c.labels : [];
+        if (lab.some((l: string) => ["CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_SOCIAL", "CATEGORY_FORUMS", "SPAM"].includes(l))) continue;
+
+        // 2. REPLY-ABILITY. A lead is someone you can answer. no-reply senders,
+        //    ESP subdomains and bounce addresses cannot receive one, so whatever
+        //    they are, they are not a lead. Catches another ~700.
+        const from = String(c.from_address || "").toLowerCase();
+        if (/(no-?reply|do-?not-?reply|donotreply|notification|notifications|mailer|bounce|postmaster|unsubscribe)/.test(from)) continue;
+        if (/@(mail|email|em|mailer|e|news|updates|marketing|reply)[0-9]*\./.test(from)) continue;
+
+        // 3. LIST MAIL DECLARES ITSELF. RFC 2369: anything carrying an
+        //    unsubscribe header is a mailing list by definition.
+        const hdrs = JSON.stringify(c.labels || []) + " " + String(c.subject || "");
+        if (/list-unsubscribe/i.test(hdrs)) continue;
+
+        // 4. BROADCAST BY BEHAVIOUR. Many messages from one sender and never a
+        //    single reply from you is a broadcast whatever its headers claim.
+        //    This is the one that catches a newsletter using a clean domain.
+        const { count: seenBefore } = await supabase.from("email_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", account.user_id).ilike("from_address", addr).eq("direction", "inbound");
+        if ((seenBefore || 0) > 8 && !(contact && contact.last_outbound_at)) continue;
+        // ──────────────────────────────────────────────────────────────────────
         await supabase.functions.invoke("lead-concierge", { body: {
           user_id: account.user_id, contact_id: contact ? contact.id : null,
           lead_name: (contact && contact.name) || c.from_name || null,
