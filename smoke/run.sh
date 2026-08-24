@@ -49,6 +49,14 @@ node smoke/nested_component_guard.mjs
 echo "→ edge function auth guard"
 node smoke/edge_auth.mjs
 
+# A BARE account — no seed, no agents row, no settings — walked on a phone.
+# Every other stage seeds data first, so day-one was the one state nothing tested.
+# Its first run found two Today queries naming columns that do not exist, inside
+# empty catches, firing on every poll: two cards that had never worked for anyone.
+# Runs BEFORE seed.mjs deliberately; seeding first would hide exactly this.
+echo "→ fresh-account walk"
+node smoke/freshaccount.mjs
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 
