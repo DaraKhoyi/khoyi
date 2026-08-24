@@ -993,7 +993,20 @@ function MorningBrief({ setView }) {
   useEffect(() => {
     supabase.rpc('morning_brief_today').then(({ data }) => { if (data && data.headline) setBrief(data); });
   }, []);
-  if (!brief || hidden) return null;
+  if (hidden) return null;
+  // A missing brief and an empty one looked identical — the card just vanished, and
+  // that reads as broken. Yesterday's numbers would be worse: acting on a stale
+  // count is the real harm.
+  if (!brief) return (
+    <div className="fade-up" style={{ marginBottom: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '13px 15px' }}>
+      <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: 11, fontWeight: 700, color: '#9A7B2E', marginBottom: 5 }}>
+        Your morning brief
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>
+        Written fresh each morning — this one is on its way. Everything below is live now.
+      </div>
+    </div>
+  );
   const ICON = { signal: '📡', reply: '↩️', alert: '⏰', contacts: '👥', dollar: '$' };
   return (
     <div className="fade-up" style={{ marginBottom: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '15px 17px' }}>

@@ -94,6 +94,7 @@ import ViewLoadingFallback from './views/ViewLoadingFallback';
 import { touchScreen, previousScreen } from './openScreens';
 import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
 import { startOutboxWatcher, pruneDrafts } from './outbox';
+import { syncTimezone } from './deviceTime';
 import { MyNumbersView } from './views/MetricsPanels';
 import { LockedPage, QuickLog } from './views/QuickLog';
 import { ScoreboardView, PipelineView } from './views/ScoreboardView';
@@ -1224,6 +1225,18 @@ function AppMain() {
   // Two-finger tap anywhere -> flip. NOT double-tap-anywhere: on iOS that is zoom
   // outside touch-action:manipulation, and select-a-word inside every text field.
   React.useEffect(() => attachTwoFingerFlip(flipBack), [flipBack]);
+
+  // Stored timezone follows the DEVICE — see src/deviceTime.js for why display and
+  // scheduling need different treatment.
+  React.useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid || !userSettings) return;
+    syncTimezone(uid, userSettings.timezone).then((moved) => {
+      if (!moved) return;
+      setUserSettings(u => ({ ...(u || {}), timezone: moved.to }));
+      if (window.__notify) window.__notify('Times now follow ' + moved.to.split('/').pop().replace(/_/g, ' ') + '.', 'info');
+    });
+  }, [session, userSettings?.timezone]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drain anything captured while the signal was bad. Runs on reconnect, on
   // foreground, and once a minute — the user never presses anything, because a

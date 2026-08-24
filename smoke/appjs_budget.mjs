@@ -30,7 +30,10 @@ const BUDGETS = {
   // COMPOSITION — mounting a component the shell owns — which is what App.js is
   // for; the components themselves are their own files. Comments were trimmed
   // twice first and 2060 was held for two commits before this.
-  "src/App.js": 2070,
+  // 2070 -> 2085 on 2026-08-24: the device-timezone sync effect. Composition — it
+  // wires a module the shell owns; the logic is in src/deviceTime.js. Comment
+  // trimmed once before raising.
+  "src/App.js": 2085,
   "src/menuConfig.js": 200,
   // The accounting split is DONE: 6,745 -> ~650. These budgets are what keep it
   // that way — the file only reached 6,745 because nothing measured it, and the
@@ -67,7 +70,10 @@ const BUDGETS = {
   // 1110 -> 1115 on 2026-08-24: fixing two queries that referenced non-existent
   // columns inside empty catches. Error handling replaced the swallow, which costs
   // lines and is the entire point — these failed silently for months.
-  "src/views/TodayView.jsx": 1115,
+  // 1115 -> 1130 on 2026-08-24: the missing-brief placeholder. Ten lines of JSX
+  // replacing "return null" — the card vanishing is what made Dara think the app
+  // had broken, so the lines ARE the fix. Comment trimmed once before raising.
+  "src/views/TodayView.jsx": 1130,
   "src/views/DealsView.jsx": 1040,
   // Crossed the ~1,000-line mark since the last sweep. Guarded now rather than
   // after they become the next thing that needs a five-step split — which is the
@@ -79,7 +85,10 @@ const BUDGETS = {
   // 1110 -> 1115 on 2026-08-24: fixing two queries that referenced non-existent
   // columns inside empty catches. Error handling replaced the swallow, which costs
   // lines and is the entire point — these failed silently for months.
-  "src/views/TodayView.jsx": 1115,
+  // 1115 -> 1130 on 2026-08-24: the missing-brief placeholder. Ten lines of JSX
+  // replacing "return null" — the card vanishing is what made Dara think the app
+  // had broken, so the lines ARE the fix. Comment trimmed once before raising.
+  "src/views/TodayView.jsx": 1130,
   "src/views/DealsView.jsx": 1040,
 };
 
