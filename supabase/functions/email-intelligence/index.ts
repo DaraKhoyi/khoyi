@@ -121,21 +121,44 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // SECURITY: derive user_id from JWT only
+    // SECURITY: identity comes from the JWT, or — for the cron worker only — from an
+    // INTERNAL TOKEN plus an explicit user_id.
+    //
+    // The internal path exists because lead-triage-worker classifies leads on a
+    // schedule, when no user is present to hold a token. It is the same pattern
+    // recording-process uses, and it is deliberately a SEPARATE header rather than
+    // the service-role key: presenting the service key still fails, so a leaked
+    // service key does not become a way to read anyone's mail.
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token || token === SUPABASE_SERVICE_ROLE_KEY) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const internalTok = req.headers.get("x-internal-token") || "";
+    const INTERNAL = Deno.env.get("QCP_TOKEN") || "";
+    let userId: string;
+
+    if (INTERNAL && internalTok === INTERNAL) {
+      // Cron path: the caller must name the user, and it can only be reached by
+      // something holding a secret no browser ever sees.
+      const uid = (body && body.user_id) || null;
+      if (!uid) {
+        return new Response(JSON.stringify({ error: "user_id required on the internal path" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = uid;
+    } else {
+      if (!token || token === SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
     }
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const userId = user.id;
     const _logUsage = () => { try { logAiUsage(supabase, { userId, fn: "email-intelligence", model: MODEL, usage: __lastUsage, usedOwn: false }); } catch (_) {} };
 
     // Load the thread. Must belong to caller.
