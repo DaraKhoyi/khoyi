@@ -149,7 +149,7 @@ export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) 
                       {a.provider} · {a.is_active ? 'active' : 'inactive'}
                       {a.last_sync_at && <> · synced {new Date(a.last_sync_at).toLocaleString()}</>}
                     </div>
-                    {a.last_sync_error === 'REAUTH_REQUIRED' ? (
+                    {(a.reauth_required_at || String(a.last_sync_error || '').startsWith('REAUTH_REQUIRED')) ? (
                       <div style={{marginTop:'6px',padding:'8px 10px',background:'rgba(245,158,11,0.12)',border:'1px solid var(--yellow)',borderRadius:'8px'}}>
                         <div style={{fontSize:'12px',color:'var(--yellow)',fontWeight:600,marginBottom:'6px'}}>⚠ Google ended this connection — reconnect to resume sync.</div>
                         <button className="btn btn-sm" style={{background:'var(--yellow)',color:'#1a1205',fontWeight:600}} disabled={connecting}

@@ -7,6 +7,7 @@ import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
 import { useNbaSkips, SnoozeMenu } from '../nbaSkips';
 import { HeroEmailPanel } from './EmailShared';
+import ConnectionAlertBanner from './ConnectionAlertBanner';
 import LeadConcierge from './LeadConcierge';
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, txnSignals } from '../../supabase/functions/robot-chat/nba.js';
 
@@ -360,6 +361,9 @@ export default function TodayView({
         .live-dot{width:7px;height:7px;border-radius:50%;background:#CBA35C;display:inline-block;animation:livePulse 1.8s ease-in-out infinite;}
         .gold-hairline{height:1px;border:0;background:linear-gradient(90deg,transparent,#C5A95E 20%,#EBCB82 50%,#C5A95E 80%,transparent);background-size:200% auto;animation:goldGlide 7s linear infinite;}
         @media (prefers-reduced-motion: reduce){.gold-move,.gold-hairline{animation:none}.fade-up,.fade-up-2{animation:none}.live-dot{animation:none}}`}</style>
+
+      {/* Above everything: an outage you can see without going looking. */}
+      <ConnectionAlertBanner setView={setView} />
 
       <EnableNotifications myUserId={myUserId} />
       <VoiceNote setView={setView} userId={myUserId} />

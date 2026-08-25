@@ -35,6 +35,7 @@
 // Invoked by pg_cron (verify_jwt = false). Accepts a service credential in
 // either of the two forms Supabase now issues.
 
+import { raiseConnectionAlert, resolveConnectionAlert } from "../_shared/connectionAlert.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -188,6 +189,9 @@ Deno.serve(async (req) => {
         patch.reauth_required_at = null;
         patch.reauth_notified_at = null;
         patch.last_sync_error = null;
+        // Close the alert but KEEP the row — the old code deleted every trace of
+        // an outage on recovery, which is why "did it ever fire?" had no answer.
+        await resolveConnectionAlert(admin, acc.user_id as string, "google_" + (((acc.purposes as string[]) || [])[0] || "email"), acc.id as string);
       }
       const { error: uErr } = await admin.from("email_accounts").update(patch).eq("id", acc.id);
       report.push({
@@ -212,14 +216,23 @@ Deno.serve(async (req) => {
     const dueAgain = !firstTime && now - lastNotified > RENOTIFY_MS;
     const shouldNotify = firstTime || dueAgain;
 
-    let notified = false;
-    if (shouldNotify) {
-      notified = await pushOwner(
-        acc.user_id as string,
-        acc.email_address as string,
-        (acc.purposes as string[]) || [],
-      );
-    }
+    // One alert row per account, four channels, every attempt recorded.
+    // raiseConnectionAlert is idempotent, so the every-10-minutes cron does not
+    // spam: it re-notifies on its own cadence and escalates to SMS.
+    const nice: Record<string, string> = { email: "email", calendar: "calendar", drive: "files", contacts: "contacts" };
+    const stopped = (((acc.purposes as string[]) || []).map((p) => nice[p] || p));
+    const whatStopped = stopped.length ? stopped.join(" and ") : "syncing";
+    const raised = await raiseConnectionAlert({
+      admin,
+      userId: acc.user_id as string,
+      kind: "google_" + (((acc.purposes as string[]) || [])[0] || "email"),
+      targetId: acc.id as string,
+      label: acc.email_address as string,
+      detail: res.detail || "invalid_grant",
+      what: whatStopped,
+      critical: true,
+    });
+    const notified = raised.notified;
 
     const patch: Record<string, unknown> = {
       last_health_check_at: nowIso,
