@@ -78,11 +78,23 @@ function LeadEmailTools({ it, contacts, onActed, collapsed }) {
   const accountId = it.account_id || null;
   const pThread = it.provider_thread_id || null;
   const pMsg = it.provider_message_id || null;
+  // Archive and Delete act on a real Gmail mailbox. On a colleague's lead that
+  // mailbox is THEIRS — gmail-modify rightly refused with 403, and it was right
+  // to: clearing this card off Dara's screen must not reach into Ola's inbox.
+  // Dismiss is the correct tool there, so the mailbox actions simply are not
+  // offered.
+  const mine = it.is_mine !== false;
   if (!accountId || (!pThread && !pMsg)) return null;
   return (
     <div style={{ margin: '8px 0 4px' }}>
-      <EmailActionBar accountId={accountId} providerThreadId={pThread}
-        providerMessageId={pMsg} onDone={onActed} compact />
+      {mine ? (
+        <EmailActionBar accountId={accountId} providerThreadId={pThread}
+          providerMessageId={pMsg} onDone={onActed} compact />
+      ) : (
+        <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.4 }}>
+          {'This sits in ' + (it.owner_name ? it.owner_name.split(' ')[0] + '\u2019s' : 'their') + ' inbox, not yours \u2014 use Dismiss to clear it from your list.'}
+        </div>
+      )}
       {it.thread_id && !collapsed ? (
         <div style={{ marginTop: 6 }}>
           <ThreadDisclosure label="Read full thread">
@@ -101,6 +113,11 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
   // Archiving is meant to CLEAR the screen. The card collapses to a single
   // 'Archived. Undo' line rather than vanishing outright, because unmounting it
   // would take the undo with it — and it is gone entirely on the next load.
+  // 43 of the open leads are Dara's. 998 belong to seven other agents, and all
+  // 1,041 were rendering on his home screen as though they were his. A list you
+  // cannot finish is not a to-do list, so it defaults to your own; the rest is
+  // one tap away for a broker who wants the brokerage view.
+  const [showAll, setShowAll] = useState(false);
   const [cleared, setCleared] = useState({});
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState('');
@@ -134,9 +151,26 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
   };
 
   if (!items.length) return null;
+  const others = items.filter(x => x.is_mine === false).length;
+  const visible = showAll ? items : items.filter(x => x.is_mine !== false);
+  if (!visible.length && !others) return null;
   return (
     <div className="fade-up" style={{ marginBottom: 14 }}>
-      {items.map(it => {
+      {others ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8, fontSize: 11.5, color: 'var(--text-3)' }}>
+          <span>{showAll ? 'Showing the whole brokerage.' : (others + ' more across the brokerage.')}</span>
+          <button type="button" onClick={() => setShowAll(v => !v)}
+            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 999, padding: '2px 10px', color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            {showAll ? 'Just mine' : 'Show all'}
+          </button>
+        </div>
+      ) : null}
+      {!visible.length ? (
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', padding: '2px 0 6px' }}>
+          Nothing waiting on you right now.
+        </div>
+      ) : null}
+      {visible.map(it => {
         const first = (it.lead_name || '').trim().split(/\s+/)[0];
         const editing = editId === it.id;
         const isEmail = it.channel === 'email';
@@ -157,8 +191,15 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
               <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{(isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')) + ' \u00B7 ' + timeAgo(it.first_seen_at)}</span>
             </div>
             {/* The name is the way into the person, not decoration. */}
-            <div style={{ marginBottom: 2 }}>
+            <div style={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
               <SenderLink contact={contact} name={label} address={it.lead_email} size={15} />
+              {/* Without this, a colleague's client correspondence reads as your
+                  own. Dara was one tap from replying to another agent's closing. */}
+              {it.is_mine === false && it.owner_name ? (
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#EBCB82', border: '1px solid rgba(235,203,130,.45)', borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                  {it.owner_name.split(' ')[0] + '\u2019s lead'}
+                </span>
+              ) : null}
             </div>
             {/* inbound_text is capped around 700 characters at ingest — 72 of
                 Dara's rows sit at 695-705 with the tail cut mid-sentence. The RPC
@@ -200,7 +241,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button disabled={busy === it.id} onClick={() => send(it)}
                   style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 18px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
-                  {busy === it.id ? 'Sending\u2026' : (editing ? 'Send this' : (isEmail ? 'Send email' : 'Send reply'))}
+                  {busy === it.id ? 'Sending\u2026' : (editing ? 'Send this' : (it.is_mine === false ? 'Send as ' + ((it.owner_name || 'agent').split(' ')[0]) : (isEmail ? 'Send email' : 'Send reply')))}
                 </button>
                 {!editing && <button onClick={() => { setEditId(it.id); setEditText(it.draft); }} style={{ background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>Edit</button>}
                 <button disabled={busy === it.id} onClick={() => dismiss(it)} style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--text-3)', border: 'none', fontSize: 12.5, cursor: 'pointer' }}>Dismiss</button>
