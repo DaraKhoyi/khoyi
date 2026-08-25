@@ -190,6 +190,37 @@ export const EMAIL_ACTIONS = {
 // { ok, error } and NEVER throws — supabase-js resolves with { error } rather
 // than throwing, and an un-checked result is how "it looked deleted but came
 // back tomorrow" happens.
+// supabase-js throws away the function's error body and leaves only
+// "Edge Function returned a non-2xx status code" — which is what Dara has now
+// been shown twice for two completely different faults. The real reason is in
+// err.context, a Response. Read it, so the message names the actual problem and,
+// where it can, what to do about it.
+async function explainInvokeError(data, error) {
+  if (data && data.error) return String(data.error);
+  if (!error) return 'unknown error';
+  let detail = error.message || String(error);
+  try {
+    const ctx = error.context;
+    if (ctx && typeof ctx.text === 'function') {
+      const t = await ctx.text();
+      try {
+        const j = JSON.parse(t);
+        detail = j.error || j.message || detail;
+        if (j.detail) detail += ' \u2014 ' + String(j.detail).slice(0, 140);
+      } catch (_) { if (t) detail = t.slice(0, 200); }
+    }
+    if (ctx && ctx.status && !/\d{3}/.test(detail)) detail = detail + ' (HTTP ' + ctx.status + ')';
+  } catch (_) { /* fall through to the generic message */ }
+  // Turn the two causes a person can actually act on into instructions.
+  if (/invalid_grant|expired or revoked|No refresh_token/i.test(detail)) {
+    return 'Gmail needs reconnecting \u2014 open Settings \u2192 Email accounts, reconnect, then try again.';
+  }
+  if (/Unauthorized|invalid or expired token/i.test(detail)) {
+    return 'Your session expired \u2014 pull down to refresh the app, then try again.';
+  }
+  return detail;
+}
+
 export async function runEmailAction({ action, accountId, providerThreadId, providerMessageId, scope = 'thread' }) {
   if (!accountId) return { ok: false, error: 'No email account on this message.' };
   const wantThread = scope === 'thread' && providerThreadId;
@@ -201,7 +232,7 @@ export async function runEmailAction({ action, accountId, providerThreadId, prov
       else if (providerMessageId) body.message_id = providerMessageId;
       else body.thread_id = providerThreadId;
       const { data, error } = await supabase.functions.invoke('gmail-trash', { body });
-      if (error || !(data && data.ok)) return { ok: false, error: (error && error.message) || (data && data.error) || 'Gmail rejected the change.' };
+      if (error || !(data && data.ok)) return { ok: false, error: await explainInvokeError(data, error) };
       return { ok: true };
     }
     // archive / unarchive act on the thread — Gmail has no per-message inbox label
@@ -209,7 +240,7 @@ export async function runEmailAction({ action, accountId, providerThreadId, prov
     const { data, error } = await supabase.functions.invoke('gmail-modify', {
       body: { account_id: accountId, thread_id: providerThreadId, action: action === 'unarchive' ? 'unarchive' : 'archive' },
     });
-    if (error || !(data && data.ok)) return { ok: false, error: (error && error.message) || (data && data.error) || 'Gmail rejected the change.' };
+    if (error || !(data && data.ok)) return { ok: false, error: await explainInvokeError(data, error) };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e && e.message) || String(e) };
@@ -224,6 +255,7 @@ function notify(msg, kind) { try { window.__notify && window.__notify(msg, kind)
 // break for anyone who looks away.
 export function EmailActionBar({ accountId, providerThreadId, providerMessageId, scope = 'thread', onDone, compact = false, disabled = false }) {
   const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState('');
   const [undoable, setUndoable] = useState(null); // { action, label }
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
@@ -236,7 +268,14 @@ export function EmailActionBar({ accountId, providerThreadId, providerMessageId,
     const r = await runEmailAction({ action, accountId, providerThreadId, providerMessageId, scope });
     if (!alive.current) return;
     setBusy(null);
-    if (!r.ok) { notify('Couldn\u2019t ' + EMAIL_ACTIONS[action].verb.toLowerCase() + ' \u2014 ' + r.error, 'error'); return; }
+    if (!r.ok) {
+      // The toast clips a long reason to "non-..." on a phone, which is how a
+      // fixable problem reads as a dead end. Keep it on the card, in full.
+      setErr(r.error);
+      notify('Couldn\u2019t ' + EMAIL_ACTIONS[action].verb.toLowerCase() + '.', 'error');
+      return;
+    }
+    setErr('');
     setUndoable({ action, label: EMAIL_ACTIONS[action].done });
     notify(EMAIL_ACTIONS[action].done + ' \u2014 tap Undo if that wasn\u2019t right.', 'success');
     onDone && onDone(action);
@@ -274,6 +313,7 @@ export function EmailActionBar({ accountId, providerThreadId, providerMessageId,
   });
 
   return (
+    <div>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button type="button" style={btnStyle(false)} disabled={disabled || !!busy} title={EMAIL_ACTIONS.archive.hint} onClick={() => act('archive')}>
         {busy === 'archive' ? 'Archiving\u2026' : EMAIL_ACTIONS.archive.icon + ' Archive'}
@@ -281,6 +321,10 @@ export function EmailActionBar({ accountId, providerThreadId, providerMessageId,
       <button type="button" style={btnStyle(true)} disabled={disabled || !!busy} title={EMAIL_ACTIONS.trash.hint} onClick={() => act('trash')}>
         {busy === 'trash' ? 'Deleting\u2026' : EMAIL_ACTIONS.trash.icon + ' Delete'}
       </button>
+    </div>
+    {err ? (
+      <div style={{ marginTop: 6, fontSize: 11.5, color: '#fca5a5', lineHeight: 1.4, wordBreak: 'break-word' }}>{err}</div>
+    ) : null}
     </div>
   );
 }
