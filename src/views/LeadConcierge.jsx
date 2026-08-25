@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, emailGist, useEmailIdentity } from './EmailShared';
+import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, emailGist } from './EmailShared';
 
 // ── 5-Minute Lead Concierge ──────────────────────────────────────────────────
 // A new lead texted, called or emailed; PrismOS already drafted the first reply
@@ -34,10 +34,12 @@ function fullest(it) {
 // legal footer and every blank line between them. On a phone that is a screen
 // and a half to find one sentence. Now the gist leads — stripped and collapsed —
 // and the untouched original is one tap away for anyone who wants it.
-function InboundMessage({ text }) {
+function InboundMessage({ text, summary }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
-  const gist = emailGist(text, 240);
+  // A real one-line read from the triage pass beats anything derived. Only some
+  // threads have one; the rest fall back to the cleaned opening.
+  const gist = (summary && String(summary).trim()) || emailGist(text, 240);
   const trimmed = String(text).trim();
   // Only offer "original" when it actually differs from what is already shown.
   const hasMore = trimmed.length > gist.length + 8;
@@ -67,23 +69,28 @@ function InboundMessage({ text }) {
 // They were only reachable after expanding the thread because that is where the
 // identifiers happened to resolve — so the two things Dara asked for looked
 // missing. Identity is resolved up front now; the thread stays optional.
-function LeadEmailTools({ threadId, contacts, onActed }) {
-  const ident = useEmailIdentity({ threadId });
-  if (!threadId) return null;
+function LeadEmailTools({ it, contacts, onActed, collapsed }) {
+  // The ids come from the row the list already has. The previous version looked
+  // them up per card with useEmailIdentity, which meant 43 cards firing 43
+  // async queries on open — whichever ones lost the race rendered no Archive and
+  // no Delete at all, silently. That is why McCrink had no buttons and Marge
+  // did. Nothing here waits on anything now.
+  const accountId = it.account_id || null;
+  const pThread = it.provider_thread_id || null;
+  const pMsg = it.provider_message_id || null;
+  if (!accountId || (!pThread && !pMsg)) return null;
   return (
     <div style={{ margin: '8px 0 4px' }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {ident && ident.accountId ? (
-          <EmailActionBar accountId={ident.accountId} providerThreadId={ident.providerThreadId}
-            providerMessageId={ident.providerMessageId} onDone={onActed} compact />
-        ) : null}
-      </div>
-      <div style={{ marginTop: 6 }}>
-        <ThreadDisclosure label="Read full thread">
-          <EmailThreadPanel threadId={threadId} contacts={contacts} />
-          {ident ? <EmailIdRow messageId={ident.providerMessageId} threadId={ident.providerThreadId} /> : null}
-        </ThreadDisclosure>
-      </div>
+      <EmailActionBar accountId={accountId} providerThreadId={pThread}
+        providerMessageId={pMsg} onDone={onActed} compact />
+      {it.thread_id && !collapsed ? (
+        <div style={{ marginTop: 6 }}>
+          <ThreadDisclosure label="Read full thread">
+            <EmailThreadPanel threadId={it.thread_id} contacts={contacts} />
+            <EmailIdRow messageId={pMsg} threadId={pThread} />
+          </ThreadDisclosure>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -91,6 +98,10 @@ function LeadEmailTools({ threadId, contacts, onActed }) {
 export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(null);
+  // Archiving is meant to CLEAR the screen. The card collapses to a single
+  // 'Archived. Undo' line rather than vanishing outright, because unmounting it
+  // would take the undo with it — and it is gone entirely on the next load.
+  const [cleared, setCleared] = useState({});
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState('');
   const [flash, setFlash] = useState(null);
@@ -135,10 +146,14 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
         const contact = it.contact_id ? { id: it.contact_id, name: it.contact_name || first } : null;
         const label = it.contact_name || first || it.lead_email || it.lead_phone;
         return (
-          <div key={it.id} style={{ background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))', border: '1px solid rgba(197,169,94,.5)', borderRadius: 16, padding: '14px 16px', marginBottom: 10 }}>
+          <div key={it.id} style={cleared[it.id]
+            // Handled: it recedes instead of shouting. Still visible enough to
+            // undo, quiet enough to stop counting as work.
+            ? { background: 'transparent', border: '1px solid var(--border)', borderRadius: 16, padding: '10px 14px', marginBottom: 8, opacity: 0.6 }
+            : { background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))', border: '1px solid rgba(197,169,94,.5)', borderRadius: 16, padding: '14px 16px', marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span className="live-dot" />
-              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>{'New lead \u00B7 reply ready'}</span>
+              <span className={cleared[it.id] ? '' : 'live-dot'} style={cleared[it.id] ? { width: 7, height: 7, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' } : undefined} />
+              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: cleared[it.id] ? 'var(--text-3)' : '#EBCB82' }}>{cleared[it.id] ? (cleared[it.id] === 'trash' ? 'Deleted' : 'Archived') : 'New lead \u00B7 reply ready'}</span>
               <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{(isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')) + ' \u00B7 ' + timeAgo(it.first_seen_at)}</span>
             </div>
             {/* The name is the way into the person, not decoration. */}
@@ -150,22 +165,28 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                 also hands back full_body (the real message, up to 118k chars) and
                 nothing used it, so "Show the whole message" was showing the whole
                 STORED text, not the whole message. Prefer whichever is longer. */}
-            {isEmail && it.draft_subject ? (
+            {!cleared[it.id] && isEmail && it.draft_subject ? (
               <div style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '2px 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {it.draft_subject}
               </div>
             ) : null}
-            <InboundMessage text={fullest(it)} />
+            {!cleared[it.id] ? <InboundMessage text={fullest(it)} summary={it.triage_summary} /> : null}
             {/* The email itself: whole thread, and the way to clear it out of the
                 inbox once handled. Dismiss only clears the CARD — it always left
                 the mail sitting there. */}
-            {isEmail && it.thread_id ? (
-              <LeadEmailTools threadId={it.thread_id} contacts={contacts}
-                onActed={() => { /* deliberately NOT auto-dismissing: the action bar shows
-                    "Deleted \u2014 Undo" inline, and unmounting the card here would
-                    take the only undo away with it. */ }} />
+            {isEmail ? (
+              <LeadEmailTools it={it} contacts={contacts} collapsed={!!cleared[it.id]}
+                onActed={async (action) => {
+                  const undone = action === 'untrash' || action === 'unarchive';
+                  setCleared(c => ({ ...c, [it.id]: undone ? undefined : action }));
+                  // Handling the mail handles the lead. Undo puts it back.
+                  try {
+                    if (undone) await supabase.from('lead_concierge').update({ status: 'pending' }).eq('id', it.id);
+                    else await supabase.rpc('lead_concierge_dismiss', { p_id: it.id });
+                  } catch (_) { /* the card state is what Dara sees; never block on this */ }
+                }} />
             ) : null}
-            {editing ? (
+            {cleared[it.id] ? null : editing ? (
               <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
                 style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, margin: '10px 0' }} />
             ) : (
@@ -173,7 +194,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                 {it.draft}
               </div>
             )}
-            {flash && flash.id === it.id ? (
+            {cleared[it.id] ? null : flash && flash.id === it.id ? (
               <div style={{ fontSize: 13, color: flash.msg.indexOf('\u2713') >= 0 ? '#22c55e' : '#fca5a5', fontWeight: 600 }}>{flash.msg}</div>
             ) : (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
