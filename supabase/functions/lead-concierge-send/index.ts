@@ -77,7 +77,9 @@ Deno.serve(async (req) => {
       // for; without it every send 401'd, which is why no lead email has ever
       // gone out. lc.user_id comes from the row we just loaded by id, never from
       // the request, so this cannot be used to send as someone else.
-      const { data: sendRes, error: sendErr } = await admin.functions.invoke("gmail-send", { body: {
+      const { data: sendRes, error: sendErr } = await admin.functions.invoke("gmail-send", {
+        headers: { "x-qcp-token": Deno.env.get("QCP_TOKEN") || "" },
+        body: {
         account_id: accountId, user_id: lc.user_id,
         to: lc.lead_email, subject,
         body_text: message,

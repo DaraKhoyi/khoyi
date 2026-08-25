@@ -38,7 +38,7 @@ serve(async (req) => {
       for (const s of targets) {
         const url = `https://darasapp.com/sign/${s.token}`;
         try {
-          await db.functions.invoke("gmail-send", { body: { account_id: acct.id, user_id: r.user_id, to: s.email, subject: `Reminder: signature needed \u2014 ${r.title || "document"}`, body_text: `${r.message || "This is a friendly reminder to sign the document below."}\n\nSign securely here:\n${url}\n\n\u2014 Realty ONE Group Advantage` } });
+          await db.functions.invoke("gmail-send", { headers: { "x-qcp-token": Deno.env.get("QCP_TOKEN") || "" }, body: { account_id: acct.id, user_id: r.user_id, to: s.email, subject: `Reminder: signature needed \u2014 ${r.title || "document"}`, body_text: `${r.message || "This is a friendly reminder to sign the document below."}\n\nSign securely here:\n${url}\n\n\u2014 Realty ONE Group Advantage` } });
           await db.from("signature_signers").update({ last_reminder_at: new Date().toISOString() }).eq("id", s.id);
           reminded++;
         } catch (_) {}

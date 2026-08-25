@@ -409,6 +409,7 @@ Deno.serve(async (req) => {
           .order("is_default", { ascending: false }).limit(1).maybeSingle();
         if (acct?.id) {
           const { data: sent, error: sendErr } = await admin.functions.invoke("gmail-send", {
+            headers: { "x-qcp-token": Deno.env.get("QCP_TOKEN") || "" },
             body: {
               user_id: data.owner_user_id, account_id: acct.id, to: data.email,
               subject: "Your verification code",

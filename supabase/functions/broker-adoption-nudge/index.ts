@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     let sent = 0;
     for (const to of recipients) {
       try {
-        const { error } = await admin.functions.invoke("gmail-send", { body: {
+        const { error } = await admin.functions.invoke("gmail-send", { headers: { "x-qcp-token": Deno.env.get("QCP_TOKEN") || "" }, body: {
           account_id: acct.id, user_id: uid, to, subject: "One quick step to get the latest PrismOS", body_text: BODY,
         } });
         if (!error) sent++;

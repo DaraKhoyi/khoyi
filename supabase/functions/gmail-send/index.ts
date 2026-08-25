@@ -128,7 +128,26 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization") || "";
     const tokenStr = authHeader.replace("Bearer ", "");
     let user = (await supabase.auth.getUser(tokenStr)).data.user;
-    if (!user && tokenStr === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") && body && body.user_id) {
+
+    // Internal (function-to-function / cron) calls.
+    //
+    // This used to rest ENTIRELY on `tokenStr === SUPABASE_SERVICE_ROLE_KEY`.
+    // That string comparison is not stable on this project: two service
+    // credential formats are live (the legacy JWT and an sb_secret key), and
+    // which one a caller presents depends on which the platform injected into
+    // THAT function. When they differ the compare silently fails and the caller
+    // is told "Not authenticated" — which is what Dara saw trying to reply to
+    // Marge, and what silently broke four functions before that.
+    //
+    // A shared internal token removes the guesswork: it either matches or it
+    // does not, and it does not care what shape anyone's service key is.
+    // Identity still comes from body.user_id and is still verified below — the
+    // account must belong to that user or the send is refused.
+    const qcp = Deno.env.get("QCP_TOKEN") || "";
+    const internal =
+      (qcp && (req.headers.get("x-qcp-token") || "") === qcp) ||
+      (tokenStr && tokenStr === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    if (!user && internal && body && body.user_id) {
       user = { id: body.user_id };   // trusted internal call (cron delivery)
     }
     if (!user) {

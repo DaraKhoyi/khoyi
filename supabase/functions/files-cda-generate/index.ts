@@ -95,7 +95,7 @@ serve(async (req) => {
         const acct = (accts || []).find((a: any) => a.is_active !== false);
         const { data: signed } = await db.storage.from("file-docs").createSignedUrl(path, 7 * 24 * 3600);
         if (acct && signed?.signedUrl) {
-          await db.functions.invoke("gmail-send", { body: { account_id: acct.id, user_id: uid, to: recruiting_email, subject: `CDA \u2014 ${doc_title || "Commission Disbursement"}${agent_name ? " \u2014 " + agent_name : ""}`, body_text: `A Commission Disbursement Authorization has been generated.\n\nAgent: ${agent_name || ""}\n\nView (link valid 7 days):\n${signed.signedUrl}\n\n\u2014 Realty ONE Group Advantage \u00B7 PrismOS` } });
+          await db.functions.invoke("gmail-send", { headers: { "x-qcp-token": Deno.env.get("QCP_TOKEN") || "" }, body: { account_id: acct.id, user_id: uid, to: recruiting_email, subject: `CDA \u2014 ${doc_title || "Commission Disbursement"}${agent_name ? " \u2014 " + agent_name : ""}`, body_text: `A Commission Disbursement Authorization has been generated.\n\nAgent: ${agent_name || ""}\n\nView (link valid 7 days):\n${signed.signedUrl}\n\n\u2014 Realty ONE Group Advantage \u00B7 PrismOS` } });
           recruiting_sent = true;
         }
       } catch (_) {}
