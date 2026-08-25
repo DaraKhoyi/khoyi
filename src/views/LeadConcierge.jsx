@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { SenderLink, EmailDetailPanel } from './EmailShared';
+import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, emailGist, useEmailIdentity } from './EmailShared';
 
 // ── 5-Minute Lead Concierge ──────────────────────────────────────────────────
 // A new lead texted, called or emailed; PrismOS already drafted the first reply
@@ -28,22 +28,62 @@ function fullest(it) {
   return b.length > a.length ? b : a;
 }
 
+// What they said, in the space it deserves.
+//
+// The old version printed the raw body with pre-wrap: quoted history, signature,
+// legal footer and every blank line between them. On a phone that is a screen
+// and a half to find one sentence. Now the gist leads — stripped and collapsed —
+// and the untouched original is one tap away for anyone who wants it.
 function InboundMessage({ text }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
-  const long = text.length > 220;
-  const shown = open || !long ? text : text.slice(0, 220).replace(/\s+\S*$/, '') + '\u2026';
+  const gist = emailGist(text, 240);
+  const trimmed = String(text).trim();
+  // Only offer "original" when it actually differs from what is already shown.
+  const hasMore = trimmed.length > gist.length + 8;
   return (
     <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 12.5, color: 'var(--text-3)', fontStyle: 'italic', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-        {'\u201C' + shown + '\u201D'}
+      <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5, wordBreak: 'break-word' }}>
+        {gist || trimmed.slice(0, 240)}
       </div>
-      {long ? (
-        <button type="button" onClick={() => setOpen(v => !v)}
-          style={{ marginTop: 4, background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-          {open ? 'Show less' : 'Show the whole message'}
-        </button>
+      {hasMore ? (
+        <>
+          <button type="button" onClick={() => setOpen(v => !v)}
+            style={{ marginTop: 5, background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+            {open ? 'Hide original message' : 'Show original message'}
+          </button>
+          {open ? (
+            <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--bg-base)', border: '1px solid var(--border)', fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto' }}>
+              {trimmed}
+            </div>
+          ) : null}
+        </>
       ) : null}
+    </div>
+  );
+}
+
+// Archive and Delete belong ON the card, not hidden inside "Read full thread".
+// They were only reachable after expanding the thread because that is where the
+// identifiers happened to resolve — so the two things Dara asked for looked
+// missing. Identity is resolved up front now; the thread stays optional.
+function LeadEmailTools({ threadId, contacts, onActed }) {
+  const ident = useEmailIdentity({ threadId });
+  if (!threadId) return null;
+  return (
+    <div style={{ margin: '8px 0 4px' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {ident && ident.accountId ? (
+          <EmailActionBar accountId={ident.accountId} providerThreadId={ident.providerThreadId}
+            providerMessageId={ident.providerMessageId} onDone={onActed} compact />
+        ) : null}
+      </div>
+      <div style={{ marginTop: 6 }}>
+        <ThreadDisclosure label="Read full thread">
+          <EmailThreadPanel threadId={threadId} contacts={contacts} />
+          {ident ? <EmailIdRow messageId={ident.providerMessageId} threadId={ident.providerThreadId} /> : null}
+        </ThreadDisclosure>
+      </div>
     </div>
   );
 }
@@ -110,13 +150,20 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                 also hands back full_body (the real message, up to 118k chars) and
                 nothing used it, so "Show the whole message" was showing the whole
                 STORED text, not the whole message. Prefer whichever is longer. */}
+            {isEmail && it.draft_subject ? (
+              <div style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '2px 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {it.draft_subject}
+              </div>
+            ) : null}
             <InboundMessage text={fullest(it)} />
-            {isEmail && it.draft_subject && !editing && <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}><span style={{ color: 'var(--text-2)' }}>Subject:</span> {it.draft_subject}</div>}
             {/* The email itself: whole thread, and the way to clear it out of the
                 inbox once handled. Dismiss only clears the CARD — it always left
                 the mail sitting there. */}
             {isEmail && it.thread_id ? (
-              <EmailDetailPanel threadId={it.thread_id} contacts={contacts} />
+              <LeadEmailTools threadId={it.thread_id} contacts={contacts}
+                onActed={() => { /* deliberately NOT auto-dismissing: the action bar shows
+                    "Deleted \u2014 Undo" inline, and unmounting the card here would
+                    take the only undo away with it. */ }} />
             ) : null}
             {editing ? (
               <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}

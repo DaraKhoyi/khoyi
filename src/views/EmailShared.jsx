@@ -592,3 +592,100 @@ export function HeroEmailPanel({ action, contacts, onActed }) {
   if (!email) return null;
   return <EmailDetailPanel contactEmail={email} contacts={contacts} onActed={onActed} />;
 }
+
+// ── Gist + identity ─────────────────────────────────────────────────────────
+
+// What did this person actually say to me?
+//
+// A raw email body is mostly not that. It is the reply, then the entire thread
+// stapled underneath, then a signature, then a legal footer, then the blank
+// lines every client leaves between them. Rendered with pre-wrap on a phone
+// that is a screen and a half of whitespace and quoted text to find one
+// sentence in. Dara photographed exactly that: four visible lines, of which one
+// carried meaning.
+//
+// So strip the quoted history, drop the signature, collapse the gaps, and take
+// the opening — which for almost every real message IS the summary, because
+// people put the point first.
+export function emailGist(text, max = 240) {
+  if (!text) return '';
+  let s = String(text).replace(/\r\n/g, '\n');
+
+  // Everything from the first quote marker on belongs to an older message.
+  const cut = [
+    /^\s*On .{0,120}\bwrote:\s*$/im,
+    /^\s*-{2,}\s*Original Message\s*-{2,}\s*$/im,
+    /^\s*_{5,}\s*$/m,
+    /^\s*From:\s.+$/im,
+    /^\s*>{1,}/m,
+  ];
+  for (const re of cut) {
+    const m = re.exec(s);
+    if (m && m.index > 0) s = s.slice(0, m.index);
+  }
+
+  // Signature block: a "-- " sigdash, or a sign-off followed by short lines.
+  s = s.split(/^\s*--\s*$/m)[0];
+  s = s.replace(/\n\s*(?:Thanks|Thank you|Best|Best regards|Regards|Sincerely|Cheers|Warmly)[,!.]?\s*\n[\s\S]*$/i, '');
+
+  // Unsubscribe / legal tails.
+  s = s.replace(/\n[^\n]*\b(unsubscribe|confidentiality notice|this email and any attachments)\b[\s\S]*$/i, '');
+
+  // The actual space fix: any run of blank lines becomes ONE break, and a
+  // greeting on its own line joins the sentence after it.
+  s = s.replace(/[ \t]+/g, ' ')
+       .replace(/\n{2,}/g, '\n')
+       .split('\n').map(l => l.trim()).filter(Boolean).join(' ')
+       .trim();
+
+  if (s.length <= max) return s;
+  // Prefer a sentence boundary so the gist never ends mid-thought.
+  const window = s.slice(0, max + 60);
+  const stop = Math.max(window.lastIndexOf('. '), window.lastIndexOf('? '), window.lastIndexOf('! '));
+  if (stop > max * 0.5) return window.slice(0, stop + 1);
+  return s.slice(0, max).replace(/\s+\S*$/, '') + '\u2026';
+}
+
+// Resolve WHICH email a card is about without rendering the thread.
+//
+// Archive and Delete used to live inside the "Read full thread" disclosure,
+// because that is where the identifiers appeared — the panel resolved them as a
+// side effect of loading. So the two actions Dara asked for were invisible
+// until he opened something he did not want to open. Identity resolution has to
+// be separate from rendering; this is that.
+export function useEmailIdentity({ threadId, contactEmail, accountId }) {
+  const [ident, setIdent] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setIdent(null);
+    if (!threadId && !contactEmail) return;
+    (async () => {
+      try {
+        let tid = threadId || null;
+        if (!tid && contactEmail) {
+          const { data } = await supabase.from('email_messages')
+            .select('thread_id')
+            .eq('from_address', String(contactEmail).trim().toLowerCase())
+            .order('internal_date', { ascending: false }).limit(1);
+          tid = (data && data[0] && data[0].thread_id) || null;
+        }
+        if (!tid) return;
+        const { data: msgs } = await supabase.from('email_messages')
+          .select('account_id, provider_thread_id, provider_message_id, subject')
+          .eq('thread_id', tid)
+          .order('internal_date', { ascending: false }).limit(1);
+        const m = msgs && msgs[0];
+        if (!alive || !m) return;
+        setIdent({
+          threadId: tid,
+          accountId: accountId || m.account_id || null,
+          providerThreadId: m.provider_thread_id || null,
+          providerMessageId: m.provider_message_id || null,
+          subject: m.subject || '',
+        });
+      } catch (_) { /* a card must still render if this fails */ }
+    })();
+    return () => { alive = false; };
+  }, [threadId, contactEmail, accountId]);
+  return ident;
+}
