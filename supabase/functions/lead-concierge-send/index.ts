@@ -45,9 +45,14 @@ Deno.serve(async (req) => {
     const { data: lc } = await admin.from("lead_concierge").select("*").eq("id", id).maybeSingle();
     if (!lc) return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
     if (lc.status !== "pending") return new Response(JSON.stringify({ ok: true, already: lc.status }), { headers: { ...cors, "Content-Type": "application/json" } });
+    // OWNER ONLY. A role check used to let any owner/broker_admin send from an
+    // agent's mailbox, as that agent, without the agent ever knowing — and the
+    // broker's home screen was showing him every agent's leads, so it was one
+    // tap away by accident rather than intent. A broker who genuinely needs to
+    // reply for an agent uses Act as: impersonate mints a real session for that
+    // agent, callerId IS them, and impersonation_log records who did it.
     if (!auto && callerId !== lc.user_id) {
-      const { data: staff } = await admin.from("agents").select("role").eq("auth_user_id", callerId).in("role", ["owner", "broker_admin"]).maybeSingle();
-      if (!staff) return new Response(JSON.stringify({ error: "Not permitted" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "This lead belongs to another agent. Use Act as to work on their behalf." }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const message = (text && String(text).trim()) || lc.draft;
