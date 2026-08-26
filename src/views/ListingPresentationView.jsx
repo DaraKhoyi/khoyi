@@ -251,6 +251,12 @@ export default function ListingPresentationView({ userId, agentName }) {
     market: { speed:55, moi:'', list_to_sale:'', active:'', pending:'', closed:'', annual_appreciation_pct:'', ppsf:'' },
     comps: [{ address:'', sale_price:'', gla:'', adjustments:[] }],
     tiers: { opportunistic:'', target:'', fast:'' },
+    // Which tiers the AGENT chose, versus ones we prefilled from the research
+    // pass. Without this the two are indistinguishable, and a prefilled AVM
+    // number outranks the reconciled value from the comps the agent actually
+    // adjusted — which is how 785 Nina Dr. presented at $3.78M after being
+    // reconciled to $3.126M.
+    tiers_manual: { opportunistic:false, target:false, fast:false },
     netsheet: { commission_pct:6, mortgage_payoff:'', title_fees:'', tax_proration:'', other:'',
       units: { commission:'pct', title_fees:'pct', tax_proration:'usd', mortgage_payoff:'usd', other:'usd' } },
   });
@@ -337,6 +343,12 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
     const n = { ...prev }; const seg = path.split('.');
     if (seg.length === 1) n[seg[0]] = val;
     else n[seg[0]] = { ...n[seg[0]], [seg[1]]: val };
+    // Editing a tier box is the agent taking the wheel; emptying it gives the
+    // wheel back to the reconciled comps.
+    if (seg[0] === 'tiers') {
+      const chosen = String(val ?? '').trim() !== '' && Number(val) > 0;
+      n.tiers_manual = { ...(prev.tiers_manual || {}), [seg[1]]: chosen };
+    }
     return n;
   }), []);
   const setUnit = useCallback((field, unit) => setP(prev => ({ ...prev, netsheet: { ...prev.netsheet, units: { ...(prev.netsheet.units || {}), [field]: unit } } })), []);
@@ -451,8 +463,14 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
         }
         const vt = (r.valuation && r.valuation.tiers) || {};
         next.tiers = { ...prev.tiers };
+        next.tiers_manual = { ...(prev.tiers_manual || {}) };
         for (const k of ['opportunistic','target','fast']) {
-          if ((prev.tiers && (prev.tiers[k] === '' || prev.tiers[k] == null || Number(prev.tiers[k]) === 0)) && vt[k] != null) next.tiers[k] = vt[k];
+          if ((prev.tiers && (prev.tiers[k] === '' || prev.tiers[k] == null || Number(prev.tiers[k]) === 0)) && vt[k] != null) {
+            next.tiers[k] = vt[k];
+            // Prefilled from research, NOT chosen. The reconciled comps outrank
+            // this the moment there are comps to reconcile.
+            next.tiers_manual[k] = false;
+          }
         }
         next._research = { sources: r.sources || [], notes: r.notes || '', confidence: r.confidence || 'low', valuation: r.valuation || null };
         if ((next.subject.last_sold_price == null || next.subject.last_sold_price === '') && r.subject && r.subject.last_sold_price != null) next.subject.last_sold_price = r.subject.last_sold_price;
@@ -635,6 +653,28 @@ function Editor({ initial, userId, agentName, onExit, flash, notify }) {
 
           {/* 4. PRICING */}
           <div style={eyebrow}>Three-tier pricing</div>
+          {/* Say which number the presentation will actually print. The boxes
+              below can hold a research prefill that is no longer true, and there
+              was no way to tell by looking. */}
+          {recon && recon.tiers && recon.tiers.target ? (() => {
+            const rt = (p._research && p._research.valuation && p._research.valuation.tiers) || {};
+            const stale = ['opportunistic','target','fast'].filter(k => {
+              const v = Number(p.tiers[k] || 0);
+              const man = (p.tiers_manual || {})[k];
+              return v > 0 && man !== true && Number(rt[k] || 0) === v && v !== recon.tiers[k];
+            });
+            if (!stale.length) return null;
+            return (
+              <div style={{ fontSize:12, color:'var(--text-2)', background:'rgba(197,169,94,.10)', border:'1px solid rgba(197,169,94,.45)', borderRadius:10, padding:'9px 11px', marginBottom:8, lineHeight:1.5 }}>
+                {'These were prefilled from research before you tuned the comps. Your adjusted comps now reconcile to $' + recon.tiers.target.toLocaleString() + ', and that is what the presentation will use. Type a price to override it.'}
+                <button type="button"
+                  onClick={() => { for (const k of ['opportunistic','target','fast']) set('tiers.' + k, String(recon.tiers[k])); }}
+                  style={{ marginLeft:8, background:'none', border:'1px solid var(--border)', borderRadius:999, padding:'2px 10px', color:'var(--accent)', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                  Fill from comps
+                </button>
+              </div>
+            );
+          })() : null}
           <div style={gridTiers}>
             <Field label="Opportunistic" path="tiers.opportunistic" value={p.tiers.opportunistic} onSet={set} inputMode="numeric" placeholder="729000" />
             <Field label={'Target \u2605'} path="tiers.target" value={p.tiers.target} onSet={set} inputMode="numeric" placeholder="699000" />

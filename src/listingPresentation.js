@@ -325,10 +325,31 @@ export function buildPresentationHTML(p) {
   // override slider) + confidence stars — the SAME engine the live editor uses.
   const recon = reconcileValuation(s, comps, { research_confidence: p.research_confidence });
   const roundK = (n) => Math.round(n / 1000) * 1000;
+  // Which number wins.
+  //
+  // This used to be "anything in the tier box beats the comps". But the research
+  // pass PREFILLS those boxes with its own AVM estimate, and nothing recorded
+  // whether a value was prefilled or chosen — so a stale pre-comp guess silently
+  // outranked the reconciled valuation. 785 Nina Dr. reconciled to $3,126,000
+  // from 10 adjusted comps and still presented a $3,779,000 target, because the
+  // research pass had put $3,779,000 in the box before a single comp was tuned.
+  //
+  // Now only a tier the AGENT actually chose overrides the comps.
+  const manual = p.tiers_manual || {};
+  const researchTiers = (p._research && p._research.valuation && p._research.valuation.tiers) || {};
+  const wasPrefilled = (key, value) => {
+    // Presentations saved before tiers_manual existed carry no provenance. But
+    // an untouched prefill still EQUALS the research tier it came from, which
+    // is evidence enough to hand it back to the comps.
+    const r = Number(researchTiers[key] || 0);
+    return r > 0 && Number(value || 0) === r;
+  };
   const tierPrice = (explicit, key, mult) => {
     const e = Number(explicit || 0);
-    if (e > 0) return e;                                  // agent typed an explicit tier
+    const chosen = manual[key] === true || (manual[key] === undefined && e > 0 && !wasPrefilled(key, e));
+    if (e > 0 && chosen) return e;                        // the agent decided this one
     if (recon.tiers && recon.tiers[key]) return recon.tiers[key];  // reconciled from comps
+    if (e > 0) return e;                                  // no comps to reconcile — better than nothing
     return 0;
   };
   const tierRows = [
