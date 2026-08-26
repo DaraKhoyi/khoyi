@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } 
 import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL, ensureFreshSession } from './dataService';
 import { useConnectionHealth } from './connection';
+import { useReturnBookmark } from './returnBookmark';
 import { useNbaSkips, SnoozeMenu } from './nbaSkips';
 import * as tus from 'tus-js-client';
 import DocumentsView, { ContactDocuments } from './views/DocumentsView';
@@ -1062,7 +1063,7 @@ function AppMain() {
   // app-wide in CSS (overscroll-behavior), which is what used to wipe state.
   const mainScrollRef = useRef(null);
   // Always open a freshly-selected view at its top (don't restore prior scroll position).
-  useEffect(() => { const el = mainScrollRef.current; if (el) el.scrollTo({ top: 0, left: 0 }); }, [view]);
+  useReturnBookmark(view, mainScrollRef, viewRef);
   const ptrRef = useRef({ startY: 0, active: false });
   const [ptrPull, setPtrPull] = useState(0);
   const [ptrBusy, setPtrBusy] = useState(false);

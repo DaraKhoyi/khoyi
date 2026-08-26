@@ -834,6 +834,30 @@ function CallList() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Coming back from a contact record. If a call, text or email actually went
+  // out while you were in there, the person is done for today — you should not
+  // have to tell the app something it can already see. outreach_since checks the
+  // phone line, the texts and the mailbox, so it counts real outreach rather
+  // than merely having opened the record.
+  useEffect(() => {
+    let alive = true;
+    const r = (typeof window !== 'undefined') ? window.__returnedFrom : null;
+    if (!r || !r.contactId || !r.at) return;
+    try { window.__returnedFrom = null; } catch (_) {}
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('outreach_since', { p_contact: r.contactId, p_since: r.at });
+        if (!alive || !data || !data.ok) return;
+        const { error } = await supabase.rpc('log_call_list', { p_contact: r.contactId, p_outcome: 'called' });
+        if (error) return;                       // leave it on the list rather than lie
+        setPeople(list => (list || []).filter(x => x.id !== r.contactId));
+        const kind = data.kind === 'call' ? 'Call' : data.kind === 'text' ? 'Text' : data.kind === 'email' ? 'Email' : 'Outreach';
+        try { window.__notify && window.__notify(kind + ' logged \u2014 ticked off today\u2019s list.', 'success'); } catch (_) {}
+      } catch (_) { /* never break Today over a bookkeeping nicety */ }
+    })();
+    return () => { alive = false; };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const call = async (p) => {
     try { await supabase.rpc('log_call_list', { p_contact: p.id, p_outcome: 'called' }); } catch (_) {}
     try { window.location.href = 'tel:' + String(p.phone).replace(/[^\d+]/g, ''); } catch (_) {}
@@ -862,7 +886,12 @@ function CallList() {
               {p.disc ? <span title={'DISC ' + p.disc} style={{ width: 20, height: 20, borderRadius: 6, flex: 'none', background: (DISC[p.disc] || 'var(--text-3)') + '22', border: '1px solid ' + (DISC[p.disc] || 'var(--text-3)'), color: DISC[p.disc] || 'var(--text-2)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{p.disc}</span>
                 : <span style={{ width: 20, height: 20, flex: 'none' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                <button type="button"
+                  onClick={() => { try { window.__openContactAndReturn && window.__openContactAndReturn(p.id); } catch (_) {} }}
+                  title={'Open ' + (p.name || 'contact') + '\u2019s record'}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14.5, fontWeight: 700, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecorationLine: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: '3px' }}>
+                  {p.name}
+                </button>
                 <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{p.reason}</div>
               </div>
               <button onClick={() => call(p)} style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 9, padding: '8px 14px', fontWeight: 800, fontSize: 13, cursor: 'pointer', flex: 'none' }}>Call</button>
