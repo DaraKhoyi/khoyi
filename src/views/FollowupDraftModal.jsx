@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../dataService';
 import { applyMergeFields, quoNormPhone, resolveSendAccount } from '../helpers';
-import { quoCall } from '../quo';
+import { quoCall, sendQuoSms } from '../quo';
 import { notify } from '../notify';
 import { Icon } from '../icons';
 import { useBackClose } from '../backClose';
@@ -195,7 +195,7 @@ export default function FollowupDraftModal({ entry, contacts, defaultContact, re
       const { data: st } = await supabase.from('quo_settings').select('active_number').eq('user_id', userId).maybeSingle();
       from = st?.active_number || null;
       if (!from) throw new Error('No Quo number is selected for your account yet. Open the Quo tab and pick YOUR number before sending.');
-      await quoCall('/v1/messages', { method: 'POST', body: { content: bodyText, from, to: [to] } });
+      await sendQuoSms({ from, to, content: bodyText });
       await logSent('text', bodyText);
       if (recipient?.id) {
         const nowIso = new Date().toISOString();

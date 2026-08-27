@@ -6,7 +6,7 @@ import { modal, quoFmtDur, quoFmtPhone, quoFmtWhen, quoLast10, quoNormPhone } fr
 import { CallFollowupsPanel } from './ReviewPanels';
 import QuoCallDetail from './QuoCallDetail';
 import QuoRecording from './QuoRecording';
-import { quoCall } from '../quo';
+import { quoCall, sendQuoSms } from '../quo';
 
 // At-a-glance health of the Quo (OpenPhone) integration: live API connection,
 // active number, webhooks, texting, and calls — with a clear fix path when call
@@ -397,7 +397,7 @@ function QuoView({ contacts = [], userId, profiles = [], defaultSystem = 'eisenh
     const tmp = { id: 'tmp-' + Date.now(), op_id: 'tmp-' + Date.now(), direction: 'outgoing', from_number: fromNumber.number, to_number: selected.participant, body: text, op_created_at: new Date().toISOString(), status: 'queued' };
     setMsgs(m => [tmp, ...m]); setCompose('');
     try {
-      await quoCall('/v1/messages', { method: 'POST', body: { content: text, from: fromNumber.number, to: [selected.participant] } });
+      await sendQuoSms({ from: fromNumber.number, to: selected.participant, content: text });
       // the message.delivered webhook will persist + realtime-replace the optimistic row
     } catch (e) {
       setErr('Send failed: ' + String(e.message || e));

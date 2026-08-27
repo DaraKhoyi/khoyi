@@ -100,6 +100,28 @@ serve(async (req) => {
       );
     }
 
+    // A caller may only send FROM their own Quo number.
+    //
+    // Found while reproducing Dara's send failure: a throwaway account with no
+    // Quo settings at all successfully sent a text FROM Dara's brokerage number,
+    // because the proxy forwarded `from` verbatim. Any signed-in agent could
+    // have texted a client as the broker. Same rule as everywhere else — you act
+    // as yourself, and impersonation is the audited path.
+    if (method === "POST" && path === "/v1/messages") {
+      const wantFrom = String((payload && payload.from) || "").replace(/[^0-9]/g, "");
+      const { data: st } = await supabase
+        .from("quo_settings").select("active_number").eq("user_id", user.id).maybeSingle();
+      const mine = String((st && st.active_number) || "").replace(/[^0-9]/g, "");
+      if (!mine) {
+        return new Response(JSON.stringify({ ok: false, error: "No Quo number is set up for your account yet." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      if (!wantFrom || wantFrom.slice(-10) !== mine.slice(-10)) {
+        return new Response(JSON.stringify({ ok: false, error: "You can only send from your own Quo number." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     const url = `${QUO_BASE}${path}${buildQuery(query)}`;
     const init: RequestInit = {
       method,

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { quoNormPhone } from '../helpers';
-import { quoCall } from '../quo';
+import { quoCall, sendQuoSms } from '../quo';
 import { useBackClose } from '../backClose';
 import { notify } from '../notify';
 
@@ -175,7 +175,7 @@ export function BulkDiscComposer({ contacts, profileByContact, channel, userId, 
           if (se) throw se; if (sr?.error) throw new Error(sr.error);
           await logSent(c, 'email', body, subject);
         } else {
-          await quoCall('/v1/messages', { method: 'POST', body: { content: body, from, to: [quoNormPhone(c.phone)] } });
+          await sendQuoSms({ from, to: quoNormPhone(c.phone), content: body });
           await logSent(c, 'text', body);
         }
         sent++;
