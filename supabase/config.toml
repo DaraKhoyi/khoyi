@@ -226,6 +226,9 @@ verify_jwt = false
 [functions.critical-connection-watch]
 verify_jwt = false
 
+[functions.email-unsubscribe]
+verify_jwt = true
+
 [functions.google-connection-watch]
 verify_jwt = false
 

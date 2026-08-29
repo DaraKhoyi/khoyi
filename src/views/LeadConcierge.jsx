@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
-import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, emailGist } from './EmailShared';
+import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, emailGist, runEmailAction } from './EmailShared';
 import EmailTaskModal from './EmailTaskModal';
 
 // ── 5-Minute Lead Concierge ──────────────────────────────────────────────────
@@ -70,7 +70,30 @@ function InboundMessage({ text, summary }) {
 // They were only reachable after expanding the thread because that is where the
 // identifiers happened to resolve — so the two things Dara asked for looked
 // missing. Identity is resolved up front now; the thread stays optional.
-function LeadEmailTools({ it, contacts, onActed, collapsed }) {
+function LeadEmailTools({ it, contacts, onActed, collapsed, onNotALead, onDelegate }) {
+  const [unsubBusy, setUnsubBusy] = useState(false);
+  const toolBtn = { fontSize: 11.5, fontWeight: 700, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' };
+  const unsubscribe = async () => {
+    setUnsubBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('email-unsubscribe', {
+        body: { account_id: it.account_id, provider_message_id: it.provider_message_id, sender: it.lead_email },
+      });
+      if (error) { if (window.__notify) window.__notify('Unsubscribe failed: ' + error.message, 'error'); return; }
+      if (data && data.ok) {
+        if (window.__notify) window.__notify('Unsubscribed. They should stop arriving.', 'success');
+        onNotALead && onNotALead(it, 'unsubscribed');
+        return;
+      }
+      // Honest about the ones that need a human click.
+      if (data && data.url) {
+        try { window.open(data.url, '_blank', 'noopener'); } catch (_) {}
+        if (window.__notify) window.__notify('Opened their unsubscribe page \u2014 finish it there.', 'success');
+      } else if (window.__notify) {
+        window.__notify((data && data.message) || 'No unsubscribe link on this one.', 'error');
+      }
+    } finally { setUnsubBusy(false); }
+  };
   // Reply / archive / delete only cover the mail you can finish now. Task it and
   // Snooze cover the rest, which on Dara's queue is most of it.
   const [modal, setModal] = useState(null);   // 'task' | 'snooze'
@@ -113,8 +136,23 @@ function LeadEmailTools({ it, contacts, onActed, collapsed }) {
           </button>
           <button type="button" onClick={() => setModal('snooze')}
             title="Not now — it leaves your inbox and comes back when you say"
-            style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+            style={toolBtn}>
             {'\u23F0 Snooze'}
+          </button>
+          <button type="button" disabled={unsubBusy} onClick={unsubscribe}
+            title="Use the sender's own unsubscribe, so they stop arriving at all"
+            style={toolBtn}>
+            {unsubBusy ? 'Unsubscribing\u2026' : '\u2298 Unsubscribe'}
+          </button>
+          <button type="button" onClick={() => onNotALead && onNotALead(it)}
+            title="Teach the queue: this sender is not a lead, and neither is the next one from them"
+            style={toolBtn}>
+            {'\u2716 Not a lead'}
+          </button>
+          <button type="button" onClick={() => onDelegate && onDelegate(it)}
+            title="Hand this to the agent who should own it"
+            style={toolBtn}>
+            {'\u21AA Delegate'}
           </button>
         </div>
       ) : (
@@ -137,6 +175,11 @@ function LeadEmailTools({ it, contacts, onActed, collapsed }) {
 export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(null);
+  // Nine cards from the same sender should die in one gesture, not nine.
+  const [sel, setSel] = useState({});
+  const [bulkBusy, setBulkBusy] = useState('');
+  const [agents, setAgents] = useState([]);
+  const [delegateFor, setDelegateFor] = useState(null);
   // Archiving is meant to CLEAR the screen. The card collapses to a single
   // 'Archived. Undo' line rather than vanishing outright, because unmounting it
   // would take the undo with it — and it is gone entirely on the next load.
@@ -144,6 +187,57 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState('');
   const [flash, setFlash] = useState(null);
+
+  // Roster for delegation. Only names — no agent data crosses the wall.
+  useEffect(() => { (async () => {
+    try {
+      const { data } = await supabase.from('agents')
+        .select('auth_user_id, name, active').not('auth_user_id','is',null).eq('active', true).order('name');
+      setAgents(data || []);
+    } catch (_) {}
+  })(); }, []);
+
+  // Desktop shortcuts. Dara processes email at a laptop and tapping is the slow
+  // path. Deliberately inert while typing, and inert on phones.
+  useEffect(() => {
+    const onKey = async (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (typing) return;
+      if (typeof window !== 'undefined' && window.innerWidth < 900) return;
+      const ids = Object.keys(selRef.current || {}).filter(k => selRef.current[k]);
+      if (!ids.length) return;
+      const k = e.key;
+      if (k === 'e') { e.preventDefault(); bulkRef.current && bulkRef.current('archive'); }
+      else if (k === '#') { e.preventDefault(); bulkRef.current && bulkRef.current('trash'); }
+      else if (k === 'u') { e.preventDefault(); bulkRef.current && bulkRef.current('not_a_lead'); }
+      else if (k === 'Escape') { e.preventDefault(); setSel({}); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const selRef = React.useRef(sel); selRef.current = sel;
+  const bulkRef = React.useRef(null);
+
+  const selIds = React.useMemo(() => Object.keys(sel).filter(k => sel[k]), [sel]);
+  const toggleSel = (id) => setSel(m => ({ ...m, [id]: !m[id] }));
+  const clearSel = () => setSel({});
+
+  // One judgement about a sender, applied to every open lead from them.
+  const markSender = React.useCallback(async (email, kind) => {
+    if (!email) { if (window.__notify) window.__notify('This lead has no email address to judge.', 'error'); return; }
+    const { data, error } = await supabase.rpc('lead_sender_rule', { p_sender: email, p_kind: kind });
+    if (error || !data || !data.ok) {
+      if (window.__notify) window.__notify('Could not save that: ' + ((error && error.message) || (data && data.error) || ''), 'error');
+      return false;
+    }
+    setItems(list => list.filter(x => String(x.lead_email || '').toLowerCase() !== String(email).toLowerCase()));
+    if (window.__notify) window.__notify(
+      (kind === 'not_a_lead' ? 'Marked not a lead' : 'Sender blocked') +
+      (data.cleared > 1 ? ' \u2014 cleared ' + data.cleared + ' from this sender.' : '.'), 'success');
+    return true;
+  }, []);
 
   const load = React.useCallback(async () => {
     try { const { data } = await supabase.rpc('lead_concierge_pending'); setItems(Array.isArray(data) ? data : []); } catch (_) { setItems([]); }
@@ -172,10 +266,77 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
     setBusy(null);
   };
 
+  // Bulk actions run one at a time and report what actually happened. Nine
+  // archives that half-fail silently would be worse than nine taps.
+  const runBulk = async (kind) => {
+    const chosen = items.filter(x => sel[x.id]);
+    if (!chosen.length) return;
+    setBulkBusy(kind);
+    let done = 0, failed = 0;
+    for (const it of chosen) {
+      try {
+        if (kind === 'dismiss') { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); done++; }
+        else if (kind === 'not_a_lead') { (await markSender(it.lead_email, 'not_a_lead')) ? done++ : failed++; }
+        else if (kind === 'archive' || kind === 'trash') {
+          const r = await runEmailAction({ action: kind, accountId: it.account_id,
+            providerThreadId: it.provider_thread_id, providerMessageId: it.provider_message_id });
+          if (r.ok) { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); done++; } else failed++;
+        }
+      } catch (_) { failed++; }
+    }
+    setBulkBusy('');
+    clearSel();
+    await load();
+    if (window.__notify) window.__notify(
+      done + ' done' + (failed ? ', ' + failed + " couldn't be" : '') + '.', failed ? 'error' : 'success');
+  };
+
+  bulkRef.current = runBulk;
+
   if (!items.length) return null;
   const visible = items;
+  const bulkBtn = { fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' };
   return (
     <div className="fade-up" style={{ marginBottom: 14 }}>
+      {delegateFor ? (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setDelegateFor(null)} style={{ zIndex: 1400 }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, width: '92%' }}>
+            <div className="modal-header"><h3 style={{ margin: 0 }}>Hand this to</h3></div>
+            <div style={{ padding: 14, maxHeight: '60vh', overflowY: 'auto' }}>
+              <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 10, lineHeight: 1.5 }}>
+                {'They get an A-priority task with the message. The email stays in your mailbox \u2014 nothing of yours moves to them.'}
+              </div>
+              {agents.length ? agents.map(a => (
+                <button key={a.auth_user_id} type="button"
+                  onClick={async () => {
+                    const { data, error } = await supabase.rpc('delegate_lead', { p_lead: delegateFor.id, p_to_auth: a.auth_user_id });
+                    setDelegateFor(null);
+                    if (error || !data || !data.ok) { if (window.__notify) window.__notify('Could not delegate: ' + ((error && error.message) || (data && data.error) || ''), 'error'); return; }
+                    setItems(list => list.filter(x => x.id !== delegateFor.id));
+                    if (window.__notify) window.__notify('Sent to ' + (data.agent || 'them') + '.', 'success');
+                  }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: '1px solid var(--border)', borderRadius: 9, padding: '10px 12px', marginBottom: 7, color: 'var(--text-1)', fontSize: 13.5, cursor: 'pointer' }}>
+                  {a.name}
+                </button>
+              )) : <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>No agents with logins yet.</div>}
+            </div>
+            <div style={{ padding: '0 14px 14px', textAlign: 'right' }}>
+              <button className="btn btn-ghost" onClick={() => setDelegateFor(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {selIds.length ? (
+        <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+          background: 'rgba(16,13,9,.96)', border: '1px solid rgba(197,169,94,.5)', borderRadius: 12, padding: '9px 11px', marginBottom: 10 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: '#EBCB82' }}>{selIds.length + ' selected'}</span>
+          <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('archive')}>{bulkBusy === 'archive' ? 'Archiving\u2026' : 'Archive'}</button>
+          <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('trash')}>{bulkBusy === 'trash' ? 'Deleting\u2026' : 'Delete'}</button>
+          <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('not_a_lead')}>{bulkBusy === 'not_a_lead' ? 'Marking\u2026' : 'Not a lead'}</button>
+          <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('dismiss')}>Dismiss</button>
+          <button style={{ ...bulkBtn, marginLeft: 'auto', border: 'none', color: 'var(--text-3)' }} onClick={clearSel}>Clear</button>
+        </div>
+      ) : null}
       {visible.map(it => {
         const first = (it.lead_name || '').trim().split(/\s+/)[0];
         const editing = editId === it.id;
@@ -192,6 +353,8 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
             ? { background: 'transparent', border: '1px solid var(--border)', borderRadius: 16, padding: '10px 14px', marginBottom: 8, opacity: 0.6 }
             : { background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))', border: '1px solid rgba(197,169,94,.5)', borderRadius: 16, padding: '14px 16px', marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <input type="checkbox" checked={!!sel[it.id]} onChange={() => toggleSel(it.id)}
+                title="Select for a bulk action" style={{ marginRight: 2, cursor: 'pointer' }} />
               <span className={cleared[it.id] ? '' : 'live-dot'} style={cleared[it.id] ? { width: 7, height: 7, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' } : undefined} />
               <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: cleared[it.id] ? 'var(--text-3)' : '#EBCB82' }}>{cleared[it.id] ? (cleared[it.id] === 'trash' ? 'Deleted' : 'Archived') : 'New lead \u00B7 reply ready'}</span>
               <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{(isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')) + ' \u00B7 ' + timeAgo(it.first_seen_at)}</span>
@@ -216,6 +379,8 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                 the mail sitting there. */}
             {isEmail ? (
               <LeadEmailTools it={it} contacts={contacts} collapsed={!!cleared[it.id]}
+                onNotALead={(row, kind) => markSender(row.lead_email, kind || 'not_a_lead')}
+                onDelegate={(row) => setDelegateFor(row)}
                 onActed={async (action) => {
                   const undone = action === 'untrash' || action === 'unarchive';
                   setCleared(c => ({ ...c, [it.id]: undone ? undefined : action }));
