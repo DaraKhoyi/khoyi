@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, emailGist } from './EmailShared';
+import EmailTaskModal from './EmailTaskModal';
 
 // ── 5-Minute Lead Concierge ──────────────────────────────────────────────────
 // A new lead texted, called or emailed; PrismOS already drafted the first reply
@@ -70,6 +71,9 @@ function InboundMessage({ text, summary }) {
 // identifiers happened to resolve — so the two things Dara asked for looked
 // missing. Identity is resolved up front now; the thread stays optional.
 function LeadEmailTools({ it, contacts, onActed, collapsed }) {
+  // Reply / archive / delete only cover the mail you can finish now. Task it and
+  // Snooze cover the rest, which on Dara's queue is most of it.
+  const [modal, setModal] = useState(null);   // 'task' | 'snooze'
   // The ids come from the row the list already has. The previous version looked
   // them up per card with useEmailIdentity, which meant 43 cards firing 43
   // async queries on open — whichever ones lost the race rendered no Archive and
@@ -85,9 +89,34 @@ function LeadEmailTools({ it, contacts, onActed, collapsed }) {
   if (!accountId || (!pThread && !pMsg)) return null;
   return (
     <div style={{ margin: '8px 0 4px' }}>
+      {modal ? (
+        <EmailTaskModal mode={modal}
+          subject={it.draft_subject || it.subject || ''}
+          body={fullest(it)}
+          fromName={(it.contact_name || it.lead_name || '').split(' ')[0] || ''}
+          contactId={it.contact_id || null}
+          threadId={it.thread_id || null}
+          accountId={accountId}
+          providerThreadId={pThread}
+          providerMessageId={pMsg}
+          onClose={() => setModal(null)}
+          onDone={() => onActed && onActed('archive')} />
+      ) : null}
       {mine ? (
-        <EmailActionBar accountId={accountId} providerThreadId={pThread}
-          providerMessageId={pMsg} onDone={onActed} compact />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <EmailActionBar accountId={accountId} providerThreadId={pThread}
+            providerMessageId={pMsg} onDone={onActed} compact />
+          <button type="button" onClick={() => setModal('task')}
+            title="Make an A/B/C/D task carrying the whole email, and have the email return on the due date"
+            style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+            {'\u2713 Task it'}
+          </button>
+          <button type="button" onClick={() => setModal('snooze')}
+            title="Not now — it leaves your inbox and comes back when you say"
+            style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+            {'\u23F0 Snooze'}
+          </button>
+        </div>
       ) : (
         <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.4 }}>
           {'This sits in another agent\u2019s inbox \u2014 use Dismiss to clear it from your list.'}
