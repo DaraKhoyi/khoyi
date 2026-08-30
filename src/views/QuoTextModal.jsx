@@ -2,7 +2,7 @@
 // Extracted from App.js (strangle).
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../dataService';
-import { quoCall, sendQuoSms, smsPartCount, SMS_SEGMENT } from '../quo';
+import { quoCall, sendQuoSms } from '../quo';
 import { quoNormPhone } from '../helpers';
 import { notify } from '../notify';
 import { Icon } from '../icons';
@@ -65,14 +65,8 @@ export default function QuoTextModal({ contact, userId, defaultText = '', phone,
             placeholder={`Write a text to ${name}…`}
             style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: '14px', lineHeight: 1.5, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text-1)', resize: 'vertical', fontFamily: 'inherit' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-            {/* Quo bills anything over one segment against prepaid credits this
-                workspace does not have, so long texts go out as several. Say so
-                before sending rather than failing after. */}
             <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
               {text.length + ' characters'}
-              {text.trim().length > SMS_SEGMENT ? (
-                <span style={{ color: 'var(--accent)' }}>{' \u00B7 sends as ' + smsPartCount(text) + ' texts'}</span>
-              ) : null}
             </span>
             {sent && <span style={{ fontSize: '12px', color: 'var(--green)', fontWeight: 600 }}>✓ Sent</span>}
           </div>
