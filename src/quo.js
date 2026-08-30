@@ -18,20 +18,24 @@ export async function quoCall(path, { method = 'GET', query, body } = {}) {
 
 // ── Sending a text ───────────────────────────────────────────────────────────
 //
-// Quo's API bills anything longer than ONE SMS segment against prepaid credits,
-// and this workspace has none — so a long text comes back 402 "The organization
-// does not have enough prepaid credits to send the message". The message is
-// technically Quo's and completely misleading: nothing is wrong with the plan,
-// and the SAME text pasted into the Quo app sends fine, because in-app
-// messaging is included where multi-segment API sends are not.
+// Quo bills EVERY text sent through the API against prepaid credits, while
+// texts sent inside the Quo app are covered by the plan. When the credit balance
+// reaches zero the API returns 402 "The organization does not have enough
+// prepaid credits to send the message" and the Quo app keeps working — which is
+// exactly what Dara saw.
 //
-// Measured against the live API rather than assumed:
-//     160 characters -> 202 sent
-//     161 characters -> 402 Not Enough Credits
+// A correction worth recording. On 27 Aug the same error appeared and the
+// evidence pointed at LENGTH: 160 characters sent, 161 failed. That was real but
+// it was not the cause. There was a small credit balance left, and a
+// multi-segment message costs more of it than a single segment, so the balance
+// ran out partway up the length scale and length looked like the trigger. On 30
+// Aug a THIRTY-character message to the same number failed the same way. The
+// balance is simply gone. Length was a symptom of price, not the rule.
 //
-// So we send the way the app does: as single-segment messages, in order. Split
-// on sentence and word boundaries so each part reads like something a person
-// typed, never mid-word.
+// Splitting still earns its place — fewer segments is less credit per message,
+// and it is how the app behaves — so it stays. But the error must name the real
+// problem, because "shorten it" sends someone off editing a message that was
+// never too long.
 export const SMS_SEGMENT = 160;
 
 export function splitSms(text, limit = SMS_SEGMENT) {
@@ -64,6 +68,31 @@ export function smsPartCount(text) { return splitSms(text).length; }
 
 // ONE place that sends a text. Four screens used to call quoCall('/v1/messages')
 // directly and all four hit the same wall.
+// A blocked outbox is a connection fault, and it belongs where the other ones
+// are: the undismissable banner on Today. Only the client can see this one —
+// nothing server-side gets told that a send was refused.
+async function flagQuoCredits() {
+  const { data: u } = await supabase.auth.getUser();
+  const uid = u && u.user && u.user.id;
+  if (!uid) return;
+  const { data: open } = await supabase.from('connection_alerts')
+    .select('id').eq('kind', 'quo_credits').is('resolved_at', null).limit(1);
+  if (open && open.length) return;
+  await supabase.from('connection_alerts').insert({
+    user_id: uid, kind: 'quo_credits', target_id: 'sms',
+    label: 'Texting from PrismOS',
+    detail: 'Quo returned 402: not enough prepaid credits.',
+  });
+}
+
+async function clearQuoCreditsFlag() {
+  try {
+    await supabase.from('connection_alerts')
+      .update({ resolved_at: new Date().toISOString() })
+      .eq('kind', 'quo_credits').is('resolved_at', null);
+  } catch (_) {}
+}
+
 export async function sendQuoSms({ from, to, content, onProgress }) {
   const parts = splitSms(content);
   if (!parts.length) throw new Error('Nothing to send.');
@@ -73,14 +102,21 @@ export async function sendQuoSms({ from, to, content, onProgress }) {
     } catch (e) {
       const msg = String((e && e.message) || e);
       if (/prepaid credits/i.test(msg)) {
-        throw new Error(parts.length > 1
-          ? 'Quo rejected part ' + (i + 1) + ' of ' + parts.length + '. Shorten the message and try again.'
-          : 'Quo rejected this message. Shorten it and try again.');
+        // Raise it on the home screen too — this blocks every text, not just
+        // this one, and it will not fix itself.
+        try { await flagQuoCredits(); } catch (_) {}
+        throw new Error(
+          'Quo is out of prepaid credits, so texts sent from PrismOS are being refused. ' +
+          'Texts sent inside the Quo app still work because those are covered by your plan. ' +
+          'Add credits in Quo (Settings \u2192 Billing) and this starts working again \u2014 ' +
+          'the message length is not the problem.');
       }
       throw new Error(i === 0 ? msg : 'Sent ' + i + ' of ' + parts.length + ' parts, then: ' + msg);
     }
     if (onProgress) onProgress(i + 1, parts.length);
   }
+  // It works again — take the banner down without waiting for a sweep.
+  clearQuoCreditsFlag();
   return parts.length;
 }
 

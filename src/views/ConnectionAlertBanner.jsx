@@ -20,10 +20,11 @@ const KIND_LABEL = {
   google_drive: 'Files',
   google_contacts: 'Contacts',
   quo: 'Phone line',
+  quo_credits: 'Texting',
 };
 
 function actionFor(kind) {
-  if (kind === 'quo') return { label: 'Open Phone settings', view: 'quo' };
+  if (kind === 'quo' || kind === 'quo_credits') return { label: 'Open Phone & Text', view: 'quo' };
   return { label: 'Reconnect now', view: 'settings' };
 }
 
@@ -94,7 +95,10 @@ export default function ConnectionAlertBanner({ setView }) {
             <div style={{ fontSize: 13.5, color: 'var(--text-1)', marginTop: 5, lineHeight: 1.45, wordBreak: 'break-word' }}>
               {a.label}
               <span style={{ color: 'var(--text-3)' }}>
-                {a.kind === 'quo' ? ' \u2014 calls and texts have stopped.' : ' \u2014 nothing is syncing until you reconnect.'}
+                {a.kind === 'quo_credits'
+                  ? ' \u2014 Quo is out of prepaid credits, so texts sent from PrismOS are refused. Texts sent inside the Quo app still work. Add credits in Quo to restore it.'
+                  : a.kind === 'quo' ? ' \u2014 calls and texts have stopped.'
+                  : ' \u2014 nothing is syncing until you reconnect.'}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
