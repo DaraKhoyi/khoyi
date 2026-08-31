@@ -45,12 +45,12 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
   const [edits, setEdits] = useState({});   // { [id]: { due, priority, title } }
-  const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B', title: c.title || '' };
+  const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B', title: c.title || '', notes: '' };
   // Seed from the COMMITMENT on first touch — not from empty strings — so setting
   // a date never wipes the title (and vice versa). Takes the whole commitment so
   // the seed has the real values. Functional update reads the latest edits map.
   const setEdit = (c, patch) => setEdits(e => {
-    const cur = e[c.id] || { due: c.due_date || '', priority: 'B', title: c.title || '' };
+    const cur = e[c.id] || { due: c.due_date || '', priority: 'B', title: c.title || '', notes: '' };
     return { ...e, [c.id]: { ...cur, ...patch } };
   });
 
@@ -111,7 +111,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
         // A/B/C is the Eisenhower quadrant, NOT the priority column (which is
         // constrained to high/medium/low). Writing 'B' to priority would violate
         // a CHECK constraint. Map to both so the task sorts correctly.
-        const pmap = { A: 'high', B: 'medium', C: 'low' };
+        const pmap = { A: 'high', B: 'medium', C: 'low', D: 'low' };
         const { data: t, error } = await supabase.from('tasks').insert({
           user_id: userId,
           title,
@@ -119,7 +119,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
           priority: pmap[e.priority] || 'medium',
           priority_system: 'eisenhower',
           eisenhower_quadrant: e.priority || 'B',
-          notes: `From a call with ${c.contact_name} — they/you said: “${c.quote}”`,
+          // Whatever was typed, plus the words that produced the task — the
+          // quote is the evidence and should never be lost to an edit.
+          notes: ((editOf(c).notes || '').trim()
+            ? (editOf(c).notes || '').trim() + '\n\n'
+            : '') + `From a call with ${c.contact_name} — they/you said: “${c.quote}”`,
           contact_id: c.contact_id || null,
           completed: false,
         }).select().single();
@@ -329,7 +333,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
                   style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8,
                     color: 'var(--text-1)', padding: '5px 8px', fontSize: 12 }} />
                 <div style={{ display: 'flex', gap: 3 }}>
-                  {['A', 'B', 'C'].map(p => (
+                  {['A', 'B', 'C', 'D'].map(p => (
                     <button key={p} onClick={() => setEdit(c, { priority: p })}
                       style={{ width: 26, height: 26, borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: 'pointer',
                         border: '1px solid ' + (editOf(c).priority === p ? 'var(--accent-2)' : 'var(--border)'),
@@ -338,6 +342,14 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
                   ))}
                 </div>
               </div>
+              {/* Anything else that belongs on the task. The quote is appended
+                  automatically, so this is for what the call did not say. */}
+              <textarea value={editOf(c).notes || ''} rows={2}
+                onChange={ev => setEdit(c, { notes: ev.target.value })}
+                placeholder="Add notes for this task (optional)"
+                style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-1)',
+                  padding: '6px 8px', fontSize: 12, marginBottom: 8, fontFamily: 'inherit', resize: 'vertical' }} />
               <button disabled={busy === c.id} onClick={() => accept(c)} style={btn(true)}>
                 {c.owner === 'me' ? 'Make it a task' : 'Track it'}
               </button>
