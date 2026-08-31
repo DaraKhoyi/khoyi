@@ -83,6 +83,7 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Lead-Gen Systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
       { label: 'How I\u2019m Doing', view: 'scoreboard', icon: 'target' },
       { label: 'My Stats', view: 'numbers', icon: 'chart' },
+      { label: 'People You Know', view: 'uncarded', icon: 'users' },
       { label: 'Growth', view: 'growth', icon: 'chart' },
       ...(isAdmin ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
     ] },
