@@ -172,27 +172,55 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
     if (!email) { setEmails([]); return; }
     let cancelled = false;
     (async () => {
-      const cols = 'id,from_address,from_name,subject,snippet,internal_date,direction,is_read,provider_thread_id';
-      const [inb, outb] = await Promise.all([
+      const cols = 'id,from_address,from_name,subject,snippet,internal_date,direction,is_read,provider_thread_id,account_id';
+      // Correspondence is correspondence whether the person was in To or Cc.
+      // Matching only To meant an email that CC'd them never appeared here at
+      // all — and cc is exactly how a broker loops people into a thread.
+      const [inb, outb, cc, mine] = await Promise.all([
         supabase.from('email_messages').select(cols).eq('from_address', email).order('internal_date', { ascending: false }).limit(60),
         supabase.from('email_messages').select(cols).contains('to_addresses', [{ email }]).order('internal_date', { ascending: false }).limit(60),
+        supabase.from('email_messages').select(cols).contains('cc_addresses', [{ email }]).order('internal_date', { ascending: false }).limit(60),
+        supabase.from('email_accounts').select('email_address'),
       ]);
       if (cancelled) return;
+
+      // Which addresses are the account owner's own. Gmail files the copy that
+      // lands in a SECOND connected mailbox as inbound, so 185 of Dara's own
+      // emails were rendering as "them -> you" — his own words attributed to the
+      // other person. The sender decides direction; the folder does not.
+      const own = new Set((mine.data || []).map(a => String(a.email_address || '').trim().toLowerCase()));
+
       const seen = new Set();
-      const merged = [...(inb.data || []), ...(outb.data || [])].filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
-      const items = merged.filter(m => m.internal_date).map(m => ({
+      const merged = [...(inb.data || []), ...(outb.data || []), ...(cc.data || [])]
+        .filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+
+      // One email sent from one mailbox and received in another is TWO rows with
+      // two provider ids — the same message, listed twice, which is what Dara
+      // photographed. Collapse on what actually identifies the message.
+      const byMsg = new Map();
+      for (const m of merged) {
+        const key = (m.subject || '') + '|' + (m.internal_date || '');
+        const prev = byMsg.get(key);
+        const isOwn = own.has(String(m.from_address || '').trim().toLowerCase());
+        // Prefer the copy whose stored direction already agrees with the sender.
+        if (!prev || (isOwn && m.direction === 'outbound' && prev.direction !== 'outbound')) byMsg.set(key, m);
+      }
+
+      const items = [...byMsg.values()].filter(m => m.internal_date).map(m => ({
         id: 'email:' + m.id,
         _email: true,
         kind: 'email',
-        direction: m.direction || 'inbound',
+        direction: own.has(String(m.from_address || '').trim().toLowerCase())
+          ? 'outbound'
+          : (m.direction || 'inbound'),
         occurred_at: m.internal_date,
         subject: m.subject || '(no subject)',
-        body: (m.subject || '(no subject)') + (m.snippet ? ' — ' + m.snippet : ''),
+        body: (m.subject || '(no subject)') + (m.snippet ? ' \u2014 ' + m.snippet : ''),
         brief: m.snippet || m.subject || '',
         is_read: m.is_read,
         entity_type: 'contact', entity_id: entityId,
         mentions: [], tags: [], pinned: false,
-      }));
+      })).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
       setEmails(items);
     })();
     return () => { cancelled = true; };
