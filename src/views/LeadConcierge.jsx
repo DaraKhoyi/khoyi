@@ -183,6 +183,11 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
   // Archiving is meant to CLEAR the screen. The card collapses to a single
   // 'Archived. Undo' line rather than vanishing outright, because unmounting it
   // would take the undo with it — and it is gone entirely on the next load.
+  // Sixteen of these, each with a summary, a draft and six buttons, is most of a
+  // phone screen apiece — enough to push everything below them out of sight,
+  // which is exactly what happened to the call commitments. Show a handful and
+  // offer the rest; a deck you can finish beats a wall you scroll past.
+  const [showAllLeads, setShowAllLeads] = useState(false);
   const [cleared, setCleared] = useState({});
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState('');
@@ -294,7 +299,9 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
   bulkRef.current = runBulk;
 
   if (!items.length) return null;
-  const visible = items;
+  const LEAD_PREVIEW = 5;
+  const visible = showAllLeads ? items : items.slice(0, LEAD_PREVIEW);
+  const hiddenCount = items.length - visible.length;
   const bulkBtn = { fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' };
   return (
     <div className="fade-up" style={{ marginBottom: 14 }}>
@@ -414,6 +421,20 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
           </div>
         );
       })}
+      {hiddenCount > 0 ? (
+        <button type="button" onClick={() => setShowAllLeads(true)}
+          style={{ width: '100%', background: 'transparent', border: '1px solid var(--border)', borderRadius: 12,
+            padding: '10px 12px', color: 'var(--accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          {'Show ' + hiddenCount + ' more lead' + (hiddenCount === 1 ? '' : 's')}
+        </button>
+      ) : null}
+      {showAllLeads && items.length > LEAD_PREVIEW ? (
+        <button type="button" onClick={() => setShowAllLeads(false)}
+          style={{ width: '100%', background: 'transparent', border: 'none', padding: '8px 0',
+            color: 'var(--text-3)', fontSize: 12, cursor: 'pointer' }}>
+          Show fewer
+        </button>
+      ) : null}
     </div>
   );
 }

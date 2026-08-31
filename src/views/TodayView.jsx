@@ -369,6 +369,13 @@ export default function TodayView({
       <VoiceNote setView={setView} userId={myUserId} />
       <MorningBrief setView={setView} />
       <CallList />
+      {/* PERISHABLE FIRST.
+          These were sitting 169 lines and sixteen full-height lead cards below,
+          which is how 202 of them expired without ever being looked at — more
+          than were ever accepted. They are one-tap decisions, there are rarely
+          more than a few dozen, and they are the only thing on this screen with
+          a clock on it. Everything below can wait; these cannot. */}
+      <CommitmentReview userId={myUserId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
 
       {/* Header — moving-gold eyebrow, live date, fade-up entrance */}
@@ -538,7 +545,6 @@ export default function TodayView({
         onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <DelegationOutbox userId={myUserId}
         onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
-      <CommitmentReview userId={myUserId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <StaleDecide tasks={tasks} setTasks={setTasks} userId={myUserId} />
 
       {/* Follow-ups pulled from your calls — planning belongs here, not in the dialer */}
