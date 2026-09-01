@@ -367,17 +367,6 @@ export default function TodayView({
 
       <EnableNotifications myUserId={myUserId} />
       <VoiceNote setView={setView} userId={myUserId} />
-      <MorningBrief setView={setView} />
-      <CallList />
-      {/* PERISHABLE FIRST.
-          These were sitting 169 lines and sixteen full-height lead cards below,
-          which is how 202 of them expired without ever being looked at — more
-          than were ever accepted. They are one-tap decisions, there are rarely
-          more than a few dozen, and they are the only thing on this screen with
-          a clock on it. Everything below can wait; these cannot. */}
-      <CommitmentReview userId={myUserId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
-      <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
-
       {/* Header — moving-gold eyebrow, live date, fade-up entrance */}
       <div className="fade-up" style={{ marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
@@ -439,6 +428,13 @@ export default function TodayView({
         </div>
       )}
 
+      <MorningBrief setView={setView} />
+      {/* DO THIS NEXT — the first thing on the screen.
+          It used to render below the brief, the call list, the commitments, the
+          lead deck AND the page header, which meant the one card whose entire
+          job is to answer 'what now?' was the last thing you reached. Opening
+          Today should answer that question before you scroll, so it sits
+          directly under the brief and above everything it is meant to outrank. */}
       {/* The one hero — Do this next (swipe or tap the arrows to move through them) */}
       {cur ? (
         <div onTouchStart={onHeroTouchStart} onTouchEnd={onHeroTouchEnd} className="fade-up-2" style={{ position: 'relative', borderRadius: 20, padding: '22px 20px 18px', marginBottom: 18, background: 'radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,0.16), transparent 55%), linear-gradient(180deg, #1B1610, #100D09)', border: '1px solid rgba(203,163,92,0.55)', boxShadow: '0 0 40px rgba(203,163,92,0.12)', touchAction: 'pan-y', overflow: 'hidden' }}>
@@ -497,6 +493,18 @@ export default function TodayView({
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setView && setView('prospecting')}>See growth moves</button>
         </div>
       )}
+
+      <CallList />
+      {/* PERISHABLE FIRST.
+          These were sitting 169 lines and sixteen full-height lead cards below,
+          which is how 202 of them expired without ever being looked at — more
+          than were ever accepted. They are one-tap decisions, there are rarely
+          more than a few dozen, and they are the only thing on this screen with
+          a clock on it. Everything below can wait; these cannot. */}
+      <CommitmentReview userId={myUserId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
+      <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
+
+
 
       {/* The day, narrated — folded in from the old Planning briefing */}
       {brief?.summary && (
