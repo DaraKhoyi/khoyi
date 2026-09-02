@@ -31,7 +31,7 @@ function isoToLocalInput(iso) {
   return d.toISOString().slice(0, 16);
 }
 
-export default function ActivityTimeline({ entityType = 'contact', entityId, contact = null, userId, onContactPatch, contacts = [] }) {
+export default function ActivityTimeline({ entityType = 'contact', entityId, contact = null, userId, onContactPatch, contacts = [], onEditTask }) {
   const isContact = entityType === 'contact';
   const [timeline, setTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -620,7 +620,15 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
             {sortedReminders.slice(0, 6).map(t => (
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
                 <button onClick={() => completeReminder(t)} title="Mark done" style={{ width: '16px', height: '16px', borderRadius: '4px', border: `1.5px solid ${TONE_COLOR[t._due.tone]}`, background: 'transparent', cursor: 'pointer', flexShrink: 0, padding: 0 }} />
-                <span style={{ flex: 1, minWidth: 0, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</span>
+                {/* The checkbox finishes it; the title opens it. Reading a
+                    follow-up and being unable to change it is the state Dara
+                    kept landing in. */}
+                <button onClick={() => onEditTask && onEditTask(t)} title="Open and edit this task"
+                  style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0,
+                    color: 'var(--text-1)', fontSize: '12px', cursor: onEditTask ? 'pointer' : 'default',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'inherit' }}>
+                  {t.title}
+                </button>
                 <span style={{ fontSize: '10px', fontWeight: 600, color: TONE_COLOR[t._due.tone], whiteSpace: 'nowrap' }}>{t._due.label}</span>
               </div>
             ))}

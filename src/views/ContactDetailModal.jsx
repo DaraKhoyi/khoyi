@@ -14,6 +14,7 @@ import SingleContactPicker from './SingleContactPicker';
 import QuoTextModal from './QuoTextModal';
 import FollowupDraftModal from './FollowupDraftModal';
 import ActivityTimeline from './ActivityTimeline';
+const TaskModal = lazy(() => import('./TaskModal'));
 import RelationshipIntel from './RelationshipIntel';
 import SocialLinksPanel from './SocialLinksPanel';
 import CustomFieldsPanel from './CustomFieldsPanel';
@@ -161,6 +162,10 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
 
   // Linked tasks
   const [linkedTasks, setLinkedTasks] = useState([]);
+  // A task shown on a contact record was a dead line of text: you could read it
+  // and nothing else. Opening the same editor the Tasks screen uses means one
+  // task editor everywhere, rather than a second, lesser one grown here.
+  const [editingTask, setEditingTask] = useState(null);
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
   // Pass 3: linked events (events.contact_id) + linked properties (property_contacts join)
@@ -925,6 +930,36 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
           </div>
         )}
         {textTo && <QuoTextModal contact={contact} phone={textTo.phone} userId={userId} onClose={()=>setTextTo(null)} />}
+        {editingTask && (
+          <Suspense fallback={null}>
+            <TaskModal
+              initial={editingTask}
+              defaultSystem={editingTask.priority_system || 'eisenhower'}
+              contacts={contacts}
+              userId={userId}
+              onClose={() => setEditingTask(null)}
+              onSave={async (patch) => {
+                const row = { ...patch };
+                delete row.id;
+                const { error } = await supabase.from('tasks').update(row).eq('id', editingTask.id);
+                if (error) { notify('Could not save: ' + error.message, 'error'); return; }
+                setLinkedTasks(list => list.map(x => x.id === editingTask.id ? { ...x, ...row } : x));
+                setEditingTask(null);
+                // Today, the call list and the briefing all read tasks; tell them.
+                try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
+              }}
+              onDelete={async () => {
+                const ok = await confirmDialog('Delete this task?');
+                if (!ok) return;
+                const { error } = await supabase.from('tasks').delete().eq('id', editingTask.id);
+                if (error) { notify('Could not delete: ' + error.message, 'error'); return; }
+                setLinkedTasks(list => list.filter(x => x.id !== editingTask.id));
+                setEditingTask(null);
+                try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
+              }}
+            />
+          </Suspense>
+        )}
         {emailComposeOpen && <FollowupDraftModal entry={{ entity_type:'contact', entity_id:contact.id, mentions:[contact.id] }} contacts={contacts} defaultContact={contact} userId={userId} onClose={()=>setEmailComposeOpen(false)} onSent={(cid, patch) => { Object.assign(contact, patch); if (setContacts) setContacts(prev => prev.map(c => c.id === cid ? { ...c, ...patch } : c)); }} />}
 
         <div style={{padding:'13px 16px 10px'}}>
@@ -1469,6 +1504,7 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
               Object.assign(contact, patch);
               if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
             }}
+            onEditTask={(t) => setEditingTask(t)}
           />
         </div>
 
@@ -1507,7 +1543,8 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
             </div>
           )}
           {(tasksExpanded ? linkedTasks : linkedTasks.slice(0, 3)).map(t => (
-            <div key={t.id} style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',fontSize:'12px'}}>
+            <div key={t.id} onClick={() => setEditingTask(t)} title="Open and edit this task"
+              style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',fontSize:'12px',cursor:'pointer'}}>
               <div style={{flex:1,minWidth:0,textDecoration: t.completed ? 'line-through' : 'none',color: t.completed ? 'var(--text-3)' : 'var(--text-1)'}}>
                 {t.completed ? '✓ ' : '○ '}{t.title}
               </div>
