@@ -172,52 +172,38 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
     if (!email) { setEmails([]); return; }
     let cancelled = false;
     (async () => {
-      const cols = 'id,from_address,from_name,subject,snippet,internal_date,direction,is_read,provider_thread_id,account_id';
-      // Correspondence is correspondence whether the person was in To or Cc.
-      // Matching only To meant an email that CC'd them never appeared here at
-      // all — and cc is exactly how a broker loops people into a thread.
-      const [inb, outb, cc, mine] = await Promise.all([
-        supabase.from('email_messages').select(cols).eq('from_address', email).order('internal_date', { ascending: false }).limit(60),
-        supabase.from('email_messages').select(cols).contains('to_addresses', [{ email }]).order('internal_date', { ascending: false }).limit(60),
-        supabase.from('email_messages').select(cols).contains('cc_addresses', [{ email }]).order('internal_date', { ascending: false }).limit(60),
-        supabase.from('email_accounts').select('email_address'),
-      ]);
+      // One call, server-side, so a SHARED contact shows the whole team's
+      // correspondence and not just yours. Josh's email from a client is on the
+      // record Dara is reading, and vice versa — which is the point of sharing a
+      // contact at all. Private contacts return only your own mail.
+      //
+      // Dedup happens in the RPC: an email cc'd to Dara, Josh and Alex is three
+      // rows in three mailboxes with three different Gmail ids, and it must
+      // appear once. It collapses on sender + subject + minute, preferring your
+      // own copy so Archive and Delete act on a mailbox you actually own.
+      const { data: rows, error: rErr } = await supabase.rpc('contact_thread_emails', {
+        p_contact: entityId, p_limit: 120,
+      });
       if (cancelled) return;
+      if (rErr) { setEmails([]); return; }
 
-      // Which addresses are the account owner's own. Gmail files the copy that
-      // lands in a SECOND connected mailbox as inbound, so 185 of Dara's own
-      // emails were rendering as "them -> you" — his own words attributed to the
-      // other person. The sender decides direction; the folder does not.
-      const own = new Set((mine.data || []).map(a => String(a.email_address || '').trim().toLowerCase()));
+      const { data: mine } = await supabase.from('email_accounts').select('email_address');
+      const own = new Set((mine || []).map(a => String(a.email_address || '').trim().toLowerCase()));
 
-      const seen = new Set();
-      const merged = [...(inb.data || []), ...(outb.data || []), ...(cc.data || [])]
-        .filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
-
-      // One email sent from one mailbox and received in another is TWO rows with
-      // two provider ids — the same message, listed twice, which is what Dara
-      // photographed. Collapse on what actually identifies the message.
-      const byMsg = new Map();
-      for (const m of merged) {
-        const key = (m.subject || '') + '|' + (m.internal_date || '');
-        const prev = byMsg.get(key);
-        const isOwn = own.has(String(m.from_address || '').trim().toLowerCase());
-        // Prefer the copy whose stored direction already agrees with the sender.
-        if (!prev || (isOwn && m.direction === 'outbound' && prev.direction !== 'outbound')) byMsg.set(key, m);
-      }
-
-      const items = [...byMsg.values()].filter(m => m.internal_date).map(m => ({
+      const items = (Array.isArray(rows) ? rows : []).filter(m => m.internal_date).map(m => ({
         id: 'email:' + m.id,
         _email: true,
         kind: 'email',
-        direction: own.has(String(m.from_address || '').trim().toLowerCase())
-          ? 'outbound'
-          : (m.direction || 'inbound'),
+        // The sender decides direction, not the folder it landed in.
+        direction: own.has(String(m.from_address || '').trim().toLowerCase()) ? 'outbound' : (m.direction || 'inbound'),
         occurred_at: m.internal_date,
         subject: m.subject || '(no subject)',
         body: (m.subject || '(no subject)') + (m.snippet ? ' \u2014 ' + m.snippet : ''),
         brief: m.snippet || m.subject || '',
         is_read: m.is_read,
+        // Whose mailbox this came out of, when it is not yours. Without it a
+        // teammate's correspondence reads as though you had it all along.
+        via: m.is_mine === false ? (m.mailbox_owner || 'a teammate') : null,
         entity_type: 'contact', entity_id: entityId,
         mentions: [], tags: [], pinned: false,
       })).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
@@ -540,6 +526,12 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
             {e._email && (
               <span style={{ fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0 5px' }} title="Synced from Gmail">
                 <span style={{display:'inline-flex',alignItems:'center',gap:'4px'}}><Icon name="mail" size={11} /> Gmail{e.is_read === false ? ' · unread' : ''}</span>
+              </span>
+            )}
+            {e.via && (
+              <span style={{ fontSize: '10px', color: '#EBCB82', background: 'rgba(235,203,130,.10)', border: '1px solid rgba(235,203,130,.4)', borderRadius: '4px', padding: '0 5px' }}
+                title="This is in a teammate's mailbox, shown because the contact is shared with your team">
+                {'via ' + e.via}
               </span>
             )}
             {!(e.entity_type === entityType && e.entity_id === entityId) && (
