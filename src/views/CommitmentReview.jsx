@@ -40,6 +40,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [openId, setOpenId] = useState(null);   // waiting-on row expanded for full edit
   const [shownProposed, setShownProposed] = useState(3);   // never a wall
   // What the user sets on a card WHILE reviewing — a due date and a priority — so
   // a commitment becomes a properly-scheduled task in one step, instead of landing
@@ -154,6 +155,24 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   }
 
   // Reword a commitment in place. Save the edited title back to the row.
+  // The waiting-on rows only ever let you reword the title. Everything else —
+  // who it is on, when it is due — was fixed at extraction time and unreachable,
+  // which is why two of Dara's read 'Unknown' and stayed that way.
+  async function saveCommitment(c, patch) {
+    setBusy(c.id); setErr(null);
+    const clean = {};
+    if (patch.title !== undefined) clean.title = String(patch.title || '').trim();
+    if (patch.due_date !== undefined) clean.due_date = patch.due_date || null;
+    if (patch.owner !== undefined) clean.owner = patch.owner;
+    if (patch.owner_contact_id !== undefined) clean.owner_contact_id = patch.owner_contact_id;
+    if (clean.title === '') { setErr('Give it a title first.'); setBusy(null); return false; }
+    setRows(rs => rs.map(r => r.id === c.id ? { ...r, ...clean } : r));
+    const { error } = await supabase.from('commitments').update(clean).eq('id', c.id);
+    setBusy(null);
+    if (error) { setErr(String(error.message || error)); await load(); return false; }
+    return true;
+  }
+
   async function saveTitle(c, newTitle) {
     const t = (newTitle || '').trim();
     setEditingId(null);
@@ -381,12 +400,63 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
                     style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--accent-2)', borderRadius: 7,
                       color: 'var(--text-1)', padding: '5px 8px', fontSize: 12.5 }} />
                 ) : (
-                  <div onClick={() => setEditingId(c.id)} title="Tap to reword"
-                    style={{ fontSize: 12.5, color: 'var(--text-1)', cursor: 'text' }}>
+                  <div onClick={() => setOpenId(openId === c.id ? null : c.id)} title="Tap to edit"
+                    style={{ fontSize: 12.5, color: 'var(--text-1)', cursor: 'pointer' }}>
                     <b style={{ color: 'var(--accent-2)' }}>{responsible(c)}</b> — {c.title}
                   </div>
                 )}
                 {c.due_date && <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 2 }}>by {fmtDate(c.due_date)}</div>}
+
+                {/* FULL EDIT, in place. Who it is on, what it says, when it is
+                    due — the same three controls the proposal cards use, rather
+                    than a second lesser editor. It stays on Today because that
+                    is where the list is; sending you to another screen to fix a
+                    date is how a list stops getting worked. */}
+                {openId === c.id && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <OwnerPicker owner={c.owner} ownerContactId={c.owner_contact_id}
+                        counterpartyName={c.contact_name} contacts={contacts}
+                        onChange={(patch) => setOwner(c, patch)} />
+                    </div>
+                    <input defaultValue={c.title} id={'ct-' + c.id}
+                      style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, color: 'var(--text-1)',
+                        background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8,
+                        padding: '7px 9px', marginBottom: 8 }} />
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input type="date" defaultValue={c.due_date || ''} id={'cd-' + c.id}
+                        style={{ flex: '1 1 140px', background: 'var(--bg-base)', border: '1px solid var(--border)',
+                          borderRadius: 8, color: 'var(--text-1)', padding: '6px 8px', fontSize: 12.5 }} />
+                      <button disabled={busy === c.id} style={{ ...btn(true), padding: '6px 12px', fontSize: 12 }}
+                        onClick={async () => {
+                          const t = document.getElementById('ct-' + c.id);
+                          const d = document.getElementById('cd-' + c.id);
+                          const ok = await saveCommitment(c, { title: t ? t.value : c.title, due_date: d ? d.value : c.due_date });
+                          if (ok) setOpenId(null);
+                        }}>
+                        {busy === c.id ? 'Saving\u2026' : 'Save'}
+                      </button>
+                      <button style={{ ...btn(false), padding: '6px 10px', fontSize: 12 }} onClick={() => setOpenId(null)}>Cancel</button>
+                    </div>
+                    {c.quote && (
+                      <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.45, fontStyle: 'italic' }}>
+                        {'\u201C' + c.quote + '\u201D'}
+                      </div>
+                    )}
+                    {/* Back to where it came from. There is no route to a single
+                        call — QuoCallDetail only renders inside the Phone list —
+                        so a 'open the call' button would strand you on a screen
+                        with no way to find it. The person IS reachable, their
+                        record carries the call in its timeline, and the quote
+                        above is the evidence either way. */}
+                    {c.contact_id && (
+                      <button onClick={() => { try { window.__openContact && window.__openContact(c.contact_id); } catch (_) {} }}
+                        style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                        {'\u2197 Open ' + (c.contact_name && c.contact_name !== 'Unknown' ? c.contact_name + '\u2019s' : 'the') + ' record'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <button disabled={busy === c.id} onClick={() => removeCommitment(c)} title="Delete this item"
                 aria-label="Delete"
