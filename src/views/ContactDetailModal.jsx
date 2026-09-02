@@ -14,6 +14,7 @@ import SingleContactPicker from './SingleContactPicker';
 import QuoTextModal from './QuoTextModal';
 import FollowupDraftModal from './FollowupDraftModal';
 import ActivityTimeline from './ActivityTimeline';
+import { saveTaskFromModal, deleteTask } from '../taskSave';
 const TaskModal = lazy(() => import('./TaskModal'));
 import RelationshipIntel from './RelationshipIntel';
 import SocialLinksPanel from './SocialLinksPanel';
@@ -938,24 +939,21 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
               contacts={contacts}
               userId={userId}
               onClose={() => setEditingTask(null)}
-              onSave={async (patch) => {
-                const row = { ...patch };
-                delete row.id;
-                const { error } = await supabase.from('tasks').update(row).eq('id', editingTask.id);
-                if (error) { notify('Could not save: ' + error.message, 'error'); return; }
-                setLinkedTasks(list => list.map(x => x.id === editingTask.id ? { ...x, ...row } : x));
+              onSave={async (data) => {
+                const r = await saveTaskFromModal(editingTask.id, data);
+                if (!r.ok) { notify('Could not save: ' + r.error, 'error'); return; }
+                if (r.linkError) notify('Task saved, but contacts didn\u2019t link: ' + r.linkError, 'error');
+                setLinkedTasks(list => list.map(x => x.id === editingTask.id ? { ...x, ...r.row } : x));
                 setEditingTask(null);
-                // Today, the call list and the briefing all read tasks; tell them.
-                try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
+                notify('\u2713 Saved', 'success');
               }}
               onDelete={async () => {
                 const ok = await confirmDialog('Delete this task?');
                 if (!ok) return;
-                const { error } = await supabase.from('tasks').delete().eq('id', editingTask.id);
-                if (error) { notify('Could not delete: ' + error.message, 'error'); return; }
+                const r = await deleteTask(editingTask.id);
+                if (!r.ok) { notify('Could not delete: ' + r.error, 'error'); return; }
                 setLinkedTasks(list => list.filter(x => x.id !== editingTask.id));
                 setEditingTask(null);
-                try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
               }}
             />
           </Suspense>
