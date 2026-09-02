@@ -28,18 +28,16 @@ export default function LinkedNotes({ userId, targetType, targetId, title = 'Not
 
   const load = useCallback(async () => {
     if (!userId || !targetId) { setNotes([]); return; }
-    const { data: links, error: lErr } = await supabase.from('entity_links')
-      .select('item_id')
-      .eq('user_id', userId).eq('item_type', 'note')
-      .eq('target_type', targetType).eq('target_id', targetId);
-    if (lErr) { setErr(lErr.message); setNotes([]); return; }
-    const ids = (links || []).map(l => l.item_id);
-    if (!ids.length) { setNotes([]); return; }
-    const { data, error } = await supabase.from('notes')
-      .select('id,title,body,kind,pinned,created_at,updated_at')
-      .in('id', ids).order('updated_at', { ascending: false });
+    // Notes reach a contact through entity_links, and entity_links is own-only —
+    // so filtering by user_id here meant a teammate's note could never appear no
+    // matter what the notes policy said. On a contact SHARED to your team the
+    // server decides instead: everyone's notes, each stamped with who wrote it.
+    // On a private contact it still returns only your own.
+    const { data, error } = await supabase.rpc('linked_notes_for', {
+      p_target_type: targetType, p_target: targetId,
+    });
     if (error) { setErr(error.message); setNotes([]); return; }
-    setNotes(data || []);
+    setNotes(Array.isArray(data) ? data : []);
   }, [userId, targetType, targetId]);
 
   useEffect(() => { load(); }, [load]);
@@ -143,8 +141,11 @@ export default function LinkedNotes({ userId, targetType, targetId, title = 'Not
                 <span style={{ fontSize: 10.5, color: 'var(--text-3)', flex: '1 1 auto' }}>
                   {new Date(n.updated_at || n.created_at).toLocaleDateString()}
                   {n.kind === 'journal' ? ' · journal' : n.kind === 'recording' ? ' · call transcript' : ''}
+                  {/* Whose note this is. Unattributed on a shared record, a
+                      colleague's note reads as your own memory. */}
+                  {n.author ? <span style={{ color: '#EBCB82' }}>{' \u00B7 ' + n.author}</span> : null}
                 </span>
-                {n.kind !== 'journal' && n.kind !== 'recording' && (
+                {n.is_mine !== false && n.kind !== 'journal' && n.kind !== 'recording' && (
                   <button onClick={() => { setEditing(n.id); setEditBody(n.body || ''); }}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Edit</button>
                 )}
