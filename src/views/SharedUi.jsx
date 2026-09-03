@@ -368,7 +368,8 @@ export function useDictation(onFinal) {
   const wantRef = useRef(false);      // does the user still want to be listening?
   const timerRef = useRef(null);      // pending auto-restart
   const startedAtRef = useRef(0);
-  const failsRef = useRef(0);         // consecutive fast failures (runaway guard)
+  const failsRef = useRef(0);                 // consecutive fast failures (runaway guard)
+  const sessionFinalRef = useRef('');         // this session's final text, for idempotent appends
   const onFinalRef = useRef(onFinal);
   useEffect(() => { onFinalRef.current = onFinal; });
   const supported = typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -385,10 +386,22 @@ export function useDictation(onFinal) {
     teardown(); // never leave a previous recognizer holding the mic
     let rec; try { rec = new SR(); } catch (_) { return; }
     rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true;
+    // Same Android quirk as the note dictation: resultIndex is not reliable and
+    // an already-final result comes back again, so appending the delta from it
+    // repeats the sentence. Rebuild the session's whole final transcript and
+    // emit only the new tail. sessionFinalRef resets per session, which matters
+    // here because onend RESTARTS recognition and the new session counts from
+    // zero again.
+    sessionFinalRef.current = '';
     rec.onresult = (ev) => {
-      let f = '', it = '';
-      for (let i = ev.resultIndex; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) f += r[0].transcript; else it += r[0].transcript; }
-      if (f) { failsRef.current = 0; if (onFinalRef.current) onFinalRef.current(f); }
+      let allFinal = '', it = '';
+      for (let i = 0; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) allFinal += r[0].transcript; else it += r[0].transcript; }
+      const prev = sessionFinalRef.current || '';
+      if (allFinal.length > prev.length) {
+        const delta = allFinal.slice(prev.length);
+        sessionFinalRef.current = allFinal;
+        if (delta.trim()) { failsRef.current = 0; if (onFinalRef.current) onFinalRef.current(delta); }
+      }
       setInterim(it);
     };
     rec.onerror = (e) => {

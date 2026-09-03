@@ -61,6 +61,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
   const [interim, setInterim] = useState('');
   const [cleaning, setCleaning] = useState(false);
   const recRef = useRef(null);
+  const sessionFinalRef = useRef('');
   const speechSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
   function startDictation() {
@@ -70,18 +71,33 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
     rec.lang = 'en-US';
     rec.continuous = true;
     rec.interimResults = true;
+    // Android Chrome does not honour ev.resultIndex the way the spec implies: it
+    // re-delivers results that were already final, and merges an utterance into
+    // one entry whose transcript keeps GROWING. Appending the delta from
+    // resultIndex therefore re-appends the whole sentence on every event, which
+    // is what produced "Michael Michael Michael called Michael called me today".
+    //
+    // So do not append. Rebuild the whole final transcript from every result
+    // each time and emit only what is new — idempotent, so a re-delivered result
+    // changes nothing.
+    sessionFinalRef.current = '';
     rec.onresult = (ev) => {
-      let finalText = '', interimText = '';
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      let allFinal = '', interimText = '';
+      for (let i = 0; i < ev.results.length; i++) {
         const res = ev.results[i];
-        if (res.isFinal) finalText += res[0].transcript;
+        if (res.isFinal) allFinal += res[0].transcript;
         else interimText += res[0].transcript;
       }
-      if (finalText) {
-        setBody(prev => {
-          const sep = (!prev || prev.endsWith(' ') || prev.endsWith('\n')) ? '' : ' ';
-          return prev + sep + finalText.trim() + ' ';
-        });
+      const prevFinal = sessionFinalRef.current || '';
+      if (allFinal.length > prevFinal.length) {
+        const delta = allFinal.slice(prevFinal.length).trim();
+        sessionFinalRef.current = allFinal;
+        if (delta) {
+          setBody(prev => {
+            const sep = (!prev || prev.endsWith(' ') || prev.endsWith('\n')) ? '' : ' ';
+            return prev + sep + delta + ' ';
+          });
+        }
       }
       setInterim(interimText);
     };
