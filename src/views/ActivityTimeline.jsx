@@ -298,6 +298,19 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
   }
   useEffect(() => { loadReminders(); /* eslint-disable-next-line */ }, [entityType, entityId, isContact]);
 
+  // Re-read when a task changes anywhere.
+  //
+  // Editing a follow-up from this very strip left it showing the OLD due date:
+  // the save fired prism:tasks-changed and nothing here was listening, so a task
+  // moved two days into the future still read 'overdue 2d' until the whole app
+  // was restarted. The list that owns the edit has to be the list that refreshes.
+  useEffect(() => {
+    const onChanged = () => loadReminders();
+    window.addEventListener('prism:tasks-changed', onChanged);
+    return () => window.removeEventListener('prism:tasks-changed', onChanged);
+    /* eslint-disable-next-line */
+  }, [entityType, entityId, isContact]);
+
   async function completeReminder(t) {
     await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString(), status: 'done' }).eq('id', t.id);
     setReminders(prev => prev.filter(x => x.id !== t.id));
