@@ -74,6 +74,7 @@ const CONTACT_TYPES = [
   { id: 'misc',               label: 'Misc',                 icon: '🗂️', category: 'Other' },
   { id: 'other',              label: 'Other',                icon: '❓', category: 'Other' },
 ];
+const NAME_LINK = { background:'none', border:'none', padding:0, textAlign:'left', cursor:'pointer', color:'inherit', font:'inherit', textDecorationLine:'underline', textDecorationStyle:'dotted', textUnderlineOffset:'3px' };
 const CONTACT_TYPE_LABELS = Object.fromEntries(CONTACT_TYPES.map(t => [t.id, t.label]));
 
 // Live, expandable type list sourced from the contact_types table (falls back to the
@@ -1570,7 +1571,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           <div className="ww-nrow">
             <div className="ww-av">{(reachNext.c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
             <div className="nm">
-              <div className="n">{reachNext.c.name}</div>
+              {/* The name opens the record — the thing you read is what you reach for. */}
+              <button type="button" className="n" style={NAME_LINK} title="Open this contact's record"
+                onClick={(e)=>{ e.stopPropagation(); setDetailContact(reachNext.c); }}>{reachNext.c.name}</button>
               <div className="m">{[CONTACT_TYPE_LABELS[reachNext.c.type]||reachNext.c.type].filter(Boolean).join(' · ')} · <em>{reachNext.why}</em></div>
             </div>
             {(() => { const rp = profileByContact.get(reachNext.c.id); return rp?.primary_letter ? <span className="ww-disc" style={{fontSize:16}}>{rp.primary_letter}{rp.secondary_letter?'/'+rp.secondary_letter:''}</span> : null; })()}
