@@ -250,6 +250,39 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   // moot by the time anyone reviews — measured 91% dismissed. Keep them out of the
   // queue entirely rather than making you hand-dismiss stale work.
   const proposed = rows.filter(r => r.status === 'proposed' && (r.fuse || 'near') !== 'immediate');
+
+  // Group by the conversation they came out of. Not every call should leave
+  // work behind — most are just a conversation — and deciding that ONCE per
+  // call is the difference between a queue you clear and one you abandon.
+  // 24 proposals across 20 conversations: almost every call is a single
+  // decision, which is why the per-item review felt heavier than it was.
+  // NOT a useMemo: this sits below `if (!rows) return null`, so a hook here runs
+  // conditionally and React tears the whole screen down — the smoke gate caught
+  // exactly that. Two dozen rows do not need memoising anyway.
+  const byCall = (() => {
+    const m = new Map();
+    for (const c of proposed) {
+      const k = c.call_id || ('solo:' + c.id);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(c);
+    }
+    return [...m.entries()];
+  })();
+
+  // 'Summary only' — the call and its summary already live on the contact
+  // record, so this drops the follow-ups and keeps everything else. Nothing is
+  // lost that was not going to be noise.
+  async function summaryOnly(items) {
+    if (!items.length) return;
+    setBusy(items[0].id); setErr(null);
+    const ids = items.map(i => i.id);
+    setRows(rs => rs.map(r => ids.includes(r.id) ? { ...r, status: 'dismissed' } : r));
+    const { error } = await supabase.from('commitments')
+      .update({ status: 'dismissed', decided_at: new Date().toISOString() }).in('id', ids);
+    setBusy(null);
+    if (error) { setErr(String(error.message || error)); await load(); return; }
+    try { window.__notify && window.__notify('Kept the summary \u2014 no follow-ups created.', 'success'); } catch (_) {}
+  }
   const waiting = rows.filter(r => r.status === 'accepted' && r.owner === 'them');
   const late = waiting.filter(r => r.due_date && daysLate(r.due_date) > 0);
   const onTime = waiting.filter(r => !late.includes(r));
@@ -339,9 +372,30 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
       {proposed.length > 0 && (
         <>
           <div style={{ ...lab, marginBottom: 7, marginTop: late.length ? 14 : 0 }}>
-            From your calls — {Math.min(shownProposed, proposed.length)} of {proposed.length} to review
+            From your calls — {byCall.length} conversation{byCall.length === 1 ? '' : 's'} to file
           </div>
-          {proposed.slice(0, shownProposed).map(c => renderCard(c, { editable: true, children: (
+          {/* One decision per conversation, asked where you know the answer.
+              Most calls are just a conversation and should leave a summary and
+              nothing else; a few carry real work. Taking that call once, per
+              call, is lighter than judging every extracted line — and the
+              summary is already on the contact record either way, so 'summary
+              only' loses nothing. */}
+          {byCall.slice(0, 6).map(([callKey, items]) => (
+            <div key={callKey} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '9px 11px', marginBottom: 9 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-1)', flex: '1 1 auto', minWidth: 0 }}>
+                  {items[0].contact_name}
+                  <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>
+                    {' \u00B7 ' + items.length + ' follow-up' + (items.length === 1 ? '' : 's') + ' found'}
+                  </span>
+                </span>
+                <button disabled={busy === items[0].id} onClick={() => summaryOnly(items)}
+                  title="Keep the call and its summary on the record, create no tasks"
+                  style={{ ...btn(false), padding: '5px 10px', fontSize: 11.5 }}>
+                  {busy === items[0].id ? 'Filing\u2026' : 'Summary only'}
+                </button>
+              </div>
+              {items.map(c => renderCard(c, { editable: true, children: (
             <>
               {/* Set WHEN and how urgent right here — for a task you'll own so it
                   lands scheduled, and for one you're tracking so you know when to
@@ -381,7 +435,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
               </button>
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
             </>
-          ) }))}
+              ) }))}
+            </div>
+          ))}
         </>
       )}
 
@@ -464,11 +520,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
               <button disabled={busy === c.id} onClick={() => dismiss(c)} style={{ ...btn(false), padding: '5px 10px', fontSize: 11 }}>Done</button>
             </div>
           ))}
-          {proposed.length > shownProposed && (
+          {byCall.length > 6 && (
             <div style={{ display:'flex', gap:8, justifyContent:'center', marginTop:8 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShownProposed(n => n + 3)}>
-                Show 3 more ({proposed.length - shownProposed} left)
-              </button>
+              <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                {(byCall.length - 6) + ' more conversation' + (byCall.length - 6 === 1 ? '' : 's') + ' below once these are filed'}
+              </span>
             </div>
           )}
         </>
