@@ -34,11 +34,34 @@ const glyphs = {
   spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>,
 };
 
-const Icon = ({ name, active }) => (
-  <svg viewBox="0 0 24 24" width="21" height="21" fill="none"
-    stroke={active ? GOLD : 'rgba(246,241,231,0.55)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+// One room, one colour.
+//
+// The Rooms menu earns its coherence by giving each room a single accent and
+// using it three ways — the tinted chip behind the glyph, the hairline, the
+// badge. The bar did none of that: six flat grey glyphs and gold-when-active,
+// which is a different product one tap inside the room.
+//
+// Every glyph here now wears the ROOM's accent, not six colours of its own.
+// Six bright tabs would be louder than the tiles and would break the rule that
+// makes them work — a colour has to mean one thing. Inside the Nerve Center,
+// sage means Nerve Center, and the whole bar says so at a glance. Intensity,
+// not hue, carries which section you are on.
+const Icon = ({ name, active, accent }) => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+    stroke={active ? accent : accent + 'A6'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     {glyphs[name] || glyphs.star}
   </svg>
+);
+
+// The chip from the Rooms drawer, sized for a bar. 40px there, 32 here — six of
+// them have to sit on a phone beside their labels.
+const Chip = ({ children, active, accent }) => (
+  <span style={{ width: 32, height: 32, borderRadius: 10, display: 'grid', placeItems: 'center',
+    background: active ? accent + '24' : 'transparent',
+    border: '1px solid ' + (active ? accent + '59' : 'transparent'),
+    transition: 'background .15s, border-color .15s' }}>
+    {children}
+  </span>
 );
 
 export default function ModeBar({ modeId, currentView, currentSub, onNavigate, onHome, badges = {} }) {
@@ -58,11 +81,15 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
 
   const mode = modeById(modeId);
   if (!mode) return null;
+  const accent = mode.accent || GOLD;
 
   return (
     <div ref={barRef} style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 40,
       background: 'rgba(16,13,9,0.94)', backdropFilter: 'blur(12px)',
-      borderTop: '1px solid rgba(203,163,92,0.28)', paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
+      borderTop: '1px solid ' + accent + '3D', paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
+      {/* The same 2px gradient hairline the room tiles wear, fading at both
+          ends. It is the thread that ties the bar to the tile you tapped. */}
+      <div style={{ height: 2, background: 'linear-gradient(90deg, transparent, ' + accent + '88, transparent)' }} />
       <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', alignItems: 'stretch' }}>
         {/* Home removed from the bar (Dara): the sections ARE the bar. The escape
             back to the hub/rooms still lives in the top nav (logo → menu, and the
@@ -81,25 +108,40 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
             const key = sub ? `${v}:${sub}` : v;
             // active when we're on this view AND (no sub required, or the sub matches)
             const active = v === currentView && (!sub || sub === currentSub);
-            const badge = badges[v];
+            // A badge is either a number, or { n, urgent } when the caller means
+            // "this one actually needs you". Plain numbers stay quiet.
+            const raw = badges[v];
+            const n = typeof raw === 'object' && raw ? (raw.n || 0) : (raw || 0);
+            const urgent = typeof raw === 'object' && raw ? !!raw.urgent : false;
             return (
               <button key={key} onClick={() => onNavigate(v, sub)}
                 style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  justifyContent: 'center', gap: 3, padding: '9px 6px 8px', flex: 1, minWidth: 0,
+                  justifyContent: 'center', gap: 4, padding: '13px 6px 9px', flex: 1, minWidth: 0,
                   background: 'none', border: 'none', cursor: 'pointer' }}>
-                <Icon name={glyph} active={active} />
+                <Chip active={active} accent={accent}>
+                  <Icon name={glyph} active={active} accent={accent} />
+                </Chip>
                 <span style={{ fontSize: 10, fontWeight: active ? 800 : 600,
-                  color: active ? GOLD : 'rgba(246,241,231,0.6)', whiteSpace: 'nowrap' }}>
+                  color: active ? accent : 'rgba(246,241,231,0.55)', whiteSpace: 'nowrap' }}>
                   {label}
                 </span>
-                {badge > 0 && (
-                  <span style={{ position: 'absolute', top: 4, right: '50%', marginRight: -18,
-                    background: '#C9563F', color: '#fff', fontSize: 9, fontWeight: 800,
-                    borderRadius: 100, padding: '1px 5px', minWidth: 15, textAlign: 'center' }}>
-                    {badge > 99 ? '99+' : badge}
+                {n > 0 && (
+                  // EMBER IS NOT AN INVENTORY COLOUR. Three permanent red pills
+                  // reading 39 / 99+ / 99+ spent the one colour that means "this
+                  // needs you now" on counts that are simply how much mail exists.
+                  // By the time something is genuinely urgent, red says nothing.
+                  // Counts wear the room's accent; ember is kept for urgent.
+                  // Clear of the chip. At -20 the pill sat ON the active chip's
+                  // corner and the two borders muddled into each other.
+                  <span style={{ position: 'absolute', top: 3, right: '50%', marginRight: -25,
+                    background: urgent ? 'rgba(201,86,63,0.18)' : accent + '26',
+                    border: '1px solid ' + (urgent ? 'rgba(201,86,63,0.55)' : accent + '4D'),
+                    color: urgent ? '#E99678' : accent,
+                    fontSize: 9, fontWeight: 800, borderRadius: 100, padding: '0 5px',
+                    minWidth: 15, textAlign: 'center', lineHeight: '15px' }}>
+                    {n > 99 ? '99+' : n}
                   </span>
                 )}
-                {active && <span style={{ position: 'absolute', bottom: 0, width: 22, height: 2.5, background: GOLD, borderRadius: 2 }} />}
               </button>
             );
           })}

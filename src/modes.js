@@ -46,7 +46,11 @@ export const MODES = [
     label: 'Library',
     tag: 'Everything I know',
     glyph: 'library',
-    accent: '#8FB8A8',
+    // Was #8FB8A8 — the same sage as the Nerve Center. Once the accent colours
+    // the whole room and not just its tile, two rooms wearing one colour means
+    // the colour identifies nothing. Teal is cooler and more saturated than the
+    // sage, and greener than the Deals slate, so all six hues stay separable.
+    accent: '#5EA9B8',
     home: 'notes',
     resume: true,
     bar: [
