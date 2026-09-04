@@ -55,10 +55,17 @@ function toDate(v: any): string | null {
   const s = String(v).trim();
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); // M/D/YYYY
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (m) {
-    let [_, mo, d, y] = m;
+    let [_, a, b, y] = m;
     if (y.length === 2) y = "20" + y;
+    // The sheet mixes M/D/Y and D/M/Y — "13/08/2025" produced 2025-13-08 and
+    // Postgres rejected it as month 13. If the first number cannot be a month,
+    // the pair is the other way round. Ambiguous dates (both <= 12) stay M/D/Y,
+    // which is what the rest of the sheet uses.
+    let mo = a, d = b;
+    if (parseInt(a, 10) > 12 && parseInt(b, 10) <= 12) { mo = b; d = a; }
+    if (parseInt(mo, 10) > 12 || parseInt(d, 10) > 31) return null;
     return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
   const dt = new Date(s);
