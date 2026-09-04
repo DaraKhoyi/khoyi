@@ -50,9 +50,26 @@ function toNum(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 // Google Sheets returns dates as strings (formatted) — normalize common shapes to YYYY-MM-DD.
-function toDate(v: any): string | null {
+function toDate(v: any, fallbackYear?: number): string | null {
   if (!v) return null;
+  // A real date cell arrives as a Date once cellDates is on. Use its parts
+  // directly — going through toISOString() would shift the day across the
+  // timezone boundary for anything before 00:00 UTC.
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    const y = v.getFullYear(), mo = String(v.getMonth() + 1).padStart(2, "0"), d = String(v.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${d}`;
+  }
   const s = String(v).trim();
+  // "12/30" — the sheet holds some dates as text with no year at all. It belongs
+  // to the tab it was read from.
+  const md = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (md && fallbackYear) {
+    const mo = parseInt(md[1], 10), d = parseInt(md[2], 10);
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${fallbackYear}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+    return null;
+  }
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
@@ -121,7 +138,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: false, error: `Could not read the sheet from Drive (${r.status}).` }),
           { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
       }
-      wb = XLSX.read(new Uint8Array(await r.arrayBuffer()), { type: "array", cellDates: false });
+      wb = XLSX.read(new Uint8Array(await r.arrayBuffer()), { type: "array", cellDates: true });
     }
 
     for (const { tab, year } of tabMap) {
@@ -133,7 +150,13 @@ Deno.serve(async (req) => {
       // below expects. With raw:true a date arrives as the Excel serial 46267
       // and Postgres reads that as the year 46267: "time zone displacement out
       // of range". Numbers still coerce fine downstream.
-      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null }) as any[][];
+      // raw:true + cellDates:true gives real Date objects for date cells and leaves
+      // text cells as text. raw:false was worse than the serial problem it fixed:
+      // it applies the CELL FORMAT, and cells formatted "mm/dd" came out as
+      // "12/30" with the year stripped, which silently moved dates to the wrong
+      // year. The year is not recoverable from the formatted string; it is from
+      // the Date object.
+      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as any[][];
       if (rows.length < 2) { summary.push({ tab, year, rows: 0 }); continue; }
 
       // header name -> column index
@@ -161,11 +184,11 @@ Deno.serve(async (req) => {
         records.push({
           year, trans_id: transId, agent_name_raw: txt(agent) || "(unnamed)", source_tab: tab, source_row: ri + 1,
           address: txt(col(r, "Street Number and Name")), buy_side: !!txt(col(r, "Buy")), list_side: !!txt(col(r, "List")),
-          gross_sale: gs, gross_commission: gc, date_received: toDate(col(r, "Date Rcvd")),
+          gross_sale: gs, gross_commission: gc, date_received: toDate(col(r, "Date Rcvd"), year),
           amount_to_agent: toNum(col(r, "Amount to Pay Agent")), kind,
           lender: txt(col(r, "Lender")), office_fee: toNum(col(r, "Gross Office Fee") ?? col(r, "Office Fee Share")),
           referral_1: toNum(col(r, "Referral (1)")), rog_corp_cost: toNum(col(r, "ROG Corp. Cost")),
-          tc_payment: toNum(col(r, "TC payment")), date_paid: toDate(col(r, "Date Paid (ALEX)")),
+          tc_payment: toNum(col(r, "TC payment")), date_paid: toDate(col(r, "Date Paid (ALEX)"), year),
           notes: txt(col(r, "Notes include who referals are paid to")), title_agent: txt(col(r, "Title Agent")),
           raw_row: raw,
         });
@@ -176,9 +199,25 @@ Deno.serve(async (req) => {
         const { data: aid } = await supabase.rpc("resolve_agent_id", { p_name: rec.agent_name_raw });
         rec.agent_id = aid || null;
       }
+      // A Trans ID can appear twice in the sheet — 279 does in Paid 2026 — and
+      // Postgres refuses an upsert that would touch the same row twice
+      // ("ON CONFLICT DO UPDATE command cannot affect row a second time"). One
+      // duplicated line was failing the ENTIRE year. Keep the last occurrence,
+      // which is the lower row and the later edit, and report the collision
+      // rather than hiding it.
+      const seen = new Map<string, any>();
+      const collisions: number[] = [];
+      for (const r of records) {
+        const k = `${r.year}:${r.trans_id}`;
+        if (seen.has(k)) collisions.push(r.trans_id);
+        seen.set(k, r);
+      }
+      const deduped = [...seen.values()];
+      if (collisions.length) summary.push({ tab, year, note: `duplicate Trans IDs in the sheet: ${[...new Set(collisions)].join(", ")}` });
+
       // upsert keyed on (year, trans_id)
       const { error: upErr } = await supabase.from("brokerage_transactions").upsert(
-        records.map((r) => ({ ...r, imported_at: new Date().toISOString() })),
+        deduped.map((r) => ({ ...r, imported_at: new Date().toISOString() })),
         { onConflict: "year,trans_id" },
       );
       if (upErr) { summary.push({ tab, year, error: upErr.message }); continue; }
