@@ -14,6 +14,7 @@
 //   • Agent names resolve to agent_id via public.resolve_agent_id() (self-healing).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
