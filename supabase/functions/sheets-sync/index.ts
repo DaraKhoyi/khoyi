@@ -121,7 +121,12 @@ Deno.serve(async (req) => {
       // 3) pull the whole tab out of the workbook we already have
       const ws = wb.Sheets[tab];
       if (!ws) { summary.push({ tab, year, error: `tab not found (present: ${Object.keys(wb.Sheets).join(", ")})` }); continue; }
-      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as any[][];
+      // raw:false gives FORMATTED values — the same thing the Sheets API returned
+      // with dateTimeRenderOption=FORMATTED_STRING, which is what the parser
+      // below expects. With raw:true a date arrives as the Excel serial 46267
+      // and Postgres reads that as the year 46267: "time zone displacement out
+      // of range". Numbers still coerce fine downstream.
+      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null }) as any[][];
       if (rows.length < 2) { summary.push({ tab, year, rows: 0 }); continue; }
 
       // header name -> column index
