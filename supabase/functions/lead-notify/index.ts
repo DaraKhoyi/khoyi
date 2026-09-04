@@ -145,12 +145,16 @@ Deno.serve(async (req) => {
     if (!agentBy.size) return json({ ok: true, considered: 0, note: "no agents with logins" });
 
     // Leads first seen in the last 6 hours that have not been judged yet. The
-    // window keeps a backlog from stampeding everyone on first run.
+    // window keeps a backlog from stampeding everyone on first run — but during
+    // the shadow run a wider pass is useful, so Dara has real examples to read
+    // straight away instead of waiting for the next lead to land. Sending is off
+    // in shadow mode, so a wide look-back costs nothing.
+    const hours = Math.min(Number(body.hours) || 6, 24 * 30);
     const { data: leads } = await admin.from("lead_concierge")
       .select("id, user_id, lead_name, lead_email, lead_phone, channel, inbound_text, first_seen_at, contact_id")
       .eq("status", "pending")
-      .gte("first_seen_at", new Date(Date.now() - 6 * 3600 * 1000).toISOString())
-      .order("first_seen_at", { ascending: false }).limit(200);
+      .gte("first_seen_at", new Date(Date.now() - hours * 3600 * 1000).toISOString())
+      .order("first_seen_at", { ascending: false }).limit(Number(body.limit) || 200);
 
     const out = { considered: 0, would_send: 0, suppressed: 0, sent: 0, shadow };
     for (const lead of leads || []) {
