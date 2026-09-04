@@ -1776,3 +1776,56 @@ input[type="radio"], input[type="range"], select, progress {
   .fade-up, .fade-up-2, .fade-up-3 { animation: none; }
   .live-dot { animation: none; }
 }
+
+
+/* ── Room colour: the accent of the room you are standing in ──────────────
+   Published by ModeBar as --room-accent. Everything inside a room can wear it,
+   so the bar is not the only thing that knows where you are. Falls back to gold
+   outside a room, which is every screen that has no bar. */
+
+/* The hairline under the bar and beneath each room page title. It drifts —
+   slowly, once every twelve seconds — the same "moving gold" idea the brand
+   already uses, in the room's own colour. Slow is what makes it read as
+   premium rather than as a loading bar. */
+@keyframes roomGlide { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+.room-hairline { animation: roomGlide 12s linear infinite; }
+
+/* The lit chip in the bar breathes. Barely — a 6% swing over four seconds. It
+   should read as alive when you look at it, and be invisible when you do not. */
+@keyframes chipBreathe {
+  0%, 100% { box-shadow: 0 0 0 3px var(--room-accent-16, rgba(203,163,92,.12)), 0 4px 18px -4px var(--room-accent-30, rgba(203,163,92,.3)); }
+  50%      { box-shadow: 0 0 0 4px var(--room-accent-16, rgba(203,163,92,.12)), 0 6px 24px -4px var(--room-accent-30, rgba(203,163,92,.45)); }
+}
+.mb-chip-lit { animation: chipBreathe 4.5s ease-in-out infinite; }
+
+/* A page inside a room announces the room: the title's icon and the rule under
+   it take the room's colour instead of the same gold every screen wears. */
+.room-rule {
+  height: 1px; border: 0; margin: 12px 0 0;
+  background: linear-gradient(90deg, var(--room-accent, #C5A95E), var(--room-accent-30, rgba(197,169,94,.3)) 45%, transparent);
+}
+.room-ink { color: var(--room-accent, var(--accent)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .room-hairline, .mb-chip-lit { animation: none; }
+}
+
+
+/* THE ROOM'S LIGHT.
+   The room tiles are lit by a soft bloom in their own colour, up in the top
+   corner. Carrying that onto the page is what makes a screen feel like it is
+   INSIDE the room rather than merely tinted by it — the same light source,
+   continued past the tap.
+   One rule covers every page: outside a room --room-accent-16 is unset, the
+   fallback is transparent, and the bloom simply is not there. */
+.main-content { position: relative; }
+.main-content::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 320px;
+  background: radial-gradient(ellipse 130% 100% at 88% 0%, var(--room-accent-16, transparent), transparent 62%);
+  pointer-events: none; z-index: 0;
+}
+.main-content > * { position: relative; z-index: 1; }
+
+/* The eyebrow above a room title takes the room's colour too. It is the first
+   word on the screen and it should say where you are. */
+.room-eyebrow { color: var(--room-accent, var(--accent)); }

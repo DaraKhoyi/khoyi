@@ -56,10 +56,15 @@ const Icon = ({ name, active, accent }) => (
 // The chip from the Rooms drawer, sized for a bar. 40px there, 32 here — six of
 // them have to sit on a phone beside their labels.
 const Chip = ({ children, active, accent }) => (
-  <span style={{ width: 32, height: 32, borderRadius: 10, display: 'grid', placeItems: 'center',
-    background: active ? accent + '24' : 'transparent',
-    border: '1px solid ' + (active ? accent + '59' : 'transparent'),
-    transition: 'background .15s, border-color .15s' }}>
+  <span className={active ? 'mb-chip mb-chip-lit' : 'mb-chip'}
+    style={{ width: 32, height: 32, borderRadius: 10, display: 'grid', placeItems: 'center',
+      background: active ? accent + '24' : 'transparent',
+      border: '1px solid ' + (active ? accent + '59' : 'transparent'),
+      // The glow. A tinted square says "selected"; a square that throws light
+      // says "you are here" from across the room, which is what a bar you use
+      // one-handed at a glance actually needs.
+      boxShadow: active ? '0 0 0 3px ' + accent + '14, 0 4px 18px -4px ' + accent + '80' : 'none',
+      transition: 'background .18s, border-color .18s, box-shadow .18s' }}>
     {children}
   </span>
 );
@@ -79,6 +84,25 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
     return () => { window.removeEventListener('resize', set); document.documentElement.style.setProperty('--modebar-h', '0px'); };
   });
 
+  // The room's colour, published to CSS so the six pages inside the room can
+  // wear it too. Without this the bar was the only thing that knew which room
+  // you were in, and every page header stayed gold — the seam the whole
+  // exercise is meant to remove.
+  useEffect(() => {
+    const m = modeById(modeId);
+    const root = document.documentElement;
+    if (m && m.accent) {
+      root.style.setProperty('--room-accent', m.accent);
+      root.style.setProperty('--room-accent-16', m.accent + '29');
+      root.style.setProperty('--room-accent-30', m.accent + '4D');
+    }
+    return () => {
+      root.style.removeProperty('--room-accent');
+      root.style.removeProperty('--room-accent-16');
+      root.style.removeProperty('--room-accent-30');
+    };
+  }, [modeId]);
+
   const mode = modeById(modeId);
   if (!mode) return null;
   const accent = mode.accent || GOLD;
@@ -89,7 +113,9 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
       borderTop: '1px solid ' + accent + '3D', paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
       {/* The same 2px gradient hairline the room tiles wear, fading at both
           ends. It is the thread that ties the bar to the tile you tapped. */}
-      <div style={{ height: 2, background: 'linear-gradient(90deg, transparent, ' + accent + '88, transparent)' }} />
+      <div className="room-hairline" style={{ height: 2,
+        background: 'linear-gradient(90deg, transparent, ' + accent + '00 12%, ' + accent + 'CC 50%, ' + accent + '00 88%, transparent)',
+        backgroundSize: '220% 100%' }} />
       <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', alignItems: 'stretch' }}>
         {/* Home removed from the bar (Dara): the sections ARE the bar. The escape
             back to the hub/rooms still lives in the top nav (logo → menu, and the

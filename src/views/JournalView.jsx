@@ -270,8 +270,8 @@ function JournalView({ userId }) {
             style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid var(--border)', background: searchOpen ? 'var(--accent)' : 'var(--bg-hover)', color: searchOpen ? 'var(--bg-base)' : 'var(--text-2)', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="search" size={16} /></button>
         </div>
         <div className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 700, display: 'inline-block', marginBottom: '2px' }}>Daily Journal</div>
-        <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px', minWidth:0 }}><Icon name="journal" size={24} style={{color:'var(--accent)',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Mindset.</span></h2>
-        <hr className="gold-hairline" style={{margin:'12px 0 0'}} />
+        <h2 style={{ fontSize: '30px', fontWeight: 300, fontFamily: 'Fraunces, serif', letterSpacing: '-0.02em', margin: 0, display:'flex', alignItems:'center', gap:'10px', minWidth:0 }}><Icon name="journal" size={24} style={{color:'var(--room-accent, var(--accent))',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Mindset.</span></h2>
+        <hr className="room-rule" />
         <Tip id="capture" label="Capture beats recall">The best agents run on <b>captured</b> details, not remembered ones. A 20-second note today — what they said, what they want — turns a cold follow-up into a warm one next week. Everything you log trains Prism, too.</Tip>
         {!searchOpen && (
           <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
