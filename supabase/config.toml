@@ -229,6 +229,9 @@ verify_jwt = false
 [functions.email-unsubscribe]
 verify_jwt = true
 
+[functions.lead-notify]
+verify_jwt = false
+
 [functions.roster-sync]
 verify_jwt = false
 

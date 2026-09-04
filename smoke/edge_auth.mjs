@@ -39,6 +39,7 @@ if (!existsSync(ROOT)) { console.log("EDGE AUTH GUARD: no functions directory");
 // job is to serve someone with no account, protected by an unguessable token.
 const ALLOWED = new Map([
   // pg_cron / server-to-server only
+  ["lead-notify", "pg_cron only; sweeps every agent's new leads. Rejects anything without the service key or QCP token, and takes the recipient from the lead row it read, never from the request body"],
   ["disc-batch-nightly", "pg_cron only; iterates every user by design"],
   ["usage-report-monthly", "pg_cron only; reports across all users"],
   ["google-contacts-sync", "runs per-account from a cron sweep"],
