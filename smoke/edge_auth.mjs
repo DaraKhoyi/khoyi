@@ -38,6 +38,11 @@ if (!existsSync(ROOT)) { console.log("EDGE AUTH GUARD: no functions directory");
 // and is not reachable with a user token; or it is a public portal whose whole
 // job is to serve someone with no account, protected by an unguessable token.
 const ALLOWED = new Map([
+  ['notify-optout', 'One-click unsubscribe from a lead-notification email. The caller is a mail ' +
+    'client, not a session, so the random token IS the authorisation — it maps to exactly one ' +
+    'notification_prefs row. The only thing it can do is set email_new_leads = false: it cannot ' +
+    'read the agent\'s data, act as them, or turn anything back on. A leaked token is worth ' +
+    'silencing one notification the person can have restored by asking.'],
   // pg_cron / server-to-server only
   ["lead-notify", "pg_cron only; sweeps every agent's new leads. Rejects anything without the service key or QCP token, and takes the recipient from the lead row it read, never from the request body"],
   ["disc-batch-nightly", "pg_cron only; iterates every user by design"],
