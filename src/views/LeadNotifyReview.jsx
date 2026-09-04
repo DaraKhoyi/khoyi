@@ -21,7 +21,10 @@ function when(ts) {
 export default function LeadNotifyReview() {
   const [rows, setRows] = useState(null);
   const [rt, setRt] = useState(null);
-  const [tab, setTab] = useState('would_send');
+  // Everything, by default. Dara asked to judge the whole list, and the
+  // suppressed rows are the half that decides whether the filter is too
+  // aggressive — showing four of ninety-four hides the question being asked.
+  const [tab, setTab] = useState('all');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -46,6 +49,26 @@ export default function LeadNotifyReview() {
     if (error) { try { window.__notify && window.__notify('Could not switch: ' + error.message, 'error'); } catch (_) {} return; }
     load();
     try { window.__notify && window.__notify('Live. Agents will now receive new-lead emails.', 'success'); } catch (_) {}
+  };
+
+  // Two buttons, one meaning: this sender is a lead, or is not. The verdict is
+  // recorded AND turned into a rule, so it changes what happens next time
+  // instead of being an opinion in a log nobody reads.
+  const judge = async (row, verdict) => {
+    setRows(rs => (rs || []).map(x => x.id === row.id ? { ...x, verdict } : x));  // instant
+    const { data, error } = await supabase.rpc('lead_notify_verdict', { p_id: row.id, p_verdict: verdict });
+    if (error || !data?.ok) {
+      setRows(rs => (rs || []).map(x => x.id === row.id ? { ...x, verdict: row.verdict || null } : x));
+      try { window.__notify && window.__notify('Could not save that: ' + ((error && error.message) || data?.error || ''), 'error'); } catch (_) {}
+      return;
+    }
+    try {
+      window.__notify && window.__notify(
+        verdict === 'true_lead'
+          ? 'Noted — mail from ' + (row.lead_email || 'this sender') + ' will notify you.'
+          : 'Noted — ' + (row.lead_email || 'this sender') + ' will not notify you again.',
+        'success');
+    } catch (_) {}
   };
 
   const list = (rows || []).filter(r =>
@@ -146,7 +169,32 @@ export default function LeadNotifyReview() {
               <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 5, lineHeight: 1.45 }}>{r.preview}</div>
             ) : null}
             <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 6 }}>
-              {r.reason}{typeof r.score === 'number' ? '' : ''}
+              {r.reason}
+            </div>
+            {/* Judge every row, sent or suppressed. A miss in the suppressed
+                list is as important as a false alarm in the sent one. */}
+            <div style={{ display: 'flex', gap: 7, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => judge(r, 'true_lead')}
+                title="This is a real lead — mail from this sender should notify me"
+                style={{ padding: '5px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                  border: '1px solid ' + (r.verdict === 'true_lead' ? 'rgba(34,197,94,.7)' : 'var(--border)'),
+                  background: r.verdict === 'true_lead' ? 'rgba(34,197,94,.16)' : 'transparent',
+                  color: r.verdict === 'true_lead' ? '#86efac' : 'var(--text-2)' }}>
+                {'\u2713 True lead'}
+              </button>
+              <button type="button" onClick={() => judge(r, 'not_lead')}
+                title="Not a lead — this sender should never notify me"
+                style={{ padding: '5px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                  border: '1px solid ' + (r.verdict === 'not_lead' ? 'rgba(239,68,68,.6)' : 'var(--border)'),
+                  background: r.verdict === 'not_lead' ? 'rgba(239,68,68,.14)' : 'transparent',
+                  color: r.verdict === 'not_lead' ? '#fca5a5' : 'var(--text-2)' }}>
+                {'\u2716 Not lead'}
+              </button>
+              {r.verdict ? (
+                <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
+                  {r.verdict === 'true_lead' ? 'learned: notify me about this sender' : 'learned: mute this sender'}
+                </span>
+              ) : null}
             </div>
           </div>
         );

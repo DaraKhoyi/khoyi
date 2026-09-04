@@ -223,6 +223,12 @@ Deno.serve(async (req) => {
       const e = lower(a.email);
       if (e && activeEmails.has(e)) continue;
       if (!a.active) continue;
+      // NEVER deactivate someone who can log in. The broker and the admins are
+      // not on the Active Agents tab — that tab lists agents — so the first run
+      // switched Dara off, and lead-notify skips inactive people, so his own 36
+      // pending leads were never judged. Anyone with an account stays active;
+      // the roster decides who is an AGENT, not who works here.
+      if (a.auth_user_id) continue;
       const left = e && goneEmails.has(e);
       if (!dryRun) await admin.from("agents").update({ active: false }).eq("id", a.id);
       if (left) report.marked_left++; else report.deactivated++;

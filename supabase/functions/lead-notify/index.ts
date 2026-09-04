@@ -165,9 +165,18 @@ Deno.serve(async (req) => {
       if (already) continue;
       out.considered++;
 
-      // A sender the owner has already judged is never a lead again.
-      const { data: ruled } = await admin.from("lead_sender_rules")
-        .select("kind").eq("user_id", lead.user_id).ilike("sender", lead.lead_email || "~none~").maybeSingle();
+      // What the owner has already decided about this sender, from the True
+      // lead / Not lead buttons on the review screen. Two rules can exist for
+      // one address over time, so read them all rather than maybeSingle(),
+      // which throws the moment there is more than one row.
+      const { data: rules } = await admin.from("lead_sender_rules")
+        .select("kind").eq("user_id", lead.user_id).ilike("sender", lead.lead_email || "~none~");
+      const kinds = new Set((rules || []).map((r: any) => r.kind));
+      const muted = kinds.has("not_a_lead") || kinds.has("blocked") || kinds.has("unsubscribed");
+      // "True lead" is a standing instruction, not a hint. If Dara has said mail
+      // from this person is a lead, the heuristics do not get to overrule him —
+      // they exist to guess where he has not yet spoken.
+      const vouched = kinds.has("lead_ok");
 
       const addr = String(lead.lead_email || "").trim().toLowerCase();
       const text = String(lead.inbound_text || "");
@@ -217,8 +226,10 @@ Deno.serve(async (req) => {
       const wantsProperty = /(buy|buying|sell|selling|list(ing)?\b|purchase|offer|showing|tour|view the|interested in|looking for a|market value|what.s my home worth|pre-?approv|represent me|work with you|available\?|still on the market)/.test(hay);
       const isBilling = /(invoice|a bill from|payment request|past due|remittance|statement attached|w-?9|receipt)/.test(hay);
 
-      const v: Verdict = ruled
-        ? { send: false, reason: `sender previously marked ${ruled.kind}`, score: 0 }
+      const v: Verdict = muted
+        ? { send: false, reason: "you marked this sender Not lead", score: 0 }
+        : vouched && !isReply
+        ? { send: true, reason: "you marked this sender True lead", score: 100 }
         : colleague ? { send: false, reason: "sender is one of our own agents", score: 0 }
         : roleBox ? { send: false, reason: "operational mailbox, not a person", score: 0 }
         : repeat ? { send: false, reason: "already notified about this sender this week", score: 0 }
