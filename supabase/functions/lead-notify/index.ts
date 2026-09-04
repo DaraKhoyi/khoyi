@@ -202,11 +202,29 @@ Deno.serve(async (req) => {
       //    operational mailboxes. Real business, but never a new lead.
       const roleBox = /^(repairs|manager|service|accounting|escrow|closing|orders|billing|leasing|maintenance|office|hr|payroll|compliance)@/.test(addr);
 
+      // 4. A REPLY IS NOT A NEW LEAD. "Re: contract for 5054 School Rd" is the
+      //    middle of a deal already in flight; "RE: lease.pdf" is paperwork. A
+      //    new lead is someone starting a conversation, and the subject line
+      //    says which is which.
+      const subj = (text.match(/^\s*Subject:\s*(.+)$/im) || [])[1] || "";
+      const isReply = /^\s*(re|fwd?|fw)\s*:/i.test(subj);
+
+      // 5. NOT EVERY STRANGER IS A BUYER OR SELLER. An invoice, a vendor pitch
+      //    and a payment request all come from someone who is not in contacts,
+      //    which is all the pipeline was really detecting. Require a word that
+      //    only appears when somebody wants to transact.
+      const hay = (subj + " " + text).toLowerCase();
+      const wantsProperty = /(buy|buying|sell|selling|list(ing)?\b|purchase|offer|showing|tour|view the|interested in|looking for a|market value|what.s my home worth|pre-?approv|represent me|work with you|available\?|still on the market)/.test(hay);
+      const isBilling = /(invoice|a bill from|payment request|past due|remittance|statement attached|w-?9|receipt)/.test(hay);
+
       const v: Verdict = ruled
         ? { send: false, reason: `sender previously marked ${ruled.kind}`, score: 0 }
         : colleague ? { send: false, reason: "sender is one of our own agents", score: 0 }
         : roleBox ? { send: false, reason: "operational mailbox, not a person", score: 0 }
         : repeat ? { send: false, reason: "already notified about this sender this week", score: 0 }
+        : isReply ? { send: false, reason: "a reply in an existing thread, not a new lead", score: 0 }
+        : isBilling ? { send: false, reason: "an invoice or payment request", score: 0 }
+        : !wantsProperty ? { send: false, reason: "nothing said about buying, selling or renting", score: 0 }
         : judge(lead, text);
 
       const agent = agentBy.get(lead.user_id);
