@@ -94,14 +94,33 @@ Deno.serve(async (req) => {
     const tabMap: Array<{ tab: string; year: number }> = Array.isArray(cfg.tab_map) ? cfg.tab_map : [];
     const summary: any[] = [];
 
+    // Read the workbook through DRIVE, once, instead of the Sheets API per tab.
+    //
+    // Two reasons the Sheets API cannot do this job. It is not enabled on this
+    // Cloud project (403), and the GOLD report is an UPLOADED .xlsx rather than
+    // a native Google Sheet — the Sheets API does not read those at all, and
+    // Drive's /export refuses them too (403). Uploaded files come down with
+    // alt=media; native sheets need /export. Try the upload path first and fall
+    // back, so the same config works for either kind of file.
+    let wb: any;
+    {
+      const asUpload = `https://www.googleapis.com/drive/v3/files/${cfg.spreadsheet_id}?alt=media`;
+      const asNative = `https://www.googleapis.com/drive/v3/files/${cfg.spreadsheet_id}/export` +
+        `?mimeType=${encodeURIComponent("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}`;
+      let r = await fetch(asUpload, { headers: { Authorization: `Bearer ${token}` }, redirect: "follow" });
+      if (!r.ok) r = await fetch(asNative, { headers: { Authorization: `Bearer ${token}` }, redirect: "follow" });
+      if (!r.ok) {
+        return new Response(JSON.stringify({ ok: false, error: `Could not read the sheet from Drive (${r.status}).` }),
+          { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      wb = XLSX.read(new Uint8Array(await r.arrayBuffer()), { type: "array", cellDates: false });
+    }
+
     for (const { tab, year } of tabMap) {
-      // 3) pull the whole tab (formatted values so dates/money read as shown)
-      const range = encodeURIComponent(`${tab}`);
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.spreadsheet_id}/values/${range}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
-      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!resp.ok) { summary.push({ tab, year, error: `read failed ${resp.status}` }); continue; }
-      const json = await resp.json();
-      const rows: any[][] = json.values || [];
+      // 3) pull the whole tab out of the workbook we already have
+      const ws = wb.Sheets[tab];
+      if (!ws) { summary.push({ tab, year, error: `tab not found (present: ${Object.keys(wb.Sheets).join(", ")})` }); continue; }
+      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as any[][];
       if (rows.length < 2) { summary.push({ tab, year, rows: 0 }); continue; }
 
       // header name -> column index
