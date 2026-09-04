@@ -169,9 +169,44 @@ Deno.serve(async (req) => {
       const { data: ruled } = await admin.from("lead_sender_rules")
         .select("kind").eq("user_id", lead.user_id).ilike("sender", lead.lead_email || "~none~").maybeSingle();
 
+      const addr = String(lead.lead_email || "").trim().toLowerCase();
       const text = String(lead.inbound_text || "");
+
+      // Three suppressions the first shadow pass proved were needed. Each one is
+      // a real row from that run, and each would have cost trust on its own.
+
+      // 1. A COLLEAGUE IS NOT A LEAD. Ola emailing Josh produced a "new lead"
+      //    notification for Josh. Anyone on the brokerage roster is a co-worker.
+      let colleague = false;
+      if (addr) {
+        const { data: onRoster } = await admin.from("agents")
+          .select("id").ilike("email", addr).limit(1);
+        colleague = !!(onRoster && onRoster.length);
+      }
+
+      // 2. ONE SENDER, ONE NOTIFICATION. alla.tampabayrealtor@gmail.com would
+      //    have emailed Josh FOUR times in this window, and five other senders
+      //    twice. A person who writes three times is one conversation, not three
+      //    leads — and three emails about it is exactly the noise Dara warned
+      //    about. Seven days is long enough to cover a back-and-forth.
+      let repeat = false;
+      if (addr) {
+        const { data: recent } = await admin.from("lead_notifications")
+          .select("id").eq("user_id", lead.user_id).ilike("lead_email", addr)
+          .eq("decision", "would_send")
+          .gte("created_at", new Date(Date.now() - 7 * 864e5).toISOString()).limit(1);
+        repeat = !!(recent && recent.length);
+      }
+
+      // 3. THE DESK, NOT THE PERSON. repairs@, manager@, escrow@ and the like are
+      //    operational mailboxes. Real business, but never a new lead.
+      const roleBox = /^(repairs|manager|service|accounting|escrow|closing|orders|billing|leasing|maintenance|office|hr|payroll|compliance)@/.test(addr);
+
       const v: Verdict = ruled
         ? { send: false, reason: `sender previously marked ${ruled.kind}`, score: 0 }
+        : colleague ? { send: false, reason: "sender is one of our own agents", score: 0 }
+        : roleBox ? { send: false, reason: "operational mailbox, not a person", score: 0 }
+        : repeat ? { send: false, reason: "already notified about this sender this week", score: 0 }
         : judge(lead, text);
 
       const agent = agentBy.get(lead.user_id);
