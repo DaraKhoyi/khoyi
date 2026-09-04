@@ -80,7 +80,16 @@ fi
 # v1.07.25 out of production. SUID is still empty here; cleanup tolerates that.
 cleanup() {
   kill "${SRV:-}" 2>/dev/null || true
-  [ -n "${SUID:-}" ] && curl -s -X DELETE "$SUPABASE_URL/auth/v1/admin/users/$SUID" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" >/dev/null || true
+  # Delete the throwaway's ROWS before the auth user. Deleting only the auth user
+  # left its seeded agents/contacts behind, so every gate run added a permanent
+  # "Jo Ng" to the agents table — four accumulated in one morning.
+  if [ -n "${SUID:-}" ]; then
+    for t in agents contacts; do
+      curl -s -X DELETE "$SUPABASE_URL/rest/v1/$t?user_id=eq.$SUID" \
+        -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" >/dev/null || true
+    done
+    curl -s -X DELETE "$SUPABASE_URL/auth/v1/admin/users/$SUID" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" >/dev/null || true
+  fi
 }
 trap cleanup EXIT
 

@@ -188,7 +188,13 @@ Deno.serve(async (req) => {
     if (!activeRows.length) return json({ ok: false, error: "Read 0 agents from the active tab — refusing to deactivate everyone." });
 
     const activeEmails = new Set(activeRows.map(r => r.email));
-    const { data: existing } = await admin.from("agents").select("id, email, name, active, auth_user_id");
+    // SCOPED TO THE BROKERAGE OWNER. This is a multi-user system and roster-sync
+    // must not reach into another user's roster — the smoke gate seeds a
+    // throwaway user with an our_agent contact, which becomes an agents row under
+    // THAT user, and an unscoped sync deactivated four of them this morning.
+    // Someone else's agents are not this roster's business.
+    const { data: existing } = await admin.from("agents")
+      .select("id, email, name, active, auth_user_id").eq("user_id", ownerId);
     const byEmail = new Map<string, any>();
     for (const a of existing || []) { const e = lower(a.email); if (e) byEmail.set(e, a); }
 
