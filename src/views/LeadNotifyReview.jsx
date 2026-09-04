@@ -29,11 +29,21 @@ export default function LeadNotifyReview() {
 
   const load = useCallback(async () => {
     try {
-      const [{ data: r }, { data: s }] = await Promise.all([
-        supabase.from('lead_notifications').select('*').order('created_at', { ascending: false }).limit(300),
+      const [{ data: r }, { data: s }, { data: me }, { data: ags }] = await Promise.all([
+        supabase.from('lead_notifications').select('*').order('created_at', { ascending: false }).limit(400),
         supabase.from('notification_runtime').select('*').eq('id', true).maybeSingle(),
+        supabase.auth.getUser(),
+        supabase.from('agents').select('auth_user_id, name').not('auth_user_id', 'is', null),
       ]);
-      setRows(Array.isArray(r) ? r : []);
+      // The broker sees every agent's decisions, so each row has to say whose
+      // notification it is — otherwise you are judging mail with no idea who it
+      // was addressed to, and "Not lead" silences someone you did not mean.
+      const mine = me?.user?.id || null;
+      const nameBy = new Map((ags || []).map(a => [a.auth_user_id, a.name]));
+      setRows((Array.isArray(r) ? r : []).map(x => ({
+        ...x,
+        agent_name: x.user_id && x.user_id !== mine ? (nameBy.get(x.user_id) || 'another agent') : null,
+      })));
       setRt(s || null);
     } catch (_) { setRows([]); }
   }, []);
@@ -161,6 +171,12 @@ export default function LeadNotifyReview() {
                 {r.decision === 'sent' ? 'sent' : good ? 'would send' : 'suppressed'}
               </span>
               <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{when(r.created_at)}</span>
+              {r.agent_name ? (
+                <span style={{ fontSize: 10.5, color: '#EBCB82', border: '1px solid rgba(235,203,130,.4)',
+                  borderRadius: 4, padding: '0 5px' }} title="Whose notification this is">
+                  {r.agent_name}
+                </span>
+              ) : null}
             </div>
             {r.lead_email ? (
               <div style={{ fontSize: 11.5, color: 'var(--text-3)', wordBreak: 'break-all' }}>{r.lead_email}</div>
