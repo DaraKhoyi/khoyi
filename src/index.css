@@ -1826,10 +1826,18 @@ input[type="radio"], input[type="range"], select, progress {
 .main-content { position: relative; }
 .main-content::before {
   content: ''; position: absolute; inset: 0 0 auto 0; height: 320px;
-  background: radial-gradient(ellipse 130% 100% at 88% 0%, var(--room-accent-16, transparent), transparent 62%);
+  background: radial-gradient(ellipse 130% 100% at 88% 0%, var(--room-accent-26, transparent), transparent 64%);
   pointer-events: none; z-index: 0;
 }
 .main-content > * { position: relative; z-index: 1; }
+/* A second, fainter bloom low on the page. One light source at the top reads as
+   a header treatment; two brackets the screen and the whole page feels like it
+   is inside the room. */
+.main-content::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 260px;
+  background: radial-gradient(ellipse 120% 100% at 10% 100%, var(--room-accent-08, transparent), transparent 66%);
+  pointer-events: none; z-index: 0;
+}
 
 /* The eyebrow above a room title takes the room's colour too. It is the first
    word on the screen and it should say where you are. */
@@ -1859,20 +1867,29 @@ input[type="radio"], input[type="range"], select, progress {
 
 /* 1. The label above a number is the room's, not grey. Six of these on a screen
       is what ties a grid of cards together. */
-.stat-card .stat-label { color: var(--room-accent-70, var(--text-3)); }
+.stat-card .stat-label { color: var(--room-accent-85, var(--text-3)); }
 
 /* 2 + 3. The card wears the room at its edge: the same 2px gradient hairline the
    room tiles have, fading out at both ends, over a border tinted to match. */
 .stat-card {
   position: relative;
-  border-color: var(--room-accent-22, var(--border));
+  border-color: var(--room-accent-34, var(--border));
+  /* The card is LIT by the room, not merely edged by it. A wash falling from the
+     top, strongest where the hairline is, fading out before it reaches the grey
+     sub-text so nothing loses contrast. This is what carries the colour across
+     the whole grid rather than leaving it on six thin lines. */
+  background:
+    linear-gradient(180deg, var(--room-accent-08, transparent), transparent 62%),
+    var(--bg-card);
   overflow: hidden;
 }
 .stat-card::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, var(--room-accent-30, transparent) 20%,
-              var(--room-accent, transparent) 50%, var(--room-accent-30, transparent) 80%, transparent);
-  opacity: .85; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--room-accent-30, transparent) 15%,
+              var(--room-accent, transparent) 50%, var(--room-accent-30, transparent) 85%, transparent);
+  opacity: 1; pointer-events: none;
+  /* the edge throws a little light down into the card */
+  box-shadow: 0 6px 16px -6px var(--room-accent-34, transparent);
 }
 @media (hover: hover) and (pointer: fine) {
   .stat-card:hover { border-color: var(--room-accent-30, var(--accent-dim)); }
@@ -1886,9 +1903,15 @@ input[type="radio"], input[type="range"], select, progress {
       colour. It gains a ring in the room's colour instead — the control says
       "chosen" and "you are in Money" at the same time, without one meaning
       borrowing the other's colour. */
-.seg-btn.active { box-shadow: 0 0 0 1.5px var(--room-accent-30, transparent), 0 2px 10px -4px var(--room-accent-30, transparent); }
+.seg-btn.active { box-shadow: 0 0 0 2px var(--room-accent-34, transparent), 0 3px 14px -4px var(--room-accent-30, transparent); }
+/* The track the pills sit in belongs to the room too — otherwise the ring is the
+   only thing saying so, and one ring on a page of gold reads as an accident. */
+.seg-wrap, .segmented { border-color: var(--room-accent-26, var(--border)); }
 
 /* 6. Structure, not value: panel edges, rules, and the chips on what is not
       built yet. */
-.panel { border-color: var(--room-accent-22, var(--border)); }
-.panel-header { border-bottom-color: var(--room-accent-22, var(--border)); }
+.panel { border-color: var(--room-accent-26, var(--border)); }
+.panel-header { border-bottom-color: var(--room-accent-26, var(--border)); }
+/* A panel's own title is structure, so it takes the room as well. The values
+   inside it stay gold — that division does not move. */
+.panel-header h3 { color: var(--room-accent-85, var(--text-1)); }

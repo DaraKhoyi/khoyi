@@ -100,6 +100,14 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
       // enough for a border to register as the room's without becoming a box.
       root.style.setProperty('--room-accent-70', m.accent + 'B3');
       root.style.setProperty('--room-accent-22', m.accent + '38');
+      // Turned up about half again, at Dara's request: the room should be
+      // obvious, not merely present. 08 is a wash inside a card — low enough
+      // that grey sub-text keeps its contrast; 34 is a border you notice; 85 is
+      // a label that reads as coloured rather than as tinted grey.
+      root.style.setProperty('--room-accent-08', m.accent + '14');
+      root.style.setProperty('--room-accent-34', m.accent + '57');
+      root.style.setProperty('--room-accent-85', m.accent + 'D9');
+      root.style.setProperty('--room-accent-26', m.accent + '42');
     }
     return () => {
       root.style.removeProperty('--room-accent');
@@ -107,6 +115,10 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
       root.style.removeProperty('--room-accent-30');
       root.style.removeProperty('--room-accent-70');
       root.style.removeProperty('--room-accent-22');
+      root.style.removeProperty('--room-accent-08');
+      root.style.removeProperty('--room-accent-34');
+      root.style.removeProperty('--room-accent-85');
+      root.style.removeProperty('--room-accent-26');
     };
   }, [modeId]);
 
