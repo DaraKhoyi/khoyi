@@ -1834,3 +1834,61 @@ input[type="radio"], input[type="range"], select, progress {
 /* The eyebrow above a room title takes the room's colour too. It is the first
    word on the screen and it should say where you are. */
 .room-eyebrow { color: var(--room-accent, var(--accent)); }
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   GOLD IS VALUE. TEAL IS THE ROOM.
+
+   The Money page had teal icons on a gold-and-black page and the teal read as an
+   intruder. The fix is not to repaint the page in the room's colour — in a Money
+   room gold MEANS money, and a teal $75M would be worse than the problem.
+
+   So the two colours get different jobs. Every NUMBER stays gold: values, totals,
+   the title, the primary buttons, and ember still owns a negative balance. The
+   room's colour takes everything STRUCTURAL: the labels above the numbers, the
+   edges of the cards, the rules, the status markers, the ring around what is
+   selected. Gold tells you what a thing is worth; the accent tells you which
+   room you are standing in.
+
+   All of this hangs off --room-accent, which ModeBar publishes on entry, so one
+   rule dresses all six rooms — Money teal, Prospecting terracotta, Deals slate,
+   Library teal-blue, Brokerage orchid, Nerve Center gold. Outside a room every
+   variable is unset and the fallbacks are the gold the app already wore, so
+   nothing changes on screens with no room.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 1. The label above a number is the room's, not grey. Six of these on a screen
+      is what ties a grid of cards together. */
+.stat-card .stat-label { color: var(--room-accent-70, var(--text-3)); }
+
+/* 2 + 3. The card wears the room at its edge: the same 2px gradient hairline the
+   room tiles have, fading out at both ends, over a border tinted to match. */
+.stat-card {
+  position: relative;
+  border-color: var(--room-accent-22, var(--border));
+  overflow: hidden;
+}
+.stat-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--room-accent-30, transparent) 20%,
+              var(--room-accent, transparent) 50%, var(--room-accent-30, transparent) 80%, transparent);
+  opacity: .85; pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .stat-card:hover { border-color: var(--room-accent-30, var(--accent-dim)); }
+}
+
+/* 4. A live marker belongs to the room. The Money page had a generic #22c55e —
+      the one colour on that screen that belonged to no palette at all. */
+.live-dot { background: var(--room-accent, #CBA35C); }
+
+/* 5. Selection stays GOLD, because selection is an action and gold is the action
+      colour. It gains a ring in the room's colour instead — the control says
+      "chosen" and "you are in Money" at the same time, without one meaning
+      borrowing the other's colour. */
+.seg-btn.active { box-shadow: 0 0 0 1.5px var(--room-accent-30, transparent), 0 2px 10px -4px var(--room-accent-30, transparent); }
+
+/* 6. Structure, not value: panel edges, rules, and the chips on what is not
+      built yet. */
+.panel { border-color: var(--room-accent-22, var(--border)); }
+.panel-header { border-bottom-color: var(--room-accent-22, var(--border)); }

@@ -95,11 +95,18 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
       root.style.setProperty('--room-accent', m.accent);
       root.style.setProperty('--room-accent-16', m.accent + '29');
       root.style.setProperty('--room-accent-30', m.accent + '4D');
+      // Two more steps the page needs. 70% is the floor at which an 11px label
+      // in a mid-tone accent stays readable on near-black in daylight; 22% is
+      // enough for a border to register as the room's without becoming a box.
+      root.style.setProperty('--room-accent-70', m.accent + 'B3');
+      root.style.setProperty('--room-accent-22', m.accent + '38');
     }
     return () => {
       root.style.removeProperty('--room-accent');
       root.style.removeProperty('--room-accent-16');
       root.style.removeProperty('--room-accent-30');
+      root.style.removeProperty('--room-accent-70');
+      root.style.removeProperty('--room-accent-22');
     };
   }, [modeId]);
 
