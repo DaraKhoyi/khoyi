@@ -1823,22 +1823,19 @@ input[type="radio"], input[type="range"], select, progress {
    continued past the tap.
    One rule covers every page: outside a room --room-accent-16 is unset, the
    fallback is transparent, and the bloom simply is not there. */
-.main-content { position: relative; }
-.main-content::before {
-  content: ''; position: absolute; inset: 0 0 auto 0; height: 320px;
-  background: radial-gradient(ellipse 130% 100% at 88% 0%, var(--room-accent-26, transparent), transparent 64%);
-  pointer-events: none; z-index: 0;
-}
-.main-content > * { position: relative; z-index: 1; }
-/* A second, fainter bloom low on the page. One light source at the top reads as
-   a header treatment; two brackets the screen and the whole page feels like it
-   is inside the room. */
-.main-content::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 260px;
-  background: radial-gradient(ellipse 120% 100% at 10% 100%, var(--room-accent-08, transparent), transparent 66%);
-  pointer-events: none; z-index: 0;
-}
-
+/* THE ROOM'S LIGHT lives in .main-content's BACKGROUND, not in a pseudo-element.
+   Two earlier attempts both failed, and the reason is worth keeping:
+     ::before at z-index 0 with `.main-content > * { z-index: 1 }` to lift the
+     content clear — that z-index on the children created a stacking context
+     around every view, so a modal's z-index:1000 was ranked inside a layer worth
+     1 and the bottom bar at 40 painted over it. Save on Edit Task disappeared
+     behind the tab bar.
+     ::before at z-index -1 — no stacking trap, but .main-content paints its own
+     background over it and the bloom vanished entirely.
+   A background LAYER has neither problem: it sits behind all content by
+   definition, needs nothing from the children, and creates no stacking context.
+   The layers themselves are declared in App.js beside the theme's own gradient,
+   because that rule would otherwise override anything written here. */
 /* The eyebrow above a room title takes the room's colour too. It is the first
    word on the screen and it should say where you are. */
 .room-eyebrow { color: var(--room-accent, var(--accent)); }
