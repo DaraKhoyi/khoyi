@@ -23,7 +23,13 @@ export const MODES = [
     label: 'Nerve Center',
     tag: 'My people, my day.',
     glyph: 'globe',
-    accent: '#8FB8A8',
+    // Swapped with Money at Dara's request: the Nerve Center takes the gold,
+    // Money takes the sage. Note that this gold sits very close to the brand
+    // accent #C5A95E that every button and hairline already wears — so inside
+    // this room the room-colour reads as "the app's colour" rather than as
+    // "this particular room". That is a fair trade for the flagship room
+    // looking like the brand, but it is a trade.
+    accent: '#C9A84E',
     home: 'contacts',
     resume: true,
     // Dara's order (left→right): Contacts, Calls, Calendar, Tasks, Email, Journal.
@@ -108,7 +114,7 @@ export const MODES = [
     label: 'Money',
     tag: 'Am I hitting my goal',
     glyph: 'coin',
-    accent: '#C9A84E',
+    accent: '#8FB8A8',   // swapped with the Nerve Center; sage now means Money
     home: 'numbers',
     resume: true,
     bar: ['numbers', 'briefing', 'scoreboard', 'finance'],
