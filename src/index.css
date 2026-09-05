@@ -1006,8 +1006,11 @@ body {
   transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .tasks-pro-drop-target[data-drop-action="pick"] {
-  border: 2px dashed var(--red, #ef4444);
-  color: var(--red, #ef4444);
+  /* Was red. Red on a zone that only opens a date picker was overstating it —
+     nothing there is destructive, and the colour is worth more on the one cell
+     that is. Bright lavender, same dashed treatment as its neighbours. */
+  border: 2px dashed #BFA0FF;
+  color: #BFA0FF;
   transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
@@ -1031,8 +1034,8 @@ body {
   box-shadow: 0 0 16px rgba(255, 255, 255, 0.55), 0 4px 12px rgba(0,0,0,0.3);
 }
 .tasks-pro-drop-target[data-drop-action="pick"].drop-hover {
-  background: rgba(239, 68, 68, 0.18);
-  box-shadow: 0 0 16px rgba(239, 68, 68, 0.55), 0 4px 12px rgba(0,0,0,0.3);
+  background: rgba(191, 160, 255, 0.18);
+  box-shadow: 0 0 16px rgba(191, 160, 255, 0.55), 0 4px 12px rgba(0,0,0,0.3);
 }
 
 /* DELETE — the only cell of the six that destroys anything, so it must not look
@@ -1040,16 +1043,18 @@ body {
    place to PUT a task and reads as an open slot; this one is an end, and the
    closed border says so before the finger arrives. */
 .tasks-pro-drop-target[data-drop-action="delete"] {
-  border: 2px solid #C9563F;
-  color: #E4674F;
-  background: rgba(201, 86, 63, 0.10);
+  /* The red Pick Date handed over. Solid, not dashed: the other five zones are
+     places to PUT a task and read as open slots — this one is an end. */
+  border: 2px solid var(--red, #ef4444);
+  color: var(--red, #ef4444);
+  background: rgba(239, 68, 68, 0.10);
   transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .tasks-pro-drop-target[data-drop-action="delete"].drop-hover {
-  background: rgba(201, 86, 63, 0.30);
-  border-color: #E4674F;
+  background: rgba(239, 68, 68, 0.30);
+  border-color: #ef4444;
   color: #FFF1EC;
-  box-shadow: 0 0 20px rgba(201, 86, 63, 0.7), 0 4px 12px rgba(0,0,0,0.35);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.7), 0 4px 12px rgba(0,0,0,0.35);
 }
 
 /* Quadrant containers (no data-drop-action) — also get a subtle hover */
