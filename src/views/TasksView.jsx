@@ -954,7 +954,27 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             if (task) setDatePickerTask(task);
           }}
           onDropNextWeek={(taskId) => setTaskDate(taskId, addDaysISO(7))}
-          onDropNoDate={(taskId) => setTaskDate(taskId, null)}
+          onDropDelete={async (taskId) => {
+            // This corner used to clear the due date. Deleting is what Dara
+            // actually wants there, but a drag is far easier to do by accident
+            // than a tap on a delete button — so it asks first, names the task
+            // so you know which one you caught, and rolls the row back if the
+            // write fails instead of leaving the list looking emptier than the
+            // database is.
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+            if (!await confirmDialog(`Delete "${task.title}"?`)) return;
+            const snapshot = tasks;
+            setTasks(prev => prev.filter(x => x.id !== taskId));
+            const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+            if (error) {
+              setTasks(snapshot);
+              notify('Could not delete: ' + (error.message || error.code || 'unknown error'), 'error');
+              return;
+            }
+            notify('Deleted.', 'success');
+            try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
+          }}
           onDropSomeday={async (taskId) => {
             // Park it: kept, but off the active list and out of every count/NBA.
             try {
@@ -1449,7 +1469,7 @@ function MatrixTaskRow({ task, rankNumber, quadrant, headerColor, onEdit, onTogg
 }
 
 
-function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate, onDropNextWeek, onDropSomeday, onDropNoDate }) {
+function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate, onDropNextWeek, onDropSomeday, onDropDelete }) {
   return (
     <div style={{
       position:'fixed',
@@ -1470,7 +1490,10 @@ function DropZoneStrip({ visible, onDropToday, onDropTomorrow, onDropPickDate, o
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}}>
         <DropZoneCell label="Next Week" action="nextweek" onDrop={onDropNextWeek} />
         <DropZoneCell label="✦ Someday" action="someday" onDrop={onDropSomeday} />
-        <DropZoneCell label="No Date" action="nodate" onDrop={onDropNoDate} />
+        {/* The destructive corner, and it should not look like the other five.
+            Ember is the app's "this is serious" colour and it is reserved — the
+            one place it belongs is the cell that ends a task. */}
+        <DropZoneCell label="Delete" action="delete" onDrop={onDropDelete} />
       </div>
     </div>
   );

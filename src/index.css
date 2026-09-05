@@ -1035,6 +1035,23 @@ body {
   box-shadow: 0 0 16px rgba(239, 68, 68, 0.55), 0 4px 12px rgba(0,0,0,0.3);
 }
 
+/* DELETE — the only cell of the six that destroys anything, so it must not look
+   like the other five. Ember, solid rather than dashed: every other zone is a
+   place to PUT a task and reads as an open slot; this one is an end, and the
+   closed border says so before the finger arrives. */
+.tasks-pro-drop-target[data-drop-action="delete"] {
+  border: 2px solid #C9563F;
+  color: #E4674F;
+  background: rgba(201, 86, 63, 0.10);
+  transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.tasks-pro-drop-target[data-drop-action="delete"].drop-hover {
+  background: rgba(201, 86, 63, 0.30);
+  border-color: #E4674F;
+  color: #FFF1EC;
+  box-shadow: 0 0 20px rgba(201, 86, 63, 0.7), 0 4px 12px rgba(0,0,0,0.35);
+}
+
 /* Quadrant containers (no data-drop-action) — also get a subtle hover */
 .tasks-pro-drop-target:not([data-drop-action]).drop-hover {
   background: rgba(197, 169, 94, 0.06);
