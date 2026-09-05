@@ -179,7 +179,12 @@ body {
     transform: translateX(-100%);
     box-shadow: 4px 0 24px rgba(0,0,0,0.5);
     z-index: 1000;                 /* sit well above the overlay on iOS */
-    -webkit-overflow-scrolling: touch;
+    /* -webkit-overflow-scrolling REMOVED. It was needed before iOS 13 to get
+       momentum scrolling at all; since iOS 13 momentum is the default and the
+       property only forces a separate scrolling layer. That layer keeps settling
+       after the finger lifts, and a tap landing while it settles is consumed to
+       STOP the scroll rather than activate the item. With 57 menu items you
+       scroll before almost every tap — which is the double-tap Josh reported. */
     will-change: transform;        /* promote to its own layer so the slide is instant on iOS */
     transform: translateX(-100%) translateZ(0);
   }

@@ -13,6 +13,7 @@ import TodayView from './views/TodayView';
 import FirstLook from './views/FirstLook';
 import SomedayView from './views/SomedayView';
 import ModeBar from './views/ModeBar';
+import useTapActivate from './useTapActivate';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
 import { MODES, VIEW_TO_MODE, modeById } from './modes';
@@ -235,10 +236,9 @@ const MenuNode = React.memo(function MenuNode({ node, depth, ctx }) {
   const open = hasChildren && openPath[depth] === node._key;
   const active = leafView === view && !node.sub;
   const clickable = (built && leafView) || hasChildren || isAction;
-  // A node can be BOTH a destination and a parent (e.g. Ask Ari, which opens Ari
-  // yet also holds Listing Presentation). In that case the label navigates and the
-  // chevron expands — navigate() closes the menu, so firing both on one click would
-  // make the children unreachable. Pure groups (no view) toggle on the whole row.
+  // A node can be BOTH destination and parent (Ask Ari opens Ari AND holds Listing
+  // Presentation): the label navigates, the chevron expands. navigate() closes the
+  // menu, so firing both would make the children unreachable. Pure groups toggle.
   const navigable = built && leafView;
   const handleClick = () => {
     if (isAction) { node.action(); return; }
@@ -246,11 +246,11 @@ const MenuNode = React.memo(function MenuNode({ node, depth, ctx }) {
     if (hasChildren) toggle(depth, node._key);
   };
   const toggleOpen = (e) => { e.stopPropagation(); toggle(depth, node._key); };
-  const indent = 14;
+  const tap = useTapActivate(handleClick); const indent = 14;   // iOS first-tap fix
   return (
     <>
       <div className={'nav-item' + (active ? ' active' : '')}
-        onClick={clickable ? handleClick : undefined}
+        {...(clickable ? tap : {})}
         title={(built || hasChildren) ? undefined : 'Not built yet'}
         style={{ paddingLeft: indent + 'px', fontSize: depth === 0 ? '14px' : '12.5px',
           color: built ? 'var(--text-1)' : 'var(--text-3)',
