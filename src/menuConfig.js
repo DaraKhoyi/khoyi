@@ -130,6 +130,7 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Chief of Staff', view: 'chief', icon: 'sparkles', ai: true },
       { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
       { label: 'Agent Activity', view: 'agent_activity', icon: 'chart' },
+      { label: 'Goals & Pace', view: 'goal_roster', icon: 'target' },
     ] },
 
     // ── Me and the system ─────────────────────────────────────────────────────
