@@ -55,6 +55,44 @@ for (const file of files) {
       });
     },
     // title="Open \u2019s record" — a plain string attribute has the same problem.
+    // Any string literal ANYWHERE inside JSX — including one arm of a ternary,
+    // which is where FirstRun's was. Visiting JSXExpressionContainer only caught
+    // bare literals and missed {busy ? 'Opening Google\\u2026' : '...'}.
+    //
+    // Only a DOUBLED backslash is the bug: {'\\u25C6'} with one backslash is a
+    // real escape and renders the character, which TodayView relies on. Two
+    // backslashes means the escape was itself escaped and the user sees the
+    // literal text — which is what FirstRun shipped to screen.
+    StringLiteral(path) {
+      if (!path.findParent((pp) => pp.isJSXExpressionContainer())) return;
+      const raw = (path.node.extra && path.node.extra.raw) || '';
+      const m = /\\\\u[0-9a-fA-F]{4}/.exec(raw);
+      if (!m) return;
+      problems.push({
+        file, line: path.node.loc && path.node.loc.start.line, found: m[0],
+        where: 'double-escaped \\u inside JSX', snippet: raw.slice(0, 60),
+      });
+    },
+    // title="Open \u2019s record" — a plain string attribute has the same problem.
+    // A string literal rendered as a JSX CHILD: {'Opening Google\\u2026'}.
+    // Not a JSX text node, so the rule above misses it. FirstRun shipped
+    // "\\u2022 Your contacts" and "nothing here \\u2014 no contacts" to the screen
+    // as literal characters before this case was covered.
+    JSXExpressionContainer(path) {
+      const node = path.node.expression;
+      if (!node || node.type !== 'StringLiteral') return;
+      // Only a DOUBLED backslash is the bug. {'\\u25C6'} with one backslash is a
+      // real escape and renders the character — TodayView uses it correctly.
+      // Two backslashes means the escape was itself escaped, and the user sees
+      // the literal text, which is what FirstRun shipped.
+      const raw = (node.extra && node.extra.raw) || '';
+      const m = /\\\\u[0-9a-fA-F]{4}/.exec(raw);
+      if (!m) return;
+      problems.push({
+        file, line: node.loc && node.loc.start.line, found: m[0],
+        where: 'double-escaped \\u in a string rendered as a JSX child', snippet: raw.slice(0, 60),
+      });
+    },
     JSXAttribute(path) {
       const v = path.node.value;
       if (!v || v.type !== 'StringLiteral') return;

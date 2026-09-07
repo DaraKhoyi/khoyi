@@ -13,6 +13,7 @@ import TodayView from './views/TodayView';
 import FirstLook from './views/FirstLook';
 import SomedayView from './views/SomedayView';
 import ModeBar from './views/ModeBar';
+import { OnboardingGate } from './views/FirstRun';
 import useTapActivate from './useTapActivate';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
@@ -2030,12 +2031,11 @@ function AppMain() {
           onDone={() => setUserSettings(u => ({ ...(u || {}), first_look_done: true }))} />
       )}
       {dataLoaded && userSettings && (userSettings.onboarding_complete === false || onboardingReopen) && (
-        <OnboardingModal
-          userId={user.id}
-          userEmail={user.email}
-          initial={onboardingReopen ? userSettings : null}
+        <OnboardingGate
+          userId={user.id} userEmail={user.email} userSettings={userSettings} reopen={!!onboardingReopen}
           onClose={onboardingReopen && userSettings.onboarding_complete !== false ? () => setOnboardingReopen(false) : undefined}
           onComplete={() => { setOnboardingReopen(false); setJustOnboarded(true); loadData(); }}
+          onFirstRunDone={() => { setJustOnboarded(true); setUserSettings(u => ({ ...(u || {}), onboarding_complete: true })); loadData(); }}
         />
       )}
       {/* An announcement is never why someone opened the app. Held back on the
