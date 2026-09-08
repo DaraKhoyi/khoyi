@@ -44,7 +44,11 @@ const contacts = [
     company: 'Fitzgerald Montgomery Commercial Holdings LLC', role: 'Managing Director of Acquisitions' },
   { name: 'Ana Sofía Hernández-Villalobos', email: 'ana.sofia@example.com', phone: '8135555678', type: 'lead',
     cadence_days: 14, last_inbound_at: iso(now - 40 * DAY), last_communication_direction: 'inbound', last_contact_at: iso(now - 40 * DAY) },
-  { name: 'Jo Ng', email: 'jo@example.com', phone: '8135559012', type: 'our_agent',
+  // NOT our_agent. A contact typed our_agent is shared to the brokerage team by
+  // trigger, so every throwaway user the gate created put a fake agent into
+  // Dara's roster — 72 of them accumulated before he spotted it. The short name
+  // still tests the narrow-column case; the type no longer leaks.
+  { name: 'Jo Ng', email: 'jo@example.com', phone: '8135559012', type: 'lead',
     last_outbound_at: iso(now - 2 * DAY), last_communication_direction: 'outbound', last_contact_at: iso(now - 2 * DAY) },
   { name: 'Christopher Vandenberg-Oyelaran', email: 'christopher.v@example.com', phone: '8135553456',
     type: 'vendor', cadence_days: 90, last_contact_at: iso(now - 120 * DAY) },

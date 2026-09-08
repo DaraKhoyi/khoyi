@@ -97,9 +97,10 @@ export default function BrokerGoalRoster() {
   const all = rows || [];
   const shown = all.filter(a => {
     if (q.trim() && !String(a.name || '').toLowerCase().includes(q.trim().toLowerCase())) return false;
-    if (filter === 'needs') return a.priority >= 60;
-    if (filter === 'nogoal') return a.no_goal;
-    if (filter === 'quiet') return a.no_production || (a.days_since_close != null && a.days_since_close > 60);
+    if (filter === 'needs') return a.priority >= 60 && !a.departed;
+    if (filter === 'nogoal') return a.no_goal && !a.departed;
+    if (filter === 'quiet') return !a.departed && (a.no_production || (a.days_since_close != null && a.days_since_close > 60));
+    if (filter === 'departed') return a.departed;
     return true;
   });
 
@@ -113,12 +114,13 @@ export default function BrokerGoalRoster() {
         <span style={{ flex: '1 1 0', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>Who needs a call.</span>
       </h2>
       <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
-        {all.length} active · {withGoal} with a goal set · ordered by who needs you most
+        {all.filter(a => !a.departed).length} active · {withGoal} with a goal set ·{' '}
+        {all.filter(a => a.departed).length} who have left, kept for their history
       </div>
       <hr className="room-rule" />
 
       <div style={{ display: 'flex', gap: 7, margin: '14px 0 10px', flexWrap: 'wrap' }}>
-        {[['needs', 'Needs a call'], ['nogoal', 'No goal'], ['quiet', 'Gone quiet'], ['all', 'Everyone']].map(([k, l]) => (
+        {[['needs', 'Needs a call'], ['nogoal', 'No goal'], ['quiet', 'Gone quiet'], ['departed', 'Left'], ['all', 'Everyone']].map(([k, l]) => (
           <button key={k} type="button" onClick={() => setFilter(k)}
             style={{ padding: '6px 12px', borderRadius: 100, fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: '1px solid ' + (filter === k ? 'var(--room-accent, var(--accent))' : 'var(--border)'),
@@ -145,7 +147,12 @@ export default function BrokerGoalRoster() {
       ) : !shown.length ? (
         <div style={{ fontSize: 13, color: 'var(--text-3)' }}>Nobody in this group.</div>
       ) : shown.map(a => (
-        <div key={a.agent_id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px', marginBottom: 9 }}>
+        // A departed agent keeps their history but stops competing for attention:
+        // muted, no gold, and never a call-to-action. Deleting them made the
+        // report disagree with the brokerage total and erased the work they did.
+        <div key={a.agent_id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 13px',
+          marginBottom: 9, opacity: a.departed ? 0.62 : 1,
+          background: a.departed ? 'rgba(246,241,231,.02)' : 'transparent' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <button type="button" onClick={() => { try { a.contact_id && window.__openContact && window.__openContact(a.contact_id); } catch (_) {} }}
               style={{ flex: '1 1 auto', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0,
@@ -153,6 +160,12 @@ export default function BrokerGoalRoster() {
                 textDecorationLine: a.contact_id ? 'underline' : 'none', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>
               {a.name}
             </button>
+            {a.departed && (
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase',
+                color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: 100, padding: '1px 7px' }}>
+                Left
+              </span>
+            )}
             {a.pace_pct != null && (
               <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 100,
                 color: a.pace_pct >= 95 ? '#86efac' : a.pace_pct >= 75 ? '#EBCB82' : '#E4674F',
@@ -178,7 +191,7 @@ export default function BrokerGoalRoster() {
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            {a.phone && (
+            {a.phone && !a.departed && (
               <a href={'tel:' + a.phone} style={{ textDecoration: 'none', fontSize: 12, fontWeight: 800, padding: '7px 14px',
                 borderRadius: 9, background: '#EBCB82', color: '#1a1205' }}>Call</a>
             )}
