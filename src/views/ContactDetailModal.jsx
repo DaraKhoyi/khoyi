@@ -5,6 +5,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
+import ContactShareControl from './ContactShareControl';
 import { owesReply } from '../helpers';
 import { notify, confirmDialog } from '../notify';
 import { Icon } from '../icons';
@@ -972,6 +973,10 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
 
         <div style={{flex:1,minHeight:0,overflowY:'auto',overflowX:'hidden',paddingRight:'4px',paddingBottom:'120px'}}>
           {tab==='overview' && (<>
+          {/* Sharing sits at the top of Overview because "who else can see this"
+              is something you want to know BEFORE you read the record. */}
+          <ContactShareControl contact={contact} userId={userId}
+            onChanged={(next) => { try { setContacts && setContacts(cs => (cs||[]).map(c => c.id===contact.id ? { ...c, shared_scope: next } : c)); } catch (_) {} }} />
           {/* Production sits at the TOP of an agent's record on purpose: when you
               open a producer, their numbers are the context for everything else
               on the page. It renders nothing for non-agents and for agents with
