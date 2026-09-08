@@ -56,6 +56,12 @@ export default function ConnectionAlertBanner({ setView }) {
     // five-minute poll — the banner contradicting the success message directly
     // above it is what sent Dara round the reconnect loop twice.
     try {
+      // Note: reconnecting one mailbox resolves only THAT mailbox's alert.
+      // Dara reconnected dara@brokerdara.com while khoyi1234@gmail.com was the
+      // account actually revoked, so a fresh alert appeared seconds later and
+      // looked like the same one refusing to clear. The label on each alert
+      // names its account for exactly this reason — read it before assuming the
+      // warning is stale.
       if (new URLSearchParams(window.location.search).get('google_connected')) {
         setTimeout(load, 1200);      // after the callback has written the row
         setTimeout(load, 4000);      // and once more, in case it was slow

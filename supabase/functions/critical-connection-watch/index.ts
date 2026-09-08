@@ -74,6 +74,17 @@ Deno.serve(async (req) => {
     for (const line of lines) {
       if (res.ok) {
         await resolveConnectionAlert(admin, line.user_id as string, "quo", line.active_number as string);
+        // ALSO clear the credits alert the BROWSER raises.
+        //
+        // quo.js raises kind 'quo_credits' when a send comes back 402, and the
+        // only thing that cleared it was a later successful send from PrismOS.
+        // So an owner who topped up their Quo balance and did not immediately
+        // text someone kept staring at "out of prepaid credits" indefinitely.
+        // This watcher already proves the line is healthy every ten minutes; it
+        // is the right place to say so. Same asymmetry that sent Dara round the
+        // email reconnect loop: the raise path was built with care and the
+        // recovery path was left to chance.
+        await resolveConnectionAlert(admin, line.user_id as string, "quo_credits", "sms");
         report.push({ kind: "quo", user: line.user_id, state: "healthy" });
         continue;
       }
