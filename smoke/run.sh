@@ -125,8 +125,25 @@ for attempt in 1 2 3; do
   sleep $((attempt * 10))
 done
 [ -n "$SUID" ] || { echo "✗ SMOKE GATE CANNOT RUN — could not create a throwaway agent from the Supabase auth API after 3 attempts (last HTTP $CODE). This is an upstream/transient issue, not a code failure; re-run the job."; exit 2; }
-curl -s -X POST "$SUPABASE_URL/rest/v1/user_settings" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" \
+# UPSERT, not INSERT. A trigger on auth.users already creates this row, so a
+# plain POST hits a primary-key conflict, fails silently behind >/dev/null, and
+# leaves onboarding_complete at its default of FALSE. That was survivable while
+# first-run was a dismissible form; once FirstRun became a full-screen overlay it
+# covered the app, and the one large-font probe that CLICKS anything — lp_editor
+# — timed out. The gate went red for a reason that had nothing to do with the
+# code under test, which is the worst kind of red.
+curl -s -X POST "$SUPABASE_URL/rest/v1/user_settings" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" -H "Content-Type: application/json" -H "Prefer: resolution=merge-duplicates,return=minimal" \
   -d "{\"user_id\":\"$SUID\",\"onboarding_complete\":true,\"display_name\":\"Smoke Test\"}" >/dev/null
+
+# And prove it took. A silent setup failure that only shows up 200 lines later as
+# a click timeout costs more to diagnose than this check costs to run.
+OB=$(curl -s "$SUPABASE_URL/rest/v1/user_settings?user_id=eq.$SUID&select=onboarding_complete" \
+  -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" | grep -o 'true' | head -1)
+if [ "$OB" != "true" ]; then
+  echo "✗ SMOKE SETUP FAILED — onboarding_complete is not true for the throwaway user." >&2
+  echo "  Every probe that clicks would hit the first-run overlay and time out." >&2
+  exit 2
+fi
 
 # Give the account something to render. Without this every list shows its empty
 # state and the gate only ever proves that views MOUNT — which is how a
