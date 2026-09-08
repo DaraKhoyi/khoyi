@@ -230,6 +230,19 @@ Deno.serve(async (req) => {
       // the roster decides who is an AGENT, not who works here.
       if (a.auth_user_id) continue;
       const left = e && goneEmails.has(e);
+      // Move their sales to the surviving row BEFORE deactivating, or the
+      // production disappears from every broker report. That is exactly what
+      // happened on the first run: 252 transactions worth $1.88M were left on
+      // deactivated duplicates, and the goal roster showed real producers at $0.
+      // Matched on name, only when there is exactly one active row with that
+      // name — anything ambiguous is left alone rather than guessed at.
+      if (!dryRun && e) {
+        const { data: twin } = await admin.from("agents")
+          .select("id").eq("active", true).ilike("name", (a.name || "").trim());
+        if (twin && twin.length === 1 && twin[0].id !== a.id) {
+          await admin.from("brokerage_transactions").update({ agent_id: twin[0].id }).eq("agent_id", a.id);
+        }
+      }
       if (!dryRun) await admin.from("agents").update({ active: false }).eq("id", a.id);
       if (left) report.marked_left++; else report.deactivated++;
     }

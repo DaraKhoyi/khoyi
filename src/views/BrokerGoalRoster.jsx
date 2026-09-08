@@ -37,19 +37,36 @@ const ago = (ts) => {
 // open the call with.
 function why(a) {
   const bits = [];
-  if (a.no_goal && a.trailing_12mo > 0) bits.push('No goal set — ' + money(a.trailing_12mo) + ' over the last 12 months');
+  const money0 = (n) => money(n || 0);
+
+  // A goal with nothing behind it is the loudest thing on the card.
+  if (a.goal && (a.ytd_gci || 0) === 0) bits.push('Goal of ' + money0(a.goal) + ' with nothing closed this year');
+  else if (a.no_goal && a.trailing_12mo > 0) bits.push('No goal set — ' + money0(a.trailing_12mo) + ' over the last 12 months');
   else if (a.no_goal) bits.push('No goal set');
-  if (a.no_production && a.trailing_12mo > 0) bits.push('nothing closed this year');
-  else if (a.days_since_close != null && a.days_since_close > 60) bits.push('nothing closed in ' + a.days_since_close + ' days');
+  else if (a.pace_pct != null && a.pace_pct < 95) bits.push(a.pace_pct + '% of the pace their goal needs');
+
+  if ((a.ytd_gci || 0) > 0 && a.days_since_close != null && a.days_since_close > 60) {
+    bits.push('nothing closed in ' + a.days_since_close + ' days');
+  }
   if (a.same_point_last_year > 0 && a.ytd_gci < a.same_point_last_year * 0.75) {
-    bits.push('behind their own pace — ' + money(a.same_point_last_year) + ' by this date last year');
+    bits.push('behind their own pace — ' + money0(a.same_point_last_year) + ' by this date last year');
   }
   if (a.goal_below_trailing) bits.push('goal is under what they already did last year');
   if (!a.has_login) bits.push('never signed in');
+
   const t = ago(a.last_touch);
   if (t === 'never') bits.push('you have not spoken');
   else if (a.last_touch && (Date.now() - new Date(a.last_touch).getTime()) > 30 * 86400000) bits.push('last spoke ' + t + ' ago');
-  return bits.length ? bits.join(' · ') : 'On track';
+
+  // "On track" has to MEAN on track. It used to be the fallback whenever no
+  // other sentence fired, so an agent with a $70K goal, $0 closed and 0% of pace
+  // read "On track" — the report contradicting itself on the same card, which is
+  // the fastest way for a broker to stop believing any of it.
+  if (bits.length) return bits.join(' · ');
+  if (a.goal && a.pace_pct != null && a.pace_pct >= 95) return 'On track — ' + a.pace_pct + '% of pace';
+  if (!a.goal && (a.ytd_gci || 0) > 0) return money0(a.ytd_gci) + ' this year, no goal to measure it against';
+  if ((a.ytd_gci || 0) === 0 && (a.trailing_12mo || 0) === 0) return 'No production on record';
+  return 'Nothing flagged';
 }
 
 function Num({ label, value, tone }) {
