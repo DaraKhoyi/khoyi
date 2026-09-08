@@ -51,6 +51,16 @@ export default function ConnectionAlertBanner({ setView }) {
     const onWake = () => load();
     document.addEventListener('visibilitychange', onWake);
     window.addEventListener('focus', onWake);
+    // Coming back from Google is a full page load with ?google_connected= on the
+    // URL. Re-read immediately rather than showing the stale alert until the
+    // five-minute poll — the banner contradicting the success message directly
+    // above it is what sent Dara round the reconnect loop twice.
+    try {
+      if (new URLSearchParams(window.location.search).get('google_connected')) {
+        setTimeout(load, 1200);      // after the callback has written the row
+        setTimeout(load, 4000);      // and once more, in case it was slow
+      }
+    } catch (_) {}
     const t = setInterval(load, 5 * 60 * 1000);
     return () => {
       document.removeEventListener('visibilitychange', onWake);

@@ -131,6 +131,25 @@ serve(async (req) => {
       if (insErr) throw new Error(`Failed to save account (insert): ${insErr.message || insErr.code || JSON.stringify(insErr)}`);
     }
 
+    // CLOSE THE ALERT AT THE MOMENT OF RECONNECTION.
+    //
+    // Reconnecting fixed the account but left the outage alert open, because
+    // only the watcher resolved alerts and it runs every ten minutes. So the
+    // banner still said "email is disconnected" on the page that had just
+    // confirmed the connection — Dara reconnected, saw the same warning, and
+    // reconnected again. A loop, and one that teaches you to distrust the alert
+    // that was right the first time.
+    //
+    // Best-effort: a failure here must never break a successful connection, so
+    // it is caught and ignored. The watcher remains the backstop.
+    try {
+      await supabase.from("connection_alerts")
+        .update({ resolved_at: new Date().toISOString() })
+        .eq("user_id", userId)
+        .is("resolved_at", null)
+        .in("kind", ["google_email", "google_calendar", "google_disconnected", "email_disconnected"]);
+    } catch (_) { /* the connection succeeded; that is what matters */ }
+
     const dest = new URL(returnTo);
     dest.searchParams.set("google_connected", profile.email);
     dest.searchParams.set("purpose", grantedPurposes.join(","));
