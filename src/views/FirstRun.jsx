@@ -61,9 +61,17 @@ export default function FirstRun({ userId, userEmail, onDone }) {
       const n = (agent && agent.name) || '';
       setKnownName(n || null);
       setName(n);
+      // CONNECTED MEANS USABLE, not merely present. This used to check that a
+      // row existed, so an agent whose token had been revoked was skipped past
+      // the one step that would have fixed it and dropped into a workspace that
+      // could never fill. A row with no refresh token, or one flagged for
+      // reauth, is a disconnected mailbox wearing a connected row.
       const { data: acct } = await supabase.from('email_accounts')
-        .select('id').eq('user_id', userId).limit(1);
-      if (!dead && acct && acct.length) setHasEmail(true);
+        .select('id, refresh_token, reauth_required_at, is_active')
+        .eq('user_id', userId);
+      const usable = (acct || []).some(a =>
+        a.is_active !== false && !a.reauth_required_at && !!a.refresh_token);
+      if (!dead && usable) setHasEmail(true);
     })();
     return () => { dead = true; };
   }, [userId]);
