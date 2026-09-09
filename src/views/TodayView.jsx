@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { enqueue } from '../outbox';
+import { todayNY } from '../clock';
 import { supabase } from '../dataService';
 import { CallFollowupsPanel } from './ReviewPanels';
 import CommitmentReview from './CommitmentReview';
@@ -31,7 +32,7 @@ export default function TodayView({
   agentName = '', onOpenPlan,
 }) {
   const now = Date.now();
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = todayNY();
 
   // ── Automation dial ────────────────────────────────────────────────────────
   const [autoLevel, setAutoLevel] = useState(2);

@@ -2,6 +2,7 @@
 // No React, no app state — safe to import anywhere. App.js re-exports these for
 // back-compat so existing '../App' imports keep working during the migration.
 import { supabase } from './dataService';
+import { todayNY } from './clock';
 
 export function todayISO() {
   const d = new Date();
@@ -27,7 +28,7 @@ export function pad2(n){ return String(n).padStart(2,'0'); }
 
 export function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 
-export const today_ymd = () => new Date().toISOString().slice(0, 10);
+export const today_ymd = () => todayNY();
 
 export function quoNormPhone(raw) {
   if (!raw) return '';

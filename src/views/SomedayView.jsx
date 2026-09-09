@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 
 // ── Someday / Maybe ──────────────────────────────────────────────────────────
 // The parking lot for things worth keeping that don't belong on a schedule —
@@ -56,7 +57,7 @@ export default function SomedayView({ userId, setView }) {
     const d = Math.floor((Date.now() - new Date(t)) / 86400000);
     return d === 0 ? 'today' : d < 30 ? d + 'd ago' : d < 365 ? Math.round(d / 30) + 'mo ago' : Math.round(d / 365) + 'y ago';
   };
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = todayNY();
   const plusDays = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
   return (

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 
 // ── StaleDecide ──────────────────────────────────────────────────────────────
 // The bill for "not today".
@@ -39,7 +40,7 @@ export default function StaleDecide({ tasks, setTasks, userId }) {
 
   async function doToday(t) {
     setBusy(t.id);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayNY();
     const { error } = await supabase.from('tasks').update({ due_date: today, carry_count: 0 }).eq('id', t.id);
     if (error) { if (window.__notify) window.__notify('Could not move to today: ' + (error.message || error), 'error'); setBusy(null); return; }
     patch(t.id, { due_date: today, carry_count: 0 });

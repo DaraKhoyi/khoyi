@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import OwnerPicker from './OwnerPicker';
 
 // ── CommitmentReview ─────────────────────────────────────────────────────────
@@ -229,7 +230,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
       const { data: t, error } = await supabase.from('tasks').insert({
         user_id: userId,
         title: `Chase ${responsible(c)}: ${c.title}`,
-        due_date: new Date().toISOString().slice(0, 10),
+        due_date: todayNY(),
         // Provenance stays honest: the QUOTE came from the call, even when the
         // person responsible was never on it.
         notes: `${c.contact_name} said “${c.quote}” — due ${fmtDate(c.due_date)}, now ${daysLate(c.due_date)} day(s) late.`

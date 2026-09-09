@@ -5,6 +5,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import ContactShareControl from './ContactShareControl';
 import { owesReply } from '../helpers';
 import { notify, confirmDialog } from '../notify';
@@ -54,7 +55,7 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
   // Quick-add task / event inline forms
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskDue, setNewTaskDue] = useState(new Date().toISOString().slice(0,10));
+  const [newTaskDue, setNewTaskDue] = useState(todayNY());
   const [newTaskQuadrant, setNewTaskQuadrant] = useState('B');
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -134,7 +135,7 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
   const [baseI, setBaseI] = useState(profile?.baseline_i_score ?? 50);
   const [baseS, setBaseS] = useState(profile?.baseline_s_score ?? 50);
   const [baseC, setBaseC] = useState(profile?.baseline_c_score ?? 50);
-  const [baseTakenAt, setBaseTakenAt] = useState(profile?.baseline_taken_at ? profile.baseline_taken_at.slice(0,10) : new Date().toISOString().slice(0,10));
+  const [baseTakenAt, setBaseTakenAt] = useState(profile?.baseline_taken_at ? profile.baseline_taken_at.slice(0,10) : todayNY());
   const [baseSource, setBaseSource] = useState(profile?.baseline_source || 'Prism Test');
   const [savingBase, setSavingBase] = useState(false);
 

@@ -36,8 +36,8 @@ export const BEHAVIORS = [
     why:'Speed is the cheapest edge in this business — the first agent to respond usually wins. When people are left waiting, some go find someone who answers. Knock these out and protect the deals sitting inside them.',
     cta:'See who\'s waiting' },
   { id:'overdue_tasks', priority:4, view:'tasks', min:6,
-    test:(x)=>{ const t=new Date().toISOString().slice(0,10); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < t).length; },
-    title:(x)=>{ const t=new Date().toISOString().slice(0,10); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < t).length + ' tasks are past due'; },
+    test:(x)=>{ const t=todayNY(); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < t).length; },
+    title:(x)=>{ const t=todayNY(); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < t).length + ' tasks are past due'; },
     why:'A task list you don\'t trust is a list you stop looking at. When overdue items pile up, reschedule or clear them so the list reflects reality again — a clean list is one you\'ll actually work.',
     cta:'Review tasks' },
 ];
@@ -47,7 +47,7 @@ export const TRIGGER_TEMPLATES = {
   no_cadence:    { defaultView:'contacts', test:(x,t)=>{ const total=x.contacts.length; const cad=x.contacts.filter(c=>c.cadence_days).length; return (total >= (t.threshold||15) && cad < Math.max(3, Math.round(total*0.1))) ? 1 : 0; } },
   review_backlog:{ defaultView:'review', test:(x)=> x.reviewCount || 0 },
   owe_replies:   { defaultView:'contacts', test:(x)=> Object.keys(x.oweReplyMap||{}).length },
-  overdue_tasks: { defaultView:'tasks', test:(x)=>{ const d=new Date().toISOString().slice(0,10); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < d).length; } },
+  overdue_tasks: { defaultView:'tasks', test:(x)=>{ const d=todayNY(); return x.tasks.filter(tk=>!tk.completed && tk.due_date && tk.due_date < d).length; } },
 };
 
 export function buildBlueprint(goal){

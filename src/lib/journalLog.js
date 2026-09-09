@@ -5,10 +5,11 @@
 // surfaced as a generic "Save failed". Centralizing here fixes that and keeps
 // the two paths from drifting.
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 
 // Match App.js's today_ymd exactly (UTC date slice) so the Quick log and the
 // full Journal screen always agree on which day an entry belongs to.
-const today_ymd = () => new Date().toISOString().slice(0, 10);
+const today_ymd = () => todayNY();
 
 export async function mirrorJournalToTimeline(userId, entry, type, entityId) {
   try {

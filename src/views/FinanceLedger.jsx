@@ -12,6 +12,7 @@
 // Extracted from AccountingViews.jsx (see REFACTOR-PLAN.md).
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { canHover, modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
 import { useBackClose } from '../backClose';
@@ -279,7 +280,7 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
   const overheadSystem = systems.find(s => s.is_overhead);
   const advertisingCat = taxCategories.find(c => /advert/i.test(c.name));
   const personalCats = personalBudget || [];
-  const [date, setDate] = useState(initial?.date || new Date().toISOString().slice(0,10));
+  const [date, setDate] = useState(initial?.date || todayNY());
   const [amount, setAmount] = useState(initial ? Math.abs(Number(initial.amount)) : '');
   const [direction, setDirection] = useState(initial && Number(initial.amount) > 0 ? 'in' : 'out');
   const [scope, setScope] = useState(initial?.scope || 'business');
@@ -863,7 +864,7 @@ export function RecurringList({ userId, recurringTemplates, setRecurringTemplate
     const cat = taxCategories.find(c => c.id === r.template_tax_category_id);
     const sys = systems.find(s => s.id === r.template_system_id);
     const isExpense = Number(r.template_amount) < 0;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayNY();
     const isDue = r.is_active && r.next_run_date <= today;
     return (
       <div key={r.id}
@@ -962,7 +963,7 @@ export function RecurringTemplateModal({ userId, initial, taxCategories, systems
   const [description, setDescription] = useState(initial?.template_description || '');
   const [account, setAccount] = useState(initial?.template_account || '');
   const [frequency, setFrequency] = useState(initial?.frequency || 'monthly');
-  const [nextRunDate, setNextRunDate] = useState(initial?.next_run_date || new Date().toISOString().slice(0,10));
+  const [nextRunDate, setNextRunDate] = useState(initial?.next_run_date || todayNY());
   const [saving, setSaving] = useState(false);
 
   function onSystemChange(sysId) {

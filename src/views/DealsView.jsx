@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { lbl, modal, money } from '../helpers';
 import MileageView from './MileageView';
@@ -179,7 +180,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
         side: newDealSide,
         primary_client_id: newDealClientId || null,
         status: 'lead',
-        opened_date: new Date().toISOString().slice(0, 10),
+        opened_date: todayNY(),
       })
       .select().single();
     setAdding(false);
@@ -228,7 +229,7 @@ function DealsView({ deals, setDeals, contacts, setContacts, properties, userId 
       if (window.__notify) window.__notify('Set up the Commission Income tax category first.', 'error');
       return;
     }
-    const closeDate = finalValues.close_date || new Date().toISOString().slice(0, 10);
+    const closeDate = finalValues.close_date || todayNY();
     const merged = { ...deal, ...finalValues };
     const net = computeNetCommission(merged);
     // 1. Create the income transaction
@@ -886,7 +887,7 @@ function CloseDealModal({ deal, onClose, onConfirm }) {
   const [salePrice, setSalePrice]             = useState(deal.sale_price ?? '');
   const [commissionPct, setCommissionPct]     = useState(deal.commission_pct ?? '');
   const [grossCommission, setGrossCommission] = useState(deal.gross_commission ?? '');
-  const [closeDate, setCloseDate]             = useState(cleanDateInput(deal.close_date) || new Date().toISOString().slice(0,10));
+  const [closeDate, setCloseDate]             = useState(cleanDateInput(deal.close_date) || todayNY());
   const [confirming, setConfirming]           = useState(false);
 
   // Live net based on whatever is in the form right now

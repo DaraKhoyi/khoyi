@@ -3,6 +3,7 @@
 // Extracted from App.js (strangle the monolith, step 26).
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { modal, money, num } from '../helpers';
 import { Icon } from '../icons';
 import { confirmDialog, notify } from '../notify';
@@ -321,7 +322,7 @@ export function AccountingView({ userId, ownerId, agents, isAdmin }){
     }
     notify(`Created ${selKeys.length} payout(s) totaling ${money(selTotal)}.`); setSel({}); load();
   };
-  const exportACH=()=>{ const rows=(selKeys.length?selKeys:payKeys); const h=['Payee','Email','Amount','Method','Memo']; const lines=[csvRow(h),...rows.map(k=>{ const a=agents.find(x=>x.id===k)||{}; return csvRow([agentName(k),a.email||'',pendingByAgent[k].pay.toFixed(2),payMethod,`Commission payout`]); })]; dl(`ROG_payables_${new Date().toISOString().slice(0,10)}.csv`,lines.join('\n')); };
+  const exportACH=()=>{ const rows=(selKeys.length?selKeys:payKeys); const h=['Payee','Email','Amount','Method','Memo']; const lines=[csvRow(h),...rows.map(k=>{ const a=agents.find(x=>x.id===k)||{}; return csvRow([agentName(k),a.email||'',pendingByAgent[k].pay.toFixed(2),payMethod,`Commission payout`]); })]; dl(`ROG_payables_${todayNY()}.csv`,lines.join('\n')); };
   const setPayoutStatus=async(id,st)=>{ await supabase.from('payouts').update({ status:st, sent_at: st==='sent'?new Date().toISOString():null }).eq('id',id); setPayouts(p=>p.map(x=>x.id===id?{...x,status:st}:x)); };
 
   // ---------- STATEMENTS ----------

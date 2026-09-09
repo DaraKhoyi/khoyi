@@ -7,6 +7,7 @@
 // Extracted from AccountingViews.jsx (see REFACTOR-PLAN.md).
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
 import { useBackClose } from '../backClose';
@@ -981,7 +982,7 @@ export function Form1099Report({ userId }) {
     if (!contactId) return;
     const patch = { [field]: value };
     if (field === 'w9_collected' && value && !contacts.find(c => c.id === contactId)?.w9_collected_date) {
-      patch.w9_collected_date = new Date().toISOString().slice(0, 10);
+      patch.w9_collected_date = todayNY();
     }
     const { data, error } = await supabase
       .from('contacts').update(patch).eq('id', contactId).select().single();

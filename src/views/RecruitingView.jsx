@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import DealsView from './DealsView';
 import { RecruitingKpiTile } from './SharedUi';
@@ -108,7 +109,7 @@ function RecruitingView({ contacts, setContacts, userId }) {
         phone: newPhone.trim() || null,
         status: 'active',
         recruiting_stage: 'lead',
-        recruiting_first_contact_at: new Date().toISOString().slice(0,10),
+        recruiting_first_contact_at: todayNY(),
         recruiting_stage_changed_at: new Date().toISOString(),
       })
       .select().single();
@@ -129,10 +130,10 @@ function RecruitingView({ contacts, setContacts, userId }) {
       finalPatch.recruiting_stage_changed_at = new Date().toISOString();
       // Auto-stamp terminal dates when entering signed/lost
       if (patch.recruiting_stage === 'signed' && !recruit.recruiting_signed_at) {
-        finalPatch.recruiting_signed_at = new Date().toISOString().slice(0,10);
+        finalPatch.recruiting_signed_at = todayNY();
       }
       if (patch.recruiting_stage === 'lost' && !recruit.recruiting_lost_at) {
-        finalPatch.recruiting_lost_at = new Date().toISOString().slice(0,10);
+        finalPatch.recruiting_lost_at = todayNY();
       }
     }
     const { data, error } = await supabase.from('contacts').update(finalPatch).eq('id', recruit.id).select().single();

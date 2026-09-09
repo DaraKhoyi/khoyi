@@ -3,6 +3,7 @@
 // Extracted from App.js (strangle the monolith, step 26).
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { lbl, modal, money } from '../helpers';
 import { Icon } from '../icons';
 import { notify } from '../notify';
@@ -243,7 +244,7 @@ export function LeadsBoard({ userId, ownerId, agents, canWrite, isAdmin, myTeam 
   };
 
   // KPIs
-  const todayStr=new Date().toISOString().slice(0,10);
+  const todayStr=todayNY();
   const k={ total:leads.length, unassigned:leads.filter(l=>!l.assigned_agent_id&&l.stage!=='closed'&&l.stage!=='lost').length,
     due:leads.filter(l=>l.next_action_at && l.next_action_at.slice(0,10)<=todayStr && !['closed','lost'].includes(l.stage)).length,
     hot:leads.filter(l=>l.temperature==='hot'&&!['closed','lost'].includes(l.stage)).length };

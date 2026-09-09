@@ -12,6 +12,7 @@
 // Extracted from AccountingViews.jsx (see REFACTOR-PLAN.md).
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { modal, money, num, todayISO, today_ymd, ymd, canHover } from '../helpers';
 import { useBackClose } from '../backClose';
@@ -600,7 +601,7 @@ export function CashFlowForecast({ userId, settings }) {
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [cashBalance, setCashBalance] = useState(settings?.current_cash_balance ?? '');
-  const [cashAsOf, setCashAsOf] = useState(settings?.current_cash_balance_as_of || new Date().toISOString().slice(0, 10));
+  const [cashAsOf, setCashAsOf] = useState(settings?.current_cash_balance_as_of || todayNY());
   const [savingBalance, setSavingBalance] = useState(false);
   const [hoveredDay, setHoveredDay] = useState(null);
 

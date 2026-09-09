@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL, ensureFreshSession } from './dataService';
+import { todayNY } from './clock';
 import { useConnectionHealth } from './connection';
 import { useReturnBookmark } from './returnBookmark';
 import { useNbaSkips, SnoozeMenu } from './nbaSkips';
@@ -1679,7 +1680,7 @@ function AppMain() {
   // Built from counts already loaded here — no new queries. Each room learns
   // whether it has anything urgent so the dashboard can float it up and light it.
   const hubOweReply = Object.keys(oweReplyMap || {}).length;
-  const hubTodayStr = new Date().toISOString().slice(0, 10);
+  const hubTodayStr = todayNY();
   const hubDueToday = tasks.filter(t => !t.completed && t.due_date === hubTodayStr).length;   // ACTUALLY due today — not 'today or earlier'
   const hubActiveDeals = (deals || []).filter(d => ['lead', 'active', 'pending'].includes(d.status)).length;
   const hubClear = (reviewCount || 0) + (needsReviewCount || 0);

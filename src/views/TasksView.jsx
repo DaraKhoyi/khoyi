@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { modal, todayISO } from '../helpers';
 import ContactsView from './ContactsView';
@@ -917,7 +918,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
                 Waiting on other people — {waitingTasks.length}
               </span>
               {(() => {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = todayNY();
                 const late = waitingTasks.filter(t => t.due_date && t.due_date < today).length;
                 return late > 0 ? <span style={{ fontSize: 11, fontWeight: 800, color: '#C9563F' }}>{late} late</span> : null;
               })()}
@@ -927,7 +928,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
             {showWaiting && (
               <div style={{ marginTop: 6 }}>
                 {waitingTasks.map(t => {
-                  const today = new Date().toISOString().slice(0, 10);
+                  const today = todayNY();
                   const late = t.due_date && t.due_date < today;
                   return (
                     <div key={t.id} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '8px 12px',

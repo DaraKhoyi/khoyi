@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { RecruitingKpiTile } from './SharedUi';
 import SingleContactPicker from './SingleContactPicker';
@@ -23,7 +24,7 @@ function MileageView({ mileageEntries, setMileageEntries, deals, contacts, setCo
   // Quick-log form state. Lives at the top of the view; date defaults
   // to today so the most common case (logging today's miles before bed)
   // takes three taps: miles, purpose, save.
-  const [qDate, setQDate]               = useState(() => new Date().toISOString().slice(0, 10));
+  const [qDate, setQDate]               = useState(() => todayNY());
   const [qMiles, setQMiles]             = useState('');
   const [qPurpose, setQPurpose]         = useState('');
   const [qRoundTrip, setQRoundTrip]     = useState(false);

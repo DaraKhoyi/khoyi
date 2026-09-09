@@ -12,6 +12,11 @@ cd "$(dirname "$0")/.."
 echo "→ static hooks-order check"
 python3 smoke/hooks_check.py
 
+# The clock. New York time is a correctness property, not a preference: a date
+# that differs by a day between Tampa and Tokyo, or shifts an hour at a DST
+# boundary, is wrong for every user at once and invisible for months.
+node smoke/clock_check.mjs
+
 # Static guard: no undefined identifiers. The runtime smoke check proves views
 # MOUNT; it cannot prove every branch inside them runs, because the throwaway
 # agent has no data. v1.04.49 shipped a ReferenceError straight past a green

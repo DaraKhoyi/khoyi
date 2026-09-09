@@ -2,6 +2,7 @@
 // Extracted from App.js (strangle).
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { Tip } from '../tipsUi';
 import ChatMessageBubble from './ChatMessageBubble';
@@ -291,7 +292,7 @@ export default function ChatView({ robots, userId, hasModeBar }) {
       const perId = override?.personal_budget_line_id !== undefined ? override.personal_budget_line_id : (receiptData.personal_budget_line_id || null);
       const payload = {
         user_id: userId,
-        date: receiptData.date || new Date().toISOString().slice(0, 10),
+        date: receiptData.date || todayNY(),
         amount: signedAmount,
         scope,
         tax_category_id: scope === 'business' ? (catId || null) : null,

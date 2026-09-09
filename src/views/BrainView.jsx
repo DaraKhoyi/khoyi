@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
+import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { ContactPicker } from './SharedUi';
 import { useBackClose } from '../backClose';
@@ -106,7 +107,7 @@ function computeBrainStreak(brain) {
     const d = new Date(b.created_at);
     days.add(d.toISOString().slice(0,10));
   }
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayNY();
   const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0,10);
   const hitToday = days.has(today);
   // Start from today or yesterday
