@@ -131,6 +131,7 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
       { label: 'Agent Activity', view: 'agent_activity', icon: 'chart' },
       { label: 'Goals & Pace', view: 'goal_roster', icon: 'target' },
+      { label: 'Overnight Review', view: 'night_review', icon: 'sparkle' },
     ] },
 
     // ── Me and the system ─────────────────────────────────────────────────────

@@ -133,7 +133,7 @@ export const MODES = [
     home: 'agents',
     resume: true,
     // Recruiting lives here now: growing the roster is a brokerage job.
-    bar: ['agents', 'goal_roster', 'recruiting', 'app_health', 'announcements'],
+    bar: ['agents', 'goal_roster', 'night_review', 'app_health', 'announcements'],
     // 'systems' is the INFRASTRUCTURE health monitor (Online / Degraded /
     // Offline) - it was filed under Prospect, where an ops screen inherited the
     // hunting bar. It is an operations tool, so it sits beside app_health.
