@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL, ensureFreshSession } from './dataService';
-import { todayNY } from './clock';
 import { useConnectionHealth } from './connection';
 import { useReturnBookmark } from './returnBookmark';
 import { useNbaSkips, SnoozeMenu } from './nbaSkips';
@@ -13,7 +12,7 @@ import DashboardHub from './views/DashboardHub';
 import TodayView from './views/TodayView';
 import FirstLook from './views/FirstLook';
 import SomedayView from './views/SomedayView';
-import ModeBar from './views/ModeBar'; import { OnboardingGate } from './views/FirstRun';
+import ModeBar from './views/ModeBar'; import { OnboardingGate } from './views/FirstRun'; import { todayNY } from './clock';
 import useTapActivate from './useTapActivate';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
