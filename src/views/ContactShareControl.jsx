@@ -30,7 +30,9 @@ const SCOPES = [
   { id: 'none', label: 'Private', hint: 'Only you', staffOnly: false },
   { id: 'team', label: 'My team', hint: 'Everyone on your team', staffOnly: false },
   { id: 'brokerage', label: 'Broker admins', hint: 'You and the other broker admins', staffOnly: true },
-  { id: 'everyone', label: 'Everyone', hint: 'Every agent in the brokerage', staffOnly: true },
+  // Read-only on purpose. Ninety-six agents annotating the same title company
+  // turns a clean record into a noticeboard nobody can be told to stop using.
+  { id: 'everyone', label: 'Everyone', hint: 'Every agent — read-only reference', staffOnly: true },
 ];
 
 export default function ContactShareControl({ contact, userId, onChanged }) {
@@ -58,7 +60,10 @@ export default function ContactShareControl({ contact, userId, onChanged }) {
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
           {contact.owner_name ? contact.owner_name + ' owns this contact.' : 'Another agent owns this contact.'}
-          {' '}You can read it and add notes. Only the owner can change or delete it.
+          {' '}
+          {contact.shared_scope === 'everyone'
+            ? 'It is shared with the whole brokerage for reference — read-only, so notes and edits stay with the owner.'
+            : 'You can read it and add notes. Only the owner can change or delete it.'}
         </div>
       </div>
     );
@@ -99,7 +104,9 @@ export default function ContactShareControl({ contact, userId, onChanged }) {
       <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 7, lineHeight: 1.45 }}>
         {scope === 'none'
           ? 'Only you can see this contact.'
-          : (SCOPES.find(s => s.id === scope) || {}).hint + ' can see it and add notes. Only you can edit or delete it.'}
+          : scope === 'everyone'
+            ? 'Every agent can see this for reference. Nobody but you can edit it or add notes to it.'
+            : (SCOPES.find(s => s.id === scope) || {}).hint + ' can see it and add notes. Only you can edit or delete it.'}
       </div>
     </div>
   );
