@@ -31,6 +31,7 @@ import { OnboardingModal } from './OnboardingModal';
 // Settings can have them later.
 
 const GOLD = '#EBCB82';
+const money = (n) => n >= 1000000 ? '$' + (n / 1000000).toFixed(1) + 'M' : '$' + Math.round(n / 1000) + 'K';
 
 function Step({ n, of }) {
   return (
@@ -67,6 +68,9 @@ export default function FirstRun({ userId, userEmail, onDone }) {
   })();
   const [step, setStep] = useState(returnedFromGoogle ? 2 : 0);
   const [email, setEmail] = useState('');
+  const [goal, setGoal] = useState('');
+  const [suggested, setSuggested] = useState(null);
+  const [opps, setOpps] = useState(null);
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [knownName, setKnownName] = useState(null);
@@ -151,7 +155,7 @@ export default function FirstRun({ userId, userEmail, onDone }) {
     const usable = await emailIsUsable(userId);
     setHasEmail(usable);
     setBusy(false);
-    setStep(usable ? 3 : 1);
+    setStep(usable ? 2 : 1);
   }
 
   async function connectEmail() {
@@ -176,6 +180,31 @@ export default function FirstRun({ userId, userEmail, onDone }) {
   }
 
   useEffect(() => { try { localStorage.removeItem('prism_firstrun'); } catch (_) {} }, []);
+
+  // Their own last twelve months, so the goal box is not blank. Most agents do
+  // not know what to type; seeing what they actually did turns a blank field
+  // into a decision. Rounded up to the nearest 10k so it reads as a target
+  // rather than a measurement.
+  useEffect(() => {
+    if (step !== 3) return;
+    supabase.rpc('my_trailing_gci').then(({ data }) => {
+      const n = Number(data || 0);
+      if (n > 0) { const up = Math.ceil(n / 10000) * 10000; setSuggested(up); setGoal(g => g || String(up)); }
+    });
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 4) return;
+    supabase.rpc('first_run_opportunities').then(({ data }) => setOpps(data || { total: 0, people: [] }));
+  }, [step]);
+
+  async function saveGoal(skip) {
+    setBusy(true);
+    const n = Number(String(goal).replace(/[^0-9.]/g, ''));
+    if (!skip && n > 0) { try { await supabase.rpc('set_my_gci_goal', { p_goal: n }); } catch (_) {} }
+    setBusy(false);
+    setStep(4);
+  }
 
   async function finish() {
     setBusy(true);
@@ -202,7 +231,7 @@ export default function FirstRun({ userId, userEmail, onDone }) {
     <div style={{ position: 'fixed', inset: 0, zIndex: 9500, background: '#100D09',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}>
       <div style={card}>
-        <Step n={step + 1} of={4} />
+        <Step n={step + 1} of={5} />
 
         {step === 0 && (
           <>
@@ -257,7 +286,7 @@ export default function FirstRun({ userId, userEmail, onDone }) {
           </>
         )}
 
-        {step >= 2 && (
+        {step === 2 && (
           <>
             <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 300, fontSize: 27, margin: '0 0 8px', color: 'var(--text-1)' }}>
               {hasEmail ? 'Filling your workspace…' : 'You are set up.'}
@@ -279,8 +308,62 @@ export default function FirstRun({ userId, userEmail, onDone }) {
                 ))}
               </div>
             )}
-            <button disabled={busy} style={btn(true)} onClick={finish}>
-              {hasEmail ? 'Start' : 'Take a look around'}
+            <button disabled={busy} style={btn(true)} onClick={() => setStep(3)}>
+              Continue
+            </button>
+          </>
+        )}
+        {step === 3 && (
+          <>
+            <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 300, fontSize: 27, margin: '0 0 8px', color: 'var(--text-1)' }}>
+              What are you aiming at?
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 14px' }}>
+              Your gross commission goal for the next twelve months. A rough number is
+              fine — it is the difference between the app telling you how you are doing
+              and just showing you what happened.
+              {suggested ? ' You closed about ' + money(suggested) + ' in the last twelve months.' : ''}
+            </p>
+            <input value={goal} onChange={e => setGoal(e.target.value)} inputMode="numeric" placeholder="e.g. 150000"
+              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '12px 13px', color: 'var(--text-1)', fontSize: 17, marginBottom: 12 }} />
+            <button disabled={busy} style={btn(true)} onClick={() => saveGoal(false)}>Set my goal</button>
+            <button style={{ ...btn(false), marginTop: 8 }} onClick={() => saveGoal(true)}>I'll decide later</button>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            {/* The reveal. Opportunity, never indictment: three names and a next
+                step, with the total present but not shouted. "You ignored 906
+                people" is the same fact told as an accusation. */}
+            <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 300, fontSize: 27, margin: '0 0 8px', color: 'var(--text-1)' }}>
+              {opps && opps.total > 0 ? 'We found something.' : 'You are set up.'}
+            </h1>
+            {opps && opps.total > 0 ? (
+              <>
+                <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 12px' }}>
+                  {opps.total} people wrote to you and never got a reply. Some are old news.
+                  These three are recent:
+                </p>
+                {(opps.people || []).map((p, i) => (
+                  <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-1)' }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                      {p.days === 0 ? 'today' : p.days + (p.days === 1 ? ' day ago' : ' days ago')}
+                      {p.subject ? ' · ' + p.subject : ''}
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 14px' }}>
+                Your workspace is ready. As your mail syncs, the people worth calling
+                will surface on Today.
+              </p>
+            )}
+            <button disabled={busy} style={{ ...btn(true), marginTop: 6 }} onClick={finish}>
+              {opps && opps.total > 0 ? 'Show me' : 'Start'}
             </button>
           </>
         )}
