@@ -57,7 +57,15 @@ const BUDGETS = {
   // 2080 -> 2090 on 2026-08-23: the oweOnly filter that makes the Morning Brief's
   // "owed replies" row work. Five lines of filter state and one predicate; the rule
   // itself (oweReplyFn) already existed. Comments trimmed twice before raising.
-  "src/views/ContactsView.jsx": 2090,
+  // 2090 -> 2096 (v1.07.95). Shared-with-me filter and row marker. The rule
+  // says raise it in the same commit when the growth is genuinely structural,
+  // and this is: the chip, the badge and the ownership test already live in
+  // their own module (ContactSharedBadge.jsx), and what remains here is the six
+  // lines of minimum wiring — import, state, count, filter clause, chip, badge.
+  // I first tried to fit under 2090 by folding declarations onto unrelated
+  // lines, which satisfied the counter and made the file worse. That is the
+  // ratchet working against its own purpose, so I stopped and raised it instead.
+  "src/views/ContactsView.jsx": 2096,
   "src/views/ContactDetailModal.jsx": 2000,
   "src/views/TasksView.jsx": 1550,
   "src/views/CalendarView.jsx": 1450,

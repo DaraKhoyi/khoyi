@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { notify } from '../notify';
 
@@ -21,14 +21,31 @@ import { notify } from '../notify';
 // Everyone who sees a shared contact sees whose it is. A shared record with no
 // owner on it is how a database stops being believable.
 
+// Four scopes, and the last two are different acts. 'Broker admins' is "between
+// us" — the office sharing something among themselves. 'Everyone' is pushing a
+// record DOWN to all 96 agents: the lender, the title company, the inspector,
+// the photographer. Both are restricted to brokerage staff in the database, so
+// one agent cannot put a contact in front of the whole roster.
 const SCOPES = [
-  { id: 'none', label: 'Private', hint: 'Only you' },
-  { id: 'team', label: 'My team', hint: 'Everyone on your team' },
-  { id: 'brokerage', label: 'Brokerage', hint: 'Broker admins' },
+  { id: 'none', label: 'Private', hint: 'Only you', staffOnly: false },
+  { id: 'team', label: 'My team', hint: 'Everyone on your team', staffOnly: false },
+  { id: 'brokerage', label: 'Broker admins', hint: 'You and the other broker admins', staffOnly: true },
+  { id: 'everyone', label: 'Everyone', hint: 'Every agent in the brokerage', staffOnly: true },
 ];
 
 export default function ContactShareControl({ contact, userId, onChanged }) {
   const [busy, setBusy] = useState(false);
+  // Ask the database whether this viewer is brokerage staff rather than passing a
+  // role down through the tree. The same function guards the write, so the
+  // buttons on screen and the rule in the database can never disagree — and if
+  // this call fails, the staff-only options simply do not appear, which is the
+  // safe direction to fail in.
+  const [isStaff, setIsStaff] = useState(false);
+  useEffect(() => {
+    let dead = false;
+    supabase.rpc('is_brokerage_staff').then(({ data }) => { if (!dead) setIsStaff(data === true); });
+    return () => { dead = true; };
+  }, []);
   const scope = contact.shared_scope || 'none';
   const isMine = contact.user_id === userId;
 
@@ -56,7 +73,9 @@ export default function ContactShareControl({ contact, userId, onChanged }) {
     setBusy(false);
     if (error) { notify('Could not change sharing: ' + (error.message || 'unknown error'), 'error'); return; }
     notify(next === 'none' ? 'Now private to you.'
-      : next === 'team' ? 'Shared with your team.' : 'Shared with the brokerage.', 'success');
+      : next === 'team' ? 'Shared with your team.'
+      : next === 'brokerage' ? 'Shared with the broker admins.'
+      : 'Shared with every agent in the brokerage.', 'success');
     onChanged && onChanged(next);
   }
 
@@ -65,10 +84,10 @@ export default function ContactShareControl({ contact, userId, onChanged }) {
       <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 7 }}>
         Who can see this
       </div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        {SCOPES.map(s => (
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {SCOPES.filter(s => !s.staffOnly || isStaff).map(s => (
           <button key={s.id} type="button" disabled={busy} onClick={() => setScope(s.id)}
-            style={{ flex: 1, padding: '8px 4px', borderRadius: 8, cursor: busy ? 'default' : 'pointer',
+            style={{ flex: '1 1 30%', minWidth: 0, padding: '8px 4px', borderRadius: 8, cursor: busy ? 'default' : 'pointer',
               fontSize: 12, fontWeight: scope === s.id ? 800 : 600,
               border: '1px solid ' + (scope === s.id ? 'var(--room-accent, var(--accent))' : 'var(--border)'),
               background: scope === s.id ? 'var(--room-accent-16, rgba(203,163,92,.16))' : 'transparent',

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../dataService';
+import { SharedWithMeChip, SharedRowBadge, isSharedWithMe } from './ContactSharedBadge';
 import { noteContacts } from '../screenNotes';
 import ContactRowActions from './ContactRowActions';
 import { CALL_LANGUAGES } from '../languages';
@@ -1036,6 +1037,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [recencyFilter, setRecencyFilter] = useState('any');            // any · never · 30 · 60 · 90
   const [sortBy, setSortBy] = useState('last_name');  // 'last_name' | 'first_name' | 'last_contact_oldest' | 'last_contact_newest' | 'recently_added' | 'cadence_due'
   const [dueOnly, setDueOnly] = useState(false);
+  const [sharedOnly, setSharedOnly] = useState(false);
   // Morning Brief's "49 owed replies" pointed at view id 'contacts:owe', which does
   // not exist. The rule existed (oweReplyFn); no way to filter the list by it did.
   const [oweOnly, setOweOnly] = useState(false);
@@ -1048,7 +1050,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   // page paints and scrolls fast on mobile; "Show more" extends it. The window
   // resets whenever the filter/search/sort changes so results start from the top.
   const [visibleCount, setVisibleCount] = useState(60);
-  useEffect(() => { setVisibleCount(60); }, [search, typeFilter, dueOnly, sortBy, discFilter, leadSourceFilter, priorityFilter, reachFilter, recencyFilter]);
+  useEffect(() => { setVisibleCount(60); }, [search, typeFilter, dueOnly, sharedOnly, sortBy, discFilter, leadSourceFilter, priorityFilter, reachFilter, recencyFilter]);
 
   // Email-to-contact linking state
   const [linkSummary, setLinkSummary] = useState(null);  // { suggestions_count, auto_filled, auto_linked } or null when never scanned
@@ -1221,6 +1223,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     return Math.floor(days / 365) + 'y';
   }
   const dueForOutreachCount = contacts.filter(c => { const s = cadenceDue(c); return s && s.due; }).length;
+  const sharedWithMeCount = (contacts || []).filter(c => isSharedWithMe(c, userId)).length;
 
   // honoured no_reply_needed_at but not comms_settled_at, so a Settled contact
   // still headlined "you owe a reply" here. The one-day grace and the snooze are
@@ -1232,6 +1235,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const filtered = contacts.filter(c => {
     if (typeFilter !== 'all' && c.type !== typeFilter) return false;
     if (dueOnly) { const s = cadenceDue(c); if (!s || !s.due) return false; }
+    if (sharedOnly && !isSharedWithMe(c, userId)) return false;
     if (oweOnly && !oweReplyFn(c)) return false;
     if (discFilter.size) { const dl = dominantDiscLetter(profileByContact.get(c.id)) || 'none'; if (!discFilter.has(dl)) return false; }
     if (leadSourceFilter) {
@@ -1774,6 +1778,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
               </select>
             </div>
           </div>
+          <SharedWithMeChip count={sharedWithMeCount} active={sharedOnly} onToggle={()=>setSharedOnly(v=>!v)} />
           {dueForOutreachCount > 0 && (
             <div style={{marginTop:'8px'}}>
               <button onClick={()=>setDueOnly(v=>!v)}
@@ -1803,6 +1808,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
                       <div className="ww-body">
                         <div className="ww-n">{c.name}</div>
                         <div className="ww-m">{[CONTACT_TYPE_LABELS[c.type]||c.type, c.role, c.company].filter(Boolean).join(' · ')}</div>
+                        <SharedRowBadge contact={c} userId={userId} />
                       </div>
                       <div className="ww-right">
                         <ContactRowActions contact={c} onText={(ct, ph) => setTextTo({ contact: ct, phone: ph })} />
