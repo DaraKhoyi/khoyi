@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../dataService';
+import { useTapActivate } from '../useTapActivate';
 import { OnboardingModal } from './OnboardingModal';
 
 // The first ninety seconds.
@@ -42,12 +43,41 @@ function Step({ n, of }) {
   );
 }
 
+// One definition of "this mailbox works", used by the initial load and again at
+// the moment a decision depends on it.
+async function emailIsUsable(userId) {
+  const { data } = await supabase.from('email_accounts')
+    .select('id, refresh_token, reauth_required_at, is_active').eq('user_id', userId);
+  return (data || []).some(a => a.is_active !== false && !a.reauth_required_at && !!a.refresh_token);
+}
+
 export default function FirstRun({ userId, userEmail, onDone }) {
-  const [step, setStep] = useState(0);
+  // Returning from Google is a full page load carrying ?google_connected=. Read
+  // it SYNCHRONOUSLY so the first render is already past the email step.
+  //
+  // The old version started at step 0 and relied on a localStorage flag AND on
+  // hasEmail, which loads asynchronously. Josh connected successfully, came
+  // back, was asked his name again, tapped Continue before the account query
+  // returned, and was sent to "connect your email" — the step he had just
+  // completed. Round and round. Both of those inputs could be late or missing;
+  // the URL cannot.
+  const returnedFromGoogle = (() => {
+    try { return !!new URLSearchParams(window.location.search).get('google_connected'); }
+    catch (_) { return false; }
+  })();
+  const [step, setStep] = useState(returnedFromGoogle ? 2 : 0);
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [knownName, setKnownName] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  // Josh had to tap "Connect my email" twice. Same cause as the tuning-fork
+  // menu: iOS does not reliably turn a touch into a click when the surface has
+  // just finished laying out or scrolling, and the tap is spent elsewhere. On
+  // the one button that carries the whole first run, one tap has to be enough.
+  const tapConnect = useTapActivate(() => connectEmail());
+  const tapContinue = useTapActivate(() => saveName());
   const [counts, setCounts] = useState(null);
   const [hasEmail, setHasEmail] = useState(false);
 
@@ -55,23 +85,24 @@ export default function FirstRun({ userId, userEmail, onDone }) {
   useEffect(() => {
     let dead = false;
     (async () => {
+      // Show them what the brokerage already holds and let them correct it. An
+      // agent whose phone number is wrong on the roster is unreachable by every
+      // feature built on top of it, and this is the one moment they are looking.
       const { data: agent } = await supabase.from('agents')
-        .select('name').eq('auth_user_id', userId).maybeSingle();
+        .select('name, email, phone').eq('auth_user_id', userId).maybeSingle();
       if (dead) return;
       const n = (agent && agent.name) || '';
       setKnownName(n || null);
       setName(n);
+      setEmail((agent && agent.email) || userEmail || '');
+      setPhone((agent && agent.phone) || '');
       // CONNECTED MEANS USABLE, not merely present. This used to check that a
       // row existed, so an agent whose token had been revoked was skipped past
       // the one step that would have fixed it and dropped into a workspace that
       // could never fill. A row with no refresh token, or one flagged for
       // reauth, is a disconnected mailbox wearing a connected row.
-      const { data: acct } = await supabase.from('email_accounts')
-        .select('id, refresh_token, reauth_required_at, is_active')
-        .eq('user_id', userId);
-      const usable = (acct || []).some(a =>
-        a.is_active !== false && !a.reauth_required_at && !!a.refresh_token);
-      if (!dead && usable) setHasEmail(true);
+      const usable = await emailIsUsable(userId);
+      if (!dead) setHasEmail(usable);
     })();
     return () => { dead = true; };
   }, [userId]);
@@ -98,6 +129,13 @@ export default function FirstRun({ userId, userEmail, onDone }) {
     const v = name.trim();
     if (!v) { setErr('We need a name to put on your work.'); return; }
     setBusy(true); setErr('');
+    // Corrections go back to the roster, not just to their profile — the roster
+    // is what the brokerage and every report reads from.
+    try {
+      await supabase.from('agents')
+        .update({ name: v, email: (email || '').trim() || null, phone: (phone || '').trim() || null })
+        .eq('auth_user_id', userId);
+    } catch (_) { /* the setup continues; the broker can fix the roster */ }
     const { error } = await supabase.from('user_settings').upsert({
       user_id: userId, display_name: v,
       // NOT complete yet. The run is finished when they have seen their data,
@@ -106,9 +144,14 @@ export default function FirstRun({ userId, userEmail, onDone }) {
       onboarding_complete: false,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' });
+    if (error) { setBusy(false); setErr('Could not save that: ' + error.message); return; }
+    // Ask the database NOW rather than trusting hasEmail, which may not have
+    // loaded yet. Getting this wrong sends someone back to a step they have
+    // already finished, which is the worst thing a setup flow can do.
+    const usable = await emailIsUsable(userId);
+    setHasEmail(usable);
     setBusy(false);
-    if (error) { setErr('Could not save that: ' + error.message); return; }
-    setStep(hasEmail ? 2 : 1);
+    setStep(usable ? 3 : 1);
   }
 
   async function connectEmail() {
@@ -132,15 +175,7 @@ export default function FirstRun({ userId, userEmail, onDone }) {
     }
   }
 
-  // Returning from Google lands on the progress step, not back at the start.
-  useEffect(() => {
-    try {
-      if (localStorage.getItem('prism_firstrun') === '1' && hasEmail) {
-        localStorage.removeItem('prism_firstrun');
-        setStep(2);
-      }
-    } catch (_) {}
-  }, [hasEmail]);
+  useEffect(() => { try { localStorage.removeItem('prism_firstrun'); } catch (_) {} }, []);
 
   async function finish() {
     setBusy(true);
@@ -167,7 +202,7 @@ export default function FirstRun({ userId, userEmail, onDone }) {
     <div style={{ position: 'fixed', inset: 0, zIndex: 9500, background: '#100D09',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}>
       <div style={card}>
-        <Step n={step + 1} of={3} />
+        <Step n={step + 1} of={4} />
 
         {step === 0 && (
           <>
@@ -176,14 +211,19 @@ export default function FirstRun({ userId, userEmail, onDone }) {
             </h1>
             <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 16px' }}>
               {knownName
-                ? 'This is your workspace at Realty ONE Group Advantage. Your name is how your work gets signed — change it if this is not what you go by.'
-                : 'This is your workspace at Realty ONE Group Advantage. What should we call you?'}
+                ? 'This is your workspace at Realty ONE Group Advantage. Here is what we have for you — fix anything that is wrong.'
+                : 'This is your workspace at Realty ONE Group Advantage. Tell us how to reach you.'}
             </p>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
-              style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)',
-                borderRadius: 10, padding: '12px 13px', color: 'var(--text-1)', fontSize: 15, marginBottom: 14 }} />
+            {[['Your name', name, setName, 'text'], ['Email', email, setEmail, 'email'], ['Mobile', phone, setPhone, 'tel']].map(([ph, val, set, t]) => (
+              <div key={ph} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10.5, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 4 }}>{ph}</div>
+                <input value={val} type={t} onChange={e => set(e.target.value)} placeholder={ph}
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)', border: '1px solid var(--border)',
+                    borderRadius: 10, padding: '12px 13px', color: 'var(--text-1)', fontSize: 15 }} />
+              </div>
+            ))}
             {err ? <p style={{ color: '#E4674F', fontSize: 13, margin: '0 0 10px' }}>{err}</p> : null}
-            <button disabled={busy} style={btn(true)} onClick={saveName}>Continue</button>
+            <button disabled={busy} style={btn(true)} {...tapContinue}>Continue</button>
           </>
         )}
 
@@ -208,7 +248,7 @@ export default function FirstRun({ userId, userEmail, onDone }) {
               </div>
             </div>
             {err ? <p style={{ color: '#E4674F', fontSize: 13, margin: '0 0 10px' }}>{err}</p> : null}
-            <button disabled={busy} style={btn(true)} onClick={connectEmail}>
+            <button disabled={busy} style={btn(true)} {...tapConnect}>
               {busy ? 'Opening Google…' : 'Connect my email'}
             </button>
             <button style={{ ...btn(false), marginTop: 8 }} onClick={() => setStep(2)}>
@@ -217,7 +257,7 @@ export default function FirstRun({ userId, userEmail, onDone }) {
           </>
         )}
 
-        {step === 2 && (
+        {step >= 2 && (
           <>
             <h1 style={{ fontFamily: 'Fraunces, Georgia, serif', fontWeight: 300, fontSize: 27, margin: '0 0 8px', color: 'var(--text-1)' }}>
               {hasEmail ? 'Filling your workspace…' : 'You are set up.'}
