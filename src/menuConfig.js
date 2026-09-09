@@ -35,6 +35,17 @@
 // an unreachable screen; nothing catches a SECOND path to one, so that
 // discipline is yours.
 // ═══════════════════════════════════════════════════════════════════════════
+// NOTE FOR WHOEVER EDITS THIS FILE NEXT.
+//
+// The Brokerage and Team groups are NOT defined here. They are passed in from
+// App.js (brokerageGroup / teamGroup) and spliced in at the bottom of this
+// function, because they depend on runtime role and impersonation state. Adding
+// a Brokerage entry to this file does nothing: it is not merged, it is replaced.
+//
+// This cost real time twice. During the audit I reported nine "unreachable"
+// screens by reading only this file and missing App.js's group. Then I added
+// Overnight Review and Goals & Pace here, shipped them, and Dara could not find
+// either — because neither ever rendered. Brokerage entries belong in App.js.
 export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, setSidebarOpen, enterMode }) {
   return [
     // ── Daily drivers: flat, one tap ─────────────────────────────────────────
@@ -130,8 +141,6 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Chief of Staff', view: 'chief', icon: 'sparkles', ai: true },
       { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
       { label: 'Agent Activity', view: 'agent_activity', icon: 'chart' },
-      { label: 'Goals & Pace', view: 'goal_roster', icon: 'target' },
-      { label: 'Overnight Review', view: 'night_review', icon: 'sparkle' },
     ] },
 
     // ── Me and the system ─────────────────────────────────────────────────────
