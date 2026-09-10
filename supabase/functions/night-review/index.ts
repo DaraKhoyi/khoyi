@@ -40,7 +40,45 @@ const PANEL = [
   ["The Newcomer", "discoverability for an agent in their first ninety seconds"],
   ["The Accountant", "token spend, query cost, storage growth, cost per agent per month"],
   ["The Merchant", "what would make this sellable beyond this one brokerage"],
+  // ADDED for the property-management work, and permanent thereafter.
+  //
+  // Property management is not brokerage with different screens: it holds other
+  // people's money. Florida requires owner funds and security deposits in
+  // segregated escrow, reconciled monthly, under the broker's licence. A CRM
+  // that gets a contact wrong is embarrassing; a PM platform that commingles a
+  // deposit or misstates an owner statement is a licence problem and a lawsuit.
+  // None of the other eight would catch that — the Archivist checks whether
+  // numbers agree with each other, not whether they satisfy a regulator.
+  ["The Fiduciary", "trust accounting, escrow segregation, owner statements, " +
+    "1099s, security-deposit handling, licence and regulatory exposure"],
 ];
+
+// STEP 2 — SIGHT. The panel could not read the code; it reasoned from numbers
+// and produced directional advice. With the repo it can name a file and a line,
+// which is the difference between "look for duplicated logic" and "these two
+// functions disagree". Read-only, and only the shapes it needs: sizes, the gate
+// scripts' names, and the last few commits.
+async function repoView(): Promise<Record<string, unknown>> {
+  const pat = Deno.env.get("GITHUB_PAT");
+  if (!pat) return { note: "no repo access configured" };
+  const h = { Authorization: `Bearer ${pat}`, "User-Agent": "PrismOS-Panel", Accept: "application/vnd.github+json" };
+  const out: Record<string, unknown> = {};
+  try {
+    const tree = await (await fetch("https://api.github.com/repos/DaraKhoyi/khoyi/git/trees/main?recursive=1", { headers: h })).json();
+    const files = (tree.tree || []).filter((f: any) => f.type === "blob" && /^(src|smoke|supabase)\//.test(f.path));
+    out.file_count = files.length;
+    // The biggest files are where drift hides, and where the ratchet fights back.
+    out.largest_files = files.sort((a: any, b: any) => (b.size || 0) - (a.size || 0)).slice(0, 12)
+      .map((f: any) => ({ path: f.path, kb: Math.round((f.size || 0) / 1024) }));
+    out.gate_scripts = files.filter((f: any) => f.path.startsWith("smoke/")).map((f: any) => f.path);
+    const commits = await (await fetch("https://api.github.com/repos/DaraKhoyi/khoyi/commits?per_page=10", { headers: h })).json();
+    out.recent_commits = (commits || []).map((c: any) => (c.commit?.message || "").split("\n")[0]);
+  } catch (e) { out.error = String((e as Error)?.message || e); }
+  return out;
+}
+
+const fingerprint = (agent: string, title: string) =>
+  (agent + "|" + String(title || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim()).slice(0, 300);
 
 async function gather(admin: any) {
   const ev: Record<string, unknown> = {};
@@ -75,6 +113,24 @@ async function gather(admin: any) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
+  // INTERNAL ONLY. This function runs as service role, accepts a body and spends
+  // tokens, so an unauthenticated caller who learned the URL could both drive it
+  // and run up the bill. pg_cron and the app already send this header; nothing
+  // else should reach it. Flagged by smoke/edge_auth.mjs, which was right.
+  const qcp = req.headers.get("x-qcp-token");
+  if (qcp !== Deno.env.get("QCP_TOKEN")) {
+    return new Response(JSON.stringify({ error: "unauthorised" }), {
+      status: 401, headers: { ...CORS, "Content-Type": "application/json" },
+    });
+  }
+
+  // The panel can now be ASKED something, not only left to review the system.
+  // Dara wanted a proposal put to it and there was no way in — the value of
+  // eight specialists is wasted if they can only answer one fixed question.
+  let ask: { question?: string; context?: string } = {};
+  try { ask = await req.json(); } catch (_) { ask = {}; }
+  const isQuestion = !!(ask && ask.question);
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   // The kill switch, before anything else happens or anything is spent.
@@ -92,8 +148,32 @@ Deno.serve(async (req) => {
 
   try {
     const evidence = await gather(admin);
+    (evidence as any).repo = await repoView();
 
-    const system = [
+    // STEP 1 — MEMORY. What has already been decided, so the panel stops
+    // re-raising it. A rejection is data: it tells the panel something about
+    // Dara's priorities that it should not have to be told twice.
+    const { data: settled } = await admin.from("panel_findings")
+      .select("agent, title, status, times_raised, decision_note")
+      .in("status", ["accepted", "rejected", "done", "wont_fix"])
+      .order("last_seen", { ascending: false }).limit(120);
+    (evidence as any).already_decided = settled || [];
+
+    const system = isQuestion ? [
+      "You are a panel of nine specialists advising Dara Khoyi, a Tampa broker,",
+      "on a proposal for PrismOS. Each of you reviews ONLY your own discipline",
+      "and abstains rather than padding:",
+      ...PANEL.map(([n, d]) => `  ${n}: ${d}`),
+      "",
+      "Vote Advance, Revise or Reject on the PROPOSAL, with one sentence of",
+      "reasoning. Disagreement is the point — do not converge politely. If the",
+      "proposal is too large to do at once, say what to cut and what to do first.",
+      "",
+      "Return ONLY JSON, no prose or backticks:",
+      '{"briefing":"<250-350 words to Dara: the two or three things that decide',
+      'whether this succeeds, and what you would cut>",',
+      '"findings":[{"agent":"","title":"","evidence":"","why_it_matters":"","effort":"small|medium|large","confidence":"high|medium|low"}]}',
+    ].join("\n") : [
       "You are a panel of eight specialists reviewing PrismOS, a real estate brokerage",
       "platform used daily by a broker with ~96 agents in Tampa.",
       "",
@@ -106,6 +186,16 @@ Deno.serve(async (req) => {
       ...PANEL.map(([n, d]) => `  ${n}: ${d}`),
       "",
       "Fewer excellent findings beat many weak ones. Three real ones is a good night.",
+      "",
+      "YOU HAVE MEMORY NOW. already_decided lists findings Dara has already ruled",
+      "on. Do NOT raise anything he rejected or marked won't-fix — his rejection is",
+      "information about his priorities, not an oversight. For anything ACCEPTED or",
+      "DONE, say whether it actually moved, using tonight's numbers. Lead the",
+      "briefing with WHAT CHANGED since last night, not with a fresh essay.",
+      "",
+      "YOU CAN SEE THE REPOSITORY NOW. evidence.repo carries the file list with",
+      "sizes, the gate scripts and the last ten commit subjects. Name a file when",
+      "you can. A finding that points at a path is worth several that do not.",
       "",
       "Return ONLY JSON, no prose or backticks:",
       '{"briefing":"<200-300 words, warm and direct, addressed to Dara, leading with',
@@ -124,7 +214,10 @@ Deno.serve(async (req) => {
         model: "claude-sonnet-4-6",
         max_tokens: 4000,
         system,
-        messages: [{ role: "user", content: "Tonight's measurements:\n\n" + JSON.stringify(evidence, null, 1) }],
+        messages: [{ role: "user", content: isQuestion
+          ? "PROPOSAL:\n\n" + ask.question + "\n\nCONTEXT ABOUT THE SYSTEM:\n" +
+            (ask.context || "") + "\n\nCurrent measurements:\n" + JSON.stringify(evidence, null, 1)
+          : "Tonight's measurements:\n\n" + JSON.stringify(evidence, null, 1) }],
       }),
     });
     const j = await res.json();
@@ -143,6 +236,24 @@ Deno.serve(async (req) => {
       });
     } catch (_) { /* the review still ran */ }
 
+    // Persist findings so tomorrow's panel inherits tonight's work.
+    for (const f of (parsed.findings || [])) {
+      try {
+        const fp = fingerprint(f.agent || "", f.title || "");
+        const { data: seen } = await admin.from("panel_findings").select("id, times_raised").eq("fingerprint", fp).maybeSingle();
+        if (seen) {
+          await admin.from("panel_findings").update({
+            last_seen: new Date().toISOString(), times_raised: (seen.times_raised || 1) + 1, run_id: runId,
+          }).eq("id", seen.id);
+        } else {
+          await admin.from("panel_findings").insert({
+            fingerprint: fp, agent: f.agent, title: f.title, evidence: f.evidence,
+            why_it_matters: f.why_it_matters, effort: f.effort, confidence: f.confidence, run_id: runId,
+          });
+        }
+      } catch (_) { /* a ledger failure must not lose the night's briefing */ }
+    }
+
     await admin.from("night_review_runs").update({
       status: "done", finished_at: new Date().toISOString(),
       briefing: parsed.briefing || null,
@@ -156,6 +267,24 @@ Deno.serve(async (req) => {
   } catch (e) {
     // A failed review must be visible tomorrow, not silent. Dara should never
     // wonder whether the panel found nothing or simply never ran.
+    // Persist findings so tomorrow's panel inherits tonight's work.
+    for (const f of (parsed.findings || [])) {
+      try {
+        const fp = fingerprint(f.agent || "", f.title || "");
+        const { data: seen } = await admin.from("panel_findings").select("id, times_raised").eq("fingerprint", fp).maybeSingle();
+        if (seen) {
+          await admin.from("panel_findings").update({
+            last_seen: new Date().toISOString(), times_raised: (seen.times_raised || 1) + 1, run_id: runId,
+          }).eq("id", seen.id);
+        } else {
+          await admin.from("panel_findings").insert({
+            fingerprint: fp, agent: f.agent, title: f.title, evidence: f.evidence,
+            why_it_matters: f.why_it_matters, effort: f.effort, confidence: f.confidence, run_id: runId,
+          });
+        }
+      } catch (_) { /* a ledger failure must not lose the night's briefing */ }
+    }
+
     await admin.from("night_review_runs").update({
       status: "failed", finished_at: new Date().toISOString(), error: String((e as Error)?.message || e),
     }).eq("id", runId);

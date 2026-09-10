@@ -38,6 +38,16 @@ if (!existsSync(ROOT)) { console.log("EDGE AUTH GUARD: no functions directory");
 // and is not reachable with a user token; or it is a public portal whose whole
 // job is to serve someone with no account, protected by an unguessable token.
 const ALLOWED = new Map([
+  // Internal only, and gated on x-qcp-token rather than a user JWT. It takes a
+  // QUESTION from the body, never an identity: there is no user_id to spoof and
+  // nothing it returns is scoped to a person. It was correctly flagged when it
+  // first accepted a body with no auth at all — the fix was the token check, not
+  // this entry. An unauthenticated caller now gets 401, verified.
+  ["night-review", "cron and broker-initiated; x-qcp-token required; takes a question, not an identity"],
+  // Same gate. Acts on a proposal id, never on a user id, and refuses to merge
+  // anything unless CI is green.
+  ["panel-propose", "cron and broker-initiated; x-qcp-token required; operates on proposal ids only"],
+
   ['notify-optout', 'One-click unsubscribe from a lead-notification email. The caller is a mail ' +
     'client, not a session, so the random token IS the authorisation — it maps to exactly one ' +
     'notification_prefs row. The only thing it can do is set email_new_leads = false: it cannot ' +
