@@ -424,7 +424,8 @@ async function syncOneAccount(supabase, account, opts) {
         subject: subject || null,
         snippet: msg.snippet || null,
         body_text: bodies.text || null,
-        body_html: bodies.html || null,
+        // See keepHtml(): bulk mail keeps everything but the rendered layout.
+        body_html: keepHtml(fromObj.email, getHeader(headers, "List-Unsubscribe")) ? (bodies.html || null) : null,
         labels,
         is_read: !labels.includes("UNREAD"),
         is_starred: labels.includes("STARRED"),
@@ -653,6 +654,36 @@ async function syncOneAccount(supabase, account, opts) {
     result.error = String(err);
     return result;
   }
+}
+
+
+// Do not store the HTML body of bulk mail.
+//
+// body_html is 702 MB of a 1,083 MB table — 65% of it — and the newsletters are
+// the part that compounds, because they arrive forever whether or not anyone
+// reads them. mail.beehiiv.com alone accounts for 4,160 messages and 84 MB.
+//
+// KEPT for these: sender, subject, snippet, labels, dates, and the plain TEXT
+// body. Search, the lead concierge and the contact timeline all still work.
+// DROPPED: the rendered marketing layout, which is only used to display the
+// message in the reader — and nobody opens a two-year-old newsletter.
+//
+// Deliberately conservative, and the test is the SENDER rather than the content:
+// a human who happens to write "unsubscribe" keeps their formatting. A false
+// positive costs the styling of one promotional email; a false negative costs a
+// few kilobytes.
+const BULK_SENDER = /(no-?reply|do-?not-?reply|donotreply|notification|notifications|mailer|bounce|postmaster|newsletter|marketing|campaign|updates?@|news@|alerts?@|billing@|invoice@|receipts?@|noreply)/i;
+const BULK_DOMAIN = /(beehiiv|mailchimp|sendgrid|constantcontact|hubspot|marketo|substack|klaviyo|exacttarget|sparkpost|mandrill|rsgsv|mcsv)/i;
+
+function keepHtml(fromAddress, listUnsubscribe) {
+  const a = (fromAddress || "").toLowerCase();
+  if (!a) return true;                       // unknown sender: keep, be safe
+  if (BULK_SENDER.test(a)) return false;
+  if (BULK_DOMAIN.test(a)) return false;
+  // A List-Unsubscribe header is the mail standard's own declaration that a
+  // message is a bulk mailing — more reliable than guessing from the address.
+  if (listUnsubscribe) return false;
+  return true;
 }
 
 serve(async (req) => {
