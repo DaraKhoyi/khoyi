@@ -22,7 +22,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function buildResearchPrompt(candidate, contact, scope, me, disc) {
+function buildResearchPrompt(candidate, contact, scope, me, disc, ownWords) {
   const id = candidate || {};
   // Social profiles are the STRONGEST anchors — a known LinkedIn/Instagram URL
   // pins identity far better than name+email, so the research reads the right
@@ -101,7 +101,7 @@ ${lastOut && !lastIn ? "NOTE: every logged contact has been me reaching out to t
 
 SUBJECT ANCHORS (use these to confirm you have the RIGHT person):
 ${anchors}
-${meBlock}${discBlock}${relationshipBlock}
+${meBlock}${discBlock}${relationshipBlock}${ownWords || ""}
 
 RESEARCH SCOPE: ${scope.toUpperCase()}. ${scopeLine}
 
@@ -109,6 +109,22 @@ RESEARCH SCOPE: ${scope.toUpperCase()}. ${scopeLine}
 - Use ONLY legitimately public web sources (LinkedIn, public Facebook/Instagram/X, company sites, public registries/licenses appropriate to their field, news, podcasts, talks, published writing). NO data brokers, leaked data, or paywalled personal records.
 - This is for RELATIONSHIP-BUILDING ONLY. It is NOT a background check and must NOT be used for any tenant, employment, lending, insurance, or other eligibility decision (those are FCRA-regulated and this is not FCRA-compliant).
 - Anchor every finding to the SAME person as the anchors above. If you cannot confidently confirm identity, say so and set identity_confidence to "low" — never blend two different people.
+- WHAT THEY TOLD YOU OUTRANKS WHAT YOU FOUND. If the WHAT THEY HAVE TOLD YOU
+  section below is present, treat it as the most reliable source in this brief.
+  It is first-party: this person wrote it to the agent, in their own words, in
+  correspondence they chose to send. A web search guesses; this does not. Where
+  the two disagree, believe the correspondence and say so.
+  Mark anything drawn from it as self-disclosed, so the agent knows the
+  difference between "he told you his wife handles the finances" and "the
+  internet suggests he is married".
+
+- PUBLIC PROPERTY RECORDS are legitimate and often decisive in a transaction.
+  Deeds, mortgages and tax rolls are public and name CO-OWNERS. If a spouse or
+  co-owner is on title, they must sign — an agent who does not know this finds
+  out at the closing table. Report co-owners and vesting where the record shows
+  them, as TRANSACTION FACT rather than personal colour. Do not extend this into
+  researching that co-owner as a person.
+
 - FAMILY: include family only where the SUBJECT has chosen to make it public themselves (e.g., they post about coaching their kid's team, run the business with their spouse, describe themselves as a "third-generation Tampan"). Never research, name, or profile their children or other relatives as separate subjects. Never include minors' details. Family context is for warmth AND for the client’s legitimate housing needs — you MAY note household composition at a high level where the subject has made it public (e.g. “a family with young children,” which helps an agent size a home to the right number of bedrooms). But it is NEVER a dossier: do not research, name, photograph, locate, schedule, or detail any specific minor.
 - No speculation. Every non-trivial claim gets a source. If you only find something once, label it single-source. If evidence is thin, say so rather than padding.
 
@@ -152,6 +168,8 @@ Be concrete and personal to them. Generic relationship advice is worse than noth
   "personal": {
     "hobbies": ["..."],
     "family_context": "self-disclosed/public only; null if none; never minors",
+    "family_source": "told_you" | "public" | null,
+    "co_owners_on_title": "from public property records; who must sign; null if none found",
     "geo_cultural_ties": ["..."],
     "recurring_themes": ["..."],
     "recent_excitement": ["..."],
@@ -335,7 +353,37 @@ serve(async (req) => {
 
     const { data: prof } = await supabase.from("profiles").select("*").eq("contact_id", contact_id).maybeSingle();
     const disc = prof ? { primary: prof.baseline_primary || prof.primary_letter || prof.research_primary, secondary: prof.baseline_secondary || prof.secondary_letter || prof.research_secondary, confidence: prof.confidence || prof.research_confidence } : null;
-    const prompt = buildResearchPrompt(candidate, contact, scope, me, disc);
+    // WHAT THEY TOLD YOU. The richest and safest source of family and life
+    // context is not the internet — it is the person's own correspondence with
+    // this agent. "My wife and I are looking", "before my daughter starts
+    // school": first-party, freely given, already in the database, and more
+    // accurate than anything a search will infer. It was never being read.
+    //
+    // Own mail only, capped, and newest first. No third parties, no minors'
+    // details beyond what the subject volunteered themselves.
+    let ownWords = "";
+    try {
+      const { data: msgs } = await supabase
+        .from("email_messages")
+        .select("subject, snippet, body_text, internal_date, direction")
+        .eq("user_id", contact.user_id)
+        .eq("direction", "inbound")
+        .ilike("from_address", contact.email || "\u0000")
+        .order("internal_date", { ascending: false })
+        .limit(25);
+      const lines = (msgs || [])
+        .map((m) => {
+          const t = (m.body_text || m.snippet || "").replace(/\s+/g, " ").slice(0, 400);
+          return t ? `[${String(m.internal_date).slice(0, 10)}] ${m.subject || ""}: ${t}` : "";
+        })
+        .filter(Boolean).slice(0, 20);
+      if (lines.length) {
+        ownWords = "\n\nWHAT THEY HAVE TOLD YOU (first-party; their own words in mail to this agent):\n"
+          + lines.join("\n");
+      }
+    } catch (_) { /* research still runs without it */ }
+
+    const prompt = buildResearchPrompt(candidate, contact, scope, me, disc, ownWords);
 
     const writeProfile = async (fields) => {
       const { data: existing } = await supabase.from("profiles").select("id").eq("contact_id", contact_id).maybeSingle();
