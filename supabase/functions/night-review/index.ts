@@ -51,6 +51,21 @@ const PANEL = [
   // numbers agree with each other, not whether they satisfy a regulator.
   ["The Fiduciary", "trust accounting, escrow segregation, owner statements, " +
     "1099s, security-deposit handling, licence and regulatory exposure"],
+  // ADDED at Dara's request, ahead of property management.
+  //
+  // The threat model is about to change completely. Tenant applications carry
+  // SOCIAL SECURITY NUMBERS. Owner disbursements carry BANK ACCOUNT AND ROUTING
+  // DETAILS. Today the worst case of a breach is embarrassing; with that data it
+  // is identity theft for people who trusted the brokerage, Florida breach
+  // notification, and a licence problem.
+  //
+  // The Fiduciary asks whether the money is accounted for correctly. The
+  // Sentinel asks whether anyone who should not have it can reach it. Those are
+  // different questions and the second has never had an owner on this panel.
+  ["The Sentinel", "security: who can reach what. RLS gaps and fail-open policies, " +
+    "edge functions that trust the caller, secrets in code or logs, PII and " +
+    "credentials at rest, over-broad grants, and anything that would turn a " +
+    "single compromised account into a breach of everyone's data"],
 ];
 
 // STEP 2 — SIGHT. The panel could not read the code; it reasoned from numbers
@@ -108,6 +123,31 @@ async function gather(admin: any) {
   // cost, but never whether the spend bought anything. The lead concierge had a
   // 0.26% hit rate — 5,799 cards surfaced, 15 acted on — and nobody had ever
   // shown that to the nine people whose job is noticing exactly this.
+  // What the Sentinel needs to reason from. Posture, not opinion.
+  await one("rls_coverage", `select count(*) tables,
+     count(*) filter (where c.relrowsecurity) with_rls,
+     count(*) filter (where not c.relrowsecurity) without_rls
+   from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relkind='r'`);
+  await one("tables_without_rls_holding_rows", `select c.relname, s.n_live_tup
+   from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   left join pg_stat_user_tables s on s.relid=c.oid
+   where n.nspname='public' and c.relkind='r' and not c.relrowsecurity
+     and coalesce(s.n_live_tup,0) > 0 order by 2 desc limit 10`);
+  await one("permissive_policies", `select tablename, policyname, cmd
+   from pg_policies where schemaname='public'
+     and (qual = 'true' or with_check = 'true') limit 10`);
+  // Columns whose NAME suggests they hold something that would hurt if leaked.
+  // Names are a weak signal, which is the point: the Sentinel should ask, not
+  // assume, and a false positive costs one sentence of explanation.
+  await one("sensitive_columns", `select table_name, column_name
+   from information_schema.columns where table_schema='public'
+     and (column_name ~* '(ssn|social_security|tax_id|routing|account_number|iban|card|cvv|passport|license_num|dob|date_of_birth|password|secret|token|api_key|credential)')
+   order by 1 limit 25`);
+  await one("public_grants", `select table_name, privilege_type, grantee
+   from information_schema.role_table_grants
+   where table_schema='public' and grantee in ('anon','PUBLIC')
+     and privilege_type in ('INSERT','UPDATE','DELETE') limit 15`);
   await one("agent_hit_rates", `select 'lead_concierge' agent,
      count(*) surfaced, count(*) filter (where status='sent') acted,
      round(100.0*count(*) filter (where status='sent')/nullif(count(*),0),2) pct
