@@ -46,7 +46,7 @@ export function ContactPicker({ contacts = [], selectedIds = [], onChange, label
         <div style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'8px',background:'var(--bg-base)',maxHeight:'240px',display:'flex',flexDirection:'column'}}>
           <input className="form-input" autoFocus value={query} onChange={e=>setQuery(e.target.value)}
             placeholder={placeholder} style={{margin:0,marginBottom:'6px',fontSize:'12px'}} />
-          <div style={{overflowY:'auto',flex:1}}>
+          <div style={{overflowY:'auto',flex:1,minHeight:0}}>
             {options.length === 0 && (
               <div style={{padding:'12px',textAlign:'center',color:'var(--text-3)',fontSize:'11px'}}>
                 {query ? emptyText : 'No contacts to add.'}

@@ -800,7 +800,7 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1}}>
+        <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1,minHeight:0}}>
           {suggestions === null && !scanErr && <div style={{padding:'40px',textAlign:'center',color:'var(--text-3)'}}>Scanning…</div>}
           {scanErr && <div style={{padding:'28px 16px',textAlign:'center',color:'var(--yellow)',fontSize:'13px'}}>{scanErr}</div>}
 
@@ -2006,7 +2006,7 @@ function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, 
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1}}>
+        <div style={{padding:'0 16px 16px',overflowY:'auto',flex:1,minHeight:0}}>
           {errorMsg && (
             <div style={{padding:'8px 12px',marginBottom:'10px',background:'rgba(239,68,68,0.10)',border:'1px solid #ef4444',borderRadius:'6px',color:'#ef4444',fontSize:'12px'}}>
               {errorMsg}

@@ -620,7 +620,7 @@ export function TemplateLibraryModal({ templates, activeNames, atCap, maxSystems
         </div>
 
         {/* Scrolling list */}
-        <div style={{padding:'12px 16px',overflowY:'auto',flex:1}}>
+        <div style={{padding:'12px 16px',overflowY:'auto',flex:1,minHeight:0}}>
           {filtered.length === 0 ? (
             <p style={{textAlign:'center',color:'var(--text-3)',padding:'40px 20px',fontStyle:'italic'}}>No systems match these filters.</p>
           ) : (

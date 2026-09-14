@@ -180,7 +180,7 @@ export default function TaskModal({ onClose, onSave, onDelete, initial, defaultS
           {!(initial && initial.id) && <div style={{height:'14px'}} />}
         </div>
         <form onSubmit={handleSubmit} style={{display:'flex',flexDirection:'column',minHeight:0,flex:1,overflow:'hidden'}}>
-          <div style={{overflowY:'auto',padding:'18px 20px',flex:1}}>
+          <div style={{overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'18px 20px',flex:1,minHeight:0}}>
           <div className="form-group"><label className="form-label">Task</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?" autoFocus required /></div>
           <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase',color:'var(--text-3)',margin:'4px 0 12px',paddingTop:'16px',borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'7px'}}><Icon name="target" size={12} style={{color:'var(--accent)'}} />Priority &amp; focus</div>
           <div className="form-group">
@@ -379,7 +379,7 @@ export default function TaskModal({ onClose, onSave, onDelete, initial, defaultS
               <div style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'8px',background:'var(--bg-base)',maxHeight:'240px',display:'flex',flexDirection:'column'}}>
                 <input className="form-input" autoFocus value={contactQuery} onChange={e=>setContactQuery(e.target.value)}
                   placeholder="Search by name, email, or company…" style={{margin:0,marginBottom:'6px',fontSize:'12px'}} />
-                <div style={{overflowY:'auto',flex:1}}>
+                <div style={{overflowY:'auto',flex:1,minHeight:0}}>
                   {filteredContactOptions.length === 0 && (
                     <div style={{padding:'12px',textAlign:'center',color:'var(--text-3)',fontSize:'11px'}}>
                       {contactQuery ? 'No matches.' : 'No contacts to add.'}
@@ -421,7 +421,7 @@ export default function TaskModal({ onClose, onSave, onDelete, initial, defaultS
             );
           })()}
           </div>
-          <div style={{display:'flex',justifyContent:'flex-end',gap:'10px',padding:'14px 20px',borderTop:'1px solid var(--border)',background:'var(--bg-base)',flexShrink:0}}>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:'10px',padding:'14px 20px calc(14px + env(safe-area-inset-bottom, 0px))',flexShrink:0,borderTop:'1px solid var(--border)',background:'var(--bg-base)',flexShrink:0}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" style={{padding:'10px 24px',fontWeight:800}}>Save Task</button>
           </div>

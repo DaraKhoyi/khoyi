@@ -1936,7 +1936,7 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
               </div>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowResearchReport(false)}>✕</button>
             </div>
-            <div style={{padding:'16px',overflowY:'auto',flex:1,fontSize:'13px',lineHeight:1.7,color:'var(--text-1)',whiteSpace:'pre-wrap'}}>
+            <div style={{padding:'16px',overflowY:'auto',flex:1,fontSize:'13px',lineHeight:1.7,color:'var(--text-1)',whiteSpace:'pre-wrap',minHeight:0}}>
               {profile.research_needs_confirmation && (
                 <div style={{ marginBottom:'14px', padding:'12px 14px', borderRadius:'10px', background:'rgba(245,158,11,0.10)', border:'1px solid rgba(245,158,11,0.45)' }}>
                   <div style={{ fontSize:'12.5px', fontWeight:700, color:'var(--yellow)', marginBottom:'4px' }}>⚠ Is this the right person?</div>
