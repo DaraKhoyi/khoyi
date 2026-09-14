@@ -104,6 +104,18 @@ async function gather(admin: any) {
   await one("goals_set", `select count(*) total, count(*) filter (where exists
      (select 1 from agent_goals g where g.agent_id = a.id and g.year = extract(year from public.today_ny())::int)) with_goal
      from agents a where a.active`);
+  // HOW THE AGENTS ARE ACTUALLY DOING. The panel reviewed the codebase and the
+  // cost, but never whether the spend bought anything. The lead concierge had a
+  // 0.26% hit rate — 5,799 cards surfaced, 15 acted on — and nobody had ever
+  // shown that to the nine people whose job is noticing exactly this.
+  await one("agent_hit_rates", `select 'lead_concierge' agent,
+     count(*) surfaced, count(*) filter (where status='sent') acted,
+     round(100.0*count(*) filter (where status='sent')/nullif(count(*),0),2) pct
+   from lead_concierge`);
+  await one("learned_rules", `select kind, count(*) n,
+     count(*) filter (where note like 'learned:%') auto_learned
+   from lead_sender_rules group by 1`);
+  await one("commitments_kept", `select status, count(*) n from commitments group by 1`);
   await one("email_storage", `select count(*) rows,
      pg_size_pretty(pg_total_relation_size('email_messages')) size,
      count(*) filter (where internal_date > now() - interval '30 days') last_30d
