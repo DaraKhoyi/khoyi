@@ -127,8 +127,11 @@ function LeadEmailTools({ it, contacts, onActed, collapsed, onNotALead, onDelega
       ) : null}
       {mine ? (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Archive stays here. Delete moved down beside Edit and Dismiss at
+              Dara's request, so the destructive choice sits with the other
+              decisions about the draft rather than at the top of the card. */}
           <EmailActionBar accountId={accountId} providerThreadId={pThread}
-            providerMessageId={pMsg} onDone={onActed} compact />
+            providerMessageId={pMsg} onDone={onActed} compact only={['archive']} />
           <button type="button" onClick={() => setModal('task')}
             title="Make an A/B/C/D task carrying the whole email, and have the email return on the due date"
             style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 9px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
@@ -265,6 +268,29 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
     } catch (e) { setFlash({ id: it.id, msg: (e.message || 'Send failed') }); }
     setBusy(null);
   };
+  // Delete the actual email. Uses the SAME helper EmailActionBar calls, so there
+  // is one rule for trashing mail rather than a second copy that drifts — the
+  // pattern this codebase has paid for more than any other.
+  const deleteMail = async (it) => {
+    if (!window.confirm('Move this email to Trash? Gmail keeps it for 30 days.')) return;
+    setBusy(it.id);
+    try {
+      const r = await runEmailAction({
+        action: 'trash',
+        accountId: it.account_id,
+        providerThreadId: it.provider_thread_id,
+        providerMessageId: it.provider_message_id,
+      });
+      if (r && r.error) throw new Error(r.error);
+      await supabase.rpc('lead_concierge_dismiss', { p_id: it.id });
+      setItems(list => list.filter(x => x.id !== it.id));
+      if (window.__notify) window.__notify('Deleted. It is in your Gmail Trash for 30 days.', 'success');
+    } catch (e) {
+      if (window.__notify) window.__notify('Could not delete: ' + (e.message || 'unknown error'), 'error');
+    }
+    setBusy(null);
+  };
+
   const dismiss = async (it) => {
     setBusy(it.id);
     try { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); setItems(list => list.filter(x => x.id !== it.id)); } catch (_) {}
@@ -415,6 +441,19 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                   {busy === it.id ? 'Sending\u2026' : (editing ? 'Send this' : (isEmail ? 'Send email' : 'Send reply'))}
                 </button>
                 {!editing && <button onClick={() => { setEditId(it.id); setEditText(it.draft); }} style={{ background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>Edit</button>}
+                {/* Delete sits between Edit and Dismiss. It moves the real email
+                    to Trash — recoverable in Gmail for 30 days — whereas Dismiss
+                    only clears this card and leaves the mail where it is. Two
+                    different acts, so they do not look alike. */}
+                {isEmail && (
+                  <button type="button" disabled={busy === it.id}
+                    title="Move the email to Trash. Recoverable in Gmail for 30 days."
+                    onClick={() => deleteMail(it)}
+                    style={{ background: 'transparent', color: '#E4674F', border: '1px solid rgba(201,86,63,.45)',
+                      borderRadius: 10, padding: '10px 14px', fontSize: 13, cursor: 'pointer' }}>
+                    Delete
+                  </button>
+                )}
                 <button disabled={busy === it.id} onClick={() => dismiss(it)} style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--text-3)', border: 'none', fontSize: 12.5, cursor: 'pointer' }}>Dismiss</button>
               </div>
             )}

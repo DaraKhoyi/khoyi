@@ -126,7 +126,7 @@ export default function TaskModal({ onClose, onSave, onDelete, initial, defaultS
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{maxWidth:'640px',width:'min(640px,100%)',padding:0,maxHeight:'92vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div className="modal" style={{maxWidth:'640px',width:'min(640px,100%)',padding:0,maxHeight:'min(92vh, 92dvh)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {/* HEADER — title row and ACTION row are separate on purpose. Cramming
             the title, two labelled pills and a close button into one flex row
             collapsed at Dara's large system font: "Edit Task" wrapped to two

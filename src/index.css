@@ -432,9 +432,13 @@ body {
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
 /* ─── MODAL ─── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); padding: 16px; }
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); padding: 16px; }
-.modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 480px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px);
+  /* Respect the notch and the home indicator, or the first and last rows of a
+     tall modal sit underneath them on an iPhone. */
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px);
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 480px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-height: 90vh; max-height: 90dvh; overflow-y: auto; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .modal-header h3 { font-size: 16px; font-weight: 700; }
 .modal-close { background: none; border: none; color: var(--text-3); font-size: 20px; cursor: pointer; }

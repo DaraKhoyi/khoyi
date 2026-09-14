@@ -253,7 +253,10 @@ function notify(msg, kind) { try { window.__notify && window.__notify(msg, kind)
 // Gmail back and puts the label where it was. It stays until dismissed rather
 // than vanishing on a timer, because a timed undo on a phone is a promise you
 // break for anyone who looks away.
-export function EmailActionBar({ accountId, providerThreadId, providerMessageId, scope = 'thread', onDone, compact = false, disabled = false }) {
+// `only` lets a caller render a subset. The lead card wants Archive here and
+// Delete moved down beside Edit and Dismiss, where the destructive choice sits
+// with the other decisions about the draft rather than at the top of the card.
+export function EmailActionBar({ accountId, providerThreadId, providerMessageId, scope = 'thread', onDone, compact = false, disabled = false, only = null }) {
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState('');
   const [undoable, setUndoable] = useState(null); // { action, label }
@@ -318,9 +321,11 @@ export function EmailActionBar({ accountId, providerThreadId, providerMessageId,
       <button type="button" style={btnStyle(false)} disabled={disabled || !!busy} title={EMAIL_ACTIONS.archive.hint} onClick={() => act('archive')}>
         {busy === 'archive' ? 'Archiving\u2026' : EMAIL_ACTIONS.archive.icon + ' Archive'}
       </button>
+      {(!only || only.includes('trash')) && (
       <button type="button" style={btnStyle(true)} disabled={disabled || !!busy} title={EMAIL_ACTIONS.trash.hint} onClick={() => act('trash')}>
         {busy === 'trash' ? 'Deleting\u2026' : EMAIL_ACTIONS.trash.icon + ' Delete'}
       </button>
+      )}
     </div>
     {err ? (
       <div style={{ marginTop: 6, fontSize: 11.5, color: '#fca5a5', lineHeight: 1.4, wordBreak: 'break-word' }}>{err}</div>
