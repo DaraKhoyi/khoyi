@@ -535,28 +535,77 @@ async function syncOneAccount(supabase, account, opts) {
     // on first connect), and observe quiet hours (only 8am–9pm in the user's tz)
     // so nobody gets a 3am buzz. Dedupe is automatic — gmail-sync only sees
     // messages past the history cursor, so each inbound is counted once.
+    // NOTIFY ABOUT PEOPLE, NOT ABOUT EMAIL.
+    //
+    // This pushed whenever a sync found ANY new inbound message, and the sync
+    // runs every five minutes. Alexander got a buzz for every newsletter and
+    // every no-reply receipt — "a notification on every single email identity,
+    // even if it's spam". That is not a notification system, it is a nuisance,
+    // and it is how an agent learns to ignore the app.
+    //
+    // Three faults, all fixed here:
+    //   1. It counted ALL inbound. Bulk senders and machines are now excluded.
+    //   2. It ignored what the user had already rejected. Senders they have
+    //      marked not-a-lead, blocked or unsubscribed no longer count — the
+    //      same rules the concierge reads, so a dismissal teaches both.
+    //   3. There was no throttle. At most one push an hour now, and it says how
+    //      many are waiting rather than firing once per message.
     if ((result.new_inbound || 0) > 0 && !opts.force_backfill) {
       try {
-        // resolve the user's timezone (fall back to Eastern) for quiet-hours
-        let tz = "America/New_York";
-        try {
-          const { data: prof } = await supabase.from("ari_briefing_prefs").select("tz").eq("user_id", account.user_id).maybeSingle();
-          if (prof?.tz) tz = prof.tz;
-        } catch (_) {}
-        const localHour = parseInt(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hour12: false }).format(new Date()), 10);
-        if (localHour >= 8 && localHour < 21) {
-          const n = result.new_inbound;
-          await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/push-send`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: account.user_id,
-              title: n === 1 ? "New message" : `${n} new messages`,
-              body: n === 1 ? "You have a new email that may need a reply." : `You have ${n} new emails that may need a reply.`,
-              url: "https://darasapp.com/",
-              tag: "owe-reply",
-            }),
-          }).catch(() => {});
+        // Who actually wrote, among the newly synced inbound.
+        const { data: fresh } = await supabase
+          .from("email_messages")
+          .select("from_address")
+          .eq("user_id", account.user_id)
+          .eq("direction", "inbound")
+          .gte("internal_date", new Date(Date.now() - 30 * 60 * 1000).toISOString())
+          .limit(80);
+
+        const { data: muted } = await supabase
+          .from("lead_sender_rules")
+          .select("sender")
+          .eq("user_id", account.user_id)
+          .in("kind", ["not_a_lead", "blocked", "unsubscribed"]);
+        const mutedSet = new Set((muted || []).map((r) => String(r.sender || "").toLowerCase()));
+
+        const notable = (fresh || []).filter((m) => {
+          const a = String(m.from_address || "").toLowerCase();
+          if (!a) return false;
+          if (mutedSet.has(a)) return false;
+          if (BULK_SENDER.test(a) || BULK_DOMAIN.test(a)) return false;
+          return true;
+        }).length;
+
+        if (notable > 0) {
+          // Quiet hours, in the user's own zone, and at most one an hour.
+          let tz = "America/New_York";
+          try {
+            const { data: prof } = await supabase.from("ari_briefing_prefs").select("tz").eq("user_id", account.user_id).maybeSingle();
+            if (prof?.tz) tz = prof.tz;
+          } catch (_) {}
+          const localHour = parseInt(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hour12: false }).format(new Date()), 10);
+
+          const { data: pref } = await supabase.from("notification_prefs")
+            .select("last_push_at").eq("user_id", account.user_id).maybeSingle();
+          const lastPush = pref?.last_push_at ? new Date(pref.last_push_at).getTime() : 0;
+          const throttled = Date.now() - lastPush < 60 * 60 * 1000;
+
+          if (localHour >= 8 && localHour < 21 && !throttled) {
+            await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/push-send`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                user_id: account.user_id,
+                title: notable === 1 ? "Someone is waiting on you" : `${notable} people are waiting on you`,
+                body: notable === 1 ? "A new message looks like it needs a reply." : `${notable} new messages look like they need a reply.`,
+                url: "https://darasapp.com/",
+                tag: "owe-reply",
+              }),
+            }).catch(() => {});
+            await supabase.from("notification_prefs")
+              .update({ last_push_at: new Date().toISOString() })
+              .eq("user_id", account.user_id);
+          }
         }
       } catch (_) { /* push is best-effort; never block the sync */ }
     }
