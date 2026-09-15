@@ -39,6 +39,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   const [rows, setRows] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [busy, setBusy] = useState(null);
+  const [dueEdit, setDueEdit] = useState(null);
   const [err, setErr] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [openId, setOpenId] = useState(null);   // waiting-on row expanded for full edit
@@ -339,10 +340,43 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
         </div>
       )}
       <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+        {/* The date is a BUTTON. "11d late" was read-only, so the only honest
+            responses to a date that had slipped were to chase someone or drop
+            it — when the real answer is usually "it moved to Friday". Tap it and
+            pick a new one; the card re-sorts itself out of Late. */}
         {c.due_date && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: tone === 'late' ? EMBER : 'var(--text-3)' }}>
-            {tone === 'late' ? `${daysLate(c.due_date)}d late · was ${fmtDate(c.due_date)}` : fmtDate(c.due_date)}
-          </span>
+          dueEdit === c.id ? (
+            <input type="date" defaultValue={c.due_date} autoFocus
+              onChange={(e) => { const v = e.target.value; if (v) { saveCommitment(c, { due_date: v }); setDueEdit(null); } }}
+              onBlur={() => setDueEdit(null)}
+              style={{ background: 'var(--bg-base)', border: '1px solid var(--room-accent, var(--accent))',
+                borderRadius: 8, padding: '5px 8px', color: 'var(--text-1)', fontSize: 12 }} />
+          ) : (
+            <button type="button" onClick={() => setDueEdit(c.id)}
+              title="Change the due date"
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                fontSize: 11, fontWeight: 700, textDecorationLine: 'underline', textDecorationStyle: 'dotted',
+                textUnderlineOffset: 3, color: tone === 'late' ? EMBER : 'var(--text-3)' }}>
+              {tone === 'late' ? `${daysLate(c.due_date)}d late · was ${fmtDate(c.due_date)}` : fmtDate(c.due_date)}
+            </button>
+          )
+        )}
+        {/* Nothing to move if no date was ever set — so offer to set one. */}
+        {!c.due_date && (
+          dueEdit === c.id ? (
+            <input type="date" autoFocus
+              onChange={(e) => { const v = e.target.value; if (v) { saveCommitment(c, { due_date: v }); setDueEdit(null); } }}
+              onBlur={() => setDueEdit(null)}
+              style={{ background: 'var(--bg-base)', border: '1px solid var(--room-accent, var(--accent))',
+                borderRadius: 8, padding: '5px 8px', color: 'var(--text-1)', fontSize: 12 }} />
+          ) : (
+            <button type="button" onClick={() => setDueEdit(c.id)}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11,
+                fontWeight: 700, color: 'var(--text-3)', textDecorationLine: 'underline',
+                textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>
+              + due date
+            </button>
+          )
         )}
         <div style={{ flex: 1 }} />
         {!editable && (
