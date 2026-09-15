@@ -561,20 +561,48 @@ async function syncOneAccount(supabase, account, opts) {
           .gte("internal_date", new Date(Date.now() - 30 * 60 * 1000).toISOString())
           .limit(80);
 
+        // Their own rules PLUS the brokerage's. A sender two agents have already
+        // rejected should not have to annoy a third before it stops.
         const { data: muted } = await supabase
           .from("lead_sender_rules")
-          .select("sender")
-          .eq("user_id", account.user_id)
+          .select("sender, user_id, is_brokerage")
+          .or(`user_id.eq.${account.user_id},is_brokerage.eq.true`)
           .in("kind", ["not_a_lead", "blocked", "unsubscribed"]);
         const mutedSet = new Set((muted || []).map((r) => String(r.sender || "").toLowerCase()));
 
-        const notable = (fresh || []).filter((m) => {
-          const a = String(m.from_address || "").toLowerCase();
-          if (!a) return false;
-          if (mutedSet.has(a)) return false;
-          if (BULK_SENDER.test(a) || BULK_DOMAIN.test(a)) return false;
-          return true;
-        }).length;
+        // SOMEONE YOU KNOW, not merely someone who is not a robot. Of
+        // Alexander's 268 inbound in a week, 210 came from real addresses — the
+        // bulk filter alone still left him a buzzing phone. A notification is
+        // worth sending when a PERSON HE HAS DEALT WITH is waiting: someone he
+        // has replied to before, or someone on his contact list. Everything else
+        // waits quietly in the app, where he can find it when he looks.
+        const senders = [...new Set((fresh || []).map((m) => String(m.from_address || "").toLowerCase()).filter(Boolean))]
+          .filter((a) => !mutedSet.has(a) && !BULK_SENDER.test(a) && !BULK_DOMAIN.test(a));
+
+        let known = new Set();
+        if (senders.length) {
+          const [{ data: contacts }, { data: replied }] = await Promise.all([
+            supabase.from("contacts").select("email").eq("user_id", account.user_id).in("email", senders),
+            supabase.from("email_messages").select("to_addresses")
+              .eq("user_id", account.user_id).eq("direction", "outbound")
+              .gte("internal_date", new Date(Date.now() - 365 * 86400000).toISOString())
+              .limit(2000),
+          ]);
+          (contacts || []).forEach((c) => c.email && known.add(String(c.email).toLowerCase()));
+          (replied || []).forEach((m) => (m.to_addresses || []).forEach((t) => t && known.add(String(t).toLowerCase())));
+        }
+
+        // BUT A NEW AGENT HAS NO HISTORY TO JUDGE BY. Alexander has 12 sent
+        // emails and one contact, so "someone you know" would mean silence — the
+        // opposite failure, and worse: an app that never speaks is one nobody
+        // opens. When there is not enough history to be confident, fall back to
+        // "not bulk, not muted" and let the hourly throttle do the protecting.
+        // As they use the app, known grows and the notifications get sharper on
+        // their own.
+        const enoughHistory = known.size >= 25;
+        const notable = enoughHistory
+          ? senders.filter((a) => known.has(a)).length
+          : senders.length;
 
         if (notable > 0) {
           // Quiet hours, in the user's own zone, and at most one an hour.
