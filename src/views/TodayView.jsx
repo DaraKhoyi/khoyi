@@ -502,7 +502,7 @@ export default function TodayView({
           than were ever accepted. They are one-tap decisions, there are rarely
           more than a few dozen, and they are the only thing on this screen with
           a clock on it. Everything below can wait; these cannot. */}
-      <CommitmentReview userId={myUserId} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
+      <CommitmentReview userId={myUserId} compact onSeeAll={() => setView('tasks')} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
 
 

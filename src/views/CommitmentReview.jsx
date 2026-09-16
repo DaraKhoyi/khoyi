@@ -35,7 +35,7 @@ const fmtDate = (d) => {
 };
 const daysLate = (d) => Math.floor((Date.now() - new Date(d + 'T12:00:00')) / 86400000);
 
-export default function CommitmentReview({ userId, contactId = null, onChanged }) {
+export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll }) {
   const [rows, setRows] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -287,7 +287,20 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
   }
   const waiting = rows.filter(r => r.status === 'accepted' && r.owner === 'them');
   const late = waiting.filter(r => r.due_date && daysLate(r.due_date) > 0);
-  const onTime = waiting.filter(r => !late.includes(r));
+  const onTimeAll = waiting.filter(r => !late.includes(r));
+  // ON TODAY, SHOW ONLY WHAT IS ACTUALLY DUE. A promise someone made for
+  // November 2nd is not today's business, and eight of them between Dara and the
+  // thing he opened the app for is how a daily screen becomes something to
+  // scroll past. Today keeps what is late or due within two days; the full list
+  // — every future promise included — lives on Commitments, reached from the
+  // "see all" link below.
+  const soon = (r) => {
+    if (!r.due_date) return true;          // undated: nobody is chasing it but him
+    const d = Math.ceil((new Date(r.due_date + 'T12:00:00') - new Date()) / 86400000);
+    return d <= 2;
+  };
+  const onTime = compact ? onTimeAll.filter(soon) : onTimeAll;
+  const hiddenFuture = onTimeAll.length - onTime.length;
   if (!proposed.length && !waiting.length) return null;
 
   // IMPORTANT: this is a plain function, NOT a nested <Card/> component. A nested
@@ -474,6 +487,14 @@ export default function CommitmentReview({ userId, contactId = null, onChanged }
             </div>
           ))}
         </>
+      )}
+
+      {compact && hiddenFuture > 0 && (
+        <button type="button" onClick={() => onSeeAll && onSeeAll()}
+          style={{ background: 'none', border: 0, padding: '2px 0 0', cursor: 'pointer', fontSize: 12,
+            color: 'var(--room-accent, var(--accent))', fontWeight: 700 }}>
+          {hiddenFuture} more not due yet \u2014 see all
+        </button>
       )}
 
       {onTime.length > 0 && (
