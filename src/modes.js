@@ -123,9 +123,10 @@ export const MODES = [
     resumeDaily: true,
     bar: [
       { view: 'finance', sub: 'ledger',    label: 'Add', glyph: 'plus' },
+      { view: 'finance', sub: 'dashboard', label: 'Finance' },
       { view: 'numbers',                   label: 'My GCI' },
       { view: 'finance', sub: 'blueprint', label: 'Blueprint', glyph: 'chart' },
-      { view: 'finance', sub: 'dashboard', label: 'Finance' },
+      { view: 'mileage',                   label: 'Mileage' },
     ],
     // Plan My Day and Rank moved OUT of this room to the tuning fork, under
     // Daily Journal — they are daily planning and standings, not money.
