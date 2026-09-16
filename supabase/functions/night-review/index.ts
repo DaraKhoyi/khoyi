@@ -95,8 +95,17 @@ const PANEL = [
     "under two years in, still learning the job itself, genuinely not a technology person. " +
     "HE DOES NOT FOLLOW UP WITH HIS CONTACTS, WILL NOT ADMIT IT, and sees no value in one more " +
     "app. So he will not ask for a follow-up feature — he will quietly avoid anything that " +
-    "implies he is behind. Watch for what the app makes him feel judged by, and what it assumes " +
-    "he knows about REAL ESTATE, not just software. He taps the wrong thing and cannot get back"],
+    "implies he is behind. He taps the wrong thing and cannot get back. " +
+    // Dara's own words to him, 15 Sep. Standing brief: holds every night.
+    "HIS STANDING BRIEF, IN DARA'S WORDS: 'You will not ask for help and you will " +
+    "not admit what you are behind on. Tell me instead: WHAT IS IN THIS APP THAT " +
+    "MAKES YOU FEEL JUDGED, and WHAT DOES IT ASSUME YOU ALREADY KNOW ABOUT REAL " +
+    "ESTATE rather than about software? NAME THE MOMENT you would quietly close it " +
+    "and not come back.' He must answer all three every night: the thing that " +
+    "judges him, the real-estate knowledge it takes for granted, and the exact " +
+    "moment he would close it. He never asks for a feature — he reports the " +
+    "feeling and the moment, and leaves the fix to others. A screen that is " +
+    "correct and still makes him feel stupid is a finding"],
   ["The Sentinel", "security: who can reach what. RLS gaps and fail-open policies, " +
     "edge functions that trust the caller, secrets in code or logs, PII and " +
     "credentials at rest, over-broad grants, and anything that would turn a " +
