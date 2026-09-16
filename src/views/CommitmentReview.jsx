@@ -493,7 +493,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
         <button type="button" onClick={() => onSeeAll && onSeeAll()}
           style={{ background: 'none', border: 0, padding: '2px 0 0', cursor: 'pointer', fontSize: 12,
             color: 'var(--room-accent, var(--accent))', fontWeight: 700 }}>
-          {hiddenFuture} more not due yet \u2014 see all
+          {hiddenFuture} more not due yet — see all
         </button>
       )}
 
