@@ -168,6 +168,15 @@ async function repoView(): Promise<Record<string, unknown>> {
   return out;
 }
 
+const WORKING_AGENTS = [
+  ["lead-concierge", "decides what inbound mail is a lead worth surfacing, and drafts the reply. 5,799 surfaced, 15 acted on."],
+  ["chief-of-staff", "decides what Dara should do next, across tasks, calendar and mail."],
+  ["contact-research", "builds a picture of a person before a meeting, now including what they wrote to us."],
+  ["recording pipeline", "transcribes calls, summarises, extracts commitments. 683 calls, 248 expired."],
+  ["disc-analyze", "reads a person's own words and produces the behavioural read."],
+  ["email-nightly-intel", "reads the day's mail overnight and decides what matters tomorrow."],
+];
+
 const fingerprint = (agent: string, title: string) =>
   (agent + "|" + String(title || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim()).slice(0, 300);
 
@@ -345,6 +354,69 @@ Deno.serve(async (req) => {
       '"findings":[{"agent":"","title":"","evidence":"","why_it_matters":"","effort":"small|medium|large","confidence":"high|medium|low"}]}',
     ].join("\n");
 
+    // ── THE COUNCIL ────────────────────────────────────────────────────────
+    //
+    // The twelve used to review the same evidence in parallel and file blind.
+    // The Accountant did not know Ray would close the app the first time he saw
+    // 248 missed items; Ray did not know the concierge costs real money to
+    // produce a 0.26% hit rate. Those two facts belong in one sentence and
+    // nobody had ever put them there.
+    //
+    // Three rounds: file blind, read each other, file again. CHANGING IS NOT
+    // REQUIRED and most will not — "each must learn something" asks a model to
+    // report a feeling, and it will always oblige. So change is MEASURED against
+    // the preserved round one rather than claimed, and both extremes are
+    // reported: nobody changing means they are not really reading each other,
+    // everybody changing every night means they are performing agreement, which
+    // is worse because it looks like progress.
+    const focusIdx = Math.floor(Date.now() / 86400000) % WORKING_AGENTS.length;
+    const focus = WORKING_AGENTS[focusIdx];
+
+    const councilRules = [
+      "",
+      "=== THE COUNCIL ===",
+      "Work in three rounds and return both.",
+      "",
+      "ROUND 1 — OPEN. Each member writes their strongest observation from tonight's",
+      "evidence, grounded in a number or a file, WITHOUT seeing the others.",
+      "",
+      "ROUND 2 — READ. Every member now sees all twelve. Each answers only what is",
+      "true for them: does anything change my finding (usually no — say so); does",
+      "anything CONTRADICT it (name them); and does anything need a discipline that",
+      "is not mine (hand it over by name). THE HANDOVER IS THE MOST VALUABLE MOVE —",
+      "a panel of twelve that never hands anything over is twelve people working",
+      "alone in the same room.",
+      "",
+      "ROUND 3 — FILE. Most findings will be identical to round one and that is the",
+      "EXPECTED outcome. A finding counts as changed only if it is withdrawn,",
+      "re-aimed at a different cause, sharpened by something another member",
+      "supplied, or handed to someone else. Attribution must name a member and the",
+      "specific point; 'the discussion led me to reconsider' is rejected.",
+      "",
+      "STANDING RULE: Marguerite and Ray outrank every other member on whether a",
+      "screen is usable. The engineers may explain why something is hard to fix.",
+      "They may not overrule whether it is a problem.",
+      "",
+      "TONIGHT'S WORKING AGENT: " + focus[0] + " — " + focus[1],
+      "The council also reviews THAT agent's judgement, not just the codebase, and",
+      "answers: what would make it better tomorrow? The Accountant prices it,",
+      "Marguerite says whether it gets her closer to a buyer who can transact, Ray",
+      "says whether it would make him close the app, the Sentinel says what it",
+      "exposes. This is how the panel makes the other agents smarter.",
+      "",
+      "CRITICAL: do the three rounds in your head. Return ONLY the JSON object and",
+      "nothing before or after it — no narration of the rounds, no headings, no",
+      "prose. The rounds appear in the JSON fields, not above them.",
+      "Return ONLY JSON:",
+      '{"round1":[{"agent":"","observation":""}],',
+      '"council":{"handovers":[{"from":"","to":"","what":""}],',
+      '           "disagreements":[{"between":["",""],"about":""}],',
+      '           "joint_findings":["<something no single member could have reached alone>"],',
+      '           "agent_focus":{"agent":"' + focus[0] + '","recommendation":"","priced_by_accountant":"","marguerite":"","ray":"","sentinel":""}},',
+      '"briefing":"<250-350 words to Dara, opening with what the group concluded TOGETHER>",',
+      '"findings":[{"agent":"","title":"","evidence":"","why_it_matters":"","effort":"small|medium|large","confidence":"high|medium|low","changed":"no|withdrawn|reaimed|sharpened|handed","changed_by":"<member and the specific point, or null>"}]}',
+    ].join("\n");
+
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -354,8 +426,8 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 4000,
-        system,
+        max_tokens: 8000,
+        system: system + councilRules,
         messages: [{ role: "user", content: isQuestion
           ? "PROPOSAL:\n\n" + ask.question + "\n\nCONTEXT ABOUT THE SYSTEM:\n" +
             (ask.context || "") + "\n\nCurrent measurements:\n" + JSON.stringify(evidence, null, 1)
@@ -364,8 +436,37 @@ Deno.serve(async (req) => {
     });
     const j = await res.json();
     const text = (j?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
-    let parsed: any = {};
-    try { parsed = JSON.parse(text.replace(/```json|```/g, "").trim()); } catch (_) { parsed = { briefing: text, findings: [] }; }
+    // EXTRACT the JSON rather than assume the whole reply is JSON. Asked to hold
+    // a three-round conversation, the model narrated the rounds first and put the
+    // JSON at the end — so a strict parse threw away an entire council and left
+    // the transcript sitting in the briefing field. Take the last balanced object
+    // in the reply; fall back to the raw text only if there is none.
+    function extractJson(t: string): any | null {
+      const clean = t.replace(/```json|```/g, "");
+      const start = clean.indexOf("{");
+      if (start < 0) return null;
+      // Walk from each candidate opening brace, deepest-last wins.
+      for (const from of [clean.lastIndexOf('\n{'), start]) {
+        if (from < 0) continue;
+        let depth = 0, inStr = false, esc = false;
+        for (let i = from; i < clean.length; i++) {
+          const ch = clean[i];
+          if (esc) { esc = false; continue; }
+          if (ch === "\\") { esc = true; continue; }
+          if (ch === '"') inStr = !inStr;
+          if (inStr) continue;
+          if (ch === "{") depth++;
+          else if (ch === "}") {
+            depth--;
+            if (depth === 0) {
+              try { return JSON.parse(clean.slice(from, i + 1)); } catch (_) { break; }
+            }
+          }
+        }
+      }
+      return null;
+    }
+    let parsed: any = extractJson(text) || { briefing: text, findings: [] };
 
     const inTok = j?.usage?.input_tokens || 0, outTok = j?.usage?.output_tokens || 0;
     const cost = (inTok / 1e6) * 3 + (outTok / 1e6) * 15;
@@ -396,7 +497,15 @@ Deno.serve(async (req) => {
       } catch (_) { /* a ledger failure must not lose the night's briefing */ }
     }
 
+    // Measured, not claimed: count what the model itself marked as changed, and
+    // keep round one so the claim can be checked against it later.
+    const changed = (parsed.findings || []).filter((f: any) => f.changed && f.changed !== "no").length;
+
     await admin.from("night_review_runs").update({
+      round1: parsed.round1 || null,
+      council: parsed.council || null,
+      changed_count: changed,
+      agent_focus: focus[0],
       status: "done", finished_at: new Date().toISOString(),
       briefing: parsed.briefing || null,
       findings: parsed.findings || [],
