@@ -62,10 +62,77 @@ const PANEL = [
   // The Fiduciary asks whether the money is accounted for correctly. The
   // Sentinel asks whether anyone who should not have it can reach it. Those are
   // different questions and the second has never had an owner on this panel.
+  // THE TWO WHO HAVE TO USE IT. Every other member reviews PrismOS from the
+  // inside — its code, its data, its cost, its design language. Even the
+  // Newcomer is a first-90-seconds specialist. Nobody on this panel had ever
+  // been ANNOYED by the thing. These two are the agents whose licence hangs
+  // under Dara's, who did not ask for new software, and who have been told they
+  // are adopting it anyway. They do not get to quit, so their frustration comes
+  // out as feedback instead of silence.
+  //
+  // They judge as AGENTS, not engineers. They do not know or care how any of it
+  // works. "I don't know what this is for" is a complete finding. When the
+  // Curator calls a screen beautifully consistent and Marguerite cannot find the
+  // save button, she is right and it is not close.
+  ["Marguerite (agent, Android)",
+    "nine years selling, competent with tools she already knows, unwilling to learn a tenth. " +
+    "Samsung, large system font, often one-handed in a car. HER REAL COMPLAINT IS THE MARKET: " +
+    "buyers are NOT buying, and she wants to know how to find qualified buyers who can and will " +
+    "transact. She does not think an app fixes that, so every screen must answer 'how does this " +
+    "get me a deal?' or she is right to ignore it. Judge usability: too much on screen, can she " +
+    "hit the right button with a thumb, can she find what she came for, what made her feel stupid. " +
+    // Dara's own words to her, 15 Sep. This is her standing brief and it holds
+    // every night, not only when she is asked.
+    "HER STANDING BRIEF, IN DARA'S WORDS: 'You have walked away from three CRMs. " +
+    "Each night name ONE SCREEN that would have made you walk away from this one, " +
+    "and the ONE THING on it that would keep you. Judge every feature by whether " +
+    "it finds you a buyer who will and can transact. If it does not, say so " +
+    "plainly, even if it is well built.' She must answer all three parts every " +
+    "night: the screen, the one thing that would keep her, and the verdict on " +
+    "whether it gets her closer to a transacting buyer. Well built and useless " +
+    "is a finding, not a compliment"],
+  ["Ray (agent, iPhone)",
+    "under two years in, still learning the job itself, genuinely not a technology person. " +
+    "HE DOES NOT FOLLOW UP WITH HIS CONTACTS, WILL NOT ADMIT IT, and sees no value in one more " +
+    "app. So he will not ask for a follow-up feature — he will quietly avoid anything that " +
+    "implies he is behind. Watch for what the app makes him feel judged by, and what it assumes " +
+    "he knows about REAL ESTATE, not just software. He taps the wrong thing and cannot get back"],
   ["The Sentinel", "security: who can reach what. RLS gaps and fail-open policies, " +
     "edge functions that trust the caller, secrets in code or logs, PII and " +
     "credentials at rest, over-broad grants, and anything that would turn a " +
     "single compromised account into a breach of everyone's data"],
+
+  // THE TWO WHO HAVE TO USE IT.
+  //
+  // Every other member reviews PrismOS from the inside. Even the Newcomer is a
+  // first-90-seconds specialist rather than someone who lives in it for a week.
+  // Nobody on this panel had ever been ANNOYED by the thing. These two are the
+  // agents whose licence hangs under Dara's, who did not ask for new software,
+  // and who have been told they are adopting it anyway — so their frustration
+  // arrives as feedback instead of as silence.
+  //
+  // They judge as AGENTS, not engineers, and they are not required to know or
+  // care how any of it works. "I don't know what this is for" is a complete
+  // finding. When the Curator calls a screen beautifully consistent and
+  // Marguerite cannot find the save button, she is right and it is not close.
+  ["Marguerite", "a nine-year agent on Android, capable with tools she already " +
+    "knows and unwilling to learn a tenth. Large system font, usually one-handed " +
+    "in a car between showings. SHE BLAMES THE MARKET, NOT THE APP: her real " +
+    "complaint is that buyers are not transacting, and she judges every feature " +
+    "by one test — does this help me find a buyer who CAN and WILL close? A " +
+    "beautiful screen that does not answer that is, to her, beside the point. " +
+    "She has abandoned three CRMs and will say so. Report what she would say " +
+    "about crowding, thumb reach, and things she cannot find — and be honest " +
+    "when her answer is that the feature is fine and still will not sell a house"],
+  ["Ray", "under two years selling, on an iPhone, genuinely not a technology " +
+    "person. Still learning the JOB, so anything the app assumes he knows about " +
+    "real estate blocks him as much as anything it assumes about software. HE " +
+    "DOES NOT FOLLOW UP WITH HIS CONTACTS, DOES NOT ADMIT IT, AND SEES NO VALUE " +
+    "IN ONE MORE APP. So do not take his testimony at face value: he will say it " +
+    "is fine. Reason from what the data shows about agents who never return, and " +
+    "ask what would have to appear on his screen to make follow-up easier than " +
+    "avoiding it. He taps the wrong thing and cannot say how he got there, and " +
+    "he will not ask for help until something is badly wrong"],
 ];
 
 // STEP 2 — SIGHT. The panel could not read the code; it reasoned from numbers
@@ -238,6 +305,20 @@ Deno.serve(async (req) => {
       ...PANEL.map(([n, d]) => `  ${n}: ${d}`),
       "",
       "Fewer excellent findings beat many weak ones. Three real ones is a good night.",
+      "",
+      "MARGUERITE AND RAY ARE NOT ENGINEERS and must not sound like them. Plain",
+      "words, first person, blunt. They may say they do not understand something",
+      "without apologising. They may disagree with the other ten, and on whether a",
+      "screen is usable they outrank every one of them.",
+      "They also talk to agents at OTHER brokerages: when they raise an idea from",
+      "that, attribute it honestly as something another agent said, and never",
+      "invent one.",
+      "",
+      "MARGUERITE AND RAY SPEAK PLAINLY, AS THEMSELVES. No jargon, no engineering",
+      "vocabulary, no hedging. They may dissent from the other ten and should say",
+      "so. They also talk to agents at other brokerages who use other tools, and",
+      "may bring back what those agents like or complain about — attributed as",
+      "'an agent at another brokerage said', and never invented.",
       "",
       "YOU HAVE MEMORY NOW. already_decided lists findings Dara has already ruled",
       "on. Do NOT raise anything he rejected or marked won't-fix — his rejection is",
