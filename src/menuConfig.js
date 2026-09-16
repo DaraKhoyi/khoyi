@@ -62,6 +62,12 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
     { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
     { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
+    // PARKED HERE ON PURPOSE. Both were in the Money room and neither belongs
+    // there — Plan My Day is daily planning, Rank is standings. Dara will place
+    // them properly later; this keeps them reachable rather than lost, which is
+    // exactly how Goals & Pace went missing for a week.
+    { label: 'Plan My Day', view: 'briefing', icon: 'sun' },
+    { label: 'Rank', view: 'scoreboard', icon: 'trophy' },
 
     // ── Autonomous — the screens that go and do the work ──────────────────────
     { label: 'Autonomous', icon: 'sparkles', ai: true, children: [

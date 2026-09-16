@@ -115,11 +115,20 @@ export const MODES = [
     tag: 'Am I hitting my goal',
     glyph: 'coin',
     accent: '#8FB8A8',   // swapped with the Nerve Center; sage now means Money
-    home: 'numbers',
+    // Money opens on ADD TRANSACTION, once a day. The room's job is recording
+    // what happened before reviewing it, and the recording is the part that gets
+    // skipped. Coming back later in the same day resumes where you were.
+    home: { view: 'finance', sub: 'ledger' },
     resume: true,
-    bar: ['numbers', 'briefing', 'scoreboard', 'finance'],
-    // 'briefing' carries Outreach -> Results + the Goal Engine: performance
-    // review, not daily planning. Visited weekly/monthly, deliberately.
+    resumeDaily: true,
+    bar: [
+      { view: 'finance', sub: 'ledger',    label: 'Add', glyph: 'plus' },
+      { view: 'numbers',                   label: 'My GCI' },
+      { view: 'finance', sub: 'blueprint', label: 'Blueprint', glyph: 'chart' },
+      { view: 'finance', sub: 'dashboard', label: 'Finance' },
+    ],
+    // Plan My Day and Rank moved OUT of this room to the tuning fork, under
+    // Daily Journal — they are daily planning and standings, not money.
     views: ['numbers', 'briefing', 'scoreboard', 'mileage', 'finance', 'investments'],
   },
   {
@@ -189,3 +198,13 @@ export const VIEW_TO_MODE = (() => {
 })();
 
 export const modeById = (id) => MODES.find((m) => m.id === id) || null;
+
+// Where a room opens. `home` is usually a view id, but may be {view, sub} when
+// the room should land on a sub-tab — Money opens on Add Transaction rather than
+// the Finance dashboard, because recording what happened is the part that gets
+// skipped, and reviewing it is no use without it.
+export function roomEntry(mode) {
+  const h = mode && mode.home;
+  if (h && typeof h === 'object') return { view: h.view, sub: h.sub || null };
+  return { view: h, sub: null };
+}

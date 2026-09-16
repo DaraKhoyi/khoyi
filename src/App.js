@@ -16,7 +16,7 @@ import ModeBar from './views/ModeBar'; import { OnboardingGate } from './views/F
 import useTapActivate from './useTapActivate';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
-import { MODES, VIEW_TO_MODE, modeById } from './modes';
+import { MODES, VIEW_TO_MODE, modeById, roomEntry } from './modes';
 import { rememberRoomSpot, roomResumeSpot } from './roomResume';
 import { PAGES, PAGE_GROUPS, pageVisible, roleAllows, makeEntitled, ALL_FEATURES } from './pages';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
@@ -1047,8 +1047,8 @@ function AppMain() {
       if (spot.sub) setDeepLink(d => ({ view: spot.view, sub: spot.sub, n: d.n + 1 }));
       return;
     }
-    setView(m.home);
-  };
+    const entry = roomEntry(m); setView(entry.view);   // entry may carry a sub-tab; see modes.js
+    if (entry.sub) setDeepLink(d => ({ view: entry.view, sub: entry.sub, n: d.n + 1 })); };
   const goHome = () => { setStickyMode(null); setView('today'); };   // Home leaves the room as well as the screen
   React.useEffect(() => {
     try {
@@ -1781,7 +1781,7 @@ function AppMain() {
   // the sidebar renders them greyed out and unclickable. Adding a MENU row is
   // not enough on its own — google_contacts shipped greyed for exactly that
   // reason.
-  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts', 'cadence_review', 'goal_roster', 'night_review', 'uncarded', 'lead_notify', 'unstuck', 'tags', 'correspondent', 'investor_transition', 'my_prism', 'production', 'transactions']);
+  const builtSet = new Set([...NAV.map(i => i.id), 'disc_test', 'disc_roster', 'myvoice', 'voice_roster', 'google_contacts', 'cadence_review', 'goal_roster', 'night_review', 'uncarded', 'lead_notify', 'unstuck', 'tags', 'correspondent', 'investor_transition', 'my_prism', 'production', 'transactions', 'briefing', 'scoreboard']);
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
