@@ -16,7 +16,7 @@ import ModeBar from './views/ModeBar'; import { OnboardingGate } from './views/F
 import useTapActivate from './useTapActivate';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
-import { MODES, VIEW_TO_MODE, modeById, roomEntry } from './modes';
+import { MODES, VIEW_TO_MODE, modeById, roomEntry, launchTarget } from './modes';
 import { rememberRoomSpot, roomResumeSpot } from './roomResume';
 import { PAGES, PAGE_GROUPS, pageVisible, roleAllows, makeEntitled, ALL_FEATURES } from './pages';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
@@ -1148,14 +1148,11 @@ function AppMain() {
   // Whitelisted on purpose: a launcher is user input like any other, and ?view=
   // should not be able to poke at an arbitrary internal string.
   useEffect(() => {
-    let v;
-    try { v = new URLSearchParams(window.location.search).get('view'); } catch (_) { return; }
-    if (!v) return;
-    const ALLOWED = ['dashboard','prospecting','tasks','calendar','contacts','inbox','quo',
-                     'journal','numbers','chat','finance','documents','mileage','production','investor_pipeline'];
-    if (ALLOWED.includes(v)) {
-      setView(v);
-      try { const tb = new URLSearchParams(window.location.search).get('tab'); if (tb) window.__investorTab = tb; } catch (_) {}
+    const t = launchTarget(window.location.search);   // whitelisted; see modes.js
+    if (t) {
+      setView(t.view);
+      if (t.sub) setDeepLink(d => ({ view: t.view, sub: t.sub, n: d.n + 1 }));
+      if (t.tab) window.__investorTab = t.tab;
     }
     try { window.history.replaceState({}, '', '/'); } catch (_) {}
   }, []);

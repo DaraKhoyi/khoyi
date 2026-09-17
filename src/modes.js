@@ -209,3 +209,21 @@ export function roomEntry(mode) {
   if (h && typeof h === 'object') return { view: h.view, sub: h.sub || null };
   return { view: h, sub: null };
 }
+
+// What a launcher shortcut asked for. Long-pressing the app icon opens a jump
+// list — Prospect, Contacts, Tasks, Money — and each entry is a URL. Both values
+// are whitelisted because a shortcut is user input like any other and must not
+// be able to poke at an arbitrary internal string.
+const LAUNCH_VIEWS = ['dashboard','prospecting','tasks','calendar','contacts','inbox','quo',
+  'journal','numbers','chat','finance','documents','mileage','production','investor_pipeline'];
+const LAUNCH_SUBS = ['ledger','blueprint','dashboard','reports','today','roi','library'];
+
+export function launchTarget(search) {
+  try {
+    const q = new URLSearchParams(search || '');
+    const view = q.get('view');
+    if (!view || !LAUNCH_VIEWS.includes(view)) return null;
+    const sub = q.get('sub');
+    return { view, sub: sub && LAUNCH_SUBS.includes(sub) ? sub : null, tab: q.get('tab') || null };
+  } catch (_) { return null; }
+}
