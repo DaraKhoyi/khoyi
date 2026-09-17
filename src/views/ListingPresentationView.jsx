@@ -280,7 +280,7 @@ export default function ListingPresentationView({ userId, agentName }) {
       <TipFor screen="listing_presentation" />
       {notify && <Toast notify={notify} />}
       <div style={{ marginBottom: 6 }}><span style={{ fontFamily:'Barlow Condensed,sans-serif', fontWeight:700, letterSpacing:'.2em', textTransform:'uppercase', color:G, fontSize:13 }}>Win the listing</span></div>
-      <h1 style={{ fontFamily:'Fraunces,serif', fontWeight:400, fontSize:34, color:'var(--text-1)', margin:'0 0 6px' }}>Listing Presentations</h1>
+      <h1 style={{ fontFamily:'Fraunces,serif', fontWeight:400, fontSize:34, color:'var(--text-1)', margin:'0 0 6px' }}>My Listing Pitch</h1>
       <p style={{ color:'var(--text-2)', fontSize:15, margin:'0 0 20px', maxWidth:'62ch' }}>Turn an address into an executive, DISC-aware valuation dossier {'\u2014'} pricing, comps, a launch plan, and a live net-sheet {'\u2014'} as a branded web presentation you can present, email, or share with the seller.</p>
       <button onClick={() => { setEditing(blank()); setMode('edit'); }} style={{ background:CHAMP, color:INK, border:'none', borderRadius:10, padding:'13px 22px', fontWeight:800, fontSize:15, cursor:'pointer' }}>+ New Listing Presentation</button>
 

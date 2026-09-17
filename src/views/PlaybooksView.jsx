@@ -81,7 +81,7 @@ function PlaybooksView({ brain, playbookSteps, setPlaybookSteps, playbookRuns, s
   return (
     <div>
       <div className="page-header" style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
-        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="playbooks" size={26} style={{color:'var(--accent)',flexShrink:0}} />Playbooks</h2><p>Your repeatable plays · {playbooks.length} playbooks · {totalRuns} total runs · {last7dRuns} this week</p></div>
+        <div><h2 style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon name="playbooks" size={26} style={{color:'var(--accent)',flexShrink:0}} />My Scripts</h2><p>Your repeatable plays · {playbooks.length} playbooks · {totalRuns} total runs · {last7dRuns} this week</p></div>
       </div>
 
       {flash && (

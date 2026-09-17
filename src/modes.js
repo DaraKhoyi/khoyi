@@ -86,11 +86,11 @@ export const MODES = [
     bar: [
       // Six distinct glyphs on purpose. ROI and Growth both wanted the rising
       // line; two identical icons in one bar is a bar you have to read.
-      { view: 'prospecting', sub: 'today',   label: 'Today',   glyph: 'target' },
-      { view: 'prospecting', sub: 'library', label: 'Systems', glyph: 'library' },
-      { view: 'prospecting', sub: 'roi',     label: 'ROI',     glyph: 'coin' },
+      { view: 'prospecting', sub: 'today',   label: 'Hunt',    glyph: 'target' },
+      { view: 'prospecting', sub: 'library', label: 'Systems', glyph: 'gear' },
+      { view: 'prospecting', sub: 'roi',     label: 'Paid',    glyph: 'coin' },
       { view: 'playbooks', label: 'Scripts', glyph: 'book' },
-      { view: 'listing_presentation', label: 'Present', glyph: 'doc' },
+      { view: 'listing_presentation', label: 'Pitch', glyph: 'doc' },
       { view: 'growth', label: 'Growth', glyph: 'up' },
     ],
     // listing_presentation belonged to NO room, so it showed no bottom bar at

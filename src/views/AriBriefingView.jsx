@@ -1107,7 +1107,7 @@ export function GrowthView({ userId, setView }) {
     <>
       <div style={{ padding: '18px 16px 4px' }}>
         <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: '11px', fontWeight: 600, color: 'var(--accent)', marginBottom: '2px' }}>Plan</div>
-        <h2 style={{ margin: '0 0 2px', fontFamily: "'Fraunces',Georgia,serif", fontWeight: 400 }}>Set up your day.</h2>
+        <h2 style={{ margin: '0 0 2px', fontFamily: "'Fraunces',Georgia,serif", fontWeight: 400 }}>My Growth.</h2>
       </div>
       <div style={{ padding: '8px 16px 0' }}>
         <div className="seg-track">
