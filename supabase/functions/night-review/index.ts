@@ -196,6 +196,23 @@ async function gather(admin: any) {
      where schemaname='public' order by n_live_tup desc limit 8`);
   await one("empty_tables", `select count(*) filter (where n_live_tup=0) empty, count(*) total
      from pg_stat_user_tables where schemaname='public'`);
+  // THE REAL DENOMINATOR. The panel kept opening with "2 active of 96", which
+  // reads as catastrophe. Only FOUR people have ever been asked to test this —
+  // Dara, Josh Maples, Alexander Khoyi, Mary Sous. Against four, two active is
+  // an ordinary early beta; against 96 it is a disaster that is not happening.
+  // Measuring against a denominator nobody agreed to is how a panel produces
+  // alarming findings that are not true.
+  await one("BETA_GROUP_read_this_first", `select
+     'Only these people are testing PrismOS. Judge adoption against THEM, not the roster.' note,
+     count(*) beta_users,
+     count(*) filter (where u.last_sign_in_at > now() - interval '7 days') active_7d,
+     count(*) filter (where u.last_sign_in_at > now() - interval '30 days') active_30d,
+     string_agg(a.name || ' (' || coalesce(u.last_sign_in_at::date::text,'never') || ')', ', ') who
+   from agents a left join auth.users u on u.id = a.auth_user_id
+   where a.is_beta`);
+  await one("full_roster_context", `select count(*) on_roster,
+     'Not beta testers. They were never invited, so their inactivity is not a finding.' note
+   from agents where active and not is_beta`);
   await one("adoption", `select count(*) with_login,
      count(*) filter (where last_sign_in_at > now() - interval '7 days') active_7d
      from agents a join auth.users u on u.id = a.auth_user_id where a.active`);
