@@ -62,6 +62,9 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
     { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
     { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
+    // Home-screen and NFC shortcuts. Under Settings would hide it; agents need
+    // to find this without being told it exists.
+    { label: 'Launchers', view: 'launchers', icon: 'link' },
     // PARKED HERE ON PURPOSE. Both were in the Money room and neither belongs
     // there — Plan My Day is daily planning, Rank is standings. Dara will place
     // them properly later; this keeps them reachable rather than lost, which is
