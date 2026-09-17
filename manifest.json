@@ -109,6 +109,19 @@
   },
   "shortcuts": [
     {
+      "name": "Add expense",
+      "short_name": "Money",
+      "description": "Record a transaction",
+      "url": "/?view=finance&sub=ledger",
+      "icons": [
+        {
+          "src": "/sc-prospecting.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
       "name": "Prospecting",
       "short_name": "Prospect",
       "description": "Today's lead-gen work",
