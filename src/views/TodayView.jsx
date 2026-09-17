@@ -961,6 +961,17 @@ function EnableNotifications({ myUserId }) {
           setState('unsupported'); return;
         }
         const reg = await navigator.serviceWorker.ready;
+        // ALREADY SAID YES ON ANY DEVICE? Then stop asking. This only ever
+        // checked the CURRENT browser's subscription, so Dara — who has had
+        // push on since August across four devices — was still being prompted
+        // every morning at the top of Today. A prompt for something you already
+        // did is not a prompt, it is furniture.
+        try {
+          const { data: subs } = await supabase.from('push_subscriptions')
+            .select('id').eq('user_id', myUserId).limit(1);
+          if (subs && subs.length && Notification.permission !== 'denied') { setState('on'); return; }
+        } catch (_) { /* fall through to the per-browser check below */ }
+
         const sub = await reg.pushManager.getSubscription();
         if (sub && Notification.permission === 'granted') {
           // already on → make sure it's saved, then stay quiet
