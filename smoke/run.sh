@@ -17,6 +17,10 @@ python3 smoke/hooks_check.py
 # boundary, is wrong for every user at once and invisible for months.
 node smoke/clock_check.mjs
 
+# Icons: a name with no matching icon falls back to a star silently, so tabs go
+# identical without anything failing. Found the hard way in the Money room.
+node smoke/icon_check.mjs
+
 # Static guard: no undefined identifiers. The runtime smoke check proves views
 # MOUNT; it cannot prove every branch inside them runs, because the throwaway
 # agent has no data. v1.04.49 shipped a ReferenceError straight past a green

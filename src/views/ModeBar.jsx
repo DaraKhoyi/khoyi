@@ -32,6 +32,11 @@ const glyphs = {
   search: <><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></>,
   upload: <><path d="M12 16V5M8 9l4-4 4 4"/><path d="M5 19h14"/></>,
   spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>,
+  // ADDED for the Money room, where four tabs were sharing two pictures.
+  edit: <><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/></>,        // write it down
+  dashboard: <><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="5"/><rect x="13" y="10" width="8" height="11"/><rect x="3" y="13" width="8" height="8"/></>,
+  ruler: <><rect x="3" y="8" width="18" height="8" rx="1"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></>,  // the plan, measured
+  globe: <><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></>,
 };
 
 // One room, one colour.
