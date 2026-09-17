@@ -21,11 +21,22 @@ import { MODES } from '../modes';
 // shortcut to a URL gets the same icon in the same place with none of that, so
 // that is what this page hands out.
 
+// The eight that have their own install page under /launch/. Each is a
+// separately installable app with its own name and icon, so tapping "Add to
+// Home Screen" there gives a real, labelled icon rather than a ninth copy of the
+// PrismOS one.
+const INSTALLABLE = [
+  ['nerve',      'Nerve Center', 'Your whole world'],
+  ['money',      'Money',        'Add an expense, see the numbers'],
+  ['prospect',   'Prospecting',  "Today's hunt"],
+  ['deals',      'Deals',        'Your pipeline'],
+  ['library',    'Library',      'Notes, docs and calls'],
+  ['brokerage',  'Brokerage',    'The office'],
+  ['tasks',      'Tasks',        'Everything on your plate'],
+  ['addexpense', 'Add Expense',  'Straight to the form'],
+];
+
 const LINKS = [
-  { group: 'Rooms', items: MODES.map(m => ({
-      label: m.label, hint: m.tag,
-      url: typeof m.home === 'object' ? `/?view=${m.home.view}&sub=${m.home.sub}` : `/?view=${m.home}`,
-    })) },
   { group: 'Straight to a page', items: [
     { label: 'Add expense',    hint: 'Opens the transaction form',   url: '/?view=finance&sub=ledger' },
     { label: 'My numbers',     hint: 'GCI against goal',             url: '/?view=numbers' },
@@ -78,9 +89,40 @@ export default function LaunchersView() {
       </div>
       <hr className="room-rule" />
 
+      {/* THE ONE-TAP ROUTE. Each of these opens a page that carries its own
+          manifest, so Chrome offers a single Add to Home Screen button and the
+          icon that lands is named and coloured for that room. The handoff to
+          Chrome is unavoidable — an installed app has no install machinery — but
+          this is the whole of it: tap, tap, done. */}
+      <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
+        color: 'var(--room-accent-85, var(--text-3))', margin: '14px 0 8px' }}>
+        Add an icon to your home screen
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+        {INSTALLABLE.map(([key, label, hint]) => (
+          <a key={key} href={'/launch/' + key + '/'} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none',
+              border: '1px solid var(--border)', borderRadius: 11, padding: '10px 11px' }}>
+            <img src={'/launch/' + key + '-192.png'} alt="" width="34" height="34"
+              style={{ borderRadius: 9, flexShrink: 0 }} />
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-1)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+              <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-3)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hint}</span>
+            </span>
+          </a>
+        ))}
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.55, marginBottom: 18 }}>
+        Tap one, then <strong>Add to Home Screen</strong> on the page that opens. It has to
+        open in Chrome for a moment — an installed app cannot install things — then you
+        are back.
+      </div>
+
       <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '13px 14px', margin: '12px 0 16px' }}>
         <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
-          color: 'var(--text-3)', marginBottom: 8 }}>Putting one on your home screen</div>
+          color: 'var(--text-3)', marginBottom: 8 }}>Any other page, or a case button</div>
         <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.7 }}>
           <li>Tap <strong>Copy</strong> beside the one you want.</li>
           <li>Open Chrome and paste it into the address bar, then go.</li>
