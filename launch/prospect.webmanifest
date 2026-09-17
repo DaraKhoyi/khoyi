@@ -1,0 +1,32 @@
+{
+  "id": "/launch/prospect/",
+  "name": "Prospecting \u00b7 PrismOS",
+  "short_name": "Prospecting",
+  "description": "Today\u2019s hunt",
+  "start_url": "/?view=prospecting&sub=today",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#100D09",
+  "theme_color": "#100D09",
+  "icons": [
+    {
+      "src": "/launch/prospect-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/prospect-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/prospect-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

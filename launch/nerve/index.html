@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nerve Center &middot; PrismOS</title>
+<link rel="manifest" href="/launch/nerve.webmanifest">
+<meta name="theme-color" content="#100D09">
+<link rel="apple-touch-icon" href="/launch/nerve-192.png">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100dvh; background:#100D09; color:#F6F1E7;
+    font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:28px calc(22px + env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) calc(22px + env(safe-area-inset-left,0px));
+    text-align:center; }
+  img.mark { width:104px; height:104px; border-radius:24px; }
+  h1 { font-family:Georgia,'Times New Roman',serif; font-weight:300; font-size:30px; margin:20px 0 4px; }
+  p  { color:#A89C88; font-size:14px; line-height:1.55; margin:0 0 22px; max-width:22rem; }
+  .rule { width:120px; height:1px; background:#C9A84E; opacity:.55; margin:2px 0 0; }
+  button, a.go { font:inherit; font-size:15px; font-weight:800; padding:14px 26px; border-radius:12px;
+    border:0; cursor:pointer; background:#C9A84E; color:#100D09; text-decoration:none; display:inline-block; }
+  a.plain { color:#A89C88; font-size:13px; margin-top:18px; text-decoration:underline; }
+  .steps { color:#A89C88; font-size:13px; line-height:1.7; text-align:left; max-width:22rem;
+    border:1px solid #2B2620; border-radius:12px; padding:14px 16px; }
+  .steps b { color:#F6F1E7; }
+  .hide { display:none; }
+</style>
+</head>
+<body>
+  <img class="mark" src="/launch/nerve-192.png" alt="">
+  <h1>Nerve Center</h1>
+  <div class="rule"></div>
+  <p>Your whole world</p>
+
+  <button id="add" class="hide">Add to Home Screen</button>
+
+  <!-- Shown when the browser will not offer an install: already installed, or a
+       browser that does not support it. Telling someone the truth beats a button
+       that does nothing when pressed. -->
+  <div id="manual" class="steps hide">
+    <b>To put this on your home screen</b><br>
+    Open Chrome&rsquo;s <b>&#8942; menu</b> &rarr; <b>Add to Home screen</b>.<br>
+    Already added it? Just open it from there.
+  </div>
+
+  <a class="go" id="open" href="/?view=dashboard">Open Nerve Center</a>
+  <a class="plain" href="/">Back to PrismOS</a>
+
+<script>
+  // If this page is opened from an ALREADY-INSTALLED icon, there is nothing to
+  // install — go straight where the person meant to go.
+  var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  if (standalone) location.replace("/?view=dashboard");
+
+  var deferred = null;
+  var addBtn = document.getElementById('add');
+  var manual = document.getElementById('manual');
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferred = e;
+    addBtn.classList.remove('hide');
+    manual.classList.add('hide');
+  });
+
+  addBtn.addEventListener('click', async function () {
+    if (!deferred) return;
+    deferred.prompt();
+    try { await deferred.userChoice; } catch (_) {}
+    deferred = null;
+    addBtn.classList.add('hide');
+  });
+
+  window.addEventListener('appinstalled', function () {
+    addBtn.classList.add('hide');
+    manual.classList.add('hide');
+  });
+
+  // Chrome fires beforeinstallprompt within a moment of load, or not at all.
+  // If it has not fired, show the manual route rather than an empty screen.
+  setTimeout(function () {
+    if (!deferred && !standalone) manual.classList.remove('hide');
+  }, 1400);
+</script>
+</body>
+</html>

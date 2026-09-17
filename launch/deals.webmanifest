@@ -1,0 +1,32 @@
+{
+  "id": "/launch/deals/",
+  "name": "Deals \u00b7 PrismOS",
+  "short_name": "Deals",
+  "description": "Your pipeline",
+  "start_url": "/?view=investor_pipeline",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#100D09",
+  "theme_color": "#100D09",
+  "icons": [
+    {
+      "src": "/launch/deals-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/deals-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/deals-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

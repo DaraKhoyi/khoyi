@@ -1,0 +1,32 @@
+{
+  "id": "/launch/tasks/",
+  "name": "Tasks \u00b7 PrismOS",
+  "short_name": "Tasks",
+  "description": "Everything on your plate",
+  "start_url": "/?view=tasks",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#100D09",
+  "theme_color": "#100D09",
+  "icons": [
+    {
+      "src": "/launch/tasks-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/tasks-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/tasks-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

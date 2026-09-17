@@ -1,0 +1,32 @@
+{
+  "id": "/launch/brokerage/",
+  "name": "Brokerage \u00b7 PrismOS",
+  "short_name": "Brokerage",
+  "description": "The office",
+  "start_url": "/?view=production",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#100D09",
+  "theme_color": "#100D09",
+  "icons": [
+    {
+      "src": "/launch/brokerage-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/brokerage-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/brokerage-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
