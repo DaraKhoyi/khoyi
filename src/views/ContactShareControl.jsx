@@ -48,7 +48,17 @@ export default function ContactShareControl({ contact, userId, onChanged }) {
     supabase.rpc('is_brokerage_staff').then(({ data }) => { if (!dead) setIsStaff(data === true); });
     return () => { dead = true; };
   }, []);
-  const scope = contact.shared_scope || 'none';
+  // THE CONTROL OWNS WHAT IT SHOWS. It read the scope straight off the contact
+  // prop, so the highlight only moved if a parent somewhere up the tree happened
+  // to re-render with a fresh row — and in the contact modal it does not. Dara
+  // tapped Broker admins, got the confirmation, and watched the pill stay on
+  // Private: the write had succeeded and the screen was lying about it.
+  //
+  // Local state, seeded from the prop and re-seeded when a DIFFERENT contact is
+  // opened. The prop stays the source of truth on mount; the control is the
+  // source of truth for the choice just made.
+  const [scope, showScope] = useState(contact.shared_scope || 'none');
+  useEffect(() => { showScope(contact.shared_scope || 'none'); }, [contact.id, contact.shared_scope]);
   const isMine = contact.user_id === userId;
 
   // Not yours: you get told whose it is, and nothing to press.
@@ -77,6 +87,7 @@ export default function ContactShareControl({ contact, userId, onChanged }) {
       .eq('id', contact.id);
     setBusy(false);
     if (error) { notify('Could not change sharing: ' + (error.message || 'unknown error'), 'error'); return; }
+    showScope(next);           // the pill moves because the write succeeded
     notify(next === 'none' ? 'Now private to you.'
       : next === 'team' ? 'Shared with your team.'
       : next === 'brokerage' ? 'Shared with the broker admins.'
