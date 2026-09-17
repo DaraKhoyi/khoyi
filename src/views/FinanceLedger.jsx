@@ -35,6 +35,11 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editRecurring, setEditRecurring] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  useEffect(() => {
+    const open = () => { setEditTx(null); setShowModal(true); };
+    window.addEventListener('prism:new-transaction', open);
+    return () => window.removeEventListener('prism:new-transaction', open);
+  }, []);
   const [showBulkCategorize, setShowBulkCategorize] = useState(false);
 
   useEffect(() => { if (!trackPersonal) setScopeFilter('business'); }, [trackPersonal]);
@@ -144,8 +149,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
             ⬆ Import
           </button>
         )}
-        {!readOnly && <button className="btn-add-circle" onClick={() => { setEditTx(null); setShowModal(true); }} title="New transaction" aria-label="New transaction">+</button>}
-      </div>
+              </div>
 
       {searchOpen && (
         <HeaderSearchInput value={search} onChange={setSearch} placeholder="🔍 Search payee / description / account…" onClose={() => setSearchOpen(false)} />

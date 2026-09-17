@@ -149,9 +149,19 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
       )}
 
       <div className="view-header" style={{display:'flex',flexDirection:'column',gap:'12px',marginBottom:'14px'}}>
+        {subView === 'ledger' && !readOnly && (
+          <div style={{display:'flex',justifyContent:'flex-end'}}>
+            <button className="btn-add-circle" title="New transaction" aria-label="New transaction"
+              onClick={() => { try { window.dispatchEvent(new CustomEvent('prism:new-transaction')); } catch (_) {} }}>+</button>
+          </div>
+        )}
         <div>
           <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-            <span style={{display:'inline-flex',alignItems:'center',gap:'9px'}}><Icon name="finance" size={22} style={{color:'var(--accent)'}} /> Finance Dashboard</span>
+            <span style={{display:'inline-flex',alignItems:'center',gap:'9px'}}><Icon name="finance" size={22} style={{color:'var(--accent)'}} /> {
+              subView === 'ledger'    ? 'My Transactions'
+            : subView === 'blueprint' ? 'My Blueprint'
+            : subView === 'reports'   ? 'Reports'
+            : 'My Dashboard'}</span>
             {settings && (
               <span className="fin-badge" style={{background:`${tier.color}1f`, color:tier.color, border:`1px solid ${tier.color}59`}}>{tier.label}</span>
             )}
@@ -184,7 +194,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
           {[
             { id: 'dashboard', label: 'Dashboard' },
             { id: 'blueprint', label: 'Blueprint' },
-            { id: 'ledger',    label: 'Ledger' },
+            { id: 'ledger',    label: 'Add' },
             { id: 'reports',   label: 'Reports' },
           ].map(t => (
             <button key={t.id} type="button" onClick={() => setSubView(t.id)}

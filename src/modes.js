@@ -122,11 +122,11 @@ export const MODES = [
     resume: true,
     resumeDaily: true,
     bar: [
-      { view: 'finance', sub: 'ledger',    label: 'Add', glyph: 'plus' },
+      { view: 'finance', sub: 'ledger',    label: 'Add', glyph: 'edit' },
       { view: 'finance', sub: 'dashboard', label: 'Finance' },
       { view: 'numbers',                   label: 'My GCI' },
-      { view: 'finance', sub: 'blueprint', label: 'Blueprint', glyph: 'chart' },
-      { view: 'mileage',                   label: 'Mileage' },
+      { view: 'finance', sub: 'blueprint', label: 'Blueprint', glyph: 'ruler' },
+      { view: 'mileage',                   label: 'My Drives' },
     ],
     // Plan My Day and Rank moved OUT of this room to the tuning fork, under
     // Daily Journal — they are daily planning and standings, not money.
@@ -178,7 +178,7 @@ export const VIEW_META = {
   properties: { label: 'Property', glyph: 'building' },
   numbers:    { label: 'My GCI',   glyph: 'coin' },
   scoreboard: { label: 'Rank',     glyph: 'up' },
-  mileage:    { label: 'Mileage',  glyph: 'car' },
+  mileage:    { label: 'My Drives',  glyph: 'car' },
   finance:    { label: 'Finance',  glyph: 'coin' },
   investments:{ label: 'Invest',   glyph: 'building' },
   agents:     { label: 'Roster',   glyph: 'people' },
