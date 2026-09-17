@@ -98,6 +98,23 @@ export default function NightReview() {
         </div>
       )}
 
+      {/* THE HONEST GAP. panel-propose can branch, commit, run the gate and
+          merge — that half is built and tested. What does not exist is the step
+          BEFORE it: nothing reads a finding and writes the actual file change.
+          So the queue is empty and will stay empty however the toggle is set,
+          and saying so is better than an empty panel that looks broken. */}
+      {proposals.length === 0 && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '13px 14px', margin: '14px 0' }}>
+          <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
+            color: 'var(--text-3)', marginBottom: 6 }}>Nothing to approve</div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55 }}>
+            The panel reports findings, but it cannot yet turn one into a change for you
+            to approve. That step is not built. Until it is, act on the findings below
+            by telling Einstein which one to do.
+          </div>
+        </div>
+      )}
+
       {/* PROPOSALS — actual changes, waiting on Dara. Above the briefing,
           because a decision outranks a report. */}
       {proposals.filter(p => p.status === 'awaiting_review').length > 0 && (
@@ -218,7 +235,7 @@ export default function NightReview() {
           color: 'var(--text-3)', marginBottom: 9 }}>Your controls</div>
         {[
           ['enabled', 'Run the panel each night', 'Stops immediately. Nothing is spent while it is off.'],
-          ['allow_fixes', 'Let it propose changes overnight', 'It writes the change and runs the gate. Nothing merges without you.'],
+          ['allow_fixes', 'Let it propose changes overnight', 'Not wired up yet — the panel reports findings, but nothing turns one into a change you can approve. Leaving this on does nothing today.'],
         ].map(([field, label, hint]) => (
           <div key={field} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
             <button type="button" disabled={busy || !cfg} onClick={() => toggle(field, !(cfg || {})[field])}

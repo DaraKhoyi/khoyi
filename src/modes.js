@@ -182,6 +182,8 @@ export const VIEW_META = {
   finance:    { label: 'Finance',  glyph: 'dashboard' },
   investments:{ label: 'Invest',   glyph: 'building' },
   agents:     { label: 'Roster',   glyph: 'people' },
+  goal_roster:{ label: 'Goals',    glyph: 'target' },
+  night_review:{ label: 'Panel',   glyph: 'spark' },
   agent_activity:{ label: 'Activity', glyph: 'up' },
   app_health: { label: 'Health',   glyph: 'gear' },
   announcements:{ label: 'Notices', glyph: 'mail' },
