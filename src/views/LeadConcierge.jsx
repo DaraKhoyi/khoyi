@@ -291,6 +291,28 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
     setBusy(null);
   };
 
+  // WHO IS THIS? Three lines, on the card, where the decision is actually made.
+  // The panel's point: the concierge surfaces thousands and contact-research —
+  // which would say who these people are — fired 15 times in a month because
+  // nobody goes and asks it. Marguerite set the shape: a nudge, not a report,
+  // and only for someone who wrote to you first.
+  //
+  // On demand rather than for all 5,920: at a fraction of a cent each that is
+  // still real money spent on cards nobody opens, and the Accountant would be
+  // right to say so.
+  const [briefs, setBriefs] = useState({});
+  const getBrief = async (it) => {
+    if (briefs[it.id]?.text || briefs[it.id]?.loading) return;
+    setBriefs(b => ({ ...b, [it.id]: { loading: true } }));
+    try {
+      const { data, error } = await supabase.functions.invoke('lead-brief', { body: { lead_id: it.id } });
+      if (error || data?.error) throw new Error(data?.error || error.message);
+      setBriefs(b => ({ ...b, [it.id]: { text: data.brief || null, skipped: data.skipped || null } }));
+    } catch (e) {
+      setBriefs(b => ({ ...b, [it.id]: { text: null, err: e.message || 'could not read it' } }));
+    }
+  };
+
   const dismiss = async (it) => {
     setBusy(it.id);
     try { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); setItems(list => list.filter(x => x.id !== it.id)); } catch (_) {}
@@ -407,6 +429,31 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
               </div>
             ) : null}
             {!cleared[it.id] ? <InboundMessage text={fullest(it)} summary={it.triage_summary} /> : null}
+
+            {!cleared[it.id] && (it.brief || briefs[it.id]) ? (
+              <div style={{ border: '1px solid var(--border)', borderLeft: '2px solid var(--room-accent, var(--accent))',
+                borderRadius: 10, padding: '10px 12px', margin: '8px 0 2px' }}>
+                <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
+                  color: 'var(--text-3)', marginBottom: 5 }}>Who is this</div>
+                {briefs[it.id]?.loading ? (
+                  <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Reading what they wrote…</div>
+                ) : (
+                  <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                    {it.brief || briefs[it.id]?.text || (
+                      briefs[it.id]?.skipped ? 'Nothing worth briefing — ' + briefs[it.id].skipped + '.'
+                        : briefs[it.id]?.err || '')}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {!cleared[it.id] && !it.brief && !briefs[it.id] ? (
+              <button type="button" onClick={() => getBrief(it)}
+                style={{ background: 'none', border: 0, padding: '6px 0 0', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 700, color: 'var(--room-accent, var(--accent))' }}>
+                Who is this?
+              </button>
+            ) : null}
             {/* The email itself: whole thread, and the way to clear it out of the
                 inbox once handled. Dismiss only clears the CARD — it always left
                 the mail sitting there. */}
