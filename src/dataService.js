@@ -43,9 +43,29 @@ export async function ensureFreshSession() {
 // the guard belongs.
 const _invoke = supabase.functions.invoke.bind(supabase.functions);
 supabase.functions.invoke = async (name, options) => {
-  await ensureFreshSession();
+  // TWO WAYS THIS USED TO HANG FOREVER, and both leave a spinner on screen with
+  // the work already done on the server.
+  //
+  // 1. ensureFreshSession() was awaited UNGUARDED. The rpc wrapper below has
+  //    always had .catch(() => false) on the same call; this one did not, so a
+  //    refresh that rejected or never settled took the whole invoke with it and
+  //    the caller's `busy` stayed true for good. Dara's Ari rewrite span three
+  //    times while the server logged three completed rewrites and billed for
+  //    them — the answer existed and never reached the screen.
+  //
+  // 2. Nothing bounded the call itself. A request that stalls mid-flight never
+  //    settles, so every caller must either race its own timeout or hang.
+  //
+  // A promise that never settles is worse than one that rejects: an error can be
+  // shown and retried, a hang can only be force-closed.
+  await ensureFreshSession().catch(() => false);
   try {
-    const res = await _invoke(name, options);
+    const res = await Promise.race([
+      _invoke(name, options),
+      new Promise((_, rej) => setTimeout(
+        () => rej(new Error('Timed out waiting for ' + name + '. It may still have run — check before retrying.')),
+        90000)),
+    ]);
     return res;
   } catch (err) {
     // A transient network failure on an edge call is a signal the backend may be
