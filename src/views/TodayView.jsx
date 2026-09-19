@@ -206,7 +206,7 @@ export default function TodayView({
         setHeroIdx(0); bumpApprovals();
       })();
     } else if (cta.kind === 'open_reply') {
-      if (cta.email) { window.__inboxOpenEmail = cta.email; setView && setView('inbox'); }
+      if (cta.email) { window.__inboxOpenEmail = cta.email; window.__inboxDraftReply = true; setView && setView('inbox'); }
       else if (cta.phone) { window.__quoTab = { tab: 'messages', phone: cta.phone, name: cta.name }; setView && setView('quo'); }
       else setView && setView('inbox');
     } else if (cta.kind === 'view') { setView && setView(cta.payload); }

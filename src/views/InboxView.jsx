@@ -709,6 +709,13 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
         if (data && data.length) row = data[0];
       } catch (_) {}
       if (!row) {
+        // BROADER FALLBACK. The first lookup matches on the thread's participants
+        // array; when that misses — a differently-shaped row, an alias, a
+        // forwarded chain — Dara landed on the inbox LIST with a toast he did not
+        // see, which reads as "Open did nothing". Look for the most recent
+        // message from that address, and if there is none, the most recent
+        // message TO it: a thread you owe a reply on may have your own send as
+        // its latest row.
         try {
           const { data } = await supabase.from('email_messages').select('thread_id, internal_date')
             .ilike('from_address', `%${email}%`).order('internal_date', { ascending: false }).limit(1);
@@ -723,6 +730,19 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
         if (row.account_id) setSelectedId(row.account_id);
         setPendingOpenThreadId(row.id);
       } else {
+        try {
+          const { data } = await supabase.from('email_messages')
+            .select('thread_id').contains('to_addresses', [email])
+            .order('internal_date', { ascending: false }).limit(1);
+          if (data && data.length && data[0].thread_id) {
+            const { data: tr } = await supabase.from('email_threads').select('id, account_id').eq('id', data[0].thread_id).limit(1);
+            if (tr && tr.length) {
+              if (tr[0].account_id) setSelectedId(tr[0].account_id);
+              setPendingOpenThreadId(tr[0].id);
+              return;
+            }
+          }
+        } catch (_) {}
         try { if (window.__notify) window.__notify("Couldn't find that email conversation.", 'info'); } catch (_) {}
       }
     })();
@@ -1650,6 +1670,15 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     setComposeReplyMeta(null);
     setSendMsg('');
     setShowCompose(true);
+
+    // ARRIVED FROM "DO THIS NEXT". Dara already decided to reply before he
+    // tapped Open, so the next thing on screen should be something to EDIT, not
+    // an empty box he has to start from. Draft it immediately; Ari's rewrite is
+    // right there to tune it afterwards.
+    if (typeof window !== 'undefined' && window.__inboxDraftReply) {
+      window.__inboxDraftReply = false;
+      setTimeout(() => { try { aiReplyDraft(); } catch (_) {} }, 120);
+    }
   }
 
   // Forward a message: empty recipients, prefilled with "Forwarded message" preamble
