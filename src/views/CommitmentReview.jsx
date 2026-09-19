@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { supabase } from '../dataService';
 import { todayNY } from '../clock';
 import OwnerPicker from './OwnerPicker';
@@ -35,10 +35,18 @@ const fmtDate = (d) => {
 };
 const daysLate = (d) => Math.floor((Date.now() - new Date(d + 'T12:00:00')) / 86400000);
 
+// Reading the call. The old note here said there was no route to a single call,
+// which was true — but CallDetail is a COMPONENT, not a route, and it takes a
+// callId. It can be opened in place. Dara: "frequently there is not enough of
+// the conversation for me to determine the context, and sometimes it does not
+// know with who."
+const CallDetail = lazy(() => import('./CallDetail'));
+
 export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll }) {
   const [rows, setRows] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [busy, setBusy] = useState(null);
+  const [readingCall, setReadingCall] = useState(null);   // { callId, name }
   const [dueEdit, setDueEdit] = useState(null);
   const [err, setErr] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -595,6 +603,14 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                         with no way to find it. The person IS reachable, their
                         record carries the call in its timeline, and the quote
                         above is the evidence either way. */}
+                    {c.call_id && (
+                      <button type="button"
+                        onClick={(e) => { e.stopPropagation(); setReadingCall({ callId: c.call_id, name: c.owner_name || c.contact_name || 'this call' }); }}
+                        style={{ marginTop: 8, marginRight: 12, background: 'none', border: 'none', padding: 0,
+                          color: 'var(--room-accent, var(--accent))', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        Read the call
+                      </button>
+                    )}
                     {c.contact_id && (
                       <button type="button" onClick={() => { try { window.__openContact && window.__openContact(c.contact_id); } catch (_) {} }}
                         style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
@@ -619,6 +635,26 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
           )}
         </>
       )}
+
+      {readingCall && (
+        <div className="modal-overlay" onClick={() => setReadingCall(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(8,6,4,.72)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 620, maxHeight: '88dvh', minHeight: 0, overflow: 'auto',
+              background: 'var(--bg-card)', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+              border: '1px solid var(--border)', padding: '14px 14px calc(14px + env(safe-area-inset-bottom,0px))' }}>
+            <button type="button" onClick={() => setReadingCall(null)}
+              style={{ background: 'none', border: 0, padding: '2px 0 10px', cursor: 'pointer',
+                color: 'var(--text-3)', fontSize: 13, fontWeight: 700 }}>Close</button>
+            <Suspense fallback={<div style={{ padding: 16, color: 'var(--text-3)' }}>Opening the call\u2026</div>}>
+              <CallDetail callId={readingCall.callId} contactName={readingCall.name}
+                onClose={() => setReadingCall(null)} />
+            </Suspense>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
