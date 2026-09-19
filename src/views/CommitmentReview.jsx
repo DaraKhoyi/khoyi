@@ -414,7 +414,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
         )}
         <div style={{ flex: 1 }} />
         {!editable && (
-          <button disabled={busy === c.id} onClick={() => removeCommitment(c)} title="Delete this item" aria-label="Delete"
+          <button type="button" disabled={busy === c.id} onClick={() => removeCommitment(c)} title="Delete this item" aria-label="Delete"
             style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '2px 4px' }}>×</button>
         )}
         {children}
@@ -431,10 +431,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
           <div style={{ ...lab, color: EMBER, marginBottom: 7 }}>They’re late — {late.length}</div>
           {late.map(c => renderCard(c, { tone: 'late', children: (
             <>
-              <button disabled={busy === c.id} onClick={() => chase(c)} style={btn(true)}>Chase them</button>
-              <button disabled={busy === c.id} onClick={() => pushOut(c, 7)} style={btn(false)}>+1 week</button>
-              <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not needed</button>
-              <button disabled={busy === c.id} onClick={() => remove(c)}
+              <button type="button" disabled={busy === c.id} onClick={() => chase(c)} style={btn(true)}>Chase them</button>
+              <button type="button" disabled={busy === c.id} onClick={() => pushOut(c, 7)} style={btn(false)}>+1 week</button>
+              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not needed</button>
+              <button type="button" disabled={busy === c.id} onClick={() => remove(c)}
                 style={{ ...btn(false), color: EMBER, borderColor: 'rgba(201,86,63,.45)' }}>Delete</button>
             </>
           ) }))}
@@ -461,7 +461,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                     {' \u00B7 ' + items.length + ' follow-up' + (items.length === 1 ? '' : 's') + ' found'}
                   </span>
                 </span>
-                <button disabled={busy === items[0].id} onClick={() => summaryOnly(items)}
+                <button type="button" disabled={busy === items[0].id} onClick={() => summaryOnly(items)}
                   title="Keep the call and its summary on the record, create no tasks"
                   style={{ ...btn(false), padding: '5px 10px', fontSize: 11.5 }}>
                   {busy === items[0].id ? 'Filing\u2026' : 'Summary only'}
@@ -475,11 +475,13 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', marginBottom: 8, flexWrap: 'wrap' }}>
                 <input type="date" value={editOf(c).due}
                   onChange={ev => setEdit(c, { due: ev.target.value })}
+                  onClick={(e) => e.stopPropagation()}
                   style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8,
                     color: 'var(--text-1)', padding: '5px 8px', fontSize: 12 }} />
-                <div style={{ display: 'flex', gap: 3 }}>
+                <div style={{ display: 'flex', gap: 3 }} onClick={(e) => e.stopPropagation()}>
                   {['A', 'B', 'C', 'D'].map(p => (
-                    <button key={p} onClick={() => setEdit(c, { priority: p })}
+                    <button type="button" key={p}
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); setEdit(c, { priority: p }); }}
                       style={{ width: 26, height: 26, borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: 'pointer',
                         border: '1px solid ' + (editOf(c).priority === p ? 'var(--accent-2)' : 'var(--border)'),
                         background: editOf(c).priority === p ? 'var(--accent-2)' : 'transparent',
@@ -489,23 +491,23 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               </div>
               {/* Anything else that belongs on the task. The quote is appended
                   automatically, so this is for what the call did not say. */}
-              <textarea value={editOf(c).notes || ''} rows={2}
+              <textarea onClick={(e) => e.stopPropagation()} value={editOf(c).notes || ''} rows={2}
                 onChange={ev => setEdit(c, { notes: ev.target.value })}
                 placeholder="Add notes for this task (optional)"
                 style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-base)',
                   border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-1)',
                   padding: '6px 8px', fontSize: 12, marginBottom: 8, fontFamily: 'inherit', resize: 'vertical' }} />
-              <button disabled={busy === c.id} onClick={() => accept(c)} style={btn(true)}>
+              <button type="button" disabled={busy === c.id} onClick={() => accept(c)} style={btn(true)}>
                 {c.owner === 'me' ? 'Make it a task' : 'Track it'}
               </button>
               {/* Done: for yours it records a completed task so the work counts;
                   for theirs it just closes the tracking — they delivered. */}
-              <button disabled={busy === c.id}
+              <button type="button" disabled={busy === c.id}
                 onClick={() => (c.owner === 'me' ? doneAlready(c) : resolveTheirs(c))}
                 style={btn(false)}>
                 {c.owner === 'me' ? 'Done already' : 'They delivered'}
               </button>
-              <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
+              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
             </>
               ) }))}
             </div>
@@ -563,7 +565,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                       <input type="date" defaultValue={c.due_date || ''} id={'cd-' + c.id}
                         style={{ flex: '1 1 140px', background: 'var(--bg-base)', border: '1px solid var(--border)',
                           borderRadius: 8, color: 'var(--text-1)', padding: '6px 8px', fontSize: 12.5 }} />
-                      <button disabled={busy === c.id} style={{ ...btn(true), padding: '6px 12px', fontSize: 12 }}
+                      <button type="button" disabled={busy === c.id} style={{ ...btn(true), padding: '6px 12px', fontSize: 12 }}
                         onClick={async () => {
                           const t = document.getElementById('ct-' + c.id);
                           const d = document.getElementById('cd-' + c.id);
@@ -572,7 +574,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                         }}>
                         {busy === c.id ? 'Saving\u2026' : 'Save'}
                       </button>
-                      <button style={{ ...btn(false), padding: '6px 10px', fontSize: 12 }} onClick={() => setOpenId(null)}>Cancel</button>
+                      <button type="button" style={{ ...btn(false), padding: '6px 10px', fontSize: 12 }} onClick={() => setOpenId(null)}>Cancel</button>
                     </div>
                     {c.quote && (
                       <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.45, fontStyle: 'italic' }}>
@@ -586,7 +588,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                         record carries the call in its timeline, and the quote
                         above is the evidence either way. */}
                     {c.contact_id && (
-                      <button onClick={() => { try { window.__openContact && window.__openContact(c.contact_id); } catch (_) {} }}
+                      <button type="button" onClick={() => { try { window.__openContact && window.__openContact(c.contact_id); } catch (_) {} }}
                         style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
                         {'\u2197 Open ' + (c.contact_name && c.contact_name !== 'Unknown' ? c.contact_name + '\u2019s' : 'the') + ' record'}
                       </button>
@@ -594,10 +596,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                   </div>
                 )}
               </div>
-              <button disabled={busy === c.id} onClick={() => removeCommitment(c)} title="Delete this item"
+              <button type="button" disabled={busy === c.id} onClick={() => removeCommitment(c)} title="Delete this item"
                 aria-label="Delete"
                 style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '2px 4px', flex: 'none' }}>×</button>
-              <button disabled={busy === c.id} onClick={() => dismiss(c)} style={{ ...btn(false), padding: '5px 10px', fontSize: 11 }}>Done</button>
+              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={{ ...btn(false), padding: '5px 10px', fontSize: 11 }}>Done</button>
             </div>
           ))}
           {byCall.length > 6 && (
