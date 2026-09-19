@@ -647,7 +647,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
             <button type="button" onClick={() => setReadingCall(null)}
               style={{ background: 'none', border: 0, padding: '2px 0 10px', cursor: 'pointer',
                 color: 'var(--text-3)', fontSize: 13, fontWeight: 700 }}>Close</button>
-            <Suspense fallback={<div style={{ padding: 16, color: 'var(--text-3)' }}>Opening the call\u2026</div>}>
+            <Suspense fallback={<div style={{ padding: 16, color: 'var(--text-3)' }}>Opening the call…</div>}>
               <CallDetail callId={readingCall.callId} contactName={readingCall.name}
                 onClose={() => setReadingCall(null)} />
             </Suspense>
