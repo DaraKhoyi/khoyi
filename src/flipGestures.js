@@ -23,8 +23,14 @@ const LONG_PRESS_MS = 480;
 const TWO_FINGER_MS = 260;
 const TWO_FINGER_SLOP = 14;
 
+// One state object for the fork, not one per render. This is called inline in
+// App.js's JSX, so a fresh object was created on EVERY re-render and the tap
+// history went with it — half the reason a single tap could behave like a double
+// one. There is exactly one tuning fork on screen, so one shared state is right.
+const forkState = { t: 0, long: false, timer: null };
+
 export function forkHandlers({ onFlip, onSwitcher, onMenu }) {
-  const st = { t: 0, long: false, timer: null };
+  const st = forkState;
   const clear = () => { if (st.timer) { clearTimeout(st.timer); st.timer = null; } };
   return {
     onPointerDown: () => {
@@ -35,15 +41,28 @@ export function forkHandlers({ onFlip, onSwitcher, onMenu }) {
       clear();
       if (st.long) { if (e && e.preventDefault) e.preventDefault(); return; }
       const now = Date.now();
+
+      // THE MENU OPENS ON THE FIRST TAP. It used to wait 330ms in case a second
+      // tap was coming, which made the single tap — the thing done a hundred
+      // times a day — feel broken, and left a stale st.t that could make the
+      // NEXT single tap read as a double and flip instead of opening. Dara:
+      // "it does not give me the menu any more, it behaves as if I
+      // double-tapped it."
+      //
+      // A double tap still flips: the second tap closes the menu on its way. A
+      // gesture used rarely should not slow down the one used constantly.
       if (st.t && now - st.t < DOUBLE_TAP_MS) {
         st.t = 0;
         if (e && e.preventDefault) e.preventDefault();
+        if (onMenu) onMenu(false);      // close what the first tap opened
         if (onFlip) onFlip();
         return;
       }
       st.t = now;
-      // hold the menu until the double-tap window closes, or it opens on the way to a flip
-      setTimeout(() => { if (st.t === now) { st.t = 0; if (onMenu) onMenu(); } }, DOUBLE_TAP_MS + 10);
+      // Clear the window even if no second tap comes, so a stale timestamp can
+      // never turn a later single tap into a flip.
+      setTimeout(() => { if (st.t === now) st.t = 0; }, DOUBLE_TAP_MS + 10);
+      if (onMenu) onMenu(true);
     },
     onPointerLeave: clear,
     onPointerCancel: clear,
