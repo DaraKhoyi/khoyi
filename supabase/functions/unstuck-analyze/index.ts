@@ -219,7 +219,8 @@ async function runAnalysis(admin: any, l: any, comps: any[], listing_id: string,
     const data = await resp.json();
 
     try {
-      await logAiUsage(admin, { userId: billUserId, fn: "unstuck-analyze", model: MODEL, usage: data?.usage, usedOwn: false });
+      await logAiUsage(admin, { userId: billUserId, fn: "unstuck-analyze", model: MODEL, usage: data?.usage, usedOwn: false,
+        subjectType: "unstuck_listing", subjectId: listing_id || null });
     } catch (_) { /* never fail the run on a telemetry write */ }
 
     if (!resp.ok) {

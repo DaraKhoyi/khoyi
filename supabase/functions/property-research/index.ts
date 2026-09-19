@@ -106,7 +106,8 @@ Deno.serve(async (req) => {
       return J({ error: `Research service error ${apiResp.status}. Please try again.` }, 502);
     }
     const apiData = await apiResp.json();
-    try { await logAiUsage(admin, { userId: billUserId, fn: "property-research", model: MODEL, usage: apiData?.usage, usedOwn: false }); } catch (_) {}
+    try { await logAiUsage(admin, { userId: billUserId, fn: "property-research", model: MODEL, usage: apiData?.usage, usedOwn: false,
+      subjectType: "property", subjectId: null }   // keyed by address; no row id exists); } catch (_) {}
 
     const fullText = (apiData.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
     const data = extractJson(fullText);

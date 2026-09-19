@@ -63,7 +63,13 @@ export async function logEmbeddingUsage(
 
 export async function logAiUsage(
   supabase: any,
-  { userId, fn, model, usage, usedOwn }: { userId?: string | null; fn: string; model: string; usage?: any; usedOwn?: boolean },
+  // subjectType/subjectId: WHAT the spend was about — the contact, property or
+  // deal. Every caller already knows this and was throwing it away, which is why
+  // "did this $0.30 research help?" was unanswerable rather than merely hard.
+  // Optional, so nothing breaks for the functions that have no subject.
+  { userId, fn, model, usage, usedOwn, subjectType, subjectId }:
+    { userId?: string | null; fn: string; model: string; usage?: any; usedOwn?: boolean;
+      subjectType?: string | null; subjectId?: string | null },
 ): Promise<void> {
   try {
     if (!userId) return;                       // never mis-attribute
@@ -75,6 +81,7 @@ export async function logAiUsage(
     const { error } = await supabase.from("ai_usage_log").insert({
       user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok,
       web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn,
+      subject_type: subjectType || null, subject_id: subjectId || null,
     });
     if (error) console.error(`[aiUsage] ${fn} log failed:`, error.message);
   } catch (e) {

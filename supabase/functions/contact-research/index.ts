@@ -274,13 +274,13 @@ async function resolveKey(supabase, userId, platformKey) {
   return { key: platformKey, usedOwn: false };
 }
 const AI_RATES = { "claude-opus-4-8": [5, 25], "claude-opus-4-7": [5, 25], "claude-sonnet-4-6": [3, 15], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
-async function logUsage(supabase, { userId, fn, model, usage, usedOwn }) {
+async function logUsage(supabase, { userId, fn, model, usage, usedOwn, subjectType, subjectId }) {
   try {
     const inTok = usage?.input_tokens || 0, outTok = usage?.output_tokens || 0;
     const searches = usage?.server_tool_use?.web_search_requests || 0;
     const [ri, ro] = AI_RATES[model] || [3, 15];
     const cost = (inTok / 1e6) * ri + (outTok / 1e6) * ro + searches * 0.01;
-    await supabase.from("ai_usage_log").insert({ user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok, web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn });
+    await supabase.from("ai_usage_log").insert({ user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok, web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn, subject_type: subjectType || null, subject_id: subjectId || null });
   } catch (_) {}
 }
 
@@ -412,7 +412,8 @@ serve(async (req) => {
         });
         if (!exResp.ok) return J({ ok: false, reason: "extract call failed " + exResp.status });
         const exData = await exResp.json();
-        await logUsage(supabase, { userId: billUserId, fn: "contact-research-extract", model: "claude-sonnet-4-6", usage: exData.usage, usedOwn });
+        await logUsage(supabase, { userId: billUserId, fn: "contact-research-extract", model: "claude-sonnet-4-6", usage: exData.usage, usedOwn,
+          subjectType: "contact", subjectId: contact_id || null });
         const exText = (exData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
         const d = extractJson(exText) || {};
         const disc2 = d.disc || {};
@@ -465,7 +466,8 @@ serve(async (req) => {
           return;
         }
         const apiData = await apiResp.json();
-        await logUsage(supabase, { userId: billUserId, fn: "contact-research", model, usage: apiData.usage, usedOwn });
+        await logUsage(supabase, { userId: billUserId, fn: "contact-research", model, usage: apiData.usage, usedOwn,
+          subjectType: "contact", subjectId: contact_id || null });
         const fullReport = (apiData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
         let data = extractJson(fullReport) || {};
         // FALLBACK: the model sometimes returns the narrative report but forgets
@@ -486,7 +488,8 @@ serve(async (req) => {
             });
             if (exResp.ok) {
               const exData = await exResp.json();
-              await logUsage(supabase, { userId: billUserId, fn: "contact-research-extract", model: "claude-sonnet-4-6", usage: exData.usage, usedOwn });
+              await logUsage(supabase, { userId: billUserId, fn: "contact-research-extract", model: "claude-sonnet-4-6", usage: exData.usage, usedOwn,
+          subjectType: "contact", subjectId: contact_id || null });
               const exText = (exData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
               const parsed = extractJson(exText);
               if (parsed && typeof parsed === "object") data = { ...parsed, ...data, disc: parsed.disc || data.disc };
