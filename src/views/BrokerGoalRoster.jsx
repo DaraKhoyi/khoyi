@@ -83,14 +83,25 @@ export default function BrokerGoalRoster() {
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState('needs');
   const [q, setQ] = useState('');
+  // Commitments that expired with nobody told. The Fiduciary's sharpening: if one
+  // ever touched a transaction deadline or a disclosure date, the silence is a
+  // gap in the record, not just a product failure. The broker needs the count by
+  // agent, and needs it beside the goals rather than on a screen nobody opens.
+  const [expired, setExpired] = useState([]);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('broker_goal_roster');
     if (error) { setErr(error.message); setRows([]); return; }
     if (data && data.error) { setErr(data.error); setRows([]); return; }
     setRows(Array.isArray(data) ? data : []);
+    try {
+      const { data: ex } = await supabase.rpc('expired_commitments_by_agent');
+      setExpired(Array.isArray(ex) ? ex : []);
+    } catch (_) { /* the roster still loads */ }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const expiredTotal = expired.reduce((n, e) => n + (e.expired || 0), 0);
 
   if (err) return <div style={{ padding: 20, color: 'var(--text-3)' }}>{err}</div>;
 
@@ -118,6 +129,32 @@ export default function BrokerGoalRoster() {
         {all.filter(a => a.departed).length} who have left, kept for their history
       </div>
       <hr className="room-rule" />
+
+      {/* SILENT EXPIRY MADE VISIBLE. 255 commitments closed their window with
+          nobody told — not the agent, not the broker. A 14% completion rate was
+          being recorded and never shown to the one person who could act on it. */}
+      {expiredTotal > 0 && (
+        <div style={{ border: '1px solid rgba(201,86,63,.45)', background: 'rgba(201,86,63,.07)',
+          borderRadius: 12, padding: '12px 14px', margin: '12px 0 16px' }}>
+          <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
+            color: '#E4674F', marginBottom: 6 }}>Expired without a decision</div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, marginBottom: 8 }}>
+            {expiredTotal} commitment{expiredTotal === 1 ? '' : 's'} closed their window with nobody
+            told. Every one is now on the record in the commitment log.
+          </div>
+          {expired.slice(0, 6).map(e => (
+            <div key={e.user_id} style={{ display: 'flex', justifyContent: 'space-between',
+              gap: 10, padding: '5px 0', borderTop: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--text-1)', minWidth: 0, overflow: 'hidden',
+                textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.agent}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-3)', flexShrink: 0 }}>
+                {e.expired} expired &middot; {e.done} done
+                {e.completion_pct != null ? ' · ' + e.completion_pct + '% kept' : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 7, margin: '14px 0 10px', flexWrap: 'wrap' }}>
         {[['needs', 'Needs a call'], ['nogoal', 'No goal'], ['quiet', 'Gone quiet'], ['departed', 'Left'], ['all', 'Everyone']].map(([k, l]) => (
