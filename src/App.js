@@ -1192,6 +1192,7 @@ function AppMain() {
   const [oweReplyMap, setOweReplyMap] = useState({});
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarOpenedAt = useRef(0);   // see the overlay's onClick
   // Desktop keeps the sidebar permanently visible; mobile only when opened. We use
   // this to avoid rendering the ~30-node menu tree on every app render when it's
   // closed on a phone — that churn was the iPhone menu lag.
@@ -1851,7 +1852,7 @@ function AppMain() {
       {false && <QuickLog userId={user.id} onNavigate={navigate} onUploadRecording={(f) => setSharedAudio(f)} />}
       {/* Mobile header */}
       <div className="mobile-header">
-        <div className="mobile-header-logo" {...forkHandlers({ onFlip: flipBack, onSwitcher: () => setSwitcherOpen(true), onMenu: (open) => setSidebarOpen(open !== false) })} style={{cursor:"pointer",touchAction:"manipulation"}} role="button" aria-label="Menu — double-tap to flip back, hold to switch"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
+        <div className="mobile-header-logo" {...forkHandlers({ onFlip: flipBack, onSwitcher: () => setSwitcherOpen(true), onMenu: (open) => { if (open !== false) sidebarOpenedAt.current = Date.now(); setSidebarOpen(open !== false); } })} style={{cursor:"pointer",touchAction:"manipulation"}} role="button" aria-label="Menu — double-tap to flip back, hold to switch"><svg className="mh-fork" width="27" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true"><g className="mh-fork-wave mh-fork-w2" stroke="#EBCB82" strokeWidth="1.2" strokeLinecap="round" fill="none"><path d="M31 8 Q37 17 31 26"/><path d="M9 8 Q3 17 9 26"/></g><g className="mh-fork-wave mh-fork-w1" stroke="#EBCB82" strokeWidth="1.3" strokeLinecap="round" fill="none"><path d="M28 11 Q32 17 28 23"/><path d="M12 11 Q8 17 12 23"/></g><g stroke="#CBA35C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M15 6 V21"/><path d="M25 6 V21"/><path d="M15 21 C15 26 17 28 20 28 C23 28 25 26 25 21"/><path d="M20 28 V36"/></g><circle cx="20" cy="37.4" r="1.9" fill="#CBA35C"/></svg><span className="mh-divider"></span><div className="mh-text"><span className="rog-wordmark"><span className="rog-realty">REALTY</span><span className="rog-one">ONE</span><span className="rog-group">GROUP</span><span className="rog-adv">Advantage</span></span><span className="rog-sub"><span className="rog-pb">powered by </span><PrismMark /></span></div></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
           {/* The header magnifier now searches EVERYTHING, not just the Library.
               A magnifier in a header is the most conventional control in software
@@ -1880,7 +1881,8 @@ function AppMain() {
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
         {/* The old full menu — opens from the TUNING FORK. Keeps access to every
             screen and setting while the mindset structure matures. */}
-        {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+        {sidebarOpen && <div className="sidebar-overlay"
+          onClick={() => { if (Date.now() - sidebarOpenedAt.current > 400) setSidebarOpen(false); }} />}
         <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-logo">
             <RogLogo />
