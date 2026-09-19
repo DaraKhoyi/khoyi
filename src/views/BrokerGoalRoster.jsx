@@ -101,7 +101,11 @@ export default function BrokerGoalRoster() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const expiredTotal = expired.reduce((n, e) => n + (e.expired || 0), 0);
+    // RAY'S POINT, AND THE REASON THE WORD IS GONE: "expired" told an agent he had
+  // already failed at something whose clock he never saw. Nothing expires now —
+  // a promise past its date is WAITING, which is a fact about the promise rather
+  // than a verdict on the person.
+  const expiredTotal = expired.reduce((n, e) => n + (e.waiting || 0), 0);
 
   if (err) return <div style={{ padding: 20, color: 'var(--text-3)' }}>{err}</div>;
 
@@ -137,10 +141,11 @@ export default function BrokerGoalRoster() {
         <div style={{ border: '1px solid rgba(201,86,63,.45)', background: 'rgba(201,86,63,.07)',
           borderRadius: 12, padding: '12px 14px', margin: '12px 0 16px' }}>
           <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
-            color: '#E4674F', marginBottom: 6 }}>Expired without a decision</div>
+            color: '#E4674F', marginBottom: 6 }}>Waiting on a decision</div>
           <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, marginBottom: 8 }}>
-            {expiredTotal} commitment{expiredTotal === 1 ? '' : 's'} closed their window with nobody
-            told. Every one is now on the record in the commitment log.
+            {expiredTotal} promise{expiredTotal === 1 ? ' is' : 's are'} past the date with nobody
+            having decided what to do. Nothing expires or disappears — they wait until
+            someone acts.
           </div>
           {expired.slice(0, 6).map(e => (
             <div key={e.user_id} style={{ display: 'flex', justifyContent: 'space-between',
@@ -148,8 +153,8 @@ export default function BrokerGoalRoster() {
               <span style={{ fontSize: 12.5, color: 'var(--text-1)', minWidth: 0, overflow: 'hidden',
                 textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.agent}</span>
               <span style={{ fontSize: 12.5, color: 'var(--text-3)', flexShrink: 0 }}>
-                {e.expired} expired &middot; {e.done} done
-                {e.completion_pct != null ? ' · ' + e.completion_pct + '% kept' : ''}
+                {e.waiting} waiting &middot; {e.done} done
+                {e.kept_pct != null ? ' · ' + e.kept_pct + '% kept' : ''}
               </span>
             </div>
           ))}
