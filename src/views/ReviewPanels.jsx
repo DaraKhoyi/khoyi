@@ -172,7 +172,16 @@ export function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSys
         <button className="btn btn-ghost btn-sm" onClick={recheck} disabled={busy} title="Scan recent calls for new follow-ups">{busy ? 'Checking…' : 'Check calls'}</button>
       </div>
       {rows.slice(0, shownCalls).map(call => (
-        <div key={call.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+        // ONE CALL, ONE CARD. They were separated by a single faint grey rule,
+        // so a long summary ran straight into the next person's and Dara could
+        // not tell where one conversation ended. A real edge and its own ground
+        // does the separating; the gold hairline under the header is the app's
+        // existing signal for "a heading and its content", used here for the
+        // same job.
+        <div key={call.id} style={{
+          background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
+          padding: '12px 13px', marginBottom: 12,
+          boxShadow: '0 1px 0 rgba(203,163,92,.10), 0 6px 18px rgba(0,0,0,.22)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', fontWeight: 700 }}>{nameForCall(call)}</span>
             <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
@@ -181,6 +190,9 @@ export function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSys
               {call.op_created_at ? ` · ${new Date(call.op_created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
             </span>
           </div>
+          {/* The app's hairline, doing at card scale what it does under a room
+              header: separating a heading from what it introduces. */}
+          <div className="gold-hairline" style={{ margin: '6px 0 9px' }} />
           {sumText(call.summary) && <div style={{ fontSize: '11.5px', color: 'var(--text-2)', fontStyle: 'italic', marginBottom: '8px', whiteSpace: 'pre-wrap' }}>{sumText(call.summary)}</div>}
           {call.items.map((it, idx) => {
             const key = call.id + ':' + it._i;
