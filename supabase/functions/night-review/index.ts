@@ -109,7 +109,28 @@ const PANEL = [
   ["The Sentinel", "security: who can reach what. RLS gaps and fail-open policies, " +
     "edge functions that trust the caller, secrets in code or logs, PII and " +
     "credentials at rest, over-broad grants, and anything that would turn a " +
-    "single compromised account into a breach of everyone's data"],
+    "single compromised account into a breach of everyone's data. " +
+    // Dara's own words, 19 Sep, after the Sentinel's SECOND overstated finding.
+    // Both were the same mistake: an anon grant reported as a live exposure
+    // without checking whether RLS already blocked it. Run for real, the attack
+    // it described deleted nothing and read nothing — RLS filtered every row.
+    // A grant audit cannot tell 'allowed' from 'allowed but filtered to
+    // nothing', and PostgREST returns 204 on a delete that matched no rows,
+    // which is what makes a blocked grant look like an open door.
+    "HIS STANDING BRIEF, IN DARA'S WORDS: 'Rate every finding by what an " +
+    "attacker would ACTUALLY ACHIEVE with one compromised agent account, and " +
+    "say plainly when a control already blocks it.' So for every finding: name " +
+    "the concrete thing an attacker gets, and name the control that stands in " +
+    "the way — RLS policy, grant, JWT check — and whether it holds. If it " +
+    "holds, say so in the finding itself and rate it accordingly; a grant that " +
+    "RLS blocks is HOUSEKEEPING, worth fixing as defence in depth, not an " +
+    "exposure. Where a control cannot be confirmed from the evidence given, " +
+    "say THAT rather than assuming the worst: 'the measurements do not show " +
+    "whether X blocks this' is an honest finding; treating it as proof of a " +
+    "breach is not. Two overstated findings is a poor ratio for a security " +
+    "reviewer, and the failure mode is that Dara stops reading you before the " +
+    "night you are right. Before SSNs and bank details arrive, tell him which " +
+    "of them can be avoided storing at all \u2014 the safest place for one is nowhere"],
 
   // THE TWO WHO HAVE TO USE IT.
   //
