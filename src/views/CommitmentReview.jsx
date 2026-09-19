@@ -338,8 +338,17 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // <input> DOM node and drops focus/keyboard after one character. Calling a
   // function that returns JSX splices it into the parent at a stable position, so
   // the input keeps its identity and focus survives typing. Key goes on the root.
+  // THE SAME EDGE THE CALL-REVIEW CARDS GOT. These sit stacked inside a
+  // conversation, several to a call, each with its own title, quote, date,
+  // priority, notes and four buttons — and they were separated by a plain
+  // one-pixel line. A card carrying that much needs to look like a card: its own
+  // ground, a real edge, and the faint gold top-light so the border reads on the
+  // near-black instead of vanishing into it.
   const renderCard = (c, { children, tone, editable }) => (
-    <div key={c.id} style={{ ...card, borderColor: tone === 'late' ? EMBER : 'var(--border)', marginBottom: 8 }}>
+    <div key={c.id} style={{ ...card,
+      borderColor: tone === 'late' ? EMBER : 'var(--border)',
+      background: 'var(--bg-card)', borderRadius: 14, marginBottom: 12,
+      boxShadow: '0 1px 0 rgba(203,163,92,.10), 0 6px 18px rgba(0,0,0,.22)' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 5, flexWrap: 'wrap' }}>
         <span style={{ ...lab, color: c.owner === 'me' ? 'var(--accent-2)' : 'var(--text-3)' }}>
           {c.owner === 'me' ? 'You said you would'
@@ -348,6 +357,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
         </span>
         {c.confidence === 'low' && <span style={{ fontSize: 9, color: EMBER, fontWeight: 700 }}>· unsure</span>}
       </div>
+      <div className="gold-hairline" style={{ margin: '2px 0 9px' }} />
       {/* Attribution is the single most-corrected field — extraction tagged 89 of
           199 items "them" and 75% were thrown away. Make fixing it one tap. */}
       <div style={{ marginBottom: 8 }}>
