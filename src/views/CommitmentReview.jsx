@@ -502,10 +502,18 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               </button>
               {/* Done: for yours it records a completed task so the work counts;
                   for theirs it just closes the tracking — they delivered. */}
-              <button type="button" disabled={busy === c.id}
-                onClick={() => (c.owner === 'me' ? doneAlready(c) : resolveTheirs(c))}
-                style={btn(false)}>
-                {c.owner === 'me' ? 'Done already' : 'They delivered'}
+              {/* BOTH WAYS OF BEING FINISHED, on every card. It used to offer
+                  one: "Done already" if you owned it, "They delivered" if they
+                  did. Dara hit the case with no button — THEY said they would,
+                  and HE did it — so the only completion available claimed they
+                  had delivered, which is false and lands in the record as false.
+                  Who did the work is a fact, not a consequence of whose name is
+                  on the row. */}
+              <button type="button" disabled={busy === c.id} onClick={() => doneAlready(c)} style={btn(false)}>
+                {c.owner === 'me' ? 'Done already' : 'I did it'}
+              </button>
+              <button type="button" disabled={busy === c.id} onClick={() => resolveTheirs(c)} style={btn(false)}>
+                They delivered
               </button>
               <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
             </>
