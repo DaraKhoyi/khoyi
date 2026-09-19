@@ -149,6 +149,27 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
     setBusy(null);
   }
 
+  // PUSH IT OUT. Rescheduling is the honest answer far more often than dropping
+  // something, and it was the one response the card did not offer: chase, or let
+  // go. Most late promises are neither.
+  async function pushOut(c, days) {
+    const base = c.due_date ? new Date(c.due_date + 'T12:00:00') : new Date();
+    base.setDate(base.getDate() + days);
+    await saveCommitment(c, { due_date: base.toISOString().slice(0, 10) });
+  }
+
+  // GONE, not hidden. Dismiss records that a decision was taken; delete is for
+  // things that should never have been captured — a mis-heard line in a
+  // transcript, or someone else's promise attributed to you.
+  async function remove(c) {
+    if (!window.confirm('Delete this commitment? It will not appear anywhere again.')) return;
+    setBusy(c.id);
+    const { error } = await supabase.from('commitments').delete().eq('id', c.id);
+    setBusy(null);
+    if (error) { setErr('Could not delete: ' + error.message); return; }
+    setRows(rs => rs.filter(r => r.id !== c.id));
+  }
+
   async function dismiss(c) {
     setBusy(c.id);
     const { error } = await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', c.id);
@@ -411,7 +432,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
           {late.map(c => renderCard(c, { tone: 'late', children: (
             <>
               <button disabled={busy === c.id} onClick={() => chase(c)} style={btn(true)}>Chase them</button>
-              <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Let it go</button>
+              <button disabled={busy === c.id} onClick={() => pushOut(c, 7)} style={btn(false)}>+1 week</button>
+              <button disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not needed</button>
+              <button disabled={busy === c.id} onClick={() => remove(c)}
+                style={{ ...btn(false), color: EMBER, borderColor: 'rgba(201,86,63,.45)' }}>Delete</button>
             </>
           ) }))}
         </>
