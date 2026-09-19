@@ -210,6 +210,21 @@ async function gather(admin: any) {
     } catch (_) { ev[k] = null; }
   };
   // Measurements, not impressions.
+  // WAS THE EXPENSIVE SPEND ACTED ON? Added 19 Sep so the Accountant stops
+  // reporting cost per call with no outcome beside it — its own finding. Only
+  // rows logged since then carry a subject, so with_subject stays 0 for the
+  // backlog and the honest read for the first weeks is "not enough data yet".
+  // Say that rather than drawing a conclusion from three rows.
+  await one("ai_spend_outcomes_since_19sep", `select
+      fn, calls, usd, per_call, with_subject, acted_on, acted_pct,
+      'acted_pct = the contact was actually contacted within 14 days of the spend. ' ||
+      'It is a USAGE rate, not a conversion rate, and it is null until subjects accumulate.' note
+    from jsonb_to_recordset(public.ai_spend_with_outcome(30))
+      as t(fn text, calls int, usd numeric, per_call numeric,
+           with_subject int, acted_on int, acted_pct numeric)
+    where with_subject > 0 or usd > 1
+    order by usd desc`);
+
   await one("ai_spend_30d", `select fn, count(*) n, round(sum(cost_usd)::numeric,2) usd
      from ai_usage_log where created_at > now() - interval '30 days'
      group by 1 order by 3 desc limit 8`);
