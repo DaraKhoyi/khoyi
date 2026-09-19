@@ -346,9 +346,17 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // near-black instead of vanishing into it.
   const renderCard = (c, { children, tone, editable }) => (
     <div key={c.id} style={{ ...card,
-      borderColor: tone === 'late' ? EMBER : 'var(--border)',
-      background: 'var(--bg-card)', borderRadius: 14, marginBottom: 12,
-      boxShadow: '0 1px 0 rgba(203,163,92,.10), 0 6px 18px rgba(0,0,0,.22)' }}>
+      // MATCH THE LEAD CARD. var(--border) was too faint to read as a boundary
+      // against the near-black — Dara could see the lead cards separate and
+      // these not. Same treatment as a new lead: a gold wash and a gold edge at
+      // half strength, which is the app's existing signal for "this is a thing
+      // waiting on you". Late keeps the ember so urgency still outranks it.
+      background: tone === 'late'
+        ? 'linear-gradient(150deg,rgba(201,86,63,.13),rgba(201,86,63,.03))'
+        : 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))',
+      border: tone === 'late' ? `1px solid ${EMBER}` : '1px solid rgba(197,169,94,.5)',
+      borderRadius: 16, marginBottom: 12,
+      boxShadow: '0 6px 18px rgba(0,0,0,.22)' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 5, flexWrap: 'wrap' }}>
         <span style={{ ...lab, color: c.owner === 'me' ? 'var(--accent-2)' : 'var(--text-3)' }}>
           {c.owner === 'me' ? 'You said you would'

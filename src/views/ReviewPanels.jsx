@@ -179,9 +179,10 @@ export function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSys
         // existing signal for "a heading and its content", used here for the
         // same job.
         <div key={call.id} style={{
-          background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14,
+          background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))',
+          border: '1px solid rgba(197,169,94,.5)', borderRadius: 16,
           padding: '12px 13px', marginBottom: 12,
-          boxShadow: '0 1px 0 rgba(203,163,92,.10), 0 6px 18px rgba(0,0,0,.22)' }}>
+          boxShadow: '0 6px 18px rgba(0,0,0,.22)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', fontWeight: 700 }}>{nameForCall(call)}</span>
             <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
