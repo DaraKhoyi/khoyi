@@ -492,7 +492,18 @@ export default function TodayView({
                 <button key={i} // 6x6 dots, tapped to move between the day's actions — the smallest targets in
                 // the app and among the most used. The dot keeps its size; the button gets
                 // padding so a thumb can land on it. Found by touch_targets.mjs.
-                aria-label={'Go to action ' + (i + 1)} onClick={() => { setSwipeDir(i > heroIdx ? 1 : -1); setHeroIdx(i); }} style={{ width: i === heroIdx ? 18 : 6, height: 6, borderRadius: 3, border: 'none', padding: 0, cursor: 'pointer', transition: 'all 0.2s', background: i === heroIdx ? '#CBA35C' : 'rgba(203,163,92,0.3)' }} />
+                aria-label={'Go to action ' + (i + 1)} onClick={() => { setSwipeDir(i > heroIdx ? 1 : -1); setHeroIdx(i); }}
+                // 6px dots were the smallest targets in the app and among the most used.
+                // The BUTTON is now a 44px invisible target and a span carries the dot —
+                // sizing the button itself paints the whole hit area, because the dot's
+                // background belongs to it. Tried that, screenshotted it, reverted.
+                // Negative margin keeps the row looking the same as before.
+                style={{ width: 44, height: 44, margin: '0 -12px', display: 'grid', placeItems: 'center',
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+                <span style={{ display: 'block', height: 6, borderRadius: 3, transition: 'all 0.2s',
+                  width: i === heroIdx ? 18 : 6,
+                  background: i === heroIdx ? '#CBA35C' : 'rgba(203,163,92,0.3)' }} />
+              </button>
               ))}
             </div>
           ) : null}

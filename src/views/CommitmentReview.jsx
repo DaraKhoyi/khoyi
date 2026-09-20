@@ -508,7 +508,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                   {['A', 'B', 'C', 'D'].map(p => (
                     <button type="button" key={p}
                       onClick={(e) => { e.stopPropagation(); e.preventDefault(); setEdit(c, { priority: p }); }}
-                      style={{ width: 26, height: 26, borderRadius: 7, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                      // 26x26 was under every touch guideline and Dara reported missing
+                      // these. 44 is the floor (Apple HIG, WCAG 2.5.5); the letter stays
+                      // the size it was, the target around it grows.
+                      style={{ width: 44, height: 44, borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer',
                         border: '1px solid ' + (editOf(c).priority === p ? 'var(--accent-2)' : 'var(--border)'),
                         background: editOf(c).priority === p ? 'var(--accent-2)' : 'transparent',
                         color: editOf(c).priority === p ? '#1a1409' : 'var(--text-3)' }}>{p}</button>
