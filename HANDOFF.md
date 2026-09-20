@@ -119,6 +119,25 @@ PATCH updates metadata only → BOOT_ERROR.
 
 ---
 
+### 4.1 LOOK AT THE SCREEN BEFORE YOU COMMIT
+
+`smoke/look.mjs` captures any view at phone width AND at 135% type, and the
+images are meant to be OPENED and examined, not just generated.
+
+```bash
+node smoke/look.mjs today tasks contacts        # the views your change touched
+LOOK_BASELINE=1 node smoke/look.mjs today       # save a "before" first
+```
+
+With a baseline it also reports which screens MOVED — including ones you did not
+mean to touch, which is the failure nobody goes looking for.
+
+Use it for every change that alters anything visual. Four styling faults shipped
+in one week without it — a card border set to the divider token, two tabs drawing
+the same icon, a label truncated to "Transacti…", an icon mark drowned by its own
+background. Every one was valid CSS, so no test could have caught any of them,
+and Dara found all four by eye. That is not a reasonable thing to ask of him.
+
 ## 5. Standing build requirements
 **"GREATNESS IS THE MINIMUM."** No placeholders.
 1. **MULTI-USER.** Scope by `user_id`/role; never hardcode a person.
