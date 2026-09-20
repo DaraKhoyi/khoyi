@@ -25,6 +25,11 @@ node smoke/icon_check.mjs
 # handler wired to a function that no longer exists. Static, no credentials.
 node smoke/dead_ui.mjs
 
+# Did the version label actually move? It sat at v1.08.45 across five commits
+# while every report claimed otherwise. Passes trivially in CI (HEAD is the
+# commit being built); it bites locally, before the push.
+node smoke/version_bump.mjs
+
 
 # Readers left behind by a removed mechanism. Needs the Management API, so it is
 # skipped where SUPABASE_PAT is absent rather than failing the run.
