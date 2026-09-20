@@ -25,6 +25,9 @@ node smoke/icon_check.mjs
 # handler wired to a function that no longer exists. Static, no credentials.
 node smoke/dead_ui.mjs
 
+# Can a thumb hit it? Ratcheted, not absolute — the debt stops growing today.
+SMOKE_URL="$SMOKE_URL" SMOKE_EMAIL="$SMOKE_EMAIL" SMOKE_PASSWORD="$SMOKE_PASSWORD" node smoke/touch_targets.mjs
+
 # Readers left behind by a removed mechanism. Needs the Management API, so it is
 # skipped where SUPABASE_PAT is absent rather than failing the run.
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi

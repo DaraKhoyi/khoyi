@@ -489,7 +489,10 @@ export default function TodayView({
           {totalOpen > 1 ? (
             <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 14 }}>
               {actions.slice(0, 8).map((_, i) => (
-                <button key={i} aria-label={'Go to action ' + (i + 1)} onClick={() => { setSwipeDir(i > heroIdx ? 1 : -1); setHeroIdx(i); }} style={{ width: i === heroIdx ? 18 : 6, height: 6, borderRadius: 3, border: 'none', padding: 0, cursor: 'pointer', transition: 'all 0.2s', background: i === heroIdx ? '#CBA35C' : 'rgba(203,163,92,0.3)' }} />
+                <button key={i} // 6x6 dots, tapped to move between the day's actions — the smallest targets in
+                // the app and among the most used. The dot keeps its size; the button gets
+                // padding so a thumb can land on it. Found by touch_targets.mjs.
+                aria-label={'Go to action ' + (i + 1)} onClick={() => { setSwipeDir(i > heroIdx ? 1 : -1); setHeroIdx(i); }} style={{ width: i === heroIdx ? 18 : 6, height: 6, borderRadius: 3, border: 'none', padding: 0, cursor: 'pointer', transition: 'all 0.2s', background: i === heroIdx ? '#CBA35C' : 'rgba(203,163,92,0.3)' }} />
               ))}
             </div>
           ) : null}
