@@ -98,13 +98,38 @@ for (const pass of PASSES) {
         if (!busy) break;
         await page.waitForTimeout(700);
       }
+      // A FULL-PAGE SHOT LIES ABOUT FIXED ELEMENTS. The browser composites them
+      // at their viewport position onto a tall image, so a floating action
+      // button appears to sit on top of whatever content happens to be at that
+      // offset. My first finding from this tool was exactly that false
+      // positive: I reported the mic button covering a card heading, then
+      // measured elementFromPoint at its real centre and found nothing under it
+      // but itself. An instrument that invents faults is worse than no
+      // instrument, because it sends you to fix things that are not broken.
+      //
+      // So: hide fixed elements for the tall shot, and take a SECOND shot of the
+      // viewport with them visible, which is where a genuine overlap shows up.
+      const hidden = await page.evaluate(() => {
+        const out = [];
+        for (const el of document.querySelectorAll('body *')) {
+          const cs = getComputedStyle(el);
+          if (cs.position === 'fixed' && cs.display !== 'none') { out.push(el); el.dataset.lookHid = '1'; el.style.display = 'none'; }
+        }
+        return out.length;
+      });
       const file = path.join(OUT, `${view}-${pass.tag}.png`);
       await page.screenshot({ path: file, fullPage: true });
+      await page.evaluate(() => {
+        for (const el of document.querySelectorAll('[data-look-hid]')) { el.style.display = ''; delete el.dataset.lookHid; }
+      });
+      // The viewport as the person sees it, floating controls included.
+      const vfile = path.join(OUT, `${view}-${pass.tag}-viewport.png`);
+      await page.screenshot({ path: vfile });
       if (IS_BASELINE) fs.copyFileSync(file, path.join(BASE, `${view}-${pass.tag}.png`));
 
       const boundary = await page.evaluate(() =>
         document.body.innerText.includes('This view ran into an error'));
-      results.push({ view, pass: pass.tag, file, boundary, bytes: fs.statSync(file).size });
+      results.push({ view, pass: pass.tag, file, vfile, hidden, boundary, bytes: fs.statSync(file).size });
     } catch (e) {
       results.push({ view, pass: pass.tag, error: String(e).slice(0, 80) });
     }
@@ -135,6 +160,7 @@ for (const r of results) {
   const flag = r.boundary ? ' ERROR BOUNDARY' : '';
   console.log(`  ${r.boundary ? '✗' : '·'} ${r.view} [${r.pass}] ${r.diff || ''}${flag}`);
   console.log(`      ${r.file}`);
+  if (r.vfile) console.log(`      ${r.vfile}   (viewport — floating controls in place)`);
 }
 if (!IS_BASELINE && moved) {
   console.log('');

@@ -377,8 +377,16 @@ export default function TodayView({
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <h1 style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 33, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: 0 }}>
+        {/* A title plus a labelled control in ONE flex row, which is the exact
+            shape that has broken at large system font three times before — the
+            hamburger, the Inbox pills, the Edit Task header. At 135% the
+            greeting grows and pushes "Suggest" off the right edge. Found by
+            look.mjs, not by a person, which was the point of building it.
+            Wrap, and let the control keep its size while the title yields. */}
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+          gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ flex: '1 1 0', minWidth: 0,
+            fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 33, letterSpacing: '-0.02em', color: 'var(--text-1)', margin: 0 }}>
             {greeting}{agentName ? ', ' : '.'}{agentName ? <span className="gold-move" style={{ fontFamily: 'Fraunces, serif', fontWeight: 400 }}>{agentName.split(' ')[0]}.</span> : ''}
             {isFirstRun && (
               <div style={{ marginTop: 18, background: 'var(--bg-card)', border: '1px solid rgba(203,163,92,.35)', borderRadius: 14, padding: '16px 16px 12px' }}>
