@@ -21,6 +21,10 @@ node smoke/clock_check.mjs
 # identical without anything failing. Found the hard way in the Money room.
 node smoke/icon_check.mjs
 
+# Work that was done and cannot be seen: data loaded and never rendered, a
+# handler wired to a function that no longer exists. Static, no credentials.
+node smoke/dead_ui.mjs
+
 # Readers left behind by a removed mechanism. Needs the Management API, so it is
 # skipped where SUPABASE_PAT is absent rather than failing the run.
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi
