@@ -119,22 +119,39 @@ console.log(`  Below ${MIN}px a thumb misses, and the person assumes they did so
 console.log('  than that the button was too small. Give it padding, or a larger hit area — the');
 console.log('  glyph can stay the size it is.');
 console.log('');
+// A SET, NOT A COUNT. The count is environment-dependent: my machine saw 111 and
+// CI saw 112 on the same commit, because which cards render depends on the
+// seeded content and the time of day. A ratchet on a number that moves by itself
+// fails builds for no reason, and the cure for that is always to raise the
+// number — which is how a budget stops meaning anything.
+//
+// So the baseline is the LIST of known small controls. A run fails only when a
+// control appears that is not on it, and then it says which. That is immune to
+// counts drifting and names the actual regression instead of a delta.
+const known = new Set(budget?.controls || []);
+const novel = [...seen.keys()].filter(k => !known.has(k));
+
 if (!budget) {
-  fs.writeFileSync(BUDGET, JSON.stringify({ max: seen.size, set: new Date().toISOString().slice(0, 10) }, null, 2));
-  console.log(`==== TOUCH TARGETS: ${seen.size} under ${MIN}px — baseline recorded, this must not grow ====`);
+  fs.writeFileSync(BUDGET, JSON.stringify(
+    { set: new Date().toISOString().slice(0, 10), note: 'Known controls under ' + MIN + 'px. A NEW entry fails the gate; removing one is progress. Do not add by hand.', controls: [...seen.keys()].sort() }, null, 2));
+  console.log(`==== TOUCH TARGETS: ${seen.size} under ${MIN}px — baseline recorded, no NEW ones allowed ====`);
   process.exit(0);
 }
-if (seen.size > budget.max) {
-  console.log(`  This is ${seen.size - budget.max} MORE than the budget of ${budget.max} set on ${budget.set}.`);
-  console.log('  Fix the new ones. Do not raise the budget without a reason written beside it.');
+if (novel.length) {
+  console.log(`  ${novel.length} control(s) NOT in the baseline — these are new:`);
+  for (const n of novel) console.log(`      ${n.replace(/\|/g, '  ')}`);
   console.log('');
-  console.log(`==== TOUCH TARGETS: ${seen.size} control(s) under ${MIN}px, budget ${budget.max} ====`);
+  console.log('  Give it padding or a larger hit area. The glyph can stay the size it is.');
+  console.log('');
+  console.log(`==== TOUCH TARGETS: ${novel.length} NEW control(s) under ${MIN}px ====`);
   process.exit(1);
 }
-if (seen.size < budget.max) {
-  fs.writeFileSync(BUDGET, JSON.stringify({ max: seen.size, set: new Date().toISOString().slice(0, 10) }, null, 2));
-  console.log(`  Down from ${budget.max} to ${seen.size}. Budget tightened — it cannot go back up.`);
+const gone = [...known].filter(k => !seen.has(k));
+if (gone.length) {
+  fs.writeFileSync(BUDGET, JSON.stringify(
+    { set: new Date().toISOString().slice(0, 10), note: budget.note, controls: [...seen.keys()].sort() }, null, 2));
+  console.log(`  ${gone.length} fixed since the baseline. Recorded — they cannot come back.`);
 }
 console.log('');
-console.log(`==== TOUCH TARGETS: ${seen.size} under ${MIN}px, within the budget of ${budget.max} ====`);
+console.log(`==== TOUCH TARGETS: ${seen.size} under ${MIN}px, all known, none new ====`);
 process.exit(0);
