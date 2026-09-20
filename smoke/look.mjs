@@ -62,8 +62,27 @@ for (const pass of PASSES) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e.message).slice(0, 120)));
 
-  await page.goto(URL, { waitUntil: 'domcontentloaded' });
+  const resp = await page.goto(URL, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
+
+  // DID THE APP ACTUALLY LOAD? Proving this tool, I planted a visible fault,
+  // re-ran, and got "CHANGED ~87.8%" — which looked like a perfect catch. The
+  // screenshot was a 404 page from a static server that had not finished
+  // restarting. The tool photographed a blank error page, measured a large
+  // difference, and reported success. A screenshot tool that cannot tell an app
+  // from a 404 will confirm whatever you already believe, which is worse than
+  // having no eyes at all.
+  const loaded = await page.evaluate(() => {
+    const root = document.getElementById('root') || document.body;
+    return !!root && root.children.length > 0 && !/Error response|File not found/i.test(document.body.innerText);
+  });
+  if (!resp || !resp.ok() || !loaded) {
+    console.error(`\n  ✗ ${URL} did not serve the app (HTTP ${resp ? resp.status() : 'none'}).`);
+    console.error('    Nothing was captured. Start the static server and try again — a screenshot');
+    console.error('    of an error page is not a screenshot of the screen.\n');
+    console.error('==== LOOK: aborted, the app did not load ====');
+    process.exit(2);
+  }
 
   if (EMAIL && PASSWORD) {
     try {
@@ -147,10 +166,20 @@ for (const r of results) {
   if (r.error || IS_BASELINE) continue;
   const b = path.join(BASE, `${r.view}-${r.pass}.png`);
   if (!fs.existsSync(b)) { r.diff = 'no baseline'; continue; }
-  const before = fs.statSync(b).size;
-  const pct = before ? Math.abs(r.bytes - before) / before * 100 : 0;
-  r.diff = pct < 0.5 ? 'unchanged' : `CHANGED ~${pct.toFixed(1)}%`;
-  if (pct >= 0.5) moved++;
+  // COMPARE THE BYTES, NOT THE SIZE. Proving this tool, I planted a real
+  // regression — a heading recoloured to almost the background — and it reported
+  // "unchanged", because recolouring text barely moves the file size. A diff
+  // that misses an invisible heading is a diff that would have missed every
+  // fault Dara caught this week: the faint border, the identical icons, the
+  // drowned mark. All of those are colour, not layout.
+  //
+  // PNG encoding is deterministic for identical input, so any byte difference is
+  // a pixel difference. Crude in the other direction now — a one-pixel shift
+  // counts — but a tool that over-reports sends me to LOOK, and looking is the
+  // entire point. Under-reporting tells me there is nothing to see.
+  const same = Buffer.compare(fs.readFileSync(b), fs.readFileSync(r.file)) === 0;
+  r.diff = same ? 'unchanged' : 'CHANGED — open it';
+  if (!same) moved++;
 }
 
 console.log('');

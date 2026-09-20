@@ -69,9 +69,26 @@ const quiet = await q(`
   where j.active
     and (j.schedule like '%/%' or j.schedule like '0 * * * *')
   group by 1, 2
-  having max(d.end_time) is null or max(d.end_time) < now() - interval '3 hours'
   order by 4 desc nulls first`);
-for (const s of quiet) problems.push({
+// A FLAT THRESHOLD IS WRONG FOR A MIXED SCHEDULE. Three hours flagged
+// new-listing-sweep-6h, which runs every SIX hours and was working perfectly.
+// Derive what "overdue" means from the job's own cron expression: a */15 job is
+// late after an hour, a 6-hourly job is not late until well past six.
+const overdueFor = (schedule) => {
+  // Read the MINUTE and HOUR fields as they actually appear. The first version
+  // required the minute to be */N or 0, so "15 */6 * * *" — a six-hourly job
+  // that fires at quarter past — matched nothing, fell back to a flat three
+  // hours, and was reported dead while working perfectly. Cron expressions in
+  // this project use every shape; the parser has to as well.
+  const [minute = '', hour = ''] = String(schedule || '').split(/\s+/);
+  const perMin = /^\*\/(\d+)$/.exec(minute);
+  if (perMin) return Math.max(60, Number(perMin[1]) * 4);   // every N minutes
+  const perHour = /^\*\/(\d+)$/.exec(hour);
+  if (perHour) return Number(perHour[1]) * 60 * 2;          // every N hours
+  if (hour === '*') return 180;                             // hourly
+  return 60 * 30;                                           // daily or rarer
+};
+for (const s of quiet.filter(x => x.mins_ago === null || Number(x.mins_ago) > overdueFor(x.schedule))) problems.push({
   kind: 'silent', job: s.jobname,
   detail: s.last ? `schedule "${s.schedule}" but last ran ${s.mins_ago} minutes ago`
                  : `schedule "${s.schedule}" and has NEVER run`,
