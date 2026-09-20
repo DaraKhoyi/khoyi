@@ -36,6 +36,10 @@ if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi
 # them failed. Also needs the Management API.
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/cron_health.mjs; fi
 
+# Parts of the schema the app stopped using. Reports, never blocks — drift is a
+# decision, and "keep it, we need it next quarter" is a legitimate answer.
+if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/schema_drift.mjs; fi
+
 # Static guard: no undefined identifiers. The runtime smoke check proves views
 # MOUNT; it cannot prove every branch inside them runs, because the throwaway
 # agent has no data. v1.04.49 shipped a ReferenceError straight past a green
