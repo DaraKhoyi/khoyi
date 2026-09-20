@@ -25,6 +25,10 @@ node smoke/icon_check.mjs
 # skipped where SUPABASE_PAT is absent rather than failing the run.
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi
 
+# Scheduled jobs: errored, gone quiet, or "succeeded" while the HTTP call behind
+# them failed. Also needs the Management API.
+if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/cron_health.mjs; fi
+
 # Static guard: no undefined identifiers. The runtime smoke check proves views
 # MOUNT; it cannot prove every branch inside them runs, because the throwaway
 # agent has no data. v1.04.49 shipped a ReferenceError straight past a green
