@@ -108,9 +108,9 @@ export default function NightReview() {
           <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
             color: 'var(--text-3)', marginBottom: 6 }}>Nothing to approve</div>
           <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55 }}>
-            The panel reports findings, but it cannot yet turn one into a change for you
-            to approve. That step is not built. Until it is, act on the findings below
-            by telling Einstein which one to do.
+            One draft a night, and only from findings the panel called small that name a
+            file it is allowed to edit. Most nights that is nothing — the queue being
+            empty usually means the findings were conversations, not patches.
           </div>
         </div>
       )}
@@ -235,7 +235,7 @@ export default function NightReview() {
           color: 'var(--text-3)', marginBottom: 9 }}>Your controls</div>
         {[
           ['enabled', 'Run the panel each night', 'Stops immediately. Nothing is spent while it is off.'],
-          ['allow_fixes', 'Let it propose changes overnight', 'Not wired up yet — the panel reports findings, but nothing turns one into a change you can approve. Leaving this on does nothing today.'],
+          ['allow_fixes', 'Let it propose changes overnight', 'It reads a finding, writes the actual file change and shows it to you here. Nothing merges without you, and the gate must be green first.'],
         ].map(([field, label, hint]) => (
           <div key={field} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
             <button type="button" disabled={busy || !cfg} onClick={() => toggle(field, !(cfg || {})[field])}

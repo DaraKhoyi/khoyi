@@ -47,6 +47,7 @@ const ALLOWED = new Map([
   // Same gate. Acts on a proposal id, never on a user id, and refuses to merge
   // anything unless CI is green.
   ["panel-propose", "cron and broker-initiated; x-qcp-token required; operates on proposal ids only"],
+  ["panel-draft", "cron-initiated only; x-qcp-token required; takes a FINDING id, which is not an identity — it never reads a user_id from the body and writes only to panel_proposals"],
 
   ['notify-optout', 'One-click unsubscribe from a lead-notification email. The caller is a mail ' +
     'client, not a session, so the random token IS the authorisation — it maps to exactly one ' +
