@@ -21,6 +21,10 @@ node smoke/clock_check.mjs
 # identical without anything failing. Found the hard way in the Money room.
 node smoke/icon_check.mjs
 
+# Readers left behind by a removed mechanism. Needs the Management API, so it is
+# skipped where SUPABASE_PAT is absent rather than failing the run.
+if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi
+
 # Static guard: no undefined identifiers. The runtime smoke check proves views
 # MOUNT; it cannot prove every branch inside them runs, because the throwaway
 # agent has no data. v1.04.49 shipped a ReferenceError straight past a green
