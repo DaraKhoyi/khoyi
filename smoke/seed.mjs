@@ -85,8 +85,51 @@ await post('journal_entries', [
     content: 'Seeded entry so the journal renders with real content rather than its empty state.' },
 ]);
 
+// ── CALLS AND THE PROMISES INSIDE THEM ───────────────────────────────────────
+//
+// The review surfaces — the call-review list and "From your calls" — were the
+// one part of the app the gate could never see, because they need a CALL with
+// COMMITMENTS hanging off it and the seed made neither. Three styling changes
+// shipped to those panels without anyone looking at them, and Dara caught each
+// one himself from a screenshot. That is a gap in the harness, not bad luck.
+//
+// A commitment needs a real quo_calls row: commitments.call_id has a foreign key
+// to it, and inserting a recordings id instead fails (learned the hard way).
+const madeCalls = await post('quo_calls', [
+  { user_id: USER, direction: 'inbound', duration: 612 },
+  { user_id: USER, direction: 'outbound', duration: 187 },
+]);
+const callId = (i) => (madeCalls[i] && madeCalls[i].id) || null;
+
+// Deliberately covering every shape the card renders: one owned by the agent,
+// one owed by the other party, one already late, one with no date at all, and
+// one flagged low-confidence — because each draws differently and a seed that
+// only makes the easy case proves the easy case.
+await post('commitments', [
+  { user_id: USER, call_id: callId(0), contact_id: cid(0), owner: 'me',
+    title: 'Send the Fitzgerald-Montgomery waterfall accounting and the full transaction timeline',
+    quote: 'Yes, I will get all of that over to you as soon as I am back at my desk this afternoon.',
+    status: 'proposed', due_date: new Date(now + 2 * DAY).toISOString().slice(0, 10) },
+  { user_id: USER, call_id: callId(0), contact_id: cid(0), owner: 'them',
+    title: 'Forward the lawyer email setting out exactly what the accounting has to cover',
+    quote: 'okay, I will ask him to send that across to you',
+    status: 'proposed', confidence: 'low' },
+  { user_id: USER, call_id: callId(1), contact_id: cid(1), owner: 'them',
+    title: 'Keep me posted on the upcoming Lakeland deal before it reaches the open market',
+    quote: 'we actually have a deal coming out in a couple of days in Lakeland, so I will definitely keep you posted',
+    status: 'proposed' },
+  { user_id: USER, contact_id: cid(1), owner: 'me',
+    title: 'Chase the title company on the Westshore payoff letter that was promised last week',
+    quote: 'I will chase them first thing Monday.',
+    status: 'accepted', due_date: new Date(now - 4 * DAY).toISOString().slice(0, 10) },
+]);
+
 if (!madeContacts.length) {
   console.error('seed: NO CONTACTS CREATED — the run below would test empty views and prove nothing.');
   process.exit(1);
 }
-console.log(`seeded: ${madeContacts.length} contacts, plus tasks, events, a deal and a journal entry`);
+if (!madeCalls.length) {
+  console.error('seed: NO CALLS CREATED — the review panels would render their empty state and prove nothing.');
+  process.exit(1);
+}
+console.log(`seeded: ${madeContacts.length} contacts, ${madeCalls.length} calls with 4 commitments, plus tasks, events, a deal and a journal entry`);

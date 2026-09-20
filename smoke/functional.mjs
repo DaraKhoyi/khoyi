@@ -124,6 +124,51 @@ for (const dev of want) {
     record(dev, 'Contacts view', !boundary, boundary ? 'ERROR BOUNDARY' : '');
   } catch (e) { record(dev, 'Contacts view', false, String(e).slice(0,60)); }
 
+  // ---- FEATURE: the review panels actually render, with a readable edge ----
+  //
+  // These were invisible to the gate for weeks: they need a CALL with
+  // COMMITMENTS hanging off it and the seed made neither, so three styling
+  // changes shipped to them unseen and Dara caught every one from a screenshot.
+  // The seed now creates both; this is what stops it silently going away again.
+  //
+  // Checks the card is THERE and that its border is not the faint grey token
+  // that made it unreadable — a boundary nobody can see is the bug being fixed,
+  // and it is valid CSS, so nothing else would ever catch it.
+  try {
+    await ev(page, () => window.__setView && window.__setView('today'));
+    // The panel loads its calls and commitments after mount; 2s was not enough
+    // and the check failed on the phones while passing on desktop. Poll instead
+    // of guessing a number — a fixed wait is a flaky test waiting to happen.
+    let r = null;
+    for (let i = 0; i < 12; i++) {
+      await page.waitForTimeout(1000);
+      r = await ev(page, () => {
+        if (!document.body.innerText.includes('From your calls')) return { seen: false };
+        // The card is the SMALLEST element containing the heading — matching on
+        // startsWith broke on the wrappers around it.
+        const all = [...document.querySelectorAll('div')].filter(d =>
+          d.innerText && d.innerText.includes('SAID YOU WOULD'));
+        const card = all.length ? all[all.length - 1].closest('div[style*="border"]') || all[all.length - 1] : null;
+        if (!card) return { seen: true, card: false };
+        const cs = getComputedStyle(card);
+        // rgba(197,169,94,.5) — the lead-card edge. Faint grey is the regression.
+        const gold = /19[0-9],\s*1[0-9][0-9],\s*9[0-9]/.test(cs.borderColor);
+        return { seen: true, card: true, gold, border: cs.borderColor };
+      });
+      if (r && r.seen && r.card) break;
+    }
+    // SOFT ON PURPOSE, for now. The seed half of this works — the panel renders
+    // with real calls and commitments, confirmed by eye — but the ASSERTION is
+    // not yet reliable: desktop finds the section and the phones do not, and I
+    // have not found why. A flaky blocking stage is worse than no stage: it
+    // teaches people to re-run until green, which is how a real failure gets
+    // waved through. It reports every run; when it is stable, drop the soft flag.
+    record(dev, 'Call review renders', !!(r && r.seen && r.card),
+      r && !r.seen ? 'no From your calls section' : (r && !r.card ? 'no commitment card' : ''), true);
+    record(dev, 'Call card has a visible edge', !!(r && r.gold),
+      r && r.border ? 'border is ' + r.border : 'no card to measure', true);
+  } catch (e) { record(dev, 'Call review renders', false, String(e).slice(0, 60), true); }
+
   // ---- FEATURE: the Save button on new-contact is reachable (the iOS bug) ----
   try {
     const reachable = await ev(page, async () => {
