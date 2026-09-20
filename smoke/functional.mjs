@@ -143,11 +143,16 @@ for (const dev of want) {
     for (let i = 0; i < 12; i++) {
       await page.waitForTimeout(1000);
       r = await ev(page, () => {
-        if (!document.body.innerText.includes('From your calls')) return { seen: false };
+        // CASE-INSENSITIVE, because the heading is uppercased by CSS —
+        // text-transform changes innerText, so the source string 'From your
+        // calls' never matches what is on screen. It appeared to work on desktop
+        // only because a DIFFERENT element there carried the untransformed text.
+        // A check that passes for the wrong reason is worse than one that fails.
+        if (!/from your calls/i.test(document.body.innerText)) return { seen: false };
         // The card is the SMALLEST element containing the heading — matching on
         // startsWith broke on the wrappers around it.
         const all = [...document.querySelectorAll('div')].filter(d =>
-          d.innerText && d.innerText.includes('SAID YOU WOULD'));
+          d.innerText && /said (you|they) would/i.test(d.innerText));
         const card = all.length ? all[all.length - 1].closest('div[style*="border"]') || all[all.length - 1] : null;
         if (!card) return { seen: true, card: false };
         const cs = getComputedStyle(card);
@@ -157,17 +162,16 @@ for (const dev of want) {
       });
       if (r && r.seen && r.card) break;
     }
-    // SOFT ON PURPOSE, for now. The seed half of this works — the panel renders
-    // with real calls and commitments, confirmed by eye — but the ASSERTION is
-    // not yet reliable: desktop finds the section and the phones do not, and I
-    // have not found why. A flaky blocking stage is worse than no stage: it
-    // teaches people to re-run until green, which is how a real failure gets
-    // waved through. It reports every run; when it is stable, drop the soft flag.
+    // BLOCKING, on all four devices. It was soft for one version while the
+    // phones failed and I did not know why; the cause was the check itself
+    // searching for the source string while CSS uppercases the heading. It
+    // passed on desktop for an unrelated reason, which is the worst kind of
+    // green. Now it measures the rendered border and every device agrees.
     record(dev, 'Call review renders', !!(r && r.seen && r.card),
-      r && !r.seen ? 'no From your calls section' : (r && !r.card ? 'no commitment card' : ''), true);
+      r && !r.seen ? 'no From your calls section' : (r && !r.card ? 'no commitment card' : ''));
     record(dev, 'Call card has a visible edge', !!(r && r.gold),
-      r && r.border ? 'border is ' + r.border : 'no card to measure', true);
-  } catch (e) { record(dev, 'Call review renders', false, String(e).slice(0, 60), true); }
+      r && r.border ? 'border is ' + r.border : 'no card to measure');
+  } catch (e) { record(dev, 'Call review renders', false, String(e).slice(0, 60)); }
 
   // ---- FEATURE: the Save button on new-contact is reachable (the iOS bug) ----
   try {
