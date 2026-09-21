@@ -186,7 +186,7 @@ export function DelegationInbox({ userId, onChanged }) {
     try {
       // The recipient creates their OWN task — their user_id, their row. This is
       // why per-user RLS needs no exception for delegation.
-      const pmap = { high: 'A', medium: 'B', low: 'C' };
+      const pmap = { high: 'A', medium: 'B', low: 'C', none: 'D' };
       const { data: t, error } = await supabase.from('tasks').insert({
         user_id: userId,
         title: d.title,

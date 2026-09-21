@@ -75,7 +75,7 @@ export function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSys
     setWorking(w => ({ ...w, [key]: true }));
     try {
       const contact = call.contact_id ? contacts.find(x => x.id === call.contact_id) : null;
-      const qmap = { high: 'A', medium: 'B', low: 'C' };
+      const qmap = { high: 'A', medium: 'B', low: 'C', none: 'D' };
       const occurred = call.completed_at || call.op_created_at;
       const whenStr = occurred ? new Date(occurred).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
       const ctxLine = `From ${String(call.direction || '').includes('out') ? 'a call you made' : 'a call'}${contact ? ` with ${contact.name}` : ''}${whenStr ? ` on ${whenStr}` : ''}.`;
@@ -113,7 +113,7 @@ export function CallFollowupsPanel({ userId, contacts = [], setTasks, defaultSys
     setWorking(w => ({ ...w, [key]: true }));
     try {
       const contact = call.contact_id ? contacts.find(x => x.id === call.contact_id) : null;
-      const qmap = { high: 'A', medium: 'B', low: 'C' };
+      const qmap = { high: 'A', medium: 'B', low: 'C', none: 'D' };
       const occurred = call.completed_at || call.op_created_at;
       const whenStr = occurred ? new Date(occurred).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
       const ctxLine = `From ${String(call.direction || '').includes('out') ? 'a call you made' : 'a call'}${contact ? ` with ${contact.name}` : ''}${whenStr ? ` on ${whenStr}` : ''}. Marked done on review — already handled.`;

@@ -8,7 +8,7 @@ import { Icon } from '../icons';
 import AriRewriteButton from '../views/AriRewriteButton';
 import AutoScheduleFields from '../views/AutoScheduleFields';
 
-export const QUAD_TO_PRIO = { A: 'high', B: 'medium', C: 'low' };
+export const QUAD_TO_PRIO = { A: 'high', B: 'medium', C: 'low', D: 'none' };
 
 // ── HTML entity decoding ─────────────────────────────────────────────────────
 // Email bodies arrive HTML-escaped. When we strip tags to make a plain-text
@@ -40,14 +40,14 @@ export const QUAD_TO_PRIO = { A: 'high', B: 'medium', C: 'low' };
 // Both dismissals are timestamp-compared, never truthiness: they clear what is
 // on the table now, and a genuinely NEWER inbound re-opens the question.
 
-export const PRIO_TO_QUAD = { high: 'A', medium: 'B', low: 'C' };
+export const PRIO_TO_QUAD = { high: 'A', medium: 'B', low: 'C', none: 'D' };
 
 export function PriorityField({ system, priority, onChange, style, className = 'form-select', disabled }) {
   const eis = (system || 'eisenhower') === 'eisenhower';
   const val = eis ? (PRIO_TO_QUAD[priority] || 'B') : (priority || 'medium');
   const opts = eis
-    ? [['A', 'A'], ['B', 'B'], ['C', 'C']]
-    : [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']];
+    ? [['A', 'A'], ['B', 'B'], ['C', 'C'], ['D', 'D']]
+    : [['high', 'High'], ['medium', 'Medium'], ['low', 'Low'], ['none', 'None']];
   return (
     <select className={className} style={style} disabled={disabled} value={val}
       onChange={e => onChange(eis ? (QUAD_TO_PRIO[e.target.value] || 'medium') : e.target.value)}>

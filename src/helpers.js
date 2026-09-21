@@ -211,7 +211,7 @@ export function taskSortKey(t) {
     const qIdx = { A:0, B:1, C:2, D:3 }[t.eisenhower_quadrant] ?? 4;
     return [0, qIdx, t.eisenhower_rank ?? 999];
   }
-  const pIdx = { high:0, medium:1, low:2 }[t.priority] ?? 3;
+  const pIdx = { high:0, medium:1, low:2, none:3 }[t.priority] ?? 3;   // D sorts last, where it belongs
   return [1, pIdx, t.simple_rank ?? 999];
 }
 
