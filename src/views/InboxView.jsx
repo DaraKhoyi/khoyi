@@ -1028,7 +1028,12 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     [contactByEmail]);
   const [threads, setThreads] = useState([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
-  const [tab, setTab] = useState('inbox');
+  // Opens on IMPORTANT, not the raw inbox. Dara: "It's so bad that I rarely look
+  // at emails as I am overwhelmed with it all." 2,660 arrived in one week and 170
+  // were from someone he knows, something he starred, or a real lead — the rest
+  // was newsletters, promotions and political mail. Everything is still one tap
+  // away under "All"; nothing is deleted, only moved out of the way.
+  const [tab, setTab] = useState('important');
   const [selectedThread, setSelectedThread] = useState(null);
   // Open-tracking status for the currently open thread (shown as a "Likely seen" chip).
   const [threadTracking, setThreadTracking] = useState(null);
@@ -1299,7 +1304,13 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     setLoadingThreads(true);
     // tab can be 'inbox', 'sent', or 'snoozed'
     let q = supabase.from('email_threads').select('*').eq('account_id', account.id);
-    if (tab === 'sent') {
+    if (tab === 'important') {
+      // is_important is stamped by is_important_email() — contacts, anything
+      // starred, anyone he has written to, real portal leads, and strangers only
+      // when Gmail itself flags them important. One rule, in the database.
+      q = q.eq('is_important', true).contains('labels', ['INBOX'])
+        .or(`snoozed_until.is.null,snoozed_until.lte.${new Date().toISOString()}`);
+    } else if (tab === 'sent') {
       q = q.contains('labels', ['SENT']);
     } else if (tab === 'snoozed') {
       // Snoozed: has snoozed_until in the future
@@ -2583,9 +2594,9 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           <div className="panel">
             <div className="panel-header">
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                {['inbox','snoozed','sent'].map(t => (
+                {['important','inbox','snoozed','sent'].map(t => (
                   <button key={t} className={`btn btn-sm ${tab===t?'btn-primary':'btn-ghost'}`} onClick={()=>{setTab(t); setSelectedThread(null);}}>
-                    {t === 'inbox' ? 'Inbox' : t === 'snoozed' ? <><Icon name="clock" size={12} /> Snoozed</> : 'Sent'}
+                    {t === 'important' ? 'Important' : t === 'inbox' ? 'All' : t === 'snoozed' ? <><Icon name="clock" size={12} /> Snoozed</> : 'Sent'}
                     {t==='inbox' && unreadCount>0 && <span className="nav-badge" style={{marginLeft:'6px'}}>{unreadCount}</span>}
                   </button>
                 ))}
@@ -2618,7 +2629,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                         const triageCat = threadTriage ? TRIAGE_CATEGORIES[threadTriage.category] : null;
                         // Swipe gestures enabled only on the Inbox tab (Sent/Snoozed
                         // don't have a meaningful archive/delete action from a list row).
-                        const swipeEnabled = tab === 'inbox';
+                        const swipeEnabled = tab === 'inbox' || tab === 'important';
                         return (
                           <SwipeableEmailRow key={thread.id}
                             enabled={swipeEnabled}
