@@ -1945,37 +1945,37 @@ function DuplicateReviewModal({ groups, userId, contacts, setContacts, onClose, 
         patch.notes = canonicalNotes + '\n\n---\nMerged from duplicate:\n' + otherNotes;
       }
 
+      let movedTotal = 0;
       // Step 2: update canonical contact with merged fields
       if (Object.keys(patch).length > 0) {
         const { error: upErr } = await supabase.from('contacts').update(patch).eq('id', canonicalId);
         if (upErr) throw upErr;
       }
 
-      // Step 3: re-point any profile rows from others to canonical (one profile per contact)
-      // Strategy: if canonical already has a profile, keep it. Delete others' profiles.
-      // If canonical has no profile but others do, re-point the first to canonical.
-      const { data: canonicalProfile } = await supabase.from('profiles').select('id').eq('contact_id', canonicalId).maybeSingle();
+      // Step 3: MERGE, SERVER-SIDE. This used to re-point only `profiles` and then
+      // delete the duplicate — which destroys the person's work rather than moving
+      // it: 16 tables CASCADE on a contact delete (notes, interactions, disc
+      // evidence, scores, task_contacts...) and 21 more null out (commitments,
+      // deals, events, recordings, leads). merge_contacts() repoints every
+      // contact-pointing column, discovered at run time so next month's table is
+      // covered too, snapshots the loser into contact_merges, then deletes.
       for (const o of others) {
-        const { data: otherProfile } = await supabase.from('profiles').select('id').eq('contact_id', o.id).maybeSingle();
-        if (!otherProfile) continue;
-        if (canonicalProfile) {
-          const { error: pdErr } = await supabase.from('profiles').delete().eq('id', otherProfile.id);
-          if (pdErr) throw pdErr;
-        } else {
-          const { error: puErr } = await supabase.from('profiles').update({ contact_id: canonicalId }).eq('id', otherProfile.id);
-          if (puErr) throw puErr;
-        }
-      }
-
-      // Step 4: delete the duplicates
-      for (const o of others) {
-        const { error: cdErr } = await supabase.from('contacts').delete().eq('id', o.id);
-        if (cdErr) throw cdErr;
+        const { data: res, error: mErr } = await supabase.rpc('merge_contacts', {
+          p_keep: canonicalId, p_drop: o.id,
+        });
+        if (mErr) throw mErr;
+        if (res && res.rows_moved != null) movedTotal += res.rows_moved;
       }
 
       // Step 5: refresh contacts in parent + remove this group from list
       const { data: fresh } = await supabase.from('contacts').select('*').order('name');
       if (fresh) setContacts(fresh);
+      // Say what moved. A merge deletes a record, and silence after a destructive
+      // action leaves the person guessing whether their notes survived — which is
+      // exactly the doubt that stops people using a merge button at all.
+      setErrorMsg(movedTotal > 0
+        ? `Merged. ${movedTotal} linked item${movedTotal === 1 ? '' : 's'} moved across \u2014 tasks, notes, calls and commitments all now sit on the record you kept.`
+        : 'Merged. The duplicate had nothing attached to it.');
       const remaining = localGroups.filter(g => g.key !== group.key);
       setLocalGroups(remaining);
       onMerged?.(remaining);
