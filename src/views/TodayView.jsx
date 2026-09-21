@@ -1091,7 +1091,7 @@ function MorningBrief({ setView }) {
       </div>
     </div>
   );
-  const ICON = { signal: '📡', reply: '↩️', alert: '⏰', contacts: '👥', dollar: '$' };
+  const ICON = { signal: '📡', reply: '↩️', alert: '⏰', contacts: '👥', dollar: '$', inbox: '📥', mail: '📥' };
   return (
     <div className="fade-up" style={{ marginBottom: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '15px 17px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>

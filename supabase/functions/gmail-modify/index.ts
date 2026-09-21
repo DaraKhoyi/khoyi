@@ -49,7 +49,10 @@ async function refreshAccessTokenIfNeeded(supabase, account) {
 
 // Action → label changes mapping
 const ACTIONS = {
-  archive:     { remove: ["INBOX"] },
+  // Archive also clears UNREAD. Both of Dara's accounts archive most mail on
+  // arrival, so "worth a look" for them means UNREAD — and an archive that left
+  // a thread unread would leave it on that list after he had dealt with it.
+  archive:     { remove: ["INBOX", "UNREAD"] },
   unarchive:   { add: ["INBOX"] },
   star:        { add: ["STARRED"] },
   unstar:      { remove: ["STARRED"] },

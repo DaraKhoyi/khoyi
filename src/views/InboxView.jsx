@@ -688,6 +688,35 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
     ((a.purposes || []).includes('email') || (a.scopes || []).some(s => s.includes('gmail'))) && a.refresh_token
   );
   const [selectedId, setSelectedId] = useState(null);
+  // How many threads are worth a look in each account. Shown on the pills so it
+  // is always visible WHERE the mail is: the brief counts every account and this
+  // screen shows one, and "8 worth a look" opening on the empty account is what
+  // sent Dara looking for messages that were one tap away.
+  const [worthCounts, setWorthCounts] = useState({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const ids = mailAccounts.map(a => a.id);
+      if (!ids.length) return;
+      const since = new Date(Date.now() - 3 * 86400000).toISOString();
+      const next = {};
+      for (const id of ids) {
+        const { count, error } = await supabase.from('email_threads')
+          .select('id', { count: 'exact', head: true })
+          .eq('account_id', id).eq('worth_a_look', true).gte('last_message_at', since);
+        if (!error) next[id] = count || 0;
+      }
+      if (!alive) return;
+      setWorthCounts(next);
+      // Open on the account that actually has the mail, unless Dara has already
+      // picked one himself.
+      if (selectedId == null) {
+        const best = ids.reduce((b, id) => ((next[id] || 0) > (next[b] || 0) ? id : b), ids[0]);
+        if ((next[best] || 0) > 0) setSelectedId(best);
+      }
+    })();
+    return () => { alive = false; };
+  }, [mailAccounts.map(a => a.id).join(',')]); // eslint-disable-line
   const [pendingOpenThreadId, setPendingOpenThreadId] = useState(null);
   const account = mailAccounts.find(a => a.id === selectedId) || mailAccounts.find(a => a.is_default) || mailAccounts[0] || null;
 
@@ -790,6 +819,13 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
             }}>
             <Icon name="mail" size={13} style={{ flexShrink: 0 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email_address}</span>
+            {worthCounts[a.id] > 0 && (
+              <span title={worthCounts[a.id] + ' worth a look, last 3 days'}
+                style={{ flexShrink: 0, minWidth: 20, padding: '1px 7px', borderRadius: 999,
+                  background: '#C5A95E', color: '#1a1409', fontSize: 11, fontWeight: 800 }}>
+                {worthCounts[a.id]}
+              </span>
+            )}
           </button>
         );
       })}
@@ -1308,7 +1344,13 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
       // is_important is stamped by is_important_email() — contacts, anything
       // starred, anyone he has written to, real portal leads, and strangers only
       // when Gmail itself flags them important. One rule, in the database.
-      q = q.eq('is_important', true).contains('labels', ['INBOX'])
+      // worth_a_look is the ONE stored verdict the Today brief also counts, so
+      // the number on the card and the list on this screen cannot disagree. It
+      // does not require INBOX: both of Dara's accounts archive most mail on
+      // arrival through Gmail filters (~1% of the hub account's mail ever carries
+      // INBOX), which is how "8 worth a look" opened onto an empty list. For
+      // accounts like that, UNREAD is what still-waiting means.
+      q = q.eq('worth_a_look', true)
         .or(`snoozed_until.is.null,snoozed_until.lte.${new Date().toISOString()}`);
     } else if (tab === 'sent') {
       q = q.contains('labels', ['SENT']);
