@@ -2596,7 +2596,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                 {['important','inbox','snoozed','sent'].map(t => (
                   <button key={t} className={`btn btn-sm ${tab===t?'btn-primary':'btn-ghost'}`} onClick={()=>{setTab(t); setSelectedThread(null);}}>
-                    {t === 'important' ? 'Important' : t === 'inbox' ? 'All' : t === 'snoozed' ? <><Icon name="clock" size={12} /> Snoozed</> : 'Sent'}
+                    {t === 'important' ? 'Worth a look' : t === 'inbox' ? 'All' : t === 'snoozed' ? <><Icon name="clock" size={12} /> Snoozed</> : 'Sent'}
                     {t==='inbox' && unreadCount>0 && <span className="nav-badge" style={{marginLeft:'6px'}}>{unreadCount}</span>}
                   </button>
                 ))}
