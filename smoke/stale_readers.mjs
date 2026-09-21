@@ -39,6 +39,10 @@ if (!PAT) {
 
 // value → why it is allowed to be absent. Keep the reason; a bare list rots.
 const STALE_OK = {
+  'contacts.tax_id_type=ssn':
+    'Correct that it is empty: no real SSNs are stored yet. The column is the ' +
+    'readable label beside tax_id_last4; the number itself lives encrypted in ' +
+    'contact_tax_ids, which nothing may SELECT.',
   'commitments.status=expired':
     'Deliberately unreachable: expiry was removed 19 Sep and must never come back. ' +
     'Kept in the log vocabulary so historical rows still read correctly.',

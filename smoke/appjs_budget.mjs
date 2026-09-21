@@ -65,7 +65,12 @@ const BUDGETS = {
   // I first tried to fit under 2090 by folding declarations onto unrelated
   // lines, which satisfied the counter and made the file worse. That is the
   // ratchet working against its own purpose, so I stopped and raised it instead.
-  "src/views/ContactsView.jsx": 2096,
+  // 2096 -> 2115 (v1.08.54). Tax-ID protection: the plaintext column is gone, so
+  // the save path now routes the number through set_tax_id() instead of writing
+  // it to the row, and the merge calls the server-side merge_contacts(). Both are
+  // security plumbing that cannot live anywhere smaller. Raised deliberately,
+  // with the reason, per the rule printed by this guard.
+  "src/views/ContactsView.jsx": 2115,
   "src/views/ContactDetailModal.jsx": 2000,
   "src/views/TasksView.jsx": 1550,
   "src/views/CalendarView.jsx": 1450,

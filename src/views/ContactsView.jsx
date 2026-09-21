@@ -305,7 +305,9 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const [is1099Vendor, setIs1099Vendor]         = useState(!!(initial?.is_1099_vendor));
   const [entityType, setEntityType]             = useState(initial?.entity_type || '');
   const [taxIdType, setTaxIdType]               = useState(initial?.tax_id_type || '');
-  const [taxIdFull, setTaxIdFull]               = useState(initial?.tax_id_full || '');
+  // Never pre-filled from the record: a tax ID is write-only in the UI and is
+  // revealed one at a time, to brokerage staff, with every reveal logged.
+  const [taxIdFull, setTaxIdFull]               = useState('');
   const [w9Collected, setW9Collected]           = useState(!!(initial?.w9_collected));
   const [w9CollectedDate, setW9CollectedDate]   = useState(initial?.w9_collected_date || '');
   const [exempt1099Reason, setExempt1099Reason] = useState(initial?.exempt_1099_reason || '');
@@ -337,6 +339,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
     const cleanPhones = normalize(phones);
     const cleanEmails = normalize(emails);
     onSave({
+      __taxIdToStore: taxIdFull.trim() || null,   // handled via set_tax_id, never written to the row
       name: name.trim(), type,
       phones: cleanPhones, emails: cleanEmails,
       // phone/email columns intentionally omitted — the database trigger
@@ -363,7 +366,6 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
       is_1099_vendor: is1099Vendor,
       entity_type: entityType || null,
       tax_id_type: taxIdType || null,
-      tax_id_full: taxIdFull.trim() || null,
       w9_collected: w9Collected,
       w9_collected_date: w9CollectedDate || null,
       exempt_1099_reason: exempt1099Reason.trim() || null,
@@ -1316,6 +1318,13 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const chipBtn = (on, color) => ({ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 11px', borderRadius:999, fontSize:12, fontWeight:700, cursor:'pointer', border:`1px solid ${on?color:'var(--border)'}`, background:on?color+'22':'transparent', color:on?color:'var(--text-2)' });
 
   async function handleSave(rawData) {
+    // The tax ID never reaches the contacts row. Pull it off the payload before
+    // anything else touches it, and store it afterwards through set_tax_id(),
+    // which encrypts it into a table nothing may SELECT and leaves only the last
+    // four readable. Deleting the key from the object here means no later code
+    // path can accidentally send it.
+    const taxIdToStore = rawData && rawData.__taxIdToStore;
+    if (rawData && '__taxIdToStore' in rawData) delete rawData.__taxIdToStore;
     // Sanitize typed fields right before the DB call so no stray value can throw
     // a 22P02 (invalid type), regardless of what the form or an import produced.
     // This is the last line of defense — belt and suspenders over the form guards.
@@ -1370,6 +1379,15 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       return;
     }
     setShowModal(false);
+    // Now the contact exists, hand the number to the encrypting function. A
+    // failure here must be told, not swallowed: a tax ID the broker believes is
+    // saved and is not is worse than one he knows he still has to enter.
+    if (taxIdToStore && savedRow) {
+      const { error: txErr } = await supabase.rpc('set_tax_id', {
+        p_contact: savedRow.id, p_value: taxIdToStore, p_type: (savedRow.tax_id_type || 'ssn'),
+      });
+      if (txErr) notify('Contact saved, but the tax ID was not stored: ' + (txErr.message || txErr), 'error');
+    }
     if (editFromDetail && savedRow) setDetailContact(savedRow);
     else if (window.__researchAfterSave && savedRow) { window.__researchAfterSave = false; window.__autoResearch = savedRow.id; setDetailContact(savedRow); }
     setEditContact(null); setEditFromDetail(false);
