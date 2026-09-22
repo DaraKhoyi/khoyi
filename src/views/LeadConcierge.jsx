@@ -35,9 +35,16 @@ function fullest(it) {
 // legal footer and every blank line between them. On a phone that is a screen
 // and a half to find one sentence. Now the gist leads — stripped and collapsed —
 // and the untouched original is one tap away for anyone who wants it.
-function InboundMessage({ text, summary }) {
+function InboundMessage({ text, summary, whole }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
+  // A text message is short: the gist-plus-"show original" pattern built for
+  // email just printed the same words twice, and hid the last sentence.
+  if (whole) return (
+    <div style={{ marginBottom: 8, fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      {String(text).trim()}
+    </div>
+  );
   // A real one-line read from the triage pass beats anything derived. Only some
   // threads have one; the rest fall back to the cleaned opening.
   const gist = (summary && String(summary).trim()) || emailGist(text, 240);
@@ -282,7 +289,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
         providerMessageId: it.provider_message_id,
       });
       if (r && r.error) throw new Error(r.error);
-      await supabase.rpc('lead_concierge_dismiss', { p_id: it.id });
+      await supabase.rpc('lead_concierge_resolve', { p_id: it.id, p_outcome: 'archived' });
       setItems(list => list.filter(x => x.id !== it.id));
       if (window.__notify) window.__notify('Deleted. It is in your Gmail Trash for 30 days.', 'success');
     } catch (e) {
@@ -313,10 +320,21 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
     }
   };
 
-  const dismiss = async (it) => {
+  // THREE OUTCOMES, THREE MEANINGS (lead_concierge_resolve). "Dismiss" meant all
+  // of them at once and the learner read every one as "not a lead" — so archiving
+  // an email Dara had already answered taught the system to mute that sender.
+  //   done       it was real and it is dealt with — counts as acting on it
+  //   not_a_lead teach the system this sender is not a lead
+  //   archived   clear it, no opinion — teaches nothing
+  // The old version also swallowed errors: supabase.rpc does not throw, so a
+  // failed dismiss looked like success.
+  const resolve = async (it, outcome) => {
     setBusy(it.id);
-    try { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); setItems(list => list.filter(x => x.id !== it.id)); } catch (_) {}
+    const { error } = await supabase.rpc('lead_concierge_resolve', { p_id: it.id, p_outcome: outcome });
     setBusy(null);
+    if (error) { if (window.__notify) window.__notify("Couldn't save that: " + error.message, 'error'); return false; }
+    setCleared(c => ({ ...c, [it.id]: outcome === 'pending' ? undefined : outcome }));
+    return true;
   };
 
   // Bulk actions run one at a time and report what actually happened. Nine
@@ -328,12 +346,14 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
     let done = 0, failed = 0;
     for (const it of chosen) {
       try {
-        if (kind === 'dismiss') { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); done++; }
-        else if (kind === 'not_a_lead') { (await markSender(it.lead_email, 'not_a_lead')) ? done++ : failed++; }
+        if (kind === 'done' || kind === 'not_a_lead' || ((kind === 'archive' || kind === 'trash') && it.channel !== 'email')) {
+          const { error } = await supabase.rpc('lead_concierge_resolve', { p_id: it.id, p_outcome: kind === 'archive' || kind === 'trash' ? 'archived' : kind });
+          error ? failed++ : done++;
+        }
         else if (kind === 'archive' || kind === 'trash') {
           const r = await runEmailAction({ action: kind, accountId: it.account_id,
             providerThreadId: it.provider_thread_id, providerMessageId: it.provider_message_id });
-          if (r.ok) { await supabase.rpc('lead_concierge_dismiss', { p_id: it.id }); done++; } else failed++;
+          if (r.ok) { await supabase.rpc('lead_concierge_resolve', { p_id: it.id, p_outcome: 'archived' }); done++; } else failed++;
         }
       } catch (_) { failed++; }
     }
@@ -388,7 +408,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
           <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('archive')}>{bulkBusy === 'archive' ? 'Archiving\u2026' : 'Archive'}</button>
           <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('trash')}>{bulkBusy === 'trash' ? 'Deleting\u2026' : 'Delete'}</button>
           <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('not_a_lead')}>{bulkBusy === 'not_a_lead' ? 'Marking\u2026' : 'Not a lead'}</button>
-          <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('dismiss')}>Dismiss</button>
+          <button style={bulkBtn} disabled={!!bulkBusy} onClick={() => runBulk('done')}>{bulkBusy === 'done' ? 'Saving\u2026' : '\u2713 Done'}</button>
           <button style={{ ...bulkBtn, marginLeft: 'auto', border: 'none', color: 'var(--text-3)' }} onClick={clearSel}>Clear</button>
         </div>
       ) : null}
@@ -411,9 +431,15 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
               <input type="checkbox" checked={!!sel[it.id]} onChange={() => toggleSel(it.id)}
                 title="Select for a bulk action" style={{ marginRight: 2, cursor: 'pointer' }} />
               <span className={cleared[it.id] ? '' : 'live-dot'} style={cleared[it.id] ? { width: 7, height: 7, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' } : undefined} />
-              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: cleared[it.id] ? 'var(--text-3)' : '#EBCB82' }}>{cleared[it.id] ? (cleared[it.id] === 'trash' ? 'Deleted' : 'Archived') : 'New lead \u00B7 reply ready'}</span>
+              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: cleared[it.id] ? 'var(--text-3)' : '#EBCB82' }}>{cleared[it.id] ? ({ trash: 'Deleted', done: 'Done', not_a_lead: 'Not a lead' }[cleared[it.id]] || 'Archived') : 'New lead \u00B7 reply ready'}</span>
               <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{(isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')) + ' \u00B7 ' + timeAgo(it.first_seen_at)}</span>
             </div>
+            {['done', 'not_a_lead', 'archived'].includes(cleared[it.id]) ? (
+              <button type="button" onClick={() => resolve(it, 'pending')}
+                style={{ background: 'none', border: 0, padding: '2px 0 4px', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: 'var(--accent)', minHeight: 36 }}>
+                Undo
+              </button>
+            ) : null}
             {/* The name is the way into the person, not decoration. */}
             <div style={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
               <SenderLink contact={contact} name={label} address={it.lead_email} size={15} />
@@ -428,7 +454,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                 {it.draft_subject}
               </div>
             ) : null}
-            {!cleared[it.id] ? <InboundMessage text={fullest(it)} summary={it.triage_summary} /> : null}
+            {!cleared[it.id] ? <InboundMessage text={fullest(it)} summary={it.triage_summary} whole={!isEmail} /> : null}
 
             {!cleared[it.id] && (it.brief || briefs[it.id]) ? (
               <div style={{ border: '1px solid var(--border)', borderLeft: '2px solid var(--room-accent, var(--accent))',
@@ -466,8 +492,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                   setCleared(c => ({ ...c, [it.id]: undone ? undefined : action }));
                   // Handling the mail handles the lead. Undo puts it back.
                   try {
-                    if (undone) await supabase.from('lead_concierge').update({ status: 'pending' }).eq('id', it.id);
-                    else await supabase.rpc('lead_concierge_dismiss', { p_id: it.id });
+                    await supabase.rpc('lead_concierge_resolve', { p_id: it.id, p_outcome: undone ? 'pending' : 'archived' });
                   } catch (_) { /* the card state is what Dara sees; never block on this */ }
                 }} />
             ) : null}
@@ -501,7 +526,22 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                     Delete
                   </button>
                 )}
-                <button disabled={busy === it.id} onClick={() => dismiss(it)} style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--text-3)', border: 'none', fontSize: 12.5, cursor: 'pointer' }}>Dismiss</button>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {[['done', '\u2713 Done', 'I dealt with it \u2014 replied another way, called, or it is handled. Counts as acting on the lead.'],
+                    ['not_a_lead', 'Not a lead', 'Teach the app this sender is not a lead.'],
+                    ['archived', 'Archive', 'Clear it without teaching the app anything.']]
+                    // Email cards already carry Archive and Not a lead in their mail
+                    // toolbar (they act on the Gmail message too). Showing them twice
+                    // with two different behaviours would be worse than either.
+                    .filter(([k]) => !isEmail || k === 'done').map(([k, label, tip]) => (
+                    <button key={k} type="button" disabled={busy === it.id} title={tip} onClick={() => resolve(it, k)}
+                      style={{ minHeight: 44, padding: '0 12px', borderRadius: 10, fontSize: 13, fontWeight: k === 'done' ? 800 : 600, cursor: 'pointer',
+                        background: 'transparent', color: k === 'done' ? 'var(--accent)' : 'var(--text-2)',
+                        border: '1px solid ' + (k === 'done' ? 'rgba(197,169,94,.55)' : 'var(--border)') }}>
+                      {label}
+                    </button>
+                  ))}
+                </span>
               </div>
             )}
           </div>

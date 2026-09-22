@@ -113,7 +113,26 @@ serve(async (req) => {
               isEstablished = !!c.last_outbound_at || (c.type && !["lead", "prospect", "new"].includes(String(c.type).toLowerCase()));
             }
           }
+          // ONE VERDICT FOR A TEXT (sms_lead_verdict): machines are never leads —
+          // two Roomvu Zoom reminders became "new lead" cards with a drafted
+          // "wrong number" reply addressed to a robot; a number marked "not a
+          // lead" stays marked (texts never checked before); and a text to the
+          // broker's own line is routed to the brokerage queue only when it states
+          // real-estate intent, never made into a personal card.
+          let verdict: any = { action: "card" };
           if (!isEstablished) {
+            const { data: v } = await supabase.rpc("sms_lead_verdict", { p_user: owner, p_from: row.from_number, p_body: row.body || "" });
+            if (v) verdict = v;
+            if (verdict.action === "route") {
+              const { error: rErr } = await supabase.from("brokerage_leads").upsert({
+                received_by: owner, source: "Text to the broker", channel: "sms",
+                lead_name: leadName, lead_phone: row.from_number, subject: "Text message",
+                excerpt: String(row.body || "").slice(0, 700), provider_message_id: "sms:" + row.op_id,
+              }, { onConflict: "provider_message_id", ignoreDuplicates: true });
+              if (rErr) console.error("[brokerage_leads] sms route failed", rErr.message);
+            }
+          }
+          if (!isEstablished && verdict.action === "card") {
             await supabase.functions.invoke("lead-concierge", { body: {
               user_id: owner, contact_id: contactId, lead_name: leadName,
               lead_phone: row.from_number, channel: "sms", inbound_text: row.body || null,

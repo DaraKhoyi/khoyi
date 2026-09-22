@@ -102,6 +102,10 @@ Deno.serve(async (req) => {
       draft, draft_subject: draftSubject, email_context: email_context || null, status: "pending",
       source: source || null,
     }).select("id").single();
+    // Two mailboxes can receive one thread and race to card it in the same
+    // second; the unique index lc_one_pending_per_person lets exactly one win.
+    // Losing that race is the correct outcome, not a failure.
+    if (error && (error as any).code === "23505") return new Response(JSON.stringify({ ok: true, skipped: "already_pending" }), { headers: { ...cors, "Content-Type": "application/json" } });
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
 
     // push the agent — this IS the speed-to-lead moment
