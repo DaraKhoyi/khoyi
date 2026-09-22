@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const b = await req.json();
-    const { user_id, contact_id, lead_phone, lead_email, channel, email_context, source } = b;
+    const { user_id, contact_id, lead_phone, lead_email, channel, email_context, source, kind, skip_draft } = b;
     let { lead_name, inbound_text } = b;
     const isEmail = channel === "email";
     const leadHandle = isEmail ? lead_email : lead_phone;
@@ -75,8 +75,13 @@ Deno.serve(async (req) => {
     const usr = (firstName ? `The lead's name is ${firstName}. ` : "The lead's name is unknown. ") +
       (inbound_text ? `They just ${isEmail ? "emailed" : "texted"}: "${String(inbound_text).slice(0, 600)}"` : `They just reached out (no message). Reach out proactively.`);
 
-    let draft = firstName ? `Hi ${firstName}! Thanks for reaching out — happy to help. What can I tell you?` : `Hi there! Thanks for reaching out — happy to help. What can I tell you?`;
+    let draft = skip_draft ? "" : firstName ? `Hi ${firstName}! Thanks for reaching out — happy to help. What can I tell you?` : `Hi there! Thanks for reaching out — happy to help. What can I tell you?`;
+    // A REPLY IS NOT DRAFTED ON ARRIVAL. Dara already knows these people and
+    // writes to them himself; guessing his words to a partner is worse than
+    // useless, and drafting every important email would spend real money on text
+    // nobody sends. He can ask for a draft on the card when he wants one.
     try {
+      if (skip_draft) throw new Error("reply — drafted on request, not on arrival");
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01" },
@@ -101,6 +106,7 @@ Deno.serve(async (req) => {
       channel: channel || "sms", inbound_text: inbound_text || null,
       draft, draft_subject: draftSubject, email_context: email_context || null, status: "pending",
       source: source || null,
+      kind: kind === "reply" ? "reply" : "lead",
     }).select("id").single();
     // Two mailboxes can receive one thread and race to card it in the same
     // second; the unique index lc_one_pending_per_person lets exactly one win.

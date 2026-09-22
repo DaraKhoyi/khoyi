@@ -368,8 +368,19 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
 
   if (!items.length) return null;
   const LEAD_PREVIEW = 5;
-  const visible = showAllLeads ? items : items.slice(0, LEAD_PREVIEW);
-  const hiddenCount = items.length - visible.length;
+  // TWO JOBS, TWO ORDERS. A lead is a race — newest first, because the clock
+  // started when it landed. A reply is a debt — oldest first, because the person
+  // who has waited longest is the one being let down.
+  const leadsFirst = [...items].sort((a, b) => {
+    const ak = a.kind === 'reply' ? 1 : 0, bk = b.kind === 'reply' ? 1 : 0;
+    if (ak !== bk) return ak - bk;
+    const at = new Date(a.first_seen_at).getTime(), bt = new Date(b.first_seen_at).getTime();
+    return ak === 1 ? at - bt : bt - at;
+  });
+  const visible = showAllLeads ? leadsFirst : leadsFirst.slice(0, LEAD_PREVIEW);
+  const hiddenCount = leadsFirst.length - visible.length;
+  const firstReplyId = (visible.find(x => x.kind === 'reply') || {}).id;
+  const minsSince = (t) => Math.max(0, Math.round((Date.now() - new Date(t).getTime()) / 60000));
   const bulkBtn = { fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' };
   return (
     <div className="fade-up" style={{ marginBottom: 14 }}>
@@ -416,13 +427,25 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
         const first = (it.lead_name || '').trim().split(/\s+/)[0];
         const editing = editId === it.id;
         const isEmail = it.channel === 'email';
+        const isReply = it.kind === 'reply';
+        const mins = minsSince(it.first_seen_at);
         // The RPC resolves the contact for us when it can. When it cannot, this
         // is a stranger — which for a NEW LEAD is the normal case, so the card
         // offers to create the record rather than showing a dead name.
         const contact = it.contact_id ? { id: it.contact_id, name: it.contact_name || first } : null;
         const label = it.contact_name || first || it.lead_email || it.lead_phone;
         return (
-          <div key={it.id} style={cleared[it.id]
+          <React.Fragment key={it.id}>
+          {it.id === firstReplyId ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
+              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase',
+                letterSpacing: '.16em', fontSize: 11, fontWeight: 800, color: 'var(--text-3)' }}>
+                Not new leads {'\u2014'} people waiting on you
+              </span>
+              <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            </div>
+          ) : null}
+          <div style={cleared[it.id]
             // Handled: it recedes instead of shouting. Still visible enough to
             // undo, quiet enough to stop counting as work.
             ? { background: 'transparent', border: '1px solid var(--border)', borderRadius: 16, padding: '10px 14px', marginBottom: 8, opacity: 0.6 }
@@ -431,8 +454,19 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
               <input type="checkbox" checked={!!sel[it.id]} onChange={() => toggleSel(it.id)}
                 title="Select for a bulk action" style={{ marginRight: 2, cursor: 'pointer' }} />
               <span className={cleared[it.id] ? '' : 'live-dot'} style={cleared[it.id] ? { width: 7, height: 7, borderRadius: '50%', background: 'var(--text-3)', display: 'inline-block' } : undefined} />
-              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: cleared[it.id] ? 'var(--text-3)' : '#EBCB82' }}>{cleared[it.id] ? ({ trash: 'Deleted', done: 'Done', not_a_lead: 'Not a lead' }[cleared[it.id]] || 'Archived') : 'New lead \u00B7 reply ready'}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{(isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')) + ' \u00B7 ' + timeAgo(it.first_seen_at)}</span>
+              <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: cleared[it.id] ? 'var(--text-3)' : '#EBCB82' }}>{cleared[it.id] ? ({ trash: 'Deleted', done: 'Done', not_a_lead: 'Not a lead' }[cleared[it.id]] || 'Archived')
+                : isReply ? 'Needs your reply'
+                : (it.source ? it.source.toUpperCase() + ' \u00B7 NEW LEAD' : 'New lead \u00B7 reply ready')}</span>
+              {/* The clock a lead is judged by: portal buyers usually ask three
+                  agents at once and go with whoever answers first. */}
+              {!cleared[it.id] && !isReply ? (
+                <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800,
+                  color: mins <= 5 ? '#7BC47F' : mins <= 60 ? '#EBCB82' : '#E4674F' }}>
+                  {mins < 60 ? 'waiting ' + mins + ' min' : mins < 1440 ? 'waiting ' + Math.round(mins / 60) + ' h' : 'waiting ' + Math.round(mins / 1440) + ' d'}
+                </span>
+              ) : (
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{(isEmail ? 'emailed' : (it.channel === 'missed_call' ? 'missed call' : 'texted')) + ' \u00B7 ' + timeAgo(it.first_seen_at)}</span>
+              )}
             </div>
             {['done', 'not_a_lead', 'archived'].includes(cleared[it.id]) ? (
               <button type="button" onClick={() => resolve(it, 'pending')}
@@ -545,6 +579,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
               </div>
             )}
           </div>
+          </React.Fragment>
         );
       })}
       {hiddenCount > 0 ? (

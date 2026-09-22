@@ -88,3 +88,24 @@ Dara is broker, Josh is staff (office manager), Alexander and Mary produce.
   tagged, so they do not appear in speed-to-lead as leads.
 - Portal leads that carry the buyer only in the Reply-To header fall back to the
   sender address when no email appears in the body.
+
+## Leads and replies are different jobs (22 Sep)
+
+A lead is a race; a reply is a debt. `lead_concierge.kind` and `inbound_kind()`
+decide which, and everything downstream follows from it.
+
+| | **lead** | **reply** |
+|---|---|---|
+| Who | a recognised source, a referral, or a stranger stating intent | someone in contacts, someone Dara has written to, or any "Re:" thread |
+| Alert | push the moment it lands, by name, unthrottled, 7am–10pm | none — it joins the hourly "someone is waiting on you" |
+| Draft | written on arrival | only when asked (a reply to a partner in guessed words is worse than none, and drafting every important email spends real money on text nobody sends) |
+| Order on screen | newest first — the clock started when it landed | oldest first — the longest wait is the biggest debt |
+| Clock shown | minutes waiting, green under 5, red over an hour | when it arrived |
+| Counted in speed_to_lead | yes | no |
+
+Notifications came off shadow mode for **recognised-source leads only** — the
+portal's own lead template, the IDX form, the franchise site, a referral. Score-
+based guesses keep logging to `lead_notifications` until the log earns trust: one
+false alarm costs the channel, and a missed lead costs one opportunity.
+`gmail-sync` nudges `lead-notify` the instant it files a recognised lead, because
+the sweep runs every ten minutes and a five-minute race cannot wait for it.

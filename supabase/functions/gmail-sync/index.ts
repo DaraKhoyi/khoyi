@@ -704,7 +704,7 @@ async function syncOneAccount(supabase, account, opts) {
             if (blErr) console.error("[brokerage_leads] route failed", blErr.message);
           } else {
             await supabase.functions.invoke("lead-concierge", { body: {
-              user_id: account.user_id, lead_name: leadName, source: src.source,
+              user_id: account.user_id, lead_name: leadName, source: src.source, kind: "lead",
               // Zillow's conversation relay delivers a reply to the buyer, so
               // the sender address is usable there; elsewhere it is not.
               lead_email: buyerEmail || addr, lead_phone: buyerPhone, channel: "email",
@@ -712,6 +712,17 @@ async function syncOneAccount(supabase, account, opts) {
                              "Subject: " + (c.subject || ""), excerpt].filter(Boolean).join("\n"),
               email_context: { account_id: account.id, provider_message_id: c.provider_message_id, provider_thread_id: c.provider_thread_id },
             } });
+            // The sweep runs every ten minutes; a five-minute race cannot wait for
+            // it. Nudge the notifier now — it de-duplicates on lead_notifications,
+            // so the sweep finding the same lead later sends nothing twice.
+            try {
+              await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/lead-notify`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json",
+                           "x-qcp-token": Deno.env.get("QCP_TOKEN") || "" },
+                body: JSON.stringify({ hours: 1, limit: 5 }),
+              });
+            } catch (_) { /* the ten-minute sweep is the safety net */ }
           }
           continue;
         }
@@ -790,8 +801,19 @@ async function syncOneAccount(supabase, account, opts) {
         // sellers in the third person and carry list-mail furniture.
         const pitch = new RegExp("(unsubscribe|view (this )?(email )?in (your )?browser|mailchi\\.mp|click here|your (buyers?|sellers?|clients?|listings?|business|pipeline|leads?|database|sphere)|(realtors?|agents?|brokers?) (should|need to|can now|who)|adding agents|join (our|the) network|invitation-only|limited spots|webinar|register (now|today)|free (trial|demo)|promo code|% off|sponsored|advertis|always be closing|sell more (homes|listings)|most agents|if you need a (quick )?(pre-?approval|lender)|whenever you need a lender)").test(bodyText);
         if (!referral && (!intent || pitch)) continue;
+        // LEAD OR REPLY (inbound_kind). A stranger who wants to buy, sell or rent
+        // is a race — the clock starts now. Someone Dara knows, or a thread he is
+        // already in, is important but is not a race: it waits for him, it never
+        // buzzes his phone, and nothing is drafted for it until he asks, which is
+        // also why it costs nothing. Joe Strong replying on the 40th St thread was
+        // filed as a NEW LEAD; this is that distinction.
+        const { data: kind } = await supabase.rpc("inbound_kind", {
+          p_user: account.user_id, p_from: addr, p_subject: c.subject || "",
+          p_source: referral ? "Referral" : "Direct inquiry",
+        });
         await supabase.functions.invoke("lead-concierge", { body: {
           user_id: account.user_id, contact_id: contact ? contact.id : null,
+          kind: kind || "lead", skip_draft: kind === "reply",
           source: referral ? "Referral" : "Direct inquiry",
           lead_name: (contact && contact.name) || c.from_name || null,
           lead_email: c.from_address, channel: "email",

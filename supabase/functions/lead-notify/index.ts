@@ -151,8 +151,12 @@ Deno.serve(async (req) => {
     // in shadow mode, so a wide look-back costs nothing.
     const hours = Math.min(Number(body.hours) || 6, 24 * 30);
     const { data: leads } = await admin.from("lead_concierge")
-      .select("id, user_id, lead_name, lead_email, lead_phone, channel, inbound_text, first_seen_at, contact_id")
+      .select("id, user_id, lead_name, lead_email, lead_phone, channel, inbound_text, first_seen_at, contact_id, source, kind")
       .eq("status", "pending")
+      // A reply is never an alert. Someone Dara already knows waiting on him is
+      // important and is not a race; spending the alarm on it is how the alarm
+      // stops meaning anything.
+      .eq("kind", "lead")
       .gte("first_seen_at", new Date(Date.now() - hours * 3600 * 1000).toISOString())
       .order("first_seen_at", { ascending: false }).limit(Number(body.limit) || 200);
 
@@ -250,7 +254,41 @@ Deno.serve(async (req) => {
       if (!v.send) { out.suppressed++; await admin.from("lead_notifications").insert(row); continue; }
       out.would_send++;
 
-      if (shadow) { await admin.from("lead_notifications").insert(row); continue; }
+      // SHADOW MODE STAYS ON FOR GUESSES, AND COMES OFF FOR CERTAINTY. This has
+      // been silent since it was built because the old queue called a VPN advert
+      // a lead. A lead recognised by its SOURCE TEMPLATE is a different kind of
+      // claim: realtor.com's own "New realtor.com lead - <name>" format, a Zillow
+      // inquiry, the brokerage's IDX form. Those send now. Score-based guesses
+      // keep logging until Dara has read enough of them to trust the score.
+      const certain = !!lead.source && lead.source !== "Direct inquiry";
+      row.reason = (row.reason || "") + (certain ? " · recognised source: " + lead.source : "");
+      if (shadow && !certain) { await admin.from("lead_notifications").insert(row); continue; }
+
+      // SPEED TO LEAD IS THE WHOLE POINT, so a recognised lead buzzes the phone
+      // the moment it lands — by name, with the property, unthrottled. The
+      // "someone is waiting on you" push for ordinary mail is deliberately
+      // throttled to one an hour; a lead is a race and must not queue behind it.
+      // 7am–10pm: a lead at midnight still waits for morning, but only just.
+      if (certain) {
+        try {
+          const hourNow = Number(new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "2-digit", hour12: false }));
+          if (hourNow >= 7 && hourNow < 22) {
+            const who = lead.lead_name || lead.lead_email || lead.lead_phone || "Someone";
+            await fetch(`${SUPABASE_URL}/functions/v1/push-send`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                user_id: lead.user_id,
+                title: `New lead: ${who}`,
+                body: `${lead.source} · answer in the next 5 minutes`,
+                url: "https://darasapp.com/",
+                tag: "new-lead-" + lead.id,     // its own tag: never collapses onto another lead
+              }),
+            });
+            row.reason = (row.reason || "") + " · pushed";
+          }
+        } catch (_) { /* the email below is still the record */ }
+      }
 
       // Live. Respect the agent's own switch.
       const { data: pref } = await admin.from("notification_prefs")
