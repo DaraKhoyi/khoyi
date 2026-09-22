@@ -645,7 +645,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
                   ? decodeEntities(e.body_text)
                   : (e.is_mine
                       ? (e.brief || 'No text was stored for this message. Open it in the Inbox to read it in full.')
-                      : 'This email is in ' + (e.via || 'a teammate') + "'s mailbox. You can see that it happened, not read it here.")}
+                      : 'No text was stored for this message.')}
               </div>
               {e.is_mine && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '9px 11px', borderTop: '1px solid var(--border)' }}>
