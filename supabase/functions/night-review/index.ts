@@ -190,7 +190,15 @@ async function repoView(): Promise<Record<string, unknown>> {
 }
 
 const WORKING_AGENTS = [
-  ["lead-concierge", "decides what inbound mail is a lead worth surfacing, and drafts the reply. 5,799 surfaced, 15 acted on."],
+  ["lead-concierge", "turns inbound leads into a fast first reply. SINCE 21 SEP IT WORKS LIKE THIS, audit it against this: " +
+    "(1) a lead is recognised first by SOURCE TEMPLATE (lead_sources: Zillow, realtor.com, Homes.com, Redfin, rental portals, the " +
+    "brokerage IDX and franchise sites, CRM platforms, showing and home-value requests) — before any bulk filter, because portals " +
+    "send leads from notification addresses; (2) then a REFERRAL from an established contact; (3) then a stranger only with stated " +
+    "real-estate intent. Leads landing on the broker or office manager (agents.production_role broker/staff) go to brokerage_leads " +
+    "to be assigned to a producing agent, never to a personal card. Learning runs BOTH ways and ONLY from producing agents: " +
+    "lead_was_acted() counts email, call or concierge reply as acting; mutes expire in 180 days; lead sources are never muted; " +
+    "brokerage-wide mutes need two PRODUCING agents. The measure that matters is speed_to_lead: minutes from arrival to first " +
+    "reply, and the share inside 5 minutes. Judge the agent by leads answered fast, not by cards surfaced or suppressed"],
   ["chief-of-staff", "decides what Dara should do next, across tasks, calendar and mail."],
   ["contact-research", "builds a picture of a person before a meeting, now including what they wrote to us."],
   ["recording pipeline", "transcribes calls, summarises, extracts commitments. 683 calls, 248 expired."],
@@ -292,12 +300,24 @@ async function gather(admin: any) {
    from information_schema.role_table_grants
    where table_schema='public' and grantee in ('anon','PUBLIC')
      and privilege_type in ('INSERT','UPDATE','DELETE') limit 15`);
+  // HONEST "ACTED". status='sent' counted only replies sent from the concierge's
+  // own draft and reported 20 of 5,997 (0.33%). Agents had answered 371 by email
+  // or phone. That false 0.33% is what the panel read as "the loop only
+  // suppresses", and what the old learning read as "never actioned".
   await one("agent_hit_rates", `select 'lead_concierge' agent,
-     count(*) surfaced, count(*) filter (where status='sent') acted,
-     round(100.0*count(*) filter (where status='sent')/nullif(count(*),0),2) pct
-   from lead_concierge`);
+     count(*) surfaced,
+     count(*) filter (where first_response_at is not null) answered_any_channel,
+     count(*) filter (where source is not null) from_recognised_sources,
+     count(*) filter (where source is not null and first_response_at is not null) source_leads_answered,
+     round(100.0*count(*) filter (where first_response_at is not null)/nullif(count(*),0),2) pct
+   from lead_concierge where first_seen_at > now() - interval '30 days'`);
+  await one("speed_to_lead_by_agent", `select public.speed_to_lead(30) v`);
+  await one("brokerage_leads_unrouted", `select count(*) n, max(round(extract(epoch from now()-received_at)/60)) oldest_minutes,
+     string_agg(distinct source, ', ') sources from brokerage_leads where status='unassigned'`);
   await one("learned_rules", `select kind, count(*) n,
-     count(*) filter (where note like 'learned:%') auto_learned
+     count(*) filter (where note like 'learned:%') auto_learned,
+     count(*) filter (where is_brokerage) brokerage_wide,
+     count(*) filter (where learned_from = 'producing_agent') from_producers
    from lead_sender_rules group by 1`);
   await one("commitments_kept", `select status, count(*) n from commitments group by 1`);
   await one("email_storage", `select count(*) rows,

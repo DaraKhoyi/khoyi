@@ -90,6 +90,13 @@ export default function BrokerGoalRoster() {
   const [expired, setExpired] = useState([]);
   // Transactions whose numbers a person has to check against the paperwork.
   const [toCheck, setToCheck] = useState([]);
+  // Leads that reached the broker or the office manager, waiting for a producing
+  // agent — and how fast each agent actually answers theirs.
+  const [routeQ, setRouteQ] = useState([]);
+  const [producers, setProducers] = useState([]);
+  const [pick, setPick] = useState({});
+  const [speed, setSpeed] = useState([]);
+  const [routeMsg, setRouteMsg] = useState('');
   const [showCheck, setShowCheck] = useState(false);
 
   const load = useCallback(async () => {
@@ -100,6 +107,14 @@ export default function BrokerGoalRoster() {
     try {
       const { data: ex } = await supabase.rpc('expired_commitments_by_agent');
       setExpired(Array.isArray(ex) ? ex : []);
+    } catch (_) { /* the roster still loads */ }
+    try {
+      const [{ data: lq }, { data: pa }, { data: sp }] = await Promise.all([
+        supabase.rpc('brokerage_lead_queue'), supabase.rpc('producing_agents_with_login'), supabase.rpc('speed_to_lead', { p_days: 30 }),
+      ]);
+      setRouteQ(Array.isArray(lq) ? lq : []);
+      setProducers(Array.isArray(pa) ? pa : []);
+      setSpeed(Array.isArray(sp) ? sp : []);
     } catch (_) { /* the roster still loads */ }
     try {
       const { data: pr } = await supabase.rpc('txn_data_problems');
@@ -150,6 +165,84 @@ export default function BrokerGoalRoster() {
           and nothing said so. The app cannot know what "$43.96" was meant to be —
           guessing would be making the silent wrong number ourselves — so it
           names each row and the exact place in the spreadsheet to fix it. */}
+      {/* LEADS WAITING FOR AN AGENT. A buyer who inquires through a portal has
+          usually asked three agents at once and goes with whoever answers
+          first. When that inquiry lands on the broker or the office manager it
+          used to become a card nobody worked. Now it waits here, with how long
+          it has been waiting, until it is handed to someone who sells. */}
+      {routeQ.length > 0 && (
+        <div style={{ border: '1px solid rgba(201,86,63,.5)', background: 'rgba(201,86,63,.06)',
+          borderRadius: 12, padding: '12px 14px', margin: '12px 0 12px' }}>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,
+            letterSpacing: '.16em', textTransform: 'uppercase', color: '#E4674F', marginBottom: 6 }}>
+            {routeQ.length} lead{routeQ.length === 1 ? '' : 's'} waiting for an agent
+          </div>
+          {routeMsg && <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 6 }}>{routeMsg}</div>}
+          {routeQ.map(l => (
+            <div key={l.id} style={{ padding: '9px 0', borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 600 }}>
+                {(l.lead_name || 'Unnamed buyer') + (l.property ? ' \u00b7 ' + l.property : '')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                {l.source + ' \u00b7 to ' + (l.received_by || 'brokerage') + ' \u00b7 waiting ' +
+                  (l.minutes_waiting < 90 ? l.minutes_waiting + ' min' : Math.round(l.minutes_waiting / 60) + ' h')}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
+                <select value={pick[l.id] || ''} onChange={e => setPick(p => ({ ...p, [l.id]: e.target.value }))}
+                  style={{ flex: '1 1 160px', minWidth: 0, minHeight: 44, borderRadius: 10, padding: '0 10px',
+                    background: 'var(--bg-input, #1a1510)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                  <option value="">Choose an agent…</option>
+                  {producers.map(a => <option key={a.user_id} value={a.user_id}>{a.name}</option>)}
+                </select>
+                <button type="button" disabled={!pick[l.id]}
+                  onClick={async () => {
+                    const { error } = await supabase.rpc('assign_brokerage_lead', { p_id: l.id, p_agent_user: pick[l.id] });
+                    if (error) { setRouteMsg('Could not assign: ' + error.message); return; }
+                    const who = (producers.find(a => a.user_id === pick[l.id]) || {}).name || 'the agent';
+                    setRouteMsg('Sent to ' + who + ' \u2014 a first reply is drafted and their phone has been told.');
+                    setRouteQ(q => q.filter(x => x.id !== l.id));
+                  }}
+                  style={{ minHeight: 44, padding: '0 16px', borderRadius: 10, border: 'none', fontWeight: 800,
+                    background: pick[l.id] ? '#C5A95E' : 'var(--border)', color: '#1a1409', cursor: pick[l.id] ? 'pointer' : 'default' }}>
+                  Assign
+                </button>
+                <button type="button"
+                  onClick={async () => {
+                    const { error } = await supabase.rpc('dismiss_brokerage_lead', { p_id: l.id });
+                    if (error) { setRouteMsg('Could not dismiss: ' + error.message); return; }
+                    setRouteQ(q => q.filter(x => x.id !== l.id));
+                  }}
+                  style={{ minHeight: 44, padding: '0 14px', borderRadius: 10, background: 'transparent',
+                    border: '1px solid var(--border)', color: 'var(--text-2)', cursor: 'pointer' }}>
+                  Not a lead
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* SPEED TO LEAD. The number that predicts whether a lead converts. The
+          old measure counted only replies sent from the concierge's own draft,
+          and so recorded 20 responses where agents had actually answered 371 by
+          email or phone — and then muted the senders it thought were ignored. */}
+      {speed.length > 0 && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', margin: '0 0 12px' }}>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,
+            letterSpacing: '.16em', textTransform: 'uppercase', color: '#C5A95E', marginBottom: 6 }}>
+            Speed to lead · last 30 days
+          </div>
+          {speed.map(r => (
+            <div key={r.agent} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '5px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <span style={{ flex: '1 1 0', minWidth: 0, fontSize: 13, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.agent}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                {r.median_minutes != null ? 'median ' + (r.median_minutes < 120 ? r.median_minutes + ' min' : Math.round(r.median_minutes / 60) + ' h') : 'no replies yet'}
+                {' \u00b7 ' + r.within_5_min + ' of ' + r.responses + ' in 5 min'}
+                {r.leads > 0 ? ' \u00b7 ' + r.answered + '/' + r.leads + ' portal leads answered' : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {toCheck.length > 0 && (
         <div style={{ border: '1px solid rgba(197,169,94,.5)', background: 'rgba(197,169,94,.07)',
           borderRadius: 12, padding: '12px 14px', margin: '12px 0 12px' }}>

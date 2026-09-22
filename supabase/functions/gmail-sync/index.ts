@@ -464,7 +464,10 @@ async function syncOneAccount(supabase, account, opts) {
         // stash for the Lead Concierge pass after the loop (email path)
         try {
           conciergeCandidates.push({ from_address: fromObj.email, from_name: fromObj.name, subject: subject || null,
-            snippet: (bodies.text || msg.snippet || "").slice(0, 600), provider_message_id: msg.id, provider_thread_id: msg.threadId, labels });
+            snippet: (bodies.text || msg.snippet || "").slice(0, 600), provider_message_id: msg.id, provider_thread_id: msg.threadId, labels,
+            // Portal lead emails put the buyer's phone and email well below the
+            // first 600 characters; the source path reads further.
+            body: (bodies.text || msg.snippet || "").slice(0, 2500) });
         } catch (_) {}
       }
 
@@ -662,9 +665,61 @@ async function syncOneAccount(supabase, account, opts) {
     // uses. Skips automated/no-reply senders and anyone we already email with.
     try {
       const seen = new Set();
+      // WHO WORKS LEADS. The broker and the office manager receive leads but do
+      // not convert them. Their leads are routed to a producing agent through
+      // the brokerage queue instead of becoming personal cards nobody works.
+      const { data: producing } = await supabase.rpc("is_producing_user", { p_user: account.user_id });
       for (const c of conciergeCandidates) {
         const addr = (c.from_address || "").toLowerCase().trim();
-        if (!addr || seen.has(addr)) continue;
+        if (!addr) continue;
+        if (addr === (account.email_address || "").toLowerCase()) continue;
+
+        // ── 1. SOURCE FIRST ──────────────────────────────────────────────────
+        // How leads actually arrive in this industry: portals (Zillow,
+        // realtor.com, Homes.com, Redfin), rental portals, the brokerage's own
+        // IDX and franchise sites, CRM platforms, showing requests, home-value
+        // requests. Each has a fixed lead TEMPLATE. Matching it is certain in a
+        // way no keyword can be — the same domains send "New realtor.com lead -
+        // Zachary Brewer" and "Your 33756 leads are inside". These come from
+        // notification addresses and Gmail files many under Updates, which is
+        // exactly why the old gate threw real buyers away. The template check
+        // runs BEFORE any bulk filter.
+        const { data: src } = await supabase.rpc("match_lead_source", { p_from: addr, p_subject: c.subject || "" });
+        if (src && src.source) {
+          const text = String(c.body || c.snippet || "");
+          const ownDomain = (account.email_address || "").split("@")[1] || "";
+          const buyerEmail = (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [])
+            .map((e) => e.toLowerCase())
+            .find((e) => !/(zillow|realtor\.com|move\.com|homes\.com|rent\.com|redfin|xomio|apartments\.com|noreply|no-reply)/.test(e)
+                         && !(ownDomain && e.endsWith("@" + ownDomain))) || null;
+          const buyerPhone = ((text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0]) || null;
+          const leadName = src.lead_name || c.from_name || null;
+          const excerpt = text.replace(/\s+/g, " ").slice(0, 700);
+          if (producing === false) {
+            const { error: blErr } = await supabase.from("brokerage_leads").upsert({
+              received_by: account.user_id, source: src.source, channel: src.channel,
+              lead_name: leadName, lead_email: buyerEmail || (src.source === "Zillow" ? addr : null), lead_phone: buyerPhone,
+              property: src.property || null, subject: c.subject, excerpt, provider_message_id: c.provider_message_id,
+            }, { onConflict: "provider_message_id", ignoreDuplicates: true });
+            if (blErr) console.error("[brokerage_leads] route failed", blErr.message);
+          } else {
+            await supabase.functions.invoke("lead-concierge", { body: {
+              user_id: account.user_id, lead_name: leadName, source: src.source,
+              // Zillow's conversation relay delivers a reply to the buyer, so
+              // the sender address is usable there; elsewhere it is not.
+              lead_email: buyerEmail || addr, lead_phone: buyerPhone, channel: "email",
+              inbound_text: ["Source: " + src.source, src.property ? "Property: " + src.property : null,
+                             "Subject: " + (c.subject || ""), excerpt].filter(Boolean).join("\n"),
+              email_context: { account_id: account.id, provider_message_id: c.provider_message_id, provider_thread_id: c.provider_thread_id },
+            } });
+          }
+          continue;
+        }
+
+        // Past this point there is no lead template. The broker's and office
+        // manager's inboxes are not a lead funnel; for them, stop here.
+        if (producing === false) continue;
+        if (seen.has(addr)) continue;
         seen.add(addr);
         // skip obvious non-humans
         if (/no-?reply|do-?not-?reply|notification|mailer-daemon|postmaster|automated|@.*(mailchimp|sendgrid|amazonses|constantcontact)/i.test(addr)) continue;
@@ -674,7 +729,14 @@ async function syncOneAccount(supabase, account, opts) {
           .select("id, name, type, last_outbound_at").eq("user_id", account.user_id)
           .ilike("email", addr).limit(1).maybeSingle();
         const established = contact && (contact.last_outbound_at || (contact.type && !["lead", "prospect", "new"].includes(String(contact.type).toLowerCase())));
-        if (established) continue;
+        const bodyText = ((c.subject || "") + " " + String(c.body || c.snippet || "")).toLowerCase();
+        // ── 2. REFERRALS ─────────────────────────────────────────────────────
+        // The biggest lead source for most agents is the sphere: someone they
+        // already know saying a friend, neighbour or relative is looking. That
+        // email comes from an ESTABLISHED contact, which the old gate skipped by
+        // definition, so the single best lead an agent gets was never surfaced.
+        const referral = /\b(friend|co-?worker|colleague|neighbou?r|sister|brother|cousin|son|daughter|parents?|mom|dad|in-?laws?|boss|client of mine|someone i know|a couple)\b.{0,60}\b(looking (to|for)|wants? to|thinking (about|of)|needs? (an? )?(agent|realtor)|(buy|sell|list)(ing)?\b|relocat)/.test(bodyText);
+        if (established && !referral) continue;
 
         // ── THE FUNNEL ────────────────────────────────────────────────────────
         // Before this, EVERY inbound email became a "new lead waiting to reply
@@ -712,8 +774,25 @@ async function syncOneAccount(supabase, account, opts) {
           .eq("user_id", account.user_id).ilike("from_address", addr).eq("direction", "inbound");
         if ((seenBefore || 0) > 8 && !(contact && contact.last_outbound_at)) continue;
         // ──────────────────────────────────────────────────────────────────────
+        // ── 3. A STRANGER WITH REAL-ESTATE INTENT ───────────────────────────
+        // "Someone new who is not a robot" produced 5,997 cards and a queue no
+        // one could work. A stranger is a lead when they say what they want: to
+        // buy, sell, rent, see a home, know what theirs is worth, or talk to an
+        // agent. Everyone else still reaches the inbox — just not as a lead.
+        // INTENT IS A PERSON SAYING WHAT THEY WANT, not the topic being mentioned.
+        // The first version matched bare words like "home" and "property",
+        // which appear in every real estate newsletter, and kept 181 of Ola's
+        // 309 cards. Same patterns as the archive pass run on 21 Sep, which cut
+        // 925 waiting cards to 14 — nearly all of them real.
+        const intent = new RegExp("((i|we)('m|'re| am| are) (looking|interested|thinking|planning|hoping|ready)|(i|we) (want|would like|need|plan) to (buy|sell|list|rent|lease|see|tour|view|move|make an offer)|(can|could|may) (i|we) (see|tour|view|schedule|come by|look at)|schedule (a|an) (showing|tour|viewing|walk-?through)|is (it|this|the (home|house|property|unit|condo)).{0,30}still available|still (available|on the market)|how much (is|would|does|are)|what('s| is| would) my (home|house|condo|property).{0,20}(worth|value|sell for)|pre-?approved|make an offer|(relocating|moving) to|looking (to|for) (buy|sell|rent|a (home|house|place|condo|rental))|need (an? )?(agent|realtor))").test(bodyText);
+        // A VENDOR SAYS "YOUR BUYER"; A LEAD SAYS "I WANT TO BUY". Pitches to the
+        // agent — lead-selling networks, lenders, coaches — talk about buyers and
+        // sellers in the third person and carry list-mail furniture.
+        const pitch = new RegExp("(unsubscribe|view (this )?(email )?in (your )?browser|mailchi\\.mp|click here|your (buyers?|sellers?|clients?|listings?|business|pipeline|leads?|database|sphere)|(realtors?|agents?|brokers?) (should|need to|can now|who)|adding agents|join (our|the) network|invitation-only|limited spots|webinar|register (now|today)|free (trial|demo)|promo code|% off|sponsored|advertis|always be closing|sell more (homes|listings)|most agents|if you need a (quick )?(pre-?approval|lender)|whenever you need a lender)").test(bodyText);
+        if (!referral && (!intent || pitch)) continue;
         await supabase.functions.invoke("lead-concierge", { body: {
           user_id: account.user_id, contact_id: contact ? contact.id : null,
+          source: referral ? "Referral" : "Direct inquiry",
           lead_name: (contact && contact.name) || c.from_name || null,
           lead_email: c.from_address, channel: "email",
           inbound_text: (c.subject ? "Subject: " + c.subject + "\n\n" : "") + (c.snippet || ""),

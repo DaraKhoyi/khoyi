@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const b = await req.json();
-    const { user_id, contact_id, lead_phone, lead_email, channel, email_context } = b;
+    const { user_id, contact_id, lead_phone, lead_email, channel, email_context, source } = b;
     let { lead_name, inbound_text } = b;
     const isEmail = channel === "email";
     const leadHandle = isEmail ? lead_email : lead_phone;
@@ -41,14 +41,32 @@ Deno.serve(async (req) => {
     const since = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
     const dupeCol = isEmail ? "lead_email" : "lead_phone";
     const { data: existing } = await admin.from("lead_concierge").select("id").eq("user_id", user_id).eq(dupeCol, leadHandle).eq("status", "pending").gte("created_at", since).limit(1);
+    // realtor.com sends every buyer from the same leads@ address. Deduping on the
+    // address alone would swallow the second buyer of the day; for a recognised
+    // source the buyer's name is part of the identity.
+    if (existing && existing.length && source && lead_name) {
+      const { data: sameBuyer } = await admin.from("lead_concierge").select("id").eq("user_id", user_id)
+        .eq(dupeCol, leadHandle).eq("status", "pending").ilike("lead_name", String(lead_name)).gte("created_at", since).limit(1);
+      if (!sameBuyer || !sameBuyer.length) existing.length = 0;
+    }
     if (existing && existing.length) return new Response(JSON.stringify({ ok: true, skipped: "already_pending" }), { headers: { ...cors, "Content-Type": "application/json" } });
 
     const { voice, name } = await loadVoice(admin, user_id);
     const firstName = (lead_name || "").trim().split(/\s+/)[0] || null;
 
-    const channelLine = isEmail
+    // HOW TOP AGENTS ANSWER EACH KIND OF LEAD. A portal buyer has usually sent
+    // the same inquiry to three agents and will talk to whoever answers first
+    // and most usefully; a referral arrives warm and must thank the referrer; a
+    // rental lead is a future buyer; a home-value request is a seller.
+    const sourceLine = !source ? "" : ({
+      "Referral": "This came from someone the agent already knows, about a friend or relative who needs help. Thank them warmly for thinking of the agent, and ask for the best way to reach the person they mentioned.",
+      "Direct inquiry": "A new person wrote in about real estate. Answer what they actually asked before anything else.",
+      "Rent.com / Apartments": "A RENTAL inquiry. Confirm the rental is available or offer comparable ones, propose a viewing time, and ask their move-in date. Renters today are buyers in a year or two — be generous.",
+      "Home-value request": "A HOMEOWNER asking what their home is worth — a potential seller. Thank them, say you will prepare a proper market analysis rather than an online estimate, and ask one question about the home's condition or updates.",
+    } as Record<string,string>)[source] || `A buyer lead from ${source}. They have very likely contacted several agents at once; speed and usefulness win. Mention the specific property if one is named, offer two concrete times to see it (today or tomorrow), and ask ONE qualifying question — whether they are pre-approved, or their timeline. Never say "thanks for reaching out".`;
+    const channelLine = (sourceLine ? sourceLine + " " : "") + (isEmail
       ? `Write the agent's FIRST reply to a brand-new lead who EMAILED in. Warm, human, and helpful: greet them by first name if known, engage with what they asked, and move toward a conversation (offer to help, ask one easy question, or suggest a quick call). 2-5 sentences — an email, not a text, but still concise and personal. No signature (the app adds it). Return ONLY the email body text.`
-      : `Write the agent's FIRST reply to a brand-new lead who TEXTED. 1-3 short sentences, like a real person texting. No subject line, no signature, no emojis unless the agent's voice uses them. Return ONLY the message text.`;
+      : `Write the agent's FIRST reply to a brand-new lead who TEXTED. 1-3 short sentences, like a real person texting. No subject line, no signature, no emojis unless the agent's voice uses them. Return ONLY the message text.`);
 
     const sys = (voice
       ? `You write ${isEmail ? "emails" : "text messages"} for ${name || "a real-estate agent"}, in their own voice, captured here and authoritative on tone, phrasing, and word choice:\n"""${voice}"""\n`
@@ -82,6 +100,7 @@ Deno.serve(async (req) => {
       lead_phone: isEmail ? null : lead_phone, lead_email: isEmail ? lead_email : null,
       channel: channel || "sms", inbound_text: inbound_text || null,
       draft, draft_subject: draftSubject, email_context: email_context || null, status: "pending",
+      source: source || null,
     }).select("id").single();
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
 
