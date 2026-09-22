@@ -117,6 +117,9 @@ Rules:
 - "owner":"me" = something Dara agreed to do. "owner":"them" = something the other person agreed to do (Dara should track/expect it).
 - Resolve relative dates ("by Friday", "next week", "tomorrow") to an absolute YYYY-MM-DD using the provided current date. If no timeframe was given, use null.
 - Keep titles short and actionable. Do not invent commitments that were not discussed.
+- Only work FOR DARA: something Dara will do, or something another person will deliver TO Dara that he may need to chase. A contractor or vendor describing the steps of their own job is not Dara's task.
+- Every title names the person and stands alone a week later: "Send Svetlana the cost breakdown for the Virginia Ave repairs", never "Send the words" or "Take care of it".
+- Skip anything done during the call ("let me check now"), anything conditional ("if I run into tenants"), requests Dara did not agree to, and logistics already settled on the call.
 LANGUAGE:
 - The transcript may contain more than one language (the speaker code-switches, e.g. English with Farsi, or English with Spanish). Write ALL of your output — call_summary, every action item title, and every note — in clear, natural English, translating from the other language(s) as needed. Never leave non-English text in the summary or tasks.
 PRONOUNS (get these exactly right in the summary and notes):
@@ -275,6 +278,20 @@ serve(async (req) => {
         }
       } catch (_e) { /* extraction optional — timeline still recorded */ }
 
+      // ALREADY ON THE PLATE? The same call is read by call-commitments too, and
+      // 61% of the broker's dismissals were a promise he had already seen in the
+      // other queue. Same shared check, so the two extractors can never show one
+      // promise twice — nor re-propose a task that is already open.
+      if (proposed.length) {
+        const fresh: any[] = [];
+        for (const it of proposed) {
+          try {
+            const { data: dup } = await admin.rpc("find_similar_work", { p_user: call.user_id, p_contact: contact ? contact.id : null, p_title: it.title });
+            if (!dup) fresh.push(it);
+          } catch (_) { fresh.push(it); }   // if the check fails, show it rather than lose it
+        }
+        proposed = fresh;
+      }
       actions += proposed.length;
       const reviewStatus = proposed.length ? "pending" : "done";
       await admin.from("quo_calls").update({

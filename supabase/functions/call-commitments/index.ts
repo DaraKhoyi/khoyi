@@ -130,12 +130,20 @@ serve(async (req) => {
         const sys =
           "Extract real COMMITMENTS from a phone call, and identify any third-party speakers. Strict JSON, no fence:\n" +
           '{ "speakers": [ { "label":"C", "name":"best guess of who this is", "confidence":"high"|"low" } ], ' +
-          '"commitments": [ { "owner":"me"|"them"|"other", "owner_name":"who owes it (a speaker name)", "title":"...", "quote":"...", "fuse":"immediate"|"near"|"distant", "due_date":"YYYY-MM-DD"|null, "confidence":"high"|"low" } ] }\n\n' +
+          '"commitments": [ { "owner":"me"|"them"|"other", "owner_name":"the real name of who owes it", "title":"...", "next_step":"...", "context":"...", "owed_to_me":true|false, "quote":"...", "fuse":"immediate"|"near"|"distant", "due_date":"YYYY-MM-DD"|null, "confidence":"high"|"low" } ] }\n\n' +
           "A commitment is somebody saying they WILL DO a specific thing. Rules:\n" +
           "- QUOTE IT. Copy the actual sentence into `quote`. If you cannot quote it, do not extract it.\n" +
           "- OWNER is whoever said they'd do it, from the speaker labels. `me` = the agent, `them` = the primary contact on the call, `other` = a third party. When `other`, put their spoken name in `owner_name`. Never infer from who benefits.\n" +
           "- SPEAKERS: for any speaker labelled 'Speaker C/D/…' (not already named), guess who they are from context (a name used in the call, a role). Only include speakers you can actually name; low confidence is fine. If none, use an empty list.\n" +
           "- ACTIONABLE only. A verb and an object. Topics, worries, opinions, 'we should look into it', pleasantries and small talk are NOT commitments.\n" +
+          // EVERY RULE BELOW IS A MEASURED CAUSE OF THE BROKER'S 190 DISMISSALS (21 Sep).
+          "- IT MUST CREATE WORK FOR THE AGENT. Either the agent will do it, or someone will deliver something TO the agent or the agent's client that the agent may have to chase (a document, a payment, a call back, an answer, a key). Set owed_to_me=true only then. A contractor describing the steps of their own job ('I'll come back Wednesday and finish the plumbing', 'I'll disconnect the cabana to test it') is THEIR work, not the agent's — do not extract it. Half of all dismissed cards were other people's promises that owed the agent nothing.\n" +
+          "- Personal and family promises count exactly as much as real-estate ones: the agent runs his whole life through this list.\n" +
+          "- NAME THE PERSON. owner_name is always a real name from the call or the known-people list. If you cannot say who owes it, do not extract it — a card reading 'Unknown said they would' was the second most-dismissed kind.\n" +
+          "- THE TITLE MUST STAND ALONE, read a week later by someone who never heard the call: verb + concrete object + person, and the property or deal if there is one. 'Send Svetlana the cost breakdown for the Virginia Ave repairs', never 'Send the words', 'Take care of something tomorrow' or 'Talk to her about it'.\n" +
+          "- next_step is what THE AGENT should do, in one line, even when someone else made the promise: 'Chase Tom on Thursday for the cabana test result'. This is the line the agent reads to know what the card wants.\n" +
+          "- context is one short line on what it is about: the property, the deal, the amount.\n" +
+          "- NOT COMMITMENTS: anything done during the call or the moment it ends ('let me check the email now', 'I'll text you instead of calling'); anything conditional ('if I run into tenants I'll send them your way'); a REQUEST the other person made that the agent did not agree to ('could you reverse the late fee?'); logistics already settled on the call ('meet you there at one').\n" +
           "- Default to NO. An empty list is a perfectly good answer, and is the RIGHT answer for most calls. Everything you leave out is still captured in the call summary.\n" +
           "- Do not invent dates. Only set due_date if a date or day was actually said; resolve 'Monday' against the call date.\n" +
           "- confidence low if the wording is vague or you are unsure who said it.\n" +
@@ -177,9 +185,24 @@ serve(async (req) => {
         }
 
         let kept = 0;
+        const skipped = { conditional: 0, in_the_moment: 0, vague: 0, not_owed_to_agent: 0, unknown_person: 0, duplicate: 0 };
         for (const c of list) {
           // The quote is the receipt. No receipt, no commitment.
           if (!c?.title || !c?.quote || !["me", "them", "other"].includes(c.owner)) continue;
+          // The prompt asks; the code enforces. Each guard is a dismissal pattern
+          // measured on 21 Sep — the model follows instructions most of the time,
+          // and "most of the time" is how 190 dismissals happen.
+          const q = String(c.quote).toLowerCase();
+          if (/^\s*(if|when|once|in case)\b/.test(q) || /\bif (i|we|you|they|he|she) (run|see|hear|find|get|come)\b/.test(q)) { skipped.conditional++; continue; }
+          if (/(right now|let me (check|look|see|pull|grab|find)|real quick|in a (minute|second|sec)|as we speak|when we hang up|\bnow\b)/.test(q) && c.fuse === "immediate") { skipped.in_the_moment++; continue; }
+          if (/\b(something|stuff|things|take care of it|that matter|the contact|the words)\b/i.test(String(c.title)) || String(c.title).trim().split(/\s+/).length < 4) { skipped.vague++; continue; }
+          if (c.owner !== "me" && c.owed_to_me === false) { skipped.not_owed_to_agent++; continue; }
+          if (c.owner !== "me" && !String(c.owner_name || "").trim() && !call.contact_id) { skipped.unknown_person++; continue; }
+          // Already on the plate? An open task, an open card, or a pending call
+          // follow-up. 61% of dismissals were a promise the agent had already seen
+          // in the OTHER queue, worded differently by a different extractor.
+          const { data: dup } = await db.rpc("find_similar_work", { p_user: call.user_id, p_contact: call.contact_id, p_title: String(c.title) });
+          if (dup) { skipped.duplicate++; continue; }
           // Resolve owner → owner_contact_id for third parties.
           let owner = c.owner;
           let owner_contact_id: string | null = null;
@@ -201,6 +224,9 @@ serve(async (req) => {
             owner,
             owner_contact_id,
             title: String(c.title).slice(0, 300),
+            owner_name: String(c.owner_name || "").slice(0, 120) || null,
+            next_step: c.next_step ? String(c.next_step).slice(0, 300) : null,
+            context: c.context ? String(c.context).slice(0, 300) : null,
             quote: String(c.quote).slice(0, 600),
             fuse: ["immediate","near","distant"].includes(c.fuse) ? c.fuse : "near",
             due_date: /^\d{4}-\d{2}-\d{2}$/.test(c.due_date || "") ? c.due_date : null,
@@ -211,7 +237,7 @@ serve(async (req) => {
           if (!error) kept++;
         }
         await db.from("quo_calls").update({ commitments_read_at: new Date().toISOString() }).eq("id", call.id);
-        out.push({ id: call.id, who: them, found: list.length, kept, extras: extras.length, named: speakers.length });
+        out.push({ id: call.id, who: them, found: list.length, kept, skipped, extras: extras.length, named: speakers.length });
       } catch (e) {
         // deliberately NOT marked read: a genuine failure deserves another go.
         out.push({ id: call.id, error: String((e as Error)?.message || e).slice(0, 110) });

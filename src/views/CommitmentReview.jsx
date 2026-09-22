@@ -67,7 +67,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
 
   async function load() {
     let q = supabase.from('commitments')
-      .select('id,contact_id,owner,owner_contact_id,title,quote,due_date,confidence,status,call_id,fuse')
+      .select('id,contact_id,owner,owner_contact_id,owner_name,title,next_step,context,quote,due_date,confidence,status,call_id,fuse')
       .in('status', ['proposed', 'accepted'])
       .order('created_at', { ascending: false });
     if (contactId) q = q.eq('contact_id', contactId);
@@ -361,7 +361,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
         <span style={{ ...lab, color: c.owner === 'me' ? 'var(--accent-2)' : 'var(--text-3)' }}>
           {c.owner === 'me' ? 'You said you would'
             : c.owner_contact_id ? `${responsible(c)} is on the hook`
-            : `${c.contact_name} said they would`}
+            : `${c.owner_name || c.contact_name || 'Someone on the call'} said they would`}
         </span>
         {c.confidence === 'low' && <span style={{ fontSize: 9, color: EMBER, fontWeight: 700 }}>· unsure</span>}
       </div>
@@ -392,6 +392,16 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
           <div onClick={() => setEditingId(c.id)} title="Tap to reword"
             style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.4, cursor: 'text' }}>{c.title}</div>
         )
+      )}
+      {c.next_step && (
+        <div style={{ fontSize: 13, color: 'var(--text-1)', margin: '7px 0 0', lineHeight: 1.45 }}>
+          <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10.5, fontWeight: 800,
+            letterSpacing: '.14em', textTransform: 'uppercase', color: '#C5A95E', marginRight: 6 }}>You</span>
+          {c.next_step}
+        </div>
+      )}
+      {c.context && (
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 3 }}>{c.context}</div>
       )}
       {c.quote && (
         <div style={{ fontSize: 12, color: 'var(--text-2)', fontStyle: 'italic', margin: '6px 0 0',
