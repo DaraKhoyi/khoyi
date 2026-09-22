@@ -56,13 +56,27 @@ function toDate(v: any, fallbackYear?: number): string | null {
   // directly — going through toISOString() would shift the day across the
   // timezone boundary for anything before 00:00 UTC.
   if (v instanceof Date && !isNaN(v.getTime())) {
+    // A real date cell can still be a typo: the sheet holds received dates in
+    // the year 20226 and the year 205. Keep nothing rather than a year that
+    // throws every date comparison built on it.
+    if (fallbackYear && Math.abs(v.getFullYear() - fallbackYear) > 1) return null;
     const y = v.getFullYear(), mo = String(v.getMonth() + 1).padStart(2, "0"), d = String(v.getDate()).padStart(2, "0");
     return `${y}-${mo}-${d}`;
   }
-  const s = String(v).trim();
+  let s = String(v).trim();
+  // Deliberate blanks, not unreadable dates.
+  if (/^(-+|n\/?a|none|0|tbd|\?)$/i.test(s)) return null;
+  // "3/15 Dara" — a date with a note after it. Keep the date.
+  const lead = s.match(/^(\d{1,2}[\/.\-]\d{1,2}(?:[\/.\-]\d{2,4})?)\s+\D/);
+  if (lead) s = lead[1];
   // "12/30" — the sheet holds some dates as text with no year at all. It belongs
   // to the tab it was read from.
-  const md = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  // "9.9", "8.31", "12-30" — the paid-date column is typed as MONTH.DAY with a
+  // dot. Only the slash form was recognised, so "9.9" fell through to
+  // new Date("9.9"), which V8 reads as 9 Sep 2001: 149 sales stored as paid in
+  // 2001, silently dropping out of every trailing-12-month GCI and every
+  // last-close date. Any of / . - now takes the tab's year.
+  const md = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-]?$/);   // also "9/9/" — a trailing slash with no year
   if (md && fallbackYear) {
     const mo = parseInt(md[1], 10), d = parseInt(md[2], 10);
     if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
@@ -85,8 +99,15 @@ function toDate(v: any, fallbackYear?: number): string | null {
     if (parseInt(mo, 10) > 12 || parseInt(d, 10) > 31) return null;
     return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
+  // LAST RESORT, AND IT MAY NOT INVENT A YEAR. new Date() fills a missing year
+  // with 2001 and turned "7.10"-style junk into the year 710. A date more than a
+  // year away from the tab it came from is not a date we understood: store
+  // nothing rather than a wrong number that looks right.
   const dt = new Date(s);
-  return isNaN(dt.getTime()) ? null : dt.toISOString().slice(0, 10);
+  if (isNaN(dt.getTime())) return null;
+  const y = dt.getUTCFullYear();
+  if (y < 2000 || (fallbackYear && Math.abs(y - fallbackYear) > 1)) return null;
+  return dt.toISOString().slice(0, 10);
 }
 function txt(v: any): string | null {
   if (v === null || v === undefined) return null;
@@ -180,6 +201,11 @@ Deno.serve(async (req) => {
 
         const gs = toNum(col(r, "Gross Sale"));
         const gc = toNum(col(r, "Gross Commission Received"));
+        // A BLANK ROW IS NOT A FEE. The sheet pre-numbers Trans IDs on rows nobody
+        // has filled in yet; with no agent, no address and no money on them they
+        // were imported as closed "fee" transactions — three of them this morning.
+        const toAgent = toNum(col(r, "Amount to Pay Agent"));
+        if (!txt(agent) && !txt(col(r, "Street Number and Name")) && !gs && !gc && !toAgent) continue;
         const kind = gs && gs > 0 ? "sale" : (gc && gc > 0 ? "commission" : "fee");
         records.push({
           year, trans_id: transId, agent_name_raw: txt(agent) || "(unnamed)", source_tab: tab, source_row: ri + 1,
@@ -192,6 +218,17 @@ Deno.serve(async (req) => {
           notes: txt(col(r, "Notes include who referals are paid to")), title_agent: txt(col(r, "Title Agent")),
           raw_row: raw,
         });
+        // December deal, January cheque: a year-less paid date that lands well
+        // before the money was received belongs to the following year.
+        const last = records[records.length - 1];
+        // Only when the received date is itself believable — a received date
+        // typed as 20226 pushed one paid date into 2027.
+        if (last.date_paid && last.date_received &&
+            Math.abs(new Date(last.date_received).getUTCFullYear() - year) <= 1 &&
+            new Date(last.date_paid).getTime() < new Date(last.date_received).getTime() - 14 * 86400000) {
+          const d = new Date(last.date_paid + "T00:00:00Z"); d.setUTCFullYear(d.getUTCFullYear() + 1);
+          last.date_paid = d.toISOString().slice(0, 10);
+        }
       }
 
       // 4) resolve agents in bulk, then upsert

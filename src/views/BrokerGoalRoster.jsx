@@ -88,6 +88,9 @@ export default function BrokerGoalRoster() {
   // gap in the record, not just a product failure. The broker needs the count by
   // agent, and needs it beside the goals rather than on a screen nobody opens.
   const [expired, setExpired] = useState([]);
+  // Transactions whose numbers a person has to check against the paperwork.
+  const [toCheck, setToCheck] = useState([]);
+  const [showCheck, setShowCheck] = useState(false);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('broker_goal_roster');
@@ -97,6 +100,10 @@ export default function BrokerGoalRoster() {
     try {
       const { data: ex } = await supabase.rpc('expired_commitments_by_agent');
       setExpired(Array.isArray(ex) ? ex : []);
+    } catch (_) { /* the roster still loads */ }
+    try {
+      const { data: pr } = await supabase.rpc('txn_data_problems');
+      setToCheck(Array.isArray(pr) ? pr : []);
     } catch (_) { /* the roster still loads */ }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -137,6 +144,34 @@ export default function BrokerGoalRoster() {
       {/* SILENT EXPIRY MADE VISIBLE. 255 commitments closed their window with
           nobody told — not the agent, not the broker. A 14% completion rate was
           being recorded and never shown to the one person who could act on it. */}
+      {/* NUMBERS TO CHECK. The Skeptic warned that a wrong commission figure
+          flows silently into GCI, pace and 1099s. The sheet import had stored 151
+          paid dates in the year 2001 and a $43.96 commission on a $350,000 sale,
+          and nothing said so. The app cannot know what "$43.96" was meant to be —
+          guessing would be making the silent wrong number ourselves — so it
+          names each row and the exact place in the spreadsheet to fix it. */}
+      {toCheck.length > 0 && (
+        <div style={{ border: '1px solid rgba(197,169,94,.5)', background: 'rgba(197,169,94,.07)',
+          borderRadius: 12, padding: '12px 14px', margin: '12px 0 12px' }}>
+          <button type="button" onClick={() => setShowCheck(v => !v)}
+            style={{ all: 'unset', cursor: 'pointer', display: 'flex', width: '100%', alignItems: 'center', gap: 8, minHeight: 44 }}>
+            <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,
+              letterSpacing: '.16em', textTransform: 'uppercase', color: '#C5A95E', flex: '1 1 0', minWidth: 0 }}>
+              {toCheck.length} transaction{toCheck.length === 1 ? '' : 's'} to check in the sheet
+            </span>
+            <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{showCheck ? 'Hide' : 'Show'}</span>
+          </button>
+          {showCheck && toCheck.map(t => (
+            <div key={t.id} style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>
+                {t.agent}{t.address ? ' \u00b7 ' + t.address : ''}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 2 }}>{t.problem}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{t.sheet}</div>
+            </div>
+          ))}
+        </div>
+      )}
       {expiredTotal > 0 && (
         <div style={{ border: '1px solid rgba(201,86,63,.45)', background: 'rgba(201,86,63,.07)',
           borderRadius: 12, padding: '12px 14px', margin: '12px 0 16px' }}>

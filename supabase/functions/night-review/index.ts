@@ -254,6 +254,12 @@ async function gather(admin: any) {
      from agents a join auth.users u on u.id = a.auth_user_id where a.active`);
   await one("unlinked_txns", `select count(*) n, round(sum(gross_commission)) gci
      from brokerage_transactions where agent_id is null`);
+  // Rows a person must check against the paperwork — commission out of line
+  // with the price, dates the sheet import could not read. Added 21 Sep after
+  // the Skeptic's null-GCI finding turned out to be three blank rows while 151
+  // paid dates had silently become 2001.
+  await one("txn_rows_to_check", `select count(*) n from jsonb_array_elements(
+     (select public._txn_data_problems_all())) x`);   // ungated: the broker check would read 0 with no signed-in user
   await one("goals_set", `select count(*) total, count(*) filter (where exists
      (select 1 from agent_goals g where g.agent_id = a.id and g.year = extract(year from public.today_ny())::int)) with_goal
      from agents a where a.active`);
