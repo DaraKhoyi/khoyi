@@ -43,6 +43,33 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
   const [body, setBody] = useState('');
   const [callByInteraction, setCallByInteraction] = useState({});
   const [openCall, setOpenCall] = useState(null);
+  const [openEmail, setOpenEmail] = useState(null);
+  // Reading an email here should not be a dead end: the three things anyone
+  // wants next are answer it, clear it, or see the whole conversation.
+  const openInInbox = (e, draft) => {
+    try {
+      window.__inboxOpenThreadId = e.thread_id;
+      if (draft) window.__inboxDraftReply = true;
+      if (window.__setView) window.__setView('inbox');
+      else window.location.hash = '#inbox';
+    } catch (_) { /* nothing to do */ }
+  };
+  const archiveEmail = async (e) => {
+    setMailBusy(e.id);
+    const { data, error } = await supabase.functions.invoke('gmail-modify', {
+      body: { account_id: e.account_id, thread_id: e.provider_thread_id, action: 'archive' },
+    });
+    setMailBusy(null);
+    // functions.invoke resolves with { error } — check it, or an archive that
+    // failed looks exactly like one that worked.
+    if (error || (data && data.error)) {
+      if (window.__notify) window.__notify("Couldn't archive that email: " + (error?.message || data.error), 'error');
+      return;
+    }
+    setMailDone(m => ({ ...m, [e.id]: 'Archived' }));
+  };
+  const [mailBusy, setMailBusy] = useState(null);
+  const [mailDone, setMailDone] = useState({});
   const [whenLocal, setWhenLocal] = useState(nowLocalInput());
   const [direction, setDirection] = useState('outbound');
   const [duration, setDuration] = useState('');
@@ -217,6 +244,15 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
         body: (m.subject || '(no subject)') + (m.snippet ? ' \u2014 ' + m.snippet : ''),
         brief: m.snippet || m.subject || '',
         is_read: m.is_read,
+        // The query already returned all of this; the timeline was dropping it,
+        // which is why an email could be seen but never opened or answered.
+        body_text: m.body_text || null,
+        from_name: m.from_name || null,
+        from_address: m.from_address || null,
+        thread_id: m.thread_id || null,
+        provider_thread_id: m.provider_thread_id || null,
+        account_id: m.account_id || null,
+        is_mine: m.is_mine !== false,
         // Whose mailbox this came out of, when it is not yours. Without it a
         // teammate's correspondence reads as though you had it all along.
         via: m.is_mine === false ? (m.mailbox_owner || 'a teammate') : null,
@@ -583,6 +619,55 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
             </div>
           </div>
           {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{decodeEntities(e.body || e.brief)}</div>}
+          {e._email && (
+            <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => setOpenEmail(openEmail === e.id ? null : e.id)}
+                style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--accent)',
+                  borderRadius: 100, padding: '0 13px', minHeight: 36, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                {openEmail === e.id ? 'Hide' : 'Read email'}
+              </button>
+              {mailDone[e.id] && <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{mailDone[e.id]}</span>}
+            </div>
+          )}
+          {e._email && openEmail === e.id && (
+            <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg-base)' }}>
+              <div style={{ padding: '9px 11px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)', lineHeight: 1.35 }}>{e.subject}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>
+                  {(e.direction === 'outbound' ? 'You to ' : 'From ') + (e.from_name || e.from_address || 'them') + ' \u00b7 ' + new Date(e.occurred_at).toLocaleString()}
+                </div>
+              </div>
+              {/* The whole letter, not a preview — that was the ask. Scrolls so a
+                  long thread cannot bury the actions underneath it. */}
+              <div style={{ padding: '10px 11px', maxHeight: 340, overflowY: 'auto', fontSize: 13,
+                color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {e.body_text
+                  ? decodeEntities(e.body_text)
+                  : (e.is_mine
+                      ? (e.brief || 'No text was stored for this message. Open it in the Inbox to read it in full.')
+                      : 'This email is in ' + (e.via || 'a teammate') + "'s mailbox. You can see that it happened, not read it here.")}
+              </div>
+              {e.is_mine && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '9px 11px', borderTop: '1px solid var(--border)' }}>
+                  <button onClick={() => openInInbox(e, true)}
+                    style={{ minHeight: 44, padding: '0 15px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                      background: '#C5A95E', color: '#1a1409', fontSize: 13, fontWeight: 800 }}>
+                    Reply
+                  </button>
+                  <button onClick={() => openInInbox(e, false)}
+                    style={{ minHeight: 44, padding: '0 13px', borderRadius: 10, cursor: 'pointer',
+                      background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 13, fontWeight: 600 }}>
+                    Open the thread
+                  </button>
+                  <button disabled={mailBusy === e.id || !!mailDone[e.id]} onClick={() => archiveEmail(e)}
+                    style={{ minHeight: 44, padding: '0 13px', borderRadius: 10, cursor: mailDone[e.id] ? 'default' : 'pointer',
+                      background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 13, fontWeight: 600 }}>
+                    {mailBusy === e.id ? 'Archiving\u2026' : mailDone[e.id] ? 'Archived' : 'Archive'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {callByInteraction[e.id] && (
             <div style={{ marginTop: 6 }}>
               <button onClick={() => setOpenCall(openCall === e.id ? null : e.id)}
