@@ -79,7 +79,12 @@ export default function CustomFieldsPanel({ userId, contact, contacts = [], setC
       setLoading(true);
       const [{ data: defs }, { data: vals }, { data: sysList }] = await Promise.all([
         supabase.from('custom_field_definitions')
-          .select('*').eq('user_id', userId).eq('scope', 'contact').eq('is_archived', false)
+          // The 90 Prism standard fields are ONE shared set (user_id null), not a
+          // copy per person: they are identical for everyone and nobody can edit
+          // them, so 138 copies bought nothing and grew by 90 rows per signup.
+          // A user's own custom fields still live under their own user_id.
+          .select('*').or('user_id.eq.' + userId + ',user_id.is.null')
+          .eq('scope', 'contact').eq('is_archived', false)
           .order('group_name').order('sort_order'),
         supabase.from('contact_field_values')
           .select('*').eq('contact_id', contact.id),

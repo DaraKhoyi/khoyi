@@ -33,6 +33,11 @@ node smoke/version_bump.mjs
 
 # Readers left behind by a removed mechanism. Needs the Management API, so it is
 # skipped where SUPABASE_PAT is absent rather than failing the run.
+# Clean up after runs that died before their cleanup, and assert the field
+# catalogue is still ONE shared set. Runs FIRST: a purge is worth most before
+# the next throwaway account is created.
+if [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then node smoke/test_hygiene.mjs || exit 1; fi
+
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi
 
 # Scheduled jobs: errored, gone quiet, or "succeeded" while the HTTP call behind
