@@ -13,7 +13,7 @@ const FinanceBlueprint = React.lazy(() => import('./BudgetForecast').then(m => (
 // lazy and do not ride along in the chunk that loads on every finance visit.
 // Lazy on purpose: the importer is ~1,100 lines used a few times a year. A static
 // import would bundle it into the finance chunk and undo the whole point.
-import { SE_TAX_2026, computeNetProfitFromData, computeQuarterlyTaxProjection, nextQuarterDueLabel } from '../taxMath';
+import { SE_TAX_2026, STD_DEDUCTION_2026, TAX_BRACKETS_2026, computeNetProfitFromData, computeQuarterlyTaxProjection, computeSETax, nextQuarterDueLabel } from '../taxMath';
 import { Icon } from '../icons';
 import { canHover, modal, money, num, todayISO, today_ymd, ymd } from '../helpers';
 import { HeaderSearchIcon, HeaderSearchInput, RecruitingKpiTile } from './SharedUi';
@@ -592,74 +592,8 @@ function BudgetRow({ line, onChange, readOnly }) {
 }
 
 
-const TAX_BRACKETS_2026 = {
-  single: [
-    { rate: 0.10, min: 0,        max: 12400 },
-    { rate: 0.12, min: 12400,    max: 50400 },
-    { rate: 0.22, min: 50400,    max: 105700 },
-    { rate: 0.24, min: 105700,   max: 201775 },
-    { rate: 0.32, min: 201775,   max: 256225 },
-    { rate: 0.35, min: 256225,   max: 640600 },
-    { rate: 0.37, min: 640600,   max: null },
-  ],
-  mfj: [
-    { rate: 0.10, min: 0,        max: 24800 },
-    { rate: 0.12, min: 24800,    max: 100800 },
-    { rate: 0.22, min: 100800,   max: 211400 },
-    { rate: 0.24, min: 211400,   max: 403550 },
-    { rate: 0.32, min: 403550,   max: 512450 },
-    { rate: 0.35, min: 512450,   max: 768700 },
-    { rate: 0.37, min: 768700,   max: null },
-  ],
-  // Married filing separately uses single brackets with halved breakpoints —
-  // approximated here.
-  mfs: [
-    { rate: 0.10, min: 0,        max: 12400 },
-    { rate: 0.12, min: 12400,    max: 50400 },
-    { rate: 0.22, min: 50400,    max: 105700 },
-    { rate: 0.24, min: 105700,   max: 201775 },
-    { rate: 0.32, min: 201775,   max: 256225 },
-    { rate: 0.35, min: 256225,   max: 384350 },
-    { rate: 0.37, min: 384350,   max: null },
-  ],
-  hoh: [
-    { rate: 0.10, min: 0,        max: 17700 },
-    { rate: 0.12, min: 17700,    max: 67450 },
-    { rate: 0.22, min: 67450,    max: 105700 },
-    { rate: 0.24, min: 105700,   max: 201775 },
-    { rate: 0.32, min: 201775,   max: 256200 },
-    { rate: 0.35, min: 256200,   max: 640600 },
-    { rate: 0.37, min: 640600,   max: null },
-  ],
-};
 
-const STD_DEDUCTION_2026 = {
-  single: 16100,
-  mfj: 32200,
-  mfs: 16100,
-  hoh: 24150,
-};
 
-function computeSETax(netProfit, filingStatus = 'single') {
-  const c = SE_TAX_2026;
-  if (!Number.isFinite(netProfit) || netProfit <= 0) {
-    return { ssTax: 0, medicareTax: 0, additionalMedicare: 0, total: 0, aboveLineDeduction: 0, seEarnings: 0 };
-  }
-  // Net earnings subject to SE tax (the 0.9235 factor "evens out" the
-  // employer half of SS/Medicare that wouldn't be subject to SE tax)
-  const seEarnings = netProfit * c.se_deduction_factor;
-  const ssTax = Math.min(seEarnings, c.ss_wage_base) * c.ss_rate;
-  const medicareTax = seEarnings * c.medicare_rate;
-  const addlThreshold = filingStatus === 'mfj'
-    ? c.additional_medicare_threshold_mfj
-    : c.additional_medicare_threshold_single;
-  const additionalMedicare = Math.max(0, seEarnings - addlThreshold) * c.additional_medicare_rate;
-  const total = ssTax + medicareTax + additionalMedicare;
-  // Above-the-line deduction = half of (SS + Medicare). The Additional
-  // Medicare 0.9% is NOT deductible above-the-line.
-  const aboveLineDeduction = (ssTax + medicareTax) / 2;
-  return { ssTax, medicareTax, additionalMedicare, total, aboveLineDeduction, seEarnings };
-}
 
 
 export { FinanceView };

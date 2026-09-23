@@ -29,14 +29,21 @@ const GLOBALS = new Set([
   'DataTransfer','Notification','speechSynthesis','SpeechSynthesisUtterance','MediaRecorder','AudioContext',
   'Uint8Array','Uint16Array','Uint32Array','Int8Array','Int16Array','Int32Array','Float32Array','Float64Array',
   'ArrayBuffer','DataView','SharedArrayBuffer','caches','escape','unescape','WeakRef','FinalizationRegistry',
-  'CSS','DOMParser','XMLSerializer','XMLHttpRequest','WebSocket','Worker','BroadcastChannel','ClipboardItem',
+  'indexedDB','IDBKeyRange','CSS','DOMParser','XMLSerializer','XMLHttpRequest','WebSocket','Worker','BroadcastChannel','ClipboardItem',
   'webkitAudioContext','SpeechRecognition','webkitSpeechRecognition','getComputedStyle','matchMedia','scrollTo',
 ]);
 
-const files = [
-  'src/App.js',
-  ...readdirSync('src/views').filter(f => /\.jsx?$/.test(f)).map(f => `src/views/${f}`),
-];
+// EVERY source file, not just App.js and the views. audio.js was carved out of
+// App.js and left this guard's coverage behind with it: it called tus.Upload
+// while the import stayed in App.js, so every recording upload from a contact
+// failed with "tus is not defined" and nothing caught it. A guard that covers
+// part of the tree grows blind exactly where the code is being moved.
+const files = (function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory()
+      ? (/(node_modules|build|dist)/.test(e.name) ? [] : walk(`${dir}/${e.name}`))
+      : (/\.jsx?$/.test(e.name) && !/\.test\.jsx?$/.test(e.name) ? [`${dir}/${e.name}`] : []));
+})('src');
 
 // Known-missing allowlist. It should only ever SHRINK, and only because the
 // identifier now exists — never because a finding got inconvenient. As of

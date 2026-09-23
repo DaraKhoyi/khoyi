@@ -2,6 +2,7 @@
 // Recording upload path: detect formats Whisper can't take, transcode to mp3
 // via self-hosted ffmpeg.wasm, and resumable-upload to storage. Shared by the
 // contact recordings section and the App-level recording uploader.
+import * as tus from 'tus-js-client';
 import { supabase, SUPABASE_URL } from './dataService';
 
 export const WHISPER_OK_EXT = ['mp3', 'm4a', 'wav', 'webm', 'mp4', 'mpeg', 'mpga', 'ogg', 'oga', 'flac', 'aac'];

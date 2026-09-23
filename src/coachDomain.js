@@ -1,3 +1,5 @@
+import { todayNY } from './clock';
+import { supabase } from './dataService';
 // coachDomain — the behaviour-driven coaching engine.
 // Extracted from App.js (strangle the monolith, step 24). Pure logic + constants
 // shared by CoachNudge (the dashboard nudge) and CoachView (the Coach screen);

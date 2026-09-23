@@ -3,6 +3,7 @@
 // across FileDetailModal, DocumentsView, the signature flow and email-filing.
 import React from 'react';
 import { supabase } from './dataService';
+import { DEADLINE_DEFS } from './systemHealth';
 
 export function docOriginMeta(d){
   if(d.source==='generated') return { label:'PrismOS', color:'var(--accent)' };
