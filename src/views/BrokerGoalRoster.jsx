@@ -96,6 +96,9 @@ export default function BrokerGoalRoster() {
   const [producers, setProducers] = useState([]);
   const [pick, setPick] = useState({});
   const [speed, setSpeed] = useState([]);
+  // Live SLA on company leads. One sat unrouted for ten days because nothing
+  // watched the clock and nothing escalated; this is the watch.
+  const [sla, setSla] = useState(null);
   const [routeMsg, setRouteMsg] = useState('');
   const [showCheck, setShowCheck] = useState(false);
 
@@ -115,6 +118,7 @@ export default function BrokerGoalRoster() {
       setRouteQ(Array.isArray(lq) ? lq : []);
       setProducers(Array.isArray(pa) ? pa : []);
       setSpeed(Array.isArray(sp) ? sp : []);
+      try { const { data: sd } = await supabase.rpc('lead_sla_dashboard'); setSla(sd && sd.settings ? sd : null); } catch (_) {}
     } catch (_) { /* the roster still loads */ }
     try {
       const { data: pr } = await supabase.rpc('txn_data_problems');
@@ -165,11 +169,97 @@ export default function BrokerGoalRoster() {
           and nothing said so. The app cannot know what "$43.96" was meant to be —
           guessing would be making the silent wrong number ourselves — so it
           names each row and the exact place in the spreadsheet to fix it. */}
+      {/* LIVE SLA. Not a monthly report: what is in flight right now, how long it
+          has been, and what has already breached. A buyer who filled in a form
+          nine days ago has signed with someone else. */}
+      {sla && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', margin: '12px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+            <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,
+              letterSpacing: '.16em', textTransform: 'uppercase' }}>Lead response · live</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+              {'claim in ' + sla.settings.claim_minutes + ' min · reply in ' + sla.settings.response_minutes + ' min'}
+            </span>
+          </div>
+          {sla.today && (
+            <div style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.6 }}>
+              {sla.today.leads + ' today · ' + sla.today.answered + ' answered · ' + sla.today.within_5_min + ' inside 5 min'
+                + (sla.today.median_minutes != null ? ' · median ' + sla.today.median_minutes + ' min' : '')
+                + (sla.today.escalations ? ' · ' + sla.today.escalations + ' passed on' : '')}
+            </div>
+          )}
+          {sla.waiting_on_broker > 0 && (
+            <div style={{ fontSize: 13, color: '#E4674F', fontWeight: 700, marginTop: 4 }}>
+              {sla.waiting_on_broker + ' waiting on you'
+                + (sla.oldest_wait_minutes != null ? ' · oldest ' + (sla.oldest_wait_minutes < 90
+                    ? sla.oldest_wait_minutes + ' min' : Math.round(sla.oldest_wait_minutes / 60) + ' h') : '')}
+            </div>
+          )}
+          {(sla.in_flight || []).slice(0, 6).map((f, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '5px 0',
+              borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <span style={{ flex: '1 1 0', minWidth: 0, fontSize: 12.5, color: 'var(--text-1)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.lead + ' · ' + f.agent}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700,
+                color: f.minutes <= 5 ? '#7BC47F' : f.minutes <= 60 ? '#EBCB82' : '#E4674F' }}>
+                {(f.claimed ? 'claimed · ' : 'unclaimed · ') + (f.minutes < 90 ? f.minutes + ' min' : Math.round(f.minutes / 60) + ' h')}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {/* LEADS WAITING FOR AN AGENT. A buyer who inquires through a portal has
           usually asked three agents at once and goes with whoever answers
           first. When that inquiry lands on the broker or the office manager it
           used to become a card nobody worked. Now it waits here, with how long
           it has been waiting, until it is handed to someone who sells. */}
+      {/* LIVE SLA on COMPANY leads — the ones the ladder can move. An agent's own
+          leads are theirs by Dara's ownership rule: shown separately, measured,
+          never reassigned. Averaging the two would make the brokerage's number
+          whatever the agents' own habits are. */}
+      {sla && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', margin: '12px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+            <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,
+              letterSpacing: '.16em', textTransform: 'uppercase' }}>Lead response · live</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+              {'claim in ' + sla.settings.claim_minutes + ' min, reply in ' + sla.settings.response_minutes + ' min'}
+            </span>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.6 }}>
+            {'Company leads today: ' + (sla.today ? sla.today.leads : 0) + ' · ' + (sla.today ? sla.today.answered : 0) + ' answered'
+              + (sla.today && sla.today.within_5_min ? ' · ' + sla.today.within_5_min + ' inside 5 min' : '')
+              + (sla.today && sla.today.median_minutes != null ? ' · median ' + sla.today.median_minutes + ' min' : '')
+              + (sla.today && sla.today.escalations ? ' · ' + sla.today.escalations + ' passed on' : '')}
+          </div>
+          {sla.own_leads_today && sla.own_leads_today.surfaced > 0 && (
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3 }}>
+              {'Agents’ own leads today: ' + sla.own_leads_today.surfaced + ', ' + sla.own_leads_today.answered + ' answered'
+                + (sla.own_leads_today.median_minutes != null ? ' (median ' + sla.own_leads_today.median_minutes + ' min)' : '')}
+            </div>
+          )}
+          {sla.waiting_on_broker > 0 && (
+            <div style={{ fontSize: 13, color: '#E4674F', fontWeight: 700, marginTop: 4 }}>
+              {sla.waiting_on_broker + ' waiting on you'
+                + (sla.oldest_wait_minutes != null ? ', oldest ' + (sla.oldest_wait_minutes < 90
+                    ? sla.oldest_wait_minutes + ' min' : Math.round(sla.oldest_wait_minutes / 60) + ' h') : '')}
+            </div>
+          )}
+          {(sla.in_flight || []).slice(0, 6).map((f, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '5px 0',
+              borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <span style={{ flex: '1 1 0', minWidth: 0, fontSize: 12.5, color: 'var(--text-1)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {f.lead + ' → ' + f.agent}
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: 700,
+                color: f.minutes <= 5 ? '#7BC47F' : f.minutes <= 60 ? '#EBCB82' : '#E4674F' }}>
+                {(f.claimed ? 'claimed, ' : 'unclaimed, ') + (f.minutes < 90 ? f.minutes + ' min' : Math.round(f.minutes / 60) + ' h')}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {routeQ.length > 0 && (
         <div style={{ border: '1px solid rgba(201,86,63,.5)', background: 'rgba(201,86,63,.06)',
           borderRadius: 12, padding: '12px 14px', margin: '12px 0 12px' }}>

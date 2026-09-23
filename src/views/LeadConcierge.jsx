@@ -561,17 +561,33 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                   </button>
                 )}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  {[['done', '\u2713 Done', 'I dealt with it \u2014 replied another way, called, or it is handled. Counts as acting on the lead.'],
+                  {[...(it.needs_claim ? [['claim', 'Claim this lead',
+                      'Tell the brokerage you are on it. Unclaimed leads pass to the next agent.']] : []),
+                    ['done', '\u2713 Done', 'I dealt with it \u2014 replied another way, called, or it is handled. Counts as acting on the lead.'],
                     ['not_a_lead', 'Not a lead', 'Teach the app this sender is not a lead.'],
                     ['archived', 'Archive', 'Clear it without teaching the app anything.']]
                     // Email cards already carry Archive and Not a lead in their mail
                     // toolbar (they act on the Gmail message too). Showing them twice
                     // with two different behaviours would be worse than either.
-                    .filter(([k]) => !isEmail || k === 'done').map(([k, label, tip]) => (
-                    <button key={k} type="button" disabled={busy === it.id} title={tip} onClick={() => resolve(it, k)}
+                    .filter(([k]) => !isEmail || k === 'done' || k === 'claim').map(([k, label, tip]) => (
+                    <button key={k} type="button" disabled={busy === it.id} title={tip}
+                      onClick={async () => {
+                        if (k !== 'claim') return resolve(it, k);
+                        // Claiming stops the handoff clock; it does not clear the
+                        // card, because claiming is not answering.
+                        const { data, error } = await supabase.rpc('claim_my_lead',
+                          { p_email: it.lead_email || null, p_phone: it.lead_phone || null, p_name: it.lead_name || null });
+                        if (window.__notify) {
+                          if (error) window.__notify("Couldn't claim it: " + error.message, 'error');
+                          else if (data && data.ok) window.__notify('Claimed — it stays with you. Reply within 15 minutes.', 'success');
+                          else window.__notify('That lead has already moved on to another agent.', 'info');
+                        }
+                        setItems(list => (list || []).map(x => x.id === it.id ? { ...x, needs_claim: false } : x));
+                      }}
                       style={{ minHeight: 44, padding: '0 12px', borderRadius: 10, fontSize: 13, fontWeight: k === 'done' ? 800 : 600, cursor: 'pointer',
-                        background: 'transparent', color: k === 'done' ? 'var(--accent)' : 'var(--text-2)',
-                        border: '1px solid ' + (k === 'done' ? 'rgba(197,169,94,.55)' : 'var(--border)') }}>
+                        background: k === 'claim' ? '#C5A95E' : 'transparent',
+                        color: k === 'claim' ? '#1a1409' : k === 'done' ? 'var(--accent)' : 'var(--text-2)',
+                        border: '1px solid ' + (k === 'done' ? 'rgba(197,169,94,.55)' : k === 'claim' ? '#C5A95E' : 'var(--border)') }}>
                       {label}
                     </button>
                   ))}
