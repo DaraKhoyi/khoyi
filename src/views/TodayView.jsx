@@ -911,7 +911,7 @@ function CallList() {
     <div className="fade-up" style={{ marginBottom: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '15px 17px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: collapsed ? 0 : 12 }}>
         <span style={{ fontSize: 15 }}>📞</span>
-        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, fontWeight: 800, letterSpacing: '.16em', textTransform: 'uppercase' }}>Your 5 to call today</span>
+        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, fontWeight: 800, letterSpacing: '.16em', textTransform: 'uppercase' }}>{people.length === 1 ? 'One person to call today' : 'Your ' + people.length + ' to call today'}</span>
         <button onClick={() => setCollapsed(v => !v)} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer' }}>{collapsed ? 'Show' : 'Hide'}</button>
       </div>
       {!collapsed && people.map(p => {
