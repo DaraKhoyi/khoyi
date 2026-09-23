@@ -864,10 +864,22 @@ function CallList() {
   const [people, setPeople] = useState(null);
   const [open, setOpen] = useState(null);   // contact_id whose opener is expanded
   const [collapsed, setCollapsed] = useState(false);
+  // Progress, and a way to ask for more. The list counts DOWN as he works — an
+  // automatic top-up meant finishing a call silently produced another, so the
+  // work never visibly ended. Refilling is his choice.
+  const [doneToday, setDoneToday] = useState(0);
+  const [refilling, setRefilling] = useState(false);
 
   const load = React.useCallback(async () => {
     try { const { data } = await supabase.rpc('who_to_call_today', { p_limit: 5 }); setPeople(Array.isArray(data) ? data : []); }
     catch (_) { setPeople([]); }
+    try {
+      const day = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const { count } = await supabase.from('daily_call_list')
+        .select('contact_id', { count: 'exact', head: true })
+        .eq('day', day).not('done_at', 'is', null);
+      setDoneToday(count || 0);
+    } catch (_) { /* the list still works without the tally */ }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -899,19 +911,35 @@ function CallList() {
     try { await supabase.rpc('log_call_list', { p_contact: p.id, p_outcome: 'called' }); } catch (_) {}
     try { window.location.href = 'tel:' + String(p.phone).replace(/[^\d+]/g, ''); } catch (_) {}
     setPeople(list => (list || []).filter(x => x.id !== p.id));   // move it off today's list
+    setDoneToday(n => n + 1);
   };
   const skip = async (p) => {
     try { await supabase.rpc('log_call_list', { p_contact: p.id, p_outcome: 'skipped' }); } catch (_) {}
     setPeople(list => (list || []).filter(x => x.id !== p.id));
+    setDoneToday(n => n + 1);
+  };
+  const refill = async () => {
+    setRefilling(true);
+    const { data, error } = await supabase.rpc('refill_call_list', { p_limit: 5 });
+    if (error) { if (window.__notify) window.__notify("Couldn't add more: " + error.message, 'error'); }
+    else if (data && data.added === 0 && window.__notify) window.__notify('Nobody else is due a call right now.', 'info');
+    await load();
+    setRefilling(false);
   };
 
-  if (!people || people.length === 0) return null;
+  if (!people) return null;
+  if (people.length === 0 && doneToday === 0) return null;
   const DISC = { D: '#ef4444', I: '#EBCB82', S: '#22c55e', C: '#5aa9e6' };
   return (
     <div className="fade-up" style={{ marginBottom: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '15px 17px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: collapsed ? 0 : 12 }}>
         <span style={{ fontSize: 15 }}>📞</span>
-        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, fontWeight: 800, letterSpacing: '.16em', textTransform: 'uppercase' }}>{people.length === 1 ? 'One person to call today' : 'Your ' + people.length + ' to call today'}</span>
+        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, fontWeight: 800, letterSpacing: '.16em', textTransform: 'uppercase' }}>{people.length === 0 ? 'Calls done for today'
+            : people.length === 1 ? 'One person to call today'
+            : 'Your ' + people.length + ' to call today'}</span>
+        {doneToday > 0 && (
+          <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{doneToday + ' done'}</span>
+        )}
         <button onClick={() => setCollapsed(v => !v)} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer' }}>{collapsed ? 'Show' : 'Hide'}</button>
       </div>
       {!collapsed && people.map(p => {
@@ -946,6 +974,20 @@ function CallList() {
           </div>
         );
       })}
+      {/* HIS CHOICE, NOT THE APP'S. The list counts down to nothing so finishing
+          feels like finishing; if there is time left, he asks for more. */}
+      {!collapsed && people.length < 5 && (
+        <button type="button" disabled={refilling} onClick={refill}
+          style={{ width: '100%', marginTop: people.length ? 10 : 2, minHeight: 44, borderRadius: 10, cursor: 'pointer',
+            background: 'transparent', border: '1px solid rgba(197,169,94,.5)', color: '#C5A95E', fontSize: 13, fontWeight: 800 }}>
+          {refilling ? 'Finding more\u2026' : people.length === 0 ? 'Add 5 more calls' : 'Fill back to 5'}
+        </button>
+      )}
+      {!collapsed && people.length === 0 && (
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 8, textAlign: 'center' }}>
+          That is everyone you set out to call today.
+        </div>
+      )}
     </div>
   );
 }

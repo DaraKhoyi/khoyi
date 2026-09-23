@@ -86,7 +86,12 @@ const BUDGETS = {
   // 1115 -> 1130 on 2026-08-24: the missing-brief placeholder. Ten lines of JSX
   // replacing "return null" — the card vanishing is what made Dara think the app
   // had broken, so the lines ARE the fix. Comment trimmed once before raising.
-  "src/views/TodayView.jsx": 1130,
+  // 1130 -> 1170 on 2026-09-23: the call list counts DOWN as he works and stops
+  // topping itself up, so finishing feels like finishing — plus a "Fill back to 5"
+  // button, a done tally, and a finished state. An automatic refill was two lines
+  // and hid the end of the work; making progress visible costs JSX, and that is
+  // the feature he asked for, not drift.
+  "src/views/TodayView.jsx": 1170,
   "src/views/DealsView.jsx": 1040,
   // Crossed the ~1,000-line mark since the last sweep. Guarded now rather than
   // after they become the next thing that needs a five-step split — which is the
@@ -101,7 +106,12 @@ const BUDGETS = {
   // 1115 -> 1130 on 2026-08-24: the missing-brief placeholder. Ten lines of JSX
   // replacing "return null" — the card vanishing is what made Dara think the app
   // had broken, so the lines ARE the fix. Comment trimmed once before raising.
-  "src/views/TodayView.jsx": 1130,
+  // 1130 -> 1170 on 2026-09-23: the call list counts DOWN as he works and stops
+  // topping itself up, so finishing feels like finishing — plus a "Fill back to 5"
+  // button, a done tally, and a finished state. An automatic refill was two lines
+  // and hid the end of the work; making progress visible costs JSX, and that is
+  // the feature he asked for, not drift.
+  "src/views/TodayView.jsx": 1170,
   "src/views/DealsView.jsx": 1040,
 };
 
