@@ -25,7 +25,11 @@ const corsHeaders = {
 };
 
 const PERSON_FIELDS =
-  "names,emailAddresses,phoneNumbers,organizations,photos,metadata,memberships";
+  // Everything a real estate contact record can actually use. An address, a
+  // birthday and a spouse are transaction data in this business — they were
+  // sitting in Google untouched while agents retyped them.
+  "names,nicknames,emailAddresses,phoneNumbers,organizations,addresses,birthdays," +
+  "biographies,urls,relations,events,photos,metadata,memberships";
 
 async function refreshAccessToken(refreshToken: string) {
   const clientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
@@ -70,6 +74,19 @@ function mapPerson(p: any, userId: string, accountId: string) {
     given_name: name.givenName || null,
     family_name: name.familyName || null,
     emails, phones, organizations: orgs,
+    addresses: (p.addresses || []).map((a: any) => ({
+      type: a.type || 'home', street: a.streetAddress || null, city: a.city || null,
+      region: a.region || null, postal: a.postalCode || null, formatted: a.formattedValue || null })),
+    birthday: (() => {
+      const d = ((p.birthdays || [])[0] || {}).date;
+      // Google allows a birthday with no year — keep the day, do not invent one.
+      return d && d.month && d.day ? `${d.year || 1900}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}` : null;
+    })(),
+    biography: (((p.biographies || [])[0] || {}).value || null),
+    urls: (p.urls || []).map((u: any) => ({ type: u.type || 'other', value: u.value })).filter((u: any) => u.value),
+    relations: (p.relations || []).map((r: any) => ({ type: r.type || 'other', person: r.person })).filter((r: any) => r.person),
+    events: (p.events || []).map((e: any) => ({ type: e.type || 'other', date: e.date })).filter((e: any) => e.date),
+    nickname: (((p.nicknames || [])[0] || {}).value || null),
     photo_url: ((p.photos || [])[0] || {}).url || null,
     google_groups: groups,
     primary_email: normEmail(emails[0]?.value),
