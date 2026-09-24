@@ -51,6 +51,7 @@ function DetailSheet({ row, types, onClose, onImported, notify }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [dupes, setDupes] = useState([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -63,13 +64,27 @@ function DetailSheet({ row, types, onClose, onImported, notify }) {
 
   if (!row) return null;
   const emails = row.emails || [], phones = row.phones || [], orgs = row.organizations || [];
+  const mergeInto = async (contactId) => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc('link_google_contact', { p_gc_id: row.id, p_contact_id: contactId });
+    setBusy(false);
+    if (error || !data || !data.ok) { notify && notify(false, 'Could not merge: ' + ((error && error.message) || (data && data.error) || 'unknown')); return; }
+    notify && notify(true, name + ' merged into the contact you already had.');
+    onImported && onImported(row.id, data.contact_id);
+    onClose();
+  };
 
-  const doImport = async () => {
+  // A twin is harder to fix than a prompt is to answer — the contact splits in
+  // two and half the history goes to each side. The import refuses and hands
+  // back who it matched; he decides.
+  const doImport = async (allowDuplicate) => {
     setBusy(true);
     const { data, error } = await supabase.rpc('import_google_contact', {
       p_gc_id: row.id, p_type: type, p_name: name, p_email: email, p_phone: phone, p_notes: null,
+      p_allow_duplicate: !!allowDuplicate,
     });
     setBusy(false);
+    if (data && data.error === 'duplicate') { setDupes(data.matches || []); return; }
     if (error || !data || !data.ok) { notify && notify(false, 'Could not import: ' + ((error && error.message) || (data && data.error) || 'unknown')); return; }
     notify && notify(true, data.already ? `${name} was already in PrismOS.` : `${name} added to PrismOS.`);
     onImported && onImported(row.id, data.contact_id);
@@ -149,9 +164,35 @@ function DetailSheet({ row, types, onClose, onImported, notify }) {
                 </button>
               ))}
             </div>
+            {dupes.length > 0 && (
+              <div style={{ border:'1px solid rgba(201,86,63,.5)', background:'rgba(201,86,63,.07)',
+                borderRadius:10, padding:'11px 12px', marginBottom:10 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'var(--text-1)', marginBottom:6 }}>
+                  {dupes.length === 1 ? 'You already have this person' : 'You may already have this person'}
+                </div>
+                {dupes.map(m => (
+                  <div key={m.id} style={{ marginBottom:8 }}>
+                    <div style={{ fontSize:13, color:'var(--text-1)' }}>{m.name}</div>
+                    <div style={{ fontSize:11.5, color:'var(--text-3)' }}>
+                      {[m.email, m.phone].filter(Boolean).join(' \u00b7 ') + ' \u2014 ' + m.why}
+                    </div>
+                    <button onClick={() => mergeInto(m.id)} disabled={busy}
+                      style={{ marginTop:5, minHeight:40, padding:'0 13px', borderRadius:9, cursor:'pointer',
+                        background:CHAMP, color:INK, border:'none', fontSize:13, fontWeight:800 }}>
+                      Merge Google's details into this one
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => doImport(true)} disabled={busy}
+                  style={{ marginTop:2, minHeight:40, padding:'0 12px', borderRadius:9, cursor:'pointer',
+                    background:'transparent', border:'1px solid var(--border)', color:'var(--text-2)', fontSize:13 }}>
+                  No, this is a different person {'\u2014'} add anyway
+                </button>
+              </div>
+            )}
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={onClose} style={{ flex:'1 1 90px', background:'var(--bg-base)', border:'1px solid var(--border)', color:'var(--text-2)', borderRadius:9, padding:'12px', fontSize:14, cursor:'pointer' }}>Cancel</button>
-              <button onClick={doImport} disabled={busy}
+              <button onClick={() => doImport(false)} disabled={busy}
                 style={{ flex:'2 1 170px', background:CHAMP, color:INK, border:'none', borderRadius:9, padding:'12px', fontSize:14.5, fontWeight:800, cursor:'pointer', opacity:busy ? .6 : 1 }}>
                 {busy ? 'Adding\u2026' : 'Add to PrismOS'}
               </button>
@@ -258,7 +299,11 @@ export default function GoogleContactsView({ userId }) {
   const quickImport = async (r) => {
     const { data, error } = await supabase.rpc('import_google_contact', {
       p_gc_id:r.id, p_type:'lead', p_name:r.display_name, p_email:r.primary_email, p_phone:r.primary_phone, p_notes:null,
+      p_allow_duplicate: false,
     });
+    // The quick Add has nowhere to show the choice, so it opens the sheet where
+    // the match and the merge button live rather than quietly making a twin.
+    if (data && data.error === 'duplicate') { setOpen(r); return; }
     if (error || !data || !data.ok) { notify(false, 'Could not import: ' + ((error && error.message) || (data && data.error))); return; }
     notify(true, `${r.display_name || 'Contact'} added as a Lead \u2014 open it to change the type.`);
     onImported(r.id, data.contact_id);
