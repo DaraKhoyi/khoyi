@@ -17,14 +17,25 @@ async function transcribe(bytes: Uint8Array, aaiKey: string): Promise<string> {
   // 1) upload the audio bytes
   const up = await fetch("https://api.assemblyai.com/v2/upload", { method: "POST", headers: { authorization: aaiKey }, body: bytes });
   const upJson = await up.json();
-  if (!upJson.upload_url) throw new Error("upload failed");
+  if (!upJson.upload_url) throw new Error("could not upload the audio: " + (upJson?.error || ("HTTP " + up.status)));
   // 2) submit for transcription
   const sub = await fetch("https://api.assemblyai.com/v2/transcript", {
     method: "POST", headers: { authorization: aaiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ audio_url: upJson.upload_url, speech_model: "universal" , language_detection: true }),
+    // speech_modelS, PLURAL. AssemblyAI deprecated the singular `speech_model`
+    // and now rejects it with a 400, so every voice note has failed since that
+    // took effect — and the app reported it as "no signal", which is why it went
+    // unnoticed. recording-transcribe already used the plural form, which is why
+    // call recordings kept working while voice notes did not.
+    body: JSON.stringify({
+      audio_url: upJson.upload_url,
+      speech_models: ["universal-3-5-pro", "universal-2"],
+      language_detection: true,
+    }),
   });
   const subJson = await sub.json();
-  if (!subJson.id) throw new Error("transcript submit failed");
+  // Carry the service's own words. "transcript submit failed" told us nothing;
+  // the real reply named the deprecated parameter and the replacement.
+  if (!subJson.id) throw new Error("transcription rejected the audio: " + (subJson?.error || ("HTTP " + sub.status)));
   // 3) poll briefly — a short memo finishes in a few seconds
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 1500));

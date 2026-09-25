@@ -750,15 +750,20 @@ function VoiceNote({ setView, userId }) {
       if (data.empty) { setMsg('I couldn\u2019t hear anything — try again.'); setPhase('error'); return; }
       setTranscript(data.transcript || ''); setResult(data.result || null); setPhase('review');
     } catch (e) {
-      // THE PARKING-GARAGE CASE. Before this, a failed upload showed an error and
-      // the recording was gone — and an agent who loses a twenty-second note once
-      // does not record a second one. The audio is kept on the phone and retried
-      // when signal returns, so the worst outcome is a delay, never a loss.
+      // Keep the audio on the phone and retry, so the worst outcome is a delay,
+      // never a loss. BUT DO NOT LIE ABOUT WHY: saying "No signal" for EVERY
+      // failure is how a broken voice note went unnoticed — the transcription
+      // service rejected every submission and the app blamed the connection.
+      const offline = (typeof navigator !== 'undefined' && navigator.onLine === false)
+        || /failed to fetch|networkerror|load failed|connection/i.test(String((e && e.message) || ''));
       try {
         await enqueue(userId, 'voice_note', { audio_base64: b64 }, 'Voice note (' + Math.round(blob.size / 1024) + 'KB)');
-        setMsg('No signal — the recording is saved on your phone and will send itself when you\u2019re back online.');
+        setMsg(offline
+          ? 'No signal — the recording is saved on your phone and will send itself when you’re back online.'
+          : 'Couldn’t process that note: ' + (e.message || 'unknown error')
+            + '. The recording is saved on your phone and will retry — nothing is lost.');
       } catch (_) {
-        setMsg(e.message || 'Something went wrong');
+        setMsg((e.message || 'Something went wrong') + ' — and the recording could not be saved on this device.');
       }
       setPhase('error');
     }
