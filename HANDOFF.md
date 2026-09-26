@@ -46,8 +46,11 @@ is NOT a sufficient check — use the dry run.
 - `api.github.com/user` → 200 (token liveness only)
 - `api.github.com/repos/DaraKhoyi/khoyi/**` → **403 from the agent proxy**, not
   from GitHub. The body names the remedy: an `add_repo` tool with
-  `access:"push"`. That tool was NOT available in the 25–26 Sep sessions; if your
-  session has it, attach the repo and the REST API works normally.
+  `access:"push"`. **DO NOT CALL IT in a session that must push** (tested 26 Sep):
+  while the Claude GitHub App is not linked for this repo, add_repo returns
+  `push_check: "refused"`, and from then on the proxy refuses EVERY push in that
+  session — including the PAT-header push in §1.2, with a valid token. It cannot
+  be undone in that session. REST starts working; pushing stops. Not worth it.
 
 So **check CI and deploys with git, not REST**:
 ```bash
@@ -152,7 +155,10 @@ at 99 roll MINOR and reset.
 `mutation_guard` · `hover_guard` · `nested_component_guard` ·
 `openscreens_check` · `responsive` · `test_hygiene`
 Credentialed extras that skip without a key rather than failing: `stale_readers`,
-`cron_health`, `schema_drift`. `touch_targets` REPORTS and does not block — the
+`cron_health`, `schema_drift`, and two that BLOCK when a key is present:
+`snapshot_quarantine` (no one-off backup tables in `public`) and `data_integrity`
+(listed here for weeks but never actually called by run.sh until 26 Sep — the
+list and the script had drifted; check the script, not the list). `touch_targets` REPORTS and does not block — the
 baseline differs between this container and CI (111 vs 112 on the same commit)
 and blocking on a set that cannot be reproduced would fail deploys for no reason.
 Fix which controls differ, not the number, before making it blocking.
@@ -420,6 +426,17 @@ non-retryable 400 · `recordings.summary` is JSONB (use `rec_summary_text()`;
 `btrim(jsonb)` throws) · PWA manifest `orientation` hard-locks rotation on
 installed Android (now `"any"`; an installed app keeps the OLD manifest until
 reinstalled) · MyVoice applies to OUTBOUND CLIENT DRAFTS ONLY, never the Briefing.
+
+**SNAPSHOTS GO IN `archive`, NEVER `public`.** Snapshotting a table before a data
+fix is right; putting the copy beside the live table is not. By 26 Sep eleven
+had piled up in `public` — `cfd_backup_20260923` alone was 12,420 rows, the
+sixth-largest table in the system, and `txn_date_paid_backup_20260921` held
+commission dates — where any broad report or schema scan could count them as
+real. All moved to the `archive` schema (not exposed to the API, no app-role
+grants). Do it this way:
+`create table archive.<table>_<purpose>_<YYYYMMDD> as select * from public.<table> where ...;`
+`smoke/snapshot_quarantine.mjs` fails the gate otherwise. Drop an archive table
+once its fix is proven; they are rollback copies, not records.
 
 ---
 

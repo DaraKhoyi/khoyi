@@ -46,8 +46,9 @@ often, which is what makes them safe rules rather than guesses.
 
 Pending cards 269 → 192 by rules → 138 for the broker after an AI re-judge
 (`commitment-rejudge`, $0.46), every survivor with a named person and a next step.
-Call follow-ups 189 → 142 (47 merged into the card from the same call). Backups:
-`commitments_backup_20260922`, `quo_calls_followups_backup_20260922`.
+Call follow-ups 189 → 142 (47 merged into the card from the same call). Backups (moved to the
+`archive` schema 26 Sep): `archive.commitments_backup_20260922`,
+`archive.quo_calls_followups_backup_20260922`.
 
 ## Not yet covered
 

@@ -48,6 +48,15 @@ if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/cron_health.mjs; fi
 # decision, and "keep it, we need it next quarter" is a legitimate answer.
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/schema_drift.mjs; fi
 
+# One-off backup tables belong in the `archive` schema, never next to the live
+# tables where a report can count them twice. BLOCKS. (Panel, 26 Sep: eleven
+# snapshots had piled up in public, one of them financial.)
+if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/snapshot_quarantine.mjs; fi
+
+# Crash-shaped and orphaned records in live data. BLOCKS. HANDOFF.md listed this
+# as a gate guard for weeks while nothing here ran it — wired in 26 Sep.
+if [ -n "${SUPABASE_PAT:-}" ]; then SUPA_PAT="$SUPABASE_PAT" node smoke/data_integrity.mjs; fi
+
 # Static guard: no undefined identifiers. The runtime smoke check proves views
 # MOUNT; it cannot prove every branch inside them runs, because the throwaway
 # agent has no data. v1.04.49 shipped a ReferenceError straight past a green
