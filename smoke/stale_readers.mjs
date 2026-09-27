@@ -44,6 +44,10 @@ const STALE_OK = {
     'write, because contacts are shared across agents. The type, last four and ' +
     'encrypted number live in contact_tax_ids (owner/staff only). Column to be ' +
     'dropped after 4 Oct 2026 — delete this entry then.',
+  'daily_call_list.outcome=postponed':
+    'New 27 Sep (snooze_call, the "Later…" button). Absent until the first time ' +
+    'someone postpones a call; the tally excludes it so a postponed call is not ' +
+    'counted as done. Delete this entry once a real row exists.',
   'commitments.status=expired':
     'Deliberately unreachable: expiry was removed 19 Sep and must never come back. ' +
     'Kept in the log vocabulary so historical rows still read correctly.',
