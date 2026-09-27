@@ -68,6 +68,7 @@ import TaskModal from './views/TaskModal';
 import { docOriginMeta, OriginChip, LifecycleChip, FILE_STATUSES, STATUS_META, CHK_STATUS, CHK_META, FARBAR_BUYER_CHECKLIST, logFileEvent, shortDate, StatusPill, FILE_DOC_TYPES, DOCTYPE_LABEL, DOCTYPE_TO_ITEM, WAIVER_TO_KIND, resolveDeadlineWaiver, generateDeadlinesFromTerms } from './fileDomain';
 import MissingDocsComposer from './views/MissingDocsComposer';
 import SignPortal from './views/SignPortal';
+import OAuthConsent from './views/OAuthConsent';
 import SignatureRequestModal from './views/SignatureRequestModal';
 import SignatureManageModal from './views/SignatureManageModal';
 import FileDetailModal from './views/FileDetailModal';
@@ -2071,7 +2072,7 @@ function AppMain() {
 
 export default function App() {
   const m = (typeof window !== 'undefined') && window.location.pathname.match(/^\/sign\/([A-Za-z0-9_-]+)/);
-  if (m) return <SignPortal token={m[1]} />;
+  if (m) return <SignPortal token={m[1]} />; if (window.location.pathname.startsWith('/oauth/consent')) return <OAuthConsent />; // public pages: signing, Claude sign-in
   return <AppMain />;
 }
 

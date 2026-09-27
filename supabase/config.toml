@@ -65,6 +65,11 @@ verify_jwt = false
 [functions.lead-qualify]
 verify_jwt = false
 
+# Claude connector (MCP). Must answer an unauthenticated request with 401 + the
+# sign-in pointer itself; verifies every token with auth.getUser.
+[functions.prism-mcp]
+verify_jwt = false
+
 [functions.ari-call-prep]
 verify_jwt = false
 

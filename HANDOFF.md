@@ -572,6 +572,27 @@ as the user. Service callers: `isServiceCaller(req)` from
 — it answers only to a real service key). Users: `auth.getUser(token)`.
 `smoke/edge_auth.mjs` now fails any function that trusts a decoded role or sub.
 
+**THE CLAUDE CONNECTOR (prism-mcp, 27 Sep).** PrismOS is a remote MCP server:
+`https://xlgfspnojjgvkuitcoaf.supabase.co/functions/v1/prism-mcp`. Sign-in is
+Supabase Auth's own OAuth 2.1 server (Authentication > OAuth Server: on,
+authorization path `/oauth/consent`, dynamic registration on). The consent page
+is `src/views/OAuthConsent.jsx`, routed in App.js; the auth server only accepts
+consent calls from the Site URL origin (darasapp.com). Rules that make it safe —
+keep all of them when adding tools:
+- Every tool queries through the client built from the caller's OWN token, so
+  RLS decides what Claude sees. Never read client data with the service role in
+  a tool (the only service-role write is the `mcp_calls` usage log).
+- Tokens are verified with `auth.getUser`, and must carry `client_id` (minted by
+  the consent flow, not a copied app session).
+- The consent page approves only requests returning to claude.ai / claude.com.
+  Dynamic registration lets anyone register a client; a look-alike is refused.
+- `mcp_access` gates who may use it at all. Staff-only tools set `staffOnly`.
+- v1 sends nothing to anyone (no email/text). Adding a sending tool is a
+  decision for Dara, not a code change.
+`smoke/mcp_connector.mjs` runs the whole sign-in as Claude would and proves RLS
+and every gate on each gate run (known-answer tested: opening the allowlist
+fails it).
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"
@@ -694,6 +715,11 @@ whitelisted in `launchTarget()`.
   `source`, so `lead_funnel` and `lead-qualify` skip them (LEAD_STRATEGY known
   gap). Tag a source in quo-webhook only once `sms_lead_verdict` proves intent,
   or the funnel fills with vendor texts again.
+
+- **PrismOS connector for Claude — widen after Dara's trial week (from 27 Sep).**
+  Only people in `mcp_access` can use it (Dara today). Add an agent with
+  `insert into mcp_access (user_id, note) values ('<auth id>', '<name>')`. See
+  "THE CLAUDE CONNECTOR" in §8 before adding tools.
 
 **Waiting on Dara — do not start these uninvited**
 - **The tiered gate.** Full gate for logic/DB changes, fast gate for wording and
