@@ -18,6 +18,7 @@ import { useBackClose } from '../backClose';
 import { Tip, TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
 import { modal, owesReply } from '../helpers';
+import { loadTaxId, saveTaxId } from '../taxId';
 import { BulkDiscComposer, dominantDiscLetter, DISC_STYLE_META } from './BulkDiscComposer';
 import GoogleContactsView from './GoogleContactsView';
 
@@ -109,7 +110,7 @@ function describeSaveError(error, verb = 'save') {
     home_purchase_year: 'Home purchase year', business_zip: 'Business ZIP', home_zip: 'Home ZIP',
     w9_collected_date: 'W-9 collected date', referred_by_contact_id: 'Referred by',
     recruiting_estimated_annual_gci: 'Estimated GCI', cadence_days: 'Cadence days',
-    entity_type: 'Entity type', tax_id_type: 'Tax ID type', home_ownership: 'Own/Rent', priority: 'Priority',
+    entity_type: 'Entity type', home_ownership: 'Own/Rent', priority: 'Priority',
   };
   const colMatch = msg.match(/column "([^"]+)"/i) || msg.match(/"([a-z_]+)" (?:violates|check)/i);
   const namedField = colMatch && FIELD_LABELS[colMatch[1]] ? FIELD_LABELS[colMatch[1]] : null;
@@ -304,9 +305,11 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
   const [show1099, setShow1099]                 = useState(!!(initial?.is_1099_vendor));
   const [is1099Vendor, setIs1099Vendor]         = useState(!!(initial?.is_1099_vendor));
   const [entityType, setEntityType]             = useState(initial?.entity_type || '');
-  const [taxIdType, setTaxIdType]               = useState(initial?.tax_id_type || '');
-  // Never pre-filled from the record: a tax ID is write-only in the UI and is
-  // revealed one at a time, to brokerage staff, with every reveal logged.
+  // Type + last four come from contact_tax_ids (owner/staff only), not the row.
+  const [taxIdType, setTaxIdType]               = useState('');
+  const [taxOnFile, setTaxOnFile]               = useState(null);
+  useEffect(() => { if (isEdit) loadTaxId(initial.id).then(t => { if (t) { setTaxOnFile(t.last4); setTaxIdType(t.tax_id_type || ''); } }); }, [isEdit, initial?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Never pre-filled: the number is write-only in the UI (see src/taxId.js).
   const [taxIdFull, setTaxIdFull]               = useState('');
   const [w9Collected, setW9Collected]           = useState(!!(initial?.w9_collected));
   const [w9CollectedDate, setW9CollectedDate]   = useState(initial?.w9_collected_date || '');
@@ -340,6 +343,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
     const cleanEmails = normalize(emails);
     onSave({
       __taxIdToStore: taxIdFull.trim() || null,   // handled via set_tax_id, never written to the row
+      __taxIdType: taxIdType || null,
       name: name.trim(), type,
       phones: cleanPhones, emails: cleanEmails,
       // phone/email columns intentionally omitted — the database trigger
@@ -365,7 +369,6 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
       // 1099-NEC / W-9 — empty strings → null so the DB CHECK constraints stay happy
       is_1099_vendor: is1099Vendor,
       entity_type: entityType || null,
-      tax_id_type: taxIdType || null,
       w9_collected: w9Collected,
       w9_collected_date: w9CollectedDate || null,
       exempt_1099_reason: exempt1099Reason.trim() || null,
@@ -552,7 +555,7 @@ function ContactModal({ onClose, onSave, onDelete, initial, onShowDetails, conta
                       </div>
                       <div className="form-group" style={{flex:1,marginBottom:0}}>
                         <label className="form-label">Tax ID number</label>
-                        <input className="form-input" type="text" value={taxIdFull} onChange={e => setTaxIdFull(e.target.value)} placeholder={taxIdType === 'ein' ? '12-3456789' : '123-45-6789'} autoComplete="off"/>
+                        <input className="form-input" type="text" value={taxIdFull} onChange={e => setTaxIdFull(e.target.value)} placeholder={taxOnFile ? `On file ···${taxOnFile} — type to replace` : taxIdType === 'ein' ? '12-3456789' : '123-45-6789'} autoComplete="off"/>
                       </div>
                     </div>
                     <div className="form-row">
@@ -1320,11 +1323,11 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   async function handleSave(rawData) {
     // The tax ID never reaches the contacts row. Pull it off the payload before
     // anything else touches it, and store it afterwards through set_tax_id(),
-    // which encrypts it into a table nothing may SELECT and leaves only the last
-    // four readable. Deleting the key from the object here means no later code
-    // path can accidentally send it.
+    // which encrypts it; its type and last four live beside it, owner/staff only
+    // (src/taxId.js). Deleting the keys here means no later path can send them.
     const taxIdToStore = rawData && rawData.__taxIdToStore;
-    if (rawData && '__taxIdToStore' in rawData) delete rawData.__taxIdToStore;
+    const taxIdType = rawData && rawData.__taxIdType;
+    if (rawData) { delete rawData.__taxIdToStore; delete rawData.__taxIdType; }
     // Sanitize typed fields right before the DB call so no stray value can throw
     // a 22P02 (invalid type), regardless of what the form or an import produced.
     // This is the last line of defense — belt and suspenders over the form guards.
@@ -1382,11 +1385,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
     // Now the contact exists, hand the number to the encrypting function. A
     // failure here must be told, not swallowed: a tax ID the broker believes is
     // saved and is not is worse than one he knows he still has to enter.
-    if (taxIdToStore && savedRow) {
-      const { error: txErr } = await supabase.rpc('set_tax_id', {
-        p_contact: savedRow.id, p_value: taxIdToStore, p_type: (savedRow.tax_id_type || 'ssn'),
-      });
-      if (txErr) notify('Contact saved, but the tax ID was not stored: ' + (txErr.message || txErr), 'error');
+    if (savedRow && (taxIdToStore || taxIdType)) {
+      const txErr = await saveTaxId(savedRow.id, taxIdToStore, taxIdType);
+      if (txErr) notify('Contact saved, but the tax ID was not stored: ' + txErr, 'error');
     }
     if (editFromDetail && savedRow) setDetailContact(savedRow);
     else if (window.__researchAfterSave && savedRow) { window.__researchAfterSave = false; window.__autoResearch = savedRow.id; setDetailContact(savedRow); }

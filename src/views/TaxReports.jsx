@@ -15,6 +15,7 @@ import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSD, fmtUSDCents, fmtPct, fmtHours } from '../financeUtils';
 import { SE_TAX_2026, computeFederalIncomeTax, computeNetProfitFromData, computeQuarterlyTaxProjection, nextQuarterDueLabel } from '../taxMath';
 import { KpiBox } from './FinanceTiles';
+import { loadTaxIds } from '../taxId';
 
 export const SCHEDULE_C_LINES = [
   { num: '8',   label: 'Advertising' },
@@ -884,12 +885,14 @@ export function Form1099Report({ userId }) {
           .eq('user_id', userId).eq('scope', 'business').eq('is_archived', false)
           .gte('date', start).lte('date', end).lt('amount', 0)
           .limit(5000),
-        supabase.from('contacts').select('id, name, company, type, is_1099_vendor, entity_type, tax_id_last4, tax_id_type, w9_collected, w9_collected_date, exempt_1099_reason, force_1099, business_address, business_city, business_state, business_zip, home_address, home_city, home_state, home_zip, email, phone')
+        supabase.from('contacts').select('id, name, company, type, is_1099_vendor, entity_type, w9_collected, w9_collected_date, exempt_1099_reason, force_1099, business_address, business_city, business_state, business_zip, home_address, home_city, home_state, home_zip, email, phone')
           .eq('user_id', userId).limit(5000),
       ]);
+      // Tax IDs live apart from contacts (owner/staff only) — see src/taxId.js.
+      const tins = await loadTaxIds((c || []).map(x => x.id));
       if (cancelled) return;
       setTransactions(tx || []);
-      setContacts(c || []);
+      setContacts((c || []).map(x => ({ ...x, tax_id_last4: tins[x.id]?.last4 || null, tax_id_type: tins[x.id]?.tax_id_type || null })));
       setLoading(false);
     }
     load();
@@ -1020,7 +1023,7 @@ export function Form1099Report({ userId }) {
         c?.name || v.payee,
         c?.company || '',
         c?.tax_id_type || '',
-        c?.tax_id_last4 ? `XXX-XX-${c.tax_id_last4}` : '',
+        c?.tax_id_last4 ? (c.tax_id_type === 'ein' ? `XX-XXX${c.tax_id_last4}` : `XXX-XX-${c.tax_id_last4}`) : '',
         addr, city, st, zip,
         c?.email || '',
         c?.phone || '',

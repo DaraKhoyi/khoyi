@@ -53,6 +53,12 @@ if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/schema_drift.mjs; fi
 # snapshots had piled up in public, one of them financial.)
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/snapshot_quarantine.mjs; fi
 
+# Definer functions whose owner check a signed-out caller skips ("auth.uid() is
+# not null and ..."), and sensitive columns on tables other agents can read
+# through sharing. BLOCKS. (27 Sep: set_tax_id + merge_contacts; the panel's
+# contacts.tax_id_last4.)
+if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/definer_guard.mjs; fi
+
 # Every deployed edge function has source here, and config.toml's verify_jwt
 # matches live — or the next deploy flips it and locks out a cron caller. BLOCKS.
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/function_config.mjs; fi

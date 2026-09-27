@@ -156,7 +156,8 @@ at 99 roll MINOR and reset.
 `openscreens_check` · `responsive` · `test_hygiene` · `edge_parse` ·
 `ai_cost_guard` · `anon_exposure` (calls every exposed database function with
 only the public anon key; any real data in the answer blocks — needs the
-service key only to list them)
+service key only to list them) · `definer_guard` (PAT; signed-out bypasses in
+definer functions, sensitive columns on shared tables)
 Credentialed extras that skip without a key rather than failing: `stale_readers`,
 `cron_health` (blocks on current or repeated failures, reports superseded ones and
 slow calls), `schema_drift`, and two that BLOCK when a key is present:
@@ -532,6 +533,19 @@ data: `revoke execute on function ... from public, anon;` then grant
 `auth.uid() is null` alone — a stranger passes that. `smoke/anon_exposure.mjs`
 fails the gate otherwise (known-answer tested: reopening one function fails it).
 
+**"auth.uid() IS NOT NULL AND …" IS NOT A GUARD.** In a SECURITY DEFINER
+function the body's own check is the only lock, and a signed-out caller's uid is
+NULL — so that condition is false and the whole check is skipped. set_tax_id
+and merge_contacts both had it, both callable with the anon key (27 Sep). Deny
+first: `if auth.role() is distinct from 'service_role' then if auth.uid() is
+null then raise ...; if auth.uid() <> owner and not is_brokerage_staff() then
+raise ...;`. Also: a `raise` rolls back an audit insert made just before it, so
+"log DENIED then raise" logs nothing (reveal_tax_id, set_tax_id). And no
+sensitive column (tax ID, SSN, account, passport) goes on a table other agents
+can read by sharing — contacts is one. Tax IDs live only in `contact_tax_ids`
+(owner + staff), read and written through `src/taxId.js`.
+`smoke/definer_guard.mjs` enforces both.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"
@@ -629,6 +643,15 @@ whitelisted in `launchTarget()`.
 ---
 
 ## 13. OPEN ITEMS (26 Sep 2026)
+
+**Scheduled cleanup (code, no decision needed)**
+- **After 4 Oct 2026: drop `contacts.tax_id_last4` and `contacts.tax_id_type`.**
+  Kept one release as always-empty columns (trigger `contacts_strip_tax_id_trg`
+  blanks them) so phones still on v1.08.73 can save contacts — that build sends
+  `tax_id_type` in every save and would fail on a missing column. Drop the
+  columns, the trigger and `contacts_strip_tax_id()`, then remove TRANSITIONAL in
+  `smoke/definer_guard.mjs` and the `contacts.tax_id_type=ssn` entry in
+  `smoke/stale_readers.mjs`.
 
 **Waiting on Dara — do not start these uninvited**
 - **The tiered gate.** Full gate for logic/DB changes, fast gate for wording and

@@ -40,9 +40,10 @@ if (!PAT) {
 // value → why it is allowed to be absent. Keep the reason; a bare list rots.
 const STALE_OK = {
   'contacts.tax_id_type=ssn':
-    'Correct that it is empty: no real SSNs are stored yet. The column is the ' +
-    'readable label beside tax_id_last4; the number itself lives encrypted in ' +
-    'contact_tax_ids, which nothing may SELECT.',
+    'Correct that it is empty, forever: since 27 Sep a trigger blanks it on every ' +
+    'write, because contacts are shared across agents. The type, last four and ' +
+    'encrypted number live in contact_tax_ids (owner/staff only). Column to be ' +
+    'dropped after 4 Oct 2026 — delete this entry then.',
   'commitments.status=expired':
     'Deliberately unreachable: expiry was removed 19 Sep and must never come back. ' +
     'Kept in the log vocabulary so historical rows still read correctly.',
