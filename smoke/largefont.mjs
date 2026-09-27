@@ -18,6 +18,7 @@
 // and only compares SIBLINGS — a badge legitimately sitting on top of an avatar
 // is not a bug, and flagging it would train everyone to ignore the output.
 import { chromium } from 'playwright';
+import { SIGNED_OUT_PROBE, SIGNED_OUT_NOTE } from './session_guard.mjs';
 
 const URL = process.env.SMOKE_URL || 'http://localhost:4173/';
 const EMAIL = process.env.SMOKE_EMAIL, PW = process.env.SMOKE_PASSWORD;
@@ -200,7 +201,7 @@ await page.waitForSelector('input[type="email"]', { timeout: 20000 });
 await page.fill('input[type="email"]', EMAIL);
 await page.fill('input[type="password"]', PW);
 await page.click('button:has-text("Sign In")');
-await page.waitForFunction(() => typeof window.__setView === 'function', { timeout: 35000 });
+await page.waitForFunction(() => typeof window.__setView === 'function' && !document.querySelector('.auth-screen, .loading-screen'),  /* signed IN, not merely booted: __setView exists on the sign-in screen too — see session_guard.mjs */ { timeout: 35000 });
 
 // Scale type the way an OS accessibility setting does — root font-size, so
 // every rem/em-derived box grows with it.
@@ -215,6 +216,7 @@ for (const view of VIEWS) {
     const r = m.r;
     if (m.healed) console.log(`  (${view}: a transient during load cleared on re-measure — not reported)`);
     const problems = [];
+    if (await page.evaluate(SIGNED_OUT_PROBE).catch(() => false)) problems.push(SIGNED_OUT_NOTE);
     if (r.docOverflow > 2) problems.push(`h-overflow ${r.docOverflow}px`);
     if (r.clippedTotal) problems.push(`${r.clippedTotal} clipped`);
     if (r.collisionsTotal) problems.push(`${r.collisionsTotal} overlapping`);

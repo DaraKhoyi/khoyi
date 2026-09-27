@@ -36,7 +36,7 @@ for (const f of FORMS) {
     await page.fill('input[type="email"]', EMAIL);
     await page.fill('input[type="password"]', PW);
     await page.click('button:has-text("Sign In")');
-    await page.waitForFunction(() => typeof window.__setView === 'function', { timeout: 35000 });
+    await page.waitForFunction(() => typeof window.__setView === 'function' && !document.querySelector('.auth-screen, .loading-screen'),  /* signed IN, not merely booted: __setView exists on the sign-in screen too — see session_guard.mjs */ { timeout: 35000 });
     await page.waitForTimeout(2600);
 
     const m = await page.evaluate(() => ({

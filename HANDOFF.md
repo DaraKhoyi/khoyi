@@ -155,7 +155,8 @@ at 99 roll MINOR and reset.
 `mutation_guard` · `hover_guard` · `nested_component_guard` ·
 `openscreens_check` · `responsive` · `test_hygiene`
 Credentialed extras that skip without a key rather than failing: `stale_readers`,
-`cron_health`, `schema_drift`, and two that BLOCK when a key is present:
+`cron_health` (blocks on current or repeated failures, reports superseded ones and
+slow calls), `schema_drift`, and two that BLOCK when a key is present:
 `snapshot_quarantine` (no one-off backup tables in `public`) and `data_integrity`
 (listed here for weeks but never actually called by run.sh until 26 Sep — the
 list and the script had drifted; check the script, not the list). `touch_targets` REPORTS and does not block — the
@@ -427,6 +428,36 @@ non-retryable 400 · `recordings.summary` is JSONB (use `rec_summary_text()`;
 installed Android (now `"any"`; an installed app keeps the OLD manifest until
 reinstalled) · MyVoice applies to OUTBOUND CLIENT DRAFTS ONLY, never the Briefing.
 
+**A CHECK THAT PASSES ON THE SIGN-IN SCREEN IS NOT A CHECK.** (26 Sep) The
+functional suite failed three checks on ONE random device per run for a week.
+Making the failing checks print what they SAW found the page on the sign-in
+screen. Root cause: on a first visit, `sw.js`'s `clients.claim()` fired
+`controllerchange`, and `index.html` reloaded the page on ANY controllerchange —
+wiping a half-typed sign-in form. Every fresh test browser is a first visit;
+install time grows under load, hence "random device". Real users hit it too: a
+new agent's first sign-in on a slow phone. Fixed in v1.08.73 (reload only when a
+NEW worker replaces an OLD one). Worse, the harness hid it: every suite's
+"logged in" waited for `window.__setView`, which exists on the sign-in screen,
+and most view checks pass on any page with text and no error boundary — so up to
+64 smoke + 37 large-font + 22 room checks could go green testing nothing. Now:
+`smoke/session_guard.mjs`, one probe, used by every suite; logins wait for the
+sign-in screen to be GONE. Also: `browser_gate.sh` keeps a failed first
+attempt's log (`<suite>.try1.log`) — the retry used to overwrite the only evidence.
+
+**"NO RESPONSE" IS NOT "FAILED"; READ THE JOB'S OUTPUT.** (26 Sep) `net._http_response`
+keeps 6 hours (pg_net.ttl; not raisable on Supabase) and has no URL, so
+`cron_health` claimed a 24h window it did not have and could not name a job.
+`public.worker_calls` had both all along — every `cron_call()` by job name, kept
+days. All 50 HTTP jobs now go through `cron_call` (8 bypassed it). The rule
+"doing nothing at all" lives ONCE, in `public.workers_failing_every_run()`, used
+by the texted alert AND the gate. A call that outlives the 30s wait usually
+finished anyway — chief-of-staff never answered in time in 8 days and wrote all
+14 briefings every morning — so slow jobs are proved by their output (`PROOF` in
+cron_health), and a single failure already superseded by successes reports
+instead of blocking. **`net._http_response` has NO index on `id`**: bound it by
+`created` (indexed) and materialise before joining, or the planner may rescan it
+per row — 100s+, and it failed a live monitor run on 26 Sep.
+
 **SNAPSHOTS GO IN `archive`, NEVER `public`.** Snapshotting a table before a data
 fix is right; putting the copy beside the live table is not. By 26 Sep eleven
 had piled up in `public` — `cfd_backup_20260923` alone was 12,420 rows, the
@@ -555,6 +586,20 @@ whitelisted in `launchTarget()`.
   goal set despite onboarding shipping to fix exactly that.
 
 **Known and open**
+- **Ari morning-briefing email (found 26 Sep, not yet investigated).** Two users
+  have it on for 07:00. Dara's briefing was GENERATED at 07:00 on 26 Sep but
+  `ari_briefing_prefs.last_delivered_date` still read 25 Sep; the other user
+  (vickiemitchellfl@) has no delivery account and has never been delivered one.
+  The 07:00 run outlives the 30s wait every day, so its HTTP result says nothing.
+- **17 deployed edge functions have NO source in this repo** (26 Sep):
+  anthropic-status, ari-briefing, ari-briefing-deliver, ari-call-prep,
+  calendar-poll, disc-readout, email-to-task, github-status, gmail-attachment,
+  gmail-discover, gmail-push, gmail-watch, myvoice-synthesize,
+  run-recurring-transactions, scheduled-email-send, sync-agent-profiles,
+  task-email-ingest. Several run every few minutes. They cannot be reviewed or
+  safely fixed from here until pulled back (`supabase functions download`).
+- **worker_calls is pruned by two rules**: `prune_worker_calls()` keeps 14 days,
+  the daily `worker-calls-prune-daily` job keeps 7. The 7 wins. Pick one.
 - **Mary Sous has no email connected** — the system has never seen one of her
   leads. Still the single highest-leverage action available.
 - **The concierge learns mostly from rejections** — hundreds of auto-learned

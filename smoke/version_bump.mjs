@@ -32,7 +32,10 @@ const before = ver(sh('git show HEAD:src/version.js'));
 // Only matters when the app itself is changing. Tooling-only commits (smoke/,
 // supabase/functions) do not ship a new build to Dara's phone.
 const staged = sh('git diff --cached --name-only') || sh('git diff --name-only');
-const appChanged = staged.split('\n').some(f => f.startsWith('src/') && f !== 'src/version.js');
+// index.html and public/ ship to the phone too — the 26 Sep sign-in fix lived
+// entirely in index.html, and this guard said "no app source changed".
+const SHIPS = (f) => (f.startsWith('src/') && f !== 'src/version.js') || f === 'index.html' || f.startsWith('public/') || f === 'vite.config.js';
+const appChanged = staged.split('\n').some(SHIPS);
 
 if (!appChanged) {
   console.log(`==== VERSION: no app source changed — ${now} unchanged is correct ====`);

@@ -15,7 +15,7 @@ await page.waitForSelector('input[type="email"]', { timeout: 20000 });
 await page.fill('input[type="email"]', process.env.SMOKE_EMAIL);
 await page.fill('input[type="password"]', process.env.SMOKE_PASSWORD);
 await page.click('button:has-text("Sign In")');
-await page.waitForFunction(() => typeof window.__setView === 'function', { timeout: 35000 });
+await page.waitForFunction(() => typeof window.__setView === 'function' && !document.querySelector('.auth-screen, .loading-screen'),  /* signed IN, not merely booted: __setView exists on the sign-in screen too — see session_guard.mjs */ { timeout: 35000 });
 await page.waitForTimeout(2500);
 
 // dismiss any onboarding / profile modal blocking the view

@@ -13,6 +13,7 @@
 //   SMOKE_URL=... SMOKE_EMAIL=... SMOKE_PASSWORD=... node smoke/functional.mjs
 //   FUNC_DEVICES=phone,desktop  (subset)   FUNC_SHOTS=1 (save screenshots)
 import { chromium } from 'playwright';
+import { SIGNED_OUT_PROBE, SIGNED_OUT_NOTE } from './session_guard.mjs';
 
 const URL = process.env.SMOKE_URL || 'http://localhost:4173/';
 const EMAIL = process.env.SMOKE_EMAIL;
@@ -67,10 +68,31 @@ const watchdog = setInterval(() => {
   process.exit(1);
 }, 15000).unref?.() ?? null;
 
+// When a check fails, say WHAT WAS ON SCREEN. "no From your calls section"
+// told nobody anything for a week of intermittent failures; the view, the room
+// and the first lines of text tell you which of five causes it was. Screenshot
+// too, always on failure (not only with FUNC_SHOTS), because a flake cannot be
+// asked to happen again.
+async function sawInstead(page, dev, label) {
+  let seen = '';
+  try {
+    seen = await ev(page, () => {
+      const v = window.__getView ? window.__getView() : window.__currentView;
+      const txt = (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+      const menu = [...document.querySelectorAll('.mm-row')].map(b => (b.innerText || '').split('\n')[0].trim()).filter(Boolean).slice(0, 12);
+      return `view=${v} url=${location.pathname}${location.hash} rows=[${menu.join('|')}] text="${txt}"`;
+    });
+  } catch (e) { seen = 'could not read page: ' + String(e).slice(0, 60); }
+  if (page.__auth && page.__auth.length) seen += ` auth=[${page.__auth.slice(-8).join(' ; ')}] (${page.__auth.length} auth calls)`;
+  const shot = `/tmp/func-fail-${dev}-${label}.png`;
+  try { await page.screenshot({ path: shot }); seen += ` shot=${shot}`; } catch (_) {}
+  return seen;
+}
+
 async function recoverPage(page) {
   try {
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
-    await page.waitForFunction(() => typeof window.__setView === 'function', { timeout: 30000 });
+    await page.waitForFunction(() => typeof window.__setView === 'function' && !document.querySelector('.auth-screen, .loading-screen'),  /* signed IN, not merely booted: __setView exists on the sign-in screen too — see session_guard.mjs */ { timeout: 30000 });
     await page.waitForTimeout(1500);
     return true;
   } catch (_) { return false; }
@@ -82,7 +104,7 @@ async function login(page) {
   await page.fill('input[type="email"]', EMAIL);
   await page.fill('input[type="password"]', PASSWORD);
   await page.click('button:has-text("Sign In")');
-  await page.waitForFunction(() => typeof window.__setView === 'function', { timeout: 40000 });
+  await page.waitForFunction(() => typeof window.__setView === 'function' && !document.querySelector('.auth-screen, .loading-screen'),  /* signed IN, not merely booted: __setView exists on the sign-in screen too — see session_guard.mjs */ { timeout: 40000 });
   await page.waitForTimeout(2000);
 }
 
@@ -106,6 +128,17 @@ for (const dev of want) {
   page.setDefaultNavigationTimeout(30000);
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String((e && e.message) || e)));
+  // Every auth request and its answer, so a mid-run sign-out says WHY.
+  page.__auth = [];
+  const t0 = Date.now();
+  page.on('response', async (res) => {
+    const u = res.url();
+    if (!u.includes('/auth/v1/')) return;
+    let body = '';
+    if (res.status() >= 400) { try { body = (await res.text()).slice(0, 140); } catch (_) {} }
+    const m = /\/auth\/v1\/([a-z_]+)(\?grant_type=([a-z_]+))?/.exec(u);
+    page.__auth.push(`+${((Date.now() - t0) / 1000).toFixed(1)}s ${m ? m[1] + (m[3] ? ':' + m[3] : '') : u.slice(-40)} ${res.status()}${body ? ' ' + body : ''}`);
+  });
 
   try {
     await login(page);
@@ -167,8 +200,9 @@ for (const dev of want) {
     // searching for the source string while CSS uppercases the heading. It
     // passed on desktop for an unrelated reason, which is the worst kind of
     // green. Now it measures the rendered border and every device agrees.
-    record(dev, 'Call review renders', !!(r && r.seen && r.card),
-      r && !r.seen ? 'no From your calls section' : (r && !r.card ? 'no commitment card' : ''));
+    const callOk = !!(r && r.seen && r.card);
+    record(dev, 'Call review renders', callOk,
+      callOk ? '' : (r && !r.seen ? 'no From your calls section' : 'no commitment card') + ' — saw: ' + await sawInstead(page, dev, 'callreview'));
     record(dev, 'Call card has a visible edge', !!(r && r.gold),
       r && r.border ? 'border is ' + r.border : 'no card to measure');
   } catch (e) { record(dev, 'Call review renders', false, String(e).slice(0, 60)); }
@@ -244,13 +278,14 @@ for (const dev of want) {
         await new Promise(r => setTimeout(r, 1100));
         const txt = document.body.innerText || '';
         return {
+          signedOut: !!document.querySelector('.auth-screen'),   // = SIGNED_OUT_PROBE (evaluate cannot import)
           crash: txt.includes('This view ran into an error'),
           // a real view has meaningful text; a blank shell is < ~40 chars of content
           contentLen: txt.replace(/\s+/g, ' ').trim().length,
         };
       }, view), 20000, view);
-      const ok = !res.crash && res.contentLen > 40;
-      record(dev, `Room: ${label}`, ok, res.crash ? 'ERROR BOUNDARY' : (res.contentLen <= 40 ? 'blank shell' : ''));
+      const ok = !res.signedOut && !res.crash && res.contentLen > 40;
+      record(dev, `Room: ${label}`, ok, res.signedOut ? SIGNED_OUT_NOTE : res.crash ? 'ERROR BOUNDARY' : (res.contentLen <= 40 ? 'blank shell' : ''));
     } catch (e) {
       const msg = String(e.message || e);
       // A view that stops answering is a real finding, not a harness excuse —
@@ -315,7 +350,7 @@ for (const dev of want) {
       return { first, second, nextDay, key };
     });
     if (r.err) {
-      record(dev, 'Nerve Center resume', false, r.err);
+      record(dev, 'Nerve Center resume', false, r.err + ' — saw: ' + await sawInstead(page, dev, 'nervecenter'));
     } else {
       record(dev, 'Nerve Center opens on Contacts (first visit today)', r.first === 'contacts', r.first === 'contacts' ? '' : `got ${r.first}`);
       record(dev, 'Nerve Center resumes where you left off', r.second === 'calendar', r.second === 'calendar' ? '' : `got ${r.second}`);

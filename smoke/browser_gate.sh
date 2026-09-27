@@ -109,6 +109,12 @@ for s in $SUITES; do
     echo "  ✓ $s — $(grep -oE '====.*====' "$LOGDIR/$s.log" | tail -1)"
   else
     echo "  … $s failed under load — retrying it alone"
+    # Keep the first attempt. The retry writes the same log, and until 26 Sep it
+    # erased the only record of what the flake actually was — a week of
+    # intermittent failures with no evidence left behind.
+    cp "$LOGDIR/$s.log" "$LOGDIR/$s.try1.log"
+    echo "    first attempt: $(grep -cE '✗' "$LOGDIR/$s.try1.log") failing line(s), kept at $LOGDIR/$s.try1.log"
+    grep -E '✗' "$LOGDIR/$s.try1.log" | head -4 | cut -c1-220 | sed 's/^/      /'
     if run_suite "$s"; then
       RETRIED="$RETRIED $s"
       echo "  ✓ $s — $(grep -oE '====.*====' "$LOGDIR/$s.log" | tail -1)  (passed on retry)"

@@ -28,9 +28,23 @@
         if (!('serviceWorker' in navigator)) return;
 
         var reloading = false;
-        // When the new SW takes control (after the user taps Refresh), reload
-        // once so the page swaps to the new bundle. Guarded against loops.
+        // Was this page ALREADY controlled by a service worker when it loaded?
+        // If not, this is the very first visit on this device.
+        var hadController = !!navigator.serviceWorker.controller;
+        // When a NEW SW replaces an old one (an update), reload once so the page
+        // swaps to the new bundle. Guarded against loops.
+        //
+        // NOT on the first install. sw.js calls clients.claim(), so on a first
+        // visit 'controllerchange' fires too (no controller -> the SW) — and the
+        // page reloaded itself a moment after opening. Measured 26 Sep: every
+        // fresh visit reloaded once. On a phone, that lands seconds in, while a
+        // new agent is typing their email and password: the form is wiped and
+        // the Sign In tap sends nothing. It was also the week-long "flaky"
+        // functional check — the test signed in, the reload threw the form
+        // away, and the checks ran against the sign-in screen. There is nothing
+        // to swap to on a first install: the page is already the current build.
         navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!hadController) { hadController = true; return; }
           if (reloading) return;
           reloading = true;
           window.location.reload();

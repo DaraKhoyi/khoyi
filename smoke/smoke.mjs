@@ -5,6 +5,7 @@
 //
 // Usage: SMOKE_URL=... SMOKE_EMAIL=... SMOKE_PASSWORD=... node smoke/smoke.mjs
 import { chromium } from 'playwright';
+import { SIGNED_OUT_PROBE, SIGNED_OUT_NOTE } from './session_guard.mjs';
 
 const URL = process.env.SMOKE_URL || 'http://localhost:4173/';
 const EMAIL = process.env.SMOKE_EMAIL;
@@ -29,7 +30,7 @@ try {
   await page.fill('input[type="email"]', EMAIL);
   await page.fill('input[type="password"]', PASSWORD);
   await page.click('button:has-text("Sign In")');
-  await page.waitForFunction(() => typeof window.__setView === 'function', { timeout: 35000 });
+  await page.waitForFunction(() => typeof window.__setView === 'function' && !document.querySelector('.auth-screen, .loading-screen'),  /* signed IN, not merely booted: __setView exists on the sign-in screen too — see session_guard.mjs */ { timeout: 35000 });
   await page.waitForTimeout(3000); // let first load + data settle
 
   for (const view of VIEWS) {
@@ -38,10 +39,11 @@ try {
     try { await page.evaluate((v) => window.__setView(v), view); } catch (_) {}
     await page.waitForTimeout(1800); // allow lazy chunk + effects to run
     const boundary = await page.evaluate((t) => !!(document.body && document.body.innerText.includes(t)), BOUNDARY);
+    const signedOut = await page.evaluate(SIGNED_OUT_PROBE).catch(() => false);
     const errs = pageErrors.slice(before);
-    const ok = !boundary && errs.length === 0;
-    results.push({ view, ok, boundary, err: errs[0]?.msg });
-    console.log(`${ok ? '✓ PASS' : '✗ FAIL'}  ${view}${boundary ? '   [error boundary]' : ''}${errs[0] ? '   ' + errs[0].msg : ''}`);
+    const ok = !signedOut && !boundary && errs.length === 0;
+    results.push({ view, ok, boundary, err: signedOut ? SIGNED_OUT_NOTE : errs[0]?.msg });
+    console.log(`${ok ? '✓ PASS' : '✗ FAIL'}  ${view}${signedOut ? '   [' + SIGNED_OUT_NOTE + ']' : ''}${boundary ? '   [error boundary]' : ''}${errs[0] ? '   ' + errs[0].msg : ''}`);
   }
   // ── The Ari side-key shell ────────────────────────────────────────────────
   // It lives at /ari/ and is NOT a view, so the loop above can never see it.
