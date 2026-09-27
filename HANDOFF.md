@@ -154,7 +154,9 @@ at 99 roll MINOR and reset.
 `hooks_check` · `dead_ui` · `version_bump` · `data_integrity` ·
 `mutation_guard` · `hover_guard` · `nested_component_guard` ·
 `openscreens_check` · `responsive` · `test_hygiene` · `edge_parse` ·
-`ai_cost_guard`
+`ai_cost_guard` · `anon_exposure` (calls every exposed database function with
+only the public anon key; any real data in the answer blocks — needs the
+service key only to list them)
 Credentialed extras that skip without a key rather than failing: `stale_readers`,
 `cron_health` (blocks on current or repeated failures, reports superseded ones and
 slow calls), `schema_drift`, and two that BLOCK when a key is present:
@@ -515,6 +517,20 @@ grants). Do it this way:
 `create table archive.<table>_<purpose>_<YYYYMMDD> as select * from public.<table> where ...;`
 `smoke/snapshot_quarantine.mjs` fails the gate otherwise. Drop an archive table
 once its fix is proven; they are rollback copies, not records.
+
+**THE ANON KEY IS PUBLIC — A FUNCTION IT CAN CALL IS A PUBLIC WEB PAGE.** The
+anon key ships inside the app, so anyone can call any function granted to
+`anon` (Postgres grants EXECUTE to `public` by default, and `anon` inherits
+it). On 27 Sep five functions answered strangers with real data:
+`speed_to_lead` (every agent's response times), `beta_proof_metrics` (testers'
+names, emails, activity), `brokerage_metrics` (YTD GCI $2.2M, deals, volume)
+and the company average rate and price. `pg_stat_statements` showed no
+legitimate anonymous caller. For every new function that returns business
+data: `revoke execute on function ... from public, anon;` then grant
+`authenticated`/`service_role` as needed, AND gate inside on
+`is_brokerage_staff()` or `auth.role() = 'service_role'`. Never gate on
+`auth.uid() is null` alone — a stranger passes that. `smoke/anon_exposure.mjs`
+fails the gate otherwise (known-answer tested: reopening one function fails it).
 
 ---
 

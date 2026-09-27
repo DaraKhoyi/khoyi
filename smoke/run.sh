@@ -117,6 +117,12 @@ node smoke/ai_cost_guard.mjs
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 
+# What can a stranger read with only the public key (it ships inside the app)?
+# On 27 Sep five database functions handed out agents' response records,
+# testers' contact details and the company's financials. Calls every exposed
+# function as anon; any real data in the answer blocks the push.
+node smoke/anon_exposure.mjs || exit 1
+
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
 # code gets masked and the deploy proceeds on a gate that never ran. A gate that
