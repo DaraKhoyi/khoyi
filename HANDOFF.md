@@ -153,11 +153,13 @@ at 99 roll MINOR and reset.
 `menu_reachable` · `edge_auth` · `clock_check` · `icon_check` ·
 `hooks_check` · `dead_ui` · `version_bump` · `data_integrity` ·
 `mutation_guard` · `hover_guard` · `nested_component_guard` ·
-`openscreens_check` · `responsive` · `test_hygiene`
+`openscreens_check` · `responsive` · `test_hygiene` · `edge_parse` ·
+`ai_cost_guard`
 Credentialed extras that skip without a key rather than failing: `stale_readers`,
 `cron_health` (blocks on current or repeated failures, reports superseded ones and
 slow calls), `schema_drift`, and two that BLOCK when a key is present:
-`snapshot_quarantine` (no one-off backup tables in `public`) and `data_integrity`
+`snapshot_quarantine` (no one-off backup tables in `public`), `function_config`
+(deployed functions = repo; verify_jwt = config.toml) and `data_integrity`
 (listed here for weeks but never actually called by run.sh until 26 Sep — the
 list and the script had drifted; check the script, not the list). `touch_targets` REPORTS and does not block — the
 baseline differs between this container and CI (111 vs 112 on the same commit)
@@ -458,6 +460,26 @@ instead of blocking. **`net._http_response` has NO index on `id`**: bound it by
 `created` (indexed) and materialise before joining, or the planner may rescan it
 per row — 100s+, and it failed a live monitor run on 26 Sep.
 
+**THE REPO MUST DESCRIBE WHAT IS DEPLOYED — AND NOW A CHECK SAYS SO.** (26 Sep)
+Seventeen live edge functions had no source here; six more were live on code
+older than the repo (fixes committed in July and September that never shipped);
+42 of 46 functions bundled an old `_shared/aiUsage.ts`. Causes, all fixed:
+`deploy-functions.yml` skipped `_shared/` entirely (now redeploys every importer);
+`property-research` had not PARSED since 19 Sep (a `//` comment swallowed its
+closing brackets), so its deploys failed silently; 31 functions were live with
+verify_jwt OFF but absent from `config.toml`, so their next deploy would have
+locked out their cron/webhook callers. Guards: `edge_parse` (every function
+parses; static, runs in CI), `function_config` (every deployed function has
+source here; verify_jwt matches config.toml), `ai_cost_guard` (every AI-calling
+function records its cost; 8 did not, 3 of those also had NO caller check).
+**Verify a function deploy by its VERSION NUMBER**, not the CLI's message:
+parallel `supabase functions deploy` runs reported success for three functions
+that never changed. Recover missing source with
+`npx supabase functions download <slug> --project-ref <ref> --use-api`.
+Internal function-to-function calls send `x-qcp-token` as well as the service
+key: two service-key formats are live, and a bare key compare fails when caller
+and callee hold different ones — that is how 7 of 10 morning briefings were lost.
+
 **SNAPSHOTS GO IN `archive`, NEVER `public`.** Snapshotting a table before a data
 fix is right; putting the copy beside the live table is not. By 26 Sep eleven
 had piled up in `public` — `cfd_backup_20260923` alone was 12,420 rows, the
@@ -586,20 +608,11 @@ whitelisted in `launchTarget()`.
   goal set despite onboarding shipping to fix exactly that.
 
 **Known and open**
-- **Ari morning-briefing email (found 26 Sep, not yet investigated).** Two users
-  have it on for 07:00. Dara's briefing was GENERATED at 07:00 on 26 Sep but
-  `ari_briefing_prefs.last_delivered_date` still read 25 Sep; the other user
-  (vickiemitchellfl@) has no delivery account and has never been delivered one.
-  The 07:00 run outlives the 30s wait every day, so its HTTP result says nothing.
-- **17 deployed edge functions have NO source in this repo** (26 Sep):
-  anthropic-status, ari-briefing, ari-briefing-deliver, ari-call-prep,
-  calendar-poll, disc-readout, email-to-task, github-status, gmail-attachment,
-  gmail-discover, gmail-push, gmail-watch, myvoice-synthesize,
-  run-recurring-transactions, scheduled-email-send, sync-agent-profiles,
-  task-email-ingest. Several run every few minutes. They cannot be reviewed or
-  safely fixed from here until pulled back (`supabase functions download`).
-- **worker_calls is pruned by two rules**: `prune_worker_calls()` keeps 14 days,
-  the daily `worker-calls-prune-daily` job keeps 7. The 7 wins. Pick one.
+- **Vickie Mitchell (vickiemitchellfl@) gets no morning briefing by design now**:
+  no email account, no phone notifications, last sign-in 29 Jul. The delivery
+  job records "no delivery channel" and no longer pays to write one ahead; the
+  Briefing screen writes it on demand if she opens the app. A human question,
+  not code: is she still an active user?
 - **Mary Sous has no email connected** — the system has never seen one of her
   leads. Still the single highest-leverage action available.
 - **The concierge learns mostly from rejections** — hundreds of auto-learned

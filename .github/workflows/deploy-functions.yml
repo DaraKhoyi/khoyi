@@ -29,6 +29,17 @@ jobs:
           fi
           FUNCS=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'supabase/functions/*/**' \
             | sed -E 's#supabase/functions/([^/]+)/.*#\1#' | sort -u | grep -v '^_' || true)
+          # A change to supabase/functions/_shared/<file> must redeploy EVERY
+          # function that imports it — each function bundles its own copy at
+          # deploy time. Until 26 Sep this step skipped _shared entirely, and
+          # the 19 Sep change to _shared/aiUsage.ts (record WHAT each AI spend
+          # was about) never reached the functions that use it.
+          SHARED=$(git diff --name-only "$BEFORE" "${{ github.sha }}" -- 'supabase/functions/_shared/**' | xargs -r -n1 basename || true)
+          for f in $SHARED; do
+            USERS=$(grep -rlE "_shared/${f}['\"]" supabase/functions --include=*.ts --include=*.js \
+              | sed -E 's#supabase/functions/([^/]+)/.*#\1#' | grep -v '^_' || true)
+            FUNCS=$(printf '%s\n%s\n' "$FUNCS" "$USERS" | sed '/^$/d' | sort -u)
+          done
           echo "Changed functions:"; echo "$FUNCS"
           {
             echo "funcs<<EOF"

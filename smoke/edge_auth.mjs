@@ -38,6 +38,7 @@ if (!existsSync(ROOT)) { console.log("EDGE AUTH GUARD: no functions directory");
 // and is not reachable with a user token; or it is a public portal whose whole
 // job is to serve someone with no account, protected by an unguessable token.
 const ALLOWED = new Map([
+  ["sync-agent-profiles", "pg_cron only (sync-agent-profiles-15min); nothing in src/ or any function calls it; requires x-internal-token = QCP_TOKEN and fails closed if unset (hardened 26 Sep). owner_user_id is trusted only because the caller holds the internal token"],
   // Internal only, and gated on x-qcp-token rather than a user JWT. It takes a
   // QUESTION from the body, never an identity: there is no user_id to spoof and
   // nothing it returns is scoped to a person. It was correctly flagged when it

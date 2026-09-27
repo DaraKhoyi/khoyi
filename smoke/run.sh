@@ -53,6 +53,10 @@ if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/schema_drift.mjs; fi
 # snapshots had piled up in public, one of them financial.)
 if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/snapshot_quarantine.mjs; fi
 
+# Every deployed edge function has source here, and config.toml's verify_jwt
+# matches live — or the next deploy flips it and locks out a cron caller. BLOCKS.
+if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/function_config.mjs; fi
+
 # Crash-shaped and orphaned records in live data. BLOCKS. HANDOFF.md listed this
 # as a gate guard for weeks while nothing here ran it — wired in 26 Sep.
 if [ -n "${SUPABASE_PAT:-}" ]; then SUPA_PAT="$SUPABASE_PAT" node smoke/data_integrity.mjs; fi
@@ -101,6 +105,14 @@ node smoke/jsx_escapes.mjs
 # exactly that shape, all invisible to a gate that only drives the browser.
 echo "→ edge function auth guard"
 node smoke/edge_auth.mjs
+
+# Every edge function file must PARSE — the gate built the app but never the
+# functions, and property-research failed to deploy for a week unnoticed.
+node smoke/edge_parse.mjs
+
+# Every function that spends AI credit records it against the user (standing
+# rule; 8 functions had been spending unrecorded). Static, runs in CI too.
+node smoke/ai_cost_guard.mjs
 
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }

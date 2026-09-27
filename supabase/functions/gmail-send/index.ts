@@ -61,15 +61,46 @@ function buildBodyPart({ bodyText, bodyHtml }) {
   const L = [];
   if (bodyText && bodyHtml) {
     L.push(`Content-Type: multipart/alternative; boundary="${b}"`, "",
-      `--${b}`, `Content-Type: text/plain; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyText,
-      `--${b}`, `Content-Type: text/html; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyHtml,
+      `--${b}`, `Content-Type: text/plain; charset="UTF-8"`, `Content-Transfer-Encoding: 8bit`, "", bodyText,
+      `--${b}`, `Content-Type: text/html; charset="UTF-8"`, `Content-Transfer-Encoding: 8bit`, "", bodyHtml,
       `--${b}--`);
   } else if (bodyHtml) {
-    L.push(`Content-Type: text/html; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyHtml);
+    L.push(`Content-Type: text/html; charset="UTF-8"`, `Content-Transfer-Encoding: 8bit`, "", bodyHtml);
   } else {
-    L.push(`Content-Type: text/plain; charset="UTF-8"`, `Content-Transfer-Encoding: 7bit`, "", bodyText || "");
+    L.push(`Content-Type: text/plain; charset="UTF-8"`, `Content-Transfer-Encoding: 8bit`, "", bodyText || "");
   }
   return L.join("\r\n");
+}
+
+// RFC 2047: a header may only carry ASCII. Anything else must be sent as
+// encoded-words (=?UTF-8?B?...?=), or the reader decodes the raw UTF-8 bytes as
+// Latin-1. Found 26 Sep: the Ari Briefing subject "Your Ari Briefing — Saturday"
+// arrived as "Your Ari Briefing Ã¢Â€Â” Saturday", and so would any subject or
+// sender name with an accent (Hernández, José). Chunked on character
+// boundaries so no word exceeds 75 chars and no multi-byte char is split.
+function encodeHeaderWord(s) {
+  const str = String(s ?? "");
+  if (/^[\x20-\x7E]*$/.test(str)) return str;
+  const enc = new TextEncoder();
+  const words = [];
+  let chunk = "";
+  for (const ch of str) {
+    if (enc.encode(chunk + ch).length > 45) { words.push(chunk); chunk = ""; }
+    chunk += ch;
+  }
+  if (chunk) words.push(chunk);
+  return words.map((w) => {
+    const bytes = enc.encode(w);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return `=?UTF-8?B?${btoa(bin)}?=`;
+  }).join("\r\n ");
+}
+// "Display Name" <addr> with the name encoded when it is not plain ASCII.
+function formatAddress(name, email) {
+  if (!name) return email;
+  const n = String(name);
+  return /^[\x20-\x7E]*$/.test(n) ? `"${n.replace(/"/g, "")}" <${email}>` : `${encodeHeaderWord(n)} <${email}>`;
 }
 
 function buildRfc822({ from, to, cc, bcc, subject, bodyText, bodyHtml, headers, attachments }) {
@@ -78,7 +109,7 @@ function buildRfc822({ from, to, cc, bcc, subject, bodyText, bodyHtml, headers, 
   if (to.length > 0) head.push(`To: ${to.join(", ")}`);
   if (cc.length > 0) head.push(`Cc: ${cc.join(", ")}`);
   if (bcc.length > 0) head.push(`Bcc: ${bcc.join(", ")}`);
-  if (subject) head.push(`Subject: ${subject}`);
+  if (subject) head.push(`Subject: ${encodeHeaderWord(subject)}`);
   head.push(`MIME-Version: 1.0`);
   if (headers) for (const [k, v] of Object.entries(headers)) head.push(`${k}: ${v}`);
 
@@ -250,9 +281,7 @@ serve(async (req) => {
     }
 
     const rfc822 = buildRfc822({
-      from: resolvedFromName
-        ? `"${resolvedFromName}" <${resolvedFromEmail}>`
-        : resolvedFromEmail,
+      from: formatAddress(resolvedFromName, resolvedFromEmail),
       to: arrayify(to),
       cc: arrayify(cc),
       bcc: arrayify(bcc),

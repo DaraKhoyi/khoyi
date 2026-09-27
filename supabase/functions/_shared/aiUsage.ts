@@ -10,7 +10,8 @@
 // body.user_id for service-to-service calls; if it's genuinely unknown, the row is
 // skipped rather than mis-attributed. The ONLY exemptions are system/dev functions
 // with no billable agent action (ai-key-manage key-ping, crash-monitor, propose-patch,
-// ai-note-cleanup). When you add a new AI-calling function, wiring one of these in is
+// ai-note-cleanup, anthropic-status — a 1-token health ping). smoke/ai_cost_guard.mjs
+// enforces this list. When you add a new AI-calling function, wiring one of these in is
 // not optional — it's part of shipping the feature.
 //
 // Usage inside a function, right after you parse the Anthropic response:
@@ -58,6 +59,29 @@ export async function logEmbeddingUsage(
     if (error) console.error(`[aiUsage] ${fn} embed log failed:`, error.message);
   } catch (e) {
     console.error(`[aiUsage] ${fn} embed log threw:`, e);
+  }
+}
+
+// Log an OpenAI text-to-speech call (the Ari Briefing voicemail). The speech
+// endpoint returns audio, not a usage object, so cost is ESTIMATED from the text
+// length: gpt-4o-mini-tts is roughly $0.015 per minute of audio, and ~825
+// characters of prose is about a minute. Recorded so the spend is visible and
+// attributed; update TTS_PER_CHAR if the price changes. (Added 26 Sep.)
+const TTS_PER_CHAR: Record<string, number> = { "gpt-4o-mini-tts": 0.015 / 825 };
+export async function logTtsUsage(
+  supabase: any,
+  { userId, fn, model, chars }: { userId?: string | null; fn: string; model: string; chars: number },
+): Promise<void> {
+  try {
+    if (!userId || !chars) return;
+    const cost = chars * (TTS_PER_CHAR[model] ?? 0.015 / 825);
+    const { error } = await supabase.from("ai_usage_log").insert({
+      user_id: userId, fn, model, input_tokens: Math.ceil(chars / 4), output_tokens: 0,
+      web_searches: 0, cost_usd: cost, used_own_key: false,
+    });
+    if (error) console.error(`[aiUsage] ${fn} tts log failed:`, error.message);
+  } catch (e) {
+    console.error(`[aiUsage] ${fn} tts log threw:`, e);
   }
 }
 

@@ -106,8 +106,11 @@ Deno.serve(async (req) => {
       return J({ error: `Research service error ${apiResp.status}. Please try again.` }, 502);
     }
     const apiData = await apiResp.json();
+    // subjectId is null: property research is keyed by address; no row id exists.
+    // (Until 26 Sep this comment sat INSIDE the statement and swallowed its
+    // closing "); } catch", so the file did not parse and never deployed.)
     try { await logAiUsage(admin, { userId: billUserId, fn: "property-research", model: MODEL, usage: apiData?.usage, usedOwn: false,
-      subjectType: "property", subjectId: null }   // keyed by address; no row id exists); } catch (_) {}
+      subjectType: "property", subjectId: null }); } catch (_) {}
 
     const fullText = (apiData.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
     const data = extractJson(fullText);

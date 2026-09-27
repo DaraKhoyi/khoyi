@@ -264,3 +264,101 @@ verify_jwt = false
 
 [functions.lead-triage-worker]
 verify_jwt = false
+
+# ── Added 26 Sep: live with verify_jwt OFF but missing here. `supabase functions
+# deploy` reads THIS file, and an absent entry means verify_jwt = true — so the
+# next CI deploy of any of these would have locked out its cron/webhook caller.
+# smoke/function_config.mjs now fails the gate if live and this file disagree.
+
+[functions.bounce-scan]
+verify_jwt = false
+
+[functions.brain-embed]
+verify_jwt = false
+
+[functions.brain-semantic-search]
+verify_jwt = false
+
+[functions.call-commitments]
+verify_jwt = false
+
+[functions.commitment-nudge]
+verify_jwt = false
+
+[functions.commitment-rejudge]
+verify_jwt = false
+
+[functions.contact-link-emails]
+verify_jwt = false
+
+[functions.disc-analyze]
+verify_jwt = false
+
+[functions.document-search]
+verify_jwt = false
+
+[functions.dropbox-oauth-callback]
+verify_jwt = false
+
+[functions.dropbox-sync]
+verify_jwt = false
+
+[functions.dropbox-webhook]
+verify_jwt = false
+
+[functions.geocode-transactions]
+verify_jwt = false
+
+[functions.gmail-discover]
+verify_jwt = false
+
+[functions.gmail-sync]
+verify_jwt = false
+
+[functions.investor-intake]
+verify_jwt = false
+
+[functions.investor-notify]
+verify_jwt = false
+
+[functions.investor-portal]
+verify_jwt = false
+
+[functions.ios-ingest]
+verify_jwt = false
+
+[functions.journal-search]
+verify_jwt = false
+
+[functions.lead-brief]
+verify_jwt = false
+
+[functions.listing-present]
+verify_jwt = false
+
+[functions.night-review]
+verify_jwt = false
+
+[functions.panel-draft]
+verify_jwt = false
+
+[functions.panel-propose]
+verify_jwt = false
+
+[functions.pending-process]
+verify_jwt = false
+
+[functions.property-research]
+verify_jwt = false
+
+[functions.research-report-docx]
+verify_jwt = false
+
+[functions.sheets-sync]
+verify_jwt = false
+
+[functions.sync-agent-profiles]
+verify_jwt = false
+
+[functions.usage-report-monthly]
+verify_jwt = false

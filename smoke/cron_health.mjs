@@ -153,6 +153,22 @@ const PROOF = {
     what: 'a successful nightly email-intel run in the last 26h (runs 03:30)',
     sql: `select count(*) n from public.email_intel_runs where status = 'ok' and started_at > now() - interval '26 hours'`,
   },
+  // The morning briefing reached Dara on 3 of 10 mornings while every run
+  // "succeeded" (26 Sep). Proof here is the DELIVERY: once a user's catch-up
+  // window (send_hour + 4h) has closed, today must be stamped delivered. This
+  // one counts FAILURES, so it passes at zero and names who missed and why.
+  'ari-briefing-deliver-hourly': {
+    what: 'every enabled morning briefing delivered once its window has closed',
+    missing: `select coalesce(string_agg(coalesce(u.email, p.user_id::text) || ': ' || coalesce(p.last_result, 'never attempted'), '; '), '') who, count(*) n
+      from public.ari_briefing_prefs p left join auth.users u on u.id = p.user_id
+      where p.enabled
+        and extract(hour from now() at time zone coalesce(p.tz, 'America/New_York')) >= coalesce(p.send_hour, 7) + 4
+        and coalesce(p.last_delivered_date, date '1900-01-01') < (now() at time zone coalesce(p.tz, 'America/New_York'))::date
+        -- a user with no way to receive it is a setup fact, not a delivery failure —
+        -- but only if TODAY's run actually looked and said so
+        and not (coalesce(p.last_result, '') like 'no delivery channel%'
+                 and (p.last_attempt_at at time zone coalesce(p.tz, 'America/New_York'))::date = (now() at time zone coalesce(p.tz, 'America/New_York'))::date)`,
+  },
 };
 
 const failing = await q(`select * from public.workers_failing_every_run(interval '60 minutes')`);
@@ -194,6 +210,13 @@ for (const o of outcomes) {
   if (Number(o.no_resp) > 0) slow.push(o);
 }
 for (const [job, p] of Object.entries(PROOF)) {
+  if (p.missing) {
+    let r = null;
+    try { r = (await q(p.missing))[0]; } catch (e) { r = null; }
+    if (!r) problems.push({ kind: 'no-output', job, detail: `proof query failed: ${p.what}` });
+    else if (Number(r.n) > 0) problems.push({ kind: 'no-output', job, detail: `${r.n} missed — ${p.what}: ${r.who}` });
+    continue;
+  }
   let n = -1;
   try { n = Number((await q(p.sql))[0].n); } catch (e) { n = -1; }
   if (!(n > 0)) problems.push({ kind: 'no-output', job, detail: `no proof of work: expected ${p.what}${n < 0 ? ' (proof query failed)' : ''}` });
