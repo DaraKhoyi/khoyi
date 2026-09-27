@@ -286,7 +286,7 @@ if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 // renders blank. To migrate more of the app off emoji over time, add the
 // concept here and render <Icon name="…" />.
 import { Icon, ICON_PATHS } from './icons';
-import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num, pickerInitials, owesReply, modal, lbl, splitQuotedReply, decodeEntities, MERGE_FIELDS, applyMergeFields, resolveSendAccount, isTopPriority, QUADRANTS, sortTasks } from './helpers';
+import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num, pickerInitials, owesReply, modal, lbl, splitQuotedReply, decodeEntities, MERGE_FIELDS, applyMergeFields, resolveSendAccount, EMAIL_ACCOUNT_COLS, isTopPriority, QUADRANTS, sortTasks } from './helpers';
 
 // Rainbow PRISM wordmark — DISC palette (D red, I amber, S green, C blue) + violet 5th
 const PRISM_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6'];
@@ -1445,7 +1445,7 @@ function AppMain() {
       ['playbookRuns',   supabase.from('playbook_runs').select('*').order('created_at', { ascending: false }).limit(50)],
       ['profiles',       supabase.from('profiles').select('*').order('created_at', { ascending: true })],
       ['voiceCards',     supabase.from('voice_cards').select('*').order('created_at', { ascending: true })],
-      ['emailAccounts',  supabase.from('email_accounts').select('*').order('created_at', { ascending: true })],
+      ['emailAccounts',  supabase.from('email_accounts').select(EMAIL_ACCOUNT_COLS).order('created_at', { ascending: true })],
       ['emailAliases',   supabase.from('email_aliases').select('*').order('email_address', { ascending: true })],
       // Pass 2 Batch C — user_settings row drives onboarding modal + personalization.
       // maybeSingle so we get null (not an error) when row doesn't exist yet.

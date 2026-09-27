@@ -55,9 +55,10 @@ if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/snapshot_quarantine.mjs; fi
 
 # Definer functions whose owner check a signed-out caller skips ("auth.uid() is
 # not null and ..."), and sensitive columns on tables other agents can read
-# through sharing. BLOCKS. (27 Sep: set_tax_id + merge_contacts; the panel's
-# contacts.tax_id_last4.)
-if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/definer_guard.mjs; fi
+# through sharing, and credentials (Google tokens, iCloud password) readable by
+# the browser. BLOCKS. (27 Sep: set_tax_id + merge_contacts; the panel's
+# contacts.tax_id_last4 and iCloud key.) Its static half runs without a PAT.
+node smoke/definer_guard.mjs
 
 # Every deployed edge function has source here, and config.toml's verify_jwt
 # matches live — or the next deploy flips it and locks out a cron caller. BLOCKS.

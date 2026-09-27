@@ -182,6 +182,13 @@ export function applyMergeFields(text, { contact, deal, property, senderName } =
   });
 }
 
+// Every column of email_accounts the browser may read. The Google tokens
+// (access_token, refresh_token) are withheld from browser sessions, so
+// select('*') on this table FAILS — always select these. has_refresh_token says
+// whether the account is connected. A new column must be added here AND granted
+// (supabase/sql/2026-09-27_credential_isolation.sql explains).
+export const EMAIL_ACCOUNT_COLS = 'id,user_id,provider,email_address,display_name,has_refresh_token,token_expires_at,history_id,initial_sync_done,last_sync_at,last_sync_error,is_active,scopes,created_at,updated_at,purposes,watch_expires_at,watch_history_id,intel_enabled,is_default,reauth_required_at,reauth_notified_at,last_health_check_at,skips_inbox';
+
 export async function resolveSendAccount(fields = 'id,email_address') {
   const sel = fields.includes('is_default') ? fields : fields + ',is_default';
   const { data } = await supabase.from('email_accounts')

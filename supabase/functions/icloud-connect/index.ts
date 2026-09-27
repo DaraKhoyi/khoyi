@@ -1,25 +1,14 @@
 // icloud-connect — validates an agent's iCloud app-specific password over CalDAV,
 // discovers their calendar home, ensures a dedicated "PrismOS" calendar exists,
-// and stores the (encrypted) credential + URLs on their icloud_connections row.
+// and stores the credential (encrypted inside the database with a Vault key —
+// this function never holds a key) + URLs on their icloud_connections row.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { appleUrl, setIcloudPassword } from "../_shared/icloudCredential.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ENC_KEY_B64 = Deno.env.get("ICLOUD_ENC_KEY")!;
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
-
-async function encKey() {
-  const raw = Uint8Array.from(atob(ENC_KEY_B64), (c) => c.charCodeAt(0));
-  return await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
-}
-async function encrypt(plain: string) {
-  const key = await encKey();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plain)));
-  const out = new Uint8Array(iv.length + ct.length); out.set(iv); out.set(ct, iv.length);
-  return btoa(String.fromCharCode(...out));
-}
 
 const basic = (email: string, pw: string) => "Basic " + btoa(email + ":" + pw);
 async function dav(method: string, url: string, auth: string, body?: string, extra: Record<string, string> = {}) {
@@ -51,20 +40,24 @@ Deno.serve(async (req) => {
     if (p.status === 401) return new Response(JSON.stringify({ error: "Apple rejected those credentials. Make sure it's an app-specific password from appleid.apple.com (not your main password)." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     const principalPath = rx(p.text, /current-user-principal[^>]*>\s*<href[^>]*>([^<]+)</is);
     if (!principalPath) return new Response(JSON.stringify({ error: "Could not read your iCloud account (no principal). Status " + p.status }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-    const principalUrl = principalPath.startsWith("http") ? principalPath : "https://caldav.icloud.com" + principalPath;
+    const principalUrl = appleUrl(principalPath.startsWith("http") ? principalPath : "https://caldav.icloud.com" + principalPath);
+    if (!principalUrl) return new Response(JSON.stringify({ error: "iCloud answered with an address that is not Apple's; refusing to send your password there." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 
     const h = await dav("PROPFIND", principalUrl, auth,
       '<A:propfind xmlns:A="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><A:prop><C:calendar-home-set/></A:prop></A:propfind>', { Depth: "0" });
-    const homeUrl = rx(h.text, /calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</is);
+    const homeRaw = rx(h.text, /calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</is);
+    const homeUrl = homeRaw ? appleUrl(homeRaw.startsWith("http") ? homeRaw : new URL(homeRaw, principalUrl).toString()) : null;
     if (!homeUrl) return new Response(JSON.stringify({ error: "Could not find your iCloud calendar home." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     // Pull model: no calendar is created in iCloud. We just store the validated
     // credential + home URL; icloud-sync reads their personal calendars into PrismOS.
     const svc = createClient(SUPABASE_URL, SERVICE_ROLE);
-    await svc.from("icloud_connections").upsert({
-      user_id: user.id, apple_id: email, app_password_enc: await encrypt(pw),
+    const { error: upErr } = await svc.from("icloud_connections").upsert({
+      user_id: user.id, apple_id: email,
       principal_url: principalUrl, calendar_home_url: homeUrl, prismos_calendar_url: null,
       enabled: true, status: "connected", last_error: null, updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
+    if (upErr) throw new Error("could not save the connection: " + upErr.message);
+    await setIcloudPassword(svc, user.id, pw);
 
     return new Response(JSON.stringify({ ok: true, apple_id: email }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e) {

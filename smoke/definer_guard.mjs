@@ -1,4 +1,4 @@
-// definer_guard.mjs — two database-permission mistakes that must not come back.
+// definer_guard.mjs — database-permission mistakes that must not come back.
 //
 // 1. THE NULL-UID BYPASS. A SECURITY DEFINER function runs with full rights, so
 //    its own check is the only lock. Written as
@@ -21,13 +21,44 @@
 //    column on a table whose read policy shares rows — unless it is listed in
 //    TRANSITIONAL and holds no data at all.
 //
-// Needs SUPABASE_PAT. BLOCKS.
+// 3. CREDENTIALS IN THE BROWSER. Until 27 Sep every agent's Google refresh
+//    token was loaded into their browser (select('*') on email_accounts), and
+//    an agent's session could read their iCloud ciphertext and rewrite the
+//    address the password is sent to. No browser role (anon, authenticated) may
+//    read any credential-shaped column — tokens, passwords, ciphertext, keys.
+//    Because the tokens are withheld, select('*') on email_accounts from src/
+//    now fails at runtime; that is checked statically too (runs without a PAT).
+//
+// Needs SUPABASE_PAT for 1–3's database half. BLOCKS.
 // Usage: SUPABASE_PAT=... node smoke/definer_guard.mjs
+
+import fs from 'node:fs';
+import path from 'node:path';
 
 const PAT = process.env.SUPABASE_PAT;
 const REF = process.env.SUPABASE_REF || 'xlgfspnojjgvkuitcoaf';
+
+// Static half: tables whose credential columns are withheld from the browser.
+const WITHHELD = ['email_accounts', 'icloud_connections', 'cloud_tokens', 'user_ai_keys'];
+const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+  const p = path.join(d, e.name);
+  return e.isDirectory() ? walk(p) : /\.(js|jsx|ts|tsx)$/.test(e.name) ? [p] : [];
+});
+const staticBad = [];
+for (const f of walk('src')) {
+  const src = fs.readFileSync(f, 'utf8');
+  for (const t of WITHHELD) {
+    const re = new RegExp(`from\\(['"\`]${t}['"\`]\\)\\s*\\.select\\(\\s*(\\)|['"\`]\\s*\\*)`, 'g');
+    if (re.test(src)) staticBad.push(`${f} — select('*') on ${t}: the browser may not read its credential columns; list columns (EMAIL_ACCOUNT_COLS)`);
+  }
+}
 if (!PAT) {
-  console.log('==== DEFINER GUARD: skipped — set SUPABASE_PAT to run this check ====');
+  if (staticBad.length) {
+    console.log(`==== DEFINER GUARD: ${staticBad.length} problem(s) ====`);
+    for (const b of staticBad) console.log('  ✗ ' + b);
+    process.exit(1);
+  }
+  console.log('==== DEFINER GUARD: static part clean; database part skipped — set SUPABASE_PAT ====');
   process.exit(0);
 }
 
@@ -70,7 +101,29 @@ const cols = await q(String.raw`
                     and p.qual ~* '(shared_scope|is_team_member|can_view_recruit)')
    order by 1, 2`);
 
-const bad = [];
+// Credential-shaped columns no browser role may read.
+const CRED = String.raw`(refresh_token|access_token|password|secret|_enc$|_pgp$|ciphertext|api_key|private_key)`;
+const credCols = await q(String.raw`
+  select c.table_name t, c.column_name col,
+         has_column_privilege('anon', format('public.%I', c.table_name), c.column_name, 'select') anon,
+         has_column_privilege('authenticated', format('public.%I', c.table_name), c.column_name, 'select') auth
+    from information_schema.columns c
+   where c.table_schema = 'public' and c.column_name ~* '${CRED}' and c.column_name !~* '^has_'
+   order by 1, 2`);
+// STAGED until 28 Sep 07:00 UTC: the email_accounts revoke waits for phones to
+// load the build that stops select('*'). Until then the scheduled job must
+// exist; after, the revoke must have happened. Delete this block after 28 Sep.
+const STAGED_UNTIL = Date.parse('2026-09-28T07:15:00Z');
+const staged = Date.now() < STAGED_UNTIL
+  ? (await q(`select count(*)::int n from cron.job where jobname = 'email-accounts-hide-tokens-once'`))[0].n > 0
+  : false;
+
+const bad = [...staticBad];
+for (const r of credCols) {
+  if (!r.anon && !r.auth) continue;
+  if (staged && r.t === 'email_accounts' && !r.anon) continue;
+  bad.push(`${r.t}.${r.col} — credential readable by ${[r.anon && 'anon', r.auth && 'authenticated'].filter(Boolean).join(' and ')} (the browser)`);
+}
 for (const r of bypass) bad.push(`${r.sig} — "auth.uid() is not null and …" lets a signed-out caller skip the check`);
 for (const { t, col } of cols) {
   const key = `${t}.${col}`;
@@ -80,7 +133,7 @@ for (const { t, col } of cols) {
 }
 
 if (!bad.length) {
-  console.log(`==== DEFINER GUARD: clean — no signed-out bypass in any callable definer function; no sensitive data on shared tables (${cols.length} transitional column(s), empty) ====`);
+  console.log(`==== DEFINER GUARD: clean — no signed-out bypass; no sensitive data on shared tables (${cols.length} transitional, empty); ${credCols.length} credential columns hidden from the browser${staged ? ' (email_accounts revoke scheduled for 28 Sep 03:00 EDT)' : ''} ====`);
   process.exit(0);
 }
 console.log(`==== DEFINER GUARD: ${bad.length} problem(s) ====`);

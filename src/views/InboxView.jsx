@@ -6,7 +6,7 @@ import { Icon } from '../icons';
 import RecruitingView from './RecruitingView';
 import { HeaderSearchIcon, HeaderSearchInput } from './SharedUi';
 import { PriorityField } from './TrackerPanels';
-import { canHover, decodeEntities } from '../helpers';
+import { canHover, decodeEntities, EMAIL_ACCOUNT_COLS } from '../helpers';
 import AriRewriteButton from './AriRewriteButton';
 import ForkTuningOverlay from './ForkTuningOverlay';
 import { Tip } from '../tipsUi';
@@ -685,7 +685,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
 
   // All connected email-capable Google accounts (locked-in once OAuth'd for email).
   const mailAccounts = emailAccounts.filter(a =>
-    ((a.purposes || []).includes('email') || (a.scopes || []).some(s => s.includes('gmail'))) && a.refresh_token
+    ((a.purposes || []).includes('email') || (a.scopes || []).some(s => s.includes('gmail'))) && a.has_refresh_token
   );
   const [selectedId, setSelectedId] = useState(null);
   // How many threads are worth a look in each account. Shown on the pills so it
@@ -1607,7 +1607,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         setSyncMsg(`Synced — ${r.new_messages || 0} new`);
         await loadThreads();
         // Refresh account row
-        const { data: acct } = await supabase.from('email_accounts').select('*').eq('id', account.id).single();
+        const { data: acct } = await supabase.from('email_accounts').select(EMAIL_ACCOUNT_COLS).eq('id', account.id).single();
         if (acct) setEmailAccounts(prev => prev.map(a => a.id === acct.id ? acct : a));
         // Pass 4 Batch D: kick off auto-triage in background for any new threads.
         // Refetch threads first so we have the latest list including new ones.
@@ -1681,7 +1681,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
       }
     }
     await loadThreads();
-    const { data: acct } = await supabase.from('email_accounts').select('*').eq('id', account.id).single();
+    const { data: acct } = await supabase.from('email_accounts').select(EMAIL_ACCOUNT_COLS).eq('id', account.id).single();
     if (acct) setEmailAccounts(prev => prev.map(a => a.id === acct.id ? acct : a));
     // Pass 5 Finding #8: store the cleanup-timer handle so the unmount/account
     // change effect can clear it. Previously this fired setState on dead components.

@@ -546,6 +546,22 @@ can read by sharing — contacts is one. Tax IDs live only in `contact_tax_ids`
 (owner + staff), read and written through `src/taxId.js`.
 `smoke/definer_guard.mjs` enforces both.
 
+**NO THIRD-PARTY CREDENTIAL EVER REACHES THE BROWSER, AND NO KEY LIVES IN A
+FUNCTION'S ENVIRONMENT.** Found 27 Sep (panel asked about the iCloud key): the
+app loaded `email_accounts` with select('*'), so every agent's Gmail refresh
+token — standing access to their mailbox — sat in their phone's memory; and an
+agent's session could rewrite `icloud_connections.calendar_home_url`, the
+address icloud-sync sends the Apple password to every 20 minutes. Now: token,
+password and ciphertext columns are withheld from anon/authenticated (the app
+reads `has_refresh_token`; select('*') on these tables FAILS — use
+`EMAIL_ACCOUNT_COLS` in src/helpers.js, and GRANT any new column); the iCloud
+key is in Vault (`icloud_key`) and only the database encrypts/decrypts, via
+service-role-only functions; credentials are only ever sent to https://*.icloud.com.
+Honest limit: every edge function holds the service-role key, so a compromised
+function can still ask the database to decrypt. Vault means the key is never in
+a function's env, logs or memory, and rotates in one place.
+`smoke/definer_guard.mjs` enforces the browser half.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"
@@ -652,6 +668,17 @@ whitelisted in `launchTarget()`.
   columns, the trigger and `contacts_strip_tax_id()`, then remove TRANSITIONAL in
   `smoke/definer_guard.mjs` and the `contacts.tax_id_type=ssn` entry in
   `smoke/stale_readers.mjs`.
+
+- **28 Sep, after 03:00 EDT: confirm the staged email-token revoke ran.**
+  `select has_column_privilege('authenticated','public.email_accounts','refresh_token','select')`
+  must be false and cron job `email-accounts-hide-tokens-once` gone. Then delete
+  the STAGED block in `smoke/definer_guard.mjs` (the guard fails on its own if
+  the revoke did not happen).
+- **Move `AI_KEY_ENC_SECRET` into Vault**, the iCloud way. Personal AI keys
+  (`user_ai_keys`) are encrypted with a key held in the environment of 8 edge
+  functions. 0 keys stored today, and the browser can no longer read the
+  ciphertext, so nothing is exposed — do it before the first agent saves a key.
+  Pattern: `_shared/icloudCredential.ts` + `icloud_set_password/get_password`.
 
 **Waiting on Dara — do not start these uninvited**
 - **The tiered gate.** Full gate for logic/DB changes, fast gate for wording and

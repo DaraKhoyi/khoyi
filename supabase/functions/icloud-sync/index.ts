@@ -4,18 +4,12 @@
 // personal side) and never books over personal time. Pull-only — nothing is
 // written back to iCloud, so no duplication. Runs per-user (JWT) or all (cron).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { appleUrl, getIcloudPassword } from "../_shared/icloudCredential.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ENC_KEY_B64 = Deno.env.get("ICLOUD_ENC_KEY")!;
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type" };
 
-async function decrypt(b64: string) {
-  const raw = Uint8Array.from(atob(ENC_KEY_B64), (c) => c.charCodeAt(0));
-  const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
-  const buf = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: buf.slice(0, 12) }, key, buf.slice(12)));
-}
 const basic = (e: string, p: string) => "Basic " + btoa(e + ":" + p);
 async function dav(method: string, url: string, auth: string, body?: string, extra: Record<string, string> = {}) {
   const headers: Record<string, string> = { Authorization: auth, "User-Agent": "PrismOS/1.0", ...extra };
@@ -57,9 +51,13 @@ function field(block: string, name: string) {
 }
 
 async function pullOne(svc: any, conn: any) {
-  const auth = basic(conn.apple_id, await decrypt(conn.app_password_enc));
-  const home = conn.calendar_home_url;
-  if (!home) return { calendars: 0, imported: 0, removed: 0, error: "no calendar home" };
+  // Decrypted inside the database with the Vault key; this function holds no key.
+  const pw = await getIcloudPassword(svc, conn.user_id);
+  if (!pw) throw new Error("no stored iCloud password — reconnect iCloud in Settings");
+  const auth = basic(conn.apple_id, pw);
+  // Credentials go to Apple and nowhere else (see _shared/icloudCredential.ts).
+  const home = appleUrl(conn.calendar_home_url);
+  if (!home) return { calendars: 0, imported: 0, removed: 0, error: "calendar address is not an iCloud address — refusing to send credentials" };
   const origin = new URL(home).origin;
 
   // List the agent's personal calendars (VEVENT-capable), skipping the old dedicated "PrismOS".
@@ -70,7 +68,8 @@ async function pullOne(svc: any, conn: any) {
     const href = (/<href[^>]*>([^<]+)</i.exec(blk) || [])[1];
     const name = ((/displayname[^>]*>([^<]*)</i.exec(blk) || [])[1] || "").trim();
     if (!href || !/VEVENT/i.test(blk) || name === "PrismOS") continue;
-    cals.push({ url: href.startsWith("http") ? href : origin + href, name });
+    const calUrl = appleUrl(href.startsWith("http") ? href : origin + href);
+    if (calUrl) cals.push({ url: calUrl, name });
   }
 
   const now = Date.now();

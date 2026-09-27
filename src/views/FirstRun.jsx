@@ -48,8 +48,8 @@ function Step({ n, of }) {
 // the moment a decision depends on it.
 async function emailIsUsable(userId) {
   const { data } = await supabase.from('email_accounts')
-    .select('id, refresh_token, reauth_required_at, is_active').eq('user_id', userId);
-  return (data || []).some(a => a.is_active !== false && !a.reauth_required_at && !!a.refresh_token);
+    .select('id, has_refresh_token, reauth_required_at, is_active').eq('user_id', userId);
+  return (data || []).some(a => a.is_active !== false && !a.reauth_required_at && !!a.has_refresh_token);
 }
 
 export default function FirstRun({ userId, userEmail, onDone }) {
