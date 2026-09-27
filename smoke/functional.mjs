@@ -181,11 +181,12 @@ for (const dev of want) {
         // calls' never matches what is on screen. It appeared to work on desktop
         // only because a DIFFERENT element there carried the untransformed text.
         // A check that passes for the wrong reason is worse than one that fails.
-        if (!/from your calls/i.test(document.body.innerText)) return { seen: false };
+        // Renamed 27 Sep (Ray, panel): the app says it HEARD these, in plain words.
+        if (!/heard on your calls/i.test(document.body.innerText)) return { seen: false };
         // The card is the SMALLEST element containing the heading — matching on
         // startsWith broke on the wrappers around it.
         const all = [...document.querySelectorAll('div')].filter(d =>
-          d.innerText && /said (you|they) would/i.test(d.innerText));
+          d.innerText && /(said (you|they)|you told \S+ you) would/i.test(d.innerText));
         const card = all.length ? all[all.length - 1].closest('div[style*="border"]') || all[all.length - 1] : null;
         if (!card) return { seen: true, card: false };
         const cs = getComputedStyle(card);
@@ -202,7 +203,7 @@ for (const dev of want) {
     // green. Now it measures the rendered border and every device agrees.
     const callOk = !!(r && r.seen && r.card);
     record(dev, 'Call review renders', callOk,
-      callOk ? '' : (r && !r.seen ? 'no From your calls section' : 'no commitment card') + ' — saw: ' + await sawInstead(page, dev, 'callreview'));
+      callOk ? '' : (r && !r.seen ? 'no Heard on your calls section' : 'no commitment card') + ' — saw: ' + await sawInstead(page, dev, 'callreview'));
     record(dev, 'Call card has a visible edge', !!(r && r.gold),
       r && r.border ? 'border is ' + r.border : 'no card to measure');
   } catch (e) { record(dev, 'Call review renders', false, String(e).slice(0, 60)); }

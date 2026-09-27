@@ -50,6 +50,24 @@ Call follow-ups 189 → 142 (47 merged into the card from the same call). Backup
 `archive` schema 26 Sep): `archive.commitments_backup_20260922`,
 `archive.quo_calls_followups_backup_20260922`.
 
+## What the agent sees (27 Sep, from Ray on the panel)
+
+"I would dismiss a proposed commitment if I did not know who proposed it — me or
+the app... The label 'proposed' is a software word." So:
+
+- **Say who proposed it.** The section reads *Heard on your calls*, with one line
+  explaining that PrismOS listened and wrote down what sounded like a promise,
+  and that nothing becomes a task until the agent chooses.
+- **Show the evidence.** Every conversation shows who called whom and when
+  ("they called you · Tue, Sep 15"), with *Read the call* beside it. The agent's
+  own promises read "You told Tom you would…".
+- **Newest first; a month-old call waits behind a tap.** On 27 Sep, 110 of the
+  148 waiting items came from calls more than 30 days old, and none said so.
+- **Skip, not "Not a thing" / dismiss — and Skip is always undoable** (so is
+  *Summary only*). An agent who is afraid of being wrong will not decide at all.
+- The 190 dismissals the panel keeps citing were all made **before** the 22 Sep
+  rules and are analysed above. The panel's measure now splits at 22 Sep.
+
 ## Not yet covered
 
 Commitments come only from calls today. Email and text do not yet propose

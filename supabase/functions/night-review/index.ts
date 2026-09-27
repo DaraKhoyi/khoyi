@@ -323,7 +323,17 @@ async function gather(admin: any) {
      count(*) filter (where is_brokerage) brokerage_wide,
      count(*) filter (where learned_from = 'producing_agent') from_producers
    from lead_sender_rules group by 1`);
-  await one("commitments_kept", `select status, count(*) n from commitments group by 1`);
+  // Call follow-ups, split at the 22 Sep rules. The all-time counts carried 190
+  // dismissals that were ALL made before those rules and had already been
+  // analysed (docs/COMMITMENT_RULES.md) — so the panel kept re-reading a solved
+  // problem as a live one. What matters now: what the agent decided SINCE, and
+  // how stale the waiting pile is.
+  await one("commitments_kept", `select status,
+     count(*) n,
+     count(*) filter (where decided_at >= '2026-09-22') decided_since_rules_22sep,
+     count(*) filter (where created_at >= '2026-09-22') created_since_rules_22sep,
+     count(*) filter (where status = 'proposed' and created_at < now() - interval '30 days') waiting_over_30_days
+   from commitments group by 1`);
   await one("email_storage", `select count(*) rows,
      pg_size_pretty(pg_total_relation_size('email_messages')) size,
      count(*) filter (where internal_date > now() - interval '30 days') last_30d

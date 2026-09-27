@@ -2,6 +2,7 @@ import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { supabase } from '../dataService';
 import { todayNY } from '../clock';
 import OwnerPicker from './OwnerPicker';
+import { notify } from '../notify';
 
 // ── CommitmentReview ─────────────────────────────────────────────────────────
 // The one moment where calls turn into work. Deliberately a BATCH — "6 things
@@ -28,6 +29,17 @@ const btn = (primary) => ({
   borderRadius: 100, padding: '7px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer',
 });
 
+// "your call · Tue, Sep 15" / "they called · 3 weeks ago" — the call is the
+// evidence, so name it.
+const callWhen = (c) => {
+  const t = Date.parse(c.call_at || '');
+  if (!t) return '';
+  const days = Math.floor((Date.now() - t) / 864e5);
+  const who = /in/i.test(c.call_dir || '') ? 'they called you' : /out/i.test(c.call_dir || '') ? 'you called' : 'call';
+  const ago = days < 1 ? 'today' : days === 1 ? 'yesterday' : days < 7 ? days + ' days ago'
+    : new Date(t).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return who + ' ' + ago;
+};
 const fmtDate = (d) => {
   if (!d) return null;
   const dt = new Date(d + 'T12:00:00');
@@ -52,6 +64,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   const [editingId, setEditingId] = useState(null);
   const [openId, setOpenId] = useState(null);   // waiting-on row expanded for full edit
   const [shownProposed, setShownProposed] = useState(3);   // never a wall
+  const [showOlder, setShowOlder] = useState(false);       // calls over a month old wait behind a tap
   // What the user sets on a card WHILE reviewing — a due date and a priority — so
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
@@ -79,7 +92,21 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       const { data: cs } = await supabase.from('contacts').select('id,name').in('id', ids);
       (cs || []).forEach(c => { names[c.id] = c.name; });
     }
-    setRows((data || []).map(r => ({ ...r, contact_name: names[r.contact_id] || 'Unknown' })));
+    // WHEN AND WHICH CALL. Ray (panel): "I would dismiss a proposed commitment if I
+    // did not know who proposed it — me or the app." A card with no date reads as
+    // an order from nowhere; 110 of 148 came from calls over a month old and none
+    // said so. The call's time and direction go on every conversation.
+    const callIds = [...new Set((data || []).map(r => r.call_id).filter(Boolean))];
+    const calls = {};
+    for (let i = 0; i < callIds.length; i += 150) {
+      const { data: qc } = await supabase.from('quo_calls').select('id,op_created_at,created_at,direction').in('id', callIds.slice(i, i + 150));
+      (qc || []).forEach(q => { calls[q.id] = q; });
+    }
+    setRows((data || []).map(r => {
+      const q = r.call_id && calls[r.call_id];
+      return { ...r, contact_name: names[r.contact_id] || 'Unknown',
+        call_at: q ? (q.op_created_at || q.created_at) : null, call_dir: q ? q.direction : null };
+    }));
     // Everyone, for the "someone else" picker — the responsible party is often a
     // lender/TC/co-agent who was never on the call, so this cannot be scoped to
     // the call's participants.
@@ -170,7 +197,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // things that should never have been captured — a mis-heard line in a
   // transcript, or someone else's promise attributed to you.
   async function remove(c) {
-    if (!window.confirm('Delete this commitment? It will not appear anywhere again.')) return;
+    if (!window.confirm('Delete this for good? It will not come back. (Skip hides it and can be undone.)')) return;
     setBusy(c.id);
     const { error } = await supabase.from('commitments').delete().eq('id', c.id);
     setBusy(null);
@@ -178,11 +205,20 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
     setRows(rs => rs.filter(r => r.id !== c.id));
   }
 
+  // SKIP IS ALWAYS UNDOABLE. Ray's fear, in his words: "the first time I dismiss
+  // something and then find out I was supposed to do it and a client noticed."
+  // A skip that can be taken back is one an agent can make without being sure.
+  async function restore(ids) {
+    const { error } = await supabase.from('commitments').update({ status: 'proposed', decided_at: null }).in('id', ids);
+    if (error) { setErr(String(error.message || error)); return; }
+    await load(); onChanged && onChanged();
+  }
   async function dismiss(c) {
     setBusy(c.id);
     const { error } = await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', c.id);
     if (error) { setErr(String(error.message || error)); setBusy(null); return; }
     await load(); onChanged && onChanged(); setBusy(null);
+    notify('Skipped \u2014 \u201c' + String(c.title || '').slice(0, 60) + '\u201d', 'info', { label: 'Undo', onClick: () => restore([c.id]) });
   }
 
   // Reword a commitment in place. Save the edited title back to the row.
@@ -297,8 +333,13 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       if (!m.has(k)) m.set(k, []);
       m.get(k).push(c);
     }
-    return [...m.entries()];
+    const when = (items) => Date.parse(items[0].call_at || '') || 0;
+    return [...m.entries()].sort((a, b) => when(b[1]) - when(a[1]));
   })();
+  const MONTH = 30 * 864e5;
+  const recentCalls = byCall.filter(([, items]) => !items[0].call_at || Date.now() - Date.parse(items[0].call_at) <= MONTH);
+  const olderCalls = byCall.filter(([, items]) => items[0].call_at && Date.now() - Date.parse(items[0].call_at) > MONTH);
+  const callsToShow = showOlder ? byCall : recentCalls;
 
   // 'Summary only' — the call and its summary already live on the contact
   // record, so this drops the follow-ups and keeps everything else. Nothing is
@@ -312,7 +353,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       .update({ status: 'dismissed', decided_at: new Date().toISOString() }).in('id', ids);
     setBusy(null);
     if (error) { setErr(String(error.message || error)); await load(); return; }
-    try { window.__notify && window.__notify('Kept the summary \u2014 no follow-ups created.', 'success'); } catch (_) {}
+    notify('Kept the summary \u2014 no tasks made from this call.', 'success', { label: 'Undo', onClick: () => restore(ids) });
   }
   const waiting = rows.filter(r => r.status === 'accepted' && r.owner === 'them');
   const late = waiting.filter(r => r.due_date && daysLate(r.due_date) > 0);
@@ -359,11 +400,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       boxShadow: '0 6px 18px rgba(0,0,0,.22)' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 5, flexWrap: 'wrap' }}>
         <span style={{ ...lab, color: c.owner === 'me' ? 'var(--accent-2)' : 'var(--text-3)' }}>
-          {c.owner === 'me' ? 'You said you would'
+          {c.owner === 'me' ? (c.contact_name && c.contact_name !== 'Unknown' ? `You told ${c.contact_name.split(' ')[0]} you would` : 'You said you would')
             : c.owner_contact_id ? `${responsible(c)} is on the hook`
             : `${c.owner_name || c.contact_name || 'Someone on the call'} said they would`}
         </span>
-        {c.confidence === 'low' && <span style={{ fontSize: 9, color: EMBER, fontWeight: 700 }}>· unsure</span>}
+        {c.confidence === 'low' && <span style={{ fontSize: 9, color: EMBER, fontWeight: 700 }}>· PrismOS isn’t sure it heard this right</span>}
       </div>
       <div className="gold-hairline" style={{ margin: '2px 0 9px' }} />
       {/* Attribution is the single most-corrected field — extraction tagged 89 of
@@ -479,8 +520,16 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
 
       {proposed.length > 0 && (
         <>
-          <div style={{ ...lab, marginBottom: 7, marginTop: late.length ? 14 : 0 }}>
-            From your calls — {byCall.length} conversation{byCall.length === 1 ? '' : 's'} to file
+          <div style={{ ...lab, marginBottom: 4, marginTop: late.length ? 14 : 0 }}>
+            Heard on your calls — {byCall.length} conversation{byCall.length === 1 ? '' : 's'} to check
+          </div>
+          {/* WHO PROPOSED IT. The app did — say so, in plain words, every time.
+              Ray: "If the app is telling me to do something I did not agree to,
+              I press dismiss because I do not want to be wrong in public." */}
+          <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 9 }}>
+            PrismOS listens to your calls and writes down anything that sounded like a promise. These are its
+            suggestions, not tasks — nothing happens until you choose. <b>Make it a task</b> if it’s real,
+            <b> Skip</b> if it isn’t (you can undo).
           </div>
           {/* One decision per conversation, asked where you know the answer.
               Most calls are just a conversation and should leave a summary and
@@ -488,14 +537,23 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               call, is lighter than judging every extracted line — and the
               summary is already on the contact record either way, so 'summary
               only' loses nothing. */}
-          {byCall.slice(0, 6).map(([callKey, items]) => (
+          {callsToShow.slice(0, showOlder ? 40 : 6).map(([callKey, items]) => (
             <div key={callKey} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '9px 11px', marginBottom: 9 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-1)', flex: '1 1 auto', minWidth: 0 }}>
                   {items[0].contact_name}
                   <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>
-                    {' \u00B7 ' + items.length + ' follow-up' + (items.length === 1 ? '' : 's') + ' found'}
+                    {(items[0].call_at ? ' \u00B7 ' + callWhen(items[0]) : '')
+                      + ' \u00B7 ' + items.length + ' possible follow-up' + (items.length === 1 ? '' : 's')}
                   </span>
+                  {items[0].call_id && (
+                    <button type="button"
+                      onClick={() => setReadingCall({ callId: items[0].call_id, name: items[0].contact_name || 'this call' })}
+                      style={{ marginLeft: 8, background: 'none', border: 'none', padding: '6px 0', minHeight: 36, cursor: 'pointer',
+                        color: 'var(--room-accent, var(--accent))', fontSize: 11.5, fontWeight: 700 }}>
+                      Read the call
+                    </button>
+                  )}
                 </span>
                 <button type="button" disabled={busy === items[0].id} onClick={() => summaryOnly(items)}
                   title="Keep the call and its summary on the record, create no tasks"
@@ -554,7 +612,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               <button type="button" disabled={busy === c.id} onClick={() => resolveTheirs(c)} style={btn(false)}>
                 They delivered
               </button>
-              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not a thing</button>
+              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}
+                title="Not a real promise — hide it. You can undo.">Skip</button>
             </>
               ) }))}
             </div>
@@ -562,6 +621,13 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
         </>
       )}
 
+      {proposed.length > 0 && !showOlder && olderCalls.length > 0 && (
+        <button type="button" onClick={() => setShowOlder(true)}
+          style={{ background: 'none', border: 0, padding: '4px 0 8px', cursor: 'pointer', fontSize: 12,
+            color: 'var(--room-accent, var(--accent))', fontWeight: 700, minHeight: 36 }}>
+          {'Show ' + olderCalls.length + ' older conversation' + (olderCalls.length === 1 ? '' : 's') + ' (calls more than a month ago)'}
+        </button>
+      )}
       {compact && hiddenFuture > 0 && (
         <button type="button" onClick={() => onSeeAll && onSeeAll()}
           style={{ background: 'none', border: 0, padding: '2px 0 0', cursor: 'pointer', fontSize: 12,

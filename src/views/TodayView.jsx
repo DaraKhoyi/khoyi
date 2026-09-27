@@ -557,8 +557,8 @@ export default function TodayView({
         sub={autoLevel >= 2 ? 'Prism can draft these in your voice' : 'People waiting to hear back'}
         onOpen={() => setView && setView('contacts')} />
 
-      <Group icon="✓" label="Call commitments to confirm" count={commitments.length} tone="var(--accent)"
-        sub="Pulled from your calls & recordings — confirm or dismiss" onOpen={() => setView && setView('review')} />
+      <Group icon="✓" label="Promises heard on your calls" count={commitments.length} tone="var(--accent)"
+        sub="PrismOS's suggestions — make each a task, or skip it" onOpen={() => setView && setView('review')} />
 
       <Group icon="◷" label="Due today" count={dueToday} tone="#06b6d4"
         sub="Tasks scheduled for today" onOpen={() => setView && setView('tasks')} />
