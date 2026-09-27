@@ -480,6 +480,31 @@ Internal function-to-function calls send `x-qcp-token` as well as the service
 key: two service-key formats are live, and a bare key compare fails when caller
 and callee hold different ones — that is how 7 of 10 morning briefings were lost.
 
+**MEASURE THE RETURN IN ONE PLACE: `business_outcomes(p_days)`.** (27 Sep) The
+panel reported "no outcome recorded anywhere" because `ai_spend_with_outcome`
+admitted only staff or the row's own user, and the panel reads as the SERVICE
+ROLE — it got `[]` every night whatever the data said. Fixed (service_role
+admitted), and `business_outcomes()` now composes the chain AI spend → leads →
+answered → client → closing → GCI from facts already recorded, with
+`blocked_by` naming the missing link. Attribution is live but has nothing to
+attribute until closings carry the client: the Gold Report has NO client
+column, and no contract has ever been extracted. `sheets-sync` now reads
+Client / Buyer / Seller / Client Email columns the moment they exist. The same
+audit found `speed_to_lead()` readable by ANY anonymous caller (the gate
+allowed "auth.uid() is null") — fixed to staff or service_role.
+
+**THE GOLD REPORT IMPORT WAS SILENTLY DEAD FOR FIVE DAYS.** (27 Sep) A note row
+was added above the headers in both tabs (~22 Sep): every daily run read 0 of
+~2,700 rows and answered ok. Fixed: the header row is FOUND, not assumed, and a
+tab that imports nothing reports why. The same edit reformatted the paid-date
+column as a DATE, so month.day numbers ("2.25") arrive as 1900 serials, and
+"2.10" arrives as 2.1. The first re-import BLANKED 106 paid dates, restored at
+once from `archive.brokerage_transactions_pre_resync_20260927` (snapshot taken
+first — the rule paid for itself). Now 1900 serials are read back as typed,
+and x.1 vs x.10 is settled by the received date. Re-imported: all 669 rows
+match the pre-change values except 3 legitimate changes; 2 new closings
+arrived. `cron_health` now proves the import WROTE rows in the last 26h.
+
 **SNAPSHOTS GO IN `archive`, NEVER `public`.** Snapshotting a table before a data
 fix is right; putting the copy beside the live table is not. By 26 Sep eleven
 had piled up in `public` — `cfd_backup_20260923` alone was 12,420 rows, the
@@ -598,6 +623,10 @@ whitelisted in `launchTarget()`.
   written and waiting.
 
 **Needs a human, not code**
+- **Gold Report, 27 Sep additions:** Paid 2026 Trans ID 108 (1905 N Oregon Ave #20)
+  shows paid 30 Mar but received 28 Apr; Trans ID 230 has a paid date "7.3" (3 or
+  30 Jul?) and no address or received date. And the one change that unlocks ROI
+  measurement: add **Client** and **Client Email** columns.
 - **12 transactions in the Gold Report sheet** are wrong at the source: Josh's
   $43.96 on $350k, Demi Noack's $0.00 on $550k, dates typed "710", "3/34",
   "10/41", "69/2026". Do not guess these.

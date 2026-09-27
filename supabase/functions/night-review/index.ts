@@ -233,6 +233,14 @@ async function gather(admin: any) {
     where with_subject > 0 or usd > 1
     order by usd desc`);
 
+  // THE RETURN SIDE, in one measurement (27 Sep). Until then the query above
+  // always came back [] — ai_spend_with_outcome admitted staff or the row's own
+  // user, and this panel reads as the SERVICE ROLE — so "no outcome recorded
+  // anywhere" was the tool, not the business. business_outcomes() is the chain
+  // spend -> lead -> answered -> client -> closing -> GCI, and its blocked_by says
+  // exactly which link is missing. Report the blocker; never estimate past it.
+  await one("business_outcomes_30d", `select public.business_outcomes(30) v`);
+
   await one("ai_spend_30d", `select fn, count(*) n, round(sum(cost_usd)::numeric,2) usd
      from ai_usage_log where created_at > now() - interval '30 days'
      group by 1 order by 3 desc limit 8`);

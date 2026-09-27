@@ -153,6 +153,13 @@ const PROOF = {
     what: 'a successful nightly email-intel run in the last 26h (runs 03:30)',
     sql: `select count(*) n from public.email_intel_runs where status = 'ok' and started_at > now() - interval '26 hours'`,
   },
+  // The Gold Report import answered ok and imported ZERO rows every day from
+  // 22 Sep to 27 Sep (a note row was added above the headers). Proof is rows
+  // written, not a 200. Runs 10:00; allow until 11:00 the next day.
+  'sheets-sync-daily': {
+    what: 'the Gold Report import wrote rows within the last 26 hours',
+    sql: `select count(*) n from public.brokerage_transactions where imported_at > now() - interval '26 hours'`,
+  },
   // The morning briefing reached Dara on 3 of 10 mornings while every run
   // "succeeded" (26 Sep). Proof here is the DELIVERY: once a user's catch-up
   // window (send_hour + 4h) has closed, today must be stamped delivered. This

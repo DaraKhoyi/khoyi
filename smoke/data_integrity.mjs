@@ -28,14 +28,26 @@ const CHECKS = {
 async function run() {
   let dirty = 0;
   for (const [label, sql] of Object.entries(CHECKS)) {
-    const res = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json', 'User-Agent': 'KhoyiApp/1.0' },
-      body: JSON.stringify({ query: sql }),
-    });
-    const j = await res.json().catch(() => null);
-    const n = Array.isArray(j) && j[0] && 'n' in j[0] ? Number(j[0].n) : -1;
+    // Retry what the Management API refuses under load (429/5xx), like the other
+    // credentialed checks. Added 27 Sep after a clean check read -1 in the full
+    // gate because dozens of checks share one rate limit. A check that still
+    // cannot be measured after retrying FAILS — "unknown" is never "clean".
+    let n = -1, why = '';
+    for (let i = 0; i < 8 && n < 0; i++) {
+      try {
+        const res = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json', 'User-Agent': 'KhoyiApp/1.0' },
+          body: JSON.stringify({ query: sql }),
+        });
+        const j = await res.json().catch(() => null);
+        if (Array.isArray(j) && j[0] && 'n' in j[0]) n = Number(j[0].n);
+        else { why = `HTTP ${res.status} ${JSON.stringify(j).slice(0, 80)}`; if (res.status !== 429 && res.status < 500) break; }
+      } catch (e) { why = String(e).slice(0, 80); }
+      if (n < 0) await new Promise((r) => setTimeout(r, 1000 * 2 ** i));   // 1,2,4…64s: ~2 min, longer than the throttle window
+    }
     if (n === 0) console.log(`  ✓ clean      ${label}`);
+    else if (n < 0) { console.log(`  ✗ UNMEASURED ${label} — ${why}`); dirty++; }
     else { console.log(`  ⚠️  ${n}        ${label}`); dirty++; }
   }
   console.log(dirty === 0 ? '\n✅ ALL CLEAN — no crash-shaped or orphaned data.' : `\n⚠️  ${dirty} issue(s) need attention.`);

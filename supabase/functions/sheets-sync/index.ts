@@ -50,12 +50,42 @@ function toNum(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 // Google Sheets returns dates as strings (formatted) — normalize common shapes to YYYY-MM-DD.
+// "2.10" typed in a DATE-formatted cell arrives as the number 2.1: the trailing
+// zero — the difference between 10 Feb and 1 Feb — is gone. When the decimal has
+// one digit, both readings are possible; a commission is paid ON OR AFTER it is
+// received, so take the earliest reading on/after the received date (3 days'
+// grace for a received date typed a little late). 20 paid dates depended on this.
+function paidFromSerialCell(v: any, year: number, receivedIso: string | null): string | null {
+  if (!(v instanceof Date) || isNaN(v.getTime()) || v.getUTCFullYear() >= 1901) return null;
+  const n = Math.round(((v.getTime() - Date.UTC(1899, 11, 30)) / 86400000) * 100) / 100;
+  const m = String(n).match(/^(\d{1,2})\.(\d{1,2})$/);
+  if (!m) return null;
+  const mo = parseInt(m[1], 10);
+  const days = m[2].length === 1 ? [parseInt(m[2], 10), parseInt(m[2], 10) * 10] : [parseInt(m[2], 10)];
+  const iso = (d: number) => `${year}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const valid = days.filter((d) => d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && !isNaN(new Date(iso(d) + "T00:00:00Z").getTime())).map(iso);
+  if (!valid.length) return null;
+  if (valid.length === 1 || !receivedIso) return valid[0];
+  const floor = new Date(receivedIso + "T00:00:00Z").getTime() - 3 * 86400000;
+  const after = valid.filter((d) => new Date(d + "T00:00:00Z").getTime() >= floor).sort();
+  return after[0] || valid[valid.length - 1];
+}
+
 function toDate(v: any, fallbackYear?: number): string | null {
   if (!v) return null;
   // A real date cell arrives as a Date once cellDates is on. Use its parts
   // directly — going through toISOString() would shift the day across the
   // timezone boundary for anything before 00:00 UTC.
-  if (v instanceof Date && !isNaN(v.getTime())) {
+  if (v instanceof Date && !isNaN(v.getTime()) && v.getUTCFullYear() < 1901) {
+    // A MONTH.DAY NUMBER IN A DATE-FORMATTED CELL. The paid-date column is typed
+    // "2.25" (25 Feb), "9.1" (1 Sep). Around 22 Sep the column was formatted as a
+    // DATE, so the workbook now hands back serial 2.25 as 1 Jan 1900 06:00, which
+    // the year check below rejected: 106 paid dates were blanked by the 27 Sep
+    // re-import (restored from archive.brokerage_transactions_pre_resync_20260927).
+    // Recover the number exactly as typed and parse it as the text form below.
+    const serial = (v.getTime() - Date.UTC(1899, 11, 30)) / 86400000;
+    v = String(Math.round(serial * 100) / 100);
+  } else if (v instanceof Date && !isNaN(v.getTime())) {
     // A real date cell can still be a typo: the sheet holds received dates in
     // the year 20226 and the year 205. Keep nothing rather than a year that
     // throws every date comparison built on it.
@@ -180,19 +210,37 @@ Deno.serve(async (req) => {
       const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as any[][];
       if (rows.length < 2) { summary.push({ tab, year, rows: 0 }); continue; }
 
-      // header name -> column index
-      const header = rows[0].map((h) => String(h ?? "").trim());
+      // header name -> column index. FIND the header row; do not assume row 1.
+      // On ~22 Sep a note row ("Every date in this entire tab is a date in
+      // Calendar Year 2026") was added above the headers in both tabs, and every
+      // daily import after it read 0 of ~2,700 rows while reporting ok.
+      const hRow = Math.max(0, rows.slice(0, 15).findIndex((r) => (r || []).some((c) => String(c ?? "").trim().toLowerCase() === "trans id")));
+      const header = (rows[hRow] || []).map((h) => String(h ?? "").trim());
       const idx = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
       const iTid = idx("Trans ID"), iAgent = idx("Agent Name");
       const col = (r: any[], name: string) => { const i = idx(name); return i >= 0 ? r[i] : null; };
+      // CLIENT IDENTITY (27 Sep). The Gold Report carried no client at all, so no
+      // closing could ever be tied back to the lead, contact or AI spend behind it
+      // (business_outcomes() reports this as the blocker). Any of these headers is
+      // picked up when present; a field is only written when its column EXISTS,
+      // so a sheet without them never blanks names that came from elsewhere.
+      const firstCol = (names: string[]) => names.map((n) => idx(n)).find((i) => i >= 0) ?? -1;
+      const iClient = firstCol(["Client", "Client Name", "Customer", "Customer Name"]);
+      const iBuyer = firstCol(["Buyer", "Buyer Name", "Buyer(s)"]);
+      const iSeller = firstCol(["Seller", "Seller Name", "Seller(s)"]);
+      const iEmail = firstCol(["Client Email", "Buyer Email", "Seller Email", "Email"]);
 
       const records: any[] = [];
-      for (let ri = 1; ri < rows.length; ri++) {
+      // WHY ROWS WERE SKIPPED. From 22 Sep every daily run imported 0 rows and
+      // reported ok — five days of commissions silently missing. A sync that
+      // imports nothing must say why (27 Sep).
+      const skipped = { excluded: 0, no_trans_id: 0, blank: 0 };
+      for (let ri = hRow + 1; ri < rows.length; ri++) {
         const r = rows[ri];
         const tid = iTid >= 0 ? r[iTid] : null;
         const agent = iAgent >= 0 ? r[iAgent] : null;
-        if (isExclude(tid) || isExclude(agent)) continue;
-        if (typeof tid !== "number" && !(typeof tid === "string" && /^\d+$/.test(tid.trim()))) continue;
+        if (isExclude(tid) || isExclude(agent)) { skipped.excluded++; continue; }
+        if (typeof tid !== "number" && !(typeof tid === "string" && /^\d+$/.test(tid.trim()))) { skipped.no_trans_id++; continue; }
         const transId = typeof tid === "number" ? Math.trunc(tid) : parseInt(tid, 10);
 
         // full raw row keyed by header name (nothing lost)
@@ -205,16 +253,32 @@ Deno.serve(async (req) => {
         // has filled in yet; with no agent, no address and no money on them they
         // were imported as closed "fee" transactions — three of them this morning.
         const toAgent = toNum(col(r, "Amount to Pay Agent"));
-        if (!txt(agent) && !txt(col(r, "Street Number and Name")) && !gs && !gc && !toAgent) continue;
+        if (!txt(agent) && !txt(col(r, "Street Number and Name")) && !gs && !gc && !toAgent) { skipped.blank++; continue; }
         const kind = gs && gs > 0 ? "sale" : (gc && gc > 0 ? "commission" : "fee");
+        // SAME KEYS ON EVERY ROW of a tab: PostgREST rejects a bulk upsert whose
+        // objects have different key sets, so a key is present (possibly null)
+        // exactly when its column exists — never only on the rows that have a value.
+        const client: Record<string, any> = {};
+        // "Buy"/"List" in this sheet mark the SIDE; an X in Buy means the client bought.
+        const isBuy = !!txt(col(r, "Buy")), isList = !!txt(col(r, "List"));
+        const clientName = iClient >= 0 ? (txt(r[iClient]) || null) : null;
+        if (iBuyer >= 0 || iClient >= 0) client.buyer_name = (iBuyer >= 0 ? txt(r[iBuyer]) : null) || (!isList || isBuy ? clientName : null) || null;
+        if (iSeller >= 0 || iClient >= 0) client.seller_name = (iSeller >= 0 ? txt(r[iSeller]) : null) || (isList && !isBuy ? clientName : null) || null;
+        if (iEmail >= 0) client.client_email = (txt(r[iEmail]) || "").toLowerCase() || null;
         records.push({
+          ...client,
           year, trans_id: transId, agent_name_raw: txt(agent) || "(unnamed)", source_tab: tab, source_row: ri + 1,
           address: txt(col(r, "Street Number and Name")), buy_side: !!txt(col(r, "Buy")), list_side: !!txt(col(r, "List")),
           gross_sale: gs, gross_commission: gc, date_received: toDate(col(r, "Date Rcvd"), year),
           amount_to_agent: toNum(col(r, "Amount to Pay Agent")), kind,
           lender: txt(col(r, "Lender")), office_fee: toNum(col(r, "Gross Office Fee") ?? col(r, "Office Fee Share")),
           referral_1: toNum(col(r, "Referral (1)")), rog_corp_cost: toNum(col(r, "ROG Corp. Cost")),
-          tc_payment: toNum(col(r, "TC payment")), date_paid: toDate(col(r, "Date Paid (ALEX)"), year),
+          tc_payment: toNum(col(r, "TC payment")),
+          date_paid: (() => {
+            const rawPaid = col(r, "Date Paid (ALEX)");
+            const rcv = toDate(col(r, "Date Rcvd"), year);
+            return paidFromSerialCell(rawPaid, year, rcv) ?? toDate(rawPaid, year);
+          })(),
           notes: txt(col(r, "Notes include who referals are paid to")), title_agent: txt(col(r, "Title Agent")),
           raw_row: raw,
         });
@@ -227,7 +291,11 @@ Deno.serve(async (req) => {
             Math.abs(new Date(last.date_received).getUTCFullYear() - year) <= 1 &&
             new Date(last.date_paid).getTime() < new Date(last.date_received).getTime() - 14 * 86400000) {
           const d = new Date(last.date_paid + "T00:00:00Z"); d.setUTCFullYear(d.getUTCFullYear() + 1);
-          last.date_paid = d.toISOString().slice(0, 10);
+          // Never into the FUTURE. "Paid 3/30, received 4/28" (Paid 2026, row 201)
+          // became 30 Mar 2027 — a payment eleven months from now. A paid date
+          // before the received date that is not a December/January wrap is a
+          // typing error for a person to fix, not something to guess (27 Sep).
+          if (d.getTime() <= Date.now() + 30 * 86400000) last.date_paid = d.toISOString().slice(0, 10);
         }
       }
 
@@ -261,7 +329,16 @@ Deno.serve(async (req) => {
 
       const sales = records.filter((r) => r.kind === "sale").length;
       const volume = records.filter((r) => r.kind === "sale").reduce((s, r) => s + (r.gross_sale || 0), 0);
-      summary.push({ tab, year, transactions: records.length, sales, volume: Math.round(volume) });
+      const diag: Record<string, unknown> = {};
+      if (!records.length) {
+        diag.rows_in_tab = rows.length - 1 - hRow;
+        diag.header_row_number = hRow + 1;
+        diag.skipped = skipped;
+        diag.header_row = header.filter(Boolean).slice(0, 14);
+        diag.trans_id_column_found = iTid >= 0;
+        diag.first_row_sample = (rows[hRow + 1] || []).slice(0, 6).map((v) => v instanceof Date ? v.toISOString().slice(0, 10) : v);
+      }
+      summary.push({ tab, year, transactions: records.length, sales, volume: Math.round(volume), ...diag });
     }
 
     await supabase.from("commission_sheet_config").update({ last_synced_at: new Date().toISOString(), last_sync_result: summary }).eq("id", cfg.id);
