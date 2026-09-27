@@ -63,13 +63,17 @@ const json = (obj: unknown, status = 200) =>
 // against what the runtime holds, and against the vault copy the cron jobs
 // read, rather than assuming which shape is in play.
 function isServiceCaller(req: Request): boolean {
+  // The internal token is checked FIRST and under BOTH header names this
+  // project uses (x-qcp-token, x-internal-token). Until 27 Sep a missing
+  // Authorization header returned false before the token was ever looked at.
+  const internal = Deno.env.get("QCP_TOKEN") || "";
+  const presented = req.headers.get("x-qcp-token") || req.headers.get("x-internal-token") || "";
+  if (internal && presented === internal) return true;
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return false;
   if (token === SERVICE_KEY) return true;
   const legacy = Deno.env.get("LEGACY_SERVICE_ROLE_KEY") || "";
   if (legacy && token === legacy) return true;
-  const internal = Deno.env.get("QCP_TOKEN") || "";
-  if (internal && req.headers.get("x-internal-token") === internal) return true;
   return false;
 }
 

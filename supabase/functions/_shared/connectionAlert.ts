@@ -44,6 +44,17 @@ const QUO_BASE = "https://api.openphone.com";
 // Re-alert cadence. Silence after the first shout is how an outage becomes
 // permanent; shouting every ten minutes is how someone turns alerts off.
 const RENOTIFY_MS = 6 * 60 * 60 * 1000;   // 6 hours
+
+// WHEN THE PERSON CANNOT BE REACHED, TELL THE BROKER. Found 27 Sep: Josh's Gmail
+// (roga.lutz@gmail.com) died on 16 Sep and this raised 43 alerts over 11 days —
+// every one failed on every channel (no push devices, no alert phone, and the
+// email fallback needs a healthy mailbox, which was the thing that died). Each
+// failure was recorded faithfully and nothing ever acted on it, while leads
+// were rotating to him. Recording "undelivered" is not the same as handling it.
+// So: if no channel reaches the user, the broker is told — push + SMS, at most
+// once a day per alert, naming the agent and what to ask them to do.
+const BROKER_USER_ID = Deno.env.get("BROKER_USER_ID") || "ad06bbc1-a1cb-4716-84d3-36f426ea3187";
+const BROKER_EVERY_MS = 24 * 60 * 60 * 1000;
 const ESCALATE_MS = 20 * 60 * 1000;       // still broken after 20 min => SMS
 
 function nowIso() { return new Date().toISOString(); }
@@ -181,6 +192,25 @@ export async function raiseConnectionAlert(a: RaiseArgs): Promise<{ alertId: str
 
   const delivered = channels.some((c) => c.ok);
   const prior = (existing && Array.isArray(existing.channels)) ? existing.channels : [];
+
+  // Nobody on the user's side was reached → escalate to the broker (see above).
+  let brokerReached = false;
+  if (!delivered && userId !== BROKER_USER_ID) {
+    const lastBroker = prior.concat(channels)
+      .filter((c: any) => String(c.channel || "").startsWith("broker-") && c.ok)
+      .map((c: any) => new Date(c.at).getTime()).sort().pop() || 0;
+    if (now - lastBroker > BROKER_EVERY_MS) {
+      const { data: ag } = await admin.from("agents").select("name").eq("auth_user_id", userId).maybeSingle();
+      const who = (ag && ag.name) || label;
+      const days = Math.max(1, Math.round((now - openedAt) / 86400000));
+      const btitle = `PrismOS: can't reach ${who}`;
+      const bbody = `${who}'s ${label} disconnected ${days} day${days === 1 ? "" : "s"} ago — their ${what} has stopped, and PrismOS has no way to reach them (no phone notifications or alert number). Please ask them to reconnect in Settings.`;
+      const bp = await sendPush(BROKER_USER_ID, btitle, bbody, "https://darasapp.com/?view=settings");
+      const bs = await sendSms(admin, BROKER_USER_ID, `PrismOS: ${bbody}`);
+      channels.push({ ...bp, channel: "broker-push" }, { ...bs, channel: "broker-sms" });
+      brokerReached = bp.ok || bs.ok;
+    }
+  }
   await admin.from("connection_alerts").update({
     last_notified_at: nowIso(),
     notify_count: ((existing && existing.notify_count) || 0) + 1,
@@ -189,7 +219,7 @@ export async function raiseConnectionAlert(a: RaiseArgs): Promise<{ alertId: str
     channels: prior.concat(channels).slice(-40),
   }).eq("id", alertId);
 
-  return { alertId, notified: delivered, channels };
+  return { alertId, notified: delivered, brokerReached, channels } as any;
 }
 
 // Recovery closes the alert but KEEPS the row. History is the whole point.

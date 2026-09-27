@@ -19,6 +19,10 @@ const CHECKS = {
   'recordings not mirrored': "select count(*) n from public.recordings r where not exists (select 1 from public.notes n where n.kind='recording' and n.id=r.id)",
   'transactions null amount': "select count(*) n from public.transactions where amount is null",
   'events null start_at': "select count(*) n from public.events where start_at is null",
+  // Threading invariants (27 Sep): enforced by triggers on email_messages; these
+  // prove the triggers are still there and still working.
+  'email messages not linked to a thread': "select count(*) n from public.email_messages where thread_id is null and provider_thread_id is not null",
+  'email thread message_count wrong': "select count(*) n from public.email_threads t left join (select thread_id, count(*) c from public.email_messages group by 1) x on x.thread_id = t.id where t.message_count is distinct from coalesce(x.c, 0)",
 };
 
 async function run() {
