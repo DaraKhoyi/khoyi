@@ -25,6 +25,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
 import { logTtsUsage } from "../_shared/aiUsage.ts";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -78,12 +79,8 @@ serve(async (req) => {
   // Only the cron (service role) may invoke this.
   const auth = req.headers.get("Authorization") || "";
   const tok = auth.replace("Bearer ", "");
-  const isService = () => {
-    if (tok && tok === SERVICE) return true;
-    if (QCP && (req.headers.get("x-qcp-token") || "") === QCP) return true;
-    try { const seg = tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"); const pad = seg + "===".slice((seg.length + 3) % 4); return JSON.parse(atob(pad)).role === "service_role"; } catch { return false; }
-  };
-  if (!isService()) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+  // Verified, not decoded — see _shared/serviceCaller.ts.
+  if (!(await isServiceCaller(req))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
 
   const db = createClient(SUPABASE_URL, SERVICE);
   const results: any[] = [];

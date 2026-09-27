@@ -81,7 +81,17 @@ const ALLOWED = new Map([
 ]);
 
 const IDENTITY_IN_BODY = /\b(user_id|owner_id|agent_id|agent_user_id)\b\s*[,}=:]/;
-const DERIVES_CALLER = /auth\.getUser\s*\(|getUser\s*\(\s*\)|decodeJwt\s*\(|is_brokerage_staff/;
+// decodeJwt is NOT here any more: decoding a token is not verifying it (27 Sep).
+// isServiceCaller verifies the caller is the service role — such a function
+// acts for no caller, so a body id is the cron's instruction, not a claim.
+const DERIVES_CALLER = /auth\.getUser\s*\(|getUser\s*\(\s*\)|isServiceCaller\s*\(|is_brokerage_staff/;
+// FORGEABLE: reading role/sub out of a token's payload without checking its
+// signature. With verify_jwt = false nothing else checks it, and an unsigned
+// {"role":"service_role"} got a 200 from lead-qualify on 27 Sep; the same
+// shape was live in ari-briefing-deliver, calendar-poll, calendar-sync and
+// task-autoschedule (which also trusted a decoded "sub" as the user).
+const DECODES = /atob\([^)]*split\(\s*["']\.["']\s*\)\s*\[1\]|decodeJwt\s*\(/;
+const TRUSTS_DECODED = /\.role\s*===?\s*["']service_role["']|\b(claims|payload)\??\.(sub|role)\b/;
 const SERVICE_ROLE = /SUPABASE_SERVICE_ROLE_KEY/;
 const READS_BODY = /await\s+req\.json\s*\(/;
 
@@ -96,6 +106,14 @@ for (const name of readdirSync(ROOT)) {
   // the same false-positive that produced phantom dependency cycles elsewhere.
   const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 
+  if (DECODES.test(src) && TRUSTS_DECODED.test(src)) {
+    problems.push(
+      `${name} — trusts a role or user id DECODED from the token without verifying its\n` +
+      `    signature. Anyone can type {"role":"service_role"}. Use isServiceCaller() from\n` +
+      `    _shared/serviceCaller.ts for service calls, auth.getUser(token) for users.`
+    );
+    continue;
+  }
   if (!SERVICE_ROLE.test(src)) continue;      // no elevated rights, no escalation
   if (!READS_BODY.test(src)) continue;        // takes nothing from the caller
   if (!IDENTITY_IN_BODY.test(src)) continue;  // takes no identity from the caller

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import LeadReadiness from './LeadReadiness';
 import { supabase } from '../dataService';
 import { SenderLink, EmailThreadPanel, ThreadDisclosure, EmailActionBar, EmailIdRow, emailGist, runEmailAction } from './EmailShared';
 import EmailTaskModal from './EmailTaskModal';
@@ -478,6 +479,7 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
             <div style={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
               <SenderLink contact={contact} name={label} address={it.lead_email} size={15} />
             </div>
+            {!cleared[it.id] && !isReply ? <LeadReadiness r={it.readiness} /> : null}
             {/* inbound_text is capped around 700 characters at ingest — 72 of
                 Dara's rows sit at 695-705 with the tail cut mid-sentence. The RPC
                 also hands back full_body (the real message, up to 118k chars) and

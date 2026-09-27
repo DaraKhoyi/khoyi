@@ -693,7 +693,11 @@ async function syncOneAccount(supabase, account, opts) {
             .find((e) => !/(zillow|realtor\.com|move\.com|homes\.com|rent\.com|redfin|xomio|apartments\.com|noreply|no-reply)/.test(e)
                          && !(ownDomain && e.endsWith("@" + ownDomain))) || null;
           const buyerPhone = ((text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0]) || null;
-          const leadName = src.lead_name || c.from_name || null;
+          // The IDX site sends from "SF Property Search" and names the buyer in
+          // the body ("Enquiry from: JAID ... Phone +1305..."). Using the sender
+          // name filed two real buyers as "SF Property Search" (found 27 Sep).
+          const idxName = (text.match(/Enquiry from:\s*(.+?)\s+(?:Please|Phone|Email|$)/i) || [])[1] || null;
+          const leadName = src.lead_name || idxName || c.from_name || null;
           const excerpt = text.replace(/\s+/g, " ").slice(0, 700);
           if (producing === false) {
             const { error: blErr } = await supabase.from("brokerage_leads").upsert({
@@ -799,7 +803,12 @@ async function syncOneAccount(supabase, account, opts) {
         // A VENDOR SAYS "YOUR BUYER"; A LEAD SAYS "I WANT TO BUY". Pitches to the
         // agent — lead-selling networks, lenders, coaches — talk about buyers and
         // sellers in the third person and carry list-mail furniture.
-        const pitch = new RegExp("(unsubscribe|view (this )?(email )?in (your )?browser|mailchi\\.mp|click here|your (buyers?|sellers?|clients?|listings?|business|pipeline|leads?|database|sphere)|(realtors?|agents?|brokers?) (should|need to|can now|who)|adding agents|join (our|the) network|invitation-only|limited spots|webinar|register (now|today)|free (trial|demo)|promo code|% off|sponsored|advertis|always be closing|sell more (homes|listings)|most agents|if you need a (quick )?(pre-?approval|lender)|whenever you need a lender)").test(bodyText);
+        const pitch = new RegExp("(unsubscribe|view (this )?(email )?in (your )?browser|mailchi\\.mp|click here|your (buyers?|sellers?|clients?|listings?|business|pipeline|leads?|database|sphere)|(realtors?|agents?|brokers?) (should|need to|can now|who)|adding agents|join (our|the) network|invitation-only|limited spots|webinar|register (now|today)|free (trial|demo)|promo code|% off|sponsored|advertis|always be closing|sell more (homes|listings)|most agents|if you need a (quick )?(pre-?approval|lender)|whenever you need a lender" +
+          // AGENT-TO-AGENT LISTING MARKETING. Another agent announcing a listing
+          // talks about buyers in the third person ("ideal for buyers"). Filed as
+          // a Direct-inquiry NEW LEAD on 25 Sep: "First Look Opportunity: 101 Jean
+          // Ann Ave... ideal for buyers who want the freedom to park a boat".
+          "|first look opportunity|just (hit|listed on) the mls|(ideal|perfect|great) for (buyers|investors|families)|checks .{0,20}boxes for buyers|(bring|show) (your|any) buyers?|buyer'?s? agent (commission|compensation)|coming soon to (the )?mls|price (improvement|reduction) on)").test(bodyText);
         if (!referral && (!intent || pitch)) continue;
         // LEAD OR REPLY (inbound_kind). A stranger who wants to buy, sell or rent
         // is a race — the clock starts now. Someone Dara knows, or a thread he is

@@ -562,6 +562,16 @@ function can still ask the database to decrypt. Vault means the key is never in
 a function's env, logs or memory, and rotates in one place.
 `smoke/definer_guard.mjs` enforces the browser half.
 
+**A DECODED TOKEN IS NOT A VERIFIED ONE.** 112 functions run with verify_jwt =
+false, so the gateway checks nothing; the function must. Five decided "service
+role" by base64-decoding the JWT and reading `role` — an unsigned, hand-typed
+`{"role":"service_role"}` got a 200 (tested 27 Sep). calendar-sync then took any
+agent's user_id from the body; task-autoschedule also trusted a decoded `sub`
+as the user. Service callers: `isServiceCaller(req)` from
+`_shared/serviceCaller.ts` (exact key, QCP, or a token PostgREST's root accepts
+— it answers only to a real service key). Users: `auth.getUser(token)`.
+`smoke/edge_auth.mjs` now fails any function that trusts a decoded role or sub.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"
@@ -679,6 +689,11 @@ whitelisted in `launchTarget()`.
   functions. 0 keys stored today, and the browser can no longer read the
   ciphertext, so nothing is exposed — do it before the first agent saves a key.
   Pattern: `_shared/icloudCredential.ts` + `icloud_set_password/get_password`.
+
+- **Texts are not in the lead funnel.** SMS cards to producing agents carry no
+  `source`, so `lead_funnel` and `lead-qualify` skip them (LEAD_STRATEGY known
+  gap). Tag a source in quo-webhook only once `sms_lead_verdict` proves intent,
+  or the funnel fills with vendor texts again.
 
 **Waiting on Dara — do not start these uninvited**
 - **The tiered gate.** Full gate for logic/DB changes, fast gate for wording and

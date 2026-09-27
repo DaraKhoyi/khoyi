@@ -7,6 +7,7 @@
 //   - service_role JWT  -> trusted; processes body.user_id, or ALL users if omitted (cron)
 //   - user JWT          -> scoped to that user only (body.user_id ignored)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
@@ -462,7 +463,9 @@ Deno.serve(async (req)=>{
         "Content-Type": "application/json"
       }
     });
-    const isService = claims.role === "service_role";
+    // Verified, not decoded — a forged {"role":"service_role"} passed here until
+    // 27 Sep (see _shared/serviceCaller.ts).
+    const isService = await isServiceCaller(req);
     let body = {};
     try {
       body = await req.json();
@@ -480,8 +483,12 @@ Deno.serve(async (req)=>{
         ];
       }
     } else {
-      if (!claims.sub) return new Response(JSON.stringify({
-        error: "no subject"
+      // The user is whoever the AUTH SERVER says the token belongs to. The
+      // decoded "sub" was trusted until 27 Sep; with verify_jwt off, a typed
+      // token naming any user id rescheduled that user's tasks.
+      const { data: { user } } = await admin.auth.getUser(token);
+      if (!user) return new Response(JSON.stringify({
+        error: "unauthorized"
       }), {
         status: 401,
         headers: {
@@ -490,7 +497,7 @@ Deno.serve(async (req)=>{
         }
       });
       targets = [
-        claims.sub
+        user.id
       ]; // user-scoped: ignore body.user_id
     }
     const results = [];

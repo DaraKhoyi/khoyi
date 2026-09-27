@@ -8,6 +8,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,14 +23,8 @@ serve(async (req) => {
 
   // --- auth: service_role only ---
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  const isServiceRole = (() => {
-    if (!token) return false;
-    if (token === SERVICE_ROLE_KEY) return true;
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-      return payload?.role === "service_role";
-    } catch { return false; }
-  })();
+  // Verified, not decoded — see _shared/serviceCaller.ts.
+  const isServiceRole = !!token && await isServiceCaller(req);
   if (!isServiceRole) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },

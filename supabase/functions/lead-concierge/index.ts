@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
       "Direct inquiry": "A new person wrote in about real estate. Answer what they actually asked before anything else.",
       "Rent.com / Apartments": "A RENTAL inquiry. Confirm the rental is available or offer comparable ones, propose a viewing time, and ask their move-in date. Renters today are buyers in a year or two — be generous.",
       "Home-value request": "A HOMEOWNER asking what their home is worth — a potential seller. Thank them, say you will prepare a proper market analysis rather than an online estimate, and ask one question about the home's condition or updates.",
-    } as Record<string,string>)[source] || `A buyer lead from ${source}. They have very likely contacted several agents at once; speed and usefulness win. Mention the specific property if one is named, offer two concrete times to see it (today or tomorrow), and ask ONE qualifying question — whether they are pre-approved, or their timeline. Never say "thanks for reaching out".`;
+    } as Record<string,string>)[source] || `A buyer lead from ${source}. They have very likely contacted several agents at once; speed and usefulness win. Mention the specific property if one is named, offer two concrete times to see it (today or tomorrow), and ask whether they are already pre-approved — offering, if not, to connect them with a lender today so they can make an offer the moment they find the right home. That one question is what tells the agent whether this buyer can act; keep it light and helpful, never a gate. Never say "thanks for reaching out".`;
     const channelLine = (sourceLine ? sourceLine + " " : "") + (isEmail
       ? `Write the agent's FIRST reply to a brand-new lead who EMAILED in. Warm, human, and helpful: greet them by first name if known, engage with what they asked, and move toward a conversation (offer to help, ask one easy question, or suggest a quick call). 2-5 sentences — an email, not a text, but still concise and personal. No signature (the app adds it). Return ONLY the email body text.`
       : `Write the agent's FIRST reply to a brand-new lead who TEXTED. 1-3 short sentences, like a real person texting. No subject line, no signature, no emojis unless the agent's voice uses them. Return ONLY the message text.`);
@@ -113,6 +113,18 @@ Deno.serve(async (req) => {
     // Losing that race is the correct outcome, not a failure.
     if (error && (error as any).code === "23505") return new Response(JSON.stringify({ ok: true, skipped: "already_pending" }), { headers: { ...cors, "Content-Type": "application/json" } });
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+
+    // Readiness (lead-qualify): budget, area, repeat inquiries, past client — on
+    // the card from the first minute. Best-effort; the 15-minute sweep catches it.
+    if (kind !== "reply" && source) {
+      try {
+        await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/lead-qualify`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "x-qcp-token": Deno.env.get("QCP_TOKEN") || "", "Content-Type": "application/json" },
+          body: JSON.stringify({ email: isEmail ? lead_email : null, phone: isEmail ? null : lead_phone }),
+        });
+      } catch (_) { /* the sweep is the safety net */ }
+    }
 
     // push the agent — this IS the speed-to-lead moment
     try {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import LeadReadiness from './LeadReadiness';
 import { supabase } from '../dataService';
 
 // Who to call, and what to say when they answer.
@@ -96,6 +97,7 @@ export default function BrokerGoalRoster() {
   const [producers, setProducers] = useState([]);
   const [pick, setPick] = useState({});
   const [speed, setSpeed] = useState([]);
+  const [funnel, setFunnel] = useState(null);
   // Live SLA on company leads. One sat unrouted for ten days because nothing
   // watched the clock and nothing escalated; this is the watch.
   const [sla, setSla] = useState(null);
@@ -119,6 +121,7 @@ export default function BrokerGoalRoster() {
       setProducers(Array.isArray(pa) ? pa : []);
       setSpeed(Array.isArray(sp) ? sp : []);
       try { const { data: sd } = await supabase.rpc('lead_sla_dashboard'); setSla(sd && sd.settings ? sd : null); } catch (_) {}
+      try { const { data: fu } = await supabase.rpc('lead_funnel', { p_days: 30 }); setFunnel(fu && fu.leads != null ? fu : null); } catch (_) {}
     } catch (_) { /* the roster still loads */ }
     try {
       const { data: pr } = await supabase.rpc('txn_data_problems');
@@ -277,6 +280,12 @@ export default function BrokerGoalRoster() {
                 {l.source + ' \u00b7 to ' + (l.received_by || 'brokerage') + ' \u00b7 waiting ' +
                   (l.minutes_waiting < 90 ? l.minutes_waiting + ' min' : Math.round(l.minutes_waiting / 60) + ' h')}
               </div>
+              {(l.lead_email || l.lead_phone) ? (
+                <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 3 }}>
+                  {[l.lead_phone, l.lead_email].filter(Boolean).join(' \u00b7 ')}
+                </div>
+              ) : null}
+              <LeadReadiness r={l.readiness} />
               <div style={{ display: 'flex', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
                 <select value={pick[l.id] || ''} onChange={e => setPick(p => ({ ...p, [l.id]: e.target.value }))}
                   style={{ flex: '1 1 160px', minWidth: 0, minHeight: 44, borderRadius: 10, padding: '0 10px',
@@ -315,6 +324,29 @@ export default function BrokerGoalRoster() {
           old measure counted only replies sent from the concierge's own draft,
           and so recorded 20 responses where agents had actually answered 371 by
           email or phone — and then muted the senders it thought were ignored. */}
+      {/* WHERE LEADS GO, not how busy we are. Marguerite (panel, 27 Sep): an
+          answer rate over every card is "a busy number". Real leads only, once
+          per person: answered, fast, did they write back, can they buy. */}
+      {funnel && funnel.leads > 0 && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', margin: '0 0 12px' }}>
+          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,
+            letterSpacing: '.16em', textTransform: 'uppercase', color: '#C5A95E', marginBottom: 6 }}>
+            Real leads · last 30 days
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.6 }}>
+            {funnel.leads + (funnel.leads === 1 ? ' person' : ' people')
+              + ' \u2192 ' + funnel.answered + ' answered (' + funnel.answered_in_5_min + ' inside 5 min)'
+              + ' \u2192 ' + funnel.lead_wrote_back + ' wrote back'
+              + ' \u2192 ' + funnel.preapproval_known + ' told us about pre-approval'
+              + ' \u2192 ' + funnel.ready + ' ready to buy'}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
+            {funnel.active + ' active \u00b7 ' + funnel.unknown + ' not yet known'
+              + (funnel.repeat_inquirers ? ' \u00b7 ' + funnel.repeat_inquirers + ' asked more than once' : '')
+              + (funnel.noise_cards ? ' \u00b7 ' + funnel.noise_cards + ' cards shown that were not leads' : '')}
+          </div>
+        </div>
+      )}
       {speed.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', margin: '0 0 12px' }}>
           <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,

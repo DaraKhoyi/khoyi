@@ -73,6 +73,27 @@ Dara is broker, Josh is staff (office manager), Alexander and Mary produce.
 
 ## 5. Measure
 
+**27 Sep — readiness, and the funnel instead of a rate.** Marguerite (panel):
+"I am not going to answer 568 things to close 1 deal... the number that matters
+is whether the lead could ever buy." Two changes:
+
+- **`lead_readiness` (per PERSON, written by `lead-qualify`).** From the portal
+  template, no AI: budget band from listing prices, areas, repeat inquiries,
+  closed with us before. From the lead's OWN words (their portal comment, and
+  every email/text they send after), read by a small model: pre-approved / cash /
+  talking to a lender, timeline, must sell first, already has an agent, move-in.
+  Each fact keeps their quote; nothing is inferred. Grade: **ready** (can pay +
+  inside 3 months), **active**, **early**, **not yet known** — with the one
+  question to ask next. Shown on the agent's card and the broker's queue.
+- **Pre-approval is only known because the buyer says it** — CINC's badge is
+  the buyer's own form answer. Portal leads never carry it, so the first reply
+  now asks it and offers a lender, and `lead-qualify` (every 15 min, and on
+  arrival) reads the answer when it comes back.
+- **`lead_funnel(days)`** replaces the answer rate everywhere (panel, broker
+  screen): recognised leads once per person → answered → inside 5 min → wrote
+  back → told us about pre-approval → ready. `noise_cards` = non-leads still
+  shown; should sit near zero.
+
 - `speed_to_lead()` per producing agent: median minutes to first reply and the
   share inside five minutes. The answer *rate* is only meaningful for cards the
   new gate created (`source` set) — before 21 Sep a card was only knowable as a

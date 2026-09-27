@@ -11,6 +11,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -153,18 +154,11 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    // Is this the trusted server path (the calendar-poll cron)? Match either the
-    // exact configured service-role key OR any token whose JWT role claim is
-    // 'service_role' — robust to legacy vs new key rotations. Only a real
-    // service-role JWT can be minted with that claim, so this is safe.
-    const isServiceRole = (() => {
-      if (!token) return false;
-      if (SERVICE_ROLE && token === SERVICE_ROLE) return true;
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1] || ""));
-        return payload && payload.role === "service_role";
-      } catch { return false; }
-    })();
+    // Is this the trusted server path (the calendar-poll cron)? VERIFIED, not
+    // decoded. Until 27 Sep this read the JWT's role claim without checking its
+    // signature — with verify_jwt off, anyone could type {"role":"service_role"}
+    // and name any agent's user_id below. See _shared/serviceCaller.ts.
+    const isServiceRole = !!token && await isServiceCaller(req);
     let user_id: string;
     if (isServiceRole) {
       // trusted server path (calendar-poll) — user_id must come from the body

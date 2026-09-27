@@ -308,17 +308,13 @@ async function gather(admin: any) {
    from information_schema.role_table_grants
    where table_schema='public' and grantee in ('anon','PUBLIC')
      and privilege_type in ('INSERT','UPDATE','DELETE') limit 15`);
-  // HONEST "ACTED". status='sent' counted only replies sent from the concierge's
-  // own draft and reported 20 of 5,997 (0.33%). Agents had answered 371 by email
-  // or phone. That false 0.33% is what the panel read as "the loop only
-  // suppresses", and what the old learning read as "never actioned".
-  await one("agent_hit_rates", `select 'lead_concierge' agent,
-     count(*) surfaced,
-     count(*) filter (where first_response_at is not null) answered_any_channel,
-     count(*) filter (where source is not null) from_recognised_sources,
-     count(*) filter (where source is not null and first_response_at is not null) source_leads_answered,
-     round(100.0*count(*) filter (where first_response_at is not null)/nullif(count(*),0),2) pct
-   from lead_concierge where first_seen_at > now() - interval '30 days'`);
+  // THE LEAD FUNNEL, not an answer rate. The old query counted every concierge
+  // card for 30 days — 566 of 568 made by the score-based gate retired on
+  // 21 Sep — and reported "22.71% answered". Marguerite, rightly: "a busy
+  // number". lead_funnel() counts recognised leads once per PERSON: answered,
+  // inside five minutes, the lead wrote back, readiness known, ready to buy.
+  // noise_cards is what the gate still shows that is not a lead — near zero.
+  await one("lead_funnel", `select public.lead_funnel(30) v`);
   await one("speed_to_lead_by_agent", `select public.speed_to_lead(30) v`);
   await one("brokerage_leads_unrouted", `select count(*) n, max(round(extract(epoch from now()-received_at)/60)) oldest_minutes,
      string_agg(distinct source, ', ') sources from brokerage_leads where status='unassigned'`);
