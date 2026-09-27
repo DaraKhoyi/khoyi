@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/static/js/main.7zxLU_cL.js"></script>
+    <script type="module" crossorigin src="/static/js/main.COWE_SAi.js"></script>
     <link rel="modulepreload" crossorigin href="/static/js/vendor-react.DecIrkRQ.chunk.js">
     <link rel="modulepreload" crossorigin href="/static/js/vendor-react-dom.CLTjDK3B.chunk.js">
     <link rel="modulepreload" crossorigin href="/static/js/vendor.Ks84_326.chunk.js">
@@ -33,9 +33,23 @@
         if (!('serviceWorker' in navigator)) return;
 
         var reloading = false;
-        // When the new SW takes control (after the user taps Refresh), reload
-        // once so the page swaps to the new bundle. Guarded against loops.
+        // Was this page ALREADY controlled by a service worker when it loaded?
+        // If not, this is the very first visit on this device.
+        var hadController = !!navigator.serviceWorker.controller;
+        // When a NEW SW replaces an old one (an update), reload once so the page
+        // swaps to the new bundle. Guarded against loops.
+        //
+        // NOT on the first install. sw.js calls clients.claim(), so on a first
+        // visit 'controllerchange' fires too (no controller -> the SW) — and the
+        // page reloaded itself a moment after opening. Measured 26 Sep: every
+        // fresh visit reloaded once. On a phone, that lands seconds in, while a
+        // new agent is typing their email and password: the form is wiped and
+        // the Sign In tap sends nothing. It was also the week-long "flaky"
+        // functional check — the test signed in, the reload threw the form
+        // away, and the checks ran against the sign-in screen. There is nothing
+        // to swap to on a first install: the page is already the current build.
         navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!hadController) { hadController = true; return; }
           if (reloading) return;
           reloading = true;
           window.location.reload();
