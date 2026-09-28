@@ -1,0 +1,32 @@
+{
+  "id": "/launch/talk/",
+  "name": "Talk to Prism \u00b7 PrismOS",
+  "short_name": "Talk to Prism",
+  "description": "Speak a request, hear the answer",
+  "start_url": "/?talk=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#100D09",
+  "theme_color": "#100D09",
+  "icons": [
+    {
+      "src": "/launch/talk-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/talk-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/launch/talk-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
