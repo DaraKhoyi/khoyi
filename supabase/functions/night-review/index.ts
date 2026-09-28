@@ -328,11 +328,18 @@ async function gather(admin: any) {
   await one("speed_to_lead_by_agent", `select public.speed_to_lead(30) v`);
   await one("brokerage_leads_unrouted", `select count(*) n, max(round(extract(epoch from now()-received_at)/60)) oldest_minutes,
      string_agg(distinct source, ', ') sources from brokerage_leads where status='unassigned'`);
+  // SENDER MUTES (rebuilt 28 Sep). The old count read learned_from, a column
+  // added after the brokerage-wide rows were written, and reported "0 from
+  // producers" for mutes that each had 2-3 producing agents behind them. Now:
+  // each brokerage-wide sender, how many producing agents back it, whether it
+  // meets the gate (a trigger enforces it, so this should always be true) and
+  // whether it could belong to a lead source (refused by the gate).
   await one("learned_rules", `select kind, count(*) n,
      count(*) filter (where note like 'learned:%') auto_learned,
-     count(*) filter (where is_brokerage) brokerage_wide,
-     count(*) filter (where learned_from = 'producing_agent') from_producers
+     count(*) filter (where is_brokerage) brokerage_wide_rows
    from lead_sender_rules group by 1`);
+  await one("brokerage_wide_mutes", `select 'Gate: a sender is muted for everyone only while 2+ PRODUCING agents mute it themselves, no one vouched for it, and it matches no lead source. Enforced by a trigger; the browser cannot set the flag. Re-checked daily.' read_this_first,
+     public.brokerage_mutes() v`);
   // Call follow-ups, split at the 22 Sep rules. The all-time counts carried 190
   // dismissals that were ALL made before those rules and had already been
   // analysed (docs/COMMITMENT_RULES.md) — so the panel kept re-reading a solved

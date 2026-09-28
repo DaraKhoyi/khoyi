@@ -424,6 +424,19 @@ BEFORE the device listens. A human listening and taking notes is not interceptio
 Gmail proxies; scanners cause false positives. Label honestly ("Likely seen"),
 never a hard "Read". `track_opens` off by default.
 
+**BROKERAGE-WIDE SENDER MUTES (28 Sep).** `lead_sender_rules.is_brokerage`
+drops mail from an exact address for EVERY agent (gmail-sync pushes,
+lead_concierge_pending). Gate, one definition: `brokerage_mute_allowed(sender)`
+— 2+ agents with an agents row `production_role='producing'` mute it, nobody
+marked it lead_ok, and it matches no active `lead_sources.sender_re` (nor a
+portal/CRM list). Trigger `lead_sender_rules_brokerage_guard_trg` refuses the
+flag otherwise, for every role; the browser has no column grant on
+is_brokerage/learned_from at all. `promote_shared_sender_rules` (cron 06:45)
+now also UN-mutes anything that stops qualifying and logs both directions to
+`brokerage_mute_log`; `brokerage_mutes()` is the staff/panel view. The panel's
+old "from_producers: 0" was a column added after the rows — not a gate breach.
+`smoke/brokerage_mute_guard.mjs` (known-answer tested).
+
 **UPDATES ARE THE PERSON'S CHOICE (28 Sep).** Dara lost a Library note when a
 new version swapped itself in mid-task. Now: `public/sw.js` never skipWaiting()s
 on install; `index.html` reloads on controllerchange only after
