@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import LeadReadiness from './LeadReadiness';
 import { supabase } from '../dataService';
+import DealAttribution from './DealAttribution';
 
 // Who to call, and what to say when they answer.
 //
@@ -347,6 +348,9 @@ export default function BrokerGoalRoster() {
           </div>
         </div>
       )}
+      {/* WHERE CLOSINGS CAME FROM (28 Sep): each closing's client, source and
+          speed to lead, from the Gold Report client columns. */}
+      <DealAttribution days={90} />
       {speed.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', margin: '0 0 12px' }}>
           <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, fontWeight: 800,

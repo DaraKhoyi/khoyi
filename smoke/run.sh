@@ -138,6 +138,10 @@ node smoke/mcp_connector.mjs || exit 1
 # person's own data, refuses strangers, and never changes anything without a yes.
 node smoke/talk_to_prism.mjs || exit 1
 
+# Where closings came from (closing_attribution): plants known closings in 1999
+# and checks each is tied to the right client, source and speed to lead.
+node smoke/lead_attribution.mjs || exit 1
+
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
 # code gets masked and the deploy proceeds on a gate that never ran. A gate that

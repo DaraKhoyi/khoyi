@@ -593,6 +593,25 @@ keep all of them when adding tools:
 and every gate on each gate run (known-answer tested: opening the allowlist
 fails it).
 
+**WHERE CLOSINGS CAME FROM (28 Sep).** The brokerage does NOT run its own lead
+generation — every agent generates their own (Dara, 28 Sep). So attribution
+answers, per closing: who the client was, where they came from, how fast they
+were answered. `closing_attribution(from, to)` (one row per sale; staff see all,
+an agent only their own) and `lead_attribution(days)` (by source, by agent,
+closings missing a client) in `supabase/sql/2026-09-28_lead_attribution.sql`.
+Source precedence: the Gold Report "Lead Source" column (sheets-sync writes
+`brokerage_transactions.lead_source` when that column exists — it does not yet)
+> the earliest PrismOS record of the client matched on CLIENT Email (or on a
+full name when the row has no email): company lead, lead card, the agent's
+contact (prospecting system / referral / origin). Records dated after the
+closing never count. `lead_source_bucket()` folds free text into ~15 fixed
+sources. The Gold Report's CLIENT NAME / CLIENT Email columns start 28 Sep 2026:
+older closings have no client BY DESIGN — never report them as a gap.
+`business_outcomes()` now reads its closings from `closing_attribution`. Broker
+card: `src/views/DealAttribution.jsx` on the goal roster. Panel reads
+`lead_attribution(90)` with that context. `smoke/lead_attribution.mjs` plants
+known closings in 1999 and checks every answer.
+
 **TALK TO PRISM (talk-to-prism, 27 Sep).** The voice screen: `/?talk=1`
 (`src/views/TalkToPrism.jsx`, routed in `src/publicRoutes.jsx` — App.js is at its
 line budget, so stand-alone pages live there). Its own home-screen icon comes

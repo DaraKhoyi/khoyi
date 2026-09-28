@@ -241,6 +241,16 @@ async function gather(admin: any) {
   // exactly which link is missing. Report the blocker; never estimate past it.
   await one("business_outcomes_30d", `select public.business_outcomes(30) v`);
 
+  // WHERE CLOSINGS CAME FROM (28 Sep). Dara: "At the brokerage level we are not
+  // actively involved in lead generation. Agents are each doing their own
+  // things." So a closing whose source is the agent's own sphere or open house
+  // is the system working, not PrismOS failing — judge PrismOS on whether each
+  // closing's source is KNOWN, not on how many it produced. The Gold Report's
+  // client columns start 28 Sep: never count older closings as a gap.
+  await one("where_closings_came_from_90d", `select
+      'The brokerage does not generate leads; each agent generates their own. Judge whether sources are KNOWN, not whether PrismOS produced them. Client columns in the Gold Report start 28 Sep 2026 — older closings have no client by design.' read_this_first,
+      public.lead_attribution(90) - 'evidence' v`);
+
   await one("ai_spend_30d", `select fn, count(*) n, round(sum(cost_usd)::numeric,2) usd
      from ai_usage_log where created_at > now() - interval '30 days'
      group by 1 order by 3 desc limit 8`);

@@ -1,4 +1,5 @@
--- business_outcomes(): recorded 27 Sep. The one place ROI is measured. See HANDOFF §8.
+-- business_outcomes(): recorded 27 Sep, closings rebuilt on closing_attribution() 28 Sep
+-- (supabase/sql/2026-09-28_lead_attribution.sql). The one place ROI is measured. See HANDOFF §8.
 CREATE OR REPLACE FUNCTION public.business_outcomes(p_days integer DEFAULT 30)
  RETURNS jsonb
  LANGUAGE sql
@@ -29,25 +30,10 @@ AS $function$
       and lc.first_seen_at > now() - (p_days || ' days')::interval),
   answered as (select * from leads where first_response_at is not null or status in ('sent','handled')),
   co as (select * from brokerage_leads where received_at > now() - (p_days || ' days')::interval),
-  closings as (
-    select bt.id, bt.address, coalesce(bt.date_paid, bt.date_received) closed_on, bt.gross_commission gci,
-           nullif(lower(bt.client_email),'') email,
-           array_remove(array[
-             nullif(lower(regexp_replace(coalesce(bt.buyer_name,''),'[^A-Za-z ]','','g')),''),
-             nullif(lower(regexp_replace(coalesce(bt.seller_name,''),'[^A-Za-z ]','','g')),'')], null) names
-    from brokerage_transactions bt
-    where coalesce(bt.date_paid, bt.date_received) between current_date - p_days and current_date),
-  touches as (   -- every way PrismOS demonstrably touched a person, with when
-    select lower(lead_email) email, lower(regexp_replace(coalesce(lead_name,''),'[^A-Za-z ]','','g')) nm, first_seen_at at_, 'lead card (' || coalesce(source,'?') || ')' how from lead_concierge
-    union all select lower(lead_email), lower(regexp_replace(coalesce(lead_name,''),'[^A-Za-z ]','','g')), received_at, 'company lead (' || source || ')' from brokerage_leads
-    union all select lower(c.email), lower(regexp_replace(coalesce(c.name,''),'[^A-Za-z ]','','g')), l.created_at, 'AI ' || l.fn
-      from ai_usage_log l join contacts c on l.subject_type = 'contact' and c.id = l.subject_id),
-  attributed as (
-    select distinct on (c.id) c.id, c.address, c.closed_on, c.gci, t.how, t.at_
-    from closings c join touches t
-      on ((c.email is not null and t.email = c.email) or (length(t.nm) > 5 and t.nm = any(c.names)))
-     and t.at_::date <= c.closed_on and t.at_ > c.closed_on - interval '365 days'
-    order by c.id, t.at_)
+  -- Closings, their clients and where they came from: ONE definition, shared
+  -- with the broker's "Where closings came from" card (closing_attribution).
+  closings as (select * from public.closing_attribution(current_date - p_days, current_date)),
+  attributed as (select * from closings where prismos_saw_first)
   select case when not (select ok from gate) then jsonb_build_object('error','staff or service role only') else jsonb_build_object(
     'window_days', p_days,
     'ai_spend', jsonb_build_object(
@@ -70,20 +56,28 @@ AS $function$
     'closings', jsonb_build_object(
       'count', (select count(*) from closings),
       'gci', (select round(coalesce(sum(gci),0)) from closings),
-      'with_client_identity', (select count(*) from closings where email is not null or cardinality(names) > 0)),
+      'with_client_identity', (select count(*) from closings where has_client),
+      'with_lead_source', (select count(*) from closings where source_bucket is not null),
+      'by_source', (select coalesce(jsonb_object_agg(b, n), '{}') from (select coalesce(source_bucket, 'not recorded') b, count(*) n from closings group by 1) s)),
     'attributed_to_prismos', jsonb_build_object(
       'closings', (select count(*) from attributed),
       'gci', (select round(coalesce(sum(gci),0)) from attributed),
       'evidence', (select coalesce(jsonb_agg(jsonb_build_object('address', address, 'closed_on', closed_on, 'gci', gci,
-                     'first_touch', how, 'touched_on', at_::date) order by closed_on desc),'[]') from attributed)),
+                     'source', source, 'first_touch', found_how, 'touched_on', found_on,
+                     'minutes_to_first_reply', minutes_to_first_reply) order by closed_on desc),'[]') from attributed)),
     'blocked_by', (select coalesce(jsonb_agg(b),'[]') from (
-      select 'No closing in this window records who the client was (the Gold Report has no client column and no contract has been extracted), so no sale can be tied to a lead or to AI spend. Add "Client" and "Client Email" columns to the Gold Report.' b
-        where (select count(*) from closings) > 0 and (select count(*) from closings where email is not null or cardinality(names) > 0) = 0
+      select 'Closings before 28 Sep 2026 carry no client (the Gold Report CLIENT NAME / CLIENT Email columns were added that day and are filled from then on), so older sales cannot be tied to a lead. This is expected, not a fault; judge attribution only on closings from 28 Sep onward.' b
+        where (select count(*) from closings where closed_on < date '2026-09-28' and not has_client) > 0
+      union all select (select count(*) from closings where closed_on >= date '2026-09-28' and not has_client) || ' closing(s) since 28 Sep have no CLIENT NAME or CLIENT Email in the Gold Report — fill them in so they can be attributed.'
+        where (select count(*) from closings where closed_on >= date '2026-09-28' and not has_client) > 0
+      union all select 'The Gold Report has no "Lead Source" column, so a closing''s source is known only when PrismOS itself recorded the client (most agents'' leads never pass through PrismOS). Add a "Lead Source" column.'
+        where not exists (select 1 from brokerage_transactions bt, jsonb_object_keys(bt.raw_row) k
+                          where bt.year = extract(year from current_date)::int and lower(k) ~ '^(lead )?source')
       union all select 'Only ' || (select count(*) from ai_usage_log where subject_id is not null and created_at > now() - (p_days || ' days')::interval) || ' of ' || (select count(*) from spend) || ' AI calls name the contact they were about, so most spend cannot be followed to a person.'
         where (select count(*) from spend) > 0
       union all select 'Lead cards found only in connected mailboxes (' || (select count(*) from email_accounts where 'email' = any(purposes) and reauth_required_at is null) || ' working); leads to everyone else are invisible.'
     ) s),
-    'note', 'Attributed means PrismOS surfaced, drafted for or researched the client BEFORE the closing, within a year — evidence, not proof of cause. Leads count only cards from the 21 Sep lead gate.'
+    'note', 'The brokerage does not run its own lead generation; agents each generate their own. Attributed means PrismOS held a record of the client (company lead, lead card, or the agent''s contact) BEFORE the closing, within 3 years — evidence, not proof of cause. Lead source = the Gold Report "Lead Source" if present, else PrismOS''s earliest record. Leads count only cards from the 21 Sep lead gate.'
   ) end
 $function$
 ;

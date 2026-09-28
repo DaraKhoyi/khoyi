@@ -189,7 +189,11 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: false, error: `Could not read the sheet from Drive (${r.status}).` }),
           { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
       }
-      wb = XLSX.read(new Uint8Array(await r.arrayBuffer()), { type: "array", cellDates: true });
+      // Parse ONLY the tabs we import, densely. The 06:00 run of 28 Sep died with
+      // 546 (the function's CPU/memory limit) parsing every tab of the workbook;
+      // the same run by hand minutes later fit. Leave headroom, not luck.
+      wb = XLSX.read(new Uint8Array(await r.arrayBuffer()), { type: "array", cellDates: true, dense: true,
+        sheets: tabMap.map((t) => t.tab), cellStyles: false, cellHTML: false, cellFormula: false });
     }
 
     for (const { tab, year } of tabMap) {
@@ -229,6 +233,11 @@ Deno.serve(async (req) => {
       const iBuyer = firstCol(["Buyer", "Buyer Name", "Buyer(s)"]);
       const iSeller = firstCol(["Seller", "Seller Name", "Seller(s)"]);
       const iEmail = firstCol(["Client Email", "Buyer Email", "Seller Email", "Email"]);
+      // WHERE THE CLIENT CAME FROM (28 Sep), as the agent knows it: "Open house",
+      // "Sphere", "Zillow", "Referral from…". Read when the column exists; it is
+      // the strongest evidence closing_attribution() has, because most agents'
+      // leads never pass through PrismOS at all.
+      const iSource = firstCol(["Lead Source", "Source", "Client Source", "Lead Source (how they found you)", "How Found"]);
 
       const records: any[] = [];
       // WHY ROWS WERE SKIPPED. From 22 Sep every daily run imported 0 rows and
@@ -265,6 +274,7 @@ Deno.serve(async (req) => {
         if (iBuyer >= 0 || iClient >= 0) client.buyer_name = (iBuyer >= 0 ? txt(r[iBuyer]) : null) || (!isList || isBuy ? clientName : null) || null;
         if (iSeller >= 0 || iClient >= 0) client.seller_name = (iSeller >= 0 ? txt(r[iSeller]) : null) || (isList && !isBuy ? clientName : null) || null;
         if (iEmail >= 0) client.client_email = (txt(r[iEmail]) || "").toLowerCase() || null;
+        if (iSource >= 0) client.lead_source = txt(r[iSource]) || null;
         records.push({
           ...client,
           year, trans_id: transId, agent_name_raw: txt(agent) || "(unnamed)", source_tab: tab, source_row: ri + 1,
