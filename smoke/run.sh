@@ -121,6 +121,10 @@ node smoke/edge_parse.mjs
 # rule; 8 functions had been spending unrecorded). Static, runs in CI too.
 node smoke/ai_cost_guard.mjs
 
+# A new version never reloads the app by itself (Dara lost a note to an
+# automatic update, 28 Sep). Static, runs in CI too.
+node smoke/no_forced_update.mjs || exit 1
+
 : "${SUPABASE_URL:?set SUPABASE_URL}"; : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"; : "${SUPABASE_SERVICE_KEY:?set SUPABASE_SERVICE_KEY}"
 [ -d build ] || { echo "No build/ — run the build first."; exit 2; }
 

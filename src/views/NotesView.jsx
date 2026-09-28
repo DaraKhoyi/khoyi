@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../dataService';
 import { useDurableDraft } from './DurableDraft';
+import { loadDraft, draftKey } from '../outbox';
 import { Icon } from '../icons';
 import { TipFor } from '../tipsUi';
 import { confirmDialog, notify, notifyError } from '../notify';
@@ -114,6 +115,17 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
   }
 
   const isBlank = (t, b) => !(t || '').trim() && !(b || '').trim();
+
+  // A NEW note that was never saved (the app closed or reloaded mid-sentence —
+  // 28 Sep, Dara lost one) is still on the phone. Say so and reopen it on a tap;
+  // the draft hook then puts the text back into the empty editor.
+  const [unsavedNew, setUnsavedNew] = useState(null);
+  useEffect(() => {
+    if (selected) return;
+    let alive = true;
+    loadDraft(draftKey('notes', 'body', null)).then((d) => { if (alive) setUnsavedNew(d && d.text && d.text.trim() ? d.text.trim() : null); }).catch(() => {});
+    return () => { alive = false; };
+  }, [selected]);
 
   // Discard-or-keep when leaving the editor. Called by Back and by close.
   function leaveNote() {
@@ -273,6 +285,14 @@ function NotesView({ notes, setNotes, userId, initialSub, subNonce }) {
         </div>
       </div>
 
+      {unsavedNew && !selected && (
+        <button type="button" data-testid="unsaved-note" onClick={() => { setUnsavedNew(null); createNote(); }}
+          style={{ textAlign: 'left', width: '100%', minHeight: 48, borderRadius: 12, border: '1px solid var(--accent)', background: 'rgba(197,169,94,.08)',
+            color: 'var(--text-1)', padding: '10px 12px', fontSize: 13.5, lineHeight: 1.45, cursor: 'pointer' }}>
+          <b style={{ color: 'var(--accent)' }}>Unsaved note from earlier — tap to open it.</b>
+          <span style={{ display: 'block', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{unsavedNew.slice(0, 120)}</span>
+        </button>
+      )}
       <TipFor screen="notes" />
 
       <div style={{ position: 'relative', flexShrink: 0 }}>

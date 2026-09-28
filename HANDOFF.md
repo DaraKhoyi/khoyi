@@ -424,6 +424,19 @@ BEFORE the device listens. A human listening and taking notes is not interceptio
 Gmail proxies; scanners cause false positives. Label honestly ("Likely seen"),
 never a hard "Read". `track_opens` off by default.
 
+**UPDATES ARE THE PERSON'S CHOICE (28 Sep).** Dara lost a Library note when a
+new version swapped itself in mid-task. Now: `public/sw.js` never skipWaiting()s
+on install; `index.html` reloads on controllerchange only after
+`window.__prismUpdateRequested`; `lazyWithReload` retries then shows a Refresh
+card, never reloads; `src/UpdateBanner.jsx` shows "New version ready" with
+Later (tucks to an "Update" pill) and Update (asks first if you typed in the
+last 3 minutes or a text box on screen holds words). deploy.yml has
+`keep_files: true` so a phone on the old version can still load its screens —
+a MANUAL gh-pages publish must also keep old files (copy the build over the
+existing tree; do NOT `git rm -rq .`). A new note never saved is offered back
+in the Library ("Unsaved note from earlier"). `smoke/no_forced_update.mjs` pins
+all of it.
+
 **Smaller traps:** the deploy robot must run the SAME Node major as the local gate (22): on Node 20, `createClient` from supabase-js throws at start (no built-in WebSocket), which silently kept v1.08.79–80 off the site for a night · PostgREST bulk insert rejects a batch whose objects have
 different key sets rather than defaulting the gaps · Supabase Management API
 always needs `User-Agent: KhoyiApp/1.0`, SQL literals use doubled single-quotes,

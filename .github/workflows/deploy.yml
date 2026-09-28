@@ -103,4 +103,9 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
           publish_branch: gh-pages
+          # KEEP OLD FILES (28 Sep): a phone still running yesterday's version
+          # loads that version's screens by their hashed file names. Deleting
+          # them forced a reload mid-task; updates are now the person's choice
+          # (src/UpdateBanner.jsx), so the old files must stay reachable.
+          keep_files: true
           cname: darasapp.com

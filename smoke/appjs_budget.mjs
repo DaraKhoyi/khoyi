@@ -33,7 +33,9 @@ const BUDGETS = {
   // 2070 -> 2085 on 2026-08-24: the device-timezone sync effect. Composition — it
   // wires a module the shell owns; the logic is in src/deviceTime.js. Comment
   // trimmed once before raising.
-  "src/App.js": 2085,
+  // 2085 -> 2030 on 2026-09-28: UpdateBanner moved to src/UpdateBanner.jsx and
+  // the chunk auto-reload removed (updates are now the person's choice).
+  "src/App.js": 2030,
   "src/menuConfig.js": 200,
   // The accounting split is DONE: 6,745 -> ~650. These budgets are what keep it
   // that way — the file only reached 6,745 because nothing measured it, and the

@@ -68,6 +68,7 @@ import TaskModal from './views/TaskModal';
 import { docOriginMeta, OriginChip, LifecycleChip, FILE_STATUSES, STATUS_META, CHK_STATUS, CHK_META, FARBAR_BUYER_CHECKLIST, logFileEvent, shortDate, StatusPill, FILE_DOC_TYPES, DOCTYPE_LABEL, DOCTYPE_TO_ITEM, WAIVER_TO_KIND, resolveDeadlineWaiver, generateDeadlinesFromTerms } from './fileDomain';
 import MissingDocsComposer from './views/MissingDocsComposer';
 import { specialScreen } from './publicRoutes';
+import UpdateBanner from './UpdateBanner';
 import SignatureRequestModal from './views/SignatureRequestModal';
 import SignatureManageModal from './views/SignatureManageModal';
 import FileDetailModal from './views/FileDetailModal';
@@ -122,35 +123,23 @@ import { BUILD_VERSION } from './version';
 import './index.css';
 import { computeCDA } from './lib/cda';
 
-// Lazy-load wrapper with stale-deploy recovery: if a view's code chunk fails to
-// load because a new version was deployed while the app was open (the old hashed
-// chunk no longer exists on the server), reload once to pick up the fresh build
-// instead of surfacing a "failed to fetch dynamically imported module" error.
+// Lazy-load wrapper: if a view's code chunk fails to load, retry once, then show
+// a "could not load" card with a Refresh button. It never reloads by itself.
 function lazyWithReload(factory) {
   return React.lazy(() =>
     factory().catch((err) => {
       const msg = String((err && err.message) || err || '');
       if (/dynamically imported module|Loading chunk|module script failed|Failed to fetch/i.test(msg)) {
-        try {
-          const last = +(sessionStorage.getItem('__chunkReloadAt') || 0);
-          if (Date.now() - last > 10000) {
-            sessionStorage.setItem('__chunkReloadAt', String(Date.now()));
-            window.location.reload();
-            return new Promise(() => {}); // hold render while the page reloads
-          }
-        } catch (_) {
-          window.location.reload();
-          return new Promise(() => {});
-        }
-        // Already reloaded once recently — don't crash to a blank/frozen screen.
-        // Give the user a clear way to pick up the new version.
-        return { default: function ChunkNeedsRefresh() {
+        // NEVER reload on its own (28 Sep: an automatic reload threw away a note
+        // Dara was writing). Old chunks stay published (deploy.yml keep_files),
+        // so this is usually a network blip: try once more, then ask.
+        return new Promise((r) => setTimeout(r, 1200)).then(() => factory()).catch(() => ({ default: function ChunkNeedsRefresh() {
           return React.createElement('div', { style: { padding: '32px 20px', textAlign: 'center', color: 'var(--text-2)' } },
-            React.createElement('div', { style: { fontSize: '15px', fontWeight: 600, color: 'var(--text-1)', marginBottom: '6px' } }, 'A new version was just deployed'),
-            React.createElement('div', { style: { fontSize: '13px', marginBottom: '16px' } }, 'Tap refresh to load the latest.'),
-            React.createElement('button', { className: 'btn btn-primary', onClick: () => { try { sessionStorage.removeItem('__chunkReloadAt'); } catch (_) {} window.location.reload(); } }, 'Refresh to update')
+            React.createElement('div', { style: { fontSize: '15px', fontWeight: 600, color: 'var(--text-1)', marginBottom: '6px' } }, 'This screen could not load'),
+            React.createElement('div', { style: { fontSize: '13px', marginBottom: '16px' } }, 'Check your connection, or refresh to load the latest version. Save anything you are working on first.'),
+            React.createElement('button', { className: 'btn btn-primary', onClick: () => window.location.reload() }, 'Refresh')
           );
-        } };
+        } }));
       }
       throw err;
     })
@@ -925,48 +914,6 @@ function InstallPwaPrompt() {
 // ─────────────────────────────────────────
 // APP COMPONENT
 // ─────────────────────────────────────────
-// Detects when a newer deploy is live (bundle hash changed) and offers a
-// one-tap refresh — so an installed PWA never silently runs a stale build.
-function UpdateBanner() {
-  const [ready, setReady] = useState(false);
-  const currentHashRef = useRef(null);
-  useEffect(() => {
-    try {
-      const el = document.querySelector('script[src*="/static/js/main."]');
-      if (el) { const m = el.src.match(/main\.([a-f0-9]+)\.js/); if (m) currentHashRef.current = m[1]; }
-    } catch (_) {}
-    let stop = false;
-    async function check() {
-      if (stop || !currentHashRef.current) return;
-      try {
-        const res = await fetch('/index.html?cb=' + Date.now(), { cache: 'no-store' });
-        const txt = await res.text();
-        const m = txt.match(/main\.([a-f0-9]+)\.js/);
-        if (m && m[1] !== currentHashRef.current) setReady(true);
-      } catch (_) {}
-    }
-    check();
-    const t = setTimeout(check, 3000);
-    const iv = setInterval(check, 60000);
-    const onVis = () => { if (document.visibilityState === 'visible') check(); };
-    document.addEventListener('visibilitychange', onVis);
-    return () => { stop = true; clearTimeout(t); clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
-  }, []);
-  async function refresh() {
-    try {
-      if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.update())); }
-      if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); }
-    } catch (_) {}
-    window.location.reload();
-  }
-  if (!ready) return null;
-  return (
-    <div style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)', zIndex: 5000, background: 'var(--accent)', color: 'var(--bg-base)', borderRadius: '999px', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', fontSize: '13px', fontWeight: 700, maxWidth: '92vw' }}>
-      <span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="sparkles" size={13} /> New version available</span>
-      <button onClick={refresh} style={{ background: 'var(--bg-base)', color: 'var(--accent)', border: 'none', borderRadius: '999px', padding: '6px 14px', fontWeight: 800, fontSize: '12px', cursor: 'pointer' }}>Refresh</button>
-    </div>
-  );
-}
 
 /* ============================================================
    FILES — Buyer-side transaction file management (Phase 1)

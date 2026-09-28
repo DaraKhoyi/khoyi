@@ -43,68 +43,24 @@
         // functional check — the test signed in, the reload threw the form
         // away, and the checks ran against the sign-in screen. There is nothing
         // to swap to on a first install: the page is already the current build.
+        // UPDATES ARE THE PERSON'S CHOICE (28 Sep 2026). Dara lost a note he was
+        // writing when a new version swapped itself in mid-task. The page now
+        // reloads for a new version ONLY after the person taps Update (the React
+        // UpdateBanner sets window.__prismUpdateRequested). A new service worker
+        // taking control for any other reason changes nothing on screen.
         navigator.serviceWorker.addEventListener('controllerchange', function () {
           if (!hadController) { hadController = true; return; }
-          if (reloading) return;
+          if (!window.__prismUpdateRequested || reloading) return;
           reloading = true;
           window.location.reload();
         });
 
-        function showUpdatePrompt(worker) {
-          if (document.getElementById('prismos-update-bar')) return;
-          var bar = document.createElement('div');
-          bar.id = 'prismos-update-bar';
-          bar.setAttribute('role', 'status');
-          bar.style.cssText = [
-            'position:fixed', 'left:50%', 'transform:translateX(-50%)',
-            'bottom:calc(16px + env(safe-area-inset-bottom,0px))', 'z-index:99999',
-            'display:flex', 'align-items:center', 'gap:12px',
-            'padding:10px 12px 10px 16px', 'border-radius:14px',
-            'background:#161921', 'border:1px solid #C5A95E',
-            'box-shadow:0 8px 30px rgba(0,0,0,.45)',
-            'font-family:Inter,system-ui,sans-serif', 'color:#e8eaf0',
-            'font-size:13.5px', 'max-width:calc(100vw - 24px)'
-          ].join(';');
-
-          var label = document.createElement('span');
-          label.textContent = 'New version available';
-          label.style.cssText = 'font-weight:600;white-space:nowrap';
-
-          var btn = document.createElement('button');
-          btn.textContent = 'Refresh';
-          btn.style.cssText = [
-            'background:#C5A95E', 'color:#111', 'border:none', 'border-radius:10px',
-            'padding:7px 16px', 'font-size:13px', 'font-weight:700', 'cursor:pointer',
-            'font-family:inherit', 'white-space:nowrap'
-          ].join(';');
-          btn.addEventListener('click', function () {
-            btn.disabled = true; btn.textContent = 'Updating…';
-            try { if (worker) worker.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
-            // Fallback: if the new worker doesn't take control quickly (or there's
-            // no waiting worker to message), force the reload anyway so the button
-            // can never get stuck on "Updating…".
-            setTimeout(function () { if (!reloading) { reloading = true; window.location.reload(); } }, 2500);
-          });
-
-          var dismiss = document.createElement('button');
-          dismiss.setAttribute('aria-label', 'Dismiss');
-          dismiss.textContent = '✕';
-          dismiss.style.cssText = [
-            'background:none', 'border:none', 'color:#9499b0', 'cursor:pointer',
-            'font-size:14px', 'padding:4px 6px', 'font-family:inherit'
-          ].join(';');
-          dismiss.addEventListener('click', function () { bar.remove(); });
-
-          bar.appendChild(label); bar.appendChild(btn); bar.appendChild(dismiss);
-          document.body.appendChild(bar);
-        }
-
         window.addEventListener('load', function () {
           navigator.serviceWorker.register('/sw.js').then(function (reg) {
             // A new version was already downloaded and is waiting.
-            if (reg.waiting && navigator.serviceWorker.controller) {
-              showUpdatePrompt(reg.waiting);
-            }
+            // Tell the app; its UpdateBanner shows the one "New version" prompt.
+            function ready() { window.__prismUpdateReady = true; window.dispatchEvent(new Event('prism-update-ready')); }
+            if (reg.waiting && navigator.serviceWorker.controller) ready();
             // A new version starts installing while the app is open.
             reg.addEventListener('updatefound', function () {
               var nw = reg.installing;
@@ -112,7 +68,7 @@
               nw.addEventListener('statechange', function () {
                 // "installed" + an existing controller == an update (not first install).
                 if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-                  showUpdatePrompt(reg.waiting || nw);
+                  ready();
                 }
               });
             });
