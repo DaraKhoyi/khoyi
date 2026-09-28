@@ -110,18 +110,9 @@ const credCols = await q(String.raw`
     from information_schema.columns c
    where c.table_schema = 'public' and c.column_name ~* '${CRED}' and c.column_name !~* '^has_'
    order by 1, 2`);
-// STAGED until 28 Sep 07:00 UTC: the email_accounts revoke waits for phones to
-// load the build that stops select('*'). Until then the scheduled job must
-// exist; after, the revoke must have happened. Delete this block after 28 Sep.
-const STAGED_UNTIL = Date.parse('2026-09-28T07:15:00Z');
-const staged = Date.now() < STAGED_UNTIL
-  ? (await q(`select count(*)::int n from cron.job where jobname = 'email-accounts-hide-tokens-once'`))[0].n > 0
-  : false;
-
 const bad = [...staticBad];
 for (const r of credCols) {
   if (!r.anon && !r.auth) continue;
-  if (staged && r.t === 'email_accounts' && !r.anon) continue;
   bad.push(`${r.t}.${r.col} — credential readable by ${[r.anon && 'anon', r.auth && 'authenticated'].filter(Boolean).join(' and ')} (the browser)`);
 }
 for (const r of bypass) bad.push(`${r.sig} — "auth.uid() is not null and …" lets a signed-out caller skip the check`);
@@ -133,7 +124,7 @@ for (const { t, col } of cols) {
 }
 
 if (!bad.length) {
-  console.log(`==== DEFINER GUARD: clean — no signed-out bypass; no sensitive data on shared tables (${cols.length} transitional, empty); ${credCols.length} credential columns hidden from the browser${staged ? ' (email_accounts revoke scheduled for 28 Sep 03:00 EDT)' : ''} ====`);
+  console.log(`==== DEFINER GUARD: clean — no signed-out bypass; no sensitive data on shared tables (${cols.length} transitional, empty); ${credCols.length} credential columns hidden from the browser ====`);
   process.exit(0);
 }
 console.log(`==== DEFINER GUARD: ${bad.length} problem(s) ====`);
