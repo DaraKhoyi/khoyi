@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-4ec909d'
+const VERSION = 'prismos-b05ad99'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -40,13 +40,11 @@ self.addEventListener('install', (event) => {
         // If any shell URL 404s, we still install — Chrome just needs the SW to exist
       }))
   );
-  // Take control as soon as installed. The running page has a 'controllerchange'
-  // listener that reloads once, so a freshly deployed version applies automatically
-  // on the next app open — no manual "Refresh" tap needed. This is deliberate for
-  // an actively-iterated beta: users kept getting stranded on stale bundles because
-  // the update prompt was easy to miss on a resumed mobile PWA. The app autosaves,
-  // so the reload is safe. (The "New version" prompt below still works as a backup.)
-  self.skipWaiting();
+  // NEVER take control on its own (Dara, 28 Sep 2026: "I lost my work … do not
+  // automatically implement updates"). A new version installs quietly and
+  // WAITS. The app shows "New version available"; only the person tapping
+  // Update posts SKIP_WAITING below. A cold start of the app still gets the
+  // new version, because page loads are network-first — nothing is open then.
 });
 
 // The app posts this when the user taps "Refresh" on the update prompt.
