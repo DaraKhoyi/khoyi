@@ -23,6 +23,7 @@ LAUNCHERS = [
     ('brokerage',  'Brokerage',    'The office',                  '/?view=production',           '#9AA6C9'),
     ('tasks',      'Tasks',        'Everything on your plate',    '/?view=tasks',                '#CBA35C'),
     ('addexpense', 'Add Expense',  'Straight to the form',        '/?view=finance&sub=ledger',   '#8FB8A8'),
+    ('talk',       'Talk to Prism', 'Speak a request, hear the answer', '/?talk=1',              '#EBCB82'),
 ]
 
 PAGE = """<!doctype html>

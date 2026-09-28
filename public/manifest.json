@@ -109,6 +109,19 @@
   },
   "shortcuts": [
     {
+      "name": "Talk to Prism",
+      "short_name": "Talk",
+      "description": "Speak a request",
+      "url": "/?talk=1",
+      "icons": [
+        {
+          "src": "/logo192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
       "name": "Add expense",
       "short_name": "Money",
       "description": "Record a transaction",

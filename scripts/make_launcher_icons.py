@@ -26,6 +26,7 @@ LAUNCHERS = {
     'brokerage': ('#9AA6C9', 'building'), # Brokerage
     'tasks':     ('#CBA35C', 'check'),    # Tasks
     'addexpense':('#8FB8A8', 'plus'),     # Add expense
+    'talk':      ('#EBCB82', 'mic'),      # Talk to Prism — speak a request
 }
 
 
@@ -71,6 +72,13 @@ def draw_mark(d, kind, cx, cy, r, colour, w):
                             radius=r * 0.22, outline=colour, width=w)
         d.line([cx - r * 0.42, cy, cx - r * 0.08, cy + r * 0.36, cx + r * 0.48, cy - r * 0.4],
                fill=colour, width=w + 2, joint='curve')
+    elif kind == 'mic':
+        # a microphone: capsule, cradle, stand
+        d.rounded_rectangle([cx - r * 0.34, cy - r * 1.0, cx + r * 0.34, cy + r * 0.25],
+                            radius=r * 0.34, fill=colour)
+        d.arc([cx - r * 0.72, cy - r * 0.62, cx + r * 0.72, cy + r * 0.62], 0, 180, fill=colour, width=w)
+        d.line([cx, cy + r * 0.62, cx, cy + r * 0.95], fill=colour, width=w)
+        d.line([cx - r * 0.4, cy + r * 0.95, cx + r * 0.4, cy + r * 0.95], fill=colour, width=w)
     elif kind == 'plus':
         d.line([cx - r * 0.75, cy, cx + r * 0.75, cy], fill=colour, width=w + 2)
         d.line([cx, cy - r * 0.75, cx, cy + r * 0.75], fill=colour, width=w + 2)

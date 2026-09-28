@@ -21,7 +21,7 @@ import { MODES } from '../modes';
 // shortcut to a URL gets the same icon in the same place with none of that, so
 // that is what this page hands out.
 
-// The eight that have their own install page under /launch/. Each is a
+// The nine that have their own install page under /launch/. Each is a
 // separately installable app with its own name and icon, so tapping "Add to
 // Home Screen" there gives a real, labelled icon rather than a ninth copy of the
 // PrismOS one.
@@ -34,6 +34,7 @@ const INSTALLABLE = [
   ['brokerage',  'Brokerage',    'The office'],
   ['tasks',      'Tasks',        'Everything on your plate'],
   ['addexpense', 'Add Expense',  'Straight to the form'],
+  ['talk',       'Talk to Prism', 'Speak a request, hear the answer'],
 ];
 
 const LINKS = [
@@ -50,6 +51,7 @@ const LINKS = [
     { label: 'Daily Journal',  hint: 'Write the day down',           url: '/?view=journal' },
     { label: 'My Drives',      hint: 'Mileage',                      url: '/?view=mileage' },
     { label: 'Ask Ari',        hint: 'Ask about your own data',      url: '/?view=chat' },
+    { label: 'Talk to Prism',  hint: 'Speak a request',              url: '/?talk=1' },
   ] },
 ];
 
