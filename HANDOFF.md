@@ -424,7 +424,7 @@ BEFORE the device listens. A human listening and taking notes is not interceptio
 Gmail proxies; scanners cause false positives. Label honestly ("Likely seen"),
 never a hard "Read". `track_opens` off by default.
 
-**Smaller traps:** PostgREST bulk insert rejects a batch whose objects have
+**Smaller traps:** the deploy robot must run the SAME Node major as the local gate (22): on Node 20, `createClient` from supabase-js throws at start (no built-in WebSocket), which silently kept v1.08.79–80 off the site for a night · PostgREST bulk insert rejects a batch whose objects have
 different key sets rather than defaulting the gaps · Supabase Management API
 always needs `User-Agent: KhoyiApp/1.0`, SQL literals use doubled single-quotes,
 and it rate-limits · duplicate tool names in an Anthropic API call are a hard
