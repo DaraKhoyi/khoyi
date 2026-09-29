@@ -20,6 +20,10 @@ const NO = /^(no|nope|cancel|don'?t|stop|never ?mind|wait)\b/i;
 const field = { width: '100%', boxSizing: 'border-box', minHeight: 48, borderRadius: 12, padding: '0 12px', marginBottom: 10,
   background: '#0E0B07', border: '1px solid rgba(255,255,255,.14)', color: CREAM, fontSize: 16 };
 const Recognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+// iPhone/iPad: Safari only lets the microphone start from a tap, and some iOS
+// versions do not listen at all inside a home-screen app — the keyboard's own
+// dictation key always works in the text box, so that is the fallback we name.
+const IOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
 function speak(text, onEnd) {
   try {
@@ -106,7 +110,7 @@ export default function TalkToPrism() {
 
   function startListening() {
     setErr('');
-    if (!Recognition) { setErr('This browser cannot listen. Type your request below instead.'); return; }
+    if (!Recognition) { setErr(IOS ? 'Your iPhone cannot listen from here. Tap the box below and press the microphone on your keyboard to speak.' : 'This browser cannot listen. Type your request below instead.'); return; }
     try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (_) {}
     try { rec.current && rec.current.abort(); } catch (_) {}
     const r = new Recognition();
@@ -122,7 +126,7 @@ export default function TalkToPrism() {
     };
     r.onerror = (ev) => {
       setState('idle');
-      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') setErr('PrismOS needs the microphone. Allow it when your phone asks, then tap the button.');
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') setErr(IOS ? 'Your iPhone did not let PrismOS listen. Tap the big button to try again, or tap the box below and press the microphone on your keyboard.' : 'PrismOS needs the microphone. Allow it when your phone asks, then tap the button.');
       else if (ev.error !== 'no-speech' && ev.error !== 'aborted') setErr('I did not catch that (' + ev.error + '). Tap to try again.');
     };
     r.onend = () => { setState(s => (s === 'listening' ? 'idle' : s)); const t = finalText.trim(); setHeard(''); if (t) handleSpoken(t); };
@@ -134,7 +138,7 @@ export default function TalkToPrism() {
   // Opened from the home screen: start listening at once. (If the phone wants
   // a tap first, the big button is right there.)
   useEffect(() => {
-    if (session && !autoStarted.current) { autoStarted.current = true; setTimeout(() => startListening(), 400); }
+    if (session && !autoStarted.current && !IOS) { autoStarted.current = true; setTimeout(() => startListening(), 400); }
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tap = () => {
