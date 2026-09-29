@@ -41,7 +41,8 @@
        that does nothing when pressed. -->
   <div id="manual" class="steps hide">
     <b>To put this on your home screen</b><br>
-    Open Chrome&rsquo;s <b>&#8942; menu</b> &rarr; <b>Add to Home screen</b>.<br>
+    <span id="howAndroid">Open Chrome&rsquo;s <b>&#8942; menu</b> &rarr; <b>Add to Home screen</b>.</span>
+    <span id="howIOS" class="hide">In <b>Safari</b>, tap <b>Share</b> (the square with the arrow) &rarr; <b>Add to Home Screen</b> &rarr; <b>Add</b>.</span><br>
     Already added it? Just open it from there.
   </div>
 
@@ -53,6 +54,10 @@
   // install — go straight where the person meant to go.
   var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
   if (standalone) location.replace("/?view=production");
+
+  // iPhone and iPad have no install button to offer: say how Safari does it.
+  var ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) { document.getElementById('howAndroid').classList.add('hide'); document.getElementById('howIOS').classList.remove('hide'); }
 
   var deferred = null;
   var addBtn = document.getElementById('add');
