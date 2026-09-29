@@ -58,7 +58,7 @@ const CallDetail = lazy(() => import('./CallDetail'));
 // Today (ChiefQueue.jsx), which decides WHAT is shown — this component only
 // renders that one conversation, that one late promise, or (when you are
 // caught up) the "set aside" recovery link.
-export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll, focusCallId, focusId, recoveryOnly = false, onEmpty }) {
+export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll, focusCallId, focusId, recoveryOnly = false, onEmpty, onNotToday }) {
   const [rows, setRows] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -73,6 +73,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
   const [edits, setEdits] = useState({});   // { [id]: { due, priority, title } }
+  // LATER, the same picker as the call list (Dara, 29 Sep: "allow me to select
+  // the amount of time like in other parts of the app"). Counts from TODAY —
+  // "+1 week" counted from a date already missed landed only days ahead.
+  const [laterFor, setLaterFor] = useState(null);
+  const [laterDays, setLaterDays] = useState(7);
   // Suggestions PrismOS set aside unreviewed (status 'expired', 29 Sep). Never
   // called "expired" on screen — they were the app's guesses, not failures.
   const [setAside, setSetAside] = useState(0);
@@ -226,10 +231,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // PUSH IT OUT. Rescheduling is the honest answer far more often than dropping
   // something, and it was the one response the card did not offer: chase, or let
   // go. Most late promises are neither.
-  async function pushOut(c, days) {
-    const base = c.due_date ? new Date(c.due_date + 'T12:00:00') : new Date();
-    base.setDate(base.getDate() + days);
-    await saveCommitment(c, { due_date: base.toISOString().slice(0, 10) });
+  async function pushTo(c, days) {
+    const n = Math.max(1, Math.min(365, parseInt(days, 10) || 0));
+    const d = new Date(todayNY() + 'T12:00:00'); d.setDate(d.getDate() + n);
+    setLaterFor(null);
+    await saveCommitment(c, { due_date: d.toISOString().slice(0, 10) });
   }
 
   // GONE, not hidden. Dismiss records that a decision was taken; delete is for
@@ -555,10 +561,43 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
           {late.map(c => renderCard(c, { tone: 'late', children: (
             <>
               <button type="button" disabled={busy === c.id} onClick={() => chase(c)} style={btn(true)}>Chase them</button>
-              <button type="button" disabled={busy === c.id} onClick={() => pushOut(c, 7)} style={btn(false)}>+1 week</button>
+              <button type="button" disabled={busy === c.id} onClick={() => resolveTheirs(c)} style={btn(false)} title="It has been handled">Done</button>
+              <button type="button" disabled={busy === c.id} onClick={() => { setLaterFor(laterFor === c.id ? null : c.id); setLaterDays(7); }} style={btn(false)}>Later…</button>
+              {onNotToday && <button type="button" disabled={busy === c.id} onClick={() => onNotToday()} style={btn(false)}>Not today</button>}
               <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not needed</button>
               <button type="button" disabled={busy === c.id} onClick={() => remove(c)}
                 style={{ ...btn(false), color: EMBER, borderColor: 'rgba(201,86,63,.45)' }}>Delete</button>
+              {laterFor === c.id && (
+                <div style={{ width: '100%', marginTop: 8, padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid rgba(197,169,94,.5)', borderRadius: 10 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 7 }}>Give them until</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {[[1, 'Tomorrow'], [3, '3 days'], [7, '1 week'], [14, '2 weeks'], [30, '1 month']].map(([d, label]) => (
+                      <button key={d} type="button" onClick={() => setLaterDays(d)}
+                        style={{ minHeight: 36, padding: '0 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          border: '1px solid ' + (Number(laterDays) === d ? '#C5A95E' : 'var(--border)'),
+                          background: Number(laterDays) === d ? 'rgba(197,169,94,.18)' : 'transparent',
+                          color: Number(laterDays) === d ? '#EBCB82' : 'var(--text-2)' }}>{label}</button>
+                    ))}
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-3)' }}>
+                      <input type="number" min={1} max={365} inputMode="numeric" value={laterDays}
+                        onChange={(e) => setLaterDays(e.target.value)}
+                        style={{ width: 56, minHeight: 36, borderRadius: 8, padding: '0 8px', background: 'var(--bg-card)',
+                          border: '1px solid var(--border)', color: 'var(--text-1)', fontSize: 13 }} />
+                      days
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button type="button" disabled={busy === c.id} onClick={() => pushTo(c, laterDays)}
+                      style={{ minHeight: 40, padding: '0 16px', borderRadius: 9, border: 'none', background: '#EBCB82', color: '#100D09', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+                      Move the date
+                    </button>
+                    <button type="button" onClick={() => setLaterFor(null)}
+                      style={{ minHeight: 40, padding: '0 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', fontSize: 12.5, cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) }))}
         </>
@@ -662,6 +701,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               </button>
               <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}
                 title="Not a real promise — hide it. You can undo.">Skip</button>
+              {onNotToday && <button type="button" disabled={busy === c.id} onClick={() => onNotToday()} style={btn(false)}
+                title="Keep it, and bring it back tomorrow">Not today</button>}
             </>
               ) }))}
             </div>

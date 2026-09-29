@@ -77,9 +77,9 @@ export default function ChiefQueue({ userId, setView, onChanged, startOpen = fal
 
   let body;
   if (item.kind === 'promise') {
-    body = <CommitmentReview key={item.ref} userId={userId} compact focusCallId={p.call_id || null} onEmpty={advance} onChanged={() => { onChanged && onChanged(); }} />;
+    body = <CommitmentReview key={item.ref} userId={userId} compact focusCallId={p.call_id || null} onEmpty={advance} onNotToday={() => snooze(item, 1)} onChanged={() => { onChanged && onChanged(); }} />;
   } else if (item.kind === 'chase') {
-    body = <CommitmentReview key={item.ref} userId={userId} compact focusId={p.commitment_id} onEmpty={advance} onChanged={() => { onChanged && onChanged(); }} />;
+    body = <CommitmentReview key={item.ref} userId={userId} compact focusId={p.commitment_id} onEmpty={advance} onNotToday={() => snooze(item, 1)} onChanged={() => { onChanged && onChanged(); }} />;
   } else {
     const actions = {
       deadline: [['Add as a task', () => addTask(item, p.title || item.title, p.due_date), true]],
