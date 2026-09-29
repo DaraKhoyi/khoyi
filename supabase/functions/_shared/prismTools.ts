@@ -260,15 +260,27 @@ export const TOOLS: Record<string, { title: string; description: string; inputSc
 
   brokerage_snapshot: {
     title: "Brokerage snapshot",
-    description: "For the broker and office manager only: the last 30 days of real leads (answered, inside 5 minutes, wrote back, pre-approval known, ready to buy), each agent's speed to lead, and each agent's pace against their goal.",
+    description: "For the broker and office manager only: the last 30 days of real leads (answered, inside 5 minutes, wrote back, pre-approval known, ready to buy), each agent's speed to lead, EVERY current agent's production this year biggest first (GCI, closings, goal, pace, trailing 12 months, last close), the agents who most need a call, and brokerage totals.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: RO, staffOnly: true,
     run: async (_a, { db }) => {
       const [f, s, r] = await Promise.all([db.rpc("lead_funnel", { p_days: 30 }), db.rpc("speed_to_lead", { p_days: 30 }), db.rpc("broker_goal_roster")]);
       const roster = Array.isArray(r.data?.agents) ? r.data.agents : Array.isArray(r.data) ? r.data : [];
+      // EVERY CURRENT AGENT WITH PRODUCTION OR A GOAL, biggest first (29 Sep).
+      // It used to take the first 40 of broker_goal_roster, which is sorted by
+      // "needs a call" — so the agents doing BEST (Kamal Abdel-Suarez, $188k this
+      // year, 210% of goal, was #75) never appeared. Who needs a call is a
+      // separate, labelled list.
+      const row = (a: any) => ({ name: a.name, ytd_gci: a.ytd_gci, closings_ytd: a.deals ?? null, goal: a.goal ?? null, pace_pct: a.pace_pct ?? null,
+        projected_year: a.projected ?? null, trailing_12_months: a.trailing_12mo ?? null, last_close: a.last_close ?? null });
+      const current = roster.filter((a: any) => !a.departed);
+      const producing = current.filter((a: any) => (Number(a.ytd_gci) || 0) > 0 || a.goal)
+        .sort((x: any, y: any) => (Number(y.ytd_gci) || 0) - (Number(x.ytd_gci) || 0));
       return { leads_30_days: f.data, speed_to_lead: s.data,
-        agents: roster.slice(0, 40).map((a: any) => ({ name: a.name, ytd_gci: a.ytd_gci, projected_year: a.projected ?? null, goal: a.goal ?? null, pace_pct: a.pace_pct ?? null,
-          last_close: a.last_close ?? null, departed: !!a.departed })) };
+        agents_by_production: producing.map(row),
+        needs_a_call: current.filter((a: any) => (a.priority ?? 0) >= 60).slice(0, 15).map((a: any) => ({ name: a.name, ytd_gci: a.ytd_gci, pace_pct: a.pace_pct ?? null, days_since_close: a.days_since_close ?? null })),
+        totals: { current_agents: current.length, with_production_this_year: current.filter((a: any) => (Number(a.ytd_gci) || 0) > 0).length,
+          ytd_gci: Math.round(current.reduce((t: number, a: any) => t + (Number(a.ytd_gci) || 0), 0)) } };
     },
   },
 };
