@@ -3,7 +3,7 @@ import { enqueue } from '../outbox';
 import { todayNY } from '../clock';
 import { supabase } from '../dataService';
 import { CallFollowupsPanel } from './ReviewPanels';
-import CommitmentReview from './CommitmentReview';
+import ChiefQueue from './ChiefQueue';
 import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
 import { useNbaSkips, SnoozeMenu } from '../nbaSkips';
@@ -525,7 +525,11 @@ export default function TodayView({
           than were ever accepted. They are one-tap decisions, there are rarely
           more than a few dozen, and they are the only thing on this screen with
           a clock on it. Everything below can wait; these cannot. */}
-      <CommitmentReview userId={myUserId} compact onSeeAll={() => setView('tasks')} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
+      {/* ONE SYSTEM (29 Sep): the Chief of Staff queue — calls heard, late
+          promises, deadlines, replies owed, plans, deals, review asks,
+          recruits — one thing at a time. It renders the call card itself
+          when the top item is a promise from a call. */}
+      <ChiefQueue userId={myUserId} setView={setView} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
 
 

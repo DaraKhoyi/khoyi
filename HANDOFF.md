@@ -424,6 +424,23 @@ BEFORE the device listens. A human listening and taking notes is not interceptio
 Gmail proxies; scanners cause false positives. Label honestly ("Likely seen"),
 never a hard "Read". `track_opens` off by default.
 
+**ONE SYSTEM: THE CHIEF OF STAFF QUEUE (29 Sep).** Dara: "do we need two
+systems?" → "make the chief of staff capable of all that would be missed … do
+the right thing." There is now ONE queue, `chief_queue(p_limit)` (SQL, live, no
+AI, `supabase/sql/2026-09-29_chief_queue.sql`), shown on Today by
+`src/views/ChiefQueue.jsx` as "Your one thing now" and on the Chief of Staff page
+with the list open. Order: promise from a call (perishable; the call card renders
+itself via `CommitmentReview focusCallId`) → late promise owed to you
+(`focusId`) → deadline from documents (7 days) → ONE "pick today's must-dos"
+nudge when A tasks slip (the task list stays on Tasks) → replies owed (6h–21d,
+never yourself) → plans to approve (14d) → deals stuck 10d → review/referral ask
+(closed ≤30d) → ONE quiet-recruits nudge. "Not today" / "Done" write
+`chief_snoozes`. Retired: the `chief-of-staff` edge function and its morning
+cron (4,661 unread items, last acted on 29 Jul); cos_* tables kept as history.
+Talk to Prism / Claude gained `whats_next`. The stand-alone "Heard on your
+calls" block on Today is now the queue's promise card; when the queue is empty
+Today shows only the "set aside — look again" recovery.
+
 **CLOSE THE LOOP (29 Sep).** Panel: 145 call suggestions and 4,661 Chief of
 Staff items "never closed". Cause: `expire_short_fuse_commitments()` existed but
 was never scheduled. Now cron `commitments-expire-hourly` sets aside unreviewed

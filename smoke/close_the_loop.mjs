@@ -9,7 +9,8 @@
 //   2. No call suggestion is older than its rule allows (3 / 14 / 30 days by
 //      how soon it was due) unless a person brought it back or it is still
 //      dated in the future. Allows 2 hours of slack for the hourly job.
-//   3. Nobody has Chief of Staff items waiting from more than one day.
+//   3. The Chief of Staff is ONE live queue (chief_queue) on Today; the old
+//      morning AI list stays retired.
 //   4. The screens still show one thing at a time (static).
 //
 // Needs SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_PAT. BLOCKS.
@@ -23,8 +24,10 @@ const problems = [];
 // 4. Static: one at a time.
 const cr = readFileSync('src/views/CommitmentReview.jsx', 'utf8');
 if (!/slice\(0,\s*compact \? 1\b/.test(cr)) problems.push('CommitmentReview: Today no longer shows one conversation at a time');
-const cos = readFileSync('src/views/ChiefOfStaffView.jsx', 'utf8');
-if (!/cos-one-thing/.test(cos) || !/rpc\('cos_seen'\)/.test(cos)) problems.push('ChiefOfStaffView: lost the one-thing view or no longer marks the list seen');
+const cq = readFileSync('src/views/ChiefQueue.jsx', 'utf8');
+const today = readFileSync('src/views/TodayView.jsx', 'utf8');
+if (!/rpc\('chief_queue'/.test(cq) || !/Your one thing now/.test(cq)) problems.push('ChiefQueue: no longer the live one-thing queue');
+if (!/<ChiefQueue\b/.test(today)) problems.push('Today no longer shows the Chief of Staff queue');
 
 if (!PAT || !REF) {
   if (process.env.CI) console.log('  (live checks skipped: no Management token in this environment)');
@@ -41,8 +44,11 @@ if (!PAT || !REF) {
      where status = 'proposed' and auto_expired_at is null and (due_date is null or due_date < public.today_ny())
        and created_at < now() - interval '2 hours' - case coalesce(fuse,'near') when 'immediate' then interval '3 days' when 'near' then interval '14 days' else interval '30 days' end`);
   if (stale.n) problems.push(`${stale.n} call suggestion(s) are past their rule and still waiting — the loop is not closing`);
-  const [piles] = await q(`select count(*)::int n from (select user_id from cos_actions where status = 'pending' group by 1 having count(distinct run_date) > 1) s`);
-  if (piles.n) problems.push(`${piles.n} person(s) have Chief of Staff items waiting from more than one day`);
+  // The morning AI list is retired (the queue is live); it must stay retired.
+  const [cos] = await q(`select count(*)::int n from cron.job where jobname = 'chief-of-staff-daily'`);
+  if (cos.n) problems.push('the retired chief-of-staff morning job is scheduled again — the queue is live now');
+  const [fn] = await q(`select count(*)::int n from pg_proc where proname = 'chief_queue'`);
+  if (!fn.n) problems.push('chief_queue() is missing');
 }
 
 if (!problems.length) {

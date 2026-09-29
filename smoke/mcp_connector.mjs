@@ -79,7 +79,7 @@ try {
   expect(x.status === 200 && x.j?.result?.serverInfo?.name === 'prismos', `initialize failed (${x.status} ${x.text.slice(0, 120)})`);
   x = await rpc(token, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
   const names = (x.j?.result?.tools || []).map((t) => t.name);
-  for (const n of ['todays_calls', 'postpone_call', 'find_contacts', 'contact_details', 'my_leads', 'my_tasks', 'create_task', 'call_followups'])
+  for (const n of ['whats_next', 'todays_calls', 'postpone_call', 'find_contacts', 'contact_details', 'my_leads', 'my_tasks', 'create_task', 'call_followups'])
     expect(names.includes(n), `tool missing from tools/list: ${n}`);
   // 4. Staff-only stays staff-only.
   expect(!names.includes('brokerage_snapshot'), 'brokerage_snapshot offered to a non-staff user');
@@ -99,7 +99,7 @@ try {
   expect(task && task.task_id, `create_task failed: ${JSON.stringify(task).slice(0, 120)}`);
   const det = await call('contact_details', { contact_id: c.id });
   expect(det && det.open_tasks && det.open_tasks.some((t) => t.task_id === task.task_id), 'contact_details does not show the new task');
-  for (const n of ['todays_calls', 'my_leads', 'my_tasks', 'call_followups']) { const o = await call(n); expect(!(o && o.error), `${n} errored: ${o && o.error}`); }
+  for (const n of ['whats_next', 'todays_calls', 'my_leads', 'my_tasks', 'call_followups']) { const o = await call(n); expect(!(o && o.error), `${n} errored: ${o && o.error}`); }
 
   // 3b-d. Gates.
   x = await rpc(null, { jsonrpc: '2.0', id: 3, method: 'tools/list' });

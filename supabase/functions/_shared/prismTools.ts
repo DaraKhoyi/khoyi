@@ -35,6 +35,18 @@ const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false,
 export const TOOLS: Record<string, { title: string; description: string; inputSchema: any; annotations: any; staffOnly?: boolean;
   run: (a: any, c: Ctx) => Promise<unknown> }> = {
 
+  whats_next: {
+    title: "What's next",
+    description: "The person's Chief of Staff queue — the single most important thing to do now, then the next few: promises heard on calls, late promises owed to them, deadlines, replies they owe, plans to approve, stuck deals, review asks, quiet recruits. Use for 'what should I do next / what needs me'. Present the FIRST item as the one thing; mention others only if asked.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: RO,
+    run: async (_a, { db }) => {
+      const { data, error } = await db.rpc("chief_queue", { p_limit: 5 });
+      if (error) fail(error);
+      return (data || []).map((i: any) => ({ kind: i.kind, title: i.title, why: i.why }));
+    },
+  },
+
   todays_calls: {
     title: "Today's calls",
     description: "The people this person should call today, in order, with why (they reached out and are waiting, past due for a touch, back from a postponement) and a suggested opener. The same list as the Today screen; it counts down as calls are made.",

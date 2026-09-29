@@ -199,7 +199,7 @@ const WORKING_AGENTS = [
     "lead_was_acted() counts email, call or concierge reply as acting; mutes expire in 180 days; lead sources are never muted; " +
     "brokerage-wide mutes need two PRODUCING agents. The measure that matters is speed_to_lead: minutes from arrival to first " +
     "reply, and the share inside 5 minutes. Judge the agent by leads answered fast, not by cards surfaced or suppressed"],
-  ["chief-of-staff", "decides what Dara should do next, across tasks, calendar and mail."],
+  ["chief_queue (Chief of Staff)", "ONE live queue on Today since 29 Sep: calls heard, late promises, deadlines, replies owed, plans, stuck deals, review asks, recruits; one thing at a time. No morning AI job any more; the old cos_actions rows are history, not a backlog."],
   ["contact-research", "builds a picture of a person before a meeting, now including what they wrote to us."],
   ["recording pipeline", "transcribes calls, summarises, extracts commitments. 683 calls, 248 expired."],
   ["disc-analyze", "reads a person's own words and produces the behavioural read."],

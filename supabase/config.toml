@@ -97,8 +97,6 @@ verify_jwt = false
 [functions.calls-to-knowledge]
 verify_jwt = false
 
-[functions.chief-of-staff]
-verify_jwt = false
 
 [functions.contact-identify]
 verify_jwt = false

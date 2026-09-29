@@ -54,7 +54,11 @@ const daysLate = (d) => Math.floor((Date.now() - new Date(d + 'T12:00:00')) / 86
 // know with who."
 const CallDetail = lazy(() => import('./CallDetail'));
 
-export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll }) {
+// focusCallId / focusId / recoveryOnly: used by the Chief of Staff queue on
+// Today (ChiefQueue.jsx), which decides WHAT is shown — this component only
+// renders that one conversation, that one late promise, or (when you are
+// caught up) the "set aside" recovery link.
+export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll, focusCallId, focusId, recoveryOnly = false, onEmpty }) {
   const [rows, setRows] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -142,6 +146,15 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
     }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [contactId]);
+  // In a focus (the Chief of Staff queue), tell the queue the moment this item
+  // is decided, whichever button did it, so the next one appears.
+  useEffect(() => {
+    if (!rows || recoveryOnly || !onEmpty || (focusCallId === undefined && !focusId)) return;
+    const left = focusId
+      ? rows.filter(r => r.id === focusId && r.status === 'accepted' && r.due_date && daysLate(r.due_date) > 0)
+      : rows.filter(r => r.status === 'proposed' && (focusCallId ? r.call_id === focusCallId : !r.call_id));
+    if (!left.length) onEmpty();
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // WHO is on the hook. NULL owner_contact_id on a "them" item means the person
   // on the call; set means a third party who never was.
@@ -238,6 +251,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
     const { error } = await supabase.from('commitments').update({ status: 'proposed', decided_at: null }).in('id', ids);
     if (error) { setErr(String(error.message || error)); return; }
     await load(); onChanged && onChanged();
+    // An undo brings it back into the Chief of Staff queue, too.
+    try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
   }
   async function dismiss(c) {
     setBusy(c.id);
@@ -342,7 +357,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // Short-fuse promises ("call you right back", "there in 20 minutes") are already
   // moot by the time anyone reviews — measured 91% dismissed. Keep them out of the
   // queue entirely rather than making you hand-dismiss stale work.
-  const proposed = rows.filter(r => r.status === 'proposed' && (r.fuse || 'near') !== 'immediate');
+  const focusing = focusCallId !== undefined || !!focusId || recoveryOnly;
+  const proposed = rows.filter(r => r.status === 'proposed' && (r.fuse || 'near') !== 'immediate')
+    .filter(r => !focusing ? true : (focusCallId !== undefined && !focusId && !recoveryOnly
+      ? (focusCallId ? r.call_id === focusCallId : !r.call_id) : false));
 
   // Group by the conversation they came out of. Not every call should leave
   // work behind — most are just a conversation — and deciding that ONCE per
@@ -382,8 +400,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
     notify('Kept the summary \u2014 no tasks made from this call.', 'success', { label: 'Undo', onClick: () => restore(ids) });
   }
   const waiting = rows.filter(r => r.status === 'accepted' && r.owner === 'them');
-  const late = waiting.filter(r => r.due_date && daysLate(r.due_date) > 0);
-  const onTimeAll = waiting.filter(r => !late.includes(r));
+  const late = waiting.filter(r => r.due_date && daysLate(r.due_date) > 0)
+    .filter(r => !focusing ? true : (focusId ? r.id === focusId : false));
+  const onTimeAll = focusing ? [] : waiting.filter(r => r.due_date && daysLate(r.due_date) > 0 ? false : true);
   // ON TODAY, SHOW ONLY WHAT IS ACTUALLY DUE. A promise someone made for
   // November 2nd is not today's business, and eight of them between Dara and the
   // thing he opened the app for is how a daily screen becomes something to
@@ -397,7 +416,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   };
   const onTime = compact ? onTimeAll.filter(soon) : onTimeAll;
   const hiddenFuture = onTimeAll.length - onTime.length;
-  if (!proposed.length && !waiting.length && !(setAside > 0 && !contactId)) return null;
+  const showAside = !contactId && setAside > 0 && (recoveryOnly || (!focusing && (!compact || proposed.length === 0)));
+  if (!proposed.length && !late.length && !onTime.length && !showAside) return null;
 
   // IMPORTANT: this is a plain function, NOT a nested <Card/> component. A nested
   // component defined inside the render gets a new function identity every render,
@@ -531,7 +551,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
 
       {late.length > 0 && (
         <>
-          <div style={{ ...lab, color: EMBER, marginBottom: 7 }}>They’re late — {late.length}</div>
+          <div style={{ ...lab, color: EMBER, marginBottom: 7 }}>{focusId ? 'They’re late' : `They’re late — ${late.length}`}</div>
           {late.map(c => renderCard(c, { tone: 'late', children: (
             <>
               <button type="button" disabled={busy === c.id} onClick={() => chase(c)} style={btn(true)}>Chase them</button>
@@ -665,7 +685,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       )}
 
       {/* On Today this appears only once you are caught up — never as a pile. */}
-      {!contactId && setAside > 0 && (!compact || proposed.length === 0) && (
+      {showAside && (
         <div style={{ margin: '4px 0 12px' }}>
           <button type="button" onClick={() => loadSetAside()}
             style={{ background: 'none', border: 0, padding: '4px 0', minHeight: 44, cursor: 'pointer', fontSize: 12.5,

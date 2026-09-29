@@ -145,10 +145,7 @@ for (const s of quiet.filter(x => x.mins_ago === null || Number(x.mins_ago) > ov
 const DAY = `(now() at time zone 'America/New_York')::date`;
 const NY_HOUR = `extract(hour from now() at time zone 'America/New_York')`;
 const PROOF = {
-  'chief-of-staff-daily': {
-    what: 'a chief-of-staff briefing written today (runs 06:00)',
-    sql: `select case when ${NY_HOUR} < 7 then 1 else (select count(*) from public.cos_runs where run_date = ${DAY}) end n`,
-  },
+  // chief-of-staff-daily retired 29 Sep: the Chief of Staff is now a live queue (chief_queue()).
   'email-nightly-intel-daily': {
     what: 'a successful nightly email-intel run in the last 26h (runs 03:30)',
     sql: `select count(*) n from public.email_intel_runs where status = 'ok' and started_at > now() - interval '26 hours'`,
