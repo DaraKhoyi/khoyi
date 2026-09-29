@@ -424,6 +424,23 @@ BEFORE the device listens. A human listening and taking notes is not interceptio
 Gmail proxies; scanners cause false positives. Label honestly ("Likely seen"),
 never a hard "Read". `track_opens` off by default.
 
+**DELETED EMAIL IS GONE (29 Sep).** Josh: the app kept asking him to answer
+emails he had deleted in Gmail. Deleting in Gmail is a Trash LABEL; the sync only
+handled permanent deletes, and 24 readers never excluded TRASH/SPAM. Now the
+table is `email_messages_all` and **`email_messages` is a security_invoker VIEW
+without TRASH/SPAM** — every reader (SQL, screens, edge functions) sees only live
+mail. Only gmail-sync (history labelsAdded/Removed → labels; permanent deletes;
+reconcile), gmail-trash and gmail-modify (so Undo/restore can find trashed rows)
+use `email_messages_all`. Trigger `email_trash_changed` (on label change): thread
+labels = union of its messages', message_count/worth_a_look/has_unread follow the
+visible mail, the sender's contact is recomputed (stored last_inbound_at from the
+deleted mail cleared first; recompute now says NOT waiting when nothing is left),
+and a pending lead card from that sender is archived. Daily cron
+`gmail-reconcile-gone-daily` marks what Gmail holds in Trash/Spam
+(`email_mark_gone`); the sync also reconciles when its history id is too old.
+**A column added to email_messages_all must be added to the view** (`create or
+replace view public.email_messages … select * …`). `smoke/deleted_email.mjs`.
+
 **ONE SYSTEM: THE CHIEF OF STAFF QUEUE (29 Sep).** Dara: "do we need two
 systems?" → "make the chief of staff capable of all that would be missed … do
 the right thing." There is now ONE queue, `chief_queue(p_limit)` (SQL, live, no

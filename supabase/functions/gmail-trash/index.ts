@@ -112,13 +112,23 @@ serve(async (req) => {
           await supabase.from("email_threads")
             .update(patch)
             .eq("id", thread.id);
+          // And every message in it (29 Sep): the email_messages view hides
+          // TRASH, and the trigger clears "waiting on you" for these senders.
+          // email_messages_all, because an Undo must find what is in Trash.
+          const { data: msgs } = await supabase.from("email_messages_all").select("id, labels").eq("thread_id", thread.id);
+          for (const m of (msgs || [])) {
+            const ml = mode === "untrash"
+              ? [...(m.labels || []).filter((l) => l !== "TRASH"), ...((m.labels || []).includes("INBOX") ? [] : ["INBOX"])]
+              : [...(m.labels || []).filter((l) => l !== "INBOX" && l !== "TRASH"), "TRASH"];
+            await supabase.from("email_messages_all").update({ labels: ml }).eq("id", m.id);
+          }
         }
       };
     } else {
       url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message_id}/${mode}`;
       dbCleanup = async () => {
         const { data: msg } = await supabase
-          .from("email_messages").select("id, labels, thread_id")
+          .from("email_messages_all").select("id, labels, thread_id")
           .eq("account_id", account_id).eq("provider_message_id", message_id).maybeSingle();
         if (msg) {
           let newLabels;
@@ -129,7 +139,7 @@ serve(async (req) => {
             newLabels = (msg.labels || []).filter(l => l !== "INBOX");
             if (!newLabels.includes("TRASH")) newLabels.push("TRASH");
           }
-          await supabase.from("email_messages").update({ labels: newLabels }).eq("id", msg.id);
+          await supabase.from("email_messages_all").update({ labels: newLabels }).eq("id", msg.id);
         }
       };
     }

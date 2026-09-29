@@ -221,9 +221,11 @@ for (const [job, p] of Object.entries(PROOF)) {
     else if (Number(r.n) > 0) problems.push({ kind: 'no-output', job, detail: `${r.n} missed — ${p.what}: ${r.who}` });
     continue;
   }
-  let n = -1;
-  try { n = Number((await q(p.sql))[0].n); } catch (e) { n = -1; }
-  if (!(n > 0)) problems.push({ kind: 'no-output', job, detail: `no proof of work: expected ${p.what}${n < 0 ? ' (proof query failed)' : ''}` });
+  let n = -1, why = '';
+  try { n = Number((await q(p.sql))[0].n); } catch (e) { n = -1; why = String(e?.message || e).slice(0, 160); }
+  // Say WHY the proof query failed — "proof query failed" alone cannot be told
+  // apart from a real outage (29 Sep: it failed only inside the full gate).
+  if (!(n > 0)) problems.push({ kind: 'no-output', job, detail: `no proof of work: expected ${p.what}${n < 0 ? ' (proof query failed: ' + why + ')' : ''}` });
 }
 
 // Failures that no scheduled job owns (a trigger or the app calling out).

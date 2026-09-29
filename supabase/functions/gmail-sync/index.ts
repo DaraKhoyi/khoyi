@@ -200,6 +200,7 @@ async function getHistoryDeltas(accessToken, startHistoryId) {
   // history.list returns history records; we collect message IDs that appeared
   const newIds = new Set();
   const deletedIds = new Set();
+  const labelNow = new Map();   // message id -> its labels after the change
   let pageToken;
   let latestHistoryId = startHistoryId;
   for (let i = 0; i < 20; i++) {
@@ -221,12 +222,18 @@ async function getHistoryDeltas(accessToken, startHistoryId) {
         if (Array.isArray(h.messagesDeleted)) {
           for (const md of h.messagesDeleted) deletedIds.add(md.message.id);
         }
+        // DELETING IN GMAIL IS A LABEL CHANGE (29 Sep). "Delete" moves a message
+        // to Trash; Spam is a label too. The message's current labels ride on
+        // every labelsAdded/labelsRemoved record — keep the latest per message.
+        for (const k of ["labelsAdded", "labelsRemoved"]) {
+          if (Array.isArray(h[k])) for (const x of h[k]) if (x?.message?.id && Array.isArray(x.message.labelIds)) labelNow.set(x.message.id, x.message.labelIds);
+        }
       }
     }
     if (!j.nextPageToken) break;
     pageToken = j.nextPageToken;
   }
-  return { newIds: [...newIds], deletedIds: [...deletedIds], latestHistoryId };
+  return { newIds: [...newIds], deletedIds: [...deletedIds], labelNow, latestHistoryId };
 }
 
 async function fetchMessageFull(accessToken, id) {
@@ -235,6 +242,39 @@ async function fetchMessageFull(accessToken, id) {
 
 async function getProfile(accessToken) {
   return gmailFetch(accessToken, "users/me/profile");
+}
+
+// Write Gmail's current labels onto messages whose labels changed. Updates on
+// the ALL table so a message can move into Trash (and back out).
+async function applyLabelChanges(supabase, accountId, labelNow) {
+  let n = 0;
+  if (!labelNow || !labelNow.size) return 0;
+  for (const [pid, labels] of [...labelNow.entries()].slice(0, 500)) {
+    const { data, error } = await supabase.from("email_messages_all").update({ labels })
+      .eq("account_id", accountId).eq("provider_message_id", pid).select("id");
+    if (!error && data && data.length) n += data.length;
+  }
+  return n;
+}
+
+// What Gmail holds in Trash and Spam right now (Gmail empties both after 30
+// days, so this is bounded). Marks any of those PrismOS still thinks are live.
+async function reconcileGone(supabase, accessToken, accountId) {
+  const out = { trash: 0, spam: 0 };
+  for (const label of ["TRASH", "SPAM"]) {
+    let pageToken; const ids = [];
+    for (let i = 0; i < 6; i++) {
+      const j = await gmailFetch(accessToken, "users/me/messages", { labelIds: label, maxResults: 500, pageToken });
+      for (const m of (j.messages || [])) ids.push(m.id);
+      if (!j.nextPageToken) break;
+      pageToken = j.nextPageToken;
+    }
+    for (let i = 0; i < ids.length; i += 300) {
+      const { data } = await supabase.rpc("email_mark_gone", { p_account: accountId, p_ids: ids.slice(i, i + 300), p_label: label });
+      out[label === "TRASH" ? "trash" : "spam"] += Number(data) || 0;
+    }
+  }
+  return out;
 }
 
 async function syncOneAccount(supabase, account, opts) {
@@ -292,14 +332,18 @@ async function syncOneAccount(supabase, account, opts) {
         const delta = await getHistoryDeltas(accessToken, account.history_id);
         messageIds = delta.newIds;
         latestHistoryId = delta.latestHistoryId;
-        // Mark deleted messages
+        // Deleted for good in Gmail: gone here too.
         if (delta.deletedIds.length > 0) {
           await supabase
-            .from("email_messages")
+            .from("email_messages_all")
             .delete()
             .eq("account_id", account.id)
             .in("provider_message_id", delta.deletedIds);
         }
+        // Moved to Trash / Spam, or back out of them: mirror the labels. The
+        // email_messages view hides TRASH/SPAM, and a trigger clears "waiting on
+        // you", thread labels and open lead cards (2026-09-29_deleted_email_is_gone.sql).
+        result.label_changes = await applyLabelChanges(supabase, account.id, delta.labelNow);
       } catch (e) {
         // history too old — fall back to listing recent messages
         const limit = Math.min(Math.max(opts.max_initial || 100, 1), 5000);
@@ -310,6 +354,8 @@ async function syncOneAccount(supabase, account, opts) {
         messageIds = await getMessageIds(accessToken, { limit, query });
         const prof = await getProfile(accessToken);
         latestHistoryId = prof.historyId;
+        // The change feed was too old, so deletions in the gap were missed.
+        try { result.reconciled_gone = await reconcileGone(supabase, accessToken, account.id); } catch (_) { /* next daily pass */ }
       }
     } else {
       // Marked initial done but no history_id — get current
@@ -321,7 +367,7 @@ async function syncOneAccount(supabase, account, opts) {
     let newIds = messageIds;
     if (newIds.length > 0) {
       const { data: existing } = await supabase
-        .from("email_messages")
+        .from("email_messages_all")
         .select("provider_message_id")
         .eq("account_id", account.id)
         .in("provider_message_id", newIds);
@@ -409,7 +455,7 @@ async function syncOneAccount(supabase, account, opts) {
       }
 
       // Insert message
-      const { error: insertErr } = await supabase.from("email_messages").insert({
+      const { error: insertErr } = await supabase.from("email_messages_all").insert({
         user_id: account.user_id,
         account_id: account.id,
         thread_id: threadUuid,
@@ -916,6 +962,20 @@ serve(async (req) => {
       return new Response(JSON.stringify({ synced: [], note: "No accounts to sync" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // DAILY RECONCILE (29 Sep): mark whatever Gmail holds in Trash/Spam that
+    // PrismOS still thinks is live. The change feed covers the minutes in
+    // between; this catches anything it missed (a gap, an old history id).
+    if (body && body.reconcile_gone) {
+      const out = [];
+      for (const acct of accounts) {
+        try {
+          const accessToken = await refreshAccessTokenIfNeeded(supabase, acct);
+          out.push({ account_id: acct.id, ...(await reconcileGone(supabase, accessToken, acct.id)) });
+        } catch (e) { out.push({ account_id: acct.id, error: String(e?.message || e).slice(0, 160) }); }
+      }
+      return new Response(JSON.stringify({ reconciled: out }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const results = [];

@@ -154,6 +154,9 @@ node smoke/brokerage_mute_guard.mjs || exit 1
 # one Chief of Staff list at a time (panel, 29 Sep).
 node smoke/close_the_loop.mjs || exit 1
 
+# An email deleted in Gmail or in PrismOS stops asking for a reply (Josh, 29 Sep).
+node smoke/deleted_email.mjs || exit 1
+
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
 # code gets masked and the deploy proceeds on a gate that never ran. A gate that

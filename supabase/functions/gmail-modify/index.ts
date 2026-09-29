@@ -168,8 +168,9 @@ serve(async (req) => {
       await supabase.from("email_threads")
         .update(patch)
         .eq("id", thread.id);
-      // Also update individual messages' labels
-      await supabase.from("email_messages")
+      // Also update individual messages' labels — on email_messages_all, so a
+      // thread coming back out of Trash brings its hidden messages with it.
+      await supabase.from("email_messages_all")
         .update({ labels: newLabels, is_read: !hasUnread })
         .eq("thread_id", thread.id);
     }
