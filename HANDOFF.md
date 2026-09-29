@@ -424,6 +424,21 @@ BEFORE the device listens. A human listening and taking notes is not interceptio
 Gmail proxies; scanners cause false positives. Label honestly ("Likely seen"),
 never a hard "Read". `track_opens` off by default.
 
+**CLOSE THE LOOP (29 Sep).** Panel: 145 call suggestions and 4,661 Chief of
+Staff items "never closed". Cause: `expire_short_fuse_commitments()` existed but
+was never scheduled. Now cron `commitments-expire-hourly` sets aside unreviewed
+call suggestions (status 'expired') after 3/14/30 days by fuse — never one still
+dated in the future, never one a person brought back (`auto_expired_at` set).
+It had been switched off because "expired" read as a verdict (Ray) and vanished
+silently (Fiduciary): so the UI never says expired — Today shows ONE call at a
+time, and once caught up offers "PrismOS set aside N older suggestions — look
+again" with Bring back (`restore_commitment`). Chief of Staff: yesterday's
+untouched items retire when today's list is built; the morning job builds a list
+only for people who SAW the last one (`cos_runs.seen_at`, set by `cos_seen()`
+when the screen opens; opening with no list builds one on the spot); the screen
+shows "Your one thing now" with the full list a tap away. The every-agent run
+now requires the service key (it was callable by anyone). `smoke/close_the_loop.mjs`.
+
 **BROKERAGE-WIDE SENDER MUTES (28 Sep).** `lead_sender_rules.is_brokerage`
 drops mail from an exact address for EVERY agent (gmail-sync pushes,
 lead_concierge_pending). Gate, one definition: `brokerage_mute_allowed(sender)`

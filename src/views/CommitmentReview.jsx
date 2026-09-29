@@ -69,6 +69,27 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // a commitment becomes a properly-scheduled task in one step, instead of landing
   // dateless and having to be hunted down and edited later.
   const [edits, setEdits] = useState({});   // { [id]: { due, priority, title } }
+  // Suggestions PrismOS set aside unreviewed (status 'expired', 29 Sep). Never
+  // called "expired" on screen — they were the app's guesses, not failures.
+  const [setAside, setSetAside] = useState(0);
+  const [asideRows, setAsideRows] = useState(null);
+  async function loadSetAside() {
+    if (asideRows) { setAsideRows(null); return; }
+    const { data } = await supabase.from('commitments').select('id,title,contact_id,created_at')
+      .eq('status', 'expired').gte('created_at', new Date(Date.now() - 90 * 864e5).toISOString())
+      .order('created_at', { ascending: false }).limit(60);
+    const ids = [...new Set((data || []).map(r => r.contact_id).filter(Boolean))];
+    const names = {};
+    if (ids.length) { const { data: cs } = await supabase.from('contacts').select('id,name').in('id', ids); (cs || []).forEach(c => { names[c.id] = c.name; }); }
+    setAsideRows((data || []).map(r => ({ ...r, contact_name: names[r.contact_id] })));
+  }
+  async function bringBack(c) {
+    const { error } = await supabase.rpc('restore_commitment', { p_id: c.id });
+    if (error) { setErr(String(error.message || error)); return; }
+    setAsideRows(rs => (rs || []).filter(r => r.id !== c.id));
+    setSetAside(n => Math.max(0, n - 1));
+    await load();
+  }
   const editOf = (c) => edits[c.id] || { due: c.due_date || '', priority: 'B', title: c.title || '', notes: '' };
   // Seed from the COMMITMENT on first touch — not from empty strings — so setting
   // a date never wipes the title (and vice versa). Takes the whole commitment so
@@ -84,6 +105,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       .in('status', ['proposed', 'accepted'])
       .order('created_at', { ascending: false });
     if (contactId) q = q.eq('contact_id', contactId);
+    if (!contactId) {
+      supabase.from('commitments').select('id', { count: 'exact', head: true }).eq('status', 'expired')
+        .gte('created_at', new Date(Date.now() - 90 * 864e5).toISOString())
+        .then(({ count }) => setSetAside(count || 0), () => {});
+    }
     const { data, error } = await q;
     if (error) { setErr(error.message); return; }
     const ids = [...new Set((data || []).map(r => r.contact_id).filter(Boolean))];
@@ -371,7 +397,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   };
   const onTime = compact ? onTimeAll.filter(soon) : onTimeAll;
   const hiddenFuture = onTimeAll.length - onTime.length;
-  if (!proposed.length && !waiting.length) return null;
+  if (!proposed.length && !waiting.length && !(setAside > 0 && !contactId)) return null;
 
   // IMPORTANT: this is a plain function, NOT a nested <Card/> component. A nested
   // component defined inside the render gets a new function identity every render,
@@ -521,7 +547,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       {proposed.length > 0 && (
         <>
           <div style={{ ...lab, marginBottom: 4, marginTop: late.length ? 14 : 0 }}>
-            Heard on your calls — {byCall.length} conversation{byCall.length === 1 ? '' : 's'} to check
+            {compact ? 'Heard on your calls — one at a time' : <>Heard on your calls — {byCall.length} conversation{byCall.length === 1 ? '' : 's'} to check</>}
           </div>
           {/* WHO PROPOSED IT. The app did — say so, in plain words, every time.
               Ray: "If the app is telling me to do something I did not agree to,
@@ -537,7 +563,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               call, is lighter than judging every extracted line — and the
               summary is already on the contact record either way, so 'summary
               only' loses nothing. */}
-          {callsToShow.slice(0, showOlder ? 40 : 6).map(([callKey, items]) => (
+          {/* ONE AT A TIME on Today (panel, 29 Sep): a pile reads as a score of
+              how far behind you are. Decide this one and the next appears. */}
+          {callsToShow.slice(0, compact ? 1 : (showOlder ? 40 : 6)).map(([callKey, items]) => (
             <div key={callKey} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '9px 11px', marginBottom: 9 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-1)', flex: '1 1 auto', minWidth: 0 }}>
@@ -621,7 +649,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
         </>
       )}
 
-      {proposed.length > 0 && !showOlder && olderCalls.length > 0 && (
+      {!compact && proposed.length > 0 && !showOlder && olderCalls.length > 0 && (
         <button type="button" onClick={() => setShowOlder(true)}
           style={{ background: 'none', border: 0, padding: '4px 0 8px', cursor: 'pointer', fontSize: 12,
             color: 'var(--room-accent, var(--accent))', fontWeight: 700, minHeight: 36 }}>
@@ -634,6 +662,26 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
             color: 'var(--room-accent, var(--accent))', fontWeight: 700 }}>
           {hiddenFuture} more not due yet — see all
         </button>
+      )}
+
+      {/* On Today this appears only once you are caught up — never as a pile. */}
+      {!contactId && setAside > 0 && (!compact || proposed.length === 0) && (
+        <div style={{ margin: '4px 0 12px' }}>
+          <button type="button" onClick={() => loadSetAside()}
+            style={{ background: 'none', border: 0, padding: '4px 0', minHeight: 44, cursor: 'pointer', fontSize: 12.5,
+              color: 'var(--room-accent, var(--accent))', fontWeight: 700, textAlign: 'left' }}>
+            {asideRows ? 'Hide' : (compact && !proposed.length ? 'You are caught up on your calls. ' : '') + 'PrismOS set aside ' + setAside + ' older suggestion' + (setAside === 1 ? '' : 's') + ' from calls you did not get to — look again'}
+          </button>
+          {asideRows && asideRows.map(c => (
+            <div key={c.id} style={{ ...card, padding: '9px 12px', marginBottom: 6, display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div style={{ minWidth: 0, flex: 1, fontSize: 12.5, color: 'var(--text-1)' }}>
+                {c.title}
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{(c.contact_name || 'A call') + (c.created_at ? ' \u00B7 ' + fmtDate(String(c.created_at).slice(0, 10)) : '')}</div>
+              </div>
+              <button type="button" onClick={() => bringBack(c)} style={btn(false)}>Bring back</button>
+            </div>
+          ))}
+        </div>
       )}
 
       {onTime.length > 0 && (

@@ -346,6 +346,7 @@ async function gather(admin: any) {
   // problem as a live one. What matters now: what the agent decided SINCE, and
   // how stale the waiting pile is.
   await one("commitments_kept", `select status,
+     case when status = 'expired' then 'set aside UNREVIEWED by the hourly rule (29 Sep: 3/14/30 days by fuse, never if still dated ahead); a guess from a call nobody got to, not a failure; recoverable' end read_this,
      count(*) n,
      count(*) filter (where decided_at >= '2026-09-22') decided_since_rules_22sep,
      count(*) filter (where created_at >= '2026-09-22') created_since_rules_22sep,

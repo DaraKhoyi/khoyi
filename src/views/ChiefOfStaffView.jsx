@@ -13,14 +13,30 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
   const [speaking, setSpeaking] = useState(false);
   const [err, setErr] = useState('');
 
+  // ONE THING AT A TIME (panel, 29 Sep: "surface one item, confirmed seen,
+  // before the next is generated"). The screen shows the single most important
+  // item; deciding it brings the next. The whole list is one tap away for
+  // anyone who wants it, but it is never the first thing you see.
+  const [showAll, setShowAll] = useState(false);
   const load = useCallback(async () => {
     try {
       const [{ data: q }, { data: s }] = await Promise.all([supabase.rpc('my_cos_queue'), supabase.rpc('my_cos_summary')]);
       setRows(Array.isArray(q) ? q : []);
       setSummary(typeof s === 'string' ? s : '');
-    } catch (e) { setErr(String(e)); setRows([]); }
+      return Array.isArray(q) ? q : [];
+    } catch (e) { setErr(String(e)); setRows([]); return []; }
   }, []);
-  useEffect(() => { load(); return () => { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (_) {} }; }, [load]);
+  useEffect(() => {
+    (async () => {
+      const q = await load();
+      // No list for today (the morning job only builds one for people who
+      // opened the last): build it now, while they are looking.
+      if (!q.length) { setBusy(true); try { await supabase.functions.invoke('chief-of-staff', { body: {} }); } catch (_) {} await load(); setBusy(false); }
+      // Seen — so tomorrow morning's list will be built for them.
+      try { await supabase.rpc('cos_seen'); } catch (_) {}
+    })();
+    return () => { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (_) {} };
+  }, [load]);
 
   async function refresh() {
     setBusy(true); setErr('');
@@ -78,7 +94,7 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
           <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
             <button className="btn btn-primary btn-sm" onClick={() => act(a)}>{ACT_LABEL[a.action_type] || 'Do it'}</button>
             <button className="btn btn-ghost btn-sm" onClick={() => mark(a.id, 'done')}>Mark done</button>
-            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--text-3)' }} onClick={() => mark(a.id, 'dismissed')}>Dismiss</button>
+            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--text-3)' }} onClick={() => mark(a.id, 'dismissed')}>Not today</button>
           </div>
         </div>
       </div>
@@ -107,14 +123,33 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
       {rows === null && <div style={{ color: 'var(--text-3)', fontSize: '13px', padding: '18px 2px' }}>Loading your day…</div>}
       {err && <div style={{ color: 'var(--red)', fontSize: '12px', marginTop: '8px' }}>{err}</div>}
 
-      {rows && obligations.length > 0 && (
+      {rows && !showAll && (obligations.length > 0 || growth.length > 0) && (() => {
+        const next = obligations[0] || growth[0];
+        const after = obligations.length + growth.length - 1;
+        return (
+          <div style={{ marginTop: '16px' }} data-testid="cos-one-thing">
+            <div style={{ fontSize: '12px', fontWeight: 700, color: obligations.length ? 'var(--text-2)' : 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+              {obligations.length ? 'Your one thing now' : 'One way to grow today'}
+            </div>
+            {Card(next, !obligations.length)}
+            {after > 0 && (
+              <button type="button" onClick={() => setShowAll(true)}
+                style={{ marginTop: 6, minHeight: 44, background: 'none', border: 'none', padding: '0 2px', color: 'var(--text-3)', fontSize: 12.5, cursor: 'pointer' }}>
+                Finish this and the next one appears · see the whole list
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {rows && showAll && obligations.length > 0 && (
         <div style={{ marginTop: '16px' }}>
           <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.05em' }}>What needs you</div>
           {obligations.map(a => Card(a, false))}
         </div>
       )}
 
-      {rows && growth.length > 0 && (
+      {rows && showAll && growth.length > 0 && (
         <div style={{ marginTop: '20px' }}>
           <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'flex', alignItems: 'center', gap: '6px' }}><span>📈</span> Growth plays for today</div>
           <div style={{ fontSize: '11.5px', color: 'var(--text-3)', marginTop: '2px' }}>Nothing on fire here — these are the highest-value ways to move the business forward.</div>
@@ -122,7 +157,8 @@ export default function ChiefOfStaffView({ userId, setView, setFocusTaskId, setF
         </div>
       )}
 
-      {rows && obligations.length === 0 && growth.length === 0 && (
+      {rows && busy && obligations.length === 0 && growth.length === 0 && <div style={{ color: 'var(--text-3)', fontSize: '13px', padding: '18px 2px' }}>Lining up your day…</div>}
+      {rows && !busy && obligations.length === 0 && growth.length === 0 && (
         <div className="panel" style={{ marginTop: '14px' }}><div className="panel-body" style={{ textAlign: 'center', padding: '24px 16px' }}>
           <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-1)' }}>You're clear for now. ✨</div>
           <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '6px' }}>Nothing needs a decision right now. Tap Refresh after calls or emails come in, and I'll line up what's next.</div>

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODEL = "claude-sonnet-4-6";
 const TERMINAL = ["closed", "lost", "dead", "archived", "withdrawn", "cancelled", "sold"];
@@ -44,6 +45,11 @@ ${gLines}`;
 
 async function generateForUser(sb: any, uid: string): Promise<number> {
   const today = etToday(); const now = Date.now();
+  // CLOSE THE LOOP (29 Sep, panel: "the loop has never closed once"). Anything
+  // left untouched from an earlier day is retired, so the list is always today's
+  // and never a pile. Only today's list was ever shown; the old rows were dead
+  // weight that made the numbers say nothing was ever acted on.
+  try { await sb.from("cos_actions").update({ status: "expired" }).eq("user_id", uid).eq("status", "pending").lt("run_date", today); } catch (_) {}
   const obligations: any[] = []; const growth: any[] = []; let idx = 0;
 
   // ===== OBLIGATIONS =====
@@ -124,11 +130,21 @@ serve(async (req) => {
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
     const { data: { user } } = await sb.auth.getUser(token);
     if (user) { const n = await generateForUser(sb, user.id); return J({ ok: true, generated: n }); }
+    // The every-agent run is the scheduler's alone (it spends AI for everyone).
+    if (!(await isServiceCaller(req))) return J({ error: "unauthorized" }, 401);
+    // ONE LIST, SEEN, BEFORE THE NEXT (panel, 29 Sep). Build a new morning list
+    // only for someone who opened the last one; everyone else keeps their
+    // single unseen list, and opening the screen builds a fresh one on the spot.
+    // Stops paying every morning for lists nobody reads.
+    const { data: lastRuns } = await sb.from("cos_runs").select("user_id,run_date,seen_at").order("run_date", { ascending: false }).limit(5000);
+    const unseen = new Set<string>(); const seenUser = new Set<string>();
+    for (const r of (lastRuns || [])) { if (seenUser.has(r.user_id)) continue; seenUser.add(r.user_id); if (!r.seen_at) unseen.add(r.user_id); }
     const { data: agents } = await sb.from("agents").select("auth_user_id").not("auth_user_id", "is", null);
     const { data: pausedRows } = await sb.from("agent_controls").select("user_id").eq("paused", true);
     const paused = new Set((pausedRows || []).map((r: any) => r.user_id));
     let total = 0;
-    for (const a of (agents || [])) { if (paused.has(a.auth_user_id)) continue; try { total += await generateForUser(sb, a.auth_user_id); } catch (_) {} }
-    return J({ ok: true, agents: (agents || []).length, generated: total });
+    let skipped = 0;
+    for (const a of (agents || [])) { if (paused.has(a.auth_user_id)) continue; if (unseen.has(a.auth_user_id)) { skipped++; continue; } try { total += await generateForUser(sb, a.auth_user_id); } catch (_) {} }
+    return J({ ok: true, agents: (agents || []).length, generated: total, skipped_unseen: skipped });
   } catch (e) { return J({ error: String(e) }, 500); }
 });
