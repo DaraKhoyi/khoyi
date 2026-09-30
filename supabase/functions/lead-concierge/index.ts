@@ -147,13 +147,32 @@ Deno.serve(async (req) => {
     // push the agent — this IS the speed-to-lead moment
     // Record whether it reached a device: "pushed" and "their phone lit up" are
     // not the same thing, and the difference is the lead.
+    // WHO JUST ASKED, ON THE LOCK SCREEN (30 Sep). A recognised lead's alert
+    // carries the facts, not the draft: where from, what they want, what is
+    // known about whether they can act, and the one question to ask. Readiness
+    // was written by lead-qualify just above; the known facts are lookups.
+    let factsLine = "";
+    if (kind !== "reply" && source) {
+      try {
+        const [{ data: rd }, { data: kn }] = await Promise.all([
+          admin.rpc("lead_readiness_for", { p_email: isEmail ? lead_email : null, p_phone: isEmail ? null : lead_phone }),
+          admin.rpc("lead_known_facts", { p_user: user_id, p_email: isEmail ? lead_email : null, p_phone: isEmail ? null : lead_phone }),
+        ]);
+        const bits: string[] = [String(source)];
+        if (rd?.intent === "rent") bits.push("rental");
+        for (const x of (Array.isArray(rd?.signals) ? rd.signals : []).slice(0, 2)) bits.push(String(x));
+        const known = Array.isArray(kn) && kn.length ? String(kn[0]).split(" — ")[0] : "";
+        if (known) bits.push(known);
+        factsLine = bits.join(" · ") + (rd?.ask_next ? ` — Ask: ${rd.ask_next}` : "");
+      } catch (_) { /* the alert still goes, with the draft */ }
+    }
     let reached = false;
     if (!unreachable || reach === true) {
       try {
         const { data: pr } = await admin.functions.invoke("push-send", { body: {
           user_id,
           title: firstName ? `New ${kind === "reply" ? "message" : "lead"}: ${firstName}${draft ? " — reply ready" : ""}` : (draft ? "New lead — reply ready" : "New lead"),
-          body: (draft || inbound_text || "").slice(0, 120),
+          body: (factsLine || draft || inbound_text || "").slice(0, 160),
           url: "https://darasapp.com/?concierge=" + row.id,
           tag: "concierge",
         } });
@@ -161,6 +180,19 @@ Deno.serve(async (req) => {
       } catch (_) { /* push best-effort */ }
     }
     try { await admin.from("lead_concierge").update({ alert_reached: reached }).eq("id", row.id); } catch (_) {}
+
+    // The three-line brief, written now so it is on the card when they open it
+    // (it ran only on a tap before — 0 taps in 514 cards). After the alert, so
+    // it never slows the alert down. Recognised leads only: a fraction of a cent.
+    if (kind !== "reply" && source) {
+      try {
+        await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/lead-brief`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ lead_id: row.id }),
+        });
+      } catch (_) { /* the card still has readiness and the draft */ }
+    }
 
     return new Response(JSON.stringify({ ok: true, id: row.id, draft }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {

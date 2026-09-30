@@ -36,6 +36,12 @@ const MODEL = "claude-haiku-4-5";
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { "Content-Type": "application/json" } });
 
 const PORTAL = /(zillow|realtor\.com|move\.com|homes\.com|rent\.com|redfin|xomio|apartments\.com|noreply|no-reply|myrealtyonegroup|realtyonegroup)/i;
+// A PER-BUYER relay is the buyer, not the portal (30 Sep). Zillow gives every
+// buyer their own address (…@convo.zillow.com); a reply there reaches them, and
+// their answers come back from it. Treating it as "the portal" dropped every
+// Zillow email lead with no phone — Yordani on 29 Sep had no readiness at all.
+const RELAY = /^[a-z0-9._+-]{12,}@(convo\.zillow\.com|reply\.[a-z0-9.-]+|[a-z0-9.-]*relay[a-z0-9.-]*)$/i;
+const personal = (e?: string | null) => !!e && (RELAY.test(e.trim()) || !PORTAL.test(e));
 const phone10 = (p?: string | null) => { const d = String(p || "").replace(/\D/g, ""); return d.length >= 10 ? d.slice(-10) : null; };
 const money = (n: number) => n >= 1e6 ? "$" + (n / 1e6).toFixed(n % 1e6 ? 2 : 0).replace(/\.?0+$/, "") + "M" : "$" + Math.round(n / 1000) + "k";
 
@@ -62,13 +68,19 @@ function areas(text: string): string[] {
 function intentOf(sources: string[], text: string): "buy" | "rent" | "sell" {
   if (sources.some((s) => /rent|apartment|zumper|hotpads/i.test(s))) return "rent";
   if (sources.some((s) => /home-?value/i.test(s)) || /what('s| is) my (home|house)/i.test(text)) return "sell";
+  // Zillow sends rental inquiries through the same "Zillow" source as buyers;
+  // the template gives it away ("Send application", a rental listing). 30 Sep:
+  // Yordani asked to tour a rental and was graded as a buyer.
+  if (/\bsend application\b|\brental (listing|inquiry|application)\b|\bapply for this rental\b|\bper month\b|\/mo\b/i.test(text)) return "rent";
   return "buy";
 }
 // The buyer's own words inside a portal template: realtor.com's "Comment:",
 // Zillow's message, the IDX "Please get in touch!". Template furniture is not
 // the buyer speaking, so it is not handed to the model.
 function ownWords(text: string): string {
-  const m = text.match(/Comment:\s*([\s\S]*?)(?:\n\s*\n|This consumer inquired|$)/i);
+  const m = text.match(/Comment:\s*([\s\S]*?)(?:\n\s*\n|This consumer inquired|$)/i)
+    // Zillow: "Yordani Abreu says: I would like to schedule a tour. Send application Reply"
+    || text.match(/\b[A-Z][\w'’-]*(?: [A-Z][\w'’-]*){0,2} says:\s*([\s\S]*?)(?:\s+(?:Send application|Reply|View listing|Respond|Call)\b|\n\s*\n|$)/);
   const said = (m ? m[1] : "").trim();
   return /^i'?m interested in\b[^.]*\.?$/i.test(said) ? "" : said;
 }
@@ -128,7 +140,7 @@ function grade(intent: string, f: any, inquiries: number, pastClient: boolean) {
   return { grade: g, ask };
 }
 
-async function qualifyPerson(admin: any, key: { email: string | null; p10: string | null }) {
+async function qualifyPerson(admin: any, key: { email: string | null; p10: string | null }, force = false) {
   const { email, p10 } = key;
   const since = new Date(Date.now() - 180 * 864e5).toISOString();
 
@@ -165,7 +177,7 @@ async function qualifyPerson(admin: any, key: { email: string | null; p10: strin
   // What the person wrote to us directly — email and text — after inquiring.
   const words: { at: string; text: string }[] = [];
   for (const q of inq) { const w = ownWords(q.text); if (w) words.push({ at: q.at, text: w }); }
-  if (email && !PORTAL.test(email)) {
+  if (email && personal(email)) {
     const { data: em } = await admin.from("email_messages").select("internal_date,body_text,snippet")
       .ilike("from_address", email).eq("direction", "inbound").gte("internal_date", inq[0].at).order("internal_date").limit(20);
     for (const m of em || []) {
@@ -186,7 +198,8 @@ async function qualifyPerson(admin: any, key: { email: string | null; p10: strin
   const { data: prior } = await admin.from("lead_readiness").select("id,evidence_through,facts")
     .or([email ? `email.ilike.${email}` : null, p10 ? `phone10.eq.${p10}` : null].filter(Boolean).join(","))
     .order("updated_at", { ascending: false }).limit(1).maybeSingle();
-  if (prior && prior.evidence_through && prior.evidence_through >= evidence) return { skipped: "nothing new" };
+  // force: re-read after the reading rules change (30 Sep: Zillow rentals).
+  if (!force && prior && prior.evidence_through && prior.evidence_through >= evidence) return { skipped: "nothing new" };
 
   // Template facts.
   const all = inq.map((q) => q.text + " " + (q.property || "")).join("\n");
@@ -249,7 +262,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const people = new Map<string, { email: string | null; p10: string | null }>();
   const add = (e?: string | null, p?: string | null) => {
-    const email = e && !PORTAL.test(e) ? e.toLowerCase().trim() : null;
+    const email = e && personal(e) ? e.toLowerCase().trim() : null;
     const p10 = phone10(p);
     if (!email && !p10) return;
     people.set(email || p10!, { email, p10 });
@@ -264,7 +277,7 @@ Deno.serve(async (req) => {
   }
   const results: any[] = [];
   for (const [k, key] of people) {
-    try { results.push({ who: k.replace(/(.{3}).*(@.*)?/, "$1…"), ...(await qualifyPerson(admin, key)) }); }
+    try { results.push({ who: k.replace(/(.{3}).*(@.*)?/, "$1…"), ...(await qualifyPerson(admin, key, body.force === true)) }); }
     catch (e) { results.push({ who: k.slice(0, 3) + "…", error: String((e as Error)?.message || e) }); }
   }
   return json({ ok: true, people: people.size, results });

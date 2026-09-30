@@ -122,6 +122,29 @@ ever told the agent a lead was waiting." She was right:
   `alert_reached`, and its AI spend names the card, so "acted on" is real.
 - `speed_to_lead()` carries `can_alert` per agent.
 
+## Who just asked — ready on arrival (30 Sep)
+
+Panel (Simplifier + Marguerite + Newcomer): "a lead arrives, no brief fires,
+nobody knows if the contact can transact." The answer is assembled the moment a
+recognised lead lands, not when someone goes looking:
+
+1. **What PrismOS already knows** (`lead_known_facts()`, lookups, no AI): already
+   in this agent's contacts, has written to them before, past client of the
+   brokerage. Only this agent's own book — never another agent's contacts.
+2. **Can they act** (`lead-qualify`, unchanged role): budget, area, stated
+   pre-approval / cash / timeline / has an agent, and the one question to ask.
+   Zillow's per-buyer relay address (`…@convo.zillow.com`) IS the buyer; Zillow
+   rental inquiries ("Send application") are rentals.
+3. **Three lines from their own words** (`lead-brief`, ~¼ cent): who, what they
+   want, and whether they can act — from facts only, else "Not known yet — ask …".
+   Runs on arrival for recognised leads; reads the portal message when the
+   buyer never emailed directly.
+4. **The alert carries it**: "Zillow · rental · Wesley Chapel — Ask: When do you
+   need to move in?" — the decision to call is made on the lock screen.
+
+`contact-research` (web research, ~30¢, a page long) stays on request: it is the
+wrong tool for a stranger who sent one message, and too slow for a race.
+
 ## Known gaps
 
 - **Mary Sous has no email connected.** The system has never seen one of her

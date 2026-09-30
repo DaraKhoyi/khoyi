@@ -479,19 +479,18 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
             <div style={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
               <SenderLink contact={contact} name={label} address={it.lead_email} size={15} />
             </div>
-            {!cleared[it.id] && !isReply ? <LeadReadiness r={it.readiness} /> : null}
-            {/* inbound_text is capped around 700 characters at ingest — 72 of
-                Dara's rows sit at 695-705 with the tail cut mid-sentence. The RPC
-                also hands back full_body (the real message, up to 118k chars) and
-                nothing used it, so "Show the whole message" was showing the whole
-                STORED text, not the whole message. Prefer whichever is longer. */}
-            {!cleared[it.id] && isEmail && it.draft_subject ? (
-              <div style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '2px 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {it.draft_subject}
+            {/* WHO JUST ASKED (30 Sep). What PrismOS already knows about this
+                person — your contact, written before, past client — then can
+                they act, then the three-line brief, all ready on arrival: the
+                panel's "here is who just asked, call now", read top to bottom. */}
+            {!cleared[it.id] && !isReply && Array.isArray(it.known) && it.known.length ? (
+              <div style={{ margin: '6px 0 2px' }}>
+                {it.known.map((k) => (
+                  <div key={k} style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--room-accent, var(--accent))', lineHeight: 1.5 }}>{k}</div>
+                ))}
               </div>
             ) : null}
-            {!cleared[it.id] ? <InboundMessage text={fullest(it)} summary={it.triage_summary} whole={!isEmail} /> : null}
-
+            {!cleared[it.id] && !isReply ? <LeadReadiness r={it.readiness} /> : null}
             {!cleared[it.id] && (it.brief || briefs[it.id]) ? (
               <div style={{ border: '1px solid var(--border)', borderLeft: '2px solid var(--room-accent, var(--accent))',
                 borderRadius: 10, padding: '10px 12px', margin: '8px 0 2px' }}>
@@ -508,6 +507,18 @@ export default function LeadConcierge({ myUserId, setView, contacts = [] }) {
                 )}
               </div>
             ) : null}
+
+            {/* inbound_text is capped around 700 characters at ingest — 72 of
+                Dara's rows sit at 695-705 with the tail cut mid-sentence. The RPC
+                also hands back full_body (the real message, up to 118k chars) and
+                nothing used it, so "Show the whole message" was showing the whole
+                STORED text, not the whole message. Prefer whichever is longer. */}
+            {!cleared[it.id] && isEmail && it.draft_subject ? (
+              <div style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '2px 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {it.draft_subject}
+              </div>
+            ) : null}
+            {!cleared[it.id] ? <InboundMessage text={fullest(it)} summary={it.triage_summary} whole={!isEmail} /> : null}
 
             {!cleared[it.id] && !it.brief && !briefs[it.id] ? (
               <button type="button" onClick={() => getBrief(it)}

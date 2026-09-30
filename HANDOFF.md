@@ -627,6 +627,14 @@ names its role (`to authenticated`); a `using (true)` read rule needs a reason.
 on any non-invoker view, any unlisted `true` read rule, or an agent reading a
 staff-only setting or the alias list.
 
+**WHO JUST ASKED (30 Sep).** Panel wanted contact-research fired on lead
+claim; instead the existing pieces were joined and fixed, at arrival: known facts
+(`lead_known_facts`), readiness (lead-qualify — now accepts Zillow per-buyer
+relay addresses and reads Zillow rentals; `force:true` re-reads), the three-line
+`lead-brief` (service-callable; it had selected a non-existent column so every
+"Who is this?" tap failed), and a facts-first push body. `lead_concierge_pending`
+now returns `brief` and `known`. See docs/LEAD_STRATEGY.md; `smoke/who_just_asked.mjs`.
+
 **EVERY AI CALL NAMES ITS SUBJECT (30 Sep).** Panel (Archivist + Merchant):
 2,866 of 2,872 AI calls named nobody, so spend → person → deal could not close.
 Now each function passes what it already holds to the logger (`subjectType` +
