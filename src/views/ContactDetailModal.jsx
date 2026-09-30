@@ -10,6 +10,7 @@ import ContactShareControl from './ContactShareControl';
 import { owesReply } from '../helpers';
 import { notify, confirmDialog } from '../notify';
 import { Icon } from '../icons';
+import TransactLine from './TransactLine';
 import { useBackClose } from '../backClose';
 import { Tip } from '../tipsUi';
 import SingleContactPicker from './SingleContactPicker';
@@ -999,6 +1000,7 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
               </div>
             </div>
           )}
+          <div style={{ margin: '0 16px' }}><TransactLine contactId={contact.id} /></div>
           <CadenceSuggestion contactId={contact.id} />
           <ContactKnowledge contactId={contact.id} />
           <PrepLeadButton contactId={contact.id} />

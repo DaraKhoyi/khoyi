@@ -145,6 +145,20 @@ recognised lead lands, not when someone goes looking:
 `contact-research` (web research, ~30¢, a page long) stays on request: it is the
 wrong tool for a stranger who sent one message, and too slow for a race.
 
+## Can they transact — on every contact, before every call (30 Sep)
+
+Marguerite: "a sentence that says 'mentioned pre-approval at $400K in August
+email' — I open that before every call." `_shared/transactFacts.ts` reads what
+the person WROTE to the agent (email + texts; never the web — that is the
+credit-screening line) and keeps a fact only if its quote appears word for word
+in the message. One line, with receipts: "Pre-approved at $400K (Guild) —
+“…”, email Aug 12 · Must sell first — email Sep 20", plus the question to ask
+when it is unknown. Shown first on the contact screen, in call prep, and to Talk
+to Prism / Claude (`contact_details.can_they_transact`); refreshed each morning
+for anyone who wrote in the last day (`contact-transact-morning`) and whenever
+research or call prep runs — free when nothing new has arrived. lead-qualify
+now applies the same receipt check.
+
 ## Known gaps
 
 - **Mary Sous has no email connected.** The system has never seen one of her

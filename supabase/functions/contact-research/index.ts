@@ -16,6 +16,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { refreshTransact } from "../_shared/transactFacts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -386,6 +387,15 @@ serve(async (req) => {
 
     const prompt = buildResearchPrompt(candidate, contact, scope, me, disc, ownWords);
 
+    // CAN THEY TRANSACT (30 Sep). Marguerite: "a sentence that says 'mentioned
+    // pre-approval at $400K in August email' — I open that before every call. A
+    // LinkedIn summary I don't need." Read from their OWN words only (never the
+    // web — that is the credit-screening line), every fact with its receipt.
+    // Runs alongside the research; the brief shows it first.
+    const runTransact = () => refreshTransact(supabase, contact, {
+      onUsage: async (u) => { try { await logUsage(supabase, { userId: user?.id || contact.user_id, fn: "contact-transact", model: "claude-haiku-4-5", usage: u, usedOwn: false, subjectType: "contact", subjectId: contact_id }); } catch (_) {} },
+    }).catch(() => null);
+
     const writeProfile = async (fields) => {
       const { data: existing } = await supabase.from("profiles").select("id").eq("contact_id", contact_id).maybeSingle();
       if (existing) await supabase.from("profiles").update(fields).eq("id", existing.id);
@@ -580,17 +590,19 @@ serve(async (req) => {
     };
 
     await writeProfile({ research_status: "running", research_started_at: new Date().toISOString(), research_error: null });
+    // After the profile row exists (so the two writers never both insert one).
+    const transactP = runTransact();
 
     // Background drip keeps synchronous behavior; interactive users get an
     // immediate 202 and poll the profile while it finishes in the background.
     if (isInternal) {
-      await runResearch();
+      await Promise.all([runResearch(), transactP]);
       const { data: f } = await supabase.from("profiles").select("research_status, research_error").eq("contact_id", contact_id).maybeSingle();
       return J({ ok: f?.research_status === "done", status: f?.research_status, error: f?.research_error || null });
     }
     // @ts-ignore EdgeRuntime is provided by the Supabase edge runtime
-    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(runResearch());
-    else runResearch();
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(Promise.all([runResearch(), transactP]));
+    else { runResearch(); transactP; }
     return J({ status: "running", model }, 202);
   } catch (err) {
     return J({ error: String(err) }, 500);

@@ -167,6 +167,8 @@ node smoke/who_just_asked.mjs || exit 1
 node smoke/ai_guard.mjs || exit 1
 # A successful Google reconnect clears "needs reconnecting" at once (Dara, 30 Sep).
 node smoke/reconnect_clears.mjs || exit 1
+# "Can they transact?" from their own words, with receipts (Marguerite, 30 Sep).
+node smoke/can_they_transact.mjs || exit 1
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

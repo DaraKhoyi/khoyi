@@ -110,7 +110,7 @@ export const TOOLS: Record<string, { title: string; description: string; inputSc
 
   contact_details: {
     title: "Contact details",
-    description: "Everything useful about one person: who they are, family and relationships, when you last spoke and which way, recent notes, open tasks and call follow-ups.",
+    description: "Everything useful about one person: who they are, whether they can transact (pre-approval, amount, lender, cash, must sell first, timeline — each from their own words with the date they said it), family and relationships, when you last spoke and which way, recent notes, open tasks and call follow-ups.",
     inputSchema: { type: "object", required: ["contact_id"], additionalProperties: false, properties: { contact_id: { type: "string" } } },
     annotations: RO,
     run: async (a, { db }) => {
@@ -120,11 +120,13 @@ export const TOOLS: Record<string, { title: string; description: string; inputSc
         .eq("id", id).maybeSingle();
       if (error) fail(error);
       if (!c) return { error: "No contact with that id that you can see." };
-      const [rel, notes, tasks, fus] = await Promise.all([
+      const [rel, notes, tasks, fus, prof] = await Promise.all([
         db.from("contact_relationships").select("type,notes,contact_a_id,contact_b_id").or(`contact_a_id.eq.${id},contact_b_id.eq.${id}`).limit(20),
         db.from("contact_notes").select("body,created_at").eq("contact_id", id).order("created_at", { ascending: false }).limit(5),
         db.from("tasks").select("id,title,due_date,list").eq("contact_id", id).eq("completed", false).is("archived_at", null).limit(10),
         db.from("commitments").select("title,owner,due_date,status,next_step").eq("contact_id", id).in("status", ["proposed", "accepted"]).limit(10),
+        // CAN THEY TRANSACT (30 Sep, Marguerite): from their own words, with receipts.
+        db.from("profiles").select("transact_line,transact_ask,transact_facts,transact_at").eq("contact_id", id).maybeSingle(),
       ]);
       const others = [...new Set((rel.data || []).map((r: any) => r.contact_a_id === id ? r.contact_b_id : r.contact_a_id))];
       let names: Record<string, string> = {};
@@ -133,6 +135,8 @@ export const TOOLS: Record<string, { title: string; description: string; inputSc
         (on || []).forEach((o: any) => { names[o.id] = o.name; });
       }
       return {
+        can_they_transact: prof.data?.transact_line ? { summary: prof.data.transact_line, ask_next: prof.data.transact_ask,
+          facts: prof.data.transact_facts || {}, read_at: prof.data.transact_at, note: "Only what they wrote to you, each with their exact words and date. Nothing inferred." } : null,
         contact_id: c.id, name: c.name, type: c.type, company: c.company, profession: c.profession, email: c.email, phone: c.phone,
         city: c.home_city, owns_home: c.home_ownership, language: c.spoken_language, stage: c.pipeline_stage, tags: c.tags,
         last_contact: c.last_contact_at, last_direction: c.last_communication_direction, last_channel: c.last_communication_channel,

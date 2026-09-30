@@ -369,3 +369,6 @@ verify_jwt = false
 
 [functions.usage-report-monthly]
 verify_jwt = false
+
+[functions.contact-transact]
+verify_jwt = false

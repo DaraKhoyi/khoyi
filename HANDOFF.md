@@ -627,6 +627,15 @@ names its role (`to authenticated`); a `using (true)` read rule needs a reason.
 on any non-invoker view, any unlisted `true` read rule, or an agent reading a
 staff-only setting or the alias list.
 
+**CAN THEY TRANSACT (30 Sep).** Marguerite's condition for using the research
+brief. `_shared/transactFacts.ts` (`gatherOwnWords` → `extractTransactFacts` →
+`verifyFacts` receipt check → `transactLine`; `refreshTransact` stores on
+profiles.transact_* and skips the model when nothing is new). Served by
+`contact-transact` ({contact_id} or {sweep} at 6:35 ET), called by
+contact-research and ari-call-prep, read by prismTools `contact_details`.
+UI: `src/views/TransactLine.jsx` (contact screen, call prep). First-party only,
+never the web (FCRA). `smoke/can_they_transact.mjs`.
+
 **NO SSN, TAX ID, CARD OR BANK NUMBER REACHES AN AI MODEL (30 Sep).** Sentinel
 + Fiduciary asked whether contact-research put `contacts.tax_id_last4` in its
 prompt. It did not (every AI function names its fields; those columns are empty

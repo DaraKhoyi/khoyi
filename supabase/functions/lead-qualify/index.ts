@@ -224,12 +224,17 @@ async function qualifyPerson(admin: any, key: { email: string | null; p10: strin
   const ownerUser = inq[inq.length - 1].owner;
   if (newWords.length) {
     const said = await readWords(words.map((w) => w.text), ownerUser, admin, null);
+    // RECEIPTS (30 Sep): a fact stands only if its quote is really in what they
+    // wrote, word for word. "Pre-approved" with no words behind it is dropped.
+    const nz = (x: string) => String(x || "").toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\s+/g, " ").trim();
+    const corpus = nz(words.map((w) => w.text).join(" \n "));
+    const real = (v: any) => v && v.quote && nz(v.quote).length >= 3 && corpus.includes(nz(v.quote));
     if (said) {
       for (const k of ["preapproval", "timeline", "must_sell_first", "has_agent", "move_in", "motivation"]) {
         const v = said[k];
-        if (v && v.value !== null && v.value !== undefined) facts[k] = { value: v.value, quote: v.quote || null, source: "said" };
+        if (v && v.value !== null && v.value !== undefined && real(v)) facts[k] = { value: v.value, quote: v.quote || null, source: "said" };
       }
-      if (said.budget_max?.value) facts.budget = { ...(facts.budget || {}), max: said.budget_max.value, said_max: said.budget_max.value, quote: said.budget_max.quote || null };
+      if (said.budget_max?.value && real(said.budget_max)) facts.budget = { ...(facts.budget || {}), max: said.budget_max.value, said_max: said.budget_max.value, quote: said.budget_max.quote || null };
     }
   }
 

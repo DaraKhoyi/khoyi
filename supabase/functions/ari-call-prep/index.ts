@@ -7,6 +7,7 @@ import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { refreshTransact } from "../_shared/transactFacts.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -78,6 +79,13 @@ serve(async (req) => {
     if (c.home_ownership || c.home_purchase_year) facts.push(`Home: ${c.home_ownership || "?"}${c.home_purchase_year ? `, bought ${c.home_purchase_year}` : ""}${c.home_city ? `, ${c.home_city}` : ""}`);
     facts.push(`Last contact: ${daysSince(c.last_contact_at) == null ? "none logged" : daysSince(c.last_contact_at) + " days ago"}; last inbound: ${daysSince(c.last_inbound_at) == null ? "none" : daysSince(c.last_inbound_at) + " days ago"}`);
     if (c.notes) facts.push(`Notes: ${String(c.notes).slice(0, 400)}`);
+    // CAN THEY TRANSACT (30 Sep, Marguerite): their own words, with receipts —
+    // refreshed first if they have written since (free when nothing is new).
+    let transact: any = null;
+    try {
+      transact = await refreshTransact(db, c, { onUsage: async (u) => { await logAiUsage(db, { userId: uid, fn: "contact-transact", model: "claude-haiku-4-5", usage: u, usedOwn: false, subjectType: "contact", subjectId: contactId }); } });
+    } catch (_) { /* prep still runs */ }
+    if (transact?.line) facts.push(`CAN THEY TRANSACT (their own words only): ${transact.line}${transact.ask ? ` — still unknown, ask: ${transact.ask}` : ""}`);
     if (sc) facts.push(`Propensity-to-transact score: ${sc.score}/100 (${sc.tier})${sc.factors ? ` — drivers: ${Object.keys(sc.factors).join(", ")}` : ""}`);
     if (lastEmail) facts.push(`Most recent email (${lastEmail.direction || "?"}): "${String(lastEmail.snippet || lastEmail.body_text || "").replace(/\r/g, "").slice(0, 400)}"`);
     if ((ix || []).length) facts.push("Recent interactions: " + (ix || []).map((i: any) => `${i.direction || ""} ${i.channel || ""} ${daysSince(i.occurred_at)}d ago${i.brief ? `: ${String(i.brief).slice(0, 80)}` : ""}`).join(" | "));
@@ -108,6 +116,7 @@ serve(async (req) => {
     const phone = c.phone || (Array.isArray(c.phones) && c.phones[0] && (c.phones[0].number || c.phones[0].value || c.phones[0])) || null;
     return new Response(JSON.stringify({
       prep,
+      transact: transact ? { line: transact.line, ask: transact.ask, known: !!(transact.facts && Object.keys(transact.facts).length) } : null,
       contact: { id: c.id, name: c.name, phone, email: c.email || null, company: c.company || null },
       disc: discLetter ? { letter: discLetter, label: DISC_LABEL[discLetter] } : null,
       score: sc || null,
