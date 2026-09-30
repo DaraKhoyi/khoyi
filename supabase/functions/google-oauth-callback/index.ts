@@ -121,6 +121,13 @@ serve(async (req) => {
       scopes: (tokens.scope || "").split(" "),
       purposes: mergedPurposes,
       is_active: true,
+      // A RECONNECT CLEARS "NEEDS RECONNECTING" AT ONCE (30 Sep). Only the
+      // 10-minute watcher cleared it, so after a successful reconnect Settings
+      // still said the mailbox needed reconnecting — Dara: "I'm having trouble
+      // reconnecting." Cleared only when Google handed back a NEW refresh token:
+      // without one the old (possibly revoked) token is kept and the watcher,
+      // which tests it, stays the judge.
+      ...(tokens.refresh_token ? { reauth_required_at: null, reauth_notified_at: null, last_sync_error: null } : {}),
     };
 
     if (existing) {

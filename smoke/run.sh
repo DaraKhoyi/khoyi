@@ -165,6 +165,8 @@ node smoke/ai_subject_guard.mjs || exit 1
 node smoke/who_just_asked.mjs || exit 1
 # No SSN, tax ID, card or bank number reaches an AI model (Sentinel + Fiduciary, 30 Sep).
 node smoke/ai_guard.mjs || exit 1
+# A successful Google reconnect clears "needs reconnecting" at once (Dara, 30 Sep).
+node smoke/reconnect_clears.mjs || exit 1
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
