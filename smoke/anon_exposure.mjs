@@ -74,8 +74,29 @@ await Promise.all(Array.from({ length: 6 }, async () => {
   }
 }));
 
+// TABLES AND VIEWS too (29 Sep: the function sweep never looked at them, and a
+// stranger could read app_config, agent_aliases, brokerage knowledge, and — via
+// two views that skipped row-level security — every agent's pending leads).
+// A table "leaks" when the anon key gets even one row back.
+const PUBLIC_TABLES = {
+  idx_listings: 'published IDX listings (idx_display = true) — public by design',
+};
+const tables = Object.keys(spec.paths).filter((p) => !p.startsWith('/rpc/') && p !== '/').map((p) => p.slice(1));
+const tpool = [...tables];
+await Promise.all(Array.from({ length: 6 }, async () => {
+  while (tpool.length) {
+    const t = tpool.shift();
+    let r;
+    try { r = await fetch(`${URL}/rest/v1/${t}?limit=1`, { headers: H }); } catch { continue; }
+    if (!r.ok) continue;
+    const rows = await r.json().catch(() => []);
+    if (PUBLIC_TABLES[t] || !Array.isArray(rows) || !rows.length) continue;
+    leaks.push(`table ${t} -> ${JSON.stringify(rows[0]).slice(0, 120)}`);
+  }
+}));
+
 if (!leaks.length) {
-  console.log(`==== ANON EXPOSURE: clean — ${rpcs.length} functions exposed, ${called} callable read-only with no arguments, none hands a stranger any data ====`);
+  console.log(`==== ANON EXPOSURE: clean — ${rpcs.length} functions (${called} callable with no arguments) and ${tables.length} tables/views; a stranger gets no data from any ====`);
   process.exit(0);
 }
 console.log(`==== ANON EXPOSURE: ${leaks.length} function(s) hand data to ANYONE with the public key ====`);

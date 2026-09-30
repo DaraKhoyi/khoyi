@@ -608,6 +608,25 @@ data: `revoke execute on function ... from public, anon;` then grant
 `auth.uid() is null` alone — a stranger passes that. `smoke/anon_exposure.mjs`
 fails the gate otherwise (known-answer tested: reopening one function fails it).
 
+**TABLES AND VIEWS, TOO (29 Sep).** The Sentinel flagged app_config and
+agent_aliases as "readable by every signed-in account"; it was worse — their
+read rules had no role, so strangers with the anon key could read them, and a
+sweep of all 228 tables/views as anon found 13 readable. The worst were two
+VIEWS without `security_invoker` (`lead_queue_v`, `overdue_waiting_on`): a view
+runs as its owner and skips row-level security, so any stranger saw every
+agent's pending leads and late promises. Fixed in
+`supabase/sql/2026-09-29_close_open_reads.sql`: both views are security_invoker;
+app_config is readable by agents only for browser-safe keys (today
+`licensing_enforced` — add a key to that policy's list only if the browser truly
+needs it), everything else owner/broker_admin; agent_aliases is staff-only
+(brokerage-import uses the service key); knowledge, announcements and reference
+lists are `to authenticated`. Only `idx_listings` (published IDX) stays public.
+Rules: **every new view is `with (security_invoker = true)`**; every new policy
+names its role (`to authenticated`); a `using (true)` read rule needs a reason.
+`anon_exposure.mjs` now sweeps tables as anon too; `smoke/open_reads.mjs` fails
+on any non-invoker view, any unlisted `true` read rule, or an agent reading a
+staff-only setting or the alias list.
+
 **"auth.uid() IS NOT NULL AND …" IS NOT A GUARD.** In a SECURITY DEFINER
 function the body's own check is the only lock, and a signed-out caller's uid is
 NULL — so that condition is false and the whole check is skipped. set_tax_id
