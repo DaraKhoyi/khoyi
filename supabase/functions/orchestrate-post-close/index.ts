@@ -39,7 +39,7 @@ ${voiceBlock}`;
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify({ model: MODEL, max_tokens: 2200, messages: [{ role: "user", content: prompt }] }) });
   const j = await r.json();
-  try { await logAiUsage(sb, { userId: uid, fn: "orchestrate-post-close", model: MODEL, usage: j?.usage, usedOwn: false }); } catch (_) {}
+  try { await logAiUsage(sb, { userId: uid, fn: "orchestrate-post-close", model: MODEL, usage: j?.usage, usedOwn: false, subjectType: "deal", subjectId: deal?.id }); } catch (_) {}
   const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   let plan: any = {};
   try { const m = raw.match(/\{[\s\S]*\}/); plan = JSON.parse(m ? m[0] : raw); } catch (_) { plan = { summary: "Could not generate a plan.", cadence: [] }; }

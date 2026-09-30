@@ -140,7 +140,7 @@ serve(async (req) => {
           `Transcript:\n${text.slice(0, 14000)}`;
 
         const raw = await claude(KEY, sys, usr);
-        try { await logAiUsage(db, { userId: call?.user_id, fn: "call-enrich", model: MODEL, usage: __lastUsage, usedOwn: false }); } catch (_) {}
+        try { await logAiUsage(db, { userId: call?.user_id, fn: "call-enrich", model: MODEL, usage: __lastUsage, usedOwn: false, subjectType: "call", subjectId: call?.id }); } catch (_) {}
         let parsed: any = {};
         try { parsed = JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { parsed = {}; }
 

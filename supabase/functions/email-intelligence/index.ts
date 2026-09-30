@@ -159,7 +159,7 @@ serve(async (req) => {
       }
       userId = user.id;
     }
-    const _logUsage = () => { try { logAiUsage(supabase, { userId, fn: "email-intelligence", model: MODEL, usage: __lastUsage, usedOwn: false }); } catch (_) {} };
+    const _logUsage = () => { try { logAiUsage(supabase, { userId, fn: "email-intelligence", model: MODEL, usage: __lastUsage, usedOwn: false, subjectType: "email_thread", subjectId: thread_id }); } catch (_) {} };
 
     // Load the thread. Must belong to caller.
     const { data: thread, error: tErr } = await supabase

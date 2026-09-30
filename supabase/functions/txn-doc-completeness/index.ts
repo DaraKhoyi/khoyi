@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: "user", content: [block, { type: "text", text: visionPrompt(buyers, sellers) }] }] }),
       });
       const data = await r.json();
-      try { await logAiUsage(admin, { userId: uid || doc.user_id, fn: "txn-doc-completeness", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
+      try { await logAiUsage(admin, { userId: uid || doc.user_id, fn: "txn-doc-completeness", model: MODEL, usage: data?.usage, usedOwn: false, subjectType: "transaction", subjectId: transaction_id }); } catch (_) {}
       let text = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").replace(/```json|```/g, "").trim();
       try { result = { ...JSON.parse(text), tier: "vision" }; } catch { result = { items: [], summary: "Could not read the document clearly.", confidence: "low", tier: "vision" }; }
     }

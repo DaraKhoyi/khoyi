@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ model: MODEL, max_tokens: 1500, messages: [{ role: "user", content: [block, { type: "text", text: PROMPT }] }] }),
     });
     const data = await r.json();
-    try { await logAiUsage(admin, { userId: uid || doc.user_id || body.user_id, fn: "txn-contract-extract", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
+    try { await logAiUsage(admin, { userId: uid || doc.user_id || body.user_id, fn: "txn-contract-extract", model: MODEL, usage: data?.usage, usedOwn: false, subjectType: "transaction", subjectId: transaction_id }); } catch (_) {}
 
     let text = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
     text = text.replace(/```json|```/g, "").trim();

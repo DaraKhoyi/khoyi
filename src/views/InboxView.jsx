@@ -2296,6 +2296,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           original_body: (replyCtx?.body || '').slice(0, 6000),
           from_name: replyCtx?.from_name || contact?.name || firstEmail,
           recipient_name: contact?.name || replyCtx?.from_name || firstEmail,
+          recipient_email: firstEmail || null,   // so the AI spend names the person (30 Sep)
           disc_primary: prof?.primary_letter || null,
           disc_secondary: prof?.secondary_letter || null,
           disc_rationale: prof?.rationale || prof?.research_summary || '',

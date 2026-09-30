@@ -254,7 +254,7 @@ Important:
     }
 
     const r = await runIdentify();
-    try { await logAiUsage(supabase, { userId: user?.id, fn: "contact-identify", model: "claude-sonnet-4-6", usage: __ciUsage, usedOwn: false }); } catch (_) {}
+    try { await logAiUsage(supabase, { userId: user?.id, fn: "contact-identify", model: "claude-sonnet-4-6", usage: __ciUsage, usedOwn: false, subjectType: body.contact_id ? "contact" : null, subjectId: body.contact_id || null }); } catch (_) {}
     if (r.error) return new Response(JSON.stringify({ error: r.error, detail: r.detail }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     return new Response(JSON.stringify({ confidence: r.confidence, candidates: r.candidates, identifiers_used: identifiers, search_count: r.search_count }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 

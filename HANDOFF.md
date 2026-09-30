@@ -627,6 +627,23 @@ names its role (`to authenticated`); a `using (true)` read rule needs a reason.
 on any non-invoker view, any unlisted `true` read rule, or an agent reading a
 staff-only setting or the alias list.
 
+**EVERY AI CALL NAMES ITS SUBJECT (30 Sep).** Panel (Archivist + Merchant):
+2,866 of 2,872 AI calls named nobody, so spend → person → deal could not close.
+Now each function passes what it already holds to the logger (`subjectType` +
+`subjectId`: contact / lead_card / call / email_thread / email_message /
+commitment / transaction / deal, and/or `subjectEmail` / `subjectPhone`); the
+BEFORE INSERT trigger `ai_usage_subject` on `ai_usage_log` resolves
+`contact_id`, `subject_email`, `subject_phone` and `about` ('person' | 'deal' |
+'no_one'). Functions truly not about one person are listed in
+`ai_fn_not_about_a_person()`. **A new AI function must do one or the other** —
+`smoke/ai_subject_guard.mjs` fails otherwise (static) and proves each kind
+resolves (live). closing_attribution counts spend by contact, by address, or by
+the transaction itself. History recovered where timing proves it (concierge,
+calls, inbox triage); nightly inbox reads before 30 Sep stay unattributed.
+`txn_parties_from_contract_trg`: a contract read by txn-contract-extract now
+fills the transaction's buyer/seller when empty, so closings get their client
+without anyone typing it.
+
 **AN ALERT THAT REACHES NOBODY (29 Sep).** Every push the DATABASE sent
 (`notify_lead_escalation`) used vault `service_role_jwt`; push-send only knew the
 sb_secret key, answered 401, and nothing recorded it — the lead ladder was

@@ -58,7 +58,7 @@ ${voiceBlock}`;
     throw new Error(`Anthropic API error ${r.status}: ${errText.slice(0, 200)}`);
   }
   const j = await r.json();
-  try { await logAiUsage(sb, { userId: uid, fn: "orchestrate-new-lead", model: MODEL, usage: j?.usage, usedOwn: false }); } catch (_) {}
+  try { await logAiUsage(sb, { userId: uid, fn: "orchestrate-new-lead", model: MODEL, usage: j?.usage, usedOwn: false, subjectType: "contact", subjectId: contact?.id }); } catch (_) {}
   const raw = (j.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   let plan: any = {};
   try { const m = raw.match(/\{[\s\S]*\}/); plan = JSON.parse(m ? m[0] : raw); } catch (_) { plan = { summary: "Could not generate a plan.", cadence: [] }; }

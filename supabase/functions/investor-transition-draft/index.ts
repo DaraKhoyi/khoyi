@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
         }),
       });
       const d = await r.json();
-      try { await logAiUsage(admin, { userId: body.user_id || null, fn: "investor-transition-draft", model: MODEL, usage: d?.usage, usedOwn: false }); } catch (_) {}
+      try { await logAiUsage(admin, { userId: body.user_id || null, fn: "investor-transition-draft", model: MODEL, usage: d?.usage, usedOwn: false, subjectType: n?.buyer?.contact_id ? "contact" : null, subjectId: n?.buyer?.contact_id || null, subjectEmail: n?.buyer?.email || null }); } catch (_) {}
       if (!r.ok) { out.push({ id, ok: false, error: d?.error?.message || ("HTTP " + r.status) }); continue; }
 
       const text = (d.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").trim();

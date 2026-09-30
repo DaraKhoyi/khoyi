@@ -159,6 +159,8 @@ node smoke/deleted_email.mjs || exit 1
 node smoke/open_reads.mjs || exit 1
 # A lead alert reaches a phone, or that person is skipped; a Gmail answer counts (Marguerite, 29 Sep).
 node smoke/lead_reaches_a_person.mjs || exit 1
+# Every AI call names who (or which deal) it was about (Archivist + Merchant, 30 Sep).
+node smoke/ai_subject_guard.mjs || exit 1
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

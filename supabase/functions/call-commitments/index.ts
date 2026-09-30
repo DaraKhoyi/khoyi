@@ -152,7 +152,7 @@ serve(async (req) => {
 
         const usr = `Call date: ${(call.op_created_at || "").slice(0, 10)}. Speakers are labelled by name.${multiParty ? " This call has THREE OR MORE speakers — attribute each commitment to the correct person." : ""}\n\n${script.slice(0, 14000)}`;
         const raw = await claude(KEY, sys, usr);
-        try { await logAiUsage(db, { userId: call?.user_id, fn: "call-commitments", model: MODEL, usage: __lastUsage, usedOwn: false }); } catch (_) {}
+        try { await logAiUsage(db, { userId: call?.user_id, fn: "call-commitments", model: MODEL, usage: __lastUsage, usedOwn: false, subjectType: "call", subjectId: call?.id }); } catch (_) {}
         let parsed: any = {};
         try { parsed = JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { parsed = { commitments: [] }; }
         const list = Array.isArray(parsed.commitments) ? parsed.commitments : [];

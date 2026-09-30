@@ -70,13 +70,13 @@ async function resolveKey(supabase, userId, platformKey) {
   return { key: platformKey, usedOwn: false };
 }
 const AI_RATES = { "claude-opus-4-8": [5, 25], "claude-opus-4-7": [5, 25], "claude-sonnet-4-6": [3, 15], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
-async function logUsage(supabase, { userId, fn, model, usage, usedOwn }) {
+async function logUsage(supabase, { userId, fn, model, usage, usedOwn, subjectType = null, subjectId = null, subjectEmail = null }) {
   try {
     const inTok = usage?.input_tokens || 0, outTok = usage?.output_tokens || 0;
     const searches = usage?.server_tool_use?.web_search_requests || 0;
     const [ri, ro] = AI_RATES[model] || [3, 15];
     const cost = (inTok / 1e6) * ri + (outTok / 1e6) * ro + searches * 0.01;
-    await supabase.from("ai_usage_log").insert({ user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok, web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn });
+    await supabase.from("ai_usage_log").insert({ user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok, web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn, subject_type: subjectType, subject_id: subjectId, subject_email: subjectEmail });
   } catch (_) {}
 }
 
@@ -140,7 +140,7 @@ serve(async (req) => {
       body: JSON.stringify({ model: MODEL, max_tokens: 700, system, messages: [{ role: "user", content: userMsg + __kb }] }),
     });
     const data = await r.json();
-    logUsage(__sb, { userId: __uid, fn: "email-reply-draft", model: MODEL, usage: data.usage, usedOwn: __own });
+    logUsage(__sb, { userId: __uid, fn: "email-reply-draft", model: MODEL, usage: data.usage, usedOwn: __own, subjectEmail: b.recipient_email || null });
     let draft = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
     const __sig = ((info && info.emailSig) || "").trim() || String(senderName);
     if (draft && __sig) draft = draft.replace(/\s+$/, "") + "\n\n" + __sig;

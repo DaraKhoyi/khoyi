@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ model: MODEL, max_tokens: 1200, messages: [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }, { type: "text", text: DETECT_PROMPT(pageCount) }] }] }),
       });
       const data = await r.json();
-      try { await logAiUsage(admin, { userId: uid || doc.user_id, fn: "txn-split-pdf", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
+      try { await logAiUsage(admin, { userId: uid || doc.user_id, fn: "txn-split-pdf", model: MODEL, usage: data?.usage, usedOwn: false, subjectType: "transaction", subjectId: transaction_id }); } catch (_) {}
       let text = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").replace(/```json|```/g, "").trim();
       let parsed: any;
       try { parsed = JSON.parse(text); } catch { return new Response(JSON.stringify({ error: "Could not read the bundle cleanly." }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } }); }

@@ -122,6 +122,7 @@ Deno.serve(async (req) => {
     await admin.from("ai_usage_log").insert({
       user_id: user.id, fn: "lead-brief", model: "claude-sonnet-4-6",
       input_tokens: inTok, output_tokens: outTok, cost_usd: cost,
+      subject_type: "lead_card", subject_id: lead.id, subject_email: addr || null,
     });
   } catch (_) { /* the brief still stands */ }
 

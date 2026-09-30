@@ -91,9 +91,15 @@ export async function logAiUsage(
   // deal. Every caller already knows this and was throwing it away, which is why
   // "did this $0.30 research help?" was unanswerable rather than merely hard.
   // Optional, so nothing breaks for the functions that have no subject.
-  { userId, fn, model, usage, usedOwn, subjectType, subjectId }:
+  // 30 Sep: pass whatever you are working on — subjectType 'contact' |
+  // 'lead_card' | 'call' | 'email_thread' | 'email_message' | 'commitment' with
+  // its id, and/or the other person's subjectEmail / subjectPhone. The database
+  // (ai_usage_subject trigger) works out WHO that is. smoke/ai_subject_guard.mjs
+  // fails the gate for a function that says nothing and is not on the
+  // not-about-a-person list (ai_fn_not_about_a_person).
+  { userId, fn, model, usage, usedOwn, subjectType, subjectId, subjectEmail, subjectPhone }:
     { userId?: string | null; fn: string; model: string; usage?: any; usedOwn?: boolean;
-      subjectType?: string | null; subjectId?: string | null },
+      subjectType?: string | null; subjectId?: string | null; subjectEmail?: string | null; subjectPhone?: string | null },
 ): Promise<void> {
   try {
     if (!userId) return;                       // never mis-attribute
@@ -106,6 +112,7 @@ export async function logAiUsage(
       user_id: userId, fn, model, input_tokens: inTok, output_tokens: outTok,
       web_searches: searches, cost_usd: cost, used_own_key: !!usedOwn,
       subject_type: subjectType || null, subject_id: subjectId || null,
+      subject_email: subjectEmail || null, subject_phone: subjectPhone || null,
     });
     if (error) console.error(`[aiUsage] ${fn} log failed:`, error.message);
   } catch (e) {

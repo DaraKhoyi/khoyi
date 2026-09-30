@@ -262,7 +262,7 @@ serve(async (req) => {
           transcript ? `\nTranscript:\n${transcript.slice(0, 12000)}` : "",
         ].filter(Boolean).join("\n");
         const out = safeJson(await callClaude(SYSTEM, userMsg));
-        try { await logAiUsage(admin, { userId: call?.user_id, fn: "quo-call-process", model: MODEL, usage: __quoUsage, usedOwn: false }); } catch (_) {}
+        try { await logAiUsage(admin, { userId: call?.user_id, fn: "quo-call-process", model: MODEL, usage: __quoUsage, usedOwn: false, subjectType: "call", subjectId: call?.id }); } catch (_) {}
         if (out.non_english) { try { const t = await translateToEnglish(transcript); if (t) transcriptEn = t; } catch (_) {} }
         if (Array.isArray(out.action_items)) {
           proposed = out.action_items

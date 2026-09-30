@@ -207,7 +207,7 @@ serve(async (req) => {
             `FROM: ${m.from_name || ""} <${fromAddr}>\nSUBJECT: ${m.subject || "(none)"}\n` +
             `KNOWN_CONTACT: ${isVip ? "yes" : "no"}\nFIRST_TIME_SENDER: ${firstTime ? "yes" : "no"}\n\n${bodyTrim}`;
           let parsed: any;
-          try { parsed = safeJSON(await callClaude(userText)); aiCalls++; acctCap--; pool--; try { await logAiUsage(supabase, { userId: uid, fn: "email-nightly-intel", model: MODEL, usage: __eniUsage, usedOwn: false }); } catch (_) {} }
+          try { parsed = safeJSON(await callClaude(userText)); aiCalls++; acctCap--; pool--; try { await logAiUsage(supabase, { userId: uid, fn: "email-nightly-intel", model: MODEL, usage: __eniUsage, usedOwn: false, subjectType: "email_thread", subjectId: m.thread_id, subjectEmail: fromAddr }); } catch (_) {} }
           catch (_e) { acctCap--; pool--; continue; }
 
           const reasons: any = {};
