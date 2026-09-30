@@ -627,6 +627,19 @@ names its role (`to authenticated`); a `using (true)` read rule needs a reason.
 on any non-invoker view, any unlisted `true` read rule, or an agent reading a
 staff-only setting or the alias list.
 
+**NO SSN, TAX ID, CARD OR BANK NUMBER REACHES AN AI MODEL (30 Sep).** Sentinel
++ Fiduciary asked whether contact-research put `contacts.tax_id_last4` in its
+prompt. It did not (every AI function names its fields; those columns are empty
+and `contacts_strip_tax_id_trg` keeps them so until the drop after 4 Oct). The
+real exposure was FREE TEXT — notes, emails (title-company wiring
+instructions), texts, call summaries. `_shared/aiGuard.ts` wraps `fetch` for the
+AI hosts (Anthropic, OpenAI, Voyage, Gemini) and blanks SSN/ITIN, labelled tax
+IDs/EINs, Luhn-valid card numbers and labelled account/routing numbers in every
+TEXT field of the request; image/PDF base64 is never touched. **Every function
+that calls an AI host must start with `import "../_shared/aiGuard.ts";`** —
+`smoke/ai_guard.mjs` fails otherwise and holds the known answers (phones, ZIP+4,
+prices, dates, MLS and parcel numbers must pass untouched).
+
 **WHO JUST ASKED (30 Sep).** Panel wanted contact-research fired on lead
 claim; instead the existing pieces were joined and fixed, at arrival: known facts
 (`lead_known_facts`), readiness (lead-qualify — now accepts Zillow per-buyer

@@ -1,6 +1,7 @@
 // anthropic-status — server-side Anthropic API health for the Systems dashboard.
 // Uses the ANTHROPIC_API_KEY Supabase secret (never shipped to the public frontend).
 // GET /v1/models validates the key + reachability with ZERO token cost.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {

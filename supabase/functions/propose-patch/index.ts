@@ -1,6 +1,7 @@
 // propose-patch — given a crash + a slice of the offending code, returns a
 // minimal, surgical patch (exact old_str -> new_str). Keeps the Anthropic key
 // server-side so the CI auto-fix job never needs it. Internal-token guarded.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, x-internal-token", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 serve(async (req) => {

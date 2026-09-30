@@ -24,6 +24,7 @@
 // verify_jwt: false — called with the agent's JWT from the app, and (Phase 3) by
 // pg_cron with the service role, which the gateway rejects when verify_jwt=true.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 

@@ -3,6 +3,7 @@
 // so the assessment shows up on the agent's side and tunes their assistant.
 // Match path: contact.type='our_agent' + contact.email -> agents.email -> agents.auth_user_id.
 // Idempotent. POST { contact_id?, owner_user_id }  (internal-token guarded).
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";

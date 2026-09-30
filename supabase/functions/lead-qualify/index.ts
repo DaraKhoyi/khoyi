@@ -26,6 +26,7 @@
 // lead-concierge the moment a lead lands. Cost: a fraction of a cent per person
 // with words to read; nothing for template-only leads.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 import { isServiceCaller } from "../_shared/serviceCaller.ts";

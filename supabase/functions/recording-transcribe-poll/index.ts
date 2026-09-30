@@ -17,6 +17,7 @@
 //
 // Also handles 3+ speakers, so meetings label properly instead of being forced
 // into a Me/Them binary.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";

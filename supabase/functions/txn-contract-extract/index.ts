@@ -6,6 +6,7 @@
 // POST { transaction_id, document_id }
 //   -> { ok, extracted:{...}, parties:[...] }  (also stored on the transaction, pending review)
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 

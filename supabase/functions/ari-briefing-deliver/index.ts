@@ -21,6 +21,7 @@
 //  5. A user with no connected email was skipped silently every day. They now
 //     get the push notification, and last_result says why there was no email.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";

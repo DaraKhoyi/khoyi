@@ -13,6 +13,7 @@
 //
 // x-qcp-token gated. Body: { user_id?, limit? } — default 40 cards per run.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const J = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { "Content-Type": "application/json" } });

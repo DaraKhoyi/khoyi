@@ -4,6 +4,7 @@
 //
 // Turns a raw, voice-dictated (or rough) activity note into a clean, concise,
 // professional CRM timeline note. Preserves every concrete fact; never invents.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;

@@ -10,6 +10,7 @@
 //
 // Drafts a follow-up message (email or SMS) in the user's voice, adapted to the
 // recipient's behavioral style and what genuinely matters to them. Never invents facts.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

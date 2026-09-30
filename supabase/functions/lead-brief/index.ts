@@ -20,6 +20,7 @@
 // learned signal. It applies the one rule Marguerite actually gave, which needs
 // no model: a real person, writing to you first, who is not bulk.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { isServiceCaller } from "../_shared/serviceCaller.ts";
 

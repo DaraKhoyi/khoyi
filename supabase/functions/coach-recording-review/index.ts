@@ -1,6 +1,7 @@
 // John reviews a real appointment recording and coaches the specific stage.
 // Computes a talk ratio from speaker-labeled segments, then has Claude coach
 // like a mentor who listened to the tape. The Phase D differentiator.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";

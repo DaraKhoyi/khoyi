@@ -7,6 +7,7 @@
 // POST { sender_name?, recipient_name?|from_name?, original_subject?, original_body?,
 //        disc_primary?, disc_secondary?, disc_rationale? }
 // -> { draft: string, disc: string|null } | { error: string }
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

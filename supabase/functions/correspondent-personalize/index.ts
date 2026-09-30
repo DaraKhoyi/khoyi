@@ -27,6 +27,7 @@
 //
 // verify_jwt: false — called with the agent's JWT and scoped by it.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 

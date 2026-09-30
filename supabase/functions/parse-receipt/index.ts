@@ -16,6 +16,7 @@
 //      JSON-only instruction and the user's categories as context
 //   5. Parses the JSON response, maps category names ﻗ IDs, returns to client
 // deno-lint-ignore-file no-explicit-any
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4';
 import { Image } from 'https://deno.land/x/imagescript@1.2.17/mod.ts';
 // Claude vision works best when the longest edge is <= ~1568px. Large phone

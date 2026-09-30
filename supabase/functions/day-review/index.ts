@@ -2,6 +2,7 @@
 // POST { name?, date?, doneCount, total, done:[titles], undone:[titles], mood?, note?, gci? }
 // -> { recap }   // a short, warm end-of-day reflection that closes the loop
 // Stateless; no DB access. The client persists the recap (day_plans.review + journal).
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";

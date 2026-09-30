@@ -25,6 +25,7 @@
 //   - One draft per call. Batch autonomy is a different decision and Dara has
 //     not made it.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 
 const CORS = {

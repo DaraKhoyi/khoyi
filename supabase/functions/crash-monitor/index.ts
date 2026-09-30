@@ -3,6 +3,7 @@
 // records it in crash_signatures, and alerts the owner (agent_runs + push).
 // It deliberately does NOT change code or deploy — it hands a fix-ready
 // diagnosis to a human. Safety infra, so it is never pause-gated.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

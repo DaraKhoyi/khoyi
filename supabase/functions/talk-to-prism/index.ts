@@ -21,6 +21,7 @@
 // logged to ai_usage_log against the person (the standing AI-cost rule), and
 // each tool call to mcp_calls (who, which tool, did it work — never content).
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { TOOLS, INSTRUCTIONS, type Ctx } from "../_shared/prismTools.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";

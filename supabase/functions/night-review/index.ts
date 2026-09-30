@@ -24,6 +24,7 @@
 // rows, silent-failure counts, adoption. A recommendation that could have been
 // written without opening the database is a failure of this function.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 
 const CORS = {

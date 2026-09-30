@@ -1,6 +1,7 @@
 // ai-key-manage — lets an agent store/test/remove their own Anthropic API key.
 // The key is validated with a tiny live call, then AES-GCM encrypted with a
 // server-only secret before storage. The client never receives the raw key back.
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

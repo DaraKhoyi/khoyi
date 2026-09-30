@@ -12,6 +12,7 @@
 //  - If a baseline (test) exists, Claude is biased toward agreement; deviations
 //    must be supported by strong recent evidence and generate a drift_note.
 
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

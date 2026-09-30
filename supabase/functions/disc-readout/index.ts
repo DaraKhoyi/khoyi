@@ -1,3 +1,4 @@
+import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // Auth + cost attribution added 26 Sep. This function had NO caller check and
 // the gateway accepts the PUBLIC anon key: anyone who found the URL could spend the brokerage's Claude
