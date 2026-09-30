@@ -12,6 +12,7 @@
 // the reference implementation. Deno's Node-compat runs its crypto.
 import webpush from "npm:web-push@3.6.7";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -40,16 +41,13 @@ Deno.serve(async (req) => {
     const token = authHeader.replace(/^Bearer\s+/i, "");
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    // A trusted internal caller presents a service credential. Supabase exposes
-    // two forms (legacy service_role JWT and the newer sb_secret_… key); accept
-    // either, and also treat an sb_secret_ prefix as service.
-    const SB_SECRET = Deno.env.get("SUPABASE_SECRET_KEYS") || "";
-    const isService = !!token && (
-      token === SERVICE_KEY ||
-      token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
-      (SB_SECRET && SB_SECRET.includes(token)) ||
-      token.startsWith("sb_secret_")
-    );
+    // A trusted internal caller presents a service credential — checked the one
+    // way (_shared/serviceCaller.ts: the exact key, or one PostgREST itself
+    // accepts). 29 Sep: this used to accept ANY token starting "sb_secret_" (so
+    // anyone could push to anyone), and it rejected the database's own signed
+    // service JWT, so every lead-ladder alert from SQL got a 401 and reached no
+    // phone at all.
+    const isService = await isServiceCaller(req);
 
     // Resolve the TARGET user.
     let targetUserId: string | null = null;
@@ -74,7 +72,13 @@ Deno.serve(async (req) => {
       .from("push_subscriptions").select("id, endpoint, p256dh, auth")
       .eq("user_id", targetUserId);
     if (subErr) return json({ error: subErr.message }, 500);
-    if (!subs || subs.length === 0) return json({ sent: 0, failed: 0, pruned: 0, note: "no devices" });
+    // EVERY alert leaves a record: who, what, and whether it reached a device.
+    // Without it, "we pushed the agent" and "the agent's phone rang" looked the
+    // same, and a lead could wait on a phone that never lit up.
+    const logIt = async (sent: number, failed: number, note: string | null) => {
+      try { await admin.from("push_log").insert({ user_id: targetUserId, title: title || null, tag: tag || null, sent, failed, note }); } catch (_) {}
+    };
+    if (!subs || subs.length === 0) { await logIt(0, 0, "no devices"); return json({ sent: 0, failed: 0, pruned: 0, note: "no devices" }); }
 
     const payload = JSON.stringify({
       title: title || "PrismOS",
@@ -93,13 +97,19 @@ Deno.serve(async (req) => {
           { TTL: 3600, urgency: "normal" },
         );
         sent++;
+        // A device that works again must stop reading as broken (29 Sep: the old
+        // error stayed forever, so nobody could tell a dead phone from a live one).
+        try { await admin.from("push_subscriptions").update({ last_error: null, last_ok_at: new Date().toISOString() }).eq("id", s.id); } catch (_) {}
       } catch (e: any) {
         failed++;
         const code = e?.statusCode || e?.status;
         // 404/410 = subscription gone; prune it so we stop trying.
         if (code === 404 || code === 410) dead.push(s.id);
         else {
-          try { await admin.from("push_subscriptions").update({ last_error: String(e?.message || e).slice(0, 300) }).eq("id", s.id); } catch (_) {}
+          // Keep the status code and the push service's own words — "Received
+          // unexpected response code" alone told us nothing about why.
+          const why = `${code || "?"} ${String(e?.message || e)} ${String(e?.body || "").slice(0, 160)}`.trim();
+          try { await admin.from("push_subscriptions").update({ last_error: why.slice(0, 300), last_error_at: new Date().toISOString() }).eq("id", s.id); } catch (_) {}
         }
       }
     }));
@@ -112,6 +122,7 @@ Deno.serve(async (req) => {
     // stamp last_used on the survivors
     try { await admin.from("push_subscriptions").update({ last_used_at: new Date().toISOString() }).eq("user_id", targetUserId); } catch (_) {}
 
+    await logIt(sent, failed, sent ? null : "every device refused");
     return json({ sent, failed, pruned });
   } catch (e: any) {
     return json({ error: String(e?.message || e) }, 500);

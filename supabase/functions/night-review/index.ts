@@ -326,6 +326,14 @@ async function gather(admin: any) {
   // noise_cards is what the gate still shows that is not a lead — near zero.
   await one("lead_funnel", `select public.lead_funnel(30) v`);
   await one("speed_to_lead_by_agent", `select public.speed_to_lead(30) v`);
+  // DID THE ALERT REACH A PHONE? (29 Sep, after Marguerite: "nobody ever told
+  // the agent".) push_log records every alert and how many devices took it;
+  // speed_to_lead carries can_alert. A lead offered to someone PrismOS cannot
+  // reach is the failure — judge delivery, not "pushed".
+  await one("alerts_delivered_7d", `select coalesce(a.name, 'unknown') agent, count(*) alerts,
+      count(*) filter (where l.sent > 0) reached_a_device, count(*) filter (where l.sent = 0) reached_nobody
+    from push_log l left join agents a on a.auth_user_id = l.user_id
+    where l.created_at > now() - interval '7 days' group by 1 order by 2 desc`);
   await one("brokerage_leads_unrouted", `select count(*) n, max(round(extract(epoch from now()-received_at)/60)) oldest_minutes,
      string_agg(distinct source, ', ') sources from brokerage_leads where status='unassigned'`);
   // SENDER MUTES (rebuilt 28 Sep). The old count read learned_from, a column

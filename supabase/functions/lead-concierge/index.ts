@@ -51,6 +51,20 @@ Deno.serve(async (req) => {
     }
     if (existing && existing.length) return new Response(JSON.stringify({ ok: true, skipped: "already_pending" }), { headers: { ...cors, "Content-Type": "application/json" } });
 
+    // CAN WE REACH THIS PERSON? (29 Sep, Marguerite: "the concierge ran and the
+    // agent never knew".) An agent with no working alert device who has not
+    // opened PrismOS in two weeks will never see a draft — writing one is money
+    // spent on nothing and a card that makes the software look busy. The card is
+    // still made (it measures their speed from Gmail and phone); if they open it,
+    // they write the reply on the card, the same as a message card.
+    const [{ data: reach }, { data: who }] = await Promise.all([
+      admin.rpc("lead_reachable", { p_user: user_id }),
+      admin.auth.admin.getUserById(user_id),
+    ]);
+    const lastIn = who?.user?.last_sign_in_at ? Date.parse(who.user.last_sign_in_at) : 0;
+    const unreachable = reach !== true && Date.now() - lastIn > 14 * 86400e3;
+    const noDraft = !!skip_draft || unreachable;
+
     const { voice, name } = await loadVoice(admin, user_id);
     const firstName = (lead_name || "").trim().split(/\s+/)[0] || null;
 
@@ -75,13 +89,14 @@ Deno.serve(async (req) => {
     const usr = (firstName ? `The lead's name is ${firstName}. ` : "The lead's name is unknown. ") +
       (inbound_text ? `They just ${isEmail ? "emailed" : "texted"}: "${String(inbound_text).slice(0, 600)}"` : `They just reached out (no message). Reach out proactively.`);
 
-    let draft = skip_draft ? "" : firstName ? `Hi ${firstName}! Thanks for reaching out — happy to help. What can I tell you?` : `Hi there! Thanks for reaching out — happy to help. What can I tell you?`;
+    let draftUsage: any = null;   // logged once the card exists, so the spend names the card it paid for
+    let draft = noDraft ? "" : firstName ? `Hi ${firstName}! Thanks for reaching out — happy to help. What can I tell you?` : `Hi there! Thanks for reaching out — happy to help. What can I tell you?`;
     // A REPLY IS NOT DRAFTED ON ARRIVAL. Dara already knows these people and
     // writes to them himself; guessing his words to a partner is worse than
     // useless, and drafting every important email would spend real money on text
     // nobody sends. He can ask for a draft on the card when he wants one.
     try {
-      if (skip_draft) throw new Error("reply — drafted on request, not on arrival");
+      if (noDraft) throw new Error(skip_draft ? "reply — drafted on request, not on arrival" : "nobody PrismOS can reach — no draft");
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01" },
@@ -90,7 +105,7 @@ Deno.serve(async (req) => {
       const data = await r.json();
       const t = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
       if (t) draft = t.replace(/^["']|["']$/g, "");
-      try { await logAiUsage(admin, { userId: user_id, fn: "lead-concierge", model: MODEL, usage: data?.usage, usedOwn: false }); } catch (_) {}
+      draftUsage = data?.usage || null;
     } catch (_) { /* keep the safe fallback draft */ }
 
     // reply subject for the email path ("Re: ..." off the lead's subject)
@@ -113,6 +128,9 @@ Deno.serve(async (req) => {
     // Losing that race is the correct outcome, not a failure.
     if (error && (error as any).code === "23505") return new Response(JSON.stringify({ ok: true, skipped: "already_pending" }), { headers: { ...cors, "Content-Type": "application/json" } });
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    // The spend names its card, so "was it acted on?" has an answer (the panel
+    // read 0 of 530 because it never could).
+    if (draftUsage) { try { await logAiUsage(admin, { userId: user_id, fn: "lead-concierge", model: MODEL, usage: draftUsage, usedOwn: false, subjectType: "lead_card", subjectId: row.id }); } catch (_) {} }
 
     // Readiness (lead-qualify): budget, area, repeat inquiries, past client — on
     // the card from the first minute. Best-effort; the 15-minute sweep catches it.
@@ -127,15 +145,22 @@ Deno.serve(async (req) => {
     }
 
     // push the agent — this IS the speed-to-lead moment
-    try {
-      await admin.functions.invoke("push-send", { body: {
-        user_id,
-        title: firstName ? `New lead: ${firstName} — reply ready` : "New lead — reply ready",
-        body: draft.slice(0, 120),
-        url: "https://darasapp.com/?concierge=" + row.id,
-        tag: "concierge",
-      } });
-    } catch (_) { /* push best-effort */ }
+    // Record whether it reached a device: "pushed" and "their phone lit up" are
+    // not the same thing, and the difference is the lead.
+    let reached = false;
+    if (!unreachable || reach === true) {
+      try {
+        const { data: pr } = await admin.functions.invoke("push-send", { body: {
+          user_id,
+          title: firstName ? `New ${kind === "reply" ? "message" : "lead"}: ${firstName}${draft ? " — reply ready" : ""}` : (draft ? "New lead — reply ready" : "New lead"),
+          body: (draft || inbound_text || "").slice(0, 120),
+          url: "https://darasapp.com/?concierge=" + row.id,
+          tag: "concierge",
+        } });
+        reached = !!(pr && pr.sent > 0);
+      } catch (_) { /* push best-effort */ }
+    }
+    try { await admin.from("lead_concierge").update({ alert_reached: reached }).eq("id", row.id); } catch (_) {}
 
     return new Response(JSON.stringify({ ok: true, id: row.id, draft }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {

@@ -627,6 +627,17 @@ names its role (`to authenticated`); a `using (true)` read rule needs a reason.
 on any non-invoker view, any unlisted `true` read rule, or an agent reading a
 staff-only setting or the alias list.
 
+**AN ALERT THAT REACHES NOBODY (29 Sep).** Every push the DATABASE sent
+(`notify_lead_escalation`) used vault `service_role_jwt`; push-send only knew the
+sb_secret key, answered 401, and nothing recorded it — the lead ladder was
+silent from the day it shipped. push-send now uses `_shared/serviceCaller.ts`
+(it also accepted ANY token starting `sb_secret_` — anyone could push anyone),
+logs every send to `push_log`, and clears `last_error` on success (stale errors
+made working phones look dead). From SQL, call functions with vault
+`service_role_key` (what `cron_call` uses). The ladder skips anyone who fails
+`lead_reachable()`, and checks `lead_was_acted()` before moving a lead. See
+docs/LEAD_STRATEGY.md "Reach"; `smoke/lead_reaches_a_person.mjs`.
+
 **"auth.uid() IS NOT NULL AND …" IS NOT A GUARD.** In a SECURITY DEFINER
 function the body's own check is the only lock, and a signed-out caller's uid is
 NULL — so that condition is false and the whole check is skipped. set_tax_id

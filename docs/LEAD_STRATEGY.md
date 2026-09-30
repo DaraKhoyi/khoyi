@@ -101,6 +101,27 @@ is whether the lead could ever buy." Two changes:
 - `brokerage_leads` unrouted, and how long the oldest has waited.
 - The overnight panel audits the lead agent against this document.
 
+## Reach — an alert that reaches nobody is not an alert (29 Sep)
+
+Marguerite (panel): "the concierge ran 530 times and sent zero replies … nobody
+ever told the agent a lead was waiting." She was right:
+
+- **Every alert from the database was refused** (push-send rejected the signed
+  service JWT: 401) — the ladder's "New lead", "Passed to you" and "Lead needs
+  you" never reached a phone. Fixed; `push_log` now records every alert and how
+  many devices took it, and the panel reads it (`alerts_delivered_7d`).
+- **The ladder offers a lead only to someone PrismOS can reach**
+  (`lead_reachable()`: a registered device that is not refusing alerts). With
+  nobody reachable, the broker gets it at once.
+- **An answer from Gmail or the phone counts.** The ladder checks
+  `lead_was_acted()` before moving a lead, so it never takes a lead from the
+  agent already on it; the card closes itself (`handled`) within 5 minutes.
+- The concierge does **not draft** for an agent with no working device who has
+  not opened PrismOS in 14 days — nobody would read it. The card is still made,
+  so their speed is measured from Gmail and phone. Each card records
+  `alert_reached`, and its AI spend names the card, so "acted on" is real.
+- `speed_to_lead()` carries `can_alert` per agent.
+
 ## Known gaps
 
 - **Mary Sous has no email connected.** The system has never seen one of her
