@@ -627,6 +627,20 @@ names its role (`to authenticated`); a `using (true)` read rule needs a reason.
 on any non-invoker view, any unlisted `true` read rule, or an agent reading a
 staff-only setting or the alias list.
 
+**THE LIBRARY HOLDS TALKS; SHARED FILES OPEN FOR EVERYONE (30 Sep).** Ricky
+Carruth's talk (recording, transcript, summary) is in Knowledge → Library, scope
+brokerage. Fixed on the way: (1) storage policy `knowledge_read_shared` — a
+`knowledge` file is readable when its knowledge_sources row is visible (before,
+owner-only, so "whole brokerage" items could not be opened); (2) long audio
+(> 6 MB) goes to AssemblyAI via signed URL and is collected by cron
+`knowledge-transcribe-poll` (paragraphs + timestamps, `transcript` jsonb,
+`speaker_names`); (3) embeddings are budget-batched with 429 back-off (Voyage
+rate limits had left items "processing" forever) and an indexing failure now
+reads as an error with Reprocess reusing the saved transcript; (4) publishing to
+the brokerage is staff-only server-side; (5) knowledge-ingest accepts `as_user`
+from the service only. UI: `src/views/LibraryOpen.jsx` (Listen / Open file /
+Read). `smoke/library_shared.mjs`.
+
 **CAN THEY TRANSACT (30 Sep).** Marguerite's condition for using the research
 brief. `_shared/transactFacts.ts` (`gatherOwnWords` → `extractTransactFacts` →
 `verifyFacts` receipt check → `transactLine`; `refreshTransact` stores on

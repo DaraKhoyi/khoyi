@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { unzipSync, strFromU8 } from "https://esm.sh/fflate@0.8.2";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODEL = "claude-sonnet-4-6";
 
@@ -13,8 +14,29 @@ const AI_RATES: Record<string, number[]> = { "claude-opus-4-8": [5, 25], "claude
 async function logUsage(sb: any, o: any) { try { const inT = o.usage?.input_tokens || 0, outT = o.usage?.output_tokens || 0; const [ri, ro] = AI_RATES[o.model] || [3, 15]; await sb.from("ai_usage_log").insert({ user_id: o.userId, fn: o.fn, model: o.model, input_tokens: inT, output_tokens: outT, web_searches: 0, cost_usd: (inT / 1e6) * ri + (outT / 1e6) * ro, used_own_key: !!o.usedOwn }); } catch (_) {} }
 
 async function voyageEmbed(texts: string[]): Promise<number[][]> {
+  // Paced and patient (30 Sep): a 72-minute transcript is ~70 chunks, and the
+  // embedding account answers 429 when sent more than its per-minute budget —
+  // which silently left Ricky Caruth's talk "processing" forever. Batches are
+  // sized to a token budget (≈4 characters a token), and on 429 we wait (its
+  // Retry-After, else 25s) and try again. The service's own words go into any
+  // final error, so "why" is never a guess.
   const key = Deno.env.get("VOYAGE_API_KEY"); const out: number[][] = [];
-  for (let i = 0; i < texts.length; i += 64) { const r = await fetch("https://api.voyageai.com/v1/embeddings", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ input: texts.slice(i, i + 64), model: "voyage-3.5", input_type: "document", output_dimension: 1024 }) }); if (!r.ok) throw new Error("Voyage embed failed: " + r.status); const j = await r.json(); for (const d of j.data) out.push(d.embedding); }
+  const BUDGET = 7000;
+  const batches: string[][] = []; let cur: string[] = [], tok = 0;
+  for (const t of texts) { const n = Math.ceil(t.length / 4); if (cur.length && (tok + n > BUDGET || cur.length >= 64)) { batches.push(cur); cur = []; tok = 0; } cur.push(t); tok += n; }
+  if (cur.length) batches.push(cur);
+  for (const batch of batches) {
+    let j: any = null, last = "";
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const r = await fetch("https://api.voyageai.com/v1/embeddings", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ input: batch, model: "voyage-3.5", input_type: "document", output_dimension: 1024 }) });
+      if (r.ok) { j = await r.json(); break; }
+      last = `${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`;
+      if (r.status !== 429 && r.status < 500) throw new Error("Voyage embed failed: " + last);
+      await new Promise((res) => setTimeout(res, Math.min(60, Number(r.headers.get("retry-after")) || 25) * 1000));
+    }
+    if (!j) throw new Error("Voyage embed failed after retries: " + last);
+    for (const d of j.data) out.push(d.embedding);
+  }
   return out;
 }
 async function claudeExtract(sb: any, uid: string | null, b64: string, mediaType: string, isPdf: boolean): Promise<string> {
@@ -83,10 +105,86 @@ async function indexText(sb: any, uid: string, src: any, scope: string, team_id:
   await sb.from("knowledge_sources").update({ status: "ready", extracted_text: text.slice(0, 500000), summary, tags: mergedTags, content_hash: hash, processed_at: new Date().toISOString() }).eq("id", src.id);
 }
 
-async function deriveTextFromFile(sb: any, uid: string, storage_path: string, mime: string, filename: string): Promise<string> {
+// LONG RECORDINGS (30 Sep). A talk or a training runs an hour; transcription
+// takes minutes, longer than one request may wait — so anything past a short
+// clip is handed to the service with a signed link and collected by the
+// 2-minute poll (knowledge-transcribe-poll), speakers and timestamps kept.
+// Short dictations still come back at once.
+const LONG_AUDIO_BYTES = 6 * 1024 * 1024;
+export class Deferred extends Error { constructor() { super("transcription started — collected by the poll"); } }
+async function startTranscription(sb: any, src: any, storage_path: string) {
+  const key = Deno.env.get("ASSEMBLYAI_API_KEY"); if (!key) throw new Error("Audio transcription isn't configured");
+  const { data: signed, error } = await sb.storage.from("knowledge").createSignedUrl(storage_path, 60 * 60 * 24);
+  if (error || !signed?.signedUrl) throw new Error("Could not share the audio with the transcriber");
+  const r = await fetch("https://api.assemblyai.com/v2/transcript", { method: "POST", headers: { authorization: key, "Content-Type": "application/json" },
+    body: JSON.stringify({ audio_url: signed.signedUrl, speaker_labels: true, punctuate: true, format_text: true }) });
+  const j = await r.json(); if (!j.id) throw new Error("Could not start transcription: " + (j.error || r.status));
+  await sb.from("knowledge_sources").update({ status: "processing", transcript_job: j.id, error: null }).eq("id", src.id);
+}
+const mmss = (ms: number) => { const t = Math.floor((ms || 0) / 1000); const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), x = t % 60; return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(x).padStart(2, "0"); };
+export function formatTranscript(utt: any[], names: Record<string, string> | null): string {
+  // The speaker is named when it changes, not on every paragraph.
+  let prev = "";
+  return utt.map((u) => {
+    const who = (names && names[u.speaker]) || "Speaker " + u.speaker;
+    const head = who !== prev ? `${who}\n` : "";
+    prev = who;
+    return `${head}[${mmss(u.start_ms)}] ${u.text}`;
+  }).join("\n\n");
+}
+async function pollTranscripts(sb: any) {
+  const key = Deno.env.get("ASSEMBLYAI_API_KEY"); if (!key) return { error: "not configured" };
+  const { data: jobs } = await sb.from("knowledge_sources").select("*").not("transcript_job", "is", null).eq("status", "processing").limit(10);
+  const out: any[] = [];
+  for (const src of jobs || []) {
+    try {
+      const t = await (await fetch(`https://api.assemblyai.com/v2/transcript/${src.transcript_job}`, { headers: { authorization: key } })).json();
+      if (t.status === "completed") {
+        // PARAGRAPHS, not turns. A talk is one speaker for an hour: "utterances"
+        // came back as ONE 63,000-character block (30 Sep, Ricky Caruth). The
+        // paragraph view gives readable blocks with their own start times; each
+        // takes the speaker most of its words carry.
+        let utt: any[] = [];
+        try {
+          const pr = await (await fetch(`https://api.assemblyai.com/v2/transcript/${src.transcript_job}/paragraphs`, { headers: { authorization: key } })).json();
+          utt = (pr.paragraphs || []).map((p: any) => {
+            const tally: Record<string, number> = {};
+            for (const w of p.words || []) if (w.speaker) tally[w.speaker] = (tally[w.speaker] || 0) + 1;
+            const sp = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || "A";
+            return { start_ms: p.start, end_ms: p.end, speaker: sp, text: p.text };
+          });
+        } catch (_) { /* fall back to turns below */ }
+        if (!utt.length) utt = (Array.isArray(t.utterances) && t.utterances.length ? t.utterances : [{ start: 0, end: (t.audio_duration || 0) * 1000, speaker: "A", text: t.text || "" }])
+          .map((u: any) => ({ start_ms: u.start, end_ms: u.end, speaker: u.speaker, text: u.text }));
+        const text = formatTranscript(utt, src.speaker_names);
+        await sb.from("knowledge_sources").update({ transcript: utt, duration_s: t.audio_duration || null, transcript_job: null }).eq("id", src.id);
+        // Re-collecting must not index twice.
+        await sb.from("knowledge_chunks").delete().eq("source_id", src.id);
+        await sb.from("knowledge_facts").delete().eq("source_id", src.id);
+        try { await indexText(sb, src.user_id, src, src.scope, src.team_id, src.tags, text); }
+        catch (e) {
+          // The transcript is safe; only the search index failed. Say so, and let
+          // Reprocess finish it from the saved transcript (no re-transcription).
+          await sb.from("knowledge_sources").update({ status: "error", extracted_text: text.slice(0, 500000), error: "Transcribed, but indexing failed (" + String(e).slice(0, 120) + ") — tap Reprocess." }).eq("id", src.id);
+          throw e;
+        }
+        out.push({ id: src.id, done: true, utterances: utt.length });
+      } else if (t.status === "error") {
+        await sb.from("knowledge_sources").update({ status: "error", error: "Transcription failed: " + String(t.error || "").slice(0, 300), transcript_job: null }).eq("id", src.id);
+        out.push({ id: src.id, error: t.error });
+      } else out.push({ id: src.id, status: t.status });
+    } catch (e) { out.push({ id: src.id, error: String(e).slice(0, 200) }); }
+  }
+  return { checked: (jobs || []).length, results: out };
+}
+
+async function deriveTextFromFile(sb: any, uid: string, storage_path: string, mime: string, filename: string, src: any = null): Promise<string> {
   const { data: file, error } = await sb.storage.from("knowledge").download(storage_path); if (error || !file) throw new Error("Could not download file");
   const buf = new Uint8Array(await file.arrayBuffer()); const mt = mime || ""; const fn = (filename || "").toLowerCase();
-  if (mt.startsWith("audio/") || mt.startsWith("video/")) return await transcribeAudio(buf);
+  if (mt.startsWith("audio/") || mt.startsWith("video/")) {
+    if (src && buf.length > LONG_AUDIO_BYTES) { await startTranscription(sb, src, storage_path); throw new Deferred(); }
+    return await transcribeAudio(buf);
+  }
   if (mt.includes("wordprocessingml") || fn.endsWith(".docx")) return extractDocx(buf);
   if (mt.includes("spreadsheetml") || mt.includes("ms-excel") || fn.endsWith(".xlsx") || fn.endsWith(".xls")) return extractXlsx(buf);
   let bin = ""; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]); const b64 = btoa(bin);
@@ -100,9 +198,20 @@ serve(async (req) => {
   const J = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
   try {
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-    const { data: { user } } = await sb.auth.getUser(token); if (!user) return J({ error: "Unauthorized" }, 401);
-    const uid = user.id; const b = await req.json();
+    const b = await req.json().catch(() => ({}));
+    // The 2-minute poll collects finished long transcriptions (service only).
+    if (b.poll_transcripts) {
+      if (!(await isServiceCaller(req))) return J({ error: "Forbidden" }, 403);
+      return J({ ok: true, ...(await pollTranscripts(sb)) });
+    }
+    // The server may file on someone's behalf (as_user) — never a browser.
+    let uid: string;
+    if (b.as_user && (await isServiceCaller(req))) uid = String(b.as_user);
+    else {
+      const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+      const { data: { user } } = await sb.auth.getUser(token); if (!user) return J({ error: "Unauthorized" }, 401);
+      uid = user.id;
+    }
 
     // REPROCESS in place
     if (b.reprocess && b.source_id) {
@@ -116,11 +225,11 @@ serve(async (req) => {
       await sb.from("knowledge_links").delete().eq("source_id", src.id).eq("confirmed", false);
       const run = async () => {
         try {
-          let text = src.extracted_text || "";
-          if (!text) { if (src.original_path) text = await deriveTextFromFile(sb, src.user_id, src.original_path, src.mime_type, src.title); else if (src.source_url && src.source_url.startsWith("http")) { const r = await fetch(src.source_url); text = stripHtml(await r.text()); } }
+          let text = src.extracted_text || (Array.isArray(src.transcript) && src.transcript.length ? formatTranscript(src.transcript, src.speaker_names) : "");
+          if (!text) { if (src.original_path) text = await deriveTextFromFile(sb, src.user_id, src.original_path, src.mime_type, src.title, src); else if (src.source_url && src.source_url.startsWith("http")) { const r = await fetch(src.source_url); text = stripHtml(await r.text()); } }
           text = (text || "").trim(); if (!text) throw new Error("Nothing to reprocess");
           await indexText(sb, src.user_id, src, src.scope, src.team_id, src.tags, text);
-        } catch (e) { await sb.from("knowledge_sources").update({ status: "error", error: String(e).slice(0, 400) }).eq("id", src.id); }
+        } catch (e) { if (!(e instanceof Deferred)) await sb.from("knowledge_sources").update({ status: "error", error: String(e).slice(0, 400) }).eq("id", src.id); }
       };
       // @ts-ignore
       if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(run()); else await run();
@@ -129,6 +238,13 @@ serve(async (req) => {
 
     // NORMAL INGEST
     const scope = ["private", "team", "brokerage"].includes(b.scope) ? b.scope : "private";
+    // The whole-brokerage library is what Prism answers every agent from:
+    // publishing to it is for the broker and admins (the screen already hid the
+    // option; the server did not enforce it until 30 Sep).
+    if (scope === "brokerage") {
+      const { data: ag } = await sb.from("agents").select("role").eq("auth_user_id", uid).maybeSingle();
+      if (!["owner", "broker_admin"].includes(ag?.role || "")) return J({ error: "Only the broker or an admin can share with the whole brokerage." }, 403);
+    }
     const team_id = scope === "team" ? (b.team_id || null) : null;
     const trust = ["authoritative", "standard", "draft"].includes(b.trust_level) ? b.trust_level : "standard";
     const kind = b.kind; const fn = (b.filename || "").toLowerCase();
@@ -144,10 +260,10 @@ serve(async (req) => {
         let text = "";
         if (kind === "text") text = String(b.text || "");
         else if (kind === "url") { const r = await fetch(b.url, { headers: { "User-Agent": "Mozilla/5.0 PrismOS" } }); text = stripHtml(await r.text()); }
-        else if (kind === "file") text = await deriveTextFromFile(sb, uid, b.storage_path, b.mime_type, b.filename);
+        else if (kind === "file") text = await deriveTextFromFile(sb, uid, b.storage_path, b.mime_type, b.filename, src);
         text = (text || "").trim(); if (!text) throw new Error("No text could be extracted");
         await indexText(sb, uid, src, scope, team_id, b.tags, text);
-      } catch (e) { await sb.from("knowledge_sources").update({ status: "error", error: String(e).slice(0, 400) }).eq("id", src.id); }
+      } catch (e) { if (!(e instanceof Deferred)) await sb.from("knowledge_sources").update({ status: "error", error: String(e).slice(0, 400) }).eq("id", src.id); }
     };
     // @ts-ignore
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(process()); else process();

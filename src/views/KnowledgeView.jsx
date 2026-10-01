@@ -3,6 +3,7 @@
 // zero dependencies on App.js scope, only supabase + React.
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
+import LibraryOpen from './LibraryOpen';
 
 export default function KnowledgeView({ userId, isAdmin = false }) {
   const [tab, setTab] = React.useState('ask');
@@ -41,7 +42,9 @@ export default function KnowledgeView({ userId, isAdmin = false }) {
   const loadLib = React.useCallback(async () => {
     try {
       const [{ data: srcs }, { data: facts }, { data: links }, { data: conf }] = await Promise.all([
-        supabase.from('knowledge_sources').select('*').order('created_at', { ascending: false }).limit(200),
+        // The list never carries extracted_text (a transcript can be 100k+
+        // characters × 200 rows); "Read" fetches one item's text on demand.
+        supabase.from('knowledge_sources').select('id,user_id,scope,team_id,title,source_type,original_path,source_url,mime_type,byte_size,status,error,trust_level,tags,project,summary,created_at,processed_at,duration_s').order('created_at', { ascending: false }).limit(200),
         supabase.rpc('my_knowledge_facts'),
         supabase.rpc('my_knowledge_links'),
         supabase.rpc('my_knowledge_conflicts'),
@@ -273,12 +276,13 @@ export default function KnowledgeView({ userId, isAdmin = false }) {
             {sources.length === 0 && <div className="panel"><div className="panel-body"><div style={{ fontSize: '13px', color: 'var(--text-3)' }}>Nothing yet. Add a note, link, or file to get started.</div></div></div>}
             {sources.map(s => { const st = STAT[s.status] || ['var(--text-3)', s.status]; return (
               <div key={s.id} className="panel" style={{ marginBottom: '10px' }}><div className="panel-body">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 700, color: 'var(--text-1)', fontSize: '14px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '(untitled)'}</span>
                   <span style={{ fontSize: '10px', color: st[0], border: '1px solid var(--border)', borderRadius: '6px', padding: '1px 6px', whiteSpace: 'nowrap' }}>{st[1]}</span>
                   <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-3)' }}>{s.scope}{s.scope !== 'private' ? '' : ''}</span>
-                  <button onClick={() => reprocess(s)} style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>Reprocess</button>
-                  <button onClick={() => del(s)} style={{ fontSize: '13px', padding: '10px 14px', minHeight: 44, borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Delete</button>
+                  <LibraryOpen s={s} />
+                  {(s.user_id === userId || isAdmin) && <button onClick={() => reprocess(s)} style={{ fontSize: '11px', padding: '3px 9px', borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>Reprocess</button>}
+                  {(s.user_id === userId || isAdmin) && <button onClick={() => del(s)} style={{ fontSize: '13px', padding: '10px 14px', minHeight: 44, borderRadius: '7px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>Delete</button>}
                 </div>
                 {s.summary && <div style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '5px' }}>{s.summary}</div>}
                 {s.error && <div style={{ fontSize: '12px', color: 'var(--red)', marginTop: '4px' }}>{s.error}</div>}
