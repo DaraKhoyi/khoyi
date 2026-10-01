@@ -5,6 +5,7 @@ import { supabase } from '../dataService';
 import { pushHealth, resaveThisDevice, connectThisDevice, pushSupported, isIOS, isStandalone } from '../push';
 import { CallFollowupsPanel } from './ReviewPanels';
 import ChiefQueue from './ChiefQueue';
+import CommitmentReview from './CommitmentReview';
 import StaleDecide from './StaleDecide';
 import { DelegationInbox, DelegationOutbox } from './TaskDelegation';
 import { useNbaSkips, SnoozeMenu } from '../nbaSkips';
@@ -530,6 +531,7 @@ export default function TodayView({
           promises, deadlines, replies owed, plans, deals, review asks,
           recruits — one thing at a time. It renders the call card itself
           when the top item is a promise from a call. */}
+      <SetAsideTomorrow userId={myUserId} />
       <ChiefQueue userId={myUserId} setView={setView} onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
 
@@ -863,6 +865,52 @@ function VoiceNote({ setView, userId }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Set aside tomorrow ────────────────────────────────────────────────────────
+// Panel, 1 Oct: suggestions from calls were set aside unreviewed by the hourly
+// rule, and the only agents who ever kept one were those who happened to open
+// the list. Now a push goes out the day before (warn_commitments_before_set_aside,
+// 2026-10-01 SQL) and lands HERE: the exact follow-ups at risk, keep-or-skip in
+// place. setAsideAt() mirrors public.commitment_set_aside_at() — change both or neither.
+const FUSE_DAYS = { immediate: 3, near: 14 };
+function nyMidnightAfter(due) {           // start of the day after `due`, New York time
+  const [y, m, d] = due.split('-').map(Number);
+  for (const off of [4, 5]) {
+    const t = Date.UTC(y, m - 1, d + 1, off);
+    const h = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23' }).format(t));
+    if (h === 0) return t;
+  }
+  return Date.UTC(y, m - 1, d + 1, 4);
+}
+function setAsideAt(c) {
+  const byAge = Date.parse(c.created_at) + (FUSE_DAYS[c.fuse || 'near'] || 30) * 864e5;
+  return c.due_date ? Math.max(byAge, nyMidnightAfter(c.due_date)) : byAge;
+}
+function SetAsideTomorrow({ userId }) {
+  const [ids, setIds] = useState(null);
+  const [n, setN] = useState(0);
+  const load = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('commitments').select('id,created_at,fuse,due_date')
+        .eq('user_id', userId).eq('status', 'proposed').is('auto_expired_at', null)
+        .or('fuse.is.null,fuse.neq.immediate');
+      const edge = Date.now() + 864e5;
+      const soon = (data || []).filter(c => setAsideAt(c) <= edge).map(c => c.id);
+      setIds(soon); setN(x => x + 1);
+    } catch (_) { setIds([]); }
+  }, [userId]);
+  useEffect(() => { if (userId) load(); }, [userId, load]);
+  if (!ids || !ids.length) return null;
+  return (
+    <div className="fade-up" style={{ marginBottom: 14, border: '1px solid rgba(197,169,94,.45)', borderRadius: 16, padding: '13px 15px 4px', background: 'rgba(197,169,94,.06)' }}>
+      <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 11, fontWeight: 700, color: '#EBCB82', marginBottom: 4 }}>From your calls · last chance</div>
+      <div style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 6 }}>
+        {ids.length === 1 ? 'This follow-up gets' : `These ${ids.length} follow-ups get`} set aside tomorrow unless you keep {ids.length === 1 ? 'it' : 'them'}. Skip anything that no longer matters.
+      </div>
+      <CommitmentReview key={n} userId={userId} compact onlyIds={ids} onChanged={load} />
     </div>
   );
 }

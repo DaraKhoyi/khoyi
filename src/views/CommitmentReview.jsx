@@ -58,7 +58,8 @@ const CallDetail = lazy(() => import('./CallDetail'));
 // Today (ChiefQueue.jsx), which decides WHAT is shown — this component only
 // renders that one conversation, that one late promise, or (when you are
 // caught up) the "set aside" recovery link.
-export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll, focusCallId, focusId, recoveryOnly = false, onEmpty, onNotToday }) {
+// onlyIds: render just these suggestions (the Today "set aside tomorrow" card).
+export default function CommitmentReview({ userId, contactId = null, onChanged, compact = false, onSeeAll, focusCallId, focusId, recoveryOnly = false, onEmpty, onNotToday, onlyIds = null }) {
   const [rows, setRows] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -363,9 +364,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // Short-fuse promises ("call you right back", "there in 20 minutes") are already
   // moot by the time anyone reviews — measured 91% dismissed. Keep them out of the
   // queue entirely rather than making you hand-dismiss stale work.
-  const focusing = focusCallId !== undefined || !!focusId || recoveryOnly;
+  const focusing = focusCallId !== undefined || !!focusId || recoveryOnly || !!onlyIds;
   const proposed = rows.filter(r => r.status === 'proposed' && (r.fuse || 'near') !== 'immediate')
-    .filter(r => !focusing ? true : (focusCallId !== undefined && !focusId && !recoveryOnly
+    .filter(r => onlyIds ? onlyIds.includes(r.id) : !focusing ? true : (focusCallId !== undefined && !focusId && !recoveryOnly
       ? (focusCallId ? r.call_id === focusCallId : !r.call_id) : false));
 
   // Group by the conversation they came out of. Not every call should leave
