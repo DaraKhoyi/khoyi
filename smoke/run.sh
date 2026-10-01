@@ -98,6 +98,11 @@ node smoke/hover_guard.mjs
 echo "→ fork one-tap"
 node smoke/fork_tap.mjs || exit 1
 
+# The app stays calm: five and More, dots not counts, three on Today, this week in
+# the Inbox, importance before any nudge (Josh + Dara, 1 Oct). BLOCKS.
+echo "→ calm"
+node smoke/calm_guard.mjs || exit 1
+
 # Static guard: a component defined INSIDE another is a new type every render, so
 # React remounts its subtree. With a text input inside, the caret jumps to 0 after
 # every keystroke — the note-editing bug Dara hit.

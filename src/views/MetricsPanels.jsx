@@ -161,11 +161,11 @@ export function MetricTiles({ needsNow, oweReplyN, reachN, pending=[], overdue=[
         </div>
         <div className="dash-tile" onClick={()=>setView('inbox')}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Unread email</span>
+            <span style={{ fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontWeight:700 }}>Worth a look</span>
             <span style={{ width:30, height:30, borderRadius:9, background:'var(--bg-base)', border:'1px solid var(--border)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}><Icon name="inbox" size={15} style={{ color:'var(--text-2)' }} /></span>
           </div>
           <div style={{ fontSize:30, fontWeight:800, color:'var(--text-1)', marginTop:8, lineHeight:1 }}><CountUp value={unreadEmailCount} /></div>
-          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>in your inbox</div>
+          <div style={{ fontSize:11.5, color:'var(--text-2)', marginTop:5 }}>new this week</div>
         </div>
         <div className="dash-tile" onClick={()=>setView('tasks')}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>

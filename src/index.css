@@ -266,6 +266,7 @@ body {
 .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }}
 .nav-item.active { background: var(--accent-glow); color: var(--accent); border-left-color: var(--accent); }
 .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+.nav-dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .nav-badge {
   margin-left: auto; background: var(--accent); color: #000;
   font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
@@ -1946,3 +1947,46 @@ input[type="radio"], input[type="range"], select, progress {
 /* A panel's own title is structure, so it takes the room as well. The values
    inside it stay gold — that division does not move. */
 .panel-header h3 { color: var(--room-accent-85, var(--text-1)); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CALM (1 Oct 2026) — a luxury, not a cockpit.
+
+   Josh, after a week on his iPhone: "Borders around borders around borders
+   around cards and side cards: gold outlines everywhere, different font
+   families, teeny uppercase headings, pills everywhere… Nothing gets to
+   breathe." Dara: "I was feeling the same — overwhelmed."
+
+   This layer applies the calm rules (src/calm.js) to every screen at once,
+   including the hundreds of inline styles no one will hand-edit:
+     1. TWO typefaces: Fraunces for titles, Manrope for everything else.
+        Barlow Condensed (the condensed uppercase eyebrows) becomes Manrope in
+        sentence case.
+     2. GOLD IS AN ACCENT, NOT A FRAME: gold outlines become a faint neutral
+        hairline. Gold stays in text, fills and the one primary button.
+     3. NO BOX INSIDE A BOX: a panel inside a panel loses its frame.
+   Attribute selectors read the browser's own serialisation of an inline style
+   ("rgba(197, 169, 94, 0.5)" with spaces), which is why they look odd.
+   ═══════════════════════════════════════════════════════════════════════════ */
+body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+[style*="Barlow Condensed"], .ww-prism .eyebrow, .ww-prism .section-eyebrow {
+  font-family: 'Manrope', 'Inter', sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+}
+
+[style*="solid rgba(197, 169, 94"], [style*="solid rgb(197, 169, 94)"],
+[style*="solid rgba(203, 163, 92"], [style*="solid rgb(203, 163, 92)"],
+[style*="solid rgba(201, 168, 78"], [style*="solid rgb(201, 168, 78)"],
+[style*="solid var(--accent)"] {
+  border-color: rgba(246, 241, 231, 0.08) !important;
+}
+/* …but a card that is the ONE thing on screen meant to stand apart keeps its
+   accent. Opt in with data-keep-accent. */
+[data-keep-accent] { border-color: rgba(197, 169, 94, 0.5) !important; }
+
+.panel { border-color: rgba(246, 241, 231, 0.07); }
+.panel .panel { border: none; background: transparent; box-shadow: none; }
+/* Tips: a quiet note, not a framed banner. */
+.prism-tip { background: rgba(246, 241, 231, 0.035) !important; border: none !important; }
+.prism-tip-eye { text-transform: none !important; letter-spacing: 0 !important; font-family: 'Manrope', sans-serif !important; font-size: 13px !important; }

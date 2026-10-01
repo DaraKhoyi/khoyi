@@ -1,22 +1,27 @@
 import React from 'react';
 import ChiefQueue from './ChiefQueue';
-import { Icon } from '../icons';
+import { DoneForYouList } from './DoneForYou';
+import { calm } from '../calm';
 
-// Chief of Staff — the same single queue that leads Today (ChiefQueue.jsx),
-// on its own page with the whole list open. Until 29 Sep this was a separate
-// system: an AI job rebuilt a list here every morning (4,661 items, last acted
-// on 29 Jul). Now there is one queue, computed live, and this is a window on it.
+// DONE FOR YOU — what PrismOS did, what waits for your OK, and everything that
+// can wait (1 Oct 2026). This was "Chief of Staff": the same single queue that
+// leads Today, with the whole list open. Josh asked for the other half — a
+// place where the AI says what it already handled — and it belongs here, on
+// the page Today's "See what I did" opens, so there is still one queue.
 export default function ChiefOfStaffView({ userId, setView, onOpenPlan }) {
   const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'long', day: 'numeric' });
   return (
-    <div style={{ maxWidth: '720px', margin: '0 auto' }}>
-      <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><span>💼</span> Chief of Staff</h2>
-      <div style={{ fontSize: '12.5px', color: 'var(--text-3)', margin: '2px 0 14px' }}>{today}</div>
-      <ChiefQueue userId={userId} setView={setView} startOpen
+    <div style={calm.page}>
+      <h1 style={calm.greeting}>Done for you.</h1>
+      <div style={calm.date}>{today}</div>
+      <DoneForYouList setView={setView} />
+      <div style={calm.section}>Everything that can wait</div>
+      <div style={calm.sectionNote}>The same list Today draws its three from, in order. Nothing here is urgent.</div>
+      <ChiefQueue userId={userId} setView={setView} all
         onChanged={() => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} }} />
       {onOpenPlan && (
-        <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'center' }}>
-          <button className="btn btn-ghost" onClick={onOpenPlan}><Icon name="briefing" size={14} /> &nbsp;Plan my day — arrange this into an order</button>
+        <div style={{ marginTop: 18 }}>
+          <button type="button" style={calm.link} onClick={onOpenPlan}>Plan my day — put these in an order</button>
         </div>
       )}
     </div>

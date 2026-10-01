@@ -206,15 +206,6 @@ function menuContainsView(node, view) {
   if (!node.children) return node.view === view;
   return node.children.some(c => menuContainsView(c, view));
 }
-function AiMark({ size = 13 }) {
-  // Classy gold "smart / AI" sparkle, shown after Ari-powered menu items.
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginLeft: '7px', flexShrink: 0, verticalAlign: '-2px' }}>
-      <path d="M12 1.6c.5 4.9 5.5 9.9 10.4 10.4C17.5 12.5 12.5 17.5 12 22.4 11.5 17.5 6.5 12.5 1.6 12 6.5 11.5 11.5 6.5 12 1.6Z" fill="#c5a95e"/>
-      <path d="M19.2 2.6c.13 1.7 1.1 2.67 2.8 2.8-1.7.13-2.67 1.1-2.8 2.8-.13-1.7-1.1-2.67-2.8-2.8 1.7-.13 2.67-1.1 2.8-2.8Z" fill="#d8bd78"/>
-    </svg>
-  );
-}
 const MenuNode = React.memo(function MenuNode({ node, depth, ctx }) {
   const { view, navigate, builtSet, byNavId, openPath, toggle } = ctx;
   const hasChildren = !!(node.children && node.children.length);
@@ -249,13 +240,13 @@ const MenuNode = React.memo(function MenuNode({ node, depth, ctx }) {
         <span style={{ display: 'inline-flex', justifyContent: 'center', alignItems: 'center', width: depth === 0 ? '22px' : '20px', flexShrink: 0, color: built ? (active ? 'var(--accent)' : 'var(--text-2)') : 'var(--text-3)' }}>
           <Icon name={node.icon || leafView} size={depth === 0 ? 18 : 16} fb={'•'} />
         </span>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}{node.ai && built && <AiMark />}</span>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.label}</span>
         {!built && !hasChildren && <span style={{ fontSize: '8.5px', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 5px', marginLeft: '6px', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>soon</span>}
-        {depth === 0 && leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-badge">{byNavId[leafView].badge}</span> : null}
+        {leafView && byNavId[leafView] && byNavId[leafView].badge ? <span className="nav-dot" aria-label="Needs you" /> : null}
         {hasChildren && <span data-chevron="1" style={{ marginLeft: '6px', fontSize: depth === 0 ? '17px' : '15px', lineHeight: 1, color: 'var(--accent)', opacity: 0.9, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, cursor: 'pointer', padding: navigable ? '4px 6px' : '0', margin: navigable ? '-4px 0 -4px 2px' : '0 0 0 6px' }}>▸</span>}
       </div>
       {hasChildren && open && (
-        <div style={{ margin: depth === 0 ? '4px 10px 10px 34px' : '4px 8px 8px 24px', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderLeft: '3px solid var(--accent)', borderRadius: '12px', boxShadow: '0 16px 42px -14px rgba(0,0,0,0.75)', overflow: 'hidden', padding: '5px 0' }}>
+        <div style={{ margin: depth === 0 ? '2px 0 8px 22px' : '2px 0 6px 18px', borderLeft: '1px solid rgba(246,241,231,0.08)', padding: '2px 0' }}>{/* calm: an indent, not a box inside a box */}
           {node.children.map((c, i) => <MenuNode key={c._key || i} node={c} depth={depth + 1} ctx={ctx} />)}
         </div>
       )}
@@ -1400,8 +1391,8 @@ function AppMain() {
       // Lightweight unread count for the Dashboard tile — replaces the old legacy
       // `emails.filter(...)` approach. Uses head:true + count='exact' to avoid
       // fetching any rows (just the count).
-      ['unreadEmailCount', supabase.from('email_threads').select('id', { count: 'exact', head: true })
-                              .eq('has_unread', true).contains('labels', ['INBOX']).is('snoozed_until', null)],
+      ['unreadEmailCount', supabase.from('email_threads').select('id', { count: 'exact', head: true })   // calm: important + new this week, never inventory
+                              .eq('has_unread', true).eq('worth_a_look', true).gte('last_message_at', new Date(Date.now() - 7 * 864e5).toISOString()).is('snoozed_until', null)],
       ['oweReply',       supabase.rpc('my_owe_reply')],
     ];
 
@@ -1649,16 +1640,16 @@ function AppMain() {
     money: {},
     brokerage: {},
   };
-  const barBadges = { tasks: openTaskCount, review: reviewCount, inbox: unreadEmailCount, email_review: needsReviewCount, contacts: hubOweReply };
+  const barBadges = { tasks: hubDueToday > 0, inbox: unreadEmailCount > 0, contacts: hubOweReply > 0 };   // a dot when something needs you; never a count of how much exists
 
   const NAV_ALL = [
     { id: 'today',       icon: '✦', label: 'Today' },
     { id: 'investor_pipeline', icon: '🏦', label: 'Investor Pipeline' },
     { id: 'dashboard',   icon: '⚡', label: 'Dashboard' },
-    { id: 'review',      icon: '📥', label: 'Review',      badge: reviewCount || null },
+    { id: 'review',      icon: '📥', label: 'Review',      badge: null },
     { id: 'coach',       icon: '🎯', label: 'Coach' },
     { id: 'learn',       icon: '🎓', label: 'Field Guide' },
-    { id: 'chief',       icon: '💼', label: 'Chief of Staff' },
+    { id: 'chief',       icon: '💼', label: 'Done for you' },
     { id: 'agentruns',   icon: '🤖', label: 'Prepared by AI' },
     { id: 'agent_activity', icon: '🛡️', label: 'Agent activity' },
     { id: 'adoption', icon: '📡', label: 'Adoption' },
@@ -1671,25 +1662,25 @@ function AppMain() {
     { id: 'scoreboard',  icon: '🏆', label: "How I'm doing", badge: null },
     { id: 'team',        icon: '👥', label: 'Team', badge: null },
     { id: 'contact_types', icon: '🏷️', label: 'Contact types', badge: null },
-    { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: openTaskCount || null },
+    { id: 'tasks',       icon: '✅', label: 'Tasks',       badge: hubDueToday > 0 || null },
     { id: 'someday',     icon: '✦', label: 'Someday / Maybe' },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
-    { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount || null },
-    { id: 'email_review', icon: '🕵️', label: 'Email review', badge: needsReviewCount || null },
+    { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount > 0 || null },
+    { id: 'email_review', icon: '🕵️', label: 'Email review', badge: null },
     { id: 'quo',         icon: '☎️', label: 'Quo',         badge: null },
-    { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: contacts.length || null },
+    { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: hubOweReply > 0 || null },
     { id: 'documents',   icon: '📁', label: 'Documents',   badge: null },
-    { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: contacts.filter(c=>c.type==='recruit' && c.recruiting_stage && !['signed','lost','parked'].includes(c.recruiting_stage)).length || null },
-    { id: 'deals',       icon: '🤝', label: 'Files',       badge: deals.filter(d=>['lead','active','under_contract','closing'].includes(d.status)).length || null },
+    { id: 'recruiting',  icon: '🪪', label: 'Recruiting',  badge: null },
+    { id: 'deals',       icon: '🤝', label: 'Files',       badge: null },
     { id: 'listing_presentation', icon: '🏛️', label: 'Listing Presentation', badge: null },
-    { id: 'files',       icon: '📁', label: 'Files',       badge: files.filter(f=>f.side==='buyer' && !['closed','paid','cancelled'].includes(f.status)).length || null },
+    { id: 'files',       icon: '📁', label: 'Files',       badge: null },
     ...((isAdmin||isTeamLeader) ? [{ id: 'agents',      icon: '👥', label: 'Brokerage',   badge: null }] : []),
     { id: 'mileage',     icon: '🚗', label: 'Mileage',     badge: null },
-    { id: 'properties',  icon: '🏠', label: 'Properties',  badge: properties.length || null },
-    { id: 'investments', icon: '💰', label: 'Investments', badge: investments.length || null },
+    { id: 'properties',  icon: '🏠', label: 'Properties',  badge: null },
+    { id: 'investments', icon: '💰', label: 'Investments', badge: null },
     { id: 'finance',     icon: '📊', label: 'Finance',     badge: null },
-    { id: 'brain',       icon: '🧠', label: 'Brain',       badge: brain.length || null },
-    { id: 'playbooks',   icon: '📚', label: 'Playbooks',   badge: brain.filter(b=>b.type==='playbook').length || null },
+    { id: 'brain',       icon: '🧠', label: 'Brain',       badge: null },
+    { id: 'playbooks',   icon: '📚', label: 'Playbooks',   badge: null },
     { id: 'notes',       icon: '📝', label: 'Notes',       badge: null },
     { id: 'journal',     icon: '📓', label: 'Journal',     badge: null },
     { id: 'chat',        icon: '✦',  label: robots[0]?.name || 'Assistant', badge: null },

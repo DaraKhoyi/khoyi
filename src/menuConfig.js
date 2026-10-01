@@ -47,29 +47,33 @@
 // Overnight Review and Goals & Pace here, shipped them, and Dara could not find
 // either — because neither ever rendered. Brokerage entries belong in App.js.
 export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, setSidebarOpen, enterMode }) {
+  // ── FIVE, THEN MORE (1 Oct 2026) ─────────────────────────────────────────
+  // Josh: "Looking at the menu, all the different functions it does, and not
+  // being able to collapse it… That's not lightening your work, that's giving
+  // you another job to manage." Dara: "I was feeling the same."
+  //
+  // The menu opens on the five screens a working day is made of. Everything
+  // else is under More — still one home per destination, still reachable, just
+  // pushed down where you can get to it when you need it. Phone & Text leads
+  // More because it is the most-used thing there, and it is also one tap from
+  // every contact.
   return [
-    // ── Daily drivers: flat, one tap ─────────────────────────────────────────
     { label: 'Today', view: 'today', icon: 'sparkles' },
+    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
+    { label: 'Inbox', view: 'inbox', icon: 'inbox' },
+    { label: 'Calendar', view: 'calendar', icon: 'calendar' },
+    { label: 'Contacts', view: 'contacts', icon: 'contacts' },
+    { label: 'More', icon: 'compass', children: [
+    { label: 'Phone & Text', view: 'quo', icon: 'quo' },
+    { label: 'Done for you', view: 'chief', icon: 'sparkles' },
     // Nerve Center is a ROOM, not a screen, so it is an action node rather than a
     // view node: enterMode() applies the room's resume rule — Contacts on the
-    // first visit each day, then wherever you left off. Pointing it straight at
-    // 'contacts' would look identical here and silently throw that away.
+    // first visit each day, then wherever you left off.
     { label: 'Nerve Center', icon: 'contacts',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
-    { label: 'Phone & Text', view: 'quo', icon: 'quo', ai: true },
-    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
-    { label: 'Inbox', view: 'inbox', icon: 'inbox', ai: true },
-    { label: 'Calendar', view: 'calendar', icon: 'calendar', ai: true },
-    { label: 'Contacts', view: 'contacts', icon: 'contacts', ai: true },
-    { label: 'Daily Journal', view: 'journal', icon: 'journal', ai: true },
-    // Home-screen and NFC shortcuts. Under Settings would hide it; agents need
-    // to find this without being told it exists.
-    { label: 'Launchers', view: 'launchers', icon: 'link' },
-    // PARKED HERE ON PURPOSE. Both were in the Money room and neither belongs
-    // there — Plan My Day is daily planning, Rank is standings. Dara will place
-    // them properly later; this keeps them reachable rather than lost, which is
-    // exactly how Goals & Pace went missing for a week.
+    { label: 'Daily Journal', view: 'journal', icon: 'journal' },
     { label: 'Plan My Day', view: 'briefing', icon: 'sun' },
+    { label: 'Launchers', view: 'launchers', icon: 'link' },
     { label: 'Rank', view: 'scoreboard', icon: 'trophy' },
 
     // ── Autonomous — the screens that go and do the work ──────────────────────
@@ -147,7 +151,6 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
 
     // ── Things running on their own ───────────────────────────────────────────
     { label: 'Automations', icon: 'sparkles', ai: true, children: [
-      { label: 'Chief of Staff', view: 'chief', icon: 'sparkles', ai: true },
       { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
       { label: 'Agent Activity', view: 'agent_activity', icon: 'chart' },
     ] },
@@ -166,5 +169,6 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     ] },
 
     ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),
+    ] },
   ];
 }

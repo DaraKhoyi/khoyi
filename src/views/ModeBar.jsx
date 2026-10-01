@@ -161,7 +161,9 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
             // A badge is either a number, or { n, urgent } when the caller means
             // "this one actually needs you". Plain numbers stay quiet.
             const raw = badges[v];
-            const n = typeof raw === 'object' && raw ? (raw.n || 0) : (raw || 0);
+            // true = "something here needs you" → a small dot, no number (calm, 1 Oct).
+            const dot = raw === true;
+            const n = typeof raw === 'object' && raw ? (raw.n || 0) : (typeof raw === 'number' ? raw : 0);
             const urgent = typeof raw === 'object' && raw ? !!raw.urgent : false;
             return (
               <button key={key} onClick={() => onNavigate(v, sub)}
@@ -175,6 +177,10 @@ export default function ModeBar({ modeId, currentView, currentSub, onNavigate, o
                   color: active ? accent : 'rgba(246,241,231,0.55)', whiteSpace: 'nowrap' }}>
                   {label}
                 </span>
+                {dot && (
+                  <span aria-label="Needs you" style={{ position: 'absolute', top: 9, right: '50%', marginRight: -17,
+                    width: 7, height: 7, borderRadius: '50%', background: accent }} />
+                )}
                 {n > 0 && (
                   // EMBER IS NOT AN INVENTORY COLOUR. Three permanent red pills
                   // reading 39 / 99+ / 99+ spent the one colour that means "this

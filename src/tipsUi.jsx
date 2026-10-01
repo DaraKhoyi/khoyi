@@ -11,7 +11,7 @@ function tipsSeenCount(){ return tipsSeenList().length; }
 const TIP_PACE_COOLDOWN = { thorough: 30 * 60 * 1000, balanced: 12 * 60 * 60 * 1000, light: 48 * 60 * 60 * 1000, off: Infinity };
 function tipsPace(){ try { return localStorage.getItem('prism_tips_pace') || ''; } catch(_){ return ''; } }
 function setTipsPace(p){ try { localStorage.setItem('prism_tips_pace', p); } catch(_){} }
-function effectivePace(){ const p = tipsPace(); return (p === 'thorough' || p === 'balanced' || p === 'light' || p === 'off') ? p : 'balanced'; }
+function effectivePace(){ const p = tipsPace(); return (p === 'thorough' || p === 'balanced' || p === 'light' || p === 'off') ? p : 'light'; }   // calm default (1 Oct): one tip every two days, never a wall
 function tipCooldownMs(){ return TIP_PACE_COOLDOWN[effectivePace()] || TIP_PACE_COOLDOWN.balanced; }
 function tipsAreEnabled(){ try { if (localStorage.getItem('prism_tips_enabled') === '0') return false; } catch(_){} return effectivePace() !== 'off'; }
 function tipsUnlocked(){ return tipsSeenCount() >= TIPS_UNLOCK_AT; }

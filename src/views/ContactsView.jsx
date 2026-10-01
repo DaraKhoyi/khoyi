@@ -15,7 +15,7 @@ import PropertyModal from './PropertyModal';
 import QuoTextModal from './QuoTextModal';
 import { quoCall } from '../quo';
 import { useBackClose } from '../backClose';
-import { Tip, TipFor } from '../tipsUi';
+import { TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
 import { modal, owesReply } from '../helpers';
 import { loadTaxId, saveTaxId } from '../taxId';
@@ -987,6 +987,14 @@ function EmailLinkReviewModal({ userId, contacts, setContacts, onClose, onChange
 }
 
 
+// Whose relationship IS the business — the only people a clock may suggest
+// touching. Everyone else (vendors, title, staff, former agents, family) is
+// reached when there is a reason, not because time passed. Order = who first.
+const RELATIONSHIP_IS_THE_BUSINESS = new Set(['client', 'client_residential', 'past_client', 'lead', 'buyer_lead', 'seller_lead',
+  'sphere', 'referral_partner', 'investor', 'prospect_agent', 'recruit', 'partner']);
+const TOUCH_ORDER = { client: 0, client_residential: 0, past_client: 1, lead: 2, buyer_lead: 2, seller_lead: 2, sphere: 3,
+  referral_partner: 4, investor: 4, partner: 5, prospect_agent: 6, recruit: 6 };
+
 function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, canSeeRestricted = false, initialSub = null }) {
   const [typeOptions, reloadTypes] = useContactTypes(canSeeRestricted);
   const [source, setSource] = useState('prism'); // 'prism' | 'google' — which contact book to view
@@ -998,6 +1006,7 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   const [editContact, setEditContact] = useState(null);
   const [editFromDetail, setEditFromDetail] = useState(false);
   const [showVCard, setShowVCard] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   // Expose a hook so a deep-link, Ari ("add a new contact"), or the functional
   // test harness can open the new-contact form directly.
   React.useEffect(() => {
@@ -1060,6 +1069,8 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   // Email-to-contact linking state
   const [linkSummary, setLinkSummary] = useState(null);  // { suggestions_count, auto_filled, auto_linked } or null when never scanned
   const [showLinkReview, setShowLinkReview] = useState(false);
+  // "Review" on Done for you → people found in your email opens straight here.
+  useEffect(() => { try { if (window.__openLinkReview) { window.__openLinkReview = false; setShowLinkReview(true); } } catch (_) {} }, []);
   const [scanning, setScanning] = useState(false);
 
   // Phone extraction state
@@ -1408,12 +1419,25 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
   }
 
   // Shared definition — this used to re-derive the rule and had drifted: it
-  const dueCount = useMemo(() => contacts.filter(c => { const cd = cadenceDue(c); return (cd && cd.due && !cd.snoozed) || oweReplyFn(c); }).length, [contacts]);
+  // IMPORTANCE, NOT ELAPSED TIME (1 Oct, Josh): "Austin Rankin hasn't been
+  // contacted in 2 years. Is Austin a prospective recruit, former agent, vendor,
+  // dead lead, or someone who emailed you once in 2023? It doesn't tell you.
+  // The app knows time elapsed. That's not the same thing as importance."
+  //   • a reply is owed only for two weeks — after that it is history, not a task;
+  //   • a "touch" is suggested only for people whose relationship IS the
+  //     business (clients, leads, sphere, referral partners, investors, recruits),
+  //     never a vendor, a title officer or a former agent because a clock ran out;
+  //   • the line says who they are and when, as a date — never "2y ago".
   const reachNext = useMemo(() => {
-    const owe = contacts.find(oweReplyFn);
-    if (owe) return { c: owe, why: 'you owe a reply · ' + relDaysShort(Math.floor((Date.now()-new Date(owe.last_inbound_at))/86400000)) + ' ago' };
-    const due = contacts.find(c => { const cd = cadenceDue(c); return cd && cd.due && !cd.snoozed; });
-    if (due) return { c: due, why: 'due for a touch · ' + relDaysShort(daysSinceTouch(due)) + ' since last' };
+    const day = (ts) => { const d = new Date(ts); const old = Date.now() - d > 300 * 864e5;
+      return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', ...(old ? { year: 'numeric' } : {}) }); };
+    const who = (c) => CONTACT_TYPE_LABELS[c.type] || (c.type ? c.type.replace(/_/g, ' ') : 'Contact');
+    const owe = contacts.filter(c => oweReplyFn(c) && c.last_inbound_at && Date.now() - new Date(c.last_inbound_at) < 14 * 864e5)
+      .sort((a, b) => new Date(b.last_inbound_at) - new Date(a.last_inbound_at))[0];
+    if (owe) return { c: owe, why: 'you owe a reply · wrote ' + day(owe.last_inbound_at) };
+    const due = contacts.filter(c => RELATIONSHIP_IS_THE_BUSINESS.has(c.type) && (() => { const cd = cadenceDue(c); return cd && cd.due && !cd.snoozed; })())
+      .sort((a, b) => (TOUCH_ORDER[a.type] ?? 9) - (TOUCH_ORDER[b.type] ?? 9))[0];
+    if (due) { const t = lastTouchTs(due); return { c: due, why: 'due for a touch · ' + (t ? 'last in touch ' + day(t) : 'not in touch yet') + ' · ' + who(due) }; }
     return null;
   }, [contacts]);
 
@@ -1462,36 +1486,36 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       <style>{`
         .ww-contacts{
           --bg-base:#100D09; --bg-card:#1B1610; --bg-panel:#18130D; --bg-hover:#221B10;
-          --border:rgba(203,163,92,.20); --border-strong:rgba(203,163,92,.40);
+          --border:rgba(246,241,231,.08); --border-strong:rgba(246,241,231,.14);
           --accent:#CBA35C; --accent-2:#EBCB82; --accent-dim:#946F2C; --accent-glow:rgba(203,163,92,.18);
           --text-1:#F6F1E7; --text-2:#C8BFAE; --text-3:#8C8475;
           font-family:Manrope,sans-serif;
-          background:radial-gradient(120% 38% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;
+          background:#100D09;
           min-height:100%;
         }
         .ww-contacts .page-header h2{ font-family:'Fraunces',serif; font-weight:300; letter-spacing:-.02em; font-size:30px; }
-        .ww-contacts .form-input, .ww-contacts .form-select, .ww-contacts .form-textarea{ background:#1B1610; border:1px solid rgba(203,163,92,.22); color:#F6F1E7; }
+        .ww-contacts .form-input, .ww-contacts .form-select, .ww-contacts .form-textarea{ background:#1B1610; border:1px solid rgba(246,241,231,.09); color:#F6F1E7; }
         .ww-contacts .form-input::placeholder, .ww-contacts .form-textarea::placeholder{ color:#736c5f; }
         .ww-contacts .form-input:focus, .ww-contacts .form-select:focus, .ww-contacts .form-textarea:focus{ border-color:#CBA35C; }
         .ww-contacts .btn-primary{ background:#EBCB82; color:#1a1409; border:none; }
-        .ww-contacts .btn-ghost{ border:1px solid rgba(203,163,92,.34); color:#C8BFAE; }
+        .ww-contacts .btn-ghost{ border:1px solid rgba(246,241,231,.09); color:#C8BFAE; }
         .ww-contacts .btn-ghost:hover{ border-color:#CBA35C; color:#EBCB82; }
         .ww-contacts .pill{ border-color:rgba(203,163,92,.24); }
-        .ww-eyebrow{ font-size:10.5px; font-weight:700; letter-spacing:.24em; text-transform:uppercase; color:#CBA35C; }
-        .ww-next{ margin:16px 0 6px; border:1px solid rgba(203,163,92,.40); border-radius:18px; padding:15px 16px 14px; background:radial-gradient(90% 130% at 100% 0%, rgba(203,163,92,.12), transparent 55%), linear-gradient(180deg,#1B1610,#100D09); }
-        .ww-next .lab{ font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:#CBA35C; font-weight:700; margin-bottom:12px; }
+        .ww-eyebrow{ font-size:13px; font-weight:600; letter-spacing:0; color:#C8BFAE; }
+        .ww-next{ margin:18px 0 10px; border:none; border-radius:16px; padding:16px 16px 14px; background:rgba(246,241,231,.035); }
+        .ww-next .lab{ font-size:13px; letter-spacing:0; text-transform:none; color:#C8BFAE; font-weight:600; margin-bottom:12px; }
         .ww-nrow{ display:flex; align-items:center; gap:13px; }
         .ww-nrow .nm{ flex:1; min-width:0; }
         .ww-nrow .nm .n{ font-size:17px; font-weight:700; color:#F6F1E7; }
         .ww-nrow .nm .m{ font-size:12.5px; color:#C8BFAE; margin-top:2px; }
         .ww-nrow .nm .m em{ color:#EBCB82; font-style:normal; font-weight:600; }
         .ww-acts{ display:flex; gap:8px; margin-top:13px; }
-        .ww-acts a, .ww-acts button{ flex:1; text-align:center; background:transparent; border:1px solid rgba(203,163,92,.40); color:#C8BFAE; font-family:Manrope,sans-serif; font-size:12.5px; font-weight:600; padding:9px; border-radius:100px; cursor:pointer; text-decoration:none; }
+        .ww-acts a, .ww-acts button{ flex:1; text-align:center; background:transparent; border:1px solid rgba(246,241,231,.09); color:#C8BFAE; font-family:Manrope,sans-serif; font-size:12.5px; font-weight:600; padding:9px; border-radius:100px; cursor:pointer; text-decoration:none; }
         .ww-acts .p{ background:#EBCB82; color:#1a1409; border:none; font-weight:700; }
         .ww-acts .ww-clear{ flex:0 0 auto; padding:9px 14px; border-color:rgba(203,163,92,.22); color:#8C8475; }
         .ww-acts .ww-clear:hover{ border-color:rgba(203,163,92,.45); color:#C8BFAE; }
-        .ww-av{ width:42px; height:42px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:15px; color:#EBCB82; border:1px solid rgba(203,163,92,.40); background:#18130D; text-transform:uppercase; }
-        .ww-row{ display:flex; align-items:center; gap:13px; padding:14px 2px; border-bottom:1px solid rgba(203,163,92,.16); }
+        .ww-av{ width:42px; height:42px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:15px; color:#EBCB82; border:1px solid rgba(246,241,231,.09); background:#18130D; text-transform:uppercase; }
+        .ww-row{ display:flex; align-items:center; gap:13px; padding:14px 2px; border-bottom:1px solid rgba(246,241,231,.09); }
         .ww-row .ww-body{ flex:1; min-width:0; }
         .ww-row .ww-n{ font-size:15.5px; font-weight:700; color:#F6F1E7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .ww-row .ww-m{ font-size:12.5px; color:#8C8475; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -1501,11 +1525,11 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         .ww-touch.due{ color:#EBCB82; }
         .ww-dot{ width:7px; height:7px; border-radius:50%; background:rgba(203,163,92,.40); }
         .ww-dot.due{ background:#EBCB82; box-shadow:0 0 8px rgba(235,203,130,.6); }
-        .ww-quick{ margin:8px 0 6px; border:1px solid rgba(203,163,92,.22); border-radius:14px; overflow:hidden; background:#18130D; }
-        .ww-qrow{ display:flex; align-items:center; gap:11px; padding:12px 14px; border-bottom:1px solid rgba(203,163,92,.12); cursor:pointer; }
+        .ww-quick{ margin:8px 0 6px; border:1px solid rgba(246,241,231,.09); border-radius:14px; overflow:hidden; background:#18130D; }
+        .ww-qrow{ display:flex; align-items:center; gap:11px; padding:12px 14px; border-bottom:1px solid rgba(246,241,231,.09); cursor:pointer; }
         .ww-qrow:last-child{ border-bottom:none; }
         .ww-qrow:active{ background:rgba(203,163,92,.10); }
-        .ww-qav{ width:31px; height:31px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:12px; color:#EBCB82; border:1px solid rgba(203,163,92,.40); background:#100D09; text-transform:uppercase; }
+        .ww-qav{ width:31px; height:31px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:12px; color:#EBCB82; border:1px solid rgba(246,241,231,.09); background:#100D09; text-transform:uppercase; }
         .ww-qn{ font-size:15.5px; font-weight:700; color:#F6F1E7; white-space:nowrap; flex:none; }
         .ww-qm{ font-size:12.5px; color:#8C8475; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .ww-qdisc{ font-family:'Fraunces',serif; font-size:14px; color:#CBA35C; flex:none; }
@@ -1515,43 +1539,46 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
       <TipFor screen="contacts" />
       <div className="page-header fade-up" style={{marginBottom:'2px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'8px',minHeight:'40px',marginBottom:'4px'}}>
-          {source==='prism' && <>
-          <button className="btn btn-ghost btn-sm" onClick={()=> tagMode ? exitTag() : setTagMode(true)} title="Select multiple contacts to message or tag" style={tagMode?{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}:{}}>{tagMode?'Done':'Select'}</button>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setShowVCard(true)} title="Create a contact from a vCard">vCard</button>
-          <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>
-          </>}
+          {/* 1 Oct (Josh): "You're being asked to operate a CRM." Thirteen
+              controls sat above the list. The header now holds one action (+);
+              the occasional tools live behind ⋯. */}
+          {source==='prism' && tagMode && <button className="btn btn-ghost btn-sm" onClick={exitTag} style={{background:'var(--accent)',color:'#111',border:'1px solid var(--accent)',fontWeight:700}}>Done</button>}
+          {source==='prism' && <button className="btn-add-circle" onClick={()=>{setEditContact(null);setShowModal(true);}} title="New Contact" aria-label="New Contact">+</button>}
+          <button className="btn btn-ghost btn-sm" aria-label="More contact tools" aria-expanded={showTools} onClick={()=>setShowTools(v=>!v)}>⋯</button>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'2px'}}>
           {/* "Contacts", not "Relationships": the plain word a person is told ("it's in
               your contacts") appeared nowhere on a screen also called Nerve Center and
               My People. Calendar, Tasks and Inbox already do this. */}
           <span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Contacts</span>
-          {dueCount>0 && <span className="live-dot" />}
         </div>
         <h2 style={{margin:'0',display:'flex',alignItems:'center',gap:'10px',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="contacts" size={24} style={{color:'var(--room-accent, var(--accent))',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My People.</span></h2>
-        <p style={{color:'var(--text-3)',fontSize:'13px',margin:'6px 0 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{source==='google' ? 'Your connected Google account' : <>{contacts.length} contacts{dueCount>0 && <> · <b className="gold-move" style={{fontWeight:700}}>{dueCount} due</b> for a touch</>}</>}</p>
+        <p style={{color:'var(--text-3)',fontSize:'13px',margin:'6px 0 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{source==='google' ? 'Your connected Google account' : 'The people who matter, and what they need from you'}</p>
         <hr className="room-rule" />
       </div>
 
-      {/* Contact-book source switch — Prism (your CRM) vs Google (the connected
-          Google account). Default Prism; switch freely. Segmented control matches
-          the app's gold-selected pill pattern. */}
-      <div role="tablist" aria-label="Contact source" style={{display:'flex',gap:6,padding:4,background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:13,margin:'14px 0 4px'}}>
-        {[['prism','Prism Contacts','contacts'],['google','Google Contacts','contacts']].map(([id,label]) => {
-          const on = source===id;
-          return (
-            <button key={id} role="tab" aria-selected={on} onClick={()=>setSource(id)}
-              style={{flex:1,padding:'10px 8px',borderRadius:10,border:'none',cursor:'pointer',fontSize:13.5,fontWeight:on?800:600,
-                background:on?'var(--accent)':'transparent',color:on?'#0d0f14':'var(--text-2)',
-                display:'inline-flex',alignItems:'center',justifyContent:'center',gap:7,transition:'all .15s'}}>
-              {id==='google'
-                ? <svg width="15" height="15" viewBox="0 0 48 48" style={{flexShrink:0}}><path fill={on?'#0d0f14':'#4285F4'} d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill={on?'#0d0f14':'#34A853'} d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill={on?'#0d0f14':'#FBBC05'} d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/><path fill={on?'#0d0f14':'#EA4335'} d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
-                : <Icon name="contacts" size={15} style={{color:on?'#0d0f14':'var(--accent)'}} />}
+      {/* ⋯ — the occasional tools, in plain words. */}
+      {showTools && (
+        <div data-testid="contact-tools" style={{display:'flex',flexDirection:'column',margin:'10px 0 6px',borderTop:'1px solid rgba(246,241,231,0.07)'}}>
+          {[
+            source==='prism' && ['Select several to text, email or tag', ()=>{ setTagMode(true); }],
+            source==='prism' && ['Add from a contact card (vCard)', ()=>setShowVCard(true)],
+            [source==='google' ? 'Back to my contacts' : 'Show my Google contacts', ()=>setSource(source==='google' ? 'prism' : 'google')],
+            source==='prism' && ['Review people found in my email', ()=>setShowLinkReview(true)],
+            source==='prism' && [scanning ? 'Scanning email…' : 'Match email senders to contacts', runEmailLinkScan],
+            source==='prism' && [extractingPhones ? 'Reading signatures…' : 'Fill in phone numbers from email signatures', runPhoneExtraction],
+            source==='prism' && [findingDupes ? 'Looking…' : 'Find duplicate contacts', runDuplicateScan],
+          ].filter(Boolean).map(([label, fn]) => (
+            <button key={label} type="button" onClick={()=>{ setShowTools(false); fn(); }}
+              style={{textAlign:'left',minHeight:46,background:'none',border:'none',borderBottom:'1px solid rgba(246,241,231,0.07)',color:'var(--text-1)',fontSize:14.5,fontFamily:'inherit',cursor:'pointer',padding:'0 2px'}}>
               {label}
             </button>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
+      {source==='google' && !showTools && (
+        <button type="button" onClick={()=>setSource('prism')} style={{background:'none',border:'none',color:'var(--accent)',fontSize:14,fontWeight:600,cursor:'pointer',padding:'10px 0',minHeight:44}}>‹ Back to my contacts</button>
+      )}
 
       {source==='google' && <GoogleContactsView userId={userId} />}
       {source==='prism' && (<>
@@ -1587,26 +1614,23 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         autoFocus={false}
       />
 
-      {!tagMode && !search.trim() && <Tip id="disc" label="Reading the room">That gold letter on a contact is their <b>behavioral style</b> (DISC). A <b>D</b> wants the bottom line, fast; an <b>S</b> wants warmth and reassurance. Match your delivery to how they're wired and rapport comes easy — Prism reads it for you, so you never have to be the expert.</Tip>}
       {!tagMode && !search.trim() && reachNext && (
         <div className="ww-next fade-up-2">
-          <div className="lab gold-move" style={{display:'inline-block'}}>Reach out next</div>
+          <div className="lab">Reach out next</div>
           <div className="ww-nrow">
             <div className="ww-av">{(reachNext.c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
             <div className="nm">
               {/* The name opens the record — the thing you read is what you reach for. */}
               <button type="button" className="n" style={NAME_LINK} title="Open this contact's record"
                 onClick={(e)=>{ e.stopPropagation(); setDetailContact(reachNext.c); }}>{reachNext.c.name}</button>
-              <div className="m">{[CONTACT_TYPE_LABELS[reachNext.c.type]||reachNext.c.type].filter(Boolean).join(' · ')} · <em>{reachNext.why}</em></div>
+              <div className="m"><em>{reachNext.why}</em></div>
             </div>
-            {(() => { const rp = profileByContact.get(reachNext.c.id); return rp?.primary_letter ? <span className="ww-disc" style={{fontSize:16}}>{rp.primary_letter}{rp.secondary_letter?'/'+rp.secondary_letter:''}</span> : null; })()}
           </div>
           <div className="ww-acts">
             {reachNext.c.phone && <a className="p" href={`tel:${(reachNext.c.phone||'').replace(/[^\d+]/g,'')}`} onClick={e=>{ e.stopPropagation(); const c=reachNext.c, w=reachNext.why; reachoutDone(c, w, 'Called ' + (c.name||'').split(' ')[0]); }}>Call</a>}
-            {reachNext.c.phone && <button onClick={()=>setTextTo({ contact: reachNext.c, phone: reachNext.c.phone, reachWhy: reachNext.why })}>Text</button>}
-            {reachNext.c.email && <button onClick={()=>{ const c=reachNext.c, w=reachNext.why; if(window.__composeEmail) window.__composeEmail(c.email); reachoutDone(c, w, 'Emailed ' + (c.name||'').split(' ')[0]); }}>Email</button>}
+            {!reachNext.c.phone && reachNext.c.email && <button className="p" onClick={()=>{ const c=reachNext.c, w=reachNext.why; if(window.__composeEmail) window.__composeEmail(c.email); reachoutDone(c, w, 'Emailed ' + (c.name||'').split(' ')[0]); }}>Email</button>}
             <button onClick={()=>setDetailContact(reachNext.c)}>Open</button>
-            <button className="ww-clear" title={/owe a reply/.test(reachNext.why) ? 'Mark handled — clears the reply you owe' : 'Not now — snooze this touch'} onClick={()=>clearReachout(reachNext.c, reachNext.why)}>Clear</button>
+            <button className="ww-clear" title={/owe a reply/.test(reachNext.why) ? 'Nothing needed — clears the reply you owe' : 'Nothing needed — not now'} onClick={()=>clearReachout(reachNext.c, reachNext.why)}>Nothing needed</button>
           </div>
         </div>
       )}
@@ -1649,7 +1673,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
           ⚲ Filters{activeFilterCount?` · ${activeFilterCount}`:''} {showFilters?'▲':'▾'}
         </button>
         {activeFilterCount>0 && <button className="btn btn-ghost btn-sm" onClick={clearAllFilters} style={{color:'var(--text-3)'}}>Clear all</button>}
-        <span style={{marginLeft:'auto',fontSize:'12px',color:'var(--text-3)'}}>{sorted.length} match{sorted.length===1?'':'es'}</span>
       </div>
 
       {showFilters && (
@@ -1705,23 +1728,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       )}
 
-      {showFilters && (
-      <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
-        <button className="btn btn-ghost btn-sm" onClick={runEmailLinkScan} disabled={scanning}
-          title="Scan inbox for senders that may match your contacts. Safe auto-fills are applied immediately; ambiguous matches go to review.">
-          {scanning ? '↻ Scanning…' : <><Icon name="link" size={13} /> Scan emails</>}
-        </button>
-        <button className="btn btn-ghost btn-sm" onClick={runPhoneExtraction} disabled={extractingPhones}
-          title="Extract phone numbers from email signatures and auto-fill empty contact.phone fields.">
-          {extractingPhones ? '↻ Extracting…' : <><Icon name="quo" size={13} /> Extract phones</>}
-        </button>
-        <button className="btn btn-ghost btn-sm" onClick={runDuplicateScan} disabled={findingDupes}
-          title="Find likely duplicate contacts based on email, phone, or name+company. Surfaces for review — never auto-merges.">
-          {findingDupes ? '↻ Scanning…' : <><Icon name="search" size={13} /> Find dupes</>}
-        </button>
-      </div>
-      )}
-
       {/* Phone extraction feedback */}
       {phoneMsg && (
         <div style={{padding:'8px 12px',marginBottom:'10px',borderRadius:'8px',
@@ -1752,25 +1758,9 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         </div>
       )}
 
-      {/* Pending suggestions banner */}
-      {((linkSummary?.suggestions_count || 0) + (linkSummary?.new_contact_count || 0)) > 0 && (
-        <div style={{padding:'10px 14px',marginBottom:'10px',background:'rgba(197, 169, 94, 0.08)',border:'1px solid var(--accent)',borderRadius:'8px',color:'var(--text-1)',fontSize:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
-          <span>
-            {(() => {
-              const m = linkSummary.suggestions_count || 0;
-              const n = linkSummary.new_contact_count || 0;
-              const parts = [];
-              if (m > 0) parts.push(<span key="link"><strong>{m}</strong> possible match{m === 1 ? '' : 'es'}</span>);
-              if (n > 0) parts.push(<span key="new"><strong>{n}</strong> potential new contact{n === 1 ? '' : 's'}</span>);
-              return parts.reduce((acc, p, i) => i === 0 ? [p] : [...acc, ' · ', p], []);
-            })()}
-          </span>
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowLinkReview(true)} style={{color:'var(--accent)'}}>Review →</button>
-        </div>
-      )}
-
       <div className="panel">
-        <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
+        {/* Type and sort are filters — they open with Filters, not above every list. */}
+        {showFilters && <div className="panel-header" style={{flexDirection:'column',alignItems:'stretch',gap:'10px'}}>
           {/* Search lives in header icon now — see the magnifying-glass next to the + button.
               Type filter + sort take the row to themselves. */}
           <div style={{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}}>
@@ -1798,27 +1788,15 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
             </div>
           </div>
           <SharedWithMeChip count={sharedWithMeCount} active={sharedOnly} onToggle={()=>setSharedOnly(v=>!v)} />
-          {dueForOutreachCount > 0 && (
-            <div style={{marginTop:'8px'}}>
-              <button onClick={()=>setDueOnly(v=>!v)}
-                style={{display:'inline-flex',alignItems:'center',gap:'6px',padding:'4px 10px',borderRadius:'999px',fontSize:'11px',fontWeight:600,cursor:'pointer',
-                  border:`1px solid ${dueOnly?'var(--red)':'var(--border)'}`, background: dueOnly?'rgba(239,68,68,0.12)':'transparent', color: dueOnly?'var(--red)':'var(--text-2)'}}>
-                <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="alert" size={12} /> Due for outreach ({dueForOutreachCount})</span>{dueOnly?' · showing' : ''}
-              </button>
-            </div>
-          )}
-        </div>
+        </div>}
         <div className="panel-body">
           {sorted.length === 0
             ? <div className="empty-state"><div className="empty-icon"><Icon name="users" size={28} /></div><p>No contacts here.</p></div>
             : <><div className="task-list">
                 {sorted.slice(0, visibleCount).map(c => {
-                  const p = profileByContact.get(c.id);
-                  const cad = cadenceDue(c);
                   const owe = oweReplyFn(c);
-                  const isDue = (cad && cad.due && !cad.snoozed) || owe;
-                  const dt = daysSinceTouch(c);
-                  const touchLabel = owe ? 'owes reply' : (cad && cad.due && !cad.snoozed) ? 'due' : (dt != null ? relDaysShort(dt)+' ago' : '');
+                  const isDue = !!owe;
+                  const touchLabel = owe && c.last_inbound_at && Date.now() - new Date(c.last_inbound_at) < 14 * 864e5 ? 'owes reply' : '';
                   const initials = (c.name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
                   return (
                     <div key={c.id} className="ww-row" style={{cursor:'pointer', ...(tagMode && selIds.has(c.id) ? {background:'var(--accent-glow)'} : {})}} onClick={()=>{ if(tagMode){ toggleSel(c.id); } else { setDetailContact(c); } }}>
@@ -1831,7 +1809,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
                       </div>
                       <div className="ww-right">
                         <ContactRowActions contact={c} onText={(ct, ph) => setTextTo({ contact: ct, phone: ph })} />
-                        {p?.primary_letter && <span className="ww-disc">{p.primary_letter}{p.secondary_letter?'/'+p.secondary_letter:''}</span>}
                         {touchLabel && <span className={'ww-touch'+(isDue?' due':'')}>{touchLabel}<span className={'ww-dot'+(isDue?' due':'')} /></span>}
                       </div>
                     </div>

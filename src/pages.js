@@ -78,7 +78,7 @@ export const PAGES = {
   growth:       { label: 'Growth',           icon: 'chart',    room: 'prospect',      group: 'Pipeline & Growth', minRole: 'agent', feature: 'growth',     tier: 'pro' },
 
   // ── AI Agents ──────────────────────────────────────────────────────────────
-  chief:        { label: 'Chief of Staff',   icon: 'briefing', room: null,            group: 'AI Agents', minRole: 'agent', feature: 'ai_assistant', tier: 'pro', ai: true },
+  chief:        { label: 'Done for you',     icon: 'briefing', room: null,            group: 'AI Agents', minRole: 'agent', feature: 'ai_assistant', tier: 'pro', ai: true },
   agentruns:    { label: 'Prepared by AI',   icon: 'sparkles', room: 'brokerage',     group: 'AI Agents', minRole: 'agent', feature: 'ai_assistant', tier: 'pro', ai: true },
   agent_activity:{ label: 'Agent Activity',  icon: 'brain',    room: 'brokerage',     group: 'AI Agents', minRole: 'admin', feature: 'brokerage',    tier: 'pro' },
   briefing:     { label: 'Plan My Day',      icon: 'sun',      room: 'money',         group: 'AI Agents', minRole: 'agent', feature: 'ai_assistant', tier: 'pro', ai: true },

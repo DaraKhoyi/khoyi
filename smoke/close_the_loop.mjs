@@ -26,8 +26,13 @@ const cr = readFileSync('src/views/CommitmentReview.jsx', 'utf8');
 if (!/slice\(0,\s*compact \? 1\b/.test(cr)) problems.push('CommitmentReview: Today no longer shows one conversation at a time');
 const cq = readFileSync('src/views/ChiefQueue.jsx', 'utf8');
 const today = readFileSync('src/views/TodayView.jsx', 'utf8');
-if (!/rpc\('chief_queue'/.test(cq) || !/Your one thing now/.test(cq)) problems.push('ChiefQueue: no longer the live one-thing queue');
-if (!/<ChiefQueue\b/.test(today)) problems.push('Today no longer shows the Chief of Staff queue');
+// 1 Oct (Josh + Dara, "calm"): Today shows the THREE that matter as quiet rows,
+// not one card numbered "1 of 84" and never a pile. The rest is one tap away.
+if (!/rpc\('chief_queue'/.test(cq) || !/items\.slice\(0, limit\)/.test(cq)) problems.push('ChiefQueue: no longer the live queue, capped on Today');
+const lim = (today.match(/<ChiefQueue\b[^>]*\blimit=\{(\d+)\}/) || [])[1];
+if (!lim) problems.push('Today no longer shows the queue');
+else if (Number(lim) > 3) problems.push(`Today shows ${lim} queue items — the rule is three at most`);
+if (/\{Math\.min\(heroIdx \+ 1, totalOpen\)\} \/ \{totalOpen\}/.test(today)) problems.push('Today shows a "1 / N" counter again');
 
 if (!PAT || !REF) {
   if (process.env.CI) console.log('  (live checks skipped: no Management token in this environment)');
@@ -52,7 +57,7 @@ if (!PAT || !REF) {
 }
 
 if (!problems.length) {
-  console.log('==== CLOSE THE LOOP: clean — stale suggestions are set aside on schedule; one list, one thing at a time ====');
+  console.log('==== CLOSE THE LOOP: clean — stale suggestions are set aside on schedule; one list, three on Today at most ====');
   process.exit(0);
 }
 console.log(`==== CLOSE THE LOOP: ${problems.length} problem(s) ====`);

@@ -9,7 +9,6 @@ import { PriorityField } from './TrackerPanels';
 import { canHover, decodeEntities, EMAIL_ACCOUNT_COLS } from '../helpers';
 import AriRewriteButton from './AriRewriteButton';
 import ForkTuningOverlay from './ForkTuningOverlay';
-import { Tip } from '../tipsUi';
 import { EmailHtmlFrame, PlainTextBody, buildContactByEmail } from './EmailShared';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { modal, pickerInitials } from '../helpers';
@@ -698,7 +697,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
     (async () => {
       const ids = mailAccounts.map(a => a.id);
       if (!ids.length) return;
-      const since = new Date(Date.now() - 3 * 86400000).toISOString();
+      const since = new Date(Date.now() - 7 * 86400000).toISOString();
       const next = {};
       for (const id of ids) {
         const { count, error } = await supabase.from('email_threads')
@@ -820,7 +819,7 @@ function InboxView({ emailAccounts, setEmailAccounts, emailAliases, setEmailAlia
             <Icon name="mail" size={13} style={{ flexShrink: 0 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email_address}</span>
             {worthCounts[a.id] > 0 && (
-              <span title={worthCounts[a.id] + ' worth a look, last 3 days'}
+              <span title={worthCounts[a.id] + ' worth a look this week'}
                 style={{ flexShrink: 0, minWidth: 20, padding: '1px 7px', borderRadius: 999,
                   background: '#C5A95E', color: '#1a1409', fontSize: 11, fontWeight: 800 }}>
                 {worthCounts[a.id]}
@@ -1069,7 +1068,15 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
   // were from someone he knows, something he starred, or a real lead — the rest
   // was newsletters, promotions and political mail. Everything is still one tap
   // away under "All"; nothing is deleted, only moved out of the way.
-  const [tab, setTab] = useState('important');
+  // 1 Oct (Josh + Dara): THIS WEEK, not forever. "Worth a look" had no time
+  // limit, so a three-month-old thread still sat on top. He should "open his
+  // email every day and have what came in today, maybe within the last 7 days, of
+  // importance. If it's not, it goes away but into an archive where he can go
+  // into it, make sure he's done everything he needs to, and move on."
+  //   week  — worth a look AND from the last seven days (opens here)
+  //   quiet — everything else in the inbox: the archive. Nothing is deleted.
+  const [tab, setTab] = useState(() => { try { const t = window.__inboxTab; window.__inboxTab = null; if (t === 'quiet' || t === 'week') return t; } catch (_) {} return 'week'; });
+  const [showInboxTools, setShowInboxTools] = useState(false);
   const [selectedThread, setSelectedThread] = useState(null);
   // Open-tracking status for the currently open thread (shown as a "Likely seen" chip).
   const [threadTracking, setThreadTracking] = useState(null);
@@ -1340,7 +1347,14 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
     setLoadingThreads(true);
     // tab can be 'inbox', 'sent', or 'snoozed'
     let q = supabase.from('email_threads').select('*').eq('account_id', account.id);
-    if (tab === 'important') {
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    if (tab === 'quiet') {
+      // The archive: in the inbox (or still unread, for accounts whose Gmail
+      // filters skip the inbox), and NOT this week's worth-a-look.
+      q = q.overlaps('labels', ['INBOX', 'UNREAD'])
+        .or(`worth_a_look.is.null,worth_a_look.eq.false,last_message_at.lt.${weekAgo}`)
+        .or(`snoozed_until.is.null,snoozed_until.lte.${new Date().toISOString()}`);
+    } else if (tab === 'important' || tab === 'week') {
       // is_important is stamped by is_important_email() — contacts, anything
       // starred, anyone he has written to, real portal leads, and strangers only
       // when Gmail itself flags them important. One rule, in the database.
@@ -1350,7 +1364,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
       // arrival through Gmail filters (~1% of the hub account's mail ever carries
       // INBOX), which is how "8 worth a look" opened onto an empty list. For
       // accounts like that, UNREAD is what still-waiting means.
-      q = q.eq('worth_a_look', true)
+      q = q.eq('worth_a_look', true).gte('last_message_at', weekAgo)
         .or(`snoozed_until.is.null,snoozed_until.lte.${new Date().toISOString()}`);
     } else if (tab === 'sent') {
       q = q.contains('labels', ['SENT']);
@@ -2565,13 +2579,18 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               <Icon name="settings" size={12} /> Triaging {autoTriageProgress.done}/{autoTriageProgress.total}
             </span>
           )}
-          <button className="btn btn-ghost btn-sm" onClick={() => runAliasesSync(false)} disabled={syncingAliases} title="Re-sync your Send-mail-as aliases from Gmail">
-            {syncingAliases ? '↻ Syncing senders…' : `↻ Senders (${verifiedAliases.length})`}
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={runBackfill} disabled={backfill?.running || syncing}
-            title="Pull last 365 days of emails (excludes Promotions / Updates / Social). Safe to leave running in the background — it batches.">
-            {backfill?.running ? `↻ Backfill (round ${backfill.round})` : '⤓ Pull 365d'}
-          </button>
+          {/* Rarely used tools live behind ⋯ (1 Oct, calm): the header holds what
+              is used every day — sync, search, write. */}
+          {showInboxTools && <>
+            <button className="btn btn-ghost btn-sm" onClick={() => runAliasesSync(false)} disabled={syncingAliases} title="Re-sync your Send-mail-as aliases from Gmail">
+              {syncingAliases ? 'Syncing senders…' : 'Refresh my sender addresses'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={runBackfill} disabled={backfill?.running || syncing}
+              title="Pull last 365 days of emails (excludes Promotions / Updates / Social). Safe to leave running in the background — it batches.">
+              {backfill?.running ? `Bringing in the past year (round ${backfill.round})` : 'Bring in the past year'}
+            </button>
+          </>}
+          <button className="btn btn-ghost btn-sm" aria-label="More inbox tools" aria-expanded={showInboxTools} onClick={() => setShowInboxTools(v => !v)}>⋯</button>
           <button className="btn btn-ghost" onClick={runSync} disabled={syncing}>{syncing ? 'Syncing…' : '↻ Sync'}</button>
           <HeaderSearchIcon
             value={inboxSearch}
@@ -2584,7 +2603,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
         <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'0',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="inbox" size={24} style={{color:'var(--room-accent, var(--accent))',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Correspondence.</span></h2>
         <p style={{fontSize:'13px',margin:'6px 0 0'}}>
           {!accountSwitcher && <><strong style={{color:'var(--text-1)'}}>{account.email_address}</strong>{' · '}</>}
-          {unreadCount > 0 ? `${unreadCount} unread` : 'all caught up'}
+          {tab === 'quiet' ? 'Everything PrismOS kept out of your way — nothing is deleted' : (filteredThreads.length ? 'This week, worth your time' : 'Nothing new worth your time')}
           {account.last_sync_at && <> · last sync: {timeAgo(account.last_sync_at)}</>}
           {account.last_sync_error && <> · <span style={{color:'var(--red)'}}>sync error</span></>}
         </p>
@@ -2593,7 +2612,6 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
 
       {accountSwitcher}
 
-      <Tip id="speed" label="Speed wins"><b>Speed-to-lead</b> is the highest-ROI habit in real estate: the first agent to respond usually wins the client. Prism surfaces who's waiting on you, so a fast reply becomes automatic — not accidental.</Tip>
       {/* Search input — collapsible. Filters threads client-side by subject,
           snippet, and sender name/email. Doesn't refetch from server. */}
       {searchOpen && (
@@ -2637,10 +2655,9 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
           <div className="panel">
             <div className="panel-header">
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                {['important','inbox','snoozed','sent'].map(t => (
+                {['week','quiet','snoozed','sent'].map(t => (
                   <button key={t} className={`btn btn-sm ${tab===t?'btn-primary':'btn-ghost'}`} onClick={()=>{setTab(t); setSelectedThread(null);}}>
-                    {t === 'important' ? 'Worth a look' : t === 'inbox' ? 'All' : t === 'snoozed' ? <><Icon name="clock" size={12} /> Snoozed</> : 'Sent'}
-                    {t==='inbox' && unreadCount>0 && <span className="nav-badge" style={{marginLeft:'6px'}}>{unreadCount}</span>}
+                    {t === 'week' ? 'This week' : t === 'quiet' ? 'Everything else' : t === 'snoozed' ? 'Snoozed' : 'Sent'}
                   </button>
                 ))}
               </div>
@@ -2654,7 +2671,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                       <p>
                         {inboxSearch
                           ? <>No threads match <strong>"{inboxSearch}"</strong>.</>
-                          : (tab==='sent' ? 'No sent messages yet.' : 'Inbox is empty.')}
+                          : (tab==='sent' ? 'No sent messages yet.' : tab==='week' ? 'Nothing this week needs you. Everything else is under “Everything else.”' : tab==='quiet' ? 'Nothing here.' : 'Inbox is empty.')}
                       </p>
                       {inboxSearch && (
                         <button className="btn btn-ghost btn-sm" onClick={() => { setInboxSearch(''); setSearchOpen(false); }} style={{marginTop:'8px'}}>
@@ -2665,14 +2682,13 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                   : <div className="email-list">
                       {filteredThreads.map(thread => {
                         const sender = senderFromThread(thread);
-                        const senderProfile = profileForEmail(sender.email);
                         // Pass 4 Batch D: triage indicator in thread list — colored dot
                         // hover tip with category name. Subtle so it doesn't shout.
                         const threadTriage = triageCache[thread.id];
                         const triageCat = threadTriage ? TRIAGE_CATEGORIES[threadTriage.category] : null;
                         // Swipe gestures enabled only on the Inbox tab (Sent/Snoozed
                         // don't have a meaningful archive/delete action from a list row).
-                        const swipeEnabled = tab === 'inbox' || tab === 'important';
+                        const swipeEnabled = tab === 'inbox' || tab === 'important' || tab === 'week' || tab === 'quiet';
                         return (
                           <SwipeableEmailRow key={thread.id}
                             enabled={swipeEnabled}
@@ -2693,11 +2709,6 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                                     <span style={{color:'#f59e0b',fontSize:'12px',flexShrink:0}} title="Starred">★</span>
                                   )}
                                   <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{sender.name || sender.email || '(unknown)'}</span>
-                                  {senderProfile && (
-                                    <span className="pill pill-purple" style={{fontSize:'10px',padding:'2px 6px'}}>
-                                      {senderProfile.primary_letter}{senderProfile.secondary_letter ? `/${senderProfile.secondary_letter}` : ''} · {senderProfile.confidence}
-                                    </span>
-                                  )}
                                   {thread.message_count > 1 && <span style={{color:'var(--text-3)',fontSize:'12px'}}>({thread.message_count})</span>}
                                   {thread.snoozed_until && new Date(thread.snoozed_until) > new Date() && (
                                     <span style={{fontSize:'10px',color:'var(--accent)',padding:'2px 6px',background:'rgba(197,169,94,0.10)',borderRadius:'4px'}}>

@@ -446,7 +446,8 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // ground, a real edge, and the faint gold top-light so the border reads on the
   // near-black instead of vanishing into it.
   const renderCard = (c, { children, tone, editable }) => (
-    <div key={c.id} style={{ ...card,
+    // data-keep-accent: the one card you are deciding keeps its edge under the calm layer.
+    <div key={c.id} data-keep-accent={tone === 'late' ? undefined : ''} style={{ ...card,
       // MATCH THE LEAD CARD. var(--border) was too faint to read as a boundary
       // against the near-black — Dara could see the lead cards separate and
       // these not. Same treatment as a new lead: a gold wash and a gold edge at

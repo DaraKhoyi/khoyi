@@ -169,6 +169,18 @@ for (const dev of want) {
   // and it is valid CSS, so nothing else would ever catch it.
   try {
     await ev(page, () => window.__setView && window.__setView('today'));
+    // CALM (1 Oct): Today lists what was heard as a quiet row ("Heard on your
+    // call with …"); the card opens when you tap Review. Open the first one.
+    for (let i = 0; i < 12; i++) {
+      await page.waitForTimeout(1000);
+      const opened = await ev(page, () => {
+        const row = [...document.querySelectorAll('[data-testid="chief-queue"] > div')].find(d => /heard on (your|one of your) call/i.test(d.innerText));
+        const b = row && [...row.querySelectorAll('button')].find(x => /^review$/i.test(x.textContent.trim()));
+        if (b) { b.click(); return true; }
+        return false;
+      });
+      if (opened) break;
+    }
     // The panel loads its calls and commitments after mount; 2s was not enough
     // and the check failed on the phones while passing on desktop. Poll instead
     // of guessing a number — a fixed wait is a flaky test waiting to happen.
@@ -182,7 +194,7 @@ for (const dev of want) {
         // only because a DIFFERENT element there carried the untransformed text.
         // A check that passes for the wrong reason is worse than one that fails.
         // Renamed 27 Sep (Ray, panel): the app says it HEARD these, in plain words.
-        if (!/heard on your calls/i.test(document.body.innerText)) return { seen: false };
+        if (!/heard on (your|one of your) calls?/i.test(document.body.innerText)) return { seen: false };
         // The card is the SMALLEST element containing the heading — matching on
         // startsWith broke on the wrappers around it.
         const all = [...document.querySelectorAll('div')].filter(d =>

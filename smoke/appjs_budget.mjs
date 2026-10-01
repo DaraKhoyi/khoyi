@@ -35,7 +35,9 @@ const BUDGETS = {
   // trimmed once before raising.
   // 2085 -> 2030 on 2026-09-28: UpdateBanner moved to src/UpdateBanner.jsx and
   // the chunk auto-reload removed (updates are now the person's choice).
-  "src/App.js": 2030,
+  // 2030 -> 2021 on 2026-10-01: calm pass removed the menu sparkle component and
+  // the inventory badges. Ratchet down so the space is not quietly refilled.
+  "src/App.js": 2021,
   "src/menuConfig.js": 200,
   // The accounting split is DONE: 6,745 -> ~650. These budgets are what keep it
   // that way — the file only reached 6,745 because nothing measured it, and the
