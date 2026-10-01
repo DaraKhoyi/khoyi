@@ -35,7 +35,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PAT = process.env.SUPABASE_PAT;
+// CI provides SUPABASE_ACCESS_TOKEN, not SUPABASE_PAT: until 1 Oct this whole database half
+// skipped itself on every deploy and still printed "static part clean".
+const PAT = process.env.SUPABASE_PAT || process.env.SUPABASE_ACCESS_TOKEN;
 const REF = process.env.SUPABASE_REF || 'xlgfspnojjgvkuitcoaf';
 
 // Static half: tables whose credential columns are withheld from the browser.

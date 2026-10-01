@@ -305,6 +305,11 @@ async function gather(admin: any) {
    left join pg_stat_user_tables s on s.relid=c.oid
    where n.nspname='public' and c.relkind='r' and not c.relrowsecurity
      and coalesce(s.n_live_tup,0) > 0 order by 2 desc limit 10`);
+  // POLICY SCOPE, not just coverage (Sentinel, 1 Oct): on the four tables that
+  // hold OAuth tokens and passwords, every policy must be scoped to the row's
+  // own user_id, and no view or definer function may route around it.
+  // Empty array = verified clean. smoke/credential_scope.mjs blocks deploys on it.
+  await one("credential_posture", `select public.credential_posture() findings`);
   await one("permissive_policies", `select tablename, policyname, cmd
    from pg_policies where schemaname='public'
      and (qual = 'true' or with_check = 'true') limit 10`);
