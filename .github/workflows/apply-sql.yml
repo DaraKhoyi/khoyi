@@ -1,0 +1,27 @@
+name: Apply database changes
+
+# New files in supabase/sql (dated 2026-10-01 or later) are applied to the live
+# database once each and recorded in public._applied_sql. See scripts/apply-sql.mjs.
+# Same token as the edge-function deploy: secrets.SUPABASE_ACCESS_TOKEN.
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'supabase/sql/**', 'scripts/apply-sql.mjs', '.github/workflows/apply-sql.yml' ]
+  workflow_dispatch:
+
+concurrency:
+  group: apply-sql
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply new SQL files
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/apply-sql.mjs

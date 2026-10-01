@@ -147,6 +147,13 @@ Then tell agents to **pull to refresh once** to pick it up (the app now prompts 
 
 For fixing records, database triggers, or edge functions — **no app version bump, no app build, no gh-pages.** Instead:
 
+**Schema / function changes (since 1 Oct 2026): just add a file.** Put a new
+`supabase/sql/YYYY-MM-DD_name.sql` (dated 2026-10-01 or later) and push to main.
+`.github/workflows/apply-sql.yml` runs `scripts/apply-sql.mjs`, which applies each
+new file ONCE, in a transaction, and records it in `public._applied_sql`. Editing a
+file after it has been applied does nothing (the run warns) — write a new file.
+Older files were applied by hand and are never re-run.
+
 **Data fixes (via the Management API):**
 1. **Look before you write.** SELECT the rows first, confirm exactly what you're changing and how many.
 2. Make the change with a dedup/idempotent guard (so re-running is safe).
