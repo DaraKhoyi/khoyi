@@ -4,6 +4,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { supabase } from '../dataService';
 import { BUILD_VERSION } from '../version';
 import { notify } from '../notify';
+import { pushHealth, resaveThisDevice, connectThisDevice, sendTest } from '../push';
 import { Icon } from '../icons';
 import TipsSetting from './TipsSetting';
 import EmailAccountsPanel from './EmailAccountsPanel';
@@ -20,16 +21,6 @@ import RedeemCodeBox from './RedeemCodeBox';
 import SimplifyPanel from './SimplifyPanel';
 const QuarterlyTaxBanner = lazy(() => import('./QuarterlyTaxBanner'));
 
-// push-subscription helpers (used only here)
-const VAPID_PUBLIC_KEY = 'BF7IbYP2gbqaV5B3-iaX88-r08O9tLutgXxUadjJicDKjl4QU8xxu-Yfdgloej6DeUrtChNcT6gT5HlS4Ze6OJk';
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64); const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
-}
-
 export default function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false, entitlements = null, reloadEntitlements = null, licensingEnforced = false }) {
   const [settingsTab, setSettingsTab] = useState(null);
   const [newPassword, setNewPassword] = useState('');
@@ -45,6 +36,8 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
   const [briefAcct, setBriefAcct] = useState(null);
   const [pushOn, setPushOn] = useState(false);
   const [pushMsg, setPushMsg] = useState('');
+  const [pushOk, setPushOk] = useState(true);
+  const [pushHealthState, setPushHealthState] = useState(null);
   const [pushBusy, setPushBusy] = useState(false);
   const [prefMsg, setPrefMsg] = useState('');
   const [savingPref, setSavingPref] = useState(false);
@@ -122,34 +115,22 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
   }, [userSettings]);
 
   useEffect(() => { (async () => { try { const { data } = await supabase.from('ari_briefing_prefs').select('enabled,send_hour,delivery_account_id').eq('user_id', userId).maybeSingle(); if (data) { setBriefEnabled(!!data.enabled); setBriefHour(data.send_hour ?? 7); setBriefAcct(data.delivery_account_id ?? null); } } catch(e){} })(); }, []); // eslint-disable-line
-  useEffect(() => { (async () => { try { if (!('serviceWorker' in navigator) || !('PushManager' in window)) return; const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub && typeof Notification!=='undefined' && Notification.permission==='granted') { const j=sub.toJSON(); await supabase.from('push_subscriptions').upsert({ user_id: userId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' }); setPushOn(true); } else { setPushOn(false); } } catch(e){} })(); }, []); // eslint-disable-line
+  // "On" means a device that is not refusing alerts (see ../push.js), read from
+  // the server — not "this browser has a subscription".
+  async function refreshPush() { await resaveThisDevice(userId); const h = await pushHealth(userId); setPushHealthState(h); setPushOn(h.working > 0); }
+  useEffect(() => { refreshPush().catch(() => {}); }, []); // eslint-disable-line
   async function enablePush() {
     setPushBusy(true); setPushMsg('');
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') { setPushMsg('Notifications aren’t supported on this device/browser.'); setPushBusy(false); return; }
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') { setPushMsg('Permission was not granted. On iPhone, add PrismOS to your Home Screen first, then enable.'); setPushBusy(false); return; }
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
-      const j = sub.toJSON();
-      const { error: upErr } = await supabase.from('push_subscriptions').upsert({ user_id: userId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' });
-      if (upErr) { setPushMsg('Could not save device: ' + upErr.message); setPushBusy(false); return; }
-      setPushOn(true); setPushMsg('Notifications enabled on this device.');
-    } catch (e) { setPushMsg('Could not enable: ' + (e.message || e)); }
+    try { const r = await connectThisDevice(userId); setPushOk(r.ok); setPushMsg(r.message); }
+    catch (e) { setPushOk(false); setPushMsg('Could not turn on alerts: ' + (e.message || e)); }
+    await refreshPush().catch(() => {});
     setPushBusy(false);
   }
   async function testPush() {
     setPushBusy(true); setPushMsg('');
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub && typeof Notification!=='undefined' && Notification.permission==='granted') sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
-      if (sub) { const j=sub.toJSON(); await supabase.from('push_subscriptions').upsert({ user_id: userId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' }); setPushOn(true); }
-    } catch(e){}
-    const { data, error } = await supabase.functions.invoke('push-send', { body: { title: 'Ari test ☀️', body: 'Push notifications are working.', url: 'https://darasapp.com' } });
+    const r = await sendTest(); setPushOk(r.ok); setPushMsg(r.message);
+    await refreshPush().catch(() => {});
     setPushBusy(false);
-    setPushMsg(error || data?.error ? ('Test failed: ' + (error?.message || data?.error)) : (data?.sent ? `Sent to ${data.sent} device(s) — check your phone.` : 'Tap Enable notifications first, then test.'));
   }
   async function saveBrief(nextEnabled, nextHour, nextAcct) {
     setSavingBrief(true); setBriefMsg('');
@@ -496,11 +477,12 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
             </div>
             <div style={{borderTop:'1px solid var(--border)',marginTop:'16px',paddingTop:'16px'}}>
               <div style={{fontSize:'14px',fontWeight:600,marginBottom:'4px'}}>Phone notifications</div>
-              <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 12px',lineHeight:1.5}}>Get a push notification on this device when your briefing is ready. {pushOn ? 'Enabled on this device.' : 'Not enabled on this device yet.'}</p>
-              {pushMsg && <div style={{fontSize:'12px',color:pushMsg.toLowerCase().includes('fail')||pushMsg.toLowerCase().includes('not')||pushMsg.toLowerCase().includes('could')?'var(--red)':'var(--green)',marginBottom:'10px'}}>{pushMsg}</div>}
+              <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 12px',lineHeight:1.5}}>New-lead alerts and your morning brief come to your phone as notifications. {pushHealthState == null ? '' : pushOn ? `Working on ${pushHealthState.working} device${pushHealthState.working === 1 ? '' : 's'}.` : pushHealthState.devices > 0 ? 'Your saved device is refusing alerts \u2014 reconnect it below.' : 'Not connected yet \u2014 alerts can\u2019t reach you.'}</p>
+              {pushHealthState && pushHealthState.missed7d > 0 && <div style={{fontSize:'12px',color:'var(--red)',marginBottom:'10px'}}>{pushHealthState.missed7d} alert{pushHealthState.missed7d === 1 ? '' : 's'} this week reached none of your devices.</div>}
+              {pushMsg && <div style={{fontSize:'12px',color:pushOk?'var(--green)':'var(--red)',marginBottom:'10px'}}>{pushMsg}</div>}
               <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-                {!pushOn && <button className="btn btn-primary btn-sm" disabled={pushBusy} onClick={enablePush}>{pushBusy?'…':'Enable notifications'}</button>}
-                {pushOn && <button className="btn btn-ghost btn-sm" disabled={pushBusy} onClick={testPush}>{pushBusy?'…':'Send test notification'}</button>}
+                <button className={pushOn?'btn btn-ghost btn-sm':'btn btn-primary btn-sm'} disabled={pushBusy} onClick={enablePush}>{pushBusy?'\u2026':pushOn?'Connect this device too':(pushHealthState && pushHealthState.devices > 0 ? 'Reconnect this phone' : 'Turn on alerts')}</button>
+                {pushOn && <button className="btn btn-ghost btn-sm" disabled={pushBusy} onClick={testPush}>{pushBusy?'\u2026':'Send test alert'}</button>}
               </div>
             </div>
           </div>

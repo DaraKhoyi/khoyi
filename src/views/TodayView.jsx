@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { enqueue } from '../outbox';
 import { todayNY } from '../clock';
 import { supabase } from '../dataService';
+import { pushHealth, resaveThisDevice, connectThisDevice, pushSupported, isIOS, isStandalone } from '../push';
 import { CallFollowupsPanel } from './ReviewPanels';
 import ChiefQueue from './ChiefQueue';
 import StaleDecide from './StaleDecide';
@@ -867,118 +868,123 @@ function VoiceNote({ setView, userId }) {
 }
 
 // ── Turn on notifications ─────────────────────────────────────────────────────
-// The multiplier: the Morning Brief and new-lead alerts only reach a phone if push
-// is on — and most agents never found the Settings toggle. This is the one-tap
-// front-and-center prompt. The critical fork is iOS: Safari only allows web push
-// once the app is INSTALLED to the Home Screen, so on an un-installed iPhone we
-// show the Add-to-Home-Screen steps instead of a permission request that can't work.
-const VAPID_PUBLIC_KEY = 'BF7IbYP2gbqaV5B3-iaX88-r08O9tLutgXxUadjJicDKjl4QU8xxu-Yfdgloej6DeUrtChNcT6gT5HlS4Ze6OJk';
-function b64ToU8(s) {
-  const pad = '='.repeat((4 - s.length % 4) % 4);
-  const b = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(b); const a = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i);
-  return a;
-}
+// The multiplier: new-lead alerts and the Morning Brief only reach a phone if a
+// WORKING device is connected. Logic lives in ../push.js. This card:
+//   • stays up until a device that is not refusing alerts exists (a saved but
+//     broken phone used to make it vanish for good);
+//   • says, in numbers, how many alerts this week reached nobody;
+//   • ends setup only when a real test alert reaches the phone, and says so.
+// iOS: Safari only allows web push from the installed Home Screen app, so an
+// un-installed iPhone gets the Add-to-Home-Screen steps instead.
 function EnableNotifications({ myUserId }) {
-  const [state, setState] = useState('checking'); // checking | ready | ios_install | unsupported | on | busy | error
+  // checking | ready | broken | ios_install | unsupported | busy | done | on
+  const [state, setState] = useState('checking');
   const [msg, setMsg] = useState('');
+  const [health, setHealth] = useState(null);
   const [dismissed, setDismissed] = useState(false);
-
-  const isIOS = typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test(navigator.userAgent);
-  const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+  const ios = isIOS(), standalone = isStandalone();
 
   useEffect(() => {
+    let live = true;
     (async () => {
       try {
-        if (typeof window !== 'undefined' && sessionStorage.getItem('hidePushPrompt') === '1') { setDismissed(true); return; }
-        const supported = 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined';
-        if (!supported) {
-          // iOS in a normal Safari tab can't do push until installed → guide to install
-          if (isIOS && !standalone) { setState('ios_install'); return; }
-          setState('unsupported'); return;
-        }
-        const reg = await navigator.serviceWorker.ready;
-        // ALREADY SAID YES ON ANY DEVICE? Then stop asking. This only ever
-        // checked the CURRENT browser's subscription, so Dara — who has had
-        // push on since August across four devices — was still being prompted
-        // every morning at the top of Today. A prompt for something you already
-        // did is not a prompt, it is furniture.
-        try {
-          const { data: subs } = await supabase.from('push_subscriptions')
-            .select('id').eq('user_id', myUserId).limit(1);
-          if (subs && subs.length && Notification.permission !== 'denied') { setState('on'); return; }
-        } catch (_) { /* fall through to the per-browser check below */ }
-
-        const sub = await reg.pushManager.getSubscription();
-        if (sub && Notification.permission === 'granted') {
-          // already on → make sure it's saved, then stay quiet
-          try { const j = sub.toJSON(); await supabase.from('push_subscriptions').upsert({ user_id: myUserId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' }); } catch (_) {}
-          setState('on'); return;
-        }
-        if (isIOS && !standalone) { setState('ios_install'); return; }
-        setState('ready');
-      } catch (_) { setState('ready'); }
+        await resaveThisDevice(myUserId);              // keep this phone's row fresh
+        const h = await pushHealth(myUserId);
+        if (!live) return;
+        setHealth(h);
+        // "Not now" holds for the session — unless alerts are being missed.
+        try { if (sessionStorage.getItem('hidePushPrompt') === '1' && !h.missed7d) { setDismissed(true); return; } } catch (_) {}
+        if (h.working > 0) { setState('on'); return; }
+        if (!pushSupported()) { setState(ios && !standalone ? 'ios_install' : 'unsupported'); return; }
+        if (ios && !standalone) { setState('ios_install'); return; }
+        setState(h.devices > 0 ? 'broken' : 'ready');
+      } catch (_) { if (live) setState('ready'); }
     })();
-  }, [myUserId, isIOS, standalone]);
+    return () => { live = false; };
+  }, [myUserId, ios, standalone]);
 
   const enable = async () => {
     setState('busy'); setMsg('');
     try {
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') {
-        setMsg(isIOS ? 'Still off. Open Settings › Notifications › PrismOS and allow, then tap again.' : 'Permission was blocked. Enable it in your browser\u2019s site settings, then tap again.');
-        setState('ready'); return;
-      }
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUBLIC_KEY) });
-      const j = sub.toJSON();
-      const { error } = await supabase.from('push_subscriptions').upsert({ user_id: myUserId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent }, { onConflict: 'user_id,endpoint' });
-      if (error) { setMsg('Could not save this device: ' + error.message); setState('ready'); return; }
-      // fire a confirming push so they SEE it work
-      try { await supabase.functions.invoke('push-send', { body: { title: 'You\u2019re all set \u2600\ufe0f', body: 'Your morning brief and new-lead alerts will come here.', url: 'https://darasapp.com/' } }); } catch (_) {}
-      setState('on');
-    } catch (e) { setMsg('Could not enable: ' + (e.message || e)); setState('ready'); }
+      const r = await connectThisDevice(myUserId);
+      if (r.ok) { setMsg(r.message); setState('done'); setHealth(h => h && { ...h, working: (h.working || 0) + 1 }); return; }
+      setMsg(r.message); setState(health && health.devices > 0 ? 'broken' : 'ready');
+    } catch (e) { setMsg('Could not turn on alerts: ' + (e.message || e)); setState('ready'); }
   };
   const hide = () => { try { sessionStorage.setItem('hidePushPrompt', '1'); } catch (_) {} setDismissed(true); };
 
-  if (dismissed || state === 'checking' || state === 'on' || state === 'unsupported') return null;
+  if (dismissed || state === 'checking' || state === 'on') return null;
 
+  const missed = (health && health.missed7d) || 0;
   const wrap = { marginBottom: 14, background: 'linear-gradient(150deg,rgba(197,169,94,.16),rgba(197,169,94,.04))', border: '1px solid rgba(197,169,94,.5)', borderRadius: 16, padding: '15px 17px' };
-  const head = (
+  const head = (label) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-      <span style={{ fontSize: 15 }}>🔔</span>
-      <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>Don’t miss a lead</span>
-      <button onClick={hide} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 17, cursor: 'pointer', lineHeight: 1 }}>×</button>
+      <span style={{ fontSize: 15 }}>{state === 'done' ? '✓' : '🔔'}</span>
+      <span style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.14em', fontSize: 11, fontWeight: 700, color: '#EBCB82' }}>{label}</span>
+      <button onClick={hide} aria-label="Hide" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 17, cursor: 'pointer', lineHeight: 1 }}>×</button>
     </div>
   );
+  const title = (t) => <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 18, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 6 }}>{t}</div>;
+  const missedLine = missed > 0 && (
+    <div style={{ fontSize: 13, color: '#fca5a5', marginBottom: 8, lineHeight: 1.5 }}>
+      PrismOS tried to alert you {missed === 1 ? 'once' : missed + ' times'} this week. None reached your phone.
+    </div>
+  );
+
+  // The finish line — setup is done because the phone got the test, not because a row saved.
+  if (state === 'done') {
+    return (
+      <div className="fade-up" style={wrap}>
+        {head('Alerts connected')}
+        {title('This phone will get your lead alerts.')}
+        <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55 }}>{msg} If it didn’t pop up, check that notifications for PrismOS are allowed in your phone’s settings.</div>
+      </div>
+    );
+  }
 
   if (state === 'ios_install') {
     return (
       <div className="fade-up" style={wrap}>
-        {head}
-        <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 18, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 8 }}>Add PrismOS to your Home Screen to get alerts.</div>
+        {head('Don’t miss a lead')}
+        {missedLine}
+        {title('Add PrismOS to your Home Screen to get alerts.')}
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          On iPhone, tap the <strong>Share</strong> button <span style={{ color: 'var(--accent)' }}>↑</span> in Safari, choose <strong>“Add to Home Screen,”</strong> then open PrismOS from your home screen and you’ll see a one-tap “Turn on notifications” here.
+          On iPhone, tap the <strong>Share</strong> button <span style={{ color: 'var(--accent)' }}>↑</span> in Safari, choose <strong>“Add to Home Screen,”</strong> then open PrismOS from your home screen and you’ll see a one-tap “Turn on alerts” here.
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>It takes 15 seconds and it’s how you get new-lead alerts and your morning brief on your phone.</div>
       </div>
     );
   }
 
+  if (state === 'unsupported') {
+    if (!missed) return null;   // nothing they can do here, and nothing missed — stay quiet
+    return (
+      <div className="fade-up" style={wrap}>
+        {head('Alerts can’t reach you')}
+        {missedLine}
+        <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55 }}>This browser can’t receive alerts. Open darasapp.com in Chrome on Android, or from the Home Screen app on iPhone, and turn them on there.</div>
+      </div>
+    );
+  }
+
+  const broken = state === 'broken' || (state === 'busy' && health && health.devices > 0);
   return (
     <div className="fade-up" style={wrap}>
-      {head}
-      <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 18, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 4 }}>Get new-lead alerts the moment they come in.</div>
-      <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>Turn on notifications and PrismOS will ping you when a lead reaches out — plus your morning brief each day. This is how you answer first.</div>
+      {head(broken ? 'Alerts aren’t arriving' : 'Don’t miss a lead')}
+      {missedLine}
+      {title(broken ? 'Your phone stopped accepting PrismOS alerts.' : 'Get new-lead alerts the moment they come in.')}
+      <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>
+        {broken
+          ? 'Tap below to reconnect this phone. We’ll send a test alert so you can see it work.'
+          : 'Turn on alerts and PrismOS will ping you when a lead reaches out — plus your morning brief each day. We’ll send a test so you know it worked.'}
+      </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <button disabled={state === 'busy'} onClick={enable} style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 18px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
-          {state === 'busy' ? 'Turning on…' : 'Turn on notifications'}
+          {state === 'busy' ? 'Connecting…' : broken ? 'Reconnect this phone' : 'Turn on alerts'}
         </button>
         <button onClick={hide} style={{ background: 'transparent', color: 'var(--text-3)', border: 'none', fontSize: 12.5, cursor: 'pointer' }}>Not now</button>
       </div>
-      {msg && <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 8 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 8, lineHeight: 1.5 }}>{msg}</div>}
     </div>
   );
 }

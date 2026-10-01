@@ -15,11 +15,29 @@ export default function AdoptionView({ userId }) {
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState('attention');
   const [busy, setBusy] = useState(false);
+  // Alerts in the last 7 days that reached NONE of the agent's devices, keyed by
+  // email. 1 Oct: Josh and Ola were sent 15 alerts in a week and got none, while
+  // this screen could show them as "🔔 on" — a saved device is not a working one.
+  const [missed, setMissed] = useState({});
 
   const load = useCallback(async () => {
     try { const { data } = await supabase.rpc('broker_adoption'); setData(data || { is_broker: false }); } catch (_) { setData({ is_broker: false }); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { (async () => {
+    try {
+      const since = new Date(Date.now() - 7 * 864e5).toISOString();
+      const [{ data: logs }, { data: ags }] = await Promise.all([
+        supabase.from('push_log').select('user_id,tag').eq('sent', 0).gt('created_at', since).limit(2000),
+        supabase.from('agents').select('email,auth_user_id').not('auth_user_id', 'is', null),
+      ]);
+      const byUser = {};
+      for (const r of logs || []) if (r.user_id && r.tag !== 'push-test') byUser[r.user_id] = (byUser[r.user_id] || 0) + 1;
+      const byEmail = {};
+      for (const a of ags || []) if (a.email && byUser[a.auth_user_id]) byEmail[String(a.email).toLowerCase()] = byUser[a.auth_user_id];
+      setMissed(byEmail);
+    } catch (_) {}
+  })(); }, []);
 
   const nudge = async (mode) => {
     setBusy(true);
@@ -37,10 +55,14 @@ export default function AdoptionView({ userId }) {
   if (!data.is_broker) return <div className="ww-prism" style={{ padding: 24, color: '#8C8475' }}>This view is for brokerage admins.</div>;
 
   const s = data.summary || {};
-  const agents = data.agents || [];
-  const attention = agents.filter(a => a.has_login && !a.push_on);
+  const missedOf = (a) => missed[String(a.email || '').toLowerCase()] || 0;
+  const agents = (data.agents || []).map(a => ({ ...a, missed: missedOf(a) }));
+  const missedTotal = agents.reduce((n, a) => n + a.missed, 0);
+  const missedPeople = agents.filter(a => a.missed > 0).length;
+  // An agent whose alerts are reaching nobody needs a nudge, whatever push_on says.
+  const attention = agents.filter(a => a.has_login && (!a.push_on || a.missed > 0));
   const noLogin = agents.filter(a => !a.has_login);
-  const healthy = agents.filter(a => a.has_login && a.push_on);
+  const healthy = agents.filter(a => a.has_login && a.push_on && !a.missed);
   const shown = filter === 'attention' ? attention : filter === 'nologin' ? noLogin : filter === 'healthy' ? healthy : agents;
 
   const pct = (n) => s.total ? Math.round((n / s.total) * 100) : 0;
@@ -71,8 +93,9 @@ export default function AdoptionView({ userId }) {
 
       {/* The one-tap fix: remind reachable agents to reinstall/enable */}
       <div style={{ background: 'rgba(203,163,92,.06)', border: '1px solid rgba(203,163,92,.25)', borderRadius: 14, padding: '13px 15px', marginBottom: 16 }}>
+        {missedTotal > 0 && <div style={{ fontSize: 13.5, color: '#f08a8a', fontWeight: 700, marginBottom: 6 }}>{missedTotal} alert{missedTotal === 1 ? '' : 's'} this week reached nobody — {missedPeople} agent{missedPeople === 1 ? '' : 's'} never got them.</div>}
         <div style={{ fontSize: 13.5, color: 'var(--text-1)', fontWeight: 700, marginBottom: 3 }}>Most agents can't get a single push yet.</div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>The fastest lift is getting the {attention.length} logged-in agent{attention.length === 1 ? '' : 's'} who haven't enabled notifications to reinstall and turn them on. Send them the steps by email.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>The fastest lift is getting the {attention.length} logged-in agent{attention.length === 1 ? '' : 's'} without a working device to reinstall and turn alerts on. Each email says how many alerts that agent missed.</div>
         <button onClick={() => nudge('reinstall')} disabled={busy} style={{ background: CHAMP, color: '#100D09', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer' }}>{busy ? 'Sending…' : '✉️ Email the reinstall + notifications steps'}</button>
       </div>
 
@@ -96,6 +119,7 @@ export default function AdoptionView({ userId }) {
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
               <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: a.has_login ? 'rgba(34,197,94,.14)' : 'rgba(140,132,117,.14)', color: a.has_login ? '#7fae8f' : 'var(--text-3)' }}>{a.has_login ? 'login' : 'no login'}</span>
               <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: a.push_on ? 'rgba(203,163,92,.18)' : 'rgba(224,121,79,.14)', color: a.push_on ? CHAMP : '#e0794f' }}>{a.push_on ? '🔔 on' : 'no push'}</span>
+              {a.missed > 0 && <span title="Alerts in the last 7 days that reached none of this agent's devices" style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: 'rgba(224,79,79,.16)', color: '#f08a8a' }}>🔕 missed {a.missed}</span>}
             </div>
           </div>
         ))}

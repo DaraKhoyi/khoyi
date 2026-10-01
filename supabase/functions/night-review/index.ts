@@ -331,10 +331,17 @@ async function gather(admin: any) {
   // the agent".) push_log records every alert and how many devices took it;
   // speed_to_lead carries can_alert. A lead offered to someone PrismOS cannot
   // reach is the failure — judge delivery, not "pushed".
+  // 1 Oct: why_missed separates "no devices" (setup never finished) from "every
+  // device refused" (a phone that stopped working) — different fixes. Setup and
+  // test pushes (tag push-test) are not alerts and are left out.
+  // working_devices_now: if > 0 the agent has since reconnected.
   await one("alerts_delivered_7d", `select coalesce(a.name, 'unknown') agent, count(*) alerts,
-      count(*) filter (where l.sent > 0) reached_a_device, count(*) filter (where l.sent = 0) reached_nobody
+      count(*) filter (where l.sent > 0) reached_a_device, count(*) filter (where l.sent = 0) reached_nobody,
+      string_agg(distinct l.note, ', ') filter (where l.sent = 0) why_missed,
+      (select count(*) from push_subscriptions p where p.user_id = l.user_id and p.last_error is null) working_devices_now
     from push_log l left join agents a on a.auth_user_id = l.user_id
-    where l.created_at > now() - interval '7 days' group by 1 order by 2 desc`);
+    where l.created_at > now() - interval '7 days' and coalesce(l.tag, '') <> 'push-test'
+    group by 1, l.user_id order by 2 desc`);
   await one("brokerage_leads_unrouted", `select count(*) n, max(round(extract(epoch from now()-received_at)/60)) oldest_minutes,
      string_agg(distinct source, ', ') sources from brokerage_leads where status='unassigned'`);
   // SENDER MUTES (rebuilt 28 Sep). The old count read learned_from, a column
