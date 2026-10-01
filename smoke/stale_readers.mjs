@@ -39,6 +39,11 @@ if (!PAT) {
 
 // value → why it is allowed to be absent. Keep the reason; a bare list rots.
 const STALE_OK = {
+  'contacts.status=proposed':
+    'Misattribution, not a stale reader: warn_commitments_before_set_aside() reads ' +
+    'commitments c WHERE c.status = \'proposed\' and LEFT JOINs contacts ct only for ' +
+    'the name. This check resolves the alias to the joined table. commitments.status ' +
+    '= proposed holds rows daily. (1 Oct 2026)',
   'contacts.tax_id_type=ssn':
     'Correct that it is empty, forever: since 27 Sep a trigger blanks it on every ' +
     'write, because contacts are shared across agents. The type, last four and ' +

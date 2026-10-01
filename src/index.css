@@ -1450,6 +1450,14 @@ input[type="radio"], input[type="range"], select, progress {
 .mobile-header-logo .mh-text { display: flex; flex-direction: column; justify-content: center; line-height: 1; }
 .mobile-header-logo .rog-adv { margin-left: 1.75px; }
 
+/* THE FORK MUST ANSWER ONE TAP (Josh, 1 Oct, third report).
+   touch-action:none — the header never scrolls or zooms, so iOS has no reason to
+   claim the touch as a pan and cancel it mid-tap (the dropped tap).
+   No selection, no callout — holding the fork opens the switcher, and iOS was
+   competing for the same press with its select-text magnifier. */
+.fork-btn { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.nav-item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
 /* Robust header: a large system font / page zoom must never push the menu
    button off-screen. Let the logo shrink & truncate; pin the hamburger. */
 .mobile-header { overflow: hidden; }

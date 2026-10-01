@@ -93,6 +93,11 @@ node smoke/menu_reachable.mjs
 echo "→ iOS tap guard"
 node smoke/hover_guard.mjs
 
+# The tuning fork answers one tap — including the tap iOS cancels mid-gesture
+# (Josh, third report, 1 Oct). Drives the real handlers through iPhone event orders.
+echo "→ fork one-tap"
+node smoke/fork_tap.mjs || exit 1
+
 # Static guard: a component defined INSIDE another is a new type every render, so
 # React remounts its subtree. With a text input inside, the caret jumps to 0 after
 # every keystroke — the note-editing bug Dara hit.

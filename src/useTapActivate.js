@@ -37,15 +37,19 @@ export function useTapActivate(handler) {
                   Math.abs(e.clientY - d.y) > MOVE_TOLERANCE;
     if (moved || Date.now() - d.t > TAP_TIMEOUT) { tap.current = null; return; }
     d.fired = true;
-    handler();
+    handler(e);
   };
 
-  const onClick = () => {
+  const onClick = (e) => {
     if (tap.current && tap.current.fired) { tap.current = null; return; }
-    handler();
+    handler(e);
   };
 
-  return { onPointerDown, onPointerUp, onClick };
+  // iOS cancels the pointer when it decides the touch is a scroll. Forget the
+  // tap so a stale record can never swallow the next real click.
+  const onPointerCancel = () => { tap.current = null; };
+
+  return { onPointerDown, onPointerUp, onPointerCancel, onClick };
 }
 
 export default useTapActivate;

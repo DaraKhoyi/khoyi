@@ -27,43 +27,62 @@ const TWO_FINGER_SLOP = 14;
 // App.js's JSX, so a fresh object was created on EVERY re-render and the tap
 // history went with it — half the reason a single tap could behave like a double
 // one. There is exactly one tuning fork on screen, so one shared state is right.
-const forkState = { t: 0, long: false, timer: null };
+const forkState = { t: 0, long: false, timer: null, upHandled: false };
 
 export function forkHandlers({ onFlip, onSwitcher, onMenu }) {
   const st = forkState;
   const clear = () => { if (st.timer) { clearTimeout(st.timer); st.timer = null; } };
+
+  // One tap, decided once, whichever event delivered it.
+  const tap = (e) => {
+    const now = Date.now();
+    // THE MENU OPENS ON THE FIRST TAP. It used to wait 330ms in case a second
+    // tap was coming, which made the single tap — the thing done a hundred
+    // times a day — feel broken (Dara, v1.08.30). A double tap still flips: the
+    // second tap closes the menu on its way.
+    if (st.t && now - st.t < DOUBLE_TAP_MS) {
+      st.t = 0;
+      if (e && e.preventDefault) e.preventDefault();
+      if (onMenu) onMenu(false);      // close what the first tap opened
+      if (onFlip) onFlip();
+      return;
+    }
+    st.t = now;
+    // Clear the window even if no second tap comes, so a stale timestamp can
+    // never turn a later single tap into a flip.
+    setTimeout(() => { if (st.t === now) st.t = 0; }, DOUBLE_TAP_MS + 10);
+    if (onMenu) onMenu(true);
+  };
+
   return {
     onPointerDown: () => {
-      st.long = false; clear();
+      st.long = false; st.upHandled = false; clear();
       st.timer = setTimeout(() => { st.long = true; if (onSwitcher) onSwitcher(); }, LONG_PRESS_MS);
     },
     onPointerUp: (e) => {
       clear();
       if (st.long) { if (e && e.preventDefault) e.preventDefault(); return; }
-      const now = Date.now();
-
-      // THE MENU OPENS ON THE FIRST TAP. It used to wait 330ms in case a second
-      // tap was coming, which made the single tap — the thing done a hundred
-      // times a day — feel broken, and left a stale st.t that could make the
-      // NEXT single tap read as a double and flip instead of opening. Dara:
-      // "it does not give me the menu any more, it behaves as if I
-      // double-tapped it."
-      //
-      // A double tap still flips: the second tap closes the menu on its way. A
-      // gesture used rarely should not slow down the one used constantly.
-      if (st.t && now - st.t < DOUBLE_TAP_MS) {
-        st.t = 0;
-        if (e && e.preventDefault) e.preventDefault();
-        if (onMenu) onMenu(false);      // close what the first tap opened
-        if (onFlip) onFlip();
-        return;
-      }
-      st.t = now;
-      // Clear the window even if no second tap comes, so a stale timestamp can
-      // never turn a later single tap into a flip.
-      setTimeout(() => { if (st.t === now) st.t = 0; }, DOUBLE_TAP_MS + 10);
-      if (onMenu) onMenu(true);
+      st.upHandled = true;
+      tap(e);
     },
+    // THE LOST TAP (Josh, 1 Oct, third report: "I have to tap the menu twice").
+    // iOS sometimes cancels the pointer mid-tap — a finger that wobbles a pixel
+    // reads as the start of a pan, or the long-press text-selection machinery
+    // claims the touch — and then pointerup never arrives. The tap was simply
+    // dropped, so the second tap was the one that worked. iOS still delivers a
+    // click for a real tap, so the click is now the safety net: if pointerup
+    // already handled this tap, the click is its echo and is ignored; if
+    // pointerup never came, the click opens the menu. It also makes the fork
+    // work from a keyboard (Enter on role=button), which it never did.
+    // The echo is tied to the gesture, not a clock: every touch starts with
+    // pointerdown, which resets the flag, so a quick genuine second tap is never
+    // mistaken for the echo of the first.
+    onClick: (e) => {
+      if (st.long) return;
+      if (st.upHandled) { st.upHandled = false; return; }
+      tap(e);
+    },
+    onContextMenu: (e) => { if (e && e.preventDefault) e.preventDefault(); },  // no callout on hold
     onPointerLeave: clear,
     onPointerCancel: clear,
   };

@@ -69,7 +69,9 @@ if (!PAT) {
 const TRANSITIONAL = new Set(['contacts.tax_id_last4', 'contacts.tax_id_type']);
 
 async function q(sql) {
-  for (let i = 0; i < 6; i++) {
+  // 8 tries (~4 min of backoff): it runs right after stale_readers' ~100 queries,
+  // and the Management API's rate limit outlasted 6 tries (1 Oct, three gate runs).
+  for (let i = 0; i < 8; i++) {
     try {
       const r = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
         method: 'POST',
