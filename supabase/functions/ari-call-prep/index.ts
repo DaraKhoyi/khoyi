@@ -8,6 +8,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 import { refreshTransact } from "../_shared/transactFacts.ts";
+import { refreshLastTime } from "../_shared/lastTime.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -71,13 +72,15 @@ serve(async (req) => {
     const { data: vcs } = await db.from("voice_cards").select("persona_summary,name").eq("user_id", uid).eq("is_active", true).limit(1);
     const voice = vcs && vcs[0];
 
-    const daysSince = (d: string | null) => d == null ? null : Math.floor((Date.now() - new Date(d).getTime()) / 864e5);
     const facts: string[] = [];
     facts.push(`Name: ${c.name}${c.company ? ` (${c.company})` : ""}${c.role ? `, ${c.role}` : ""}${c.profession ? ` — ${c.profession}` : ""}`);
     if (c.type) facts.push(`Relationship: ${c.type}${c.status ? `, status ${c.status}` : ""}${c.priority ? `, ${c.priority} priority` : ""}`);
     if ((c.tags || []).length) facts.push(`Tags: ${(c.tags || []).join(", ")}`);
     if (c.home_ownership || c.home_purchase_year) facts.push(`Home: ${c.home_ownership || "?"}${c.home_purchase_year ? `, bought ${c.home_purchase_year}` : ""}${c.home_city ? `, ${c.home_city}` : ""}`);
-    facts.push(`Last contact: ${daysSince(c.last_contact_at) == null ? "none logged" : daysSince(c.last_contact_at) + " days ago"}; last inbound: ${daysSince(c.last_inbound_at) == null ? "none" : daysSince(c.last_inbound_at) + " days ago"}`);
+    // Ray (panel, 30 Sep): never "47 days ago". Calendar dates only; the model is
+    // told not to mention elapsed time or grade the relationship at all.
+    { const dd = (x: string | null) => x ? new Date(x).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" }) : null;
+      if (c.last_contact_at || c.last_inbound_at) facts.push(`Last contact on ${dd(c.last_contact_at) || "—"}${c.last_inbound_at ? `; they last wrote on ${dd(c.last_inbound_at)}` : ""}`); }
     if (c.notes) facts.push(`Notes: ${String(c.notes).slice(0, 400)}`);
     // CAN THEY TRANSACT (30 Sep, Marguerite): their own words, with receipts —
     // refreshed first if they have written since (free when nothing is new).
@@ -85,16 +88,24 @@ serve(async (req) => {
     try {
       transact = await refreshTransact(db, c, { onUsage: async (u) => { await logAiUsage(db, { userId: uid, fn: "contact-transact", model: "claude-haiku-4-5", usage: u, usedOwn: false, subjectType: "contact", subjectId: contactId }); } });
     } catch (_) { /* prep still runs */ }
+    let lastTime: any = null;
+    try { lastTime = await refreshLastTime(db, c, { onUsage: async (u) => { await logAiUsage(db, { userId: uid, fn: "contact-transact", model: "claude-haiku-4-5", usage: u, usedOwn: false, subjectType: "contact", subjectId: contactId }); } }); } catch (_) { /* prep still runs */ }
+    if (lastTime?.you) facts.push(`LAST THING YOU SAID (${lastTime.you.on}): ${lastTime.you.said}`);
+    if (lastTime?.them) facts.push(`LAST THING THEY SAID (${lastTime.them.on}): ${lastTime.them.said}`);
+    if (lastTime?.call) facts.push(`LAST CALL (${lastTime.call.on}): ${lastTime.call.about}`);
     if (transact?.line) facts.push(`CAN THEY TRANSACT (their own words only): ${transact.line}${transact.ask ? ` — still unknown, ask: ${transact.ask}` : ""}`);
     if (sc) facts.push(`Propensity-to-transact score: ${sc.score}/100 (${sc.tier})${sc.factors ? ` — drivers: ${Object.keys(sc.factors).join(", ")}` : ""}`);
     if (lastEmail) facts.push(`Most recent email (${lastEmail.direction || "?"}): "${String(lastEmail.snippet || lastEmail.body_text || "").replace(/\r/g, "").slice(0, 400)}"`);
-    if ((ix || []).length) facts.push("Recent interactions: " + (ix || []).map((i: any) => `${i.direction || ""} ${i.channel || ""} ${daysSince(i.occurred_at)}d ago${i.brief ? `: ${String(i.brief).slice(0, 80)}` : ""}`).join(" | "));
+    if ((ix || []).length) facts.push("Recent interactions: " + (ix || []).map((i: any) => `${i.direction || ""} ${i.channel || ""} on ${String(i.occurred_at || "").slice(0, 10)}${i.brief ? `: ${String(i.brief).slice(0, 80)}` : ""}`).join(" | "));
     const dealText = activeDeals.length
       ? activeDeals.map((d: any) => `${d.name || d.address || d.client_name || "deal"} — status ${d.status || "?"}${d.address ? `, ${d.address}` : ""}${d.list_price ? `, list $${Number(d.list_price).toLocaleString()}` : ""}${d.close_date ? `, closing ${d.close_date}` : d.contract_date ? `, under contract ${d.contract_date}` : ""}`).join(" ; ")
       : "No active deal on file.";
 
+    // TONE RULE (Ray, 30 Sep): the prep picks up where the last conversation left
+    // off. It never says how long it has been, never implies the agent is behind
+    // or should have called sooner, and never scores or rates the relationship.
     const sys = "You are Ari, an AI partner prepping a real estate agent for a live call or text. Produce a tight, practical prep brief the agent can glance at while dialing. " +
-      "Be specific to THIS contact and their data — never generic. Adapt the approach to their behavioral style. Respond ONLY with compact JSON, no markdown, no preamble. " +
+      "Be specific to THIS contact and their data — never generic. Pick up from what was last said. NEVER mention how long it has been since contact, never imply the agent is late or should have reached out sooner, never score or rate the relationship. Adapt the approach to their behavioral style. Respond ONLY with compact JSON, no markdown, no preamble. " +
       'Schema: {"who":"one sentence on who they are and why they matter right now","communicate":"one or two sentences on HOW to talk to them given their style","opener":"a natural first line the agent can say","talking_points":["2 to 4 short bullets, specific to their situation/deal"],"next_step":"the one concrete outcome to aim for on this call"}';
     const user = `${voice ? `Agent voice: ${voice.persona_summary || voice.name}\n` : ""}Behavioral style: ${discLetter ? `${discLetter} — ${DISC_LABEL[discLetter]}` : "unknown (use balanced, warm-but-efficient approach)"}\n\nContact dossier:\n- ${facts.join("\n- ")}\n\nLive deal context: ${dealText}\n\nWrite the prep brief now.`;
 
@@ -116,6 +127,7 @@ serve(async (req) => {
     const phone = c.phone || (Array.isArray(c.phones) && c.phones[0] && (c.phones[0].number || c.phones[0].value || c.phones[0])) || null;
     return new Response(JSON.stringify({
       prep,
+      last_time: lastTime || null,
       transact: transact ? { line: transact.line, ask: transact.ask, known: !!(transact.facts && Object.keys(transact.facts).length) } : null,
       contact: { id: c.id, name: c.name, phone, email: c.email || null, company: c.company || null },
       disc: discLetter ? { letter: discLetter, label: DISC_LABEL[discLetter] } : null,

@@ -110,7 +110,7 @@ export const TOOLS: Record<string, { title: string; description: string; inputSc
 
   contact_details: {
     title: "Contact details",
-    description: "Everything useful about one person: who they are, whether they can transact (pre-approval, amount, lender, cash, must sell first, timeline — each from their own words with the date they said it), family and relationships, when you last spoke and which way, recent notes, open tasks and call follow-ups.",
+    description: "Everything useful about one person: what was last said between you (your last message, theirs, the last call — plainly, never as a gap or a score), who they are, whether they can transact (pre-approval, amount, lender, cash, must sell first, timeline — each from their own words with the date they said it), family and relationships, when you last spoke and which way, recent notes, open tasks and call follow-ups.",
     inputSchema: { type: "object", required: ["contact_id"], additionalProperties: false, properties: { contact_id: { type: "string" } } },
     annotations: RO,
     run: async (a, { db }) => {
@@ -126,7 +126,7 @@ export const TOOLS: Record<string, { title: string; description: string; inputSc
         db.from("tasks").select("id,title,due_date,list").eq("contact_id", id).eq("completed", false).is("archived_at", null).limit(10),
         db.from("commitments").select("title,owner,due_date,status,next_step").eq("contact_id", id).in("status", ["proposed", "accepted"]).limit(10),
         // CAN THEY TRANSACT (30 Sep, Marguerite): from their own words, with receipts.
-        db.from("profiles").select("transact_line,transact_ask,transact_facts,transact_at").eq("contact_id", id).maybeSingle(),
+        db.from("profiles").select("transact_line,transact_ask,transact_facts,transact_at,last_time").eq("contact_id", id).maybeSingle(),
       ]);
       const others = [...new Set((rel.data || []).map((r: any) => r.contact_a_id === id ? r.contact_b_id : r.contact_a_id))];
       let names: Record<string, string> = {};
@@ -137,6 +137,8 @@ export const TOOLS: Record<string, { title: string; description: string; inputSc
       return {
         can_they_transact: prof.data?.transact_line ? { summary: prof.data.transact_line, ask_next: prof.data.transact_ask,
           facts: prof.data.transact_facts || {}, read_at: prof.data.transact_at, note: "Only what they wrote to you, each with their exact words and date. Nothing inferred." } : null,
+        // Ray (30 Sep): what was last said, plainly — dates, never "N days ago".
+        last_time: prof.data?.last_time || null,
         contact_id: c.id, name: c.name, type: c.type, company: c.company, profession: c.profession, email: c.email, phone: c.phone,
         city: c.home_city, owns_home: c.home_ownership, language: c.spoken_language, stage: c.pipeline_stage, tags: c.tags,
         last_contact: c.last_contact_at, last_direction: c.last_communication_direction, last_channel: c.last_communication_channel,

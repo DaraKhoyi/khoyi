@@ -57,7 +57,7 @@ function ActionHubModal({ contactId, userId, onClose }) {
          : err ? <div style={{color:'var(--red)',fontSize:'12px'}}>{err}</div>
          : prep ? (
           <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
-            <TransactLine t={d?.transact} compact />
+            <TransactLine t={d?.transact} lastTime={d?.last_time} compact />
             <Section title="Who" bodyTxt={prep.who}/>
             <Section title="How to approach" bodyTxt={prep.communicate}/>
             {prep.opener && <div style={{background:'var(--bg-hover)',border:'1px solid var(--accent-dim)',borderRadius:'10px',padding:'10px'}}>

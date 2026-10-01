@@ -171,6 +171,8 @@ node smoke/reconnect_clears.mjs || exit 1
 node smoke/can_they_transact.mjs || exit 1
 # A "whole brokerage" library file opens for every agent (Dara, 30 Sep).
 node smoke/library_shared.mjs || exit 1
+# "What did I say last time" — plainly; never elapsed time or a score (Ray, 30 Sep).
+node smoke/last_time.mjs || exit 1
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

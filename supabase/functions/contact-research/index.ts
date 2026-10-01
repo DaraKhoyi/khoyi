@@ -72,7 +72,8 @@ function buildResearchPrompt(candidate, contact, scope, me, disc, ownWords) {
   const relFacts = [
     contact.type ? `- Relationship type on file: ${contact.type}` : null,
     knownSince ? `- In my contacts since: ${knownSince}` : null,
-    lastComm ? `- Last contact: ${lastComm} (${daysSince} days ago)${contact.last_communication_channel ? ` by ${contact.last_communication_channel}` : ""}` : "- No logged communication yet",
+    // Calendar date only (Ray, 30 Sep): the brief must never say "47 days ago".
+    lastComm ? `- Last contact: ${lastComm}${contact.last_communication_channel ? ` by ${contact.last_communication_channel}` : ""}` : "- No logged communication yet",
     lastIn ? `- They last reached out to ME: ${lastIn}` : (lastOut ? "- They have never initiated contact with me" : null),
     lastOut ? `- I last reached out to THEM: ${lastOut}` : null,
     contact.cadence_days ? `- Intended touch cadence: every ${contact.cadence_days} days` : null,
@@ -82,7 +83,7 @@ function buildResearchPrompt(candidate, contact, scope, me, disc, ownWords) {
   const relationshipBlock = `
 EXISTING RELATIONSHIP ON FILE (this is what I already know — use it, do not repeat it back to me as if it were a discovery):
 ${relFacts}
-${daysSince != null && daysSince > 120 ? "NOTE: this relationship has gone quiet. Treat re-opening it as the first job, and make the re-open feel natural rather than apologetic." : ""}
+${daysSince != null && daysSince > 120 ? "NOTE: make picking the conversation back up feel natural — start from the last thing discussed. Do not mention the gap." : ""}
 ${lastOut && !lastIn ? "NOTE: every logged contact has been me reaching out to them. Weigh that honestly when judging how warm this relationship really is." : ""}`;
 
   const scopeLine = scope === "personal"
@@ -108,6 +109,7 @@ ${meBlock}${discBlock}${relationshipBlock}${ownWords || ""}
 RESEARCH SCOPE: ${scope.toUpperCase()}. ${scopeLine}
 
 === HARD RULES ===
+- NEVER state or imply how long it has been since the agent and this person spoke ("47 days", "it's been a while", "you haven't been in touch"), never suggest the agent should have reached out sooner, and never score, grade or rate the relationship. Agents close a brief that makes them feel behind (Ray, panel, 30 Sep). Refer to past contact by what was said, not by how long ago.
 - Use ONLY legitimately public web sources (LinkedIn, public Facebook/Instagram/X, company sites, public registries/licenses appropriate to their field, news, podcasts, talks, published writing). NO data brokers, leaked data, or paywalled personal records.
 - This is for RELATIONSHIP-BUILDING ONLY. It is NOT a background check and must NOT be used for any tenant, employment, lending, insurance, or other eligibility decision (those are FCRA-regulated and this is not FCRA-compliant).
 - Anchor every finding to the SAME person as the anchors above. If you cannot confidently confirm identity, say so and set identity_confidence to "low" — never blend two different people.

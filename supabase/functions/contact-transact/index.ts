@@ -4,6 +4,7 @@
 // $400K in August email' she opens every morning." The reading lives in
 // _shared/transactFacts.ts; this function serves it:
 //
+//   Also returns last_time (_shared/lastTime.ts): what was last said, plainly.
 //   POST { contact_id }  — the agent (their JWT, contact must be visible to
 //                          them) or the service. Returns { line, ask, facts }.
 //                          Free when nothing new has arrived (stored answer).
@@ -16,6 +17,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isServiceCaller } from "../_shared/serviceCaller.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 import { refreshTransact } from "../_shared/transactFacts.ts";
+import { refreshLastTime } from "../_shared/lastTime.ts";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -42,6 +44,7 @@ Deno.serve(async (req) => {
         const { data: c } = await admin.from("contacts").select("id,user_id,email,emails,phone,phones").eq("id", r.contact_id).maybeSingle();
         if (!c) continue;
         const res = await refreshTransact(admin, c, { onUsage: usage(c) });
+        try { await refreshLastTime(admin, c, { onUsage: usage(c) }); } catch (_) { /* the transact line still stands */ }
         if (res.cached) cached++; else refreshed++;
       } catch (_) { failed++; }
     }
@@ -60,8 +63,13 @@ Deno.serve(async (req) => {
     if (!seen) return json({ error: "not found" }, 404);
   }
   try {
+    // "Last time" (Ray, 30 Sep) travels with it: one call gives the contact
+    // screen both things an agent wants before talking to someone.
+    // One after the other: both write the contact's profile row, and two
+    // first-time inserts at once would make two rows.
     const res = await refreshTransact(admin, c, { force: body.force === true && service, onUsage: usage(c) });
-    return json({ ok: true, ...res });
+    const last = await refreshLastTime(admin, c, { force: body.force === true && service, onUsage: usage(c) }).catch(() => null);
+    return json({ ok: true, ...res, last_time: last });
   } catch (e) {
     return json({ error: String((e as Error)?.message || e) }, 500);
   }

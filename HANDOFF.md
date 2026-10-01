@@ -627,6 +627,19 @@ names its role (`to authenticated`); a `using (true)` read rule needs a reason.
 on any non-invoker view, any unlisted `true` read rule, or an agent reading a
 staff-only setting or the alias list.
 
+**LAST TIME — WHAT WAS SAID, NEVER HOW LONG AGO (30 Sep).** Ray (panel): "I
+always forget what I said last time" — and he closes anything that scores the
+relationship or shows the gap. `_shared/lastTime.ts` writes three plain sentences
+(your last message, theirs, the last call), each with a calendar date; any
+sentence about elapsed time or a score is dropped (`plainSentence`). Stored on
+profiles.last_time; returned by contact-transact, ari-call-prep and prismTools
+`contact_details`; shown by TransactLine ("Last time") on the contact screen and
+in call prep. **House rule for every agent-facing AI surface: never "N days
+ago", never "you should have", never a relationship score.** Applied to the
+contact-research and call-prep prompts and Talk to Prism. Note: supabase-js
+`.contains()` on a jsonb array of objects sends "[object Object]" — use
+`.filter(col, "cs", JSON.stringify([...]))`. `smoke/last_time.mjs`.
+
 **THE LIBRARY HOLDS TALKS; SHARED FILES OPEN FOR EVERYONE (30 Sep).** Ricky
 Carruth's talk (recording, transcript, summary) is in Knowledge → Library, scope
 brokerage. Fixed on the way: (1) storage policy `knowledge_read_shared` — a
