@@ -177,6 +177,8 @@ node smoke/last_time.mjs || exit 1
 node smoke/warn_before_set_aside.mjs || exit 1
 # One agent can never reach another agent's mailbox: owner-only policies, proven with two logins (Sentinel, 1 Oct).
 node smoke/credential_scope.mjs || exit 1
+# Nothing an agent sees counts what they did not do (Ray, 1 Oct).
+node smoke/no_failure_ledger.mjs || exit 1
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

@@ -83,11 +83,16 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
   // called "expired" on screen — they were the app's guesses, not failures.
   const [setAside, setSetAside] = useState(0);
   const [asideRows, setAsideRows] = useState(null);
+  const [asideShown, setAsideShown] = useState(3);   // three at a time — never a ledger
   async function loadSetAside() {
     if (asideRows) { setAsideRows(null); return; }
+    // 'immediate' promises ("I'll call you right back") were moot within hours;
+    // offering them back is a list of stale guilt, not a way back in (Ray, 1 Oct).
     const { data } = await supabase.from('commitments').select('id,title,contact_id,created_at')
-      .eq('status', 'expired').gte('created_at', new Date(Date.now() - 90 * 864e5).toISOString())
+      .eq('status', 'expired').or('fuse.is.null,fuse.neq.immediate')
+      .gte('created_at', new Date(Date.now() - 90 * 864e5).toISOString())
       .order('created_at', { ascending: false }).limit(60);
+    setAsideShown(3);
     const ids = [...new Set((data || []).map(r => r.contact_id).filter(Boolean))];
     const names = {};
     if (ids.length) { const { data: cs } = await supabase.from('contacts').select('id,name').in('id', ids); (cs || []).forEach(c => { names[c.id] = c.name; }); }
@@ -116,7 +121,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       .order('created_at', { ascending: false });
     if (contactId) q = q.eq('contact_id', contactId);
     if (!contactId) {
+      // Only whether there is anything to pick up — the number is never shown.
       supabase.from('commitments').select('id', { count: 'exact', head: true }).eq('status', 'expired')
+        .or('fuse.is.null,fuse.neq.immediate')
         .gte('created_at', new Date(Date.now() - 90 * 864e5).toISOString())
         .then(({ count }) => setSetAside(count || 0), () => {});
     }
@@ -732,17 +739,29 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
           <button type="button" onClick={() => loadSetAside()}
             style={{ background: 'none', border: 0, padding: '4px 0', minHeight: 44, cursor: 'pointer', fontSize: 12.5,
               color: 'var(--room-accent, var(--accent))', fontWeight: 700, textAlign: 'left' }}>
-            {asideRows ? 'Hide' : (compact && !proposed.length ? 'You are caught up on your calls. ' : '') + 'PrismOS set aside ' + setAside + ' older suggestion' + (setAside === 1 ? '' : 's') + ' from calls you did not get to — look again'}
+            {/* Ray (panel), 1 Oct: a count of set-aside follow-ups reads as a list
+                of people he let down, and he closes the app. So: no number, no blame —
+                an invitation, three at a time. */}
+            {asideRows ? 'Hide' : (compact && !proposed.length ? 'You’re caught up on your calls. ' : '') + 'Pick up where you left off →'}
           </button>
-          {asideRows && asideRows.map(c => (
+          {asideRows && asideRows.length === 0 && (
+            <div style={{ fontSize: 12, color: 'var(--text-3)', padding: '2px 0 6px' }}>Nothing waiting — you’re all set.</div>
+          )}
+          {asideRows && asideRows.slice(0, asideShown).map(c => (
             <div key={c.id} style={{ ...card, padding: '9px 12px', marginBottom: 6, display: 'flex', gap: 10, alignItems: 'center' }}>
               <div style={{ minWidth: 0, flex: 1, fontSize: 12.5, color: 'var(--text-1)' }}>
                 {c.title}
                 <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{(c.contact_name || 'A call') + (c.created_at ? ' \u00B7 ' + fmtDate(String(c.created_at).slice(0, 10)) : '')}</div>
               </div>
-              <button type="button" onClick={() => bringBack(c)} style={btn(false)}>Bring back</button>
+              <button type="button" onClick={() => bringBack(c)} style={btn(false)}>Pick up</button>
             </div>
           ))}
+          {asideRows && asideRows.length > asideShown && (
+            <button type="button" onClick={() => setAsideShown(n => n + 3)}
+              style={{ background: 'none', border: 0, padding: '4px 0', minHeight: 44, cursor: 'pointer', fontSize: 12, color: 'var(--text-3)' }}>
+              Show 3 more
+            </button>
+          )}
         </div>
       )}
 

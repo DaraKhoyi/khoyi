@@ -906,9 +906,11 @@ function SetAsideTomorrow({ userId }) {
   if (!ids || !ids.length) return null;
   return (
     <div className="fade-up" style={{ marginBottom: 14, border: '1px solid rgba(197,169,94,.45)', borderRadius: 16, padding: '13px 15px 4px', background: 'rgba(197,169,94,.06)' }}>
-      <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 11, fontWeight: 700, color: '#EBCB82', marginBottom: 4 }}>From your calls · last chance</div>
+      {/* Ray (panel), 1 Oct: no "last chance", no deadline-as-threat. An offer,
+          and the truth that nothing is lost — it can always be picked back up. */}
+      <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.18em', fontSize: 11, fontWeight: 700, color: '#EBCB82', marginBottom: 4 }}>From your calls · still worth doing?</div>
       <div style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 6 }}>
-        {ids.length === 1 ? 'This follow-up gets' : `These ${ids.length} follow-ups get`} set aside tomorrow unless you keep {ids.length === 1 ? 'it' : 'them'}. Skip anything that no longer matters.
+        Keep what still matters. PrismOS tidies the rest away tomorrow — you can always pick {ids.length === 1 ? 'it' : 'them'} back up.
       </div>
       <CommitmentReview key={n} userId={userId} compact onlyIds={ids} onChanged={load} />
     </div>
