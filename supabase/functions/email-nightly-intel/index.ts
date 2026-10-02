@@ -76,17 +76,25 @@ function safeJSON(text: string) {
   return JSON.parse(c.slice(s, e + 1));
 }
 
-let __eniUsage: any = null;
-async function callClaude(userText: string) {
+async function callClaude(userText: string): Promise<{ text: string; usage: any }> {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
     body: JSON.stringify({ model: MODEL, max_tokens: 500, system: SYSTEM, messages: [{ role: "user", content: userText }] }),
   });
   if (!r.ok) throw new Error(`anthropic ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  const jr = await r.json(); __eniUsage = jr?.usage || null;
-  return (jr.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+  const jr = await r.json();
+  return { text: (jr.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join(""), usage: jr?.usage || null };
 }
+
+// THE RUN MUST FINISH AND SAY SO (2 Oct). Emails were read one at a time, about
+// 3 seconds each: 45 took 144 seconds, against a platform limit of about 150.
+// The first run for a third mailbox (Josh's) read 43 emails and was cut off
+// before it could record that it had run. Now: four at a time, and no new email
+// is started after DEADLINE_MS — what is left is picked up the next night
+// (email_ai_candidates skips anything already read).
+const CONCURRENCY = 4;
+const DEADLINE_MS = 110_000;
 
 // Reused OAuth refresh (mirrors gmail-sync). Returns a valid access token.
 async function accessToken(supabase: any, account: any): Promise<string> {
@@ -128,6 +136,7 @@ serve(async (req) => {
     return j({ error: "unauthorized" }, 401);
   }
 
+  const startedMs = Date.now();
   const body = await req.json().catch(() => ({}));
   const aiMax = Math.max(0, Math.min(Number(body.ai_max ?? 40), 150));
   const statsDays = Math.max(7, Math.min(Number(body.stats_days ?? 45), 120));
@@ -209,11 +218,11 @@ serve(async (req) => {
       const accountsLeft = accounts.length - idx;
       let acctCap = Math.max(0, Math.min(pool, Math.ceil(pool / Math.max(1, accountsLeft))));
       if (acctCap > 0) {
+        const asked = Math.min(acctCap, 60);
         const { data: cands, error: candErr } = await supabase.rpc("email_ai_candidates",
-          { p_account: account.id, p_since: since, p_limit: Math.min(acctCap, 60) });
+          { p_account: account.id, p_since: since, p_limit: asked });
         if (candErr) throw new Error("candidates: " + candErr.message);
-        for (const m of cands || []) {
-          if (acctCap <= 0) break;
+        const one = async (m: any) => {
           if (m.received_at && m.received_at > throughTs) throughTs = m.received_at;
           const fromAddr = (m.from_address || "").toLowerCase();
           const isVip = vip.has(fromAddr);
@@ -224,8 +233,8 @@ serve(async (req) => {
             `FROM: ${m.from_name || ""} <${fromAddr}>\nSUBJECT: ${m.subject || "(none)"}\n` +
             `KNOWN_CONTACT: ${isVip ? "yes" : "no"}\nFIRST_TIME_SENDER: ${firstTime ? "yes" : "no"}\n\n${bodyTrim}`;
           let parsed: any;
-          try { parsed = safeJSON(await callClaude(userText)); aiCalls++; acctCap--; pool--; try { await logAiUsage(supabase, { userId: uid, fn: "email-nightly-intel", model: MODEL, usage: __eniUsage, usedOwn: false, subjectType: "email_thread", subjectId: m.thread_id, subjectEmail: fromAddr }); } catch (_) {} }
-          catch (_e) { acctCap--; pool--; continue; }
+          try { const got = await callClaude(userText); parsed = safeJSON(got.text); aiCalls++; try { await logAiUsage(supabase, { userId: uid, fn: "email-nightly-intel", model: MODEL, usage: got.usage, usedOwn: false, subjectType: "email_thread", subjectId: m.thread_id, subjectEmail: fromAddr }); } catch (_) {} }
+          catch (_e) { return; }
 
           const reasons: any = {};
           if (parsed.money) reasons.money = true;
@@ -258,7 +267,18 @@ serve(async (req) => {
               reasons, needs_review: needsReview, status: "open", model: MODEL, prompt_version: PROMPT_VERSION,
             }, { onConflict: "account_id,provider_message_id" });
           }
+        };
+        const list = (cands || []).slice(0, acctCap);
+        for (let k = 0; k < list.length; k += CONCURRENCY) {
+          if (Date.now() - startedMs > DEADLINE_MS) { runRow.stopped_early = true; break; }
+          const batch = list.slice(k, k + CONCURRENCY);
+          acctCap -= batch.length; pool -= batch.length;
+          await Promise.all(batch.map((m: any) => one(m).catch(() => {})));
         }
+        // More may be waiting than were read (the cap, or the clock). Do not move
+        // the watermark past mail that was never looked at; already-read mail is
+        // skipped by email_ai_candidates, so re-scanning the window costs nothing.
+        if (runRow.stopped_early || (cands || []).length >= asked) throughTs = since;
       }
       runRow.ai_reviewed = reviewed; runRow.flagged = flagged; runRow.ai_calls = aiCalls;
       runRow.through_ts = throughTs;
@@ -311,8 +331,9 @@ serve(async (req) => {
       runRow.status = "error"; runRow.error = String(e?.message || e).slice(0, 500);
       runRow.finished_at = new Date().toISOString();
     }
+    const stoppedEarly = !!runRow.stopped_early; delete runRow.stopped_early;
     if (!dryRun) await supabase.from("email_intel_runs").insert(runRow);
-    summary.push({ account: account.email_address, ...runRow });
+    summary.push({ account: account.email_address, ...runRow, stopped_early: stoppedEarly });
   }
 
   return j({ ok: true, ai_budget_left: pool, dry_run: dryRun, runs: summary });
