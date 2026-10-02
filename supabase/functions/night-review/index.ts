@@ -379,12 +379,22 @@ async function gather(admin: any) {
   // moot), so only near/distant were ever actionable. Since 1 Oct those get a
   // push 24h before set-aside (warn_commitments_before_set_aside); kept_after_warning
   // is the share of warned suggestions the agent then decided on.
+  // 2 Oct (Skeptic + Ray: "144 expired via the immediate fuse with zero warnings"):
+  // stakes is now judged separately from fuse, and a HIGH-stakes promise is never
+  // stored as 'immediate' — so the 'immediate' row below holds only low/normal
+  // logistics ("be there in five"), which is what hiding was meant for. If a
+  // high-stakes row ever appears under 'immediate', the trigger
+  // commitment_stamp_stakes has been lost. Judge the hidden pile by
+  // hidden_immediate_sample, not by its size.
+  await one("hidden_immediate_sample", `select coalesce(stakes, 'unjudged') stakes, count(*) n,
+      (array_agg(left(title, 70) order by created_at desc))[1:5] newest_titles
+    from commitments where fuse = 'immediate' and created_at > now() - interval '30 days' group by 1 order by 1`);
   await one("set_aside_and_warnings_30d", `select coalesce(fuse, 'near') fuse,
       count(*) filter (where status = 'expired' and auto_expired_at > now() - interval '30 days') set_aside_30d,
       count(*) filter (where status = 'expired' and auto_expired_at > now() - interval '30 days' and expiry_warned_at is not null) set_aside_after_warning,
       count(*) filter (where expiry_warned_at > now() - interval '30 days') warned_30d,
       count(*) filter (where expiry_warned_at > now() - interval '30 days' and status in ('accepted','dismissed') and decided_at > expiry_warned_at) decided_after_warning,
-      case when coalesce(fuse, 'near') = 'immediate' then 'hidden from review by design; never warned' end read_this
+      case when coalesce(fuse, 'near') = 'immediate' then 'low/normal-stakes logistics only since 2 Oct (high stakes is never stored as immediate); hidden from review by design, never warned — see hidden_immediate_sample' end read_this
     from commitments group by 1 order by 1`);
   await one("email_storage", `select count(*) rows,
      pg_size_pretty(pg_total_relation_size('email_messages')) size,

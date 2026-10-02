@@ -68,6 +68,30 @@ the app... The label 'proposed' is a software word." So:
 - The 190 dismissals the panel keeps citing were all made **before** the 22 Sep
   rules and are analysed above. The panel's measure now splits at 22 Sep.
 
+## Fuse and stakes are two questions (2 Oct, Skeptic + Ray on the panel)
+
+"144 commitments expired via the immediate fuse with zero warnings." Reading
+them: about half were logistics ("Return home in ~5 minutes", "Send the meeting
+link") and hiding those is right. The rest were hidden by the same rule and
+should not have been — "Call title company to authorize key release at closing",
+"Reduce MLS listing price to $3,995,000", "Call bank to resolve the declined
+payment". `fuse` records how soon someone said they would do it; it had been
+used as how little it matters.
+
+- **fuse** — how soon it goes stale: `immediate` (hours), `near` (days), `distant`.
+- **stakes** — what it costs if it never happens: `high` (money moving, a
+  contract or its deadlines, a closing, a listing/MLS change, a legal, title or
+  compliance matter), `normal`, `low` (the logistics of the moment).
+- **Only immediate AND not high-stakes is hidden as moot.** A high-stakes
+  promise is never stored as `immediate` (trigger `commitment_stamp_stakes` lifts
+  it to `near`), so every existing rule then treats it properly: it is shown for
+  review, it goes ahead of ordinary suggestions on Today with the reason on the
+  row, it gets the day-before warning, and once set aside it can be brought back.
+- The model that reads the call judges stakes; `commitment_stakes_rule()` is the
+  floor for rows without a judgement. `smoke/stakes_guard.mjs` holds the line.
+- The person corrects it with **Not a thing** — that is the lever for noise, not
+  a wider hiding rule.
+
 ## Not yet covered
 
 Commitments come only from calls today. Email and text do not yet propose

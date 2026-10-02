@@ -132,7 +132,7 @@ serve(async (req) => {
         const sys =
           "Extract real COMMITMENTS from a phone call, and identify any third-party speakers. Strict JSON, no fence:\n" +
           '{ "speakers": [ { "label":"C", "name":"best guess of who this is", "confidence":"high"|"low" } ], ' +
-          '"commitments": [ { "owner":"me"|"them"|"other", "owner_name":"the real name of who owes it", "title":"...", "next_step":"...", "context":"...", "owed_to_me":true|false, "quote":"...", "fuse":"immediate"|"near"|"distant", "due_date":"YYYY-MM-DD"|null, "confidence":"high"|"low" } ] }\n\n' +
+          '"commitments": [ { "owner":"me"|"them"|"other", "owner_name":"the real name of who owes it", "title":"...", "next_step":"...", "context":"...", "owed_to_me":true|false, "quote":"...", "fuse":"immediate"|"near"|"distant", "stakes":"high"|"normal"|"low", "due_date":"YYYY-MM-DD"|null, "confidence":"high"|"low" } ] }\n\n' +
           "A commitment is somebody saying they WILL DO a specific thing. Rules:\n" +
           "- QUOTE IT. Copy the actual sentence into `quote`. If you cannot quote it, do not extract it.\n" +
           "- OWNER is whoever said they'd do it, from the speaker labels. `me` = the agent, `them` = the primary contact on the call, `other` = a third party. When `other`, put their spoken name in `owner_name`. Never infer from who benefits.\n" +
@@ -146,6 +146,13 @@ serve(async (req) => {
           "- next_step is what THE AGENT should do, in one line, even when someone else made the promise: 'Chase Tom on Thursday for the cabana test result'. This is the line the agent reads to know what the card wants.\n" +
           "- context is one short line on what it is about: the property, the deal, the amount.\n" +
           "- NOT COMMITMENTS: anything done during the call or the moment it ends ('let me check the email now', 'I'll text you instead of calling'); anything conditional ('if I run into tenants I'll send them your way'); a REQUEST the other person made that the agent did not agree to ('could you reverse the late fee?'); logistics already settled on the call ('meet you there at one').\n" +
+          // TWO SEPARATE QUESTIONS (2 Oct). 144 follow-ups were hidden as "immediate" — among them a key
+          // release at a closing, an MLS price reduction and a declined payment — because one word was
+          // doing both jobs. See supabase/sql/2026-10-02b_stakes.sql.
+          "- fuse and stakes are DIFFERENT questions; answer each on its own. fuse = how soon they said it would happen: 'immediate' within hours of the call, 'near' within days, 'distant' weeks or more. " +
+          "stakes = what it costs the agent or a client if it never happens. 'high' = money moving (a payment, wire, deposit, payoff, rent, invoice, a price change, an offer or counter); a contract or one of its deadlines (inspection, due diligence, financing, appraisal, extension, addendum, closing, keys at closing, a signature someone is waiting on); a listing or MLS change; a legal, title, HOA-approval or compliance matter; anything a deal, a deposit or a licence could be lost over. " +
+          "'low' = the logistics of the moment (I'll be there in ten minutes, I'll call you right back, I'll send the meeting link, a ride). 'normal' = everything else. " +
+          "'I'll call title right now to release the keys' is immediate AND high. 'I'll be there in five' is immediate and low. Do not raise stakes because someone sounded urgent, and do not lower them because they said 'right now'.\n" +
           "- Default to NO. An empty list is a perfectly good answer, and is the RIGHT answer for most calls. Everything you leave out is still captured in the call summary.\n" +
           "- Do not invent dates. Only set due_date if a date or day was actually said; resolve 'Monday' against the call date.\n" +
           "- confidence low if the wording is vague or you are unsure who said it.\n" +
@@ -197,7 +204,7 @@ serve(async (req) => {
           // and "most of the time" is how 190 dismissals happen.
           const q = String(c.quote).toLowerCase();
           if (/^\s*(if|when|once|in case)\b/.test(q) || /\bif (i|we|you|they|he|she) (run|see|hear|find|get|come)\b/.test(q)) { skipped.conditional++; continue; }
-          if (/(right now|let me (check|look|see|pull|grab|find)|real quick|in a (minute|second|sec)|as we speak|when we hang up|\bnow\b)/.test(q) && c.fuse === "immediate") { skipped.in_the_moment++; continue; }
+          if (/(right now|let me (check|look|see|pull|grab|find)|real quick|in a (minute|second|sec)|as we speak|when we hang up|\bnow\b)/.test(q) && c.fuse === "immediate" && c.stakes !== "high") { skipped.in_the_moment++; continue; }   // never drop the key release or the wire because it was said "right now"
           if (/\b(something|stuff|things|take care of it|that matter|the contact|the words)\b/i.test(String(c.title)) || String(c.title).trim().split(/\s+/).length < 4) { skipped.vague++; continue; }
           if (c.owner !== "me" && c.owed_to_me === false) { skipped.not_owed_to_agent++; continue; }
           if (c.owner !== "me" && !String(c.owner_name || "").trim() && !call.contact_id) { skipped.unknown_person++; continue; }
@@ -232,6 +239,8 @@ serve(async (req) => {
             context: c.context ? String(c.context).slice(0, 300) : null,
             quote: String(c.quote).slice(0, 600),
             fuse: ["immediate","near","distant"].includes(c.fuse) ? c.fuse : "near",
+            // null lets the database's floor rule judge it (commitment_stamp_stakes); high is never stored as immediate.
+            stakes: ["high","normal","low"].includes(c.stakes) ? c.stakes : null,
             due_date: /^\d{4}-\d{2}-\d{2}$/.test(c.due_date || "") ? c.due_date : null,
             confidence: c.confidence === "high" ? "high" : "low",
             dedupe_key: key,

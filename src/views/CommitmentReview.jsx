@@ -122,7 +122,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
 
   async function load() {
     let q = supabase.from('commitments')
-      .select('id,contact_id,owner,owner_contact_id,owner_name,title,next_step,context,quote,due_date,confidence,status,call_id,fuse')
+      .select('id,contact_id,owner,owner_contact_id,owner_name,title,next_step,context,quote,due_date,confidence,status,call_id,fuse,stakes')
       .in('status', ['proposed', 'accepted'])
       .order('created_at', { ascending: false });
     if (contactId) q = q.eq('contact_id', contactId);
@@ -508,6 +508,10 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
       )}
       {c.context && (
         <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 3 }}>{c.context}</div>
+      )}
+      {/* WHY THIS ONE IS HERE (2 Oct): stakes, not urgency. Said once, quietly. */}
+      {c.stakes === 'high' && c.status === 'proposed' && (
+        <div data-testid="stakes-high" style={{ fontSize: 12, color: '#EBCB82', fontWeight: 600, margin: '2px 0 6px' }}>Money, a deadline or a contract is involved.</div>
       )}
       {c.quote && (
         <div style={{ fontSize: 12, color: 'var(--text-2)', fontStyle: 'italic', margin: '6px 0 0',

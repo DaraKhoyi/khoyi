@@ -185,6 +185,8 @@ node smoke/library_shared.mjs || exit 1
 node smoke/last_time.mjs || exit 1
 # A follow-up from a call is never set aside without one chance to keep it (Marguerite + Skeptic, 1 Oct).
 node smoke/warn_before_set_aside.mjs || exit 1
+# What is at stake decides whether a follow-up may be hidden; high stakes is never 'immediate' (Skeptic + Ray, 2 Oct).
+node smoke/stakes_guard.mjs || exit 1
 # One agent can never reach another agent's mailbox: owner-only policies, proven with two logins (Sentinel, 1 Oct).
 node smoke/credential_scope.mjs || exit 1
 # Nothing an agent sees counts what they did not do (Ray, 1 Oct).
