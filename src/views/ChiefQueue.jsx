@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../dataService';
 import CommitmentReview from './CommitmentReview';
+import RecentWith from './RecentWith';
 import { calm } from '../calm';
 
 // THE ONE QUEUE — what needs you, decided for you.
@@ -21,6 +22,7 @@ const tell = (m, k) => { if (window.__notify) window.__notify(m, k); };
 export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all = false, onCount }) {
   const [items, setItems] = useState(null);
   const [open, setOpen] = useState(null);      // ref of a promise/chase row opened in place
+  const [heard, setHeard] = useState(null);    // ref of a row whose person's recent messages are open (Dara, 1 Oct)
   const [busy, setBusy] = useState(false);
   const countRef = useRef(onCount); countRef.current = onCount;   // a new function each render must not reload
 
@@ -111,8 +113,21 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
         const p = item.payload || {};
         return (
           <div key={item.ref} style={i ? calm.rowRule : calm.row}>
-            <div style={calm.rowTitle}>{item.title}</div>
-            {item.why && <div style={calm.rowWhy}>{item.why}</div>}
+            {p.contact_id ? (
+              // Tap the person to see what they actually said — decide without leaving Today.
+              <button type="button" aria-expanded={heard === item.ref} onClick={() => setHeard(heard === item.ref ? null : item.ref)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <div style={calm.rowTitle}>{item.title}</div>
+                {item.why && <div style={calm.rowWhy}>{item.why}</div>}
+                <div style={{ fontSize: 13, color: '#C5A95E', fontWeight: 600, marginTop: 5 }}>
+                  {heard === item.ref ? 'Hide what ' + (p.name || 'they').split(' ')[0] + ' said ▴' : 'What ' + (p.name || 'they').split(' ')[0] + ' said ▾'}
+                </div>
+              </button>
+            ) : <>
+              <div style={calm.rowTitle}>{item.title}</div>
+              {item.why && <div style={calm.rowWhy}>{item.why}</div>}
+            </>}
+            {heard === item.ref && p.contact_id && <RecentWith contactId={p.contact_id} name={p.name} setView={setView} />}
             <div style={calm.actions}>
               {actionsFor(item).map(([label, fn, primary]) => (
                 <button key={label} type="button" disabled={busy} onClick={fn} style={primary ? calm.btnPrimary : calm.btnQuiet}>{label}</button>

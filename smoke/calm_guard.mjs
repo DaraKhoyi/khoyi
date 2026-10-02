@@ -47,6 +47,11 @@ if (/totalOpen\}/.test(today)) problems.push('Today: a "1 / N" counter is back')
 if (!/<HandledLine\b/.test(today)) problems.push('Today: "what PrismOS did for you" is gone');
 if (/<VoiceNote [^>]*\/>/.test(today) && !/<VoiceNote [^>]*inline/.test(today)) problems.push('Today: the floating microphone is back');
 
+// 3b — a row about a person lets you read what they said, in place (Dara, 1 Oct)
+const cqSrc = read('src/views/ChiefQueue.jsx');
+if (!/<RecentWith contactId=\{p\.contact_id\}/.test(cqSrc)) problems.push('Today: tapping a person no longer shows what they said');
+if (/days? ago/.test(read('src/views/RecentWith.jsx').replace(/\/\/[^\n]*/g, ''))) problems.push('RecentWith says "N days ago" (house rule: a date)');
+
 // 4 — Inbox
 const inbox = read('src/views/InboxView.jsx');
 if (!/return 'week';/.test(inbox)) problems.push('Inbox: does not open on This week');
