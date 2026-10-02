@@ -2589,6 +2589,7 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
               title="Pull last 365 days of emails (excludes Promotions / Updates / Social). Safe to leave running in the background — it batches.">
               {backfill?.running ? `Bringing in the past year (round ${backfill.round})` : 'Bring in the past year'}
             </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { if (window.__setView) window.__setView('email_review'); }}>Senders to unsubscribe from</button>
           </>}
           <button className="btn btn-ghost btn-sm" aria-label="More inbox tools" aria-expanded={showInboxTools} onClick={() => setShowInboxTools(v => !v)}>⋯</button>
           <button className="btn btn-ghost" onClick={runSync} disabled={syncing}>{syncing ? 'Syncing…' : '↻ Sync'}</button>
@@ -2717,7 +2718,10 @@ function GmailInboxView({ account, openThreadId, setEmailAccounts, emailAliases,
                                   )}
                                 </div>
                                 <div className="email-subject" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.subject || '(no subject)'}</div>
-                                <div className="email-preview" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.snippet || ''}</div>
+                                {/* Flagged by the overnight read: say WHY it is here, in one plain line (1 Oct). */}
+                                {thread.flagged_why && (tab === 'week' || tab === 'important')
+                                  ? <div className="email-preview" data-testid="flagged-why" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--text-2)'}}>{thread.flagged_why}</div>
+                                  : <div className="email-preview" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.snippet || ''}</div>}
                               </div>
                               <span className="email-time" style={{flexShrink:0}}>{timeAgo(thread.last_message_at)}</span>
                             </div>

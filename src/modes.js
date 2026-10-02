@@ -162,7 +162,7 @@ export const VIEW_META = {
   inbox:      { label: 'Email',    glyph: 'mail' },
   quo:        { label: 'Calls',    glyph: 'phone' },
   journal:    { label: 'Journal',  glyph: 'book' },
-  email_review:{ label: 'Triage',  glyph: 'mail' },
+  email_review:{ label: 'Unsubscribe', glyph: 'mail' },
   documents:  { label: 'Docs',     glyph: 'doc' },
   notes:      { label: 'Library',  glyph: 'library' },
   contact_types:{ label: 'Types',  glyph: 'people' },

@@ -58,6 +58,12 @@ if (!/return 'week';/.test(inbox)) problems.push('Inbox: does not open on This w
 if (!/eq\('worth_a_look', true\)\.gte\('last_message_at', weekAgo\)/.test(inbox)) problems.push('Inbox: "This week" lost its seven-day window');
 if (!/tab === 'quiet'/.test(inbox)) problems.push('Inbox: the "Everything else" archive is gone');
 
+// 4b — one inbox, not two (panel, 1 Oct): what the overnight read flags lands in
+// "This week" with its reason; the separate review pile does not come back.
+if (/view: 'email_review'/.test(mc)) problems.push('menu: the separate "Email Review" pile is back — flagged mail belongs in the Inbox');
+if (/needsReviewCount/.test(app)) problems.push('App: the overnight-review count is back (it inflated "to clear" with email that had its own screen)');
+if (!/thread\.flagged_why/.test(inbox)) problems.push('Inbox: a flagged email no longer says why it is on the list');
+
 // 5 — Contacts
 const contacts = read('src/views/ContactsView.jsx');
 if (/\{contacts\.length\} contacts/.test(contacts)) problems.push('Contacts: the header counts contacts again');
@@ -76,6 +82,11 @@ if (PAT) {
     if (/days ago/.test(cq.d.replace(/--[^\n]*/g, ''))) problems.push('chief_queue says "N days ago" again (house rule: a date, never a count)');
     if (!/interval '14 days' and now\(\) - interval '6 hours'/.test(cq.d)) problems.push('chief_queue looks back further than two weeks for replies');
     if (!/no_reply_needed_at/.test(cq.d)) problems.push('chief_queue ignores "No reply needed"');
+    const [fl] = await q(`select pg_get_functiondef('public.stamp_worth_a_look'::regproc) d,
+      (select count(*)::int from pg_trigger where tgname = 'review_item_flags_thread_trg') trg,
+      pg_get_functiondef('public.email_ai_candidates'::regproc) c`);
+    if (!/flagged_at is not null/.test(fl.d) || !fl.trg) problems.push('what the overnight email read flags no longer reaches the Inbox (stamp_worth_a_look / review_item_flags_thread)');
+    if (!/only_promo/.test(fl.c)) problems.push('the overnight email read is paying to re-read promo-only senders again (email_ai_candidates)');
     const [dfy] = await q(`select count(*)::int n from pg_proc where proname in ('done_for_you', 'done_for_you_ack')`);
     if (dfy.n < 2) problems.push('done_for_you() / done_for_you_ack() is missing');
   } catch (e) { problems.push('could not read the live functions: ' + e.message); }

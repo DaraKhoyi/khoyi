@@ -1126,7 +1126,6 @@ function AppMain() {
   const [onboardingReopen, setOnboardingReopen] = useState(false);
   // Dashboard "Unread Email" tile — count of unread inbox threads (excludes snoozed)
   const [unreadEmailCount, setUnreadEmailCount] = useState(0);
-  const [needsReviewCount, setNeedsReviewCount] = useState(0);
   const [oweReplyMap, setOweReplyMap] = useState({});
   const [dataLoaded, setDataLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1199,14 +1198,6 @@ function AppMain() {
     const uid = session?.user?.id; if (!uid || !view) return;
     touchScreen(uid, view, null, { label: (PAGES[view] && PAGES[view].label) || view });
   }, [view, session]);
-  // Live badge for the nightly email-review queue (open items needing action).
-  useEffect(() => {
-    if (!dataLoaded) return; let alive = true;
-    supabase.from('email_review_items').select('id', { count: 'exact', head: true })
-      .eq('status', 'open').eq('needs_review', true)
-      .then(({ count }) => { if (alive) setNeedsReviewCount(count || 0); }).catch(() => {});
-    return () => { alive = false; };
-  }, [dataLoaded]);
   const [priorityPref, setPriorityPref] = useState('eisenhower');
   const [taskFilter, setTaskFilter] = useState('today');
   const [taskViewMode, setTaskViewMode] = useState('sequence');
@@ -1535,7 +1526,6 @@ function AppMain() {
     setProfiles([]); setVoiceCards([]); setEmailAccounts([]);
     setUserSettings(null);
     setUnreadEmailCount(0);
-    setNeedsReviewCount(0);
     setOweReplyMap({});
     setDataLoaded(false);
   }
@@ -1618,7 +1608,7 @@ function AppMain() {
   const hubTodayStr = todayNY();
   const hubDueToday = tasks.filter(t => !t.completed && t.due_date === hubTodayStr).length;   // ACTUALLY due today — not 'today or earlier'
   const hubActiveDeals = (deals || []).filter(d => ['lead', 'active', 'pending'].includes(d.status)).length;
-  const hubClear = (reviewCount || 0) + (needsReviewCount || 0);
+  const hubClear = reviewCount || 0;   // calls only — overnight email flags now live in the Inbox (1 Oct)
   const hubHero = hubOweReply > 0
     ? { title: `${hubOweReply} ${hubOweReply === 1 ? 'person is' : 'people are'} waiting on your reply`, why: 'A fast reply keeps deals and relationships warm.', cta: 'Reply now', go: () => setView('contacts') }
     : hubDueToday > 0
@@ -1666,7 +1656,6 @@ function AppMain() {
     { id: 'someday',     icon: '✦', label: 'Someday / Maybe' },
     { id: 'calendar',    icon: '📅', label: 'Calendar',    badge: null },
     { id: 'inbox',       icon: '📬', label: 'Inbox',       badge: unreadEmailCount > 0 || null },
-    { id: 'email_review', icon: '🕵️', label: 'Email review', badge: null },
     { id: 'quo',         icon: '☎️', label: 'Quo',         badge: null },
     { id: 'contacts',    icon: '👥', label: 'Contacts',    badge: hubOweReply > 0 || null },
     { id: 'documents',   icon: '📁', label: 'Documents',   badge: null },
@@ -1887,7 +1876,7 @@ function AppMain() {
               : view==='review'      ? <ReviewView userId={user.id} contacts={contacts} events={events} setTasks={setTasks} priorityPref={priorityPref} setView={setView} />
               : view==='coach'       ? <CoachView userId={user.id} setView={setView} />
               : view==='learn'       ? <LearnView setView={setView} userId={user.id} isAdmin={isAdmin} />
-              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)} needsReviewCount={needsReviewCount}/>
+              : view==='briefing'    ? <AriBriefingView userId={user.id} user={user} setView={setView} setFocusTaskId={setFocusTaskId} setFocusEventId={setFocusEventId} profiles={profiles} contacts={contacts} properties={properties} events={events} brain={brain} defaultSystem={priorityPref} tasks={tasks} setTasks={setTasks} onOpenPlan={()=>setPlanOpen(true)}/>
               : view==='growth'      ? <GrowthView userId={user.id} setView={setView}/>
               : view==='scoreboard'  ? <ScoreboardView userId={user.id} appCtx={appCtx} setView={setView}/>
               : view==='pipeline'    ? <PipelineView contacts={contacts} userId={user.id}/>
@@ -1899,7 +1888,7 @@ function AppMain() {
               : view==='tasks'       ? <div className="ww-tasks"><style>{`.ww-tasks{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-tasks .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-tasks .view-header h2,.ww-tasks .page-header h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;font-size:30px;} .ww-tasks .panel-header h3{font-family:'Fraunces',serif;font-weight:400;letter-spacing:-.01em;color:#F6F1E7;} .ww-tasks .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-tasks .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-tasks .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-tasks .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-tasks .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-tasks .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-tasks .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-tasks .task-item{border-color:rgba(203,163,92,.14);} .ww-tasks .task-text{color:#F6F1E7;} .ww-tasks .empty-state{color:#8C8475;} .ww-tasks .empty-icon{color:#CBA35C;}`}</style><TasksView tasks={tasks} setTasks={setTasks} userId={user.id} defaultSystem={priorityPref} taskFilter={taskFilter} setTaskFilter={onTaskFilterChange} taskViewMode={taskViewMode} setTaskViewMode={onTaskViewModeChange} brain={brain} contacts={contacts} properties={properties} events={events} focusTaskId={focusTaskId} setFocusTaskId={setFocusTaskId}/>{taskViewMode !== 'matrix' && <><ProjectTasksPanel userId={user.id}/><EmailRepliesPanel/></>}</div>
               : view==='launchers' ? <LaunchersView/> : view==='night_review' ? <NightReview/> : view==='goal_roster' ? <BrokerGoalRoster/> : view==='uncarded' ? <UncardedView setView={setView}/>
               : view==='lead_notify' ? <LeadNotifyReview/>
-              : view==='email_review' ? <EmailReviewView userId={user.id} emailAccounts={emailAccounts} contacts={contacts} setView={setView} onCount={setNeedsReviewCount}/>
+              : view==='email_review' ? <EmailReviewView emailAccounts={emailAccounts} setView={setView}/>
               : view==='inbox'       ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3,.ww-prism h3.mv-h2{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-prism .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-prism .task-item{border-color:rgba(203,163,92,.14);} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><InboxView emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} profiles={profiles} contacts={contacts} userId={user.id} setView={setView} reloadData={loadData} defaultSystem={priorityPref}/></div>
               : view==='quo'         ? <div className="ww-prism"><style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel-header h3,.ww-prism h3.mv-h2{font-family:'Fraunces',serif;font-weight:400;color:#F6F1E7;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-add-circle{background:#EBCB82;color:#1a1409;} .ww-prism .btn-view-toggle{border:1px solid rgba(203,163,92,.28);color:#C8BFAE;} .ww-prism .btn-view-toggle.active{background:rgba(203,163,92,.16);color:#EBCB82;border-color:#CBA35C;} .ww-prism .task-item{border-color:rgba(203,163,92,.14);} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style><QuoView contacts={contacts} userId={user.id} profiles={profiles} defaultSystem={priorityPref}/></div>
               : view==='contacts'    ? <ContactsView initialSub={deepLink.view==='contacts' ? deepLink.sub : null} contacts={contacts} setContacts={setContacts} userId={user.id} profiles={profiles} setProfiles={setProfiles} canSeeRestricted={isAdmin || !!(appCtx&&appCtx.is_team_leader) || (appCtx&&appCtx.role==='owner')}/>

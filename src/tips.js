@@ -85,8 +85,8 @@ export const TIPS = [
     body: 'Prism tells a client meeting from a birthday reminder, so your appointment count means something. If it ever guesses wrong, <b>one tap sets it straight</b> and it remembers.' },
 
   // ── Email ───────────────────────────────────────────────────────────────────
-  { id: 'email_review_owe', screen: 'email_review', label: 'The replies you owe, in one place',
-    body: 'Prism reads your inbox for threads <b>genuinely waiting on you</b> and gathers them here — so "inbox zero" becomes "nobody\u2019s waiting", which is the part that actually matters.' },
+  { id: 'inbox_flagged_overnight', screen: 'inbox', label: 'Why an email is on this list',
+    body: 'Overnight, Prism reads the mail that is not from your contacts. When something <b>needs you</b> — a notice with a deadline, a bill, a fraud alert — it joins <b>This week</b> with one line saying why.' },
   { id: 'email_voice', screen: 'inbox', label: 'Sounds like you, tuned to them',
     body: 'Draft replies come back in <b>your</b> voice — then adapted to how the recipient likes to be spoken to. Same you, delivered the way each person hears best.' },
   { id: 'email_open_honest', screen: 'inbox', label: 'We won\u2019t lie about opens',

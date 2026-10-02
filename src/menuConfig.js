@@ -91,7 +91,6 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
       { label: 'Who to Contact Next', view: 'cadence_review', icon: 'clock' },
       { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },
       { label: 'Group Message', view: 'group_message', icon: 'chat' },
-      { label: 'Email Review', view: 'email_review', icon: 'inbox' },
       { label: 'Import from Google', view: 'google_contacts', icon: 'contacts' },
       { label: 'Manage Tags', view: 'tags', icon: 'notes' },
       // DISC profiles across the whole sphere. It was routed but reachable from

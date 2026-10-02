@@ -6,8 +6,15 @@
 //   3. Token-GUARDED Claude triage on ONLY non-bulk, unread, un-reviewed
 //      threads since the last watermark (global nightly cap, dedup by thread).
 //   4. List-Unsubscribe fetched from Gmail for just the top recommended senders.
-//   5. Everything lands in email_review_items / email_sender_stats for the
-//      morning surface; a row per run is logged in email_intel_runs.
+//   5. Everything lands in email_review_items / email_sender_stats; a row per run
+//      is logged in email_intel_runs.
+//   6. (1 Oct) WHERE IT IS SEEN: an "urgent" or "requires_response" verdict stamps
+//      the thread (database trigger review_item_flags_thread), which puts it in
+//      the Inbox's "This week" with the summary as the reason. There is no
+//      separate review screen any more — 3,460 items sat on it unread. And
+//      email_ai_candidates skips senders this pass has only ever called
+//      promotional, so they stop costing tokens.
+//      See supabase/sql/2026-10-01e_flagged_mail_reaches_the_inbox.sql.
 //
 // Bulk (Promotions/Social/Forums/Spam) is skipped BEFORE any model call, so
 // marketing never costs tokens — it only feeds the unsubscribe recommender.
@@ -35,7 +42,7 @@ const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET");
 const INTERNAL_TOKEN = Deno.env.get("EMAIL_INTEL_TOKEN") || "";
 
 const MODEL = "claude-sonnet-4-6";
-const PROMPT_VERSION = "intel-v1";
+const PROMPT_VERSION = "intel-v2";
 const BULK_LABELS = ["SPAM", "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"];
 
 const SYSTEM = `You triage a single incoming email for a real-estate broker/owner.
@@ -48,7 +55,16 @@ Return ONLY a JSON object, no prose:
  "money":true|false,          // mentions a specific dollar amount, payment, wire, invoice, offer
  "deadline":null|"YYYY-MM-DD or short phrase", // explicit date/deadline to act by
  "legal":true|false}          // contract, signature, dispute, attorney, compliance
-Be conservative: only "urgent" for genuine time-critical items.`;
+Be conservative: only "urgent" for genuine time-critical items.
+"urgent" and "requires_response" put this email in front of him, so use them only
+when HE must do something: a person is asking him for something, money is at risk
+or due, a regulator, bank, court, MLS or landlord/tenant matter needs action.
+Automated digests, newsletters, "you have notifications", shipping and order
+updates, receipts, sign-in / verification-code notices, app invitations and
+routine voicemail notifications are "fyi" (or "promotional") — never "urgent" or
+"requires_response". A fraud or security alert that asks him to confirm a
+transaction IS urgent.
+"summary" is shown to him as the reason: say what is being asked of him, plainly.`;
 
 function j(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });

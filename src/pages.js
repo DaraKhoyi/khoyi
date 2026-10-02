@@ -55,7 +55,7 @@ export const PAGES = {
   listing_presentation: { label: 'Listing Presentation', icon: 'properties', room: null, group: 'Deals & Property', minRole: 'agent', feature: 'listing_presentation', tier: 'pro', built: true },
   contacts:     { label: 'Contacts',         icon: 'contacts', room: 'relationships', group: 'Communications', minRole: 'agent', feature: 'contacts',     tier: 'base', ai: true },
   inbox:        { label: 'Inbox',            icon: 'inbox',    room: 'relationships', group: 'Communications', minRole: 'agent', feature: 'inbox',        tier: 'base', ai: true },
-  email_review: { label: 'Email Review',     icon: 'mail',     room: 'relationships', group: 'Communications', minRole: 'agent', feature: 'inbox',        tier: 'base', ai: true },
+  email_review: { label: 'Senders to unsubscribe from',     icon: 'mail',     room: 'relationships', group: 'Communications', minRole: 'agent', feature: 'inbox',        tier: 'base', ai: true },
   quo:          { label: 'Phone & Text',     icon: 'quo',      room: 'relationships', group: 'Communications', minRole: 'agent', feature: 'quo',          tier: 'pro',  ai: true },
   journal:      { label: 'Daily Journal',    icon: 'journal',  room: 'relationships', group: 'Communications', minRole: 'agent', feature: 'journal',      tier: 'base', ai: true },
   group_message:{ label: 'Group Message',    icon: 'message',  room: 'brokerage',     group: 'Communications', minRole: 'agent', feature: 'group_message',tier: 'pro',  ai: true },
