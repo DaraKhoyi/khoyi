@@ -249,3 +249,19 @@ export const canHover = () => {
   } catch (_) { return false; }
 };
 
+
+// THE NAME PRISMOS GREETS YOU BY — one rule (2 Oct). Josh set his greeting name
+// to "Josh" in Settings and Today still said "Good morning, roga.lutz.": Today
+// had its own copy of this rule that skipped the saved name and fell through to
+// the email address. Order: the greeting name saved in Settings, then the first
+// word of the full name. With { orEmail: true } the start of the email is the
+// last resort (a label in the menu); a GREETING never uses it — "Good morning."
+// is better than greeting someone by their mailbox.
+export function greetingName(user, { orEmail = false } = {}) {
+  const m = (user && user.user_metadata) || {};
+  const saved = String(m.display_name || '').trim();
+  if (saved) return saved;
+  const full = String(m.full_name || m.name || '').trim();
+  if (full && !full.includes('@')) return full.split(/\s+/)[0];
+  return orEmail ? String((user && user.email) || '').split('@')[0] : '';
+}

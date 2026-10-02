@@ -266,7 +266,7 @@ if (typeof window !== 'undefined') window.__BUILD_VERSION__ = BUILD_VERSION;
 // renders blank. To migrate more of the app off emoji over time, add the
 // concept here and render <Icon name="…" />.
 import { Icon, ICON_PATHS } from './icons';
-import { todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num, pickerInitials, owesReply, modal, lbl, splitQuotedReply, decodeEntities, MERGE_FIELDS, applyMergeFields, resolveSendAccount, EMAIL_ACCOUNT_COLS, isTopPriority, QUADRANTS, sortTasks } from './helpers';
+import { greetingName, todayISO, priorityLabel, priorityClass, pad2, ymd, today_ymd, quoNormPhone, quoLast10, quoFmtPhone, quoFmtWhen, quoFmtDur, money, num, pickerInitials, owesReply, modal, lbl, splitQuotedReply, decodeEntities, MERGE_FIELDS, applyMergeFields, resolveSendAccount, EMAIL_ACCOUNT_COLS, isTopPriority, QUADRANTS, sortTasks } from './helpers';
 
 // Rainbow PRISM wordmark — DISC palette (D red, I amber, S green, C blue) + violet 5th
 const PRISM_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6'];
@@ -1802,7 +1802,7 @@ function AppMain() {
         currentView={view} activeMode={activeMode} isAdmin={isAdmin || isTeamLeader}
         onHome={goHome} onEnterMode={enterMode}
         modeBadges={{ relationships: hubOweReply, deals: hubActiveDeals, prospect: 0, money: 0, brokerage: 0 }}
-        userName={user.user_metadata?.display_name?.trim()||user.user_metadata?.full_name?.trim()?.split(/\s+/)[0]||user.email?.split('@')[0]}
+        userName={greetingName(user, { orEmail: true })}
         userEmail={user.email} onSignOut={handleSignOut} />
 
       <div style={{display:'flex',flex:1,overflow:'hidden'}}>
@@ -1822,7 +1822,7 @@ function AppMain() {
             <div className="sidebar-user">
               <div className="sidebar-avatar">{(user.user_metadata?.display_name||user.user_metadata?.full_name||user.email||'').slice(0,2).toUpperCase()}</div>
               <div className="sidebar-user-info">
-                <div className="sidebar-user-name">{user.user_metadata?.display_name?.trim()||user.user_metadata?.full_name?.trim()?.split(/\s+/)[0]||user.email?.split('@')[0]}</div>
+                <div className="sidebar-user-name">{greetingName(user, { orEmail: true })}</div>
                 <div className="sidebar-user-email">{user.email}</div>
               </div>
               <button className="logout-btn" onClick={handleSignOut} title="Sign out">⏻</button>
@@ -1855,9 +1855,9 @@ function AppMain() {
                 : view==='google_contacts' ? <GoogleContactsView userId={user.id} setView={setView} />
                 : view==='listing_presentation' ? <ListingPresentationView userId={user.id} agentName={appCtx?.name || user?.email || ''} />
                 : view==='someday'     ? <SomedayView userId={user.id} setView={setView} />
-                : view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]} onOpenPlan={()=>setPlanOpen(true)} />
+                : view==='today'       ? <TodayView contacts={contacts} setContacts={setContacts} tasks={tasks} setTasks={setTasks} events={events} deals={deals} setView={setView} myUserId={user.id} oweReplyMap={oweReplyMap} setOweReplyMap={setOweReplyMap} agentName={greetingName(user)} onOpenPlan={()=>setPlanOpen(true)} />
                 : view==='dashboard'   ? <DashboardHub
-                    agentName={(user?.user_metadata?.full_name || user?.email || '').split('@')[0].split(' ')[0]}
+                    agentName={greetingName(user)}
                     hour={new Date().getHours()}
                     isAdmin={isAdmin || isTeamLeader}
                     hero={hubHero} onHero={hubHero.go}

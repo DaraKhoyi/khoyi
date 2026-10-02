@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import OwnerPicker from './OwnerPicker';
 import { Icon } from '../icons';
-import { money } from '../helpers';
+import { money, greetingName } from '../helpers';
 import { PriorityField } from './TrackerPanels';
 import TaskModal from './TaskModal';
 import PrismThinking from './PrismThinking';
@@ -647,7 +647,7 @@ function AriBriefingView({ userId, user, setView, setFocusTaskId, setFocusEventI
     const { data:a } = await supabase.from('email_accounts').select('id,email_address,is_default').contains('purposes',['email']).order('is_default',{ascending:false}).order('created_at');
     setAccounts(Array.isArray(a) ? a : []);
     setAcct((a&&a[0])||null);
-    const nm = user?.user_metadata?.display_name?.trim() || user?.user_metadata?.full_name?.trim()?.split(/\s+/)[0] || (user?.email||'').split('@')[0] || 'there';
+    const nm = greetingName(user) || 'there';
     setFirstName(nm);
   })(); }, []);   // eslint-disable-line
 

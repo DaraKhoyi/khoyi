@@ -59,6 +59,11 @@ if (!/const daysLate = \(d\) => Math\.round\(\(Date\.parse\(todayNY\(\)/.test(cr
 if (!/not_a_thing_at/.test(crSrc) || !/not_a_thing_at/.test(cqSrc)) problems.push('"Not a thing" no longer records its lesson (commitments.not_a_thing_at)');
 if (!/notAThingLessons/.test(read('supabase/functions/call-commitments/index.ts'))) problems.push('the call reader no longer learns from "Not a thing" (_shared/lessons.ts)');
 
+// 3d — one rule for the name PrismOS greets you by (2 Oct: Josh saved "Josh" and
+// Today said "Good morning, roga.lutz." — Today had its own copy that skipped it).
+if (!/agentName=\{greetingName\(user\)\}/.test(app) || /agentName=\{\(user\?\.user_metadata\?\.full_name/.test(app)) problems.push('Today greets from its own name rule again — use greetingName(user), which honours the name saved in Settings');
+if (!/const saved = String\(m\.display_name/.test(read('src/helpers.js'))) problems.push('greetingName() no longer puts the saved greeting name first');
+
 // 4 — Inbox
 const inbox = read('src/views/InboxView.jsx');
 if (!/return 'week';/.test(inbox)) problems.push('Inbox: does not open on This week');
