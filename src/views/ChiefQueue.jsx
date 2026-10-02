@@ -23,6 +23,7 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
   const [items, setItems] = useState(null);
   const [open, setOpen] = useState(null);      // ref of a promise/chase row opened in place
   const [heard, setHeard] = useState(null);    // ref of a row whose person's recent messages are open (Dara, 1 Oct)
+  const [removing, setRemoving] = useState(null);   // ref of a row whose Delete / Not a thing choice is open
   const [busy, setBusy] = useState(false);
   const countRef = useRef(onCount); countRef.current = onCount;   // a new function each render must not reload
 
@@ -80,6 +81,31 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
     if (error) { tell('Could not mark it handled: ' + (error.message || error), 'error'); return; }
     advance();
   }
+  // SOMEONE ELSE'S LATE PROMISE, closed from Today without opening it (Dara, 2 Oct).
+  //   done    — it happened.
+  //   delete  — off my list, no judgement.
+  //   teach   — "Not a thing": PrismOS should not have raised it. The stamp is the
+  //             lesson the call reader is given (supabase/functions/_shared/lessons.ts).
+  // Every one of them can be undone from the toast.
+  async function closePromise(item, how) {
+    const id = item.payload && item.payload.commitment_id;
+    if (!id) return;
+    setBusy(true);
+    const now = new Date().toISOString();
+    const patch = how === 'done' ? { status: 'done', decided_at: now }
+      : { status: 'dismissed', decided_at: now, not_a_thing_at: how === 'teach' ? now : null };
+    const { error } = await supabase.from('commitments').update(patch).eq('id', id);
+    setBusy(false); setRemoving(null);
+    if (error) { tell('Could not save that: ' + (error.message || error), 'error'); return; }
+    const undo = async () => {
+      const { error: e2 } = await supabase.from('commitments').update({ status: 'accepted', decided_at: null, not_a_thing_at: null }).eq('id', id);
+      if (e2) { tell('Could not undo: ' + (e2.message || e2), 'error'); return; }
+      load(); onChanged && onChanged();
+    };
+    const msg = how === 'done' ? 'Done.' : how === 'teach' ? 'Not a thing \u2014 PrismOS will learn from this.' : 'Deleted.';
+    if (window.__notify) window.__notify(msg, 'success', { label: 'Undo', onClick: undo });
+    advance();
+  }
   const go = (view, sub) => { if (sub && window.__deepLink) window.__deepLink({ view, sub, n: Date.now() }); setView && setView(view); };
 
   if (items === null) return null;
@@ -93,7 +119,7 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
     const p = item.payload || {};
     return ({
       promise: [['Review', () => setOpen(open === item.ref ? null : item.ref), true]],
-      chase: [['Review', () => setOpen(open === item.ref ? null : item.ref), true]],
+      chase: [['Review', () => setOpen(open === item.ref ? null : item.ref), true], ['Done', () => closePromise(item, 'done')], ['Remove', () => setRemoving(removing === item.ref ? null : item.ref)]],
       bounce: [['Resend', () => { if (window.__composeEmail) window.__composeEmail(p.to || '', p.subject ? 'Re: ' + p.subject : ''); }, true], ['Handled', () => bounceHandled(item)]],
       deadline: [['Add as a task', () => addTask(item, p.title || item.title, p.due_date), true]],
       doc: [['Open', () => go('documents'), true], ['Done', () => snooze(item, 36500)]],
@@ -134,6 +160,17 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
               ))}
               <button type="button" disabled={busy} onClick={() => snooze(item, 1)} style={calm.btnQuiet}>Not today</button>
             </div>
+            {removing === item.ref && (
+              // Two ways off the list, said plainly where the choice is made.
+              <div data-testid="remove-choice" style={{ marginTop: 8, paddingLeft: 12, borderLeft: '2px solid rgba(197,169,94,0.35)' }}>
+                <button type="button" disabled={busy} onClick={() => closePromise(item, 'delete')} style={{ ...calm.link, display: 'block', minHeight: 44 }}>
+                  Delete <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>— just take it off my list</span>
+                </button>
+                <button type="button" disabled={busy} onClick={() => closePromise(item, 'teach')} style={{ ...calm.link, display: 'block', minHeight: 44 }}>
+                  Not a thing <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>— PrismOS should not have raised this, and will learn from it</span>
+                </button>
+              </div>
+            )}
             {open === item.ref && (
               <div style={{ marginTop: 10 }}>
                 {item.kind === 'promise'

@@ -220,6 +220,34 @@ for (const dev of want) {
       r && r.border ? 'border is ' + r.border : 'no card to measure');
   } catch (e) { record(dev, 'Call review renders', false, String(e).slice(0, 60)); }
 
+  // ---- FEATURE: Review on a LATE PROMISE opens it, and it can be closed three ways ----
+  // Dara, 2 Oct 7:35am: "The Review button does nothing." The row said late, the
+  // card (which counted 24-hour periods from noon) said not late, rendered
+  // nothing and closed. The seed has a promise due yesterday; this taps Review
+  // on it and requires the card, then requires Done and the Delete / Not a thing
+  // choice on the row itself.
+  try {
+    await ev(page, () => window.__setView && window.__setView('chief'));
+    let lr = null;
+    for (let i = 0; i < 14; i++) {
+      await page.waitForTimeout(1000);
+      lr = await ev(page, () => {
+        const row = [...document.querySelectorAll('[data-testid="chief-queue"] > div')].find(d => /Villa Adriana/.test(d.innerText) && /promised this by/i.test(d.innerText));
+        if (!row) return { row: false };
+        const btns = [...row.querySelectorAll('button')];
+        const has = (re) => btns.some(x => re.test(x.textContent.trim()));
+        const out = { row: true, done: has(/^done$/i), remove: has(/^remove$/i), card: /chase them/i.test(row.innerText), choice: !!row.querySelector('[data-testid="remove-choice"]') };
+        if (!out.card) { const b = btns.find(x => /^review$/i.test(x.textContent.trim())); if (b && !row.dataset.tapped) { row.dataset.tapped = '1'; b.click(); } }
+        else if (!out.choice) { const b = btns.find(x => /^remove$/i.test(x.textContent.trim())); if (b && !row.dataset.tapped2) { row.dataset.tapped2 = '1'; b.click(); } }
+        if (out.choice) out.words = /Delete/.test(row.innerText) && /Not a thing/.test(row.innerText);
+        return out;
+      });
+      if (lr && lr.card && lr.choice) break;
+    }
+    record(dev, 'Review opens a late promise', !!(lr && lr.card), lr && lr.row ? 'tapped Review; no card with "Chase them"' : 'no late-promise row — saw: ' + await sawInstead(page, dev, 'latepromise'));
+    record(dev, 'A late promise offers Done, Delete and Not a thing', !!(lr && lr.done && lr.remove && lr.choice && lr.words), JSON.stringify(lr || {}));
+  } catch (e) { record(dev, 'Review opens a late promise', false, String(e).slice(0, 60)); }
+
   // ---- FEATURE: the Save button on new-contact is reachable (the iOS bug) ----
   try {
     const reachable = await ev(page, async () => {

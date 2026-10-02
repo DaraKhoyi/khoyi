@@ -1,6 +1,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { notAThingLessons } from "../_shared/lessons.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 
 // ── call-commitments ─────────────────────────────────────────────────────────
@@ -149,7 +150,8 @@ serve(async (req) => {
           "- Do not invent dates. Only set due_date if a date or day was actually said; resolve 'Monday' against the call date.\n" +
           "- confidence low if the wording is vague or you are unsure who said it.\n" +
           (rosterNames.length ? `Known people you may match a name to (use the exact name if it fits): ${rosterNames.slice(0, 200).join(", ")}.\n` : "") +
-          "Two or three commitments is a busy call. Ten means you are extracting topics, not promises.";
+          "Two or three commitments is a busy call. Ten means you are extracting topics, not promises." +
+          await notAThingLessons(db, call.user_id);   // what this person told us was "Not a thing" (2 Oct)
 
         const usr = `Call date: ${(call.op_created_at || "").slice(0, 10)}. Speakers are labelled by name.${multiParty ? " This call has THREE OR MORE speakers — attribute each commitment to the correct person." : ""}\n\n${script.slice(0, 14000)}`;
         const raw = await claude(KEY, sys, usr);

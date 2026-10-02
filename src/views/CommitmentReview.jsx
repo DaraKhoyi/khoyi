@@ -45,7 +45,13 @@ const fmtDate = (d) => {
   const dt = new Date(d + 'T12:00:00');
   return dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 };
-const daysLate = (d) => Math.floor((Date.now() - new Date(d + 'T12:00:00')) / 86400000);
+// LATE MEANS THE DATE HAS PASSED — a calendar day, in New York, the same rule
+// chief_queue() uses (due_date < today). This used to measure 24-hour periods
+// from NOON on the due date, so a promise due yesterday was "not late" until
+// noon today: the row on Today said "it is late", Review opened a card that
+// disagreed, found nothing to show and closed itself. Dara, 2 Oct, 7:35am:
+// "The Review button does nothing." ONE RULE, ONE PLACE.
+const daysLate = (d) => Math.round((Date.parse(todayNY() + 'T12:00:00Z') - Date.parse(String(d).slice(0, 10) + 'T12:00:00Z')) / 86400000);
 
 // Reading the call. The old note here said there was no route to a single call,
 // which was true — but CallDetail is a COMPONENT, not a route, and it takes a
@@ -246,34 +252,32 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
     await saveCommitment(c, { due_date: d.toISOString().slice(0, 10) });
   }
 
-  // GONE, not hidden. Dismiss records that a decision was taken; delete is for
-  // things that should never have been captured — a mis-heard line in a
-  // transcript, or someone else's promise attributed to you.
-  async function remove(c) {
-    if (!window.confirm('Delete this for good? It will not come back. (Skip hides it and can be undone.)')) return;
-    setBusy(c.id);
-    const { error } = await supabase.from('commitments').delete().eq('id', c.id);
-    setBusy(null);
-    if (error) { setErr('Could not delete: ' + error.message); return; }
-    setRows(rs => rs.filter(r => r.id !== c.id));
-  }
-
   // SKIP IS ALWAYS UNDOABLE. Ray's fear, in his words: "the first time I dismiss
   // something and then find out I was supposed to do it and a client noticed."
   // A skip that can be taken back is one an agent can make without being sure.
-  async function restore(ids) {
-    const { error } = await supabase.from('commitments').update({ status: 'proposed', decided_at: null }).in('id', ids);
+  async function restore(ids, to = 'proposed') {
+    const { error } = await supabase.from('commitments').update({ status: to, decided_at: null, not_a_thing_at: null }).in('id', ids);
     if (error) { setErr(String(error.message || error)); return; }
     await load(); onChanged && onChanged();
     // An undo brings it back into the Chief of Staff queue, too.
     try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {}
   }
-  async function dismiss(c) {
+  // TWO WAYS TO TAKE SOMETHING OFF, and they mean different things (Dara, 2 Oct):
+  //   Skip / Delete — off my list, no judgement. It may have been real.
+  //   Not a thing   — PrismOS should not have raised it. That is a lesson: the
+  //                   stamp is read back to the model that listens to this
+  //                   person's calls (_shared/lessons.ts).
+  // Both are undoable, and undo returns it to where it was.
+  async function dismiss(c, teach = false) {
     setBusy(c.id);
-    const { error } = await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString() }).eq('id', c.id);
+    const was = c.status;
+    const { error } = await supabase.from('commitments').update({ status: 'dismissed', decided_at: new Date().toISOString(),
+      not_a_thing_at: teach ? new Date().toISOString() : null }).eq('id', c.id);
     if (error) { setErr(String(error.message || error)); setBusy(null); return; }
     await load(); onChanged && onChanged(); setBusy(null);
-    notify('Skipped \u2014 \u201c' + String(c.title || '').slice(0, 60) + '\u201d', 'info', { label: 'Undo', onClick: () => restore([c.id]) });
+    const t = '\u201c' + String(c.title || '').slice(0, 60) + '\u201d';
+    notify(teach ? 'Not a thing \u2014 PrismOS will learn from this. ' + t : (was === 'accepted' ? 'Deleted \u2014 ' : 'Skipped \u2014 ') + t,
+      teach ? 'success' : 'info', { label: 'Undo', onClick: () => restore([c.id], was === 'accepted' ? 'accepted' : 'proposed') });
   }
 
   // Reword a commitment in place. Save the edited title back to the row.
@@ -354,7 +358,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
         due_date: todayNY(),
         // Provenance stays honest: the QUOTE came from the call, even when the
         // person responsible was never on it.
-        notes: `${c.contact_name} said “${c.quote}” — due ${fmtDate(c.due_date)}, now ${daysLate(c.due_date)} day(s) late.`
+        notes: `${c.contact_name} said “${c.quote}” — it was due ${fmtDate(c.due_date)} and is late.`
           + (c.owner_contact_id ? `\nYou assigned this to ${responsible(c)}, who was not on the call.` : ''),
         contact_id: c.owner_contact_id || c.contact_id || null,
         waiting_on: responsible(c),     // the app already speaks this
@@ -529,7 +533,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                 fontSize: 11, fontWeight: 700, textDecorationLine: 'underline', textDecorationStyle: 'dotted',
                 textUnderlineOffset: 3, color: tone === 'late' ? EMBER : 'var(--text-3)' }}>
-              {tone === 'late' ? `${daysLate(c.due_date)}d late · was ${fmtDate(c.due_date)}` : fmtDate(c.due_date)}
+              {tone === 'late' ? `Late · was due ${fmtDate(c.due_date)}` : fmtDate(c.due_date)}
             </button>
           )
         )}
@@ -573,9 +577,11 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
               <button type="button" disabled={busy === c.id} onClick={() => resolveTheirs(c)} style={btn(false)} title="It has been handled">Done</button>
               <button type="button" disabled={busy === c.id} onClick={() => { setLaterFor(laterFor === c.id ? null : c.id); setLaterDays(7); }} style={btn(false)}>Later…</button>
               {onNotToday && <button type="button" disabled={busy === c.id} onClick={() => onNotToday()} style={btn(false)}>Not today</button>}
-              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}>Not needed</button>
-              <button type="button" disabled={busy === c.id} onClick={() => remove(c)}
-                style={{ ...btn(false), color: EMBER, borderColor: 'rgba(201,86,63,.45)' }}>Delete</button>
+              {/* Delete carries no judgement; Not a thing teaches. Both undo. */}
+              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}
+                title="Take it off my list. No judgement — you can undo.">Delete</button>
+              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c, true)} style={btn(false)}
+                title="PrismOS should not have raised this. It learns from it — you can undo.">Not a thing</button>
               {laterFor === c.id && (
                 <div style={{ width: '100%', marginTop: 8, padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid rgba(197,169,94,.5)', borderRadius: 10 }}>
                   <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 7 }}>Give them until</div>
@@ -623,7 +629,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
           <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 9 }}>
             PrismOS listens to your calls and writes down anything that sounded like a promise. These are its
             suggestions, not tasks — nothing happens until you choose. <b>Make it a task</b> if it’s real,
-            <b> Skip</b> if it isn’t (you can undo).
+            <b> Skip</b> to set it aside, or <b>Not a thing</b> if PrismOS should not have raised it — that teaches it. Both can be undone.
           </div>
           {/* One decision per conversation, asked where you know the answer.
               Most calls are just a conversation and should leave a summary and
@@ -709,7 +715,9 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
                 They delivered
               </button>
               <button type="button" disabled={busy === c.id} onClick={() => dismiss(c)} style={btn(false)}
-                title="Not a real promise — hide it. You can undo.">Skip</button>
+                title="Take it off my list. No judgement — you can undo.">Skip</button>
+              <button type="button" disabled={busy === c.id} onClick={() => dismiss(c, true)} style={btn(false)}
+                title="PrismOS should not have raised this. It learns from it — you can undo.">Not a thing</button>
               {onNotToday && <button type="button" disabled={busy === c.id} onClick={() => onNotToday()} style={btn(false)}
                 title="Keep it, and bring it back tomorrow">Not today</button>}
             </>

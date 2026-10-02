@@ -122,6 +122,13 @@ await post('commitments', [
     title: 'Chase the title company on the Westshore payoff letter that was promised last week',
     quote: 'I will chase them first thing Monday.',
     status: 'accepted', due_date: new Date(now - 4 * DAY).toISOString().slice(0, 10) },
+  // THEIR promise, due YESTERDAY (New York). On 2 Oct, Review on exactly this row
+  // did nothing before noon: the card measured lateness in 24-hour periods and
+  // disagreed with the queue. The functional check opens this one.
+  { user_id: USER, contact_id: cid(0), owner: 'them', owner_name: 'Rima Olabi',
+    title: 'Rima will create a video and advertisement for Villa Adriana',
+    quote: 'I will have the video and the ad done by tomorrow.',
+    status: 'accepted', due_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date(now - DAY)) },
 ]);
 
 if (!madeContacts.length) {

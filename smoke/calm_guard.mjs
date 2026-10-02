@@ -52,6 +52,13 @@ const cqSrc = read('src/views/ChiefQueue.jsx');
 if (!/<RecentWith contactId=\{p\.contact_id\}/.test(cqSrc)) problems.push('Today: tapping a person no longer shows what they said');
 if (/days? ago/.test(read('src/views/RecentWith.jsx').replace(/\/\/[^\n]*/g, ''))) problems.push('RecentWith says "N days ago" (house rule: a date)');
 
+// 3c — "late" is one rule (2 Oct): the card must agree with the queue, by calendar
+// day in New York. When it counted 24-hour periods, Review did nothing before noon.
+const crSrc = read('src/views/CommitmentReview.jsx');
+if (!/const daysLate = \(d\) => Math\.round\(\(Date\.parse\(todayNY\(\)/.test(crSrc)) problems.push('CommitmentReview: "late" is no longer a New York calendar day — Review on a promise due yesterday will do nothing before noon');
+if (!/not_a_thing_at/.test(crSrc) || !/not_a_thing_at/.test(cqSrc)) problems.push('"Not a thing" no longer records its lesson (commitments.not_a_thing_at)');
+if (!/notAThingLessons/.test(read('supabase/functions/call-commitments/index.ts'))) problems.push('the call reader no longer learns from "Not a thing" (_shared/lessons.ts)');
+
 // 4 — Inbox
 const inbox = read('src/views/InboxView.jsx');
 if (!/return 'week';/.test(inbox)) problems.push('Inbox: does not open on This week');

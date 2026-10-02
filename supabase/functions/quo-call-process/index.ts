@@ -17,6 +17,7 @@
 // POST { user_id?, call_id?, limit? } -> { processed, timelined, actions }
 
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
+import { notAThingLessons } from "../_shared/lessons.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
@@ -262,7 +263,7 @@ serve(async (req) => {
           nextSteps ? `\nOpenPhone next steps:\n${nextSteps}` : "",
           transcript ? `\nTranscript:\n${transcript.slice(0, 12000)}` : "",
         ].filter(Boolean).join("\n");
-        const out = safeJson(await callClaude(SYSTEM, userMsg));
+        const out = safeJson(await callClaude(SYSTEM + await notAThingLessons(admin, call.user_id), userMsg));   // + this person's "Not a thing" corrections (2 Oct)
         try { await logAiUsage(admin, { userId: call?.user_id, fn: "quo-call-process", model: MODEL, usage: __quoUsage, usedOwn: false, subjectType: "call", subjectId: call?.id }); } catch (_) {}
         if (out.non_english) { try { const t = await translateToEnglish(transcript); if (t) transcriptEn = t; } catch (_) {} }
         if (Array.isArray(out.action_items)) {
