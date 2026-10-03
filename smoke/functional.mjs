@@ -261,12 +261,19 @@ for (const dev of want) {
       await page.waitForTimeout(800);
       opened = await ev(page, () => { const b = [...document.querySelectorAll('[data-testid="journal-today"] button')].find(x => /^(start|keep) writing$/i.test(x.textContent.trim())); if (b) { b.click(); return true; } return false; });
     }
-    await page.waitForSelector('[data-testid="journal-writer-text"]', { timeout: 8000 });
-    await page.waitForTimeout(1500);                       // today's note loads before it accepts typing
+    await page.waitForSelector('[data-testid="journal-writer-text"][data-ready="1"]', { timeout: 12000 });   // read-only until today's note has loaded
     const ta = page.locator('[data-testid="journal-writer-text"]');
     const box = await ta.boundingBox(); const vp = page.viewportSize();
     await ta.focus(); await page.keyboard.press('Control+End'); await page.keyboard.type(' ' + mark);
     await ev(page, () => { const b = document.querySelector('[aria-label="Insert the date and time"]'); if (b) b.click(); });
+    // The checklist tool starts a box on the current line; Tidy is on the tool row.
+    await ev(page, () => { const b = document.querySelector('[aria-label^="Checklist item"]'); if (b) b.click(); });
+    await page.waitForTimeout(300);
+    const boxed = /\u2610 [^\n]*$/.test(await ta.inputValue());
+    const hasTidy = await ev(page, () => !!document.querySelector('[data-testid="journal-tools"] [aria-label^="Tidy"]'));
+    await ev(page, () => { const b = document.querySelector('[aria-label^="Checklist item"]'); if (b) b.click(); });   // tick it
+    await page.waitForTimeout(300);
+    const ticked = /\u2611 [^\n]*$/.test(await ta.inputValue());
     let saved = false;
     for (let i = 0; i < 12 && !saved; i++) { await page.waitForTimeout(700); saved = /Saved \d/.test(await page.textContent('[data-testid="journal-writer-status"]')); }
     const stamped = /\d{1,2}:\d{2} [AP]M \u2014 $/.test(await ta.inputValue());
@@ -276,11 +283,12 @@ for (const dev of want) {
     let fab = false;
     for (let i = 0; i < 10 && !fab; i++) { await page.waitForTimeout(700); fab = await ev(page, () => { const b = document.querySelector('[data-testid="journal-return"]'); if (b) { b.click(); return true; } return false; }); }
     let back = '';
-    try { await page.waitForSelector('[data-testid="journal-writer-text"]', { timeout: 9000 }); await page.waitForTimeout(1500); back = await page.locator('[data-testid="journal-writer-text"]').inputValue(); } catch (_) {}
+    try { await page.waitForSelector('[data-testid="journal-writer-text"][data-ready="1"]', { timeout: 12000 }); back = await page.locator('[data-testid="journal-writer-text"]').inputValue(); } catch (_) {}
     await ev(page, () => { const b = document.querySelector('[aria-label="Back to the journal"]'); if (b) b.click(); });
     await page.waitForTimeout(800);
     record(dev, 'Journal writes full screen', !!(box && vp && box.width >= vp.width - 2 && box.height > vp.height * 0.5), box ? Math.round(box.width) + 'x' + Math.round(box.height) + ' in ' + vp.width + 'x' + vp.height : 'no writer');
     record(dev, 'Journal note saves itself and inserts a time stamp', saved && stamped, 'saved=' + saved + ' stamp=' + stamped);
+    record(dev, 'Journal has a checklist tool and Tidy', boxed && ticked && hasTidy, 'box=' + boxed + ' tick=' + ticked + ' tidy=' + hasTidy);
     record(dev, 'Floating button returns to the note where it was left', fab && back.includes(mark), 'button=' + fab + ' words-there=' + back.includes(mark));
   } catch (e) { record(dev, 'Journal writes full screen', false, String(e).slice(0, 80)); }
 

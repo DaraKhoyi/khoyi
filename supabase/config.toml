@@ -337,6 +337,9 @@ verify_jwt = false
 [functions.journal-search]
 verify_jwt = false
 
+[functions.journal-tidy]
+verify_jwt = false
+
 [functions.lead-brief]
 verify_jwt = false
 

@@ -20,7 +20,7 @@ import { supabase } from '../dataService';
 //   edit    — an earlier note, reopened.
 //
 // The tool row sits on top of the keyboard: keyboard, dictate, time stamp,
-// bullet, highlight, undo, redo. Notes stay plain text — a highlight is
+// bullet, checklist, highlight, tidy, undo, redo. Notes stay plain text — a highlight is
 // ==words== — so every note is still searchable, summarised and linked to the
 // people it names. (Samsung's pen, eraser and lasso are handwriting tools; in a
 // typed note their jobs are done by highlight, undo and the keyboard.)
@@ -91,16 +91,31 @@ export default function JournalWriter({ userId, mode = 'running', entry = null, 
         if (alive) { setText(t); remember(t, true); setReady(true); }
         return;
       }
-      let row = null;
-      try { row = await loadRunningNote(userId, day); } catch (_) { if (alive) setStatus('offline'); }
+      // NOTHING TYPED MAY BE LOST TO THE LOAD (3 Oct). The box stays read-only
+      // until the note is on screen: in testing, words typed while the saved note
+      // was still arriving were wiped when it landed. And a slow network must not
+      // lock the writer: after 5 seconds it opens on this phone's copy, and if the
+      // server's copy turns up later with words this screen does not have, they
+      // are put in ABOVE what was typed — neither side is dropped.
       const local = readLocal(LOCAL(userId, day));
+      const fetching = loadRunningNote(userId, day).then((row) => ({ row }), () => ({ failed: true }));
+      const first = await Promise.race([fetching, new Promise((r) => setTimeout(() => r({ slow: true }), 5000))]);
+      if (!alive) return;
+      const adopt = (row) => { rowRef.current = row; savedText.current = row ? (row.content || '') : ''; analyzedText.current = savedText.current; };
+      const row = first.row || null;
       let t = row ? (row.content || '') : '';
       if (local && typeof local.text === 'string' && local.text !== t && (!row || new Date(local.at) > new Date(row.updated_at))) t = local.text;
-      if (!alive) return;
-      rowRef.current = row; savedText.current = row ? (row.content || '') : ''; analyzedText.current = savedText.current;
+      if (first.row !== undefined) adopt(row);
       setText(t); remember(t, true); setReady(true);
-      if (row) setStatus('saved ' + clock(new Date(row.updated_at)));
+      if (row) setStatus('saved ' + clock(new Date(row.updated_at))); else if (first.failed || first.slow) setStatus('offline');
       pendingSel.current = [t.length, t.length];
+      if (first.slow) fetching.then((late) => {
+        if (!alive || !late.row) return;
+        const theirs = String(late.row.content || ''), mine = textRef.current;
+        adopt(late.row);
+        if (theirs.trim() && !mine.includes(theirs.trim())) apply(theirs.replace(/\s+$/, '') + (mine.trim() ? '\n\n' + mine : ''), null);
+        flush();
+      });
     })();
     return () => { alive = false; };
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -180,14 +195,55 @@ export default function JournalWriter({ userId, mode = 'running', entry = null, 
     if (/^==[\s\S]*==$/.test(picked)) apply(text.slice(0, a) + picked.slice(2, -2) + text.slice(b), [a, b - 4]);
     else apply(text.slice(0, a) + '==' + picked + '==' + text.slice(b), [a, b + 4]);
   };
+  // ☐ / ☑ — a checklist, still plain text. Tap once for a box, again to tick it,
+  // again to untick. Ticking also works by tapping the box in the day's list.
+  const check = () => {
+    const [a] = sel(); const ls = text.lastIndexOf('\n', a - 1) + 1; const head = text.slice(ls, ls + 2);
+    if (head === '☐ ') apply(text.slice(0, ls) + '☑ ' + text.slice(ls + 2), [a]);
+    else if (head === '☑ ') apply(text.slice(0, ls) + '☐ ' + text.slice(ls + 2), [a]);
+    else if (head === '• ') apply(text.slice(0, ls) + '☐ ' + text.slice(ls + 2), [a]);
+    else apply(text.slice(0, ls) + '☐ ' + text.slice(ls), [a + 2]);
+  };
+  // Tidy — proofread what was dictated, without shortening it (journal-tidy).
+  // Works on the selected words, or the whole note. It goes in through the undo
+  // history, so one tap of Undo brings the original words back.
+  const [tidying, setTidying] = useState(false);
+  const tidy = async () => {
+    if (tidying) return;
+    if (dict.recording) dict.stop();
+    const [a, b] = sel(); const whole = a === b;
+    const from = whole ? 0 : a, to = whole ? text.length : b;
+    const piece = text.slice(from, to);
+    const say = (m, k) => { if (window.__notify) window.__notify(m, k); };
+    if (piece.trim().length < 12) { say('Write or dictate a little first — then Tidy cleans it up.', 'info'); return; }
+    const snapshot = text;
+    setTidying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('journal-tidy', { body: { text: piece } });
+      let code = data && data.error;
+      if (error && !code) { try { code = (await error.context.json()).error; } catch (_) { code = 'failed'; } }
+      if (code === 'too_long') say('That is too long to tidy in one go — select a part of the note and tap Tidy again.', 'warn');
+      else if (code === 'would_shorten') say('Tidy would have dropped some of your words, so nothing was changed.', 'warn');
+      else if (code || !data || !data.tidied) say('Could not tidy just now — your note is unchanged.', 'error');
+      else if (textRef.current !== snapshot) say('You kept writing, so Tidy left the note alone. Tap it again when you pause.', 'info');
+      else {
+        const lead = (piece.match(/^\s*/) || [''])[0], tail = (piece.match(/\s*$/) || [''])[0];
+        const out = whole ? data.tidied : lead + data.tidied + tail;
+        apply(text.slice(0, from) + out + text.slice(to), [from + out.length]);
+        say('Tidied. Undo brings your own words back.', 'success');
+      }
+    } catch (_) { say('Could not tidy just now — your note is unchanged.', 'error'); }
+    setTidying(false);
+  };
   const keyboard = () => { const ta = taRef.current; if (!ta) return; if (document.activeElement === ta) ta.blur(); else ta.focus(); };
   const onKey = (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); step(e.shiftKey ? 1 : -1); return; }
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {   // a bullet continues; an empty bullet ends the list
       const [a, b] = sel(); if (a !== b) return;
       const ls = text.lastIndexOf('\n', a - 1) + 1; const line = text.slice(ls, a);
-      if (line === '• ') { e.preventDefault(); apply(text.slice(0, ls) + text.slice(a), [ls]); }
+      if (line === '• ' || line === '☐ ' || line === '☑ ') { e.preventDefault(); apply(text.slice(0, ls) + text.slice(a), [ls]); }
       else if (line.startsWith('• ')) { e.preventDefault(); apply(text.slice(0, a) + '\n• ' + text.slice(a), [a + 3]); }
+      else if (line.startsWith('☐ ') || line.startsWith('☑ ')) { e.preventDefault(); apply(text.slice(0, a) + '\n☐ ' + text.slice(a), [a + 3]); }
     }
   };
 
@@ -231,13 +287,12 @@ export default function JournalWriter({ userId, mode = 'running', entry = null, 
   }
 
   const h = hist.current;
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   const title = mode === 'running' ? 'Today’s note' : mode === 'short' ? 'Quick note' : 'Edit note';
   const said = status === 'saving' ? 'Saving…' : status === 'offline' ? 'Saved on this phone — will sync' : status ? 'S' + status.slice(1) : '';
   const tool = (label, onTap, child, { on = false, off = false } = {}) => (
     <button type="button" aria-label={label} title={label} disabled={off}
       onMouseDown={(e) => e.preventDefault()} onClick={onTap}
-      style={{ flex: '1 1 0', minWidth: 44, height: 48, border: 'none', background: on ? 'rgba(197,169,94,.18)' : 'transparent', borderRadius: 12,
+      style={{ flex: '1 0 44px', minWidth: 44, height: 48, border: 'none', background: on ? 'rgba(197,169,94,.18)' : 'transparent', borderRadius: 12,
         color: off ? 'rgba(246,241,231,.25)' : on ? '#EBCB82' : '#D8CFBE', fontFamily: SANS, fontSize: 17, fontWeight: 700, cursor: off ? 'default' : 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{child}</button>
   );
@@ -264,20 +319,21 @@ export default function JournalWriter({ userId, mode = 'running', entry = null, 
 
       <textarea ref={taRef} data-testid="journal-writer-text" value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')}
         onChange={(e) => { if (dict.interim) return; setText(e.target.value); remember(e.target.value, false); }}
-        onKeyDown={onKey} autoFocus={mode !== 'running'}
-        placeholder={ready ? 'What happened? Who did you meet, what did they say, what’s next?\n\nName people, properties, projects or files and they link to their records.' : ''}
+        onKeyDown={onKey} autoFocus={mode !== 'running'} readOnly={!ready} data-ready={ready ? '1' : '0'}
+        placeholder={ready ? 'What happened? Who did you meet, what did they say, what’s next?\n\nName people, properties, projects or files and they link to their records.' : 'Opening your note…'}
         style={{ flex: 1, minHeight: 0, width: '100%', boxSizing: 'border-box', padding: '18px 20px 24px', border: 'none', outline: 'none', resize: 'none',
           background: 'transparent', color: '#F6F1E7', fontFamily: SANS, fontSize: 17, lineHeight: 1.65, WebkitOverflowScrolling: 'touch' }} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '4px 8px calc(env(safe-area-inset-bottom, 0px) + 4px)', background: '#1B1610', borderTop: '1px solid rgba(246,241,231,0.07)' }}>
+      <div data-testid="journal-tools" style={{ display: 'flex', alignItems: 'center', gap: 0, overflowX: 'auto', padding: '4px 8px calc(env(safe-area-inset-bottom, 0px) + 4px)', background: '#1B1610', borderTop: '1px solid rgba(246,241,231,0.07)' }}>
         {tool('Show or hide the keyboard', keyboard, <span style={{ fontSize: 19 }}>{'⌨'}</span>)}
         {dict.supported && tool(dict.recording ? 'Stop dictating' : 'Dictate', () => (dict.recording ? dict.stop() : dict.start()), <Icon name="mic" size={19} />, { on: dict.recording })}
         {tool('Insert the date and time', stamp, <Icon name="clock" size={19} />)}
         {tool('Bullet', bullet, <span style={{ fontSize: 22, lineHeight: 1 }}>{'•'}</span>)}
+        {tool('Checklist item — tap again to tick it', check, <span style={{ fontSize: 20, lineHeight: 1 }}>{'☑'}</span>)}
         {tool('Highlight', highlight, <span style={{ background: 'rgba(197,169,94,.45)', color: '#100D09', borderRadius: 4, padding: '0 6px', fontSize: 15, fontWeight: 800 }}>A</span>)}
+        {tool(tidying ? 'Tidying…' : 'Tidy — clean up dictation without shortening it', tidy, tidying ? <span style={{ fontSize: 13 }}>{'…'}</span> : <Icon name="sparkles" size={19} />, { on: tidying })}
         {tool('Undo', () => step(-1), <span>{'↶'}</span>, { off: h.at <= 0 })}
         {tool('Redo', () => step(1), <span>{'↷'}</span>, { off: h.at >= h.stack.length - 1 })}
-        <span aria-hidden="true" style={{ fontSize: 11.5, color: '#9A917F', padding: '0 6px', whiteSpace: 'nowrap' }}>{words ? words + (words === 1 ? ' word' : ' words') : ''}</span>
       </div>
     </div>
   );

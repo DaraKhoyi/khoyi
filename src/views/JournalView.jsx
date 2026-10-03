@@ -22,11 +22,29 @@ function shiftDay(ymd, delta) { const [y, m, d] = ymd.split('-').map(Number); co
 
 
 
-// ==words== in a note is a highlight (JournalWriter's highlighter). Drawn in gold.
-function NoteText({ text }) {
+// ==words== in a note is a highlight (JournalWriter's highlighter), drawn in gold.
+// A line that starts with ☐ or ☑ is a checklist item: tap it to tick or untick.
+function Hi({ text }) {
   return <>{splitHighlights(text).map((p, i) => p.hi
     ? <mark key={i} style={{ background: 'rgba(197,169,94,0.32)', color: 'inherit', borderRadius: 3, padding: '0 2px' }}>{p.t}</mark>
     : <React.Fragment key={i}>{p.t}</React.Fragment>)}</>;
+}
+function NoteText({ text, onToggle }) {
+  const lines = String(text || '').split('\n');
+  return <>{lines.map((ln, i) => {
+    const box = ln.startsWith('☐ ') || ln.startsWith('☑ ');
+    if (!box) return <React.Fragment key={i}><Hi text={ln} />{i < lines.length - 1 ? '\n' : ''}</React.Fragment>;
+    const done = ln.startsWith('☑ ');
+    return (
+      <button key={i} type="button" role="checkbox" aria-checked={done} data-testid="journal-check" onClick={() => onToggle && onToggle(i)}
+        style={{ display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%', minHeight: 44, padding: '9px 0', margin: 0, border: 'none', background: 'none',
+          textAlign: 'left', cursor: 'pointer', font: 'inherit', color: done ? 'var(--text-3)' : 'inherit', whiteSpace: 'pre-wrap' }}>
+        <span aria-hidden="true" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, border: '1.5px solid ' + (done ? '#C5A95E' : 'var(--text-3)'),
+          background: done ? '#C5A95E' : 'transparent', color: '#100D09', fontSize: 14, fontWeight: 800, lineHeight: '20px', textAlign: 'center' }}>{done ? '✓' : ''}</span>
+        <span style={{ textDecoration: done ? 'line-through' : 'none' }}><Hi text={ln.slice(2)} /></span>
+      </button>
+    );
+  })}</>;
 }
 
 
@@ -213,6 +231,22 @@ function JournalView({ userId }) {
     setCombining(false);
     load();
   }
+  // Tick or untick a checklist line in place. The note's words do not change, so
+  // nothing is re-linked; if the save fails the box goes back.
+  async function toggleCheck(entry, lineIdx) {
+    const lines = String(entry.content || '').split('\n');
+    const ln = lines[lineIdx] || '';
+    if (ln.startsWith('☐ ')) lines[lineIdx] = '☑ ' + ln.slice(2);
+    else if (ln.startsWith('☑ ')) lines[lineIdx] = '☐ ' + ln.slice(2);
+    else return;
+    const next = lines.join('\n');
+    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, content: next } : e));
+    const { error } = await supabase.from('journal_entries').update({ content: next, updated_at: new Date().toISOString() }).eq('id', entry.id);
+    if (error) {
+      setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, content: entry.content } : e));
+      if (window.__notify) window.__notify('Could not save that tick: ' + (error.message || error), 'error');
+    }
+  }
   async function summarize() {
     setSummarizing(true);
     try {
@@ -362,7 +396,7 @@ function JournalView({ userId }) {
                     <span style={{ flex: 1 }} />
                     <button onClick={() => deleteEntry(entry)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', opacity: 0.6 }}><Icon name="trash" size={14} /></button>
                   </div>
-                  <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}><NoteText text={entry.content} /></div>
+                  <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}><NoteText text={entry.content} onToggle={(i) => toggleCheck(entry, i)} /></div>
                   {(links.length > 0 || actions.length > 0) && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
                       {links.map(l => <LinkChip key={l.id} link={l} onConfirm={() => confirmLink(entry, l)} onDismiss={() => dismissLink(entry, l)} />)}
