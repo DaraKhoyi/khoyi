@@ -227,12 +227,21 @@ async function gather(admin: any) {
   await one("ai_spend_outcomes_since_19sep", `select
       fn, calls, usd, per_call, with_subject, acted_on, acted_pct,
       'acted_pct = the contact was actually contacted within 14 days of the spend. ' ||
-      'It is a USAGE rate, not a conversion rate, and it is null until subjects accumulate.' note
+      'It is a USAGE rate, not a conversion rate, and it is null until subjects accumulate. ' ||
+      'calls minus with_subject is NOT spend about nobody: rows before 30 Sep were written without recording who they were for ' ||
+      '(a recording gap). For real gaps read ai_spend_unnamed_since_30sep. contact-research refuses any call without a contact record (400/404) ' ||
+      'and its old rows were matched to their contacts on 2 Oct.' note
     from jsonb_to_recordset(public.ai_spend_with_outcome(30))
       as t(fn text, calls int, usd numeric, per_call numeric,
            with_subject int, acted_on int, acted_pct numeric)
     where with_subject > 0 or usd > 1
     order by usd desc`);
+
+  // WHAT IS GENUINELY UNNAMED (2 Oct, after the Accountant read a recording gap as
+  // "$0.31/call spent on research about nobody"): spend since subjects began to
+  // be recorded that still names no person, deal, or "not about a person".
+  await one("ai_spend_unnamed_since_30sep", `select fn, count(*) calls, round(sum(cost_usd)::numeric, 2) usd
+    from ai_usage_log where created_at > '2026-10-01' and about is null group by 1 order by 3 desc limit 15`);
 
   // THE RETURN SIDE, in one measurement (27 Sep). Until then the query above
   // always came back [] — ai_spend_with_outcome admitted staff or the row's own

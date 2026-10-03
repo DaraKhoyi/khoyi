@@ -37,6 +37,35 @@ if (PAT && URL_) {
   };
 }
 
+// 0. Research is always about a contact RECORD (the Accountant, 2 Oct: "9 of 17
+//    calls had no named subject… reject invocations without a contact record ID").
+//    Checked: none ever ran about nobody — the refusal below predates the report;
+//    the old cost rows simply did not record the contact (backfilled in
+//    supabase/sql/2026-10-02c_research_spend_names_its_contact.sql). Pinned so
+//    neither half can slip: the function refuses first, and every row names its contact.
+{
+  const cr = readFileSync('supabase/functions/contact-research/index.ts', 'utf8');
+  const refuse = cr.indexOf('if (!contact_id) return J({ error: "contact_id is required" }, 400);');
+  const found = cr.indexOf('if (cErr || !contact) return J({ error: "Contact not found" }, 404);');
+  const firstModel = cr.indexOf('api.anthropic.com', cr.indexOf('await req.json()'));
+  expect(refuse > 0 && found > refuse, 'contact-research no longer refuses a call without a real contact record');
+  expect(firstModel < 0 || firstModel > found, 'contact-research can call a model before it has confirmed the contact exists');
+  const logs = cr.match(/await log(?:Ai)?Usage\([\s\S]{0,400}?\}\)/g) || [];
+  expect(logs.length > 0 && logs.every((l) => /subjectType: "contact"/.test(l)), 'a contact-research cost row is written without its contact');
+  if (URL_ && process.env.SUPABASE_ANON_KEY) {
+    try {
+      const r = await fetch(`${URL_}/functions/v1/contact-research`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: process.env.SUPABASE_ANON_KEY }, body: '{}' });
+      expect(r.status === 400, `live contact-research answered ${r.status} to a call with no contact — it must refuse with 400 before doing anything`);
+    } catch (e) { problems.push('could not reach contact-research: ' + (e?.message || e)); }
+  }
+  if (q) {
+    try {
+      const [u] = await q(`select count(*)::int n from ai_usage_log where fn = 'contact-research' and contact_id is null and created_at > '2026-08-25'`);
+      expect(u.n === 0, `${u.n} contact-research cost row(s) since 25 Aug do not name their contact`);
+    } catch (e) { problems.push('could not read research cost rows: ' + (e?.message || e)); }
+  }
+}
+
 // 1. Static.
 const LOGS = /logAiUsage\(|logEmbeddingUsage\(|logTtsUsage\(|logUsage\(|from\("ai_usage_log"\)\.insert/;
 const NAMES = /subjectType|subjectEmail|subject_type|subject_email/;
