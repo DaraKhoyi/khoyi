@@ -284,6 +284,10 @@ fi
 echo "→ seeding the throwaway agent"
 SEED_USER_ID="$SUID" node smoke/seed.mjs || { echo "seed failed — the run below would prove nothing"; exit 2; }
 
+# An app opened on an old saved copy loads the current build, once, never over typing (Dara, 2 Oct).
+echo "→ stale saved copy heals itself"
+SMOKE_URL="http://localhost:4173/" node smoke/stale_shell.mjs || exit 1
+
 echo "→ running smoke check"
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/smoke.mjs
 

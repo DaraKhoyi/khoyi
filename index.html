@@ -24,6 +24,46 @@
     <div id="root"></div>
     <script type="module" src="/src/index.js"></script>
     <script>
+      // OPENING THE APP ON AN OLD COPY HEALS ITSELF (2 Oct 2026).
+      // Dara, 9:21pm: "The app is not loading. It says it's loading an offline
+      // older copy from many versions ago. Let the current version load."
+      // When the page request fails for a moment (weak signal, a network blip),
+      // the service worker hands back a saved copy of the app so it still opens.
+      // That copy then ran for the whole session, and it could be many versions
+      // old. Now: the moment the app opens, it asks the server which build is
+      // current. If it is not this one, and nobody has typed anything yet, it
+      // loads the current one — once. This is a COLD START only (the first few
+      // seconds, before any typing); a running app is still never reloaded for a
+      // new version unless the person taps Update (smoke/no_forced_update.mjs).
+      (function () {
+        try {
+          var el = document.querySelector('script[src*="/static/js/main."]');
+          var m = el && String(el.getAttribute('src')).match(/main\.([A-Za-z0-9_-]+)\.js/);
+          if (!m || !window.fetch) return;
+          var mine = m[1], typed = false, t0 = Date.now();
+          var mark = function () { typed = true; };
+          window.addEventListener('keydown', mark, true);
+          window.addEventListener('input', mark, true);
+          var ctl = ('AbortController' in window) ? new AbortController() : null;
+          var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 6000);
+          fetch('/index.html?boot=' + t0, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+            .then(function (r) { return r.ok ? r.text() : ''; })
+            .then(function (html) {
+              clearTimeout(timer);
+              var n = html.match(/main\.([A-Za-z0-9_-]+)\.js/);
+              if (!n || n[1] === mine) return;                       // this IS the current build
+              if (typed || Date.now() - t0 > 8000) return;           // someone is working: the Update banner offers it instead
+              var KEY = '__staleShellReload';
+              if (sessionStorage.getItem(KEY) === n[1]) return;      // already tried once for this build: never loop
+              sessionStorage.setItem(KEY, n[1]);
+              window.__prismStaleShellReload = true;
+              window.location.reload();
+            })
+            .catch(function () { /* offline: the saved copy is the best there is right now */ });
+        } catch (_) {}
+      })();
+    </script>
+    <script>
       (function () {
         if (!('serviceWorker' in navigator)) return;
 

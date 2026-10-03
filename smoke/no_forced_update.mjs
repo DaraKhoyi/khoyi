@@ -34,6 +34,20 @@ const ccAt = html.indexOf("addEventListener('controllerchange'");
 const cc = ccAt < 0 ? '' : html.slice(ccAt, ccAt + 400);
 if (!/__prismUpdateRequested/.test(cc)) problems.push("index.html: 'controllerchange' reloads without checking window.__prismUpdateRequested");
 
+// 6. A COLD START on an old saved copy loads the current build — once, and never
+//    over someone's typing (2 Oct: a moment of bad signal opened the app "many
+//    versions ago" and it stayed there). Proven live by smoke/stale_shell.mjs.
+const bootAt = html.indexOf('__staleShellReload');
+const boot = bootAt < 0 ? '' : html.slice(html.lastIndexOf('<script>', bootAt), html.indexOf('</script>', bootAt));
+if (!boot) problems.push('index.html: an app opened on an old saved copy no longer loads the current build');
+else {
+  if (!/if \(typed \|\| Date\.now\(\) - t0 > 8000\) return;/.test(boot)) problems.push('index.html: the cold-start refresh can reload over someone who is typing, or long after the app opened');
+  if (!/sessionStorage\.getItem\(KEY\) === n\[1\]\) return;/.test(boot)) problems.push('index.html: the cold-start refresh can loop (no once-per-build guard)');
+}
+const swAll = read('public/sw.js');
+if (!/c\.put\('\/index\.html', copy\)/.test(swAll)) problems.push('public/sw.js: a successful page load no longer replaces the saved copy — the offline fallback goes stale again');
+if (!/caches\.open\(VERSION\)\.then\(\(c\) => c\.match\(key\)\)/.test(swAll)) problems.push("public/sw.js: the offline fallback no longer reads this worker's own cache first (the oldest cache would answer)");
+
 const app = read('src/App.js');
 const lazy = code(app.slice(app.indexOf('function lazyWithReload'), app.indexOf('function lazyWithReload') + 2500));
 if (/(?<!onClick:\s*\(\)\s*=>\s*)window\.location\.reload\(\)/.test(lazy.replace(/onClick:\s*\(\)\s*=>\s*window\.location\.reload\(\)/g, ''))) {

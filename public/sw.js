@@ -121,8 +121,26 @@ self.addEventListener('fetch', (event) => {
     // side key to a cold-started PrismOS would be the exact failure this
     // feature exists to avoid.
     const isAri = new URL(req.url).pathname.startsWith('/ari');
+    // THE SAVED COPY IS THE LAST ONE THAT LOADED, NOT THE FIRST (2 Oct 2026).
+    // The fallback used to be whatever index.html was saved when a service
+    // worker was first installed, looked up across every cache — and the oldest
+    // cache answers first. Each deploy leaves a waiting worker with its own
+    // cache, so a moment of bad signal opened the app "many versions ago"
+    // (Dara, 2 Oct). Now every successful page load replaces the saved copy,
+    // and the fallback reads this worker's own cache first.
+    const path = new URL(req.url).pathname;
+    const isShell = path === '/' || path === '/index.html';
     event.respondWith(
-      fetch(req).catch(() => caches.match(isAri ? '/ari/index.html' : '/index.html'))
+      fetch(req).then((res) => {
+        if (isShell && res && res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(VERSION).then((c) => c.put('/index.html', copy)).catch(() => {});
+        }
+        return res;
+      }).catch(() => {
+        const key = isAri ? '/ari/index.html' : '/index.html';
+        return caches.open(VERSION).then((c) => c.match(key)).then((hit) => hit || caches.match(key));
+      })
     );
     return;
   }
