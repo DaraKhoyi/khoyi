@@ -248,6 +248,42 @@ for (const dev of want) {
     record(dev, 'A late promise offers Done, Delete and Not a thing', !!(lr && lr.done && lr.remove && lr.choice && lr.words), JSON.stringify(lr || {}));
   } catch (e) { record(dev, 'Review opens a late promise', false, String(e).slice(0, 60)); }
 
+  // ---- FEATURE: the Journal writes full screen, saves itself, and comes back ----
+  // Dara, 3 Oct: "one big note and keep coming back to it. Save its current state
+  // as I work on it and go away from it and then come back to it." Types into
+  // today's note, leaves WITHOUT a save button, goes to another screen, taps the
+  // floating button, and requires the same words to be there.
+  try {
+    const mark = 'gate-' + dev + '-' + Date.now();
+    await ev(page, () => window.__setView && window.__setView('journal'));
+    let opened = false;
+    for (let i = 0; i < 10 && !opened; i++) {
+      await page.waitForTimeout(800);
+      opened = await ev(page, () => { const b = [...document.querySelectorAll('[data-testid="journal-today"] button')].find(x => /^(start|keep) writing$/i.test(x.textContent.trim())); if (b) { b.click(); return true; } return false; });
+    }
+    await page.waitForSelector('[data-testid="journal-writer-text"]', { timeout: 8000 });
+    await page.waitForTimeout(1500);                       // today's note loads before it accepts typing
+    const ta = page.locator('[data-testid="journal-writer-text"]');
+    const box = await ta.boundingBox(); const vp = page.viewportSize();
+    await ta.focus(); await page.keyboard.press('Control+End'); await page.keyboard.type(' ' + mark);
+    await ev(page, () => { const b = document.querySelector('[aria-label="Insert the date and time"]'); if (b) b.click(); });
+    let saved = false;
+    for (let i = 0; i < 12 && !saved; i++) { await page.waitForTimeout(700); saved = /Saved \d/.test(await page.textContent('[data-testid="journal-writer-status"]')); }
+    const stamped = /\d{1,2}:\d{2} [AP]M \u2014 $/.test(await ta.inputValue());
+    await ev(page, () => { const b = document.querySelector('[aria-label="Back to the journal"]'); if (b) b.click(); });
+    await page.waitForTimeout(1200);
+    await ev(page, () => window.__setView && window.__setView('tasks'));
+    let fab = false;
+    for (let i = 0; i < 10 && !fab; i++) { await page.waitForTimeout(700); fab = await ev(page, () => { const b = document.querySelector('[data-testid="journal-return"]'); if (b) { b.click(); return true; } return false; }); }
+    let back = '';
+    try { await page.waitForSelector('[data-testid="journal-writer-text"]', { timeout: 9000 }); await page.waitForTimeout(1500); back = await page.locator('[data-testid="journal-writer-text"]').inputValue(); } catch (_) {}
+    await ev(page, () => { const b = document.querySelector('[aria-label="Back to the journal"]'); if (b) b.click(); });
+    await page.waitForTimeout(800);
+    record(dev, 'Journal writes full screen', !!(box && vp && box.width >= vp.width - 2 && box.height > vp.height * 0.5), box ? Math.round(box.width) + 'x' + Math.round(box.height) + ' in ' + vp.width + 'x' + vp.height : 'no writer');
+    record(dev, 'Journal note saves itself and inserts a time stamp', saved && stamped, 'saved=' + saved + ' stamp=' + stamped);
+    record(dev, 'Floating button returns to the note where it was left', fab && back.includes(mark), 'button=' + fab + ' words-there=' + back.includes(mark));
+  } catch (e) { record(dev, 'Journal writes full screen', false, String(e).slice(0, 80)); }
+
   // ---- FEATURE: the Save button on new-contact is reachable (the iOS bug) ----
   try {
     const reachable = await ev(page, async () => {

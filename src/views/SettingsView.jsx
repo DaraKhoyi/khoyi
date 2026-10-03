@@ -227,6 +227,21 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
     setSavingAuto(false);
   }
 
+  // The floating "back to my note" button (JournalReturn). On unless turned off.
+  const journalButtonOn = userSettings?.journal_button !== false;
+  const [savingJB, setSavingJB] = React.useState(false);
+  const [jbMsg, setJbMsg] = React.useState('');
+  async function toggleJournalButton() {
+    if (savingJB) return;
+    setSavingJB(true); setJbMsg('');
+    const { data, error } = await supabase.from('user_settings')
+      .upsert({ user_id: userId, journal_button: !journalButtonOn, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .select().maybeSingle();
+    setSavingJB(false);
+    if (error) { setJbMsg('Error: ' + error.message); return; }
+    if (data) setUserSettings?.(data);
+  }
+
   const researchModel = userSettings?.ai_research_model || 'sonnet';
   const [savingModel, setSavingModel] = React.useState(false);
   const [modelMsg, setModelMsg] = React.useState('');
@@ -423,6 +438,18 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
               </button>
             </div>
             {autoMsg && <div style={{marginTop:'10px', fontSize:'12px', color: autoMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{autoMsg}</div>}
+          </div>
+        </div>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Journal button</h3></div>
+          <div className="panel-body">
+            <div style={{display:'flex', alignItems:'center', gap:'14px'}}>
+              <p style={{flex:1, minWidth:0, fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, margin:0}}>When on, a small round button stays on screen once you have started today’s journal note. One tap takes you back to the note, where you left it. Turn it off to hide the button — your note is still in the Journal.</p>
+              <button onClick={toggleJournalButton} role="switch" aria-checked={journalButtonOn} aria-label="Journal button" data-testid="journal-button-switch" disabled={savingJB} title={journalButtonOn ? 'On' : 'Off'} style={{flexShrink:0, width:48, height:28, borderRadius:999, border:'none', cursor: savingJB?'wait':'pointer', background: journalButtonOn?'var(--accent)':'var(--border)', position:'relative', transition:'background .15s'}}>
+                <span style={{position:'absolute', top:3, left: journalButtonOn?23:3, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .15s'}} />
+              </button>
+            </div>
+            {jbMsg && <div style={{marginTop:'10px', fontSize:'12px', color:'var(--red)'}}>{jbMsg}</div>}
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>

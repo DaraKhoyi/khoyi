@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { Icon } from '../icons';
 import { lbl, today_ymd, ymd } from '../helpers';
-import { useDictation } from './SharedUi';
 import { Tip, TipFor } from '../tipsUi';
-import { logJournalEntry, mirrorJournalToTimeline } from '../lib/journalLog';
+import { mirrorJournalToTimeline, combineDayNotes, splitHighlights } from '../lib/journalLog';
+import { confirmDialog } from '../notify';
+import JournalWriter from './JournalWriter';
 
 const JLINK_META = {
   contact:  { icon: <Icon name="contacts" size={11} />, color: '#60a5fa' },
@@ -21,16 +22,11 @@ function shiftDay(ymd, delta) { const [y, m, d] = ymd.split('-').map(Number); co
 
 
 
-function AutoGrowTextarea({ value, minHeight = 120, maxHeight = 600, style, ...rest }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current; if (!el) return;
-    el.style.height = 'auto';
-    const h = Math.min(el.scrollHeight, maxHeight);
-    el.style.height = h + 'px';
-    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [value, maxHeight]);
-  return <textarea ref={ref} value={value} style={{ ...style, minHeight, resize: 'none', overflow: 'hidden' }} {...rest} />;
+// ==words== in a note is a highlight (JournalWriter's highlighter). Drawn in gold.
+function NoteText({ text }) {
+  return <>{splitHighlights(text).map((p, i) => p.hi
+    ? <mark key={i} style={{ background: 'rgba(197,169,94,0.32)', color: 'inherit', borderRadius: 3, padding: '0 2px' }}>{p.t}</mark>
+    : <React.Fragment key={i}>{p.t}</React.Fragment>)}</>;
 }
 
 
@@ -133,27 +129,27 @@ function JournalView({ userId }) {
   const [linksByEntry, setLinksByEntry] = useState({});
   const [actionsByEntry, setActionsByEntry] = useState({});
   const [loading, setLoading] = useState(true);
-  const [text, setText] = useState('');
-  const [editingId, setEditingId] = useState(null);   // journal entry currently being edited
-  const [draft, setDraft] = useState('');              // in-progress edited text
-  const [savingEdit, setSavingEdit] = useState(false);
-  // Shared-into-app (Web Share Target): a link/text shared from another app.
+  // THE WRITER (3 Oct): writing happens full screen, not in a box on this page.
+  // null, or { mode: 'running' | 'short' | 'edit', entry?, seedText? }.
+  const [writer, setWriter] = useState(null);
+  const [combining, setCombining] = useState(false);
+  // Shared-into-app (Web Share Target): a link/text shared from another app
+  // opens as a quick note. The floating Journal button opens today's note.
   useEffect(() => {
     const d = window.__pendingSharedText;
-    if (!d) return;
-    window.__pendingSharedText = null;
-    const parts = [d.title, d.text, d.url].filter(Boolean);
-    if (parts.length) setText(parts.join('\n'));
+    if (d) {
+      window.__pendingSharedText = null;
+      const parts = [d.title, d.text, d.url].filter(Boolean);
+      if (parts.length) { setWriter({ mode: 'short', seedText: parts.join('\n') }); return; }
+    }
+    if (window.__openJournalWriter) { window.__openJournalWriter = false; setWriter({ mode: 'running' }); }
   }, []);
-  const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [searching, setSearching] = useState(false);
-  const taRef = useRef(null);
-  const dict = useDictation((f) => setText(prev => { const sep = (!prev || /\s$/.test(prev)) ? '' : ' '; return prev + sep + f.trim() + ' '; }));
   const isToday = day === today_ymd();
 
   const load = useCallback(async () => {
@@ -177,22 +173,6 @@ function JournalView({ userId }) {
     return () => window.removeEventListener('journal-entry-added', h);
   }, [day, load]);
 
-  async function save() {
-    const content = text.trim();
-    if (!content || saving) return;
-    if (dict.recording) dict.stop();
-    setSaving(true);
-    try {
-      const kind = /\s/.test(content) && dict.supported ? 'text' : 'text';
-      const { entry, links, actions } = await logJournalEntry(userId, content, kind);
-      setEntries(prev => [entry, ...prev]);
-      setLinksByEntry(prev => ({ ...prev, [entry.id]: links }));
-      if (actions && actions.length) setActionsByEntry(prev => ({ ...prev, [entry.id]: actions }));
-      setText('');
-      if (window.__notify) window.__notify('Logged', 'success');
-    } catch (e) { if (window.__notify) window.__notify(e.message || 'Save failed — please try again.', 'error'); }
-    finally { setSaving(false); }
-  }
   async function confirmLink(entry, link) {
     setLinksByEntry(prev => ({ ...prev, [entry.id]: (prev[entry.id] || []).map(l => l.id === link.id ? { ...l, confirmed: true } : l) }));
     await supabase.from('journal_links').update({ confirmed: true }).eq('id', link.id);
@@ -219,27 +199,19 @@ function JournalView({ userId }) {
     if (error) { if (window.__notify) window.__notify('Could not delete entry: ' + (error.message || error), 'error'); return; }
     setEntries(prev => prev.filter(e => e.id !== entry.id));
   }
-  function startEdit(entry) { setEditingId(entry.id); setDraft(entry.content || ''); }
-  function cancelEdit() { setEditingId(null); setDraft(''); }
-  async function saveEdit(entry) {
-    const next = draft.trim();
-    if (!next) { if (window.__notify) window.__notify('Entry can’t be empty', 'warn'); return; }
-    if (next === (entry.content || '').trim()) { cancelEdit(); return; }
-    setSavingEdit(true);
-    // Re-analyze links/actions on edit (content changed), same as a fresh entry.
-    const { error } = await supabase.from('journal_entries')
-      .update({ content: next, analyzed: false, updated_at: new Date().toISOString() })
-      .eq('id', entry.id);
-    setSavingEdit(false);
-    if (error) { if (window.__notify) window.__notify('Could not save: ' + (error.message || error), 'error'); return; }
-    // Clear the now-stale links/actions in the UI; re-analysis will repopulate.
-    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, content: next, analyzed: false } : e));
-    setLinksByEntry(prev => { const n = { ...prev }; delete n[entry.id]; return n; });
-    setActionsByEntry(prev => { const n = { ...prev }; delete n[entry.id]; return n; });
-    cancelEdit();
-    if (window.__notify) window.__notify('Entry updated', 'success');
-    // Re-link/re-extract in the background (best-effort), then refresh this day.
-    try { await supabase.functions.invoke('journal-analyze', { body: { entry_id: entry.id } }); load(); } catch (_) {}
+  // Every short note of the day, in order, under its time, becomes part of the
+  // day's one note (Dara: "little notes and then combine them at the end of the day").
+  async function combine() {
+    const shorts = entries.filter(e => e.kind !== 'running');
+    if (!shorts.length || combining) return;
+    const ok = await confirmDialog(`Combine ${shorts.length === 1 ? 'this note' : 'these ' + shorts.length + ' notes'} into the day\u2019s one note? Each keeps its time and every word. The separate notes are then removed.`,
+      { confirmLabel: 'Combine', cancelLabel: 'Keep separate', danger: false });
+    if (!ok) return;
+    setCombining(true);
+    try { await combineDayNotes(userId, day, entries, fmtJTime); if (window.__notify) window.__notify('Combined into one note.', 'success'); }
+    catch (e) { if (window.__notify) window.__notify('Could not combine: ' + (e.message || e) + ' \u2014 nothing was removed.', 'error'); }
+    setCombining(false);
+    load();
   }
   async function summarize() {
     setSummarizing(true);
@@ -313,37 +285,30 @@ function JournalView({ userId }) {
 
       {!searchOpen && mode !== 'day' && <JournalStory userId={userId} mode={mode} />}
 
-      {/* Composer (today only) */}
-      {mode === 'day' && isToday && !searchOpen && (
-        <div className="panel" style={{ padding: '16px', border: dict.recording ? '1px solid var(--red)' : '1px solid var(--border)', transition: 'border-color 0.2s' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)' }}>New entry</span>
-            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>· {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
-            <span style={{ flex: 1 }} />
-            {dict.recording && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--red)' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--red)', animation: 'pulse 1.2s ease-in-out infinite' }} />listening…
-              </span>
-            )}
+      {/* Today's note — writing opens FULL SCREEN (JournalWriter). The card keeps
+          the prompt and the linking tip that used to sit in the box. */}
+      {mode === 'day' && isToday && !searchOpen && (() => {
+        const running = entries.find(e => e.kind === 'running');
+        const has = !!(running && String(running.content || '').trim());
+        return (
+          <div data-testid="journal-today" style={{ padding: '4px 0 2px' }}>
+            <button type="button" onClick={() => setWriter({ mode: 'running' })}
+              style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 400, color: 'var(--text-1)' }}>Today’s note</div>
+              <div style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.5, marginTop: 3 }}>
+                {has ? <>Saved {fmtJTime(running.updated_at || running.occurred_at)} — it saves itself as you write. Pick it up where you left it.</>
+                  : <>What happened? Who did you meet, what did they say, what’s next? Name people, properties, projects or files and they link to their records.</>}
+              </div>
+            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
+              <button type="button" onClick={() => setWriter({ mode: 'running' })}
+                style={{ minHeight: 44, padding: '0 18px', borderRadius: 10, border: 'none', background: '#C5A95E', color: '#100D09', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{has ? 'Keep writing' : 'Start writing'}</button>
+              <button type="button" onClick={() => setWriter({ mode: 'short' })}
+                style={{ minHeight: 44, padding: '0 12px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--text-3)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Quick note</button>
+            </div>
           </div>
-          <AutoGrowTextarea value={text + (dict.interim ? (text && !/\s$/.test(text) ? ' ' : '') + dict.interim : '')} onChange={e => setText(e.target.value)}
-            onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); } }}
-            placeholder={"What happened? Who did you meet, what did they say, what's next?\n\nTip: name people, properties, projects or files and they'll auto-link to their records."}
-            minHeight={220} maxHeight={640}
-            style={{ width: '100%', padding: '16px', background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text-1)', fontSize: '16px', boxSizing: 'border-box', lineHeight: 1.6, fontFamily: 'inherit' }} />
-          <div style={{ display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {dict.supported && (
-              <button onClick={() => dict.recording ? dict.stop() : dict.start()}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '12px 18px', borderRadius: '999px', border: `1.5px solid ${dict.recording ? 'var(--red)' : 'var(--border)'}`, background: dict.recording ? 'rgba(239,68,68,0.12)' : 'var(--bg-hover)', color: dict.recording ? 'var(--red)' : 'var(--text-2)', cursor: 'pointer', fontSize: '14px', fontWeight: 700 }}>
-                {dict.recording ? <>⏹ Stop</> : <><Icon name="mic" size={13} /> Dictate</>}
-              </button>
-            )}
-            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{text.trim() ? `${text.trim().split(/\s+/).length} words` : ''}</span>
-            <span style={{ flex: 1 }} />
-            <button onClick={save} disabled={saving || !text.trim()} style={{ padding: '12px 28px', background: 'var(--accent)', color: 'var(--bg-base)', border: 'none', borderRadius: '999px', fontWeight: 800, fontSize: '14px', cursor: 'pointer', opacity: (saving || !text.trim()) ? 0.5 : 1, boxShadow: (saving || !text.trim()) ? 'none' : '0 2px 10px rgba(197,169,94,0.3)' }}>{saving ? 'Logging…' : 'Log entry'}</button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Day summary */}
       {mode === 'day' && !searchOpen && (summary ? (
@@ -368,6 +333,13 @@ function JournalView({ userId }) {
         </button>
       )))}
 
+      {mode === 'day' && !searchOpen && entries.filter(e => e.kind !== 'running').length >= (entries.some(e => e.kind === 'running') ? 1 : 2) && (
+        <button type="button" data-testid="journal-combine" onClick={combine} disabled={combining}
+          style={{ alignSelf: 'flex-start', minHeight: 44, padding: 0, border: 'none', background: 'none', color: '#C5A95E', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+          {combining ? 'Combining…' : 'Combine the day’s notes into one ›'}
+        </button>
+      )}
+
       {/* Timeline */}
       {mode === 'day' && !searchOpen && (loading ? <div className="panel" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-3)' }}>Loading…</div> :
         entries.length === 0 ? (
@@ -377,31 +349,20 @@ function JournalView({ userId }) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {entries.map(entry => {
+            {[...entries].sort((x, y) => (y.kind === 'running') - (x.kind === 'running')).map(entry => {
               const links = linksByEntry[entry.id] || [];
               const actions = actionsByEntry[entry.id] || [];
               return (
                 <div key={entry.id} className="panel" style={{ padding: '12px 14px', position: 'relative' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtJTime(entry.occurred_at)}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{entry.kind === 'running' ? (isToday ? 'Today’s note' : 'The day’s note') : fmtJTime(entry.occurred_at)}</span>
                     {entry.kind === 'voice'
                       ? <span style={{ display:'inline-flex', opacity:0.6 }} title="Voice entry"><Icon name="mic" size={12} /></span>
-                      : <button onClick={() => (editingId === entry.id ? cancelEdit() : startEdit(entry))} title="Edit entry" style={{ display:'inline-flex', background:'none', border:'none', padding:0, cursor:'pointer', color: editingId === entry.id ? 'var(--accent)' : 'var(--text-3)' }}><Icon name="edit" size={12} /></button>}
+                      : <button onClick={() => setWriter(entry.kind === 'running' && isToday ? { mode: 'running' } : { mode: 'edit', entry })} title="Edit" aria-label="Edit this note" style={{ display:'inline-flex', background:'none', border:'none', padding:0, cursor:'pointer', color:'var(--text-3)' }}><Icon name="edit" size={12} /></button>}
                     <span style={{ flex: 1 }} />
                     <button onClick={() => deleteEntry(entry)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '13px', opacity: 0.6 }}><Icon name="trash" size={14} /></button>
                   </div>
-                  {editingId === entry.id ? (
-                    <div>
-                      <textarea autoFocus value={draft} onChange={e => setDraft(e.target.value)} rows={Math.max(3, draft.split('\n').length + 1)}
-                        style={{ width:'100%', boxSizing:'border-box', background:'var(--bg-1,#100D09)', border:'1px solid var(--accent)', borderRadius:'8px', color:'var(--text-1)', padding:'10px 12px', fontSize:'14px', lineHeight:1.55, fontFamily:'inherit', resize:'vertical' }} />
-                      <div style={{ display:'flex', gap:'8px', marginTop:'8px', justifyContent:'flex-end' }}>
-                        <button onClick={cancelEdit} disabled={savingEdit} style={{ background:'none', border:'1px solid var(--border)', color:'var(--text-2)', borderRadius:'999px', padding:'6px 16px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>Cancel</button>
-                        <button onClick={() => saveEdit(entry)} disabled={savingEdit} style={{ background:'var(--accent)', border:'none', color:'#100D09', borderRadius:'999px', padding:'6px 18px', fontSize:'13px', fontWeight:800, cursor:'pointer', opacity: savingEdit ? 0.6 : 1 }}>{savingEdit ? 'Saving…' : 'Save'}</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
-                  )}
+                  <div style={{ fontSize: '14px', color: 'var(--text-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}><NoteText text={entry.content} /></div>
                   {(links.length > 0 || actions.length > 0) && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
                       {links.map(l => <LinkChip key={l.id} link={l} onConfirm={() => confirmLink(entry, l)} onDismiss={() => dismissLink(entry, l)} />)}
@@ -418,6 +379,8 @@ function JournalView({ userId }) {
             })}
           </div>
         ))}
+      {writer && <JournalWriter userId={userId} mode={writer.mode} entry={writer.entry || null} seedText={writer.seedText || ''}
+        onClose={(changed) => { setWriter(null); if (changed) load(); try { window.dispatchEvent(new Event('journal-writer-closed')); } catch (_) {} }} />}
     </div>
   );
 }
