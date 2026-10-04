@@ -248,6 +248,54 @@ for (const dev of want) {
     record(dev, 'A late promise offers Done, Delete and Not a thing', !!(lr && lr.done && lr.remove && lr.choice && lr.words), JSON.stringify(lr || {}));
   } catch (e) { record(dev, 'Review opens a late promise', false, String(e).slice(0, 60)); }
 
+  // ---- FEATURE: Goals for the Day — chosen by the person, at the top of Today ----
+  // Dara, 4 Oct: "pick 3 things from the back log or current items to schedule
+  // as Goals for the Day." Opens the picker, writes a goal in its own words, keeps
+  // it, requires it on Today ABOVE "Needs you today", ticks it — and requires that
+  // no score ("1 of 3") appears anywhere in the band.
+  try {
+    const mark = 'Goal ' + dev + ' ' + Date.now();
+    await ev(page, () => window.__setView && window.__setView('today'));
+    let gb = null;
+    for (let i = 0; i < 16; i++) {
+      await page.waitForTimeout(900);
+      gb = await ev(page, (m) => {
+        const band = document.querySelector('[data-testid="goals-band"]');
+        if (!band) return { band: false };
+        const click = (sel) => { const b = band.querySelector(sel); if (b) b.click(); return !!b; };
+        const picker = band.querySelector('[data-testid="goals-picker"]');
+        const rows = [...band.querySelectorAll('[data-testid="goal-row"]')];
+        const mine = rows.find(r => r.innerText.includes(m));
+        const out = { band: true, picker: !!picker, rows: rows.length, mine: !!mine };
+        if (!picker && !mine && !band.dataset.added) { click('[data-testid="goals-choose"]') || click('[data-testid="goals-change"]'); return out; }
+        if (picker && !band.dataset.added) {
+          const inp = picker.querySelector('[data-testid="goal-input"]');
+          if (!inp) { band.dataset.added = 'full'; click('[data-testid="goals-done"]'); return { ...out, full: true }; }
+          if (inp.value !== m) { const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; set.call(inp, m); inp.dispatchEvent(new Event('input', { bubbles: true })); return out; }
+          band.dataset.added = '1'; click('[data-testid="goal-add"]'); return out;
+        }
+        if (picker && band.dataset.added === '1') {
+          if ([...picker.querySelectorAll('[data-testid="picked-goal"]')].some(r => r.innerText.includes(m))) click('[data-testid="goals-done"]');
+          return out;
+        }
+        const target = mine || rows[0];
+        if (target) {
+          const box = target.querySelector('[data-testid="goal-done"]');
+          out.checked = box && box.getAttribute('aria-checked') === 'true';
+          if (box && !out.checked && !target.dataset.ticked) { target.dataset.ticked = '1'; box.click(); }
+          const needs = [...document.querySelectorAll('div')].find(d => d.textContent.trim() === 'Needs you today');
+          out.above = !!needs && (band.compareDocumentPosition(needs) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+          out.score = /\b\d+\s+of\s+\d+\b|\bstreak\b/i.test(band.innerText);
+          out.full = band.dataset.added === 'full';
+        }
+        return out;
+      }, mark);
+      if (gb && gb.rows && gb.checked && (gb.mine || gb.full)) break;
+    }
+    record(dev, 'A goal for the day can be written, kept and ticked', !!(gb && gb.rows && gb.checked && (gb.mine || gb.full)), gb && gb.band ? JSON.stringify(gb) : 'no goals band on Today — saw: ' + await sawInstead(page, dev, 'goals'));
+    record(dev, 'Goals sit above what is inbound, and carry no score', !!(gb && gb.above && !gb.score), JSON.stringify(gb || {}));
+  } catch (e) { record(dev, 'A goal for the day can be written, kept and ticked', false, String(e).slice(0, 60)); }
+
   // ---- FEATURE: the record lists what PrismOS did on its own, line by line ----
   // Dara, 4 Oct: "not having things disappear without our knowledge." The seed has
   // a follow-up the clock set aside (a wire, so it is worth a second look) and a

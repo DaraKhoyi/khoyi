@@ -39,6 +39,11 @@ if (!PAT) {
 
 // value → why it is allowed to be absent. Keep the reason; a bare list rots.
 const STALE_OK = {
+  'contacts.status=accepted':
+    'Misattribution, not a stale reader: goal_candidates() reads commitments cm ' +
+    'WHERE cm.status = accepted and LEFT JOINs contacts ct only for the name. This ' +
+    'check resolves the alias to the joined table. commitments.status = accepted ' +
+    'holds rows (77 on 4 Oct 2026).',
   'contacts.status=handled':
     'Misattribution, not a stale reader: the_record_rows() reads lead_concierge lc ' +
     'WHERE lc.status in (dismissed, handled) and LEFT JOINs contacts ct only for a ' +
@@ -150,7 +155,10 @@ for (const [key, seen] of found) {
   // Caught on the first real run: disc_analysis_queue is 757 rows, all 'done',
   // and flagging queue_disc_analysis() for looking at 'pending' would be exactly
   // the crying-wolf that makes a guard get ignored.
-  if (/^(pending|queued|processing|running|in_progress|new|draft|sending|retry)$/.test(val)) continue;
+  // 'proposed' joined this list on 4 Oct 2026: the broker answered every waiting
+  // suggestion at 2:28pm, the table held none, and the gate failed on a person
+  // having finished their review. An empty review queue is the app working.
+  if (/^(pending|queued|processing|running|in_progress|new|draft|sending|retry|proposed)$/.test(val)) continue;
   let total, hits, recent;
   try {
     // TWO NUMBERS, NOT THREE. The original asked "and how recently?" using

@@ -12,6 +12,7 @@ import ConnectionAlertBanner from './ConnectionAlertBanner';
 import LeadConcierge from './LeadConcierge';
 import CallList from './CallList';
 import { HandledLine } from './DoneForYou';
+import GoalsBand from './GoalsBand';
 import { calm } from '../calm';
 
 // ── TODAY — one app that makes everything else disappear (1 Oct 2026) ────────
@@ -100,6 +101,10 @@ export default function TodayView({
           ))}
         </div>
       )}
+
+      {/* 1b — YOUR agenda, before anything inbound (4 Oct): contract dates this week,
+          then the goals you chose for today. */}
+      {!isFirstRun && <GoalsBand userId={myUserId} tasks={tasks} setTasks={setTasks} events={events} setView={setView} firstName={first} />}
 
       {/* 2 — What PrismOS did */}
       <HandledLine setView={setView} />

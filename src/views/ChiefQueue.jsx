@@ -123,7 +123,7 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
       bounce: [['Resend', () => { if (window.__composeEmail) window.__composeEmail(p.to || '', p.subject ? 'Re: ' + p.subject : ''); }, true], ['Handled', () => bounceHandled(item)]],
       deadline: [['Add as a task', () => addTask(item, p.title || item.title, p.due_date), true]],
       doc: [['Open', () => go('documents'), true], ['Done', () => snooze(item, 36500)]],
-      tasks: [['Open my tasks', () => go('tasks'), true]],
+      tasks: [['Pick my goals', () => { try { window.dispatchEvent(new Event('prism:open-goals')); } catch (_) {} }, true], ['Open my tasks', () => go('tasks')]],
       reply: [['Reply', () => { if (p.email) { try { window.__inboxOpenEmail = p.email; } catch (_) {} go('inbox'); } else go('contacts'); }, true], ['No reply needed', () => noReplyNeeded(item)]],
       plan: [['Review the plan', () => go('agentruns'), true]],
       deal: [['Open the deal', () => go('pipeline'), true], ['It is fine', () => snooze(item, 14)]],
