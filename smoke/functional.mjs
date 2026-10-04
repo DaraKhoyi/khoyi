@@ -271,6 +271,8 @@ for (const dev of want) {
     await page.waitForTimeout(300);
     const boxed = /\u2610 [^\n]*$/.test(await ta.inputValue());
     const hasTidy = await ev(page, () => !!document.querySelector('[data-testid="journal-tools"] [aria-label^="Tidy"]'));
+    // Every tool is on screen at once — no sideways scrolling, at any width.
+    const fits = await ev(page, () => { const el = document.querySelector('[data-testid="journal-tools"]'); if (!el) return false; const r = el.getBoundingClientRect(); return el.scrollWidth <= el.clientWidth + 1 && [...el.querySelectorAll('button')].every(b => { const x = b.getBoundingClientRect(); return x.left >= r.left - 1 && x.right <= r.right + 1 && x.width >= 28; }); });
     await ev(page, () => { const b = document.querySelector('[aria-label^="Checklist item"]'); if (b) b.click(); });   // tick it
     await page.waitForTimeout(300);
     const ticked = /\u2611 [^\n]*$/.test(await ta.inputValue());
@@ -288,7 +290,7 @@ for (const dev of want) {
     await page.waitForTimeout(800);
     record(dev, 'Journal writes full screen', !!(box && vp && box.width >= vp.width - 2 && box.height > vp.height * 0.5), box ? Math.round(box.width) + 'x' + Math.round(box.height) + ' in ' + vp.width + 'x' + vp.height : 'no writer');
     record(dev, 'Journal note saves itself and inserts a time stamp', saved && stamped, 'saved=' + saved + ' stamp=' + stamped);
-    record(dev, 'Journal has a checklist tool and Tidy', boxed && ticked && hasTidy, 'box=' + boxed + ' tick=' + ticked + ' tidy=' + hasTidy);
+    record(dev, 'Journal has a checklist tool and Tidy, all tools on screen', boxed && ticked && hasTidy && fits, 'box=' + boxed + ' tick=' + ticked + ' tidy=' + hasTidy + ' fits=' + fits);
     record(dev, 'Floating button returns to the note where it was left', fab && back.includes(mark), 'button=' + fab + ' words-there=' + back.includes(mark));
   } catch (e) { record(dev, 'Journal writes full screen', false, String(e).slice(0, 80)); }
 

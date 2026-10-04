@@ -292,7 +292,8 @@ export default function JournalWriter({ userId, mode = 'running', entry = null, 
   const tool = (label, onTap, child, { on = false, off = false } = {}) => (
     <button type="button" aria-label={label} title={label} disabled={off}
       onMouseDown={(e) => e.preventDefault()} onClick={onTap}
-      style={{ flex: '1 0 44px', minWidth: 44, height: 48, border: 'none', background: on ? 'rgba(197,169,94,.18)' : 'transparent', borderRadius: 12,
+      style={{ flex: '1 1 0', minWidth: 0, padding: 0, height: 48,   // the tools SHARE the width: they narrow on a small phone instead of scrolling (Dara, 3 Oct)
+        border: 'none', background: on ? 'rgba(197,169,94,.18)' : 'transparent', borderRadius: 12,
         color: off ? 'rgba(246,241,231,.25)' : on ? '#EBCB82' : '#D8CFBE', fontFamily: SANS, fontSize: 17, fontWeight: 700, cursor: off ? 'default' : 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{child}</button>
   );
@@ -324,7 +325,7 @@ export default function JournalWriter({ userId, mode = 'running', entry = null, 
         style={{ flex: 1, minHeight: 0, width: '100%', boxSizing: 'border-box', padding: '18px 20px 24px', border: 'none', outline: 'none', resize: 'none',
           background: 'transparent', color: '#F6F1E7', fontFamily: SANS, fontSize: 17, lineHeight: 1.65, WebkitOverflowScrolling: 'touch' }} />
 
-      <div data-testid="journal-tools" style={{ display: 'flex', alignItems: 'center', gap: 0, overflowX: 'auto', padding: '4px 8px calc(env(safe-area-inset-bottom, 0px) + 4px)', background: '#1B1610', borderTop: '1px solid rgba(246,241,231,0.07)' }}>
+      <div data-testid="journal-tools" style={{ display: 'flex', alignItems: 'center', gap: 0, overflow: 'hidden', padding: '4px 6px calc(env(safe-area-inset-bottom, 0px) + 4px)', background: '#1B1610', borderTop: '1px solid rgba(246,241,231,0.07)' }}>
         {tool('Show or hide the keyboard', keyboard, <span style={{ fontSize: 19 }}>{'⌨'}</span>)}
         {dict.supported && tool(dict.recording ? 'Stop dictating' : 'Dictate', () => (dict.recording ? dict.stop() : dict.start()), <Icon name="mic" size={19} />, { on: dict.recording })}
         {tool('Insert the date and time', stamp, <Icon name="clock" size={19} />)}
