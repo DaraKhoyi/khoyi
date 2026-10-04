@@ -38,7 +38,7 @@ for (const f of files) {
 if (/AutomationLevel|AUTO_LEVELS/.test(readFileSync('src/views/TodayView.jsx', 'utf8'))) problems.push('TodayView shows the automation picker again — no job reads automation_level yet');
 // What the AI overhears on a call is work only, unless the person asked for more.
 const lessons = readFileSync('supabase/functions/_shared/lessons.ts', 'utf8');
-if (!/export async function personalRule/.test(lessons) || !/calls_personal === true/.test(lessons)) problems.push('_shared/lessons.ts lost personalRule (personal remarks on calls are off unless asked for)');
+if (!/export async function personalRule/.test(lessons) || !/dialLevel\(db, userId, "calls_personal"\)/.test(lessons)) problems.push('_shared/lessons.ts lost personalRule (personal remarks on calls are off unless asked for)');
 for (const f of ['call-commitments', 'quo-call-process']) if (!/await personalRule\(/.test(readFileSync(`supabase/functions/${f}/index.ts`, 'utf8'))) problems.push(`${f} reads calls without the personal-remarks rule`);
 if (/Personal and family promises count exactly as much/.test(readFileSync('supabase/functions/call-commitments/index.ts', 'utf8'))) problems.push('call-commitments tells the model to harvest personal promises for everyone again');
 const cr = readFileSync('src/views/CommitmentReview.jsx', 'utf8');

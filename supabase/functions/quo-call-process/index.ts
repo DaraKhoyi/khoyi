@@ -21,6 +21,7 @@ import { notAThingLessons, personalRule } from "../_shared/lessons.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { dialLevel } from "../_shared/dial.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -253,6 +254,8 @@ serve(async (req) => {
       let proposed: any[] = [];
       let transcriptEn: string | null = null;
       try {
+        // THE DIAL: the call is still logged on the timeline; no follow-ups are looked for.
+        if ((await dialLevel(admin, call.user_id, "call_followups")) === "off") throw new Error("turned off by the person");
         const userMsg = [
           `Current date: ${today} (America/New_York).`,
           `Call direction: ${dir}.`,

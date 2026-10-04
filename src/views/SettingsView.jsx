@@ -1,6 +1,7 @@
 // SettingsView — the settings hub (account, email, permissions, integrations, etc.).
 // Extracted from App.js (strangle). Every child panel is now its own module.
 import React, { useState, useEffect, lazy, Suspense } from 'react';
+import DialSettings from './DialSettings';
 import { supabase } from '../dataService';
 import { BUILD_VERSION } from '../version';
 import { notify } from '../notify';
@@ -209,40 +210,6 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
     if (data) setUserSettings?.(data);
   }
 
-  const autoScheduleOn = userSettings?.auto_schedule_tasks === true; // default OFF
-  const [savingAuto, setSavingAuto] = React.useState(false);
-  const [autoMsg, setAutoMsg] = React.useState('');
-  async function toggleAutoSchedule() {
-    if (savingAuto) return;
-    const next = !autoScheduleOn;
-    setSavingAuto(true); setAutoMsg('');
-    const { data, error } = await supabase.from('user_settings')
-      .upsert({ user_id: userId, auto_schedule_tasks: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-      .select().maybeSingle();
-    if (error) { setAutoMsg('Error: ' + error.message); setSavingAuto(false); return; }
-    if (data) setUserSettings?.(data);
-    // Apply right away so the calendar reflects it without waiting for the cron.
-    try { await supabase.functions.invoke('task-autoschedule', { body: {} }); } catch (_) {}
-    setAutoMsg(next ? 'On — your tasks will be scheduled onto your calendar.' : 'Off — auto-scheduled blocks removed from your calendar.');
-    setSavingAuto(false);
-  }
-
-  // Personal plans heard on calls (4 Oct 2026). Off unless turned on: what the AI
-  // overhears is limited to work; what the person adds themselves is always welcome.
-  const callsPersonalOn = userSettings?.calls_personal === true;
-  const [savingCP, setSavingCP] = React.useState(false);
-  const [cpMsg, setCpMsg] = React.useState('');
-  async function toggleCallsPersonal() {
-    if (savingCP) return;
-    setSavingCP(true); setCpMsg('');
-    const { data, error } = await supabase.from('user_settings')
-      .upsert({ user_id: userId, calls_personal: !callsPersonalOn, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-      .select().maybeSingle();
-    setSavingCP(false);
-    if (error) { setCpMsg('Error: ' + error.message); return; }
-    if (data) setUserSettings?.(data);
-  }
-
   // The floating "back to my note" button (JournalReturn). On unless turned off.
   const journalButtonOn = userSettings?.journal_button !== false;
   const [savingJB, setSavingJB] = React.useState(false);
@@ -444,30 +411,7 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
               <CoachSettings userId={userId} />
         <TipsSetting />
         <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
-        <div className="panel" style={{marginBottom:'18px'}}>
-          <div className="panel-header"><h3>Auto-schedule tasks on calendar</h3></div>
-          <div className="panel-body">
-            <div style={{display:'flex', alignItems:'center', gap:'14px'}}>
-              <p style={{flex:1, minWidth:0, fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, margin:0}}>When on, Prism automatically places tasks that have an estimated duration into open blocks on your calendar. Turn it off to keep those blocks off your calendar — your tasks stay in your task list either way.</p>
-              <button onClick={toggleAutoSchedule} role="switch" aria-checked={autoScheduleOn} disabled={savingAuto} title={autoScheduleOn ? 'On' : 'Off'} style={{flexShrink:0, width:48, height:28, borderRadius:999, border:'none', cursor: savingAuto?'wait':'pointer', background: autoScheduleOn ? 'var(--accent)' : 'var(--border-strong)', position:'relative', transition:'background .15s'}}>
-                <span style={{position:'absolute', top:3, left: autoScheduleOn?23:3, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .15s'}} />
-              </button>
-            </div>
-            {autoMsg && <div style={{marginTop:'10px', fontSize:'12px', color: autoMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{autoMsg}</div>}
-          </div>
-        </div>
-        <div className="panel" style={{marginBottom:'18px'}}>
-          <div className="panel-header"><h3>Personal plans heard on calls</h3></div>
-          <div className="panel-body">
-            <div style={{display:'flex', alignItems:'center', gap:'14px'}}>
-              <p style={{flex:1, minWidth:0, fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, margin:0}}>When off, PrismOS suggests follow-ups from your calls only when they are about your work. Family and personal plans said on a call stay private conversation. Turn it on if you want those suggested too. Anything you add to your list yourself is always welcome, whatever it is about.</p>
-              <button onClick={toggleCallsPersonal} role="switch" aria-checked={callsPersonalOn} aria-label="Personal plans heard on calls" data-testid="calls-personal-switch" disabled={savingCP} title={callsPersonalOn ? 'On' : 'Off'} style={{flexShrink:0, width:48, height:28, borderRadius:999, border:'none', cursor: savingCP?'wait':'pointer', background: callsPersonalOn?'var(--accent)':'var(--border)', position:'relative', transition:'background .15s'}}>
-                <span style={{position:'absolute', top:3, left: callsPersonalOn?23:3, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .15s'}} />
-              </button>
-            </div>
-            {cpMsg && <div style={{marginTop:'10px', fontSize:'12px', color:'var(--red)'}}>{cpMsg}</div>}
-          </div>
-        </div>
+        <DialSettings userId={userId} setUserSettings={setUserSettings} />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Journal button</h3></div>
           <div className="panel-body">

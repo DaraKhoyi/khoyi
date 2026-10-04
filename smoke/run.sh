@@ -193,6 +193,8 @@ node smoke/credential_scope.mjs || exit 1
 node smoke/no_failure_ledger.mjs || exit 1
 # Nothing disappears without a line the person can read and undo (Dara + Ray, 4 Oct).
 node smoke/record_guard.mjs || exit 1
+# A level is only offered where a job obeys it (Dara, 4 Oct).
+node smoke/dial_guard.mjs || exit 1
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

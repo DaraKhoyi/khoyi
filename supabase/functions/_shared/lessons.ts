@@ -1,3 +1,4 @@
+import { dialLevel } from "./dial.ts";
 // What this person has told PrismOS was "not a thing" (2 Oct 2026).
 //
 // Dara: "I want to train my AI to give me relevant items… Not a thing should
@@ -36,13 +37,7 @@ export async function notAThingLessons(db: any, userId?: string | null, limit = 
 // AI overhears on a call is limited to their work unless they ask for more
 // (user_settings.calls_personal). One rule, here, for every call reader.
 export async function personalRule(db: any, userId?: string | null): Promise<string> {
-  let on = false;
-  try {
-    if (userId) {
-      const { data } = await db.from("user_settings").select("calls_personal").eq("user_id", userId).maybeSingle();
-      on = data?.calls_personal === true;
-    }
-  } catch (_) { on = false; }
+  const on = (await dialLevel(db, userId, "calls_personal")) === "suggest";   // THE DIAL: one rule, and pause applies
   const never = "- NEVER extract a remark about the person's own body, routine or getting ready ('I need to shower', 'let me eat first', 'I'm going to get dressed and head over') from anyone on the call. Nobody is owed those and nobody should be tracked on them.\n";
   return on
     ? never + "- Personal and family promises made to another person count exactly as much as real-estate ones: this person asked for them to be picked up.\n"

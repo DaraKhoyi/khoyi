@@ -8,6 +8,7 @@
 //   - user JWT          -> scoped to that user only (body.user_id ignored)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isServiceCaller } from "../_shared/serviceCaller.ts";
+import { dialLevel } from "../_shared/dial.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
@@ -193,8 +194,11 @@ async function scheduleUser(userId, now) {
   // Respect the per-user "Auto-schedule tasks on calendar" setting (default ON).
   // When OFF, clear any existing auto-scheduled blocks and do nothing else.
   try {
-    const { data: us } = await admin.from("user_settings").select("auto_schedule_tasks").eq("user_id", userId).maybeSingle();
-    if (!us || us.auto_schedule_tasks !== true) {
+    // THE DIAL. Paused = touch nothing (blocks already on the calendar stay put);
+    // Off = the person turned it off, so the blocks PrismOS placed are removed.
+    const { data: us } = await admin.from("user_settings").select("automation_paused").eq("user_id", userId).maybeSingle();
+    if (us?.automation_paused === true) return { user_id: userId, scheduled_tasks: 0, blocks_written: 0, skipped: "paused" };
+    if ((await dialLevel(admin, userId, "calendar")) !== "tell") {
       await admin.from("events").delete().eq("user_id", userId).eq("event_kind", "task_block");
       return { user_id: userId, scheduled_tasks: 0, blocks_written: 0, skipped: "auto_schedule_off" };
     }

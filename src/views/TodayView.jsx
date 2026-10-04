@@ -423,6 +423,11 @@ function SetAsideTomorrow({ userId }) {
   const [n, setN] = useState(0);
   const load = useCallback(async () => {
     try {
+      // THE DIAL: the question is asked only at "Do and tell". Off = nothing will be
+      // set aside; quiet = the person chose not to be asked.
+      const { data: dial } = await supabase.rpc('my_dial');
+      const tidy = ((dial?.items || []).find(i => i.cat === 'tidy_followups') || {}).level || 'tell';
+      if (dial?.paused || tidy !== 'tell') { setIds([]); return; }
       const { data } = await supabase.from('commitments').select('id,created_at,fuse,due_date')
         .eq('user_id', userId).eq('status', 'proposed').is('auto_expired_at', null)
         .or('fuse.is.null,fuse.neq.immediate');

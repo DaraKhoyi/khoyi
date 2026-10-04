@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notAThingLessons, personalRule, broughtBackLessons } from "../_shared/lessons.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { dialLevel } from "../_shared/dial.ts";
 
 // ── call-commitments ─────────────────────────────────────────────────────────
 // Pulls the promises out of a call. The whole design answers one question Dara
@@ -110,6 +111,8 @@ serve(async (req) => {
       try {
         await db.from("quo_calls").update({ commitments_read_at: new Date().toISOString() }).eq("id", call.id);
         if (!call.speaker_map) { out.push({ id: call.id, skipped: "not attributed" }); continue; }
+        // THE DIAL: this person turned follow-ups from calls off, or paused everything.
+        if (!body.force && (await dialLevel(db, call.user_id, "call_followups")) === "off") { out.push({ id: call.id, skipped: "turned off by the person" }); continue; }
         if (call.commitments_read_at && !body.force) { out.push({ id: call.id, skipped: "already read" }); continue; }
 
         const { data: contact } = call.contact_id

@@ -11,6 +11,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { dialLevel } from "../_shared/dial.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const MODEL = "claude-sonnet-4-6";
@@ -35,8 +36,7 @@ Deno.serve(async (req) => {
     if (!user_id || !leadHandle) return new Response(JSON.stringify({ error: "user_id and a phone or email required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 
     // respect the agent's on/off switch
-    const { data: st } = await admin.from("lead_concierge_settings").select("enabled").eq("user_id", user_id).maybeSingle();
-    if (st && st.enabled === false) return new Response(JSON.stringify({ ok: true, skipped: "disabled" }), { headers: { ...cors, "Content-Type": "application/json" } });
+    // (the old lead_concierge_settings.enabled switch is read by dial_level now: off = no draft, the lead still shows)
 
     // de-dupe: one pending concierge per lead handle per 12h
     const since = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
@@ -64,7 +64,10 @@ Deno.serve(async (req) => {
     ]);
     const lastIn = who?.user?.last_sign_in_at ? Date.parse(who.user.last_sign_in_at) : 0;
     const unreachable = reach !== true && Date.now() - lastIn > 14 * 86400e3;
-    const noDraft = !!skip_draft || unreachable;
+    // THE DIAL: "Replies to new leads: Off" still shows the lead and still alerts —
+    // only the drafting stops. (Returning early here would hide the lead itself.)
+    const draftsOff = (await dialLevel(admin, user_id, "lead_drafts")) === "off";
+    const noDraft = !!skip_draft || unreachable || draftsOff;
 
     const { voice, name } = await loadVoice(admin, user_id);
     const firstName = (lead_name || "").trim().split(/\s+/)[0] || null;
@@ -97,7 +100,7 @@ Deno.serve(async (req) => {
     // useless, and drafting every important email would spend real money on text
     // nobody sends. He can ask for a draft on the card when he wants one.
     try {
-      if (noDraft) throw new Error(skip_draft ? "reply — drafted on request, not on arrival" : "nobody PrismOS can reach — no draft");
+      if (noDraft) throw new Error(skip_draft ? "reply — drafted on request, not on arrival" : draftsOff ? "drafting turned off by the person" : "nobody PrismOS can reach — no draft");
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01" },
