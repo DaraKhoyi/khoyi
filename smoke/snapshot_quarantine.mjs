@@ -41,7 +41,9 @@ const sql = `select c.relname, c.reltuples::bigint est
   order by c.relname`;
 
 let rows = null;
-for (let i = 0; i < 5 && !Array.isArray(rows); i++) {
+// 8 tries over about three and a half minutes: the Management API throttles for
+// minutes at a time when gates run back to back (4 Oct 2026), and 30 seconds was not enough.
+for (let i = 0; i < 8 && !Array.isArray(rows); i++) {
   try {
     const r = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
       method: 'POST',
@@ -50,7 +52,7 @@ for (let i = 0; i < 5 && !Array.isArray(rows); i++) {
     });
     rows = await r.json();
   } catch { rows = null; }
-  if (!Array.isArray(rows)) await new Promise((s) => setTimeout(s, 2000 * (i + 1)));
+  if (!Array.isArray(rows)) await new Promise((s) => setTimeout(s, 6000 * (i + 1)));
 }
 if (!Array.isArray(rows)) {
   // Could not ask the database. That is not a pass — say so and fail.

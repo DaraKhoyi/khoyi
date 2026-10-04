@@ -219,6 +219,7 @@ export default function DiscAssessmentView({ userId, user, profiles, setProfiles
   const [driveIndex, setDriveIndex] = useState(0);
   const [styleAnswers, setStyleAnswers] = useState({});
   const [validityAnchor, setValidityAnchor] = useState(null);
+  const [agreed, setAgreed] = useState(false);   // read who sees the results, before the first question
   const [driveAnswers, setDriveAnswers] = useState({});
   const [results, setResults] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -312,9 +313,19 @@ export default function DiscAssessmentView({ userId, user, profiles, setProfiles
         drive, validity: { anchor: validityAnchor, anchorLabel, flag: validityFlag }, style_label: styleLbl, readout, coaching,
       });
       await syncOwnerProfile(style.natural, style.adaptive, drive);
+      // A starting guess for how PrismOS shows things — only for settings not set by hand.
+      const { error: gErr } = await supabase.rpc('apply_presentation_guess');
+      if (gErr) console.warn('apply_presentation_guess:', gErr.message);
     } catch (_e) {} finally { setSaving(false); }
   }
 
+  async function removeResults() {
+    if (!window.confirm('Remove your results? Your Broker and admins will no longer see them, and PrismOS goes back to the standard settings for anything you have not set yourself.')) return;
+    const { data, error } = await supabase.rpc('delete_my_assessment');
+    if (error || !data || data.ok === false) { if (window.__notify) window.__notify('Could not remove them: ' + (error?.message || data?.error || 'try again'), 'error'); return; }
+    if (window.__notify) window.__notify('Your results have been removed.', 'success');
+    setAgreed(false); retake();
+  }
   function retake() {
     setStyleAnswers({}); setDriveAnswers({}); setValidityAnchor(null); setStyleIndex(0); setDriveIndex(0); setResults(null); setPhase('intro'); scrollTop();
   }
@@ -346,7 +357,21 @@ export default function DiscAssessmentView({ userId, user, profiles, setProfiles
               <label>Your name</label>
               <input value={name} onChange={e=>setName(e.target.value)} placeholder="First and last name" />
             </div>
-            <button className="fsa-btn" disabled={!name.trim()} onClick={()=>{ setPhase('style'); scrollTop(); }}>Begin <span className="fsa-arrow">→</span></button>
+            {/* BEFORE THE FIRST QUESTION (design brief, decisions 1–3, 4 Oct 2026): what
+                this is for, who sees it, what it is never used for, and how to remove it. */}
+            <div data-testid="assessment-consent" style={{ margin: '18px 0 14px', padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(203,163,92,.35)', fontSize: 13.5, lineHeight: 1.6, color: 'var(--text-2, #C8BFAE)' }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-1, #F6F1E7)', marginBottom: 6 }}>Before you begin</div>
+              <div><strong>This is optional.</strong> PrismOS works without it.</div>
+              <div><strong>What it is for:</strong> a starting point for how PrismOS shows things to you — how much at once, how much explanation. You can see and change every one of those settings, and your choices always win.</div>
+              <div><strong>Who can see your results:</strong> you, your Broker, and the Broker’s admins. No other agent.</div>
+              <div><strong>What it is never used for:</strong> deciding who gets leads, recognition, or whether anyone stays.</div>
+              <div><strong>You can remove your results</strong> at any time from the results page.</div>
+              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 10, cursor: 'pointer', color: 'var(--text-1, #F6F1E7)' }}>
+                <input type="checkbox" data-testid="assessment-agree" checked={agreed} onChange={e => setAgreed(e.target.checked)} style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+                <span>I understand who can see my results, and I want to take it.</span>
+              </label>
+            </div>
+            <button className="fsa-btn" data-testid="assessment-begin" disabled={!name.trim() || !agreed} onClick={()=>{ setPhase('style'); scrollTop(); }}>Begin <span className="fsa-arrow">→</span></button>
           </div>
         )}
 
@@ -358,7 +383,7 @@ export default function DiscAssessmentView({ userId, user, profiles, setProfiles
           <div className="fsa-loading"><div className="fsa-spinner" /><p>Reading the spectrum…</p></div>
         )}
 
-        {phase === 'results' && results && <Results res={results} onRetake={retake} saving={saving} />}
+        {phase === 'results' && results && <Results res={results} onRetake={retake} onRemove={removeResults} saving={saving} />}
       </div>
     </div>
   );
@@ -469,7 +494,7 @@ function DriveBar({ code, val }) {
     </div>
   );
 }
-function Results({ res, onRetake, saving }) {
+function Results({ res, onRetake, onRemove, saving }) {
   const a = res.style.adaptive, n = res.style.natural;
   const flag = res.validityFlag;
   return (
@@ -512,6 +537,7 @@ function Results({ res, onRetake, saving }) {
       <div className="fsa-results-foot">
         <span className="fsa-saved">{saving ? 'Saving…' : res.taken_at ? `Saved ${new Date(res.taken_at).toLocaleDateString()}` : ''}</span>
         <button className="fsa-btn2" onClick={onRetake}><Icon name="refresh" size={13} /> Retake</button>
+        {onRemove && <button className="fsa-btn2" data-testid="assessment-remove" onClick={onRemove}>Remove my results</button>}
       </div>
     </div>
   );

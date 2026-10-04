@@ -1,11 +1,14 @@
 // TipsSetting — settings panel extracted from App.js (strangle).
 import React, { useState } from 'react';
+import { supabase } from '../dataService';
 import { TIPS_UNLOCK_AT, effectivePace, setTipsEnabled, setTipsPace, tipsSeenCount, tipsUnlocked } from '../tipsUi';
 
 export default function TipsSetting(){
   const [pace, setPace] = useState(effectivePace());
   const unlocked = tipsUnlocked(); const seen = tipsSeenCount();
-  const choose = (p) => { if (p === 'off' && !unlocked) return; setTipsPace(p); setTipsEnabled(p !== 'off'); setPace(p); };
+  const choose = (p) => { if (p === 'off' && !unlocked) return; setTipsPace(p); setTipsEnabled(p !== 'off'); setPace(p);
+    // remembered as the person's own, so a starting guess never moves it (4 Oct)
+    supabase.rpc('set_presentation', { p_key: 'tips_pace', p_value: p }).then(({ error }) => { if (error) console.warn('tips_pace:', error.message); }); };
   const opts = [
     { id:'thorough', label:'Thorough', desc:'Teach me everything, often' },
     { id:'balanced', label:'Balanced', desc:'A couple a day' },
@@ -15,7 +18,7 @@ export default function TipsSetting(){
   return (
     <div className="panel" style={{ marginBottom:'18px' }}>
       <div style={{ fontSize:'13.5px', fontWeight:700, color:'var(--text-1)' }}>Learning pace</div>
-      <div style={{ fontSize:'12px', color:'var(--text-3)', margin:'2px 0 12px' }}>How often PrismOS teaches you as you work — set to match your DISC style, change it anytime.</div>
+      <div style={{ fontSize:'12px', color:'var(--text-3)', margin:'2px 0 12px' }}>How often PrismOS explains things as you work. Change it anytime; your choice always wins.</div>
       <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
         {opts.map(o => {
           const locked = o.id === 'off' && !unlocked;

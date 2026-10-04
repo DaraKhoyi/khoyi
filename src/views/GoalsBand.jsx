@@ -43,6 +43,7 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
   const [away, setAway] = useState(false);         // back after a week or more
   const [picking, setPicking] = useState(null);    // null | 'today' | 'tomorrow'
   const [closing, setClosing] = useState(false);
+  const [evening, setEvening] = useState(true);
   const ref = useRef(null);
 
   const load = useCallback(async () => {
@@ -50,13 +51,14 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
     const [g, d, s, r] = await Promise.all([
       supabase.from('day_goals').select('*').eq('user_id', userId).in('day', [today, tomorrow]).order('pos').order('created_at'),
       supabase.rpc('my_contract_deadlines', { p_days: 7 }),
-      supabase.from('user_settings').select('daily_goal_count,last_open_at').eq('user_id', userId).maybeSingle(),
+      supabase.from('user_settings').select('daily_goal_count,last_open_at,presentation').eq('user_id', userId).maybeSingle(),
       supabase.from('day_goals').select('day').eq('user_id', userId).eq('outcome', 'tomorrow').gte('day', addDays(today, -4)).lt('day', today),
     ]);
     if (g.error) { setRows([]); return; }
     setRows(g.data || []);
     setDeadlines(Array.isArray(d.data) ? d.data : []);
     if (s.data?.daily_goal_count) setN(s.data.daily_goal_count);
+    setEvening(s.data?.presentation?.evening_prompt !== false);   // the person can turn the afternoon offer off
     setRolled(new Set((r.data || []).map(x => x.day)).size >= 3);
     return s.data || null;
   }, [userId, today, tomorrow]);
@@ -188,7 +190,7 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
 
       {closing && <CloseDay goals={mine} isDone={isDone} today={today} tomorrow={tomorrow} userId={userId} taskById={taskById} setTasks={setTasks} onChange={load} onClose={() => setClosing(false)} />}
 
-      {hour >= 15 && !compact && picking !== 'today' && !closing && (
+      {hour >= 15 && evening && !compact && picking !== 'today' && !closing && (
         picking === 'tomorrow'
           ? <Picker day={tomorrow} label="tomorrow" goals={next} n={n} setN={setN} userId={userId} tasks={tasks} busyDay={false} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />
           : <div style={{ marginTop: 6 }}>

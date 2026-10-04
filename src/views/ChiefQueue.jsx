@@ -19,7 +19,7 @@ import { calm } from '../calm';
 const plusDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); };
 const tell = (m, k) => { if (window.__notify) window.__notify(m, k); };
 
-export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all = false, onCount }) {
+export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all = false, onCount, oneAtATime = false }) {
   const [items, setItems] = useState(null);
   const [open, setOpen] = useState(null);      // ref of a promise/chase row opened in place
   const [heard, setHeard] = useState(null);    // ref of a row whose person's recent messages are open (Dara, 1 Oct)
@@ -135,7 +135,9 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
     })[item.kind] || [];
   };
 
-  const shown = all ? items : items.slice(0, limit);
+  // oneAtATime: the person asked to be shown one thing, then the next (never more than `limit`).
+  const capped = items.slice(0, limit);   // never more than `limit` on Today, whatever the setting
+  const shown = all ? items : (oneAtATime ? capped.slice(0, 1) : capped);
   return (
     <div data-testid="chief-queue">
       {shown.map((item, i) => {
@@ -184,7 +186,7 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
           </div>
         );
       })}
-      {!all && items.length > limit && (
+      {!all && items.length > (oneAtATime ? 1 : limit) && (
         <button type="button" onClick={() => go('chief')} style={{ ...calm.link, marginTop: 6 }}>
           The rest can wait — see them when you like
         </button>

@@ -56,14 +56,51 @@ export default function TodayView({
   // The next thing on today's calendar — the first thing a person wants to know.
   const next = useMemo(() => {
     const now = Date.now(); const today = todayNY();
-    const todays = (events || []).filter(e => e && e.start_at && !e.all_day && e.status !== 'cancelled'
-      && new Date(e.start_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) === today
-      && new Date(e.end_at || e.start_at).getTime() >= now)
+    // An event that repeats is stored once; place today's occurrence on today.
+    const ymd = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const lands = (e) => {
+      const first = ymd(e.start_at);
+      if (!e.recur_freq) return first === today;
+      if (first > today || (e.recur_until && String(e.recur_until).slice(0, 10) < today)) return false;
+      const a = new Date(first + 'T12:00:00Z'), b = new Date(today + 'T12:00:00Z'), n = Math.max(1, e.recur_interval || 1);
+      const days = Math.round((b - a) / 864e5);
+      if (e.recur_freq === 'daily') return days % n === 0;
+      if (e.recur_freq === 'weekly') return days % (7 * n) === 0;
+      const months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth();
+      if (e.recur_freq === 'monthly') return a.getUTCDate() === b.getUTCDate() && months % n === 0;
+      if (e.recur_freq === 'yearly') return a.getUTCDate() === b.getUTCDate() && a.getUTCMonth() === b.getUTCMonth() && (months / 12) % n === 0;
+      return false;
+    };
+    const onToday = (e) => {
+      if (!e.recur_freq || ymd(e.start_at) === today) return e;
+      const shift = Math.round((new Date(today + 'T12:00:00Z') - new Date(ymd(e.start_at) + 'T12:00:00Z')) / 864e5) * 864e5;
+      return { ...e, start_at: new Date(new Date(e.start_at).getTime() + shift).toISOString(), end_at: e.end_at ? new Date(new Date(e.end_at).getTime() + shift).toISOString() : e.end_at };
+    };
+    const todays = (events || []).filter(e => e && e.start_at && !e.all_day && e.status !== 'cancelled' && e.event_kind !== 'task_block' && lands(e))
+      .map(onToday)
+      .filter(e => new Date(e.end_at || e.start_at).getTime() >= now)
       .sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
     return { first: todays[0] || null, more: Math.max(0, todays.length - 1) };
   }, [events]);
 
   const isFirstRun = contacts.length === 0 && tasks.length === 0 && events.length === 0;
+
+  // How this person asked to be shown things (Settings → How PrismOS shows things
+  // to me). Three under "Needs you today" unless they chose one at a time.
+  const [present, setPresent] = useState({ today_items: 3 });
+  useEffect(() => {
+    let go = true;
+    const load = async () => {
+      const { data, error } = await supabase.rpc('my_presentation');
+      if (!go || error || !data) return;
+      setPresent(data);
+      // a starting guess for the learning pace applies only where this device has no choice of its own
+      try { if (data.tips_pace && !localStorage.getItem('prism_tips_pace')) localStorage.setItem('prism_tips_pace', data.tips_pace); } catch (_) {}
+    };
+    load();
+    window.addEventListener('prism:presentation-changed', load);
+    return () => { go = false; window.removeEventListener('prism:presentation-changed', load); };
+  }, [myUserId]);
 
   return (
     <div className="ww-prism" data-testid="today-calm" style={calm.page}>
@@ -115,7 +152,7 @@ export default function TodayView({
       </div>
       <DelegationInbox userId={myUserId} onChanged={notifyTasks} />
       {!isFirstRun && <div style={calm.section}>Needs you today</div>}
-      {!isFirstRun && <ChiefQueue userId={myUserId} setView={setView} limit={3} onChanged={notifyTasks} />}
+      {!isFirstRun && <ChiefQueue userId={myUserId} setView={setView} limit={3} oneAtATime={present.today_items === 1} onChanged={notifyTasks} />}
       {/* The day-before question, in the app itself (4 Oct): the push reaches only people
           with a device registered — 5 of 17 accounts. Shown only on the day it applies. */}
       {!isFirstRun && <div style={{ marginTop: 18 }}><SetAsideTomorrow userId={myUserId} /></div>}

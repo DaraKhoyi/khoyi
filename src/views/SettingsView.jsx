@@ -3,6 +3,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import DialSettings from './DialSettings';
 import NotifySettings from './NotifySettings';
+import PresentationPanel from './PresentationPanel';
 import LearnedPanel from './LearnedPanel';
 import { supabase } from '../dataService';
 import { BUILD_VERSION } from '../version';
@@ -415,6 +416,7 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
         <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
         <DialSettings userId={userId} setUserSettings={setUserSettings} />
         <NotifySettings />
+        <PresentationPanel />
         <LearnedPanel />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Journal button</h3></div>
