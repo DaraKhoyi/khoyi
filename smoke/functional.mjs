@@ -248,6 +248,34 @@ for (const dev of want) {
     record(dev, 'A late promise offers Done, Delete and Not a thing', !!(lr && lr.done && lr.remove && lr.choice && lr.words), JSON.stringify(lr || {}));
   } catch (e) { record(dev, 'Review opens a late promise', false, String(e).slice(0, 60)); }
 
+  // ---- FEATURE: the record lists what PrismOS did on its own, line by line ----
+  // Dara, 4 Oct: "not having things disappear without our knowledge." The seed has
+  // a follow-up the clock set aside (a wire, so it is worth a second look) and a
+  // suggestion the call reader left out. Both must be on the page as their own
+  // lines with a reason and a way back — and no total anywhere in the record.
+  try {
+    await ev(page, () => window.__setView && window.__setView('chief'));
+    let rc = null;
+    for (let i = 0; i < 14; i++) {
+      await page.waitForTimeout(1000);
+      rc = await ev(page, () => {
+        const root = document.querySelector('[data-testid="the-record"]');
+        if (!root) return { root: false };
+        const lines = [...root.querySelectorAll('[data-testid="record-line"], [data-testid="second-look-line"]')];
+        const find = (re) => lines.find(l => re.test(l.innerText));
+        const wire = find(/wire instructions/i), staging = find(/staging quote/i);
+        const btn = (l, re) => !!l && [...l.querySelectorAll('button')].some(b => re.test(b.textContent.trim()));
+        return { root: true, lines: lines.length, wire: !!wire, staging: !!staging,
+          wireWhy: !!wire && /set it aside/i.test(wire.innerText), stagingWhy: !!staging && /left out/i.test(staging.innerText),
+          back: btn(wire, /^(pick up|no, bring it back)$/i) && btn(staging, /^(pick up|no, bring it back)$/i),
+          total: /\b\d+\s+(set aside|left out|missed|items?|things?)\b/i.test(root.innerText) };
+      });
+      if (rc && rc.wire && rc.staging) break;
+    }
+    record(dev, 'The record lists each automatic action with why and a way back', !!(rc && rc.wire && rc.staging && rc.wireWhy && rc.stagingWhy && rc.back), rc && rc.root ? JSON.stringify(rc) : 'no record on the page — saw: ' + await sawInstead(page, dev, 'record'));
+    record(dev, 'The record carries no totals', !!(rc && rc.root && !rc.total), JSON.stringify(rc || {}));
+  } catch (e) { record(dev, 'The record lists each automatic action with why and a way back', false, String(e).slice(0, 60)); }
+
   // ---- FEATURE: the Journal writes full screen, saves itself, and comes back ----
   // Dara, 3 Oct: "one big note and keep coming back to it. Save its current state
   // as I work on it and go away from it and then come back to it." Types into

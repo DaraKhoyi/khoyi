@@ -1,7 +1,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { notAThingLessons, personalRule } from "../_shared/lessons.ts";
+import { notAThingLessons, personalRule, broughtBackLessons } from "../_shared/lessons.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 
 // ── call-commitments ─────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ serve(async (req) => {
           "- confidence low if the wording is vague or you are unsure who said it.\n" +
           (rosterNames.length ? `Known people you may match a name to (use the exact name if it fits): ${rosterNames.slice(0, 200).join(", ")}.\n` : "") +
           "Two or three commitments is a busy call. Ten means you are extracting topics, not promises." +
-          await notAThingLessons(db, call.user_id);   // what this person told us was "Not a thing" (2 Oct)
+          await notAThingLessons(db, call.user_id) + await broughtBackLessons(db, call.user_id);   // what this person told us was "Not a thing" (2 Oct)
 
         const usr = `Call date: ${(call.op_created_at || "").slice(0, 10)}. Speakers are labelled by name.${multiParty ? " This call has THREE OR MORE speakers — attribute each commitment to the correct person." : ""}\n\n${script.slice(0, 14000)}`;
         const raw = await claude(KEY, sys, usr);
@@ -196,6 +196,27 @@ serve(async (req) => {
 
         let kept = 0;
         const skipped = { conditional: 0, in_the_moment: 0, vague: 0, not_owed_to_agent: 0, unknown_person: 0, duplicate: 0 };
+        // THE RECORD (4 Oct): what is left out is written down, with why, so the
+        // person can read it and pick it back up. Before today it was a number in a log.
+        const dropped: any[] = [];
+        const leave = async (c: any, reason: keyof typeof skipped) => {
+          skipped[reason]++;
+          try {
+            dropped.push({
+              user_id: call.user_id, call_id: call.id, contact_id: call.contact_id, interaction_id: call.interaction_id,
+              owner: ["me", "them"].includes(c.owner) ? c.owner : "them",
+              owner_name: String(c.owner_name || "").slice(0, 120) || null,
+              title: String(c.title).slice(0, 300), quote: String(c.quote).slice(0, 600),
+              next_step: c.next_step ? String(c.next_step).slice(0, 300) : null,
+              context: c.context ? String(c.context).slice(0, 300) : null,
+              fuse: ["immediate", "near", "distant"].includes(c.fuse) ? c.fuse : null,
+              stakes: ["high", "normal", "low"].includes(c.stakes) ? c.stakes : null,
+              due_date: /^\d{4}-\d{2}-\d{2}$/.test(c.due_date || "") ? c.due_date : null,
+              confidence: c.confidence === "high" ? "high" : "low",
+              reason, dedupe_key: await dedupeKey(call.id, c.title),
+            });
+          } catch (_) { /* the record is best-effort; reading the call is not */ }
+        };
         for (const c of list) {
           // The quote is the receipt. No receipt, no commitment.
           if (!c?.title || !c?.quote || !["me", "them", "other"].includes(c.owner)) continue;
@@ -203,16 +224,16 @@ serve(async (req) => {
           // measured on 21 Sep — the model follows instructions most of the time,
           // and "most of the time" is how 190 dismissals happen.
           const q = String(c.quote).toLowerCase();
-          if (/^\s*(if|when|once|in case)\b/.test(q) || /\bif (i|we|you|they|he|she) (run|see|hear|find|get|come)\b/.test(q)) { skipped.conditional++; continue; }
-          if (/(right now|let me (check|look|see|pull|grab|find)|real quick|in a (minute|second|sec)|as we speak|when we hang up|\bnow\b)/.test(q) && c.fuse === "immediate" && c.stakes !== "high") { skipped.in_the_moment++; continue; }   // never drop the key release or the wire because it was said "right now"
-          if (/\b(something|stuff|things|take care of it|that matter|the contact|the words)\b/i.test(String(c.title)) || String(c.title).trim().split(/\s+/).length < 4) { skipped.vague++; continue; }
-          if (c.owner !== "me" && c.owed_to_me === false) { skipped.not_owed_to_agent++; continue; }
-          if (c.owner !== "me" && !String(c.owner_name || "").trim() && !call.contact_id) { skipped.unknown_person++; continue; }
+          if (/^\s*(if|when|once|in case)\b/.test(q) || /\bif (i|we|you|they|he|she) (run|see|hear|find|get|come)\b/.test(q)) { await leave(c, "conditional"); continue; }
+          if (/(right now|let me (check|look|see|pull|grab|find)|real quick|in a (minute|second|sec)|as we speak|when we hang up|\bnow\b)/.test(q) && c.fuse === "immediate" && c.stakes !== "high") { await leave(c, "in_the_moment"); continue; }   // never drop the key release or the wire because it was said "right now"
+          if (/\b(something|stuff|things|take care of it|that matter|the contact|the words)\b/i.test(String(c.title)) || String(c.title).trim().split(/\s+/).length < 4) { await leave(c, "vague"); continue; }
+          if (c.owner !== "me" && c.owed_to_me === false) { await leave(c, "not_owed_to_agent"); continue; }
+          if (c.owner !== "me" && !String(c.owner_name || "").trim() && !call.contact_id) { await leave(c, "unknown_person"); continue; }
           // Already on the plate? An open task, an open card, or a pending call
           // follow-up. 61% of dismissals were a promise the agent had already seen
           // in the OTHER queue, worded differently by a different extractor.
           const { data: dup } = await db.rpc("find_similar_work", { p_user: call.user_id, p_contact: call.contact_id, p_title: String(c.title) });
-          if (dup) { skipped.duplicate++; continue; }
+          if (dup) { await leave(c, "duplicate"); continue; }
           // Resolve owner → owner_contact_id for third parties.
           let owner = c.owner;
           let owner_contact_id: string | null = null;
@@ -247,6 +268,10 @@ serve(async (req) => {
             status: "proposed",
           }, { onConflict: "user_id,dedupe_key", ignoreDuplicates: true });
           if (!error) kept++;
+        }
+        if (dropped.length) {
+          const { error: dErr } = await db.from("dropped_suggestions").upsert(dropped, { onConflict: "user_id,dedupe_key", ignoreDuplicates: true });
+          if (dErr) console.error("dropped_suggestions:", dErr.message);
         }
         await db.from("quo_calls").update({ commitments_read_at: new Date().toISOString() }).eq("id", call.id);
         out.push({ id: call.id, who: them, found: list.length, kept, skipped, extras: extras.length, named: speakers.length });

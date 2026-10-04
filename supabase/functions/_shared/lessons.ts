@@ -48,3 +48,24 @@ export async function personalRule(db: any, userId?: string | null): Promise<str
     ? never + "- Personal and family promises made to another person count exactly as much as real-estate ones: this person asked for them to be picked up.\n"
     : never + "- WORK ONLY. Extract a promise only when it concerns this person's work: a client, a deal, a property, a listing, a tenant, a vendor, the brokerage, money or paperwork for any of those. Personal, family, household, health and social plans heard on the call ('I'll pick up the kids', 'dinner Saturday', 'I'll call Mom back') are private conversation, not suggestions — leave them out. They are still in the call summary.\n";
 }
+
+// What this person BROUGHT BACK from the record (4 Oct 2026): a suggestion that
+// was left out or set aside, which they said should not have been. The mirror of
+// "Not a thing" — examples of what to raise, in their own history.
+export async function broughtBackLessons(db: any, userId?: string | null, limit = 8): Promise<string> {
+  try {
+    if (!userId) return "";
+    const [a, b] = await Promise.all([
+      db.from("dropped_suggestions").select("title,quote").eq("user_id", userId).not("picked_up_at", "is", null).order("picked_up_at", { ascending: false }).limit(limit),
+      db.from("commitment_events").select("title").eq("user_id", userId).eq("actor", userId).eq("to_status", "proposed").in("from_status", ["expired", "archived"]).order("at", { ascending: false }).limit(limit),
+    ]);
+    const lines = [...(a.data || []), ...(b.data || [])].map((r: any) => {
+      const t = String(r.title || "").replace(/\s+/g, " ").trim().slice(0, 140);
+      const q = String(r.quote || "").replace(/\s+/g, " ").trim().slice(0, 160);
+      return t ? `- ${t}${q ? ` (the words were: "${q}")` : ""}` : "";
+    }).filter(Boolean).slice(0, limit);
+    if (!lines.length) return "";
+    return "\nTHIS PERSON BROUGHT THESE BACK after PrismOS left them out or set them aside — each one mattered to them. " +
+      "Learn the KIND of thing each is and do raise things like it:\n" + lines.join("\n") + "\n";
+  } catch (_) { return ""; }
+}

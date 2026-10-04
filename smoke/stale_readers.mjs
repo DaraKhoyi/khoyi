@@ -39,6 +39,11 @@ if (!PAT) {
 
 // value → why it is allowed to be absent. Keep the reason; a bare list rots.
 const STALE_OK = {
+  'contacts.status=handled':
+    'Misattribution, not a stale reader: the_record_rows() reads lead_concierge lc ' +
+    'WHERE lc.status in (dismissed, handled) and LEFT JOINs contacts ct only for a ' +
+    'name. This check resolves the alias to the joined table. lead_concierge.status ' +
+    '= handled holds rows (9 on 4 Oct 2026).',
   'contacts.status=proposed':
     'Misattribution, not a stale reader: warn_commitments_before_set_aside() reads ' +
     'commitments c WHERE c.status = \'proposed\' and LEFT JOINs contacts ct only for ' +

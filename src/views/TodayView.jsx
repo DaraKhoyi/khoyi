@@ -111,6 +111,9 @@ export default function TodayView({
       <DelegationInbox userId={myUserId} onChanged={notifyTasks} />
       {!isFirstRun && <div style={calm.section}>Needs you today</div>}
       {!isFirstRun && <ChiefQueue userId={myUserId} setView={setView} limit={3} onChanged={notifyTasks} />}
+      {/* The day-before question, in the app itself (4 Oct): the push reaches only people
+          with a device registered — 5 of 17 accounts. Shown only on the day it applies. */}
+      {!isFirstRun && <div style={{ marginTop: 18 }}><SetAsideTomorrow userId={myUserId} /></div>}
 
       {/* 4 — Everything else, one tap down */}
       <div style={{ marginTop: 30, borderTop: calm.HAIR }}>
@@ -125,7 +128,6 @@ export default function TodayView({
           <QuickActions setView={setView} userId={myUserId} onOpenPlan={onOpenPlan} />
           <MorningBrief setView={setView} />
           <CallList />
-          <SetAsideTomorrow userId={myUserId} />
           <DelegationOutbox userId={myUserId} onChanged={notifyTasks} />
           <StaleDecide tasks={tasks} setTasks={setTasks} userId={myUserId} />
           <CallFollowupsPanel userId={myUserId} contacts={contacts} setTasks={setTasks} />

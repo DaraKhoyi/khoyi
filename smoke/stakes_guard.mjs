@@ -17,7 +17,7 @@ const read = (p) => readFileSync(p, 'utf8');
 const fn = read('supabase/functions/call-commitments/index.ts');
 expect(/"stakes":"high"\|"normal"\|"low"/.test(fn), 'call-commitments no longer asks the model for stakes');
 expect(/fuse and stakes are DIFFERENT questions/.test(fn), 'call-commitments no longer tells the model fuse and stakes are separate');
-expect(/c\.fuse === "immediate" && c\.stakes !== "high"\) \{ skipped\.in_the_moment/.test(fn), 'the "in the moment" guard drops high-stakes promises again');
+expect(/c\.fuse === "immediate" && c\.stakes !== "high"\) \{ await leave\(c, "in_the_moment"\)/.test(fn), 'the "in the moment" guard drops high-stakes promises again');
 expect(/stakes: \["high","normal","low"\]\.includes\(c\.stakes\)/.test(fn), 'call-commitments no longer stores stakes');
 expect(/c\.stakes === 'high'/.test(read('src/views/CommitmentReview.jsx')), 'the review card no longer says why a high-stakes follow-up is there');
 

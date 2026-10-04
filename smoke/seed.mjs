@@ -131,6 +131,21 @@ await post('commitments', [
     status: 'accepted', due_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date(now - DAY)) },
 ]);
 
+// THE RECORD (4 Oct 2026): one follow-up the clock set aside (money in it, so it is
+// worth a second look) and one the call reader left out before it was ever shown.
+await post('commitments', [
+  { user_id: USER, call_id: callId(1), contact_id: cid(1), owner: 'me',
+    title: 'Send the wire instructions for the Bayshore earnest money deposit',
+    quote: 'I will send you the wire instructions for the deposit.',
+    status: 'expired', fuse: 'near', stakes: 'high', created_at: new Date(now - 16 * DAY).toISOString(), auto_expired_at: new Date(now - 2 * DAY).toISOString() },
+]);
+await post('dropped_suggestions', [
+  { user_id: USER, call_id: callId(0), contact_id: cid(0), owner: 'them', owner_name: 'Rima Olabi',
+    title: 'Rima will send the staging quote for the Harbour Island listing',
+    quote: 'if I get it today I will send the staging quote over', reason: 'conditional', fuse: 'near', stakes: 'normal',
+    dedupe_key: 'seed-' + USER + '-staging' },
+]);
+
 if (!madeContacts.length) {
   console.error('seed: NO CONTACTS CREATED — the run below would test empty views and prove nothing.');
   process.exit(1);
