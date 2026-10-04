@@ -29,7 +29,8 @@ const addDays = (ymd, n) => { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDa
 const longDate = (ymd) => new Date(ymd + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' });
 const say = (m, kind) => { if (window.__notify) window.__notify(m, kind || 'error'); };
 
-export default function GoalsBand({ userId, tasks = [], setTasks, events = [], setView, firstName = '' }) {
+export default function GoalsBand({ userId, tasks = [], setTasks, events = [], setView, firstName = '', compact = false }) {
+  // compact (the Tasks screen): today's goals only — no welcome, no contract dates, no evening prompt.
   const today = todayNY();
   const tomorrow = addDays(today, 1);
   const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
@@ -69,7 +70,7 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
       if (!go || !userId) return;
       const last = s?.last_open_at ? Date.parse(s.last_open_at) : null;
       if (last && Date.now() - last > 7 * 864e5) setAway(true);
-      if (!last || Date.now() - last > 36e5) {
+      if (!compact && (!last || Date.now() - last > 36e5)) {
         const { error } = await supabase.from('user_settings').upsert({ user_id: userId, last_open_at: new Date().toISOString() }, { onConflict: 'user_id' });
         if (error) console.warn('last_open_at:', error.message);
       }
@@ -79,7 +80,7 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
 
   // The queue's nudge ("Choose what really happens today") opens the picker.
   useEffect(() => {
-    const open = () => { setPicking('today'); try { ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} };
+    const open = () => { if (compact) return; setPicking('today'); try { ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} };
     window.addEventListener('prism:open-goals', open);
     return () => window.removeEventListener('prism:open-goals', open);
   }, []);
@@ -117,8 +118,8 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
   const question = `What ${n === 1 ? 'one thing' : (WORD[n] || 'three') + ' things'} would make today a win?`;
 
   return (
-    <div ref={ref} data-testid="goals-band" style={{ marginTop: 22 }}>
-      {away && (
+    <div ref={ref} data-testid={compact ? 'goals-band-compact' : 'goals-band'} style={{ marginTop: compact ? 0 : 22, marginBottom: compact ? 18 : 0 }}>
+      {away && !compact && (
         <div data-testid="welcome-back" style={{ ...calm.row, paddingTop: 0 }}>
           <div style={calm.rowTitle}>Welcome back{firstName ? ', ' + firstName : ''}.</div>
           <div style={calm.rowWhy}>Nothing was lost while you were away. Start with one small thing below. What I kept for you is under Done for you, whenever you want it.</div>
@@ -129,7 +130,7 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
         </div>
       )}
 
-      {deadlines.length > 0 && (
+      {deadlines.length > 0 && !compact && (
         <div data-testid="deadline-band" style={{ padding: '12px 14px', marginBottom: 18, borderRadius: 12, border: '1px solid rgba(197,169,94,.45)' }}>
           <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 4 }}>Contract dates this week</div>
           {deadlines.map((d, i) => (
@@ -187,7 +188,7 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
 
       {closing && <CloseDay goals={mine} isDone={isDone} today={today} tomorrow={tomorrow} userId={userId} taskById={taskById} setTasks={setTasks} onChange={load} onClose={() => setClosing(false)} />}
 
-      {hour >= 15 && picking !== 'today' && !closing && (
+      {hour >= 15 && !compact && picking !== 'today' && !closing && (
         picking === 'tomorrow'
           ? <Picker day={tomorrow} label="tomorrow" goals={next} n={n} setN={setN} userId={userId} tasks={tasks} busyDay={false} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />
           : <div style={{ marginTop: 6 }}>
@@ -344,6 +345,12 @@ function CloseDay({ goals, isDone, today, tomorrow, userId, taskById, setTasks, 
         const { error: tErr } = await supabase.from('tasks').update({ due_date: date }).eq('id', g.task_id);
         if (!tErr) setTasks && setTasks(prev => prev.map(t => t.id === g.task_id ? { ...t, due_date: date } : t));
       }
+    }
+    // "Someday" means it: the linked task moves to the Someday list, off the day.
+    if (outcome === 'someday' && g.task_id && taskById.has(g.task_id)) {
+      const { error: sErr } = await supabase.from('tasks').update({ status: 'someday' }).eq('id', g.task_id);
+      if (sErr) { say('Could not move the task to Someday: ' + sErr.message); return; }
+      setTasks && setTasks(prev => prev.map(t => t.id === g.task_id ? { ...t, status: 'someday' } : t));
     }
     const { error } = await supabase.from('day_goals').update({ outcome, moved_to: outcome === 'date' ? date : outcome === 'tomorrow' ? tomorrow : null }).eq('id', g.id);
     if (error) { say('Could not save that: ' + error.message); return; }

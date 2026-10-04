@@ -199,6 +199,8 @@ node smoke/dial_guard.mjs || exit 1
 node smoke/goals_guard.mjs || exit 1
 # One gate for every notification; what PrismOS learns can be read, forgotten and reset (Dara, 4 Oct).
 node smoke/triage_guard.mjs || exit 1
+# The morning note is short and never a count (Dara, 4 Oct: "overwhelmed by all the stuff").
+node smoke/morning_note_guard.mjs || exit 1
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

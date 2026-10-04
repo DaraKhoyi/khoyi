@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../dataService';
+import GoalsBand from './GoalsBand';
 import { todayNY } from '../clock';
 import { Icon } from '../icons';
 import { modal, todayISO } from '../helpers';
@@ -818,6 +819,9 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
 
         {/* View switcher (SEQUENCE / MATRIX) lives in the header now —
             see the icon buttons next to the + at the top right. */}
+
+        {/* The goals chosen for today, where the work is (4 Oct). Same band as Today, compact. */}
+        {filter === 'today' && <GoalsBand compact userId={userId} tasks={tasks} setTasks={setTasks} />}
 
         {/* "Move past due to Today" button */}
         {filter === 'today' && (() => {

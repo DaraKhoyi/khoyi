@@ -29,6 +29,13 @@ export default function NotifySettings() {
     if (error || !data || data.ok === false) { setMsg('Could not save: ' + (error?.message || data?.error || 'try again') + '. Nothing has changed.'); return; }
     setN(data); setMsg('Saved.');
   };
+  const morning = async (args) => {
+    if (busy) return; setBusy(true); setMsg('');
+    const { data, error } = await supabase.rpc('set_morning_note', { p_on: null, p_hour: null, ...args });
+    setBusy(false);
+    if (error || !data || data.ok === false) { setMsg('Could not save: ' + (error?.message || data?.error || 'try again') + '. Nothing has changed.'); return; }
+    setN(v => ({ ...v, morning_note: data.on, morning_note_hour: data.hour })); setMsg('Saved.');
+  };
   if (!n) return msg ? <div className="panel" style={{ marginBottom: 18 }}><div className="panel-body" style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{msg}</div></div> : null;
   const sel = { minHeight: 40, padding: '0 10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-1)', fontSize: 14 };
   const radio = (on, name, what, onClick, tid) => (
@@ -74,6 +81,25 @@ export default function NotifySettings() {
               <span style={{ position: 'absolute', top: 3, left: n.urgent_breaks_quiet ? 23 : 3, width: 22, height: 22, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
             </button>
           </div>
+        </div>
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <p style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, margin: 0 }}>
+              <strong style={{ color: 'var(--text-1)' }}>Morning note.</strong> One short notification: the first thing on your calendar, any contract date in the next three days, and the goals you chose. No counts.
+            </p>
+            <button onClick={() => morning({ p_on: !n.morning_note })} role="switch" aria-checked={!!n.morning_note} aria-label="Morning note" data-testid="morning-note" disabled={busy}
+              style={{ flexShrink: 0, width: 48, height: 28, borderRadius: 999, border: 'none', cursor: busy ? 'wait' : 'pointer', background: n.morning_note ? 'var(--accent)' : 'var(--border)', position: 'relative', transition: 'background .15s' }}>
+              <span style={{ position: 'absolute', top: 3, left: n.morning_note ? 23 : 3, width: 22, height: 22, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+            </button>
+          </div>
+          {n.morning_note && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, fontSize: 13, color: 'var(--text-2)' }}>
+              <span>At</span>
+              <select aria-label="Morning note time" data-testid="morning-note-hour" disabled={busy} value={n.morning_note_hour} onChange={e => morning({ p_hour: Number(e.target.value) })} style={sel}>
+                {HOURS.filter(x => x >= 4 && x <= 12).map(x => <option key={x} value={x}>{hourLabel(x)}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         {msg && <div data-testid="notify-msg" style={{ marginTop: 12, fontSize: 12, color: msg.startsWith('Saved') ? 'var(--text-2)' : 'var(--red)' }}>{msg}</div>}
       </div>

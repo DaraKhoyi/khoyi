@@ -596,21 +596,12 @@ function MorningBrief({ setView }) {
   // A missing brief and an empty one looked identical — the card just vanished, and
   // that reads as broken. Yesterday's numbers would be worse: acting on a stale
   // count is the real harm.
-  if (!brief) return (
-    <div className="fade-up" style={{ marginBottom: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '13px 15px' }}>
-      <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.22em', fontSize: 11, fontWeight: 700, color: '#9A7B2E', marginBottom: 5 }}>
-        Your morning brief
-      </div>
-      <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>
-        Written fresh each morning — this one is on its way. Everything below is live now.
-      </div>
-    </div>
-  );
+  if (!brief) return null;
   const ICON = { signal: '📡', reply: '↩️', alert: '⏰', contacts: '👥', dollar: '$', inbox: '📥', mail: '📥' };
   return (
     <div className="fade-up" style={{ marginBottom: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '15px 17px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, fontWeight: 800, letterSpacing: '.18em', textTransform: 'uppercase' }}>☀ Your morning brief</span>
+        <span className="gold-move" style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 12, fontWeight: 800, letterSpacing: '.18em', textTransform: 'uppercase' }}>This morning</span>
         <button onClick={() => setHidden(true)} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 17, cursor: 'pointer', lineHeight: 1 }}>×</button>
       </div>
       <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 19, color: 'var(--text-1)', lineHeight: 1.3, marginBottom: (brief.items && brief.items.length) ? 12 : 0 }}>
