@@ -827,7 +827,7 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
           return (
             <button
               onClick={async () => {
-                if (!await confirmDialog(`Move ${pastDue.length} past-due task${pastDue.length === 1 ? '' : 's'} to today?`)) return;
+                if (!await confirmDialog('Bring your earlier tasks to today?')) return;
                 const ids = pastDue.map(t => t.id);
                 await supabase.from('tasks').update({ due_date: today }).in('id', ids);
                 setTasks(prev => prev.map(t => ids.includes(t.id) ? { ...t, due_date: today } : t));
@@ -835,15 +835,15 @@ function TasksView({ tasks, setTasks, userId, defaultSystem, taskFilter, setTask
               style={{
                 width:'100%', marginBottom:'12px',
                 padding:'10px 14px',
-                background:'rgba(239,68,68,0.10)',
-                border:'1px solid #ef4444',
+                background:'transparent',
+                border:'1px solid var(--border)',
                 borderRadius:'6px',
-                color:'#ef4444',
+                color:'var(--text-2)',
                 fontSize:'12px', fontWeight:700,
                 cursor:'pointer',
                 display:'flex', alignItems:'center', justifyContent:'center', gap:'8px',
               }}>
-              ↻ Move {pastDue.length} past-due task{pastDue.length === 1 ? '' : 's'} to Today
+              ↻ Bring earlier tasks to today
             </button>
           );
         })()}
@@ -1075,7 +1075,7 @@ function FocusDeck({ tasks, onEdit, onToggleComplete, showRanking, hideTodayDue,
         <div style={{ fontSize: 34, marginBottom: 8 }}>✦</div>
         <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 300, color: 'var(--text-1)' }}>Enough for today.</div>
         <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 6, lineHeight: 1.5 }}>
-          {tasks.length} still waiting — they'll be here tomorrow, and nothing is lost.
+          The rest will be here tomorrow, and nothing is lost.
         </div>
         <button className="btn btn-ghost btn-sm" style={{ marginTop: 14 }} onClick={() => setRested(false)}>Actually, keep going</button>
       </div>
@@ -1097,11 +1097,9 @@ function FocusDeck({ tasks, onEdit, onToggleComplete, showRanking, hideTodayDue,
       {/* quiet shape of the day — you know the size without staring at it */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <div style={{ fontSize: 11, letterSpacing: 1.4, color: 'var(--text-3)', fontWeight: 700 }}>
-          {visible.length} of {tasks.length}
+          {remaining > 0 ? 'A FEW AT A TIME' : 'TODAY'}
         </div>
-        <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
-          <div style={{ width: `${Math.min(100, (visible.length / Math.max(1, tasks.length)) * 100)}%`, height: '100%', background: 'var(--accent)', opacity: .55 }} />
-        </div>
+        <div style={{ flex: 1 }} />
         <button onClick={onShowAll} style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 11, cursor: 'pointer' }}>See all →</button>
       </div>
 

@@ -227,6 +227,22 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
     setSavingAuto(false);
   }
 
+  // Personal plans heard on calls (4 Oct 2026). Off unless turned on: what the AI
+  // overhears is limited to work; what the person adds themselves is always welcome.
+  const callsPersonalOn = userSettings?.calls_personal === true;
+  const [savingCP, setSavingCP] = React.useState(false);
+  const [cpMsg, setCpMsg] = React.useState('');
+  async function toggleCallsPersonal() {
+    if (savingCP) return;
+    setSavingCP(true); setCpMsg('');
+    const { data, error } = await supabase.from('user_settings')
+      .upsert({ user_id: userId, calls_personal: !callsPersonalOn, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .select().maybeSingle();
+    setSavingCP(false);
+    if (error) { setCpMsg('Error: ' + error.message); return; }
+    if (data) setUserSettings?.(data);
+  }
+
   // The floating "back to my note" button (JournalReturn). On unless turned off.
   const journalButtonOn = userSettings?.journal_button !== false;
   const [savingJB, setSavingJB] = React.useState(false);
@@ -438,6 +454,18 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
               </button>
             </div>
             {autoMsg && <div style={{marginTop:'10px', fontSize:'12px', color: autoMsg.startsWith('Error')?'var(--red)':'var(--text-2)'}}>{autoMsg}</div>}
+          </div>
+        </div>
+        <div className="panel" style={{marginBottom:'18px'}}>
+          <div className="panel-header"><h3>Personal plans heard on calls</h3></div>
+          <div className="panel-body">
+            <div style={{display:'flex', alignItems:'center', gap:'14px'}}>
+              <p style={{flex:1, minWidth:0, fontSize:'12.5px', color:'var(--text-2)', lineHeight:1.5, margin:0}}>When off, PrismOS suggests follow-ups from your calls only when they are about your work. Family and personal plans said on a call stay private conversation. Turn it on if you want those suggested too. Anything you add to your list yourself is always welcome, whatever it is about.</p>
+              <button onClick={toggleCallsPersonal} role="switch" aria-checked={callsPersonalOn} aria-label="Personal plans heard on calls" data-testid="calls-personal-switch" disabled={savingCP} title={callsPersonalOn ? 'On' : 'Off'} style={{flexShrink:0, width:48, height:28, borderRadius:999, border:'none', cursor: savingCP?'wait':'pointer', background: callsPersonalOn?'var(--accent)':'var(--border)', position:'relative', transition:'background .15s'}}>
+                <span style={{position:'absolute', top:3, left: callsPersonalOn?23:3, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .15s'}} />
+              </button>
+            </div>
+            {cpMsg && <div style={{marginTop:'10px', fontSize:'12px', color:'var(--red)'}}>{cpMsg}</div>}
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>

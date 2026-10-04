@@ -1,7 +1,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { notAThingLessons } from "../_shared/lessons.ts";
+import { notAThingLessons, personalRule } from "../_shared/lessons.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 
 // ── call-commitments ─────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ serve(async (req) => {
           "- ACTIONABLE only. A verb and an object. Topics, worries, opinions, 'we should look into it', pleasantries and small talk are NOT commitments.\n" +
           // EVERY RULE BELOW IS A MEASURED CAUSE OF THE BROKER'S 190 DISMISSALS (21 Sep).
           "- IT MUST CREATE WORK FOR THE AGENT. Either the agent will do it, or someone will deliver something TO the agent or the agent's client that the agent may have to chase (a document, a payment, a call back, an answer, a key). Set owed_to_me=true only then. A contractor describing the steps of their own job ('I'll come back Wednesday and finish the plumbing', 'I'll disconnect the cabana to test it') is THEIR work, not the agent's — do not extract it. Half of all dismissed cards were other people's promises that owed the agent nothing.\n" +
-          "- Personal and family promises count exactly as much as real-estate ones: the agent runs his whole life through this list.\n" +
+          await personalRule(db, call.user_id) +   // work only unless they asked for more (4 Oct)
           "- NAME THE PERSON. owner_name is always a real name from the call or the known-people list. If you cannot say who owes it, do not extract it — a card reading 'Unknown said they would' was the second most-dismissed kind.\n" +
           "- THE TITLE MUST STAND ALONE, read a week later by someone who never heard the call: verb + concrete object + person, and the property or deal if there is one. 'Send Svetlana the cost breakdown for the Virginia Ave repairs', never 'Send the words', 'Take care of something tomorrow' or 'Talk to her about it'.\n" +
           "- next_step is what THE AGENT should do, in one line, even when someone else made the promise: 'Chase Tom on Thursday for the cabana test result'. This is the line the agent reads to know what the card wants.\n" +

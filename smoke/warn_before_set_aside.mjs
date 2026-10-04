@@ -53,6 +53,45 @@ if (URL_ && PAT) {
   } catch (e) { console.log('warn_before_set_aside: live check skipped — ' + String(e).slice(0, 120)); }
 }
 
+// 3. FIRED ON PURPOSE (4 Oct 2026, BLOCKS when it can run). The Skeptic: "a safeguard
+//    that has never fired is not a safeguard." A throwaway person gets one follow-up
+//    a day from being set aside; the real job must warn about it, the push must reach
+//    the sender, and only then may it be set aside. 9am–7pm New York only (the job
+//    is silent at night by design).
+const SVC = process.env.SUPABASE_SERVICE_KEY;
+const hourNY = Number(new Date().toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }));
+if (URL_ && PAT && SVC && hourNY >= 9 && hourNY < 19) {
+  const q = async (sql) => {
+    for (let i = 0; i < 6; i++) {
+      const x = await fetch('https://api.supabase.com/v1/projects/xlgfspnojjgvkuitcoaf/database/query', { method: 'POST', headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json', 'User-Agent': 'KhoyiApp/1.0' }, body: JSON.stringify({ query: sql }) });
+      if (x.ok) return x.json();
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+    throw new Error('query failed');
+  };
+  const H = { apikey: SVC, Authorization: `Bearer ${SVC}`, 'Content-Type': 'application/json' };
+  let uid = null;
+  try {
+    const u = await (await fetch(`${URL_}/auth/v1/admin/users`, { method: 'POST', headers: H, body: JSON.stringify({ email: `smoke_warn_${Date.now()}@example.com`, password: 'Smoke!' + Date.now(), email_confirm: true }) })).json();
+    uid = u.id;
+    if (!uid) throw new Error('no throwaway user');
+    await q(`insert into commitments (user_id, owner, title, status, fuse, stakes, created_at) values ('${uid}','me','Smoke: send the HOA documents','proposed','near','normal', now() - interval '13 days 12 hours')`);
+    await q('select public.warn_commitments_before_set_aside()');
+    const w = (await q(`select count(*) filter (where expiry_warned_at is not null) warned, count(*) filter (where status = 'proposed') still_here from commitments where user_id = '${uid}'`))[0];
+    expect(Number(w.warned) === 1, 'FIRED ON PURPOSE: a follow-up one day from being set aside was not warned about');
+    expect(Number(w.still_here) === 1, 'FIRED ON PURPOSE: the follow-up was set aside before its day was up');
+    let logged = 0;
+    for (let i = 0; i < 6 && !logged; i++) { await new Promise((r) => setTimeout(r, 2000)); logged = Number((await q(`select count(*) n from push_log where user_id = '${uid}' and tag = 'commitments-expiring'`))[0].n); }
+    expect(logged >= 1, 'FIRED ON PURPOSE: the warning never reached the push sender (nothing in push_log)');
+    await q(`update commitments set created_at = now() - interval '15 days' where user_id = '${uid}'`);
+    await q('select public.expire_short_fuse_commitments()');
+    const e = (await q(`select count(*) filter (where status = 'expired' and expiry_warned_at is not null) ok from commitments where user_id = '${uid}'`))[0];
+    expect(Number(e.ok) === 1, 'FIRED ON PURPOSE: after its day was up the warned follow-up was not set aside');
+    if (!problems.length) console.log('warn_before_set_aside: fired on purpose — warned, push logged, then set aside');
+  } catch (e) { console.log('warn_before_set_aside: fire-on-purpose skipped — ' + String(e).slice(0, 120)); }
+  finally { if (uid) await fetch(`${URL_}/auth/v1/admin/users/${uid}`, { method: 'DELETE', headers: H }).catch(() => {}); }
+} else console.log('warn_before_set_aside: fire-on-purpose not run (needs keys, 9am–7pm New York)');
+
 if (problems.length) {
   console.log('==== WARN BEFORE SET-ASIDE: FAILED ====');
   for (const p of problems) console.log(' - ' + p);

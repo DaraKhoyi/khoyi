@@ -17,6 +17,13 @@ const BANNED = [
   [/>\s*Bring back\s*</, '"Bring back" (say "Pick up")'],
   [/['"`]\s*\+\s*setAside\s*\+/, 'the set-aside COUNT rendered on screen'],
   [/\bexpired\b[^'"`]*['"`]\s*}/i, 'the word "expired" in on-screen text'],
+  // 4 Oct 2026 — the four screens that still counted (design brief, "No judgment").
+  [/need a decision/i, 'a count of old tasks ("N need a decision")'],
+  [/past-due task/i, 'a count of past-due tasks on a button'],
+  [/\boldest\b[^<]*\bdays\b/i, 'the age of the oldest undone thing'],
+  [/days old/i, 'an age in days on an undone task (show the date it was added)'],
+  [/\{visible\.length\} of \{tasks\.length\}/, '"N of M" on the focus deck'],
+  [/of \{recap\.total\}|of \{state\.plan\.length\}|\/ \{total\}/, 'a done-over-total score in Plan My Day'],
 ];
 const files = readdirSync('src/views').filter((f) => /\.jsx?$/.test(f) && !/^(Broker|Adoption)/.test(f)).map((f) => 'src/views/' + f);
 for (const f of files) {
@@ -26,6 +33,14 @@ for (const f of files) {
     for (const [re, what] of BANNED) if (re.test(line)) problems.push(`${f}:${i + 1} — ${what}`);
   });
 }
+// The automation picker promised levels nothing obeyed ("Manual: nothing acts on its
+// own" was not true). It stays off the screen until a level changes what the app does.
+if (/AutomationLevel|AUTO_LEVELS/.test(readFileSync('src/views/TodayView.jsx', 'utf8'))) problems.push('TodayView shows the automation picker again — no job reads automation_level yet');
+// What the AI overhears on a call is work only, unless the person asked for more.
+const lessons = readFileSync('supabase/functions/_shared/lessons.ts', 'utf8');
+if (!/export async function personalRule/.test(lessons) || !/calls_personal === true/.test(lessons)) problems.push('_shared/lessons.ts lost personalRule (personal remarks on calls are off unless asked for)');
+for (const f of ['call-commitments', 'quo-call-process']) if (!/await personalRule\(/.test(readFileSync(`supabase/functions/${f}/index.ts`, 'utf8'))) problems.push(`${f} reads calls without the personal-remarks rule`);
+if (/Personal and family promises count exactly as much/.test(readFileSync('supabase/functions/call-commitments/index.ts', 'utf8'))) problems.push('call-commitments tells the model to harvest personal promises for everyone again');
 const cr = readFileSync('src/views/CommitmentReview.jsx', 'utf8');
 if (!/Pick up where you left off/.test(cr)) problems.push('CommitmentReview no longer offers "Pick up where you left off"');
 if (!/asideRows\.slice\(0, asideShown\)/.test(cr)) problems.push('set-aside follow-ups are listed all at once instead of three at a time');

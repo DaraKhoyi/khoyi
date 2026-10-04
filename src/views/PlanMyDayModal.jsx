@@ -345,7 +345,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
       const moodTxt = review.mood ? ` Felt: ${review.mood}.` : '';
       const noteTxt = review.note ? ` ${review.note.trim()}` : '';
       const recapTxt = review.recap ? `\n\n${review.recap}` : '';
-      const content = `End-of-day review (${dl}): ${done.length} of ${total} planned items done.${moodTxt}${noteTxt}${recapTxt}`;
+      const content = `End-of-day review (${dl})${done.length ? ': done — ' + done.map(p => p.title).join('; ') + '.' : '.'}${moodTxt}${noteTxt}${recapTxt}`;
       try { await logJournalEntry(userId, content, 'text'); } catch (_e) {}
       setReview(r => ({ ...r, saving: false, saved: true }));
     } catch (e) { setReview(r => ({ ...r, saving: false, error: String(e.message || e) })); }
@@ -536,20 +536,22 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
           )}
           {state.error && <div style={{ color: 'var(--red)', fontSize: 13, padding: '10px 0' }}>Couldn't build a plan: {state.error}</div>}
           {!state.loading && !state.error && reviewing && saved && (() => {
-            const { done, undone, total } = reviewSplit();
+            const { done, undone } = reviewSplit();
             const MOODS = [{ k: 'Great', e: '😀' }, { k: 'Solid', e: '🙂' }, { k: 'Tough', e: '😓' }];
             return (
               <div>
                 <button onClick={() => setReviewing(false)} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5, marginBottom: 14 }}>‹ Back to plan</button>
                 <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                  <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--accent)', lineHeight: 1 }}>{done.length}<span style={{ fontSize: 18, color: 'var(--text-3)' }}> / {total}</span></div>
-                  <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 4 }}>{done.length === total ? 'Everything done — a clean sweep. 🎯' : `${done.length} done · ${undone.length} to carry forward`}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', lineHeight: 1.2 }}>{done.length ? 'What got done today' : 'The day, closed out'}</div>
+                  {done.length > 0 && <div style={{ marginTop: 10, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {done.map((p, i) => <div key={i} data-testid="plan-done-item" style={{ fontSize: 13, color: 'var(--text-1)' }}>✓ {p.title}</div>)}
+                  </div>}
                 </div>
 
                 {undone.length > 0 && (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Unfinished</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Still open</span>
                       {review.carried ? <span style={{ fontSize: 11, color: '#4ade80', fontWeight: 700 }}>✓ {review.carried} carried to tomorrow</span>
                         : <button onClick={carryToTomorrow} className="quick-chip" style={{ padding: '5px 11px', fontSize: 11.5 }}>→ Carry all to tomorrow</button>}
                     </div>
@@ -602,7 +604,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
             <>
               {recap && !saved && (
                 <div style={{ marginBottom: 14, background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'var(--text-2)' }}>
-                  <span style={{ color: 'var(--accent)', fontWeight: 800 }}>↻ Roll-over</span> · Your last plan: <strong style={{ color: '#4ade80' }}>{recap.done} of {recap.total} done</strong>. Anything unfinished is carried into today below.
+                  <span style={{ color: 'var(--accent)', fontWeight: 800 }}>↻ Roll-over</span> · Picking up from your last plan. Anything still open is carried into today below.
                 </div>
               )}
               {state.summary && <p style={{ margin: '0 0 14px', fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, fontWeight: 500 }}>{state.summary}</p>}
@@ -749,7 +751,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
                   {saved ? (
                     <>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>✓ {doneCount} of {state.plan.length} done today</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{doneCount > 0 ? `✓ ${doneCount} done today` : 'Your plan for today'}</span>
                         <button onClick={generateFresh} className="quick-chip" style={{ padding: '7px 13px' }}>↻ Re-plan</button>
                       </div>
                       <button onClick={() => setReviewing(true)} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', borderRadius: 11, padding: '11px', fontSize: 13.5, marginTop: 11 }}>

@@ -17,7 +17,6 @@ import { todayNY } from '../clock';
 // "Drop" is not "complete". It gets its own field so a decision to let go never
 // inflates the number of things he actually did.
 
-const EMBER = '#C9563F';
 const DAYS_STALE = 30;   // by 30 days it has survived thirty daily "not today"s
 const CARRIES_STALE = 5; // or five explicit rolls, whichever comes first
 
@@ -60,39 +59,38 @@ export default function StaleDecide({ tasks, setTasks, userId }) {
     const dropped_at = new Date().toISOString();
     const { error } = await supabase.from('tasks').update({
       dropped_at,
-      notes: (t.notes ? t.notes + '\n' : '') + `[dropped after ${ageDays(t)} days${t.carry_count ? ` and ${t.carry_count} carries` : ''} — decided against, not done]`,
+      notes: (t.notes ? t.notes + '\n' : '') + `[let go on ${todayNY()} — decided against]`,
     }).eq('id', t.id);
     if (error) { if (window.__notify) window.__notify('Could not drop task: ' + (error.message || error), 'error'); setBusy(null); return; }
     patch(t.id, { dropped_at });
     setBusy(null);
   }
 
-  const oldest = ageDays(stale[0]);
+  const added = (t) => new Date(t.created_at).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
     <div style={{ marginBottom: 16 }}>
       <button onClick={() => setOpen(v => !v)}
         style={{ width: '100%', textAlign: 'left', background: 'var(--bg-card)',
-          border: `1px solid ${EMBER}55`, borderRadius: 12, padding: '12px 14px',
+          border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px',
           color: 'var(--text-1)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: EMBER }}>{stale.length} need a decision</span>
-        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>oldest {oldest} days · carried, not done</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-1)' }}>A few older tasks, when you want to look</span>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{open ? 'later' : 'decide'}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{open ? 'close' : 'look'}</span>
       </button>
 
       {open && (
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 10, padding: '0 2px' }}>
-            These have been moved to tomorrow over and over. That’s already an answer —
-            it just never got recorded. Three doors, no fourth.
+            These have been on the list a while. Do it today, give it a date, or let it go.
+            Any of the three is a good answer.
           </div>
           {stale.slice(0, shown).map(t => (
             <div key={t.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)',
               borderRadius: 12, padding: 12, marginBottom: 7 }}>
               <div style={{ fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.4 }}>{t.title}</div>
               <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 4 }}>
-                {ageDays(t)} days old{t.carry_count ? ` · moved ${t.carry_count}×` : ''}
+                Added {added(t)}
               </div>
               {picking === t.id ? (
                 <div style={{ display: 'flex', gap: 6, marginTop: 9, alignItems: 'center' }}>
@@ -111,8 +109,8 @@ export default function StaleDecide({ tasks, setTasks, userId }) {
                     style={{ background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border)',
                       borderRadius: 100, padding: '6px 13px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Pick a real date</button>
                   <button disabled={busy === t.id} onClick={() => drop(t)}
-                    style={{ background: 'transparent', color: EMBER, border: `1px solid ${EMBER}55`,
-                      borderRadius: 100, padding: '6px 13px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Drop it</button>
+                    style={{ background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border)',
+                      borderRadius: 100, padding: '6px 13px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Let it go</button>
                 </div>
               )}
             </div>
@@ -120,7 +118,7 @@ export default function StaleDecide({ tasks, setTasks, userId }) {
           {stale.length > shown && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '8px 0' }}>
               <button className="btn btn-ghost btn-sm" onClick={() => setShown(n => n + 3)}>
-                Show 3 more ({stale.length - shown} left)
+                Show 3 more
               </button>
               <div style={{ fontSize: 11, color: 'var(--text-3)' }}>A few at a time is enough for one sitting.</div>
             </div>

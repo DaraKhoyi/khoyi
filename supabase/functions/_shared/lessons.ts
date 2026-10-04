@@ -26,3 +26,25 @@ export async function notAThingLessons(db: any, userId?: string | null, limit = 
       "They are examples of what to leave out, not a list of banned words:\n" + lines.join("\n") + "\n";
   } catch (_) { return ""; }
 }
+
+// What the call reader may pick up about the person's PRIVATE life (4 Oct 2026).
+//
+// Ray (panel): a "Get showered and ready" item in the queue — "the app is
+// tracking things that will make an agent feel watched, not helped." Dara's
+// decision the same day: OFF by default. What the person adds to their own list
+// is welcome whatever it is about (the task list is their whole life); what the
+// AI overhears on a call is limited to their work unless they ask for more
+// (user_settings.calls_personal). One rule, here, for every call reader.
+export async function personalRule(db: any, userId?: string | null): Promise<string> {
+  let on = false;
+  try {
+    if (userId) {
+      const { data } = await db.from("user_settings").select("calls_personal").eq("user_id", userId).maybeSingle();
+      on = data?.calls_personal === true;
+    }
+  } catch (_) { on = false; }
+  const never = "- NEVER extract a remark about the person's own body, routine or getting ready ('I need to shower', 'let me eat first', 'I'm going to get dressed and head over') from anyone on the call. Nobody is owed those and nobody should be tracked on them.\n";
+  return on
+    ? never + "- Personal and family promises made to another person count exactly as much as real-estate ones: this person asked for them to be picked up.\n"
+    : never + "- WORK ONLY. Extract a promise only when it concerns this person's work: a client, a deal, a property, a listing, a tenant, a vendor, the brokerage, money or paperwork for any of those. Personal, family, household, health and social plans heard on the call ('I'll pick up the kids', 'dinner Saturday', 'I'll call Mom back') are private conversation, not suggestions — leave them out. They are still in the call summary.\n";
+}

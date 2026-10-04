@@ -38,13 +38,6 @@ import { calm } from '../calm';
 // documents-that-ask kinds moved INTO chief_queue, so nothing is lost), the
 // triage deck of counts, and the floating microphone.
 
-const AUTO_LEVELS = [
-  { n: 1, key: 'manual',     label: 'Manual',      blurb: 'Nothing acts on its own. The app shows you what needs doing; you do it all.' },
-  { n: 2, key: 'suggest',    label: 'Suggest',     blurb: 'The AI prepares everything — drafts replies, flags stale work — but waits for your tap. Recommended while you build trust.' },
-  { n: 3, key: 'batch',      label: 'Batch-approve', blurb: 'The AI drafts and cleans in bulk. You approve a whole batch in one tap instead of one at a time.' },
-  { n: 4, key: 'aggressive', label: 'Aggressive',  blurb: 'Auto-pilot. The AI clears obvious work on its own and only surfaces what truly needs you — then reports what it did.' },
-];
-
 const fmtTime = (d) => d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
 
 export default function TodayView({
@@ -139,7 +132,6 @@ export default function TodayView({
           <TidyOldTasks userId={myUserId} setTasks={setTasks} tasks={tasks} />
           <HowYoureDoing tasks={tasks} />
           <EnableNotifications myUserId={myUserId} calmOnly />
-          <AutomationLevel myUserId={myUserId} />
         </div>
       )}
     </div>
@@ -176,41 +168,6 @@ function HowYoureDoing({ tasks }) {
           return <div key={i} title={`${n} done`} style={{ flex: 1, height: `${Math.max(3, (n / max) * 24)}px`, borderRadius: 2, background: i === 6 ? '#C5A95E' : 'rgba(197,169,94,0.3)' }} />;
         })}
       </div>
-    </div>
-  );
-}
-
-// How much PrismOS does on its own. A setting, so it lives at the bottom.
-function AutomationLevel({ myUserId }) {
-  const [level, setLevel] = useState(2);
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    let go = true;
-    (async () => {
-      if (!myUserId) return;
-      const { data } = await supabase.from('user_settings').select('automation_level').eq('user_id', myUserId).maybeSingle();
-      if (go && data) setLevel(data.automation_level || 2);
-    })();
-    return () => { go = false; };
-  }, [myUserId]);
-  const save = async (n) => {
-    const prev = level; setLevel(n); setOpen(false);
-    const { error } = await supabase.from('user_settings').update({ automation_level: n }).eq('user_id', myUserId);
-    if (error) { setLevel(prev); if (window.__notify) window.__notify('Could not save: ' + (error.message || error), 'error'); }
-  };
-  const cur = AUTO_LEVELS.find(l => l.n === level) || AUTO_LEVELS[1];
-  return (
-    <div style={calm.rowRule}>
-      <div style={calm.rowTitle}>How much PrismOS does on its own: {cur.label}</div>
-      <div style={calm.rowWhy}>{cur.blurb}</div>
-      <div style={calm.actions}><button type="button" style={calm.btnQuiet} onClick={() => setOpen(v => !v)}>{open ? 'Close' : 'Change'}</button></div>
-      {open && AUTO_LEVELS.map(l => (
-        <button key={l.n} type="button" onClick={() => save(l.n)}
-          style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderTop: calm.HAIR, padding: '12px 0', cursor: 'pointer', fontFamily: calm.SANS }}>
-          <div style={{ fontSize: 14.5, fontWeight: 600, color: l.n === level ? '#C5A95E' : 'var(--text-1)' }}>{l.n === level ? '● ' : '○ '}{l.label}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 2, lineHeight: 1.45 }}>{l.blurb}</div>
-        </button>
-      ))}
     </div>
   );
 }
