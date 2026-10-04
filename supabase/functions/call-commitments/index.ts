@@ -1,7 +1,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { notAThingLessons, personalRule, broughtBackLessons } from "../_shared/lessons.ts";
+import { notAThingLessons, personalRule, broughtBackLessons, putOffLessons } from "../_shared/lessons.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 import { dialLevel } from "../_shared/dial.ts";
 
@@ -113,6 +113,11 @@ serve(async (req) => {
         if (!call.speaker_map) { out.push({ id: call.id, skipped: "not attributed" }); continue; }
         // THE DIAL: this person turned follow-ups from calls off, or paused everything.
         if (!body.force && (await dialLevel(db, call.user_id, "call_followups")) === "off") { out.push({ id: call.id, skipped: "turned off by the person" }); continue; }
+        // "Always for this person" (4 Oct): the person asked for no suggestions from calls with them.
+        if (call.contact_id && !body.force) {
+          const { data: muted } = await db.from("call_reader_mutes").select("contact_id").eq("user_id", call.user_id).eq("contact_id", call.contact_id).maybeSingle();
+          if (muted) { out.push({ id: call.id, skipped: "the person asked for no suggestions from this caller" }); continue; }
+        }
         if (call.commitments_read_at && !body.force) { out.push({ id: call.id, skipped: "already read" }); continue; }
 
         const { data: contact } = call.contact_id
@@ -161,7 +166,7 @@ serve(async (req) => {
           "- confidence low if the wording is vague or you are unsure who said it.\n" +
           (rosterNames.length ? `Known people you may match a name to (use the exact name if it fits): ${rosterNames.slice(0, 200).join(", ")}.\n` : "") +
           "Two or three commitments is a busy call. Ten means you are extracting topics, not promises." +
-          await notAThingLessons(db, call.user_id) + await broughtBackLessons(db, call.user_id);   // what this person told us was "Not a thing" (2 Oct)
+          await notAThingLessons(db, call.user_id) + await broughtBackLessons(db, call.user_id) + await putOffLessons(db, call.user_id);   // what this person told us was "Not a thing" (2 Oct)
 
         const usr = `Call date: ${(call.op_created_at || "").slice(0, 10)}. Speakers are labelled by name.${multiParty ? " This call has THREE OR MORE speakers — attribute each commitment to the correct person." : ""}\n\n${script.slice(0, 14000)}`;
         const raw = await claude(KEY, sys, usr);

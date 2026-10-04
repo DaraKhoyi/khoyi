@@ -78,6 +78,29 @@ Deno.serve(async (req) => {
     const logIt = async (sent: number, failed: number, note: string | null) => {
       try { await admin.from("push_log").insert({ user_id: targetUserId, title: title || null, tag: tag || null, sent, failed, note }); } catch (_) {}
     };
+    // THE GATE (4 Oct 2026). May this reach a phone NOW? One rule for every
+    // sender — public.push_gate() in supabase/sql/2026-10-04e_training_and_triage.sql:
+    // the person's quiet hours, their choice of "as they happen" or a few updates
+    // a day, and at most one reply reminder an hour. On 4 Oct the broker's phone
+    // was found receiving "N people are waiting on you" up to 319 times a day,
+    // because that limit lived in one sender and silently never held.
+    // Only system pushes are gated: a person's own test or self-nudge always goes.
+    // A held notification is kept and delivered later as one; nothing is dropped.
+    if (isService && body.digest !== true) {
+      try {
+        const { data: gate, error: gErr } = await admin.rpc("push_gate", { p_user: targetUserId, p_tag: tag || null });
+        if (!gErr && gate && gate.action === "skip") { await logIt(0, 0, String(gate.why || "skipped")); return json({ sent: 0, failed: 0, pruned: 0, skipped: gate.why }); }
+        if (!gErr && gate && gate.action === "hold") {
+          const cls = String(tag || "untagged").replace(/[-:][0-9a-f]{8}[0-9a-f-]*$/i, "");
+          // keep the latest of each kind: replace what is waiting, then add this one
+          await admin.from("push_held").delete().eq("user_id", targetUserId).eq("tag_class", cls).is("delivered_at", null);
+          const { error: hErr } = await admin.from("push_held").insert({ user_id: targetUserId, tag_class: cls, title: title || null, body: message || null, url: url || null, tag: tag || null, why: String(gate.why || "held") });
+          if (!hErr) { await logIt(0, 0, String(gate.why || "held")); return json({ sent: 0, failed: 0, pruned: 0, held: gate.why }); }
+          console.error("push_held:", hErr.message);   // could not keep it: send it rather than lose it
+        }
+        if (gErr) console.error("push_gate:", gErr.message);   // the rule could not be asked: deliver as before
+      } catch (e) { console.error("push_gate:", String((e as Error)?.message || e)); }
+    }
     if (!subs || subs.length === 0) { await logIt(0, 0, "no devices"); return json({ sent: 0, failed: 0, pruned: 0, note: "no devices" }); }
 
     const payload = JSON.stringify({

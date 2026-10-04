@@ -278,6 +278,7 @@ export default function CommitmentReview({ userId, contactId = null, onChanged, 
     const t = '\u201c' + String(c.title || '').slice(0, 60) + '\u201d';
     notify(teach ? 'Not a thing \u2014 PrismOS will learn from this. ' + t : (was === 'accepted' ? 'Deleted \u2014 ' : 'Skipped \u2014 ') + t,
       teach ? 'success' : 'info', { label: 'Undo', onClick: () => restore([c.id], was === 'accepted' ? 'accepted' : 'proposed') });
+    if (teach) { try { window.dispatchEvent(new CustomEvent('prism:scope-ask', { detail: { kind: 'not_a_thing', commitmentId: c.id, contactId: c.contact_id || null, name: (c.contact && c.contact.name) || (c.contacts && c.contacts.name) || c.contact_name || '' } })); } catch (_) {} }
   }
 
   // Reword a commitment in place. Save the edited title back to the row.

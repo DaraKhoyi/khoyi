@@ -50,9 +50,10 @@ export async function personalRule(db: any, userId?: string | null): Promise<str
 export async function broughtBackLessons(db: any, userId?: string | null, limit = 8): Promise<string> {
   try {
     if (!userId) return "";
+    // Each is a line the person can see and forget (Settings → What PrismOS has learned).
     const [a, b] = await Promise.all([
-      db.from("dropped_suggestions").select("title,quote").eq("user_id", userId).not("picked_up_at", "is", null).order("picked_up_at", { ascending: false }).limit(limit),
-      db.from("commitment_events").select("title").eq("user_id", userId).eq("actor", userId).eq("to_status", "proposed").in("from_status", ["expired", "archived"]).order("at", { ascending: false }).limit(limit),
+      db.from("dropped_suggestions").select("title,quote").eq("user_id", userId).eq("teach", true).not("picked_up_at", "is", null).order("picked_up_at", { ascending: false }).limit(limit),
+      db.from("commitments").select("title,quote").eq("user_id", userId).not("brought_back_at", "is", null).order("brought_back_at", { ascending: false }).limit(limit),
     ]);
     const lines = [...(a.data || []), ...(b.data || [])].map((r: any) => {
       const t = String(r.title || "").replace(/\s+/g, " ").trim().slice(0, 140);
@@ -62,5 +63,22 @@ export async function broughtBackLessons(db: any, userId?: string | null, limit 
     if (!lines.length) return "";
     return "\nTHIS PERSON BROUGHT THESE BACK after PrismOS left them out or set them aside — each one mattered to them. " +
       "Learn the KIND of thing each is and do raise things like it:\n" + lines.join("\n") + "\n";
+  } catch (_) { return ""; }
+}
+
+// Why this person put something off (4 Oct 2026). "Not today" with a reason:
+// "not mine" and "too small" say the suggestion itself missed, softly — it is
+// still on their list, so these are weaker than "Not a thing".
+export async function putOffLessons(db: any, userId?: string | null, limit = 6): Promise<string> {
+  try {
+    if (!userId) return "";
+    const { data: sn } = await db.from("chief_snoozes").select("source_ref,reason").eq("user_id", userId).in("reason", ["not_mine", "too_small"]).order("created_at", { ascending: false }).limit(limit);
+    const calls = (sn || []).map((r: any) => String(r.source_ref || "")).filter((r: string) => r.startsWith("call:")).map((r: string) => r.slice(5));
+    if (!calls.length) return "";
+    const { data: cs } = await db.from("commitments").select("title,call_id").eq("user_id", userId).in("call_id", calls).limit(limit * 2);
+    const why = new Map((sn || []).map((r: any) => [String(r.source_ref).slice(5), r.reason === "not_mine" ? "not theirs to do" : "too small to track"]));
+    const lines = (cs || []).map((c: any) => `- ${String(c.title || "").replace(/\s+/g, " ").trim().slice(0, 140)} (they said: ${why.get(String(c.call_id)) || "not for them"})`).slice(0, limit);
+    if (!lines.length) return "";
+    return "\nTHIS PERSON PUT THESE OFF AND SAID WHY. Weigh it when deciding whether something like them is worth raising:\n" + lines.join("\n") + "\n";
   } catch (_) { return ""; }
 }

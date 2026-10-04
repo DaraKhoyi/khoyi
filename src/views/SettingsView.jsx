@@ -2,6 +2,8 @@
 // Extracted from App.js (strangle). Every child panel is now its own module.
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import DialSettings from './DialSettings';
+import NotifySettings from './NotifySettings';
+import LearnedPanel from './LearnedPanel';
 import { supabase } from '../dataService';
 import { BUILD_VERSION } from '../version';
 import { notify } from '../notify';
@@ -412,6 +414,8 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
         <TipsSetting />
         <React.Suspense fallback={<div style={{height:'1px'}} />}><QuarterlyTaxBanner userId={userId} /></React.Suspense>
         <DialSettings userId={userId} setUserSettings={setUserSettings} />
+        <NotifySettings />
+        <LearnedPanel />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Journal button</h3></div>
           <div className="panel-body">

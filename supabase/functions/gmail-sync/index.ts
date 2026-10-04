@@ -679,9 +679,12 @@ async function syncOneAccount(supabase, account, opts) {
                 tag: "owe-reply",
               }),
             }).catch(() => {});
-            await supabase.from("notification_prefs")
-              .update({ last_push_at: new Date().toISOString() })
-              .eq("user_id", account.user_id);
+            // UPSERT, not update (4 Oct): an account with no row here could never
+            // record the time, so "at most one an hour" never held — 319 pushes in
+            // a day for the broker. push-send's gate now enforces the hour as well.
+            const { error: npErr } = await supabase.from("notification_prefs")
+              .upsert({ user_id: account.user_id, last_push_at: new Date().toISOString() }, { onConflict: "user_id" });
+            if (npErr) console.error("notification_prefs:", npErr.message);
           }
         }
       } catch (_) { /* push is best-effort; never block the sync */ }

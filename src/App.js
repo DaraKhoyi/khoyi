@@ -68,7 +68,7 @@ import TaskModal from './views/TaskModal';
 import { docOriginMeta, OriginChip, LifecycleChip, FILE_STATUSES, STATUS_META, CHK_STATUS, CHK_META, FARBAR_BUYER_CHECKLIST, logFileEvent, shortDate, StatusPill, FILE_DOC_TYPES, DOCTYPE_LABEL, DOCTYPE_TO_ITEM, WAIVER_TO_KIND, resolveDeadlineWaiver, generateDeadlinesFromTerms } from './fileDomain';
 import MissingDocsComposer from './views/MissingDocsComposer';
 import { specialScreen } from './publicRoutes';
-import UpdateBanner from './UpdateBanner'; import JournalReturn from './views/JournalReturn';
+import UpdateBanner from './UpdateBanner'; import JournalReturn from './views/JournalReturn'; import ScopeAsk from './views/ScopeAsk';
 import SignatureRequestModal from './views/SignatureRequestModal';
 import SignatureManageModal from './views/SignatureManageModal';
 import FileDetailModal from './views/FileDetailModal';
@@ -1772,7 +1772,7 @@ function AppMain() {
       <ConnectionBanner />
       <InstallPwaPrompt />
       <UpdateBanner />
-      <JournalReturn userId={user.id} view={view} enabled={userSettings?.journal_button !== false} onOpen={() => navigate('journal')} />
+      <JournalReturn userId={user.id} view={view} enabled={userSettings?.journal_button !== false} onOpen={() => navigate('journal')} /><ScopeAsk userId={user.id} />
       <ImpersonationBanner />
       {/* QuickLog FAB (the graph icon) is preserved but hidden for now — Dara
           asked to remove it from all displays and save it for later. Flip

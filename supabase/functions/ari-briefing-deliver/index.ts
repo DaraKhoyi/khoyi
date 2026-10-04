@@ -142,7 +142,7 @@ serve(async (req) => {
           const pr = await fetch(`${SUPABASE_URL}/functions/v1/push-send`, {
             method: "POST",
             headers: internalHeaders(),
-            body: JSON.stringify({ user_id: p.user_id, title: "Ari Daily Briefing \u2600\ufe0f", body: (briefing.summary || "Your morning briefing is ready.").slice(0, 140), url: "https://darasapp.com" }),
+            body: JSON.stringify({ user_id: p.user_id, title: "Ari Daily Briefing \u2600\ufe0f", body: (briefing.summary || "Your morning briefing is ready.").slice(0, 140), url: "https://darasapp.com", tag: "briefing" }),   // the person chose this time: push_gate lets it through quiet hours
           });
           return pr.ok;
         } catch (_e) { return false; }

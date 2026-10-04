@@ -50,6 +50,8 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
     const { error } = await supabase.from('chief_snoozes').upsert({ user_id: userId, source_ref: item.ref, until: plusDays(days) }, { onConflict: 'user_id,source_ref' });
     setBusy(false);
     if (error) { tell('Could not set that aside: ' + (error.message || error), 'error'); return; }
+    // "Not today" may say why (optional; ScopeAsk). A "Done"/"It is fine" long snooze is not asked.
+    if (days === 1) { try { window.dispatchEvent(new CustomEvent('prism:scope-ask', { detail: { kind: 'not_today', ref: item.ref } })); } catch (_) {} }
     advance();
   }
   async function addTask(item, title, due) {
@@ -104,6 +106,7 @@ export default function ChiefQueue({ userId, setView, onChanged, limit = 3, all 
     };
     const msg = how === 'done' ? 'Done.' : how === 'teach' ? 'Not a thing \u2014 PrismOS will learn from this.' : 'Deleted.';
     if (window.__notify) window.__notify(msg, 'success', { label: 'Undo', onClick: undo });
+    if (how === 'teach') { try { window.dispatchEvent(new CustomEvent('prism:scope-ask', { detail: { kind: 'not_a_thing', commitmentId: id, contactId: item.payload.contact_id || null, name: item.payload.name || '' } })); } catch (_) {} }
     advance();
   }
   const go = (view, sub) => { if (sub && window.__deepLink) window.__deepLink({ view, sub, n: Date.now() }); setView && setView(view); };
