@@ -62,8 +62,9 @@ export function HandledLine({ setView }) {
 //
 // Both are answered by one thing: every automatic action as its OWN LINE — what,
 // when, why, and a way to undo it — a few at a time, with no total anywhere.
-// the_record() (supabase/sql/2026-10-04b_the_record.sql). Lines are kept with no
-// time limit; only the person removes one (design brief, decision 10).
+// the_record() (supabase/sql/2026-10-04b_the_record.sql). Lines are kept for a
+// year, then removed, and the removal is itself a line (Dara, 5 Oct; this
+// replaces "no time limit"). The person can remove one sooner.
 const when = (iso) => new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric' });
 const KIND = { commitment: 'A follow-up from a call, set aside', dropped: 'Heard on a call, and left out', lead: null };
 
@@ -95,7 +96,7 @@ function RecordLine({ it, first, second, onDone }) {
       <div style={calm.actions}>
         {second && <button type="button" disabled={busy} style={calm.btnPrimary} onClick={() => mark('right')}>Yes, that was right</button>}
         {undoLabel && <button type="button" disabled={busy} style={second ? calm.btnQuiet : calm.btnPrimary} onClick={undo}>{undoLabel}</button>}
-        {!second && <button type="button" disabled={busy} style={calm.btnQuiet} onClick={() => mark('removed')}>Remove</button>}
+        {!second && it.src !== 'tidy' && <button type="button" disabled={busy} style={calm.btnQuiet} onClick={() => mark('removed')}>Remove</button>}
       </div>
     </div>
   );
@@ -135,7 +136,7 @@ export function TheRecord() {
         </div>
       )}
       <div style={calm.section}>What I did on my own</div>
-      <div style={calm.sectionNote}>Each thing PrismOS set aside or left out, with why. Nothing is deleted unless you remove it.</div>
+      <div style={calm.sectionNote}>Each thing PrismOS set aside or left out, with why. Kept for a year, then removed. You can remove anything sooner.</div>
       {rec.failed ? <div style={calm.empty}>The record could not be loaded just now. Nothing has been lost.</div>
         : items.length === 0 ? <div style={calm.empty}>Nothing has been set aside or left out.</div>
         : items.map((it, i) => <RecordLine key={it.src + it.id} it={it} first={i === 0} onDone={() => load()} />)}

@@ -58,9 +58,6 @@ verify_jwt = false
 [functions.ari-briefing]
 verify_jwt = false
 
-[functions.ari-briefing-deliver]
-verify_jwt = false
-
 # Cron (service role) and lead-concierge only; checks the caller itself.
 [functions.lead-qualify]
 verify_jwt = false

@@ -59,6 +59,8 @@ jobs:
           SB=./node_modules/.bin/supabase
           while IFS= read -r fn; do
             [ -z "$fn" ] && continue
+            # A function whose folder was deleted in this push has nothing to deploy.
+            [ -d "supabase/functions/$fn" ] || { echo "skip $fn (removed from the repo)"; continue; }
             echo "::group::Deploy $fn"
             "$SB" functions deploy "$fn" --project-ref xlgfspnojjgvkuitcoaf
             echo "::endgroup::"

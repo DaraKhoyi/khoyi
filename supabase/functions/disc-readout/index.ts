@@ -70,8 +70,8 @@ DRIVE / GRIT (0-100):
 
 Return ONLY a JSON object (no markdown, no code fences) with exactly these keys:
 {
-  "readout": "Exactly 3 short paragraphs separated by a blank line. (1) What the Style says about how this agent operates, including any notable Natural-vs-Adaptive gap (15+ points = stress signal); weave in the validity flag if one fired. (2) What the Drive scores reveal, with honest emphasis on the lowest sub-dimension and what it looks like on a Tuesday at 2pm in real estate. (3) The combined Style x Drive read: where they win, where they leak revenue. Plain sentences only.",
-  "coaching": "Their two lowest Drive sub-dimensions, formatted exactly as: PRIORITY 1: <name>\\n<2-3 sentences: what the gap looks like in practice + a concrete intervention>\\n\\nPRIORITY 2: <name>\\n<2-3 sentences>. Plain text, no markdown."
+  "readout": "Exactly 3 short paragraphs separated by a blank line. (1) What the Style says about how this agent operates, including any notable Natural-vs-Adaptive gap (15+ points = stress signal); weave in the validity flag if one fired. (2) What the Drive scores reveal, with honest emphasis on the lowest sub-dimension and what it looks like on a Tuesday at 2pm in real estate. (3) The combined Style x Drive read: where they win, where they leak revenue. Plain sentences only. Write in words only: never state a score, a number, a point gap or 'out of 100', and never use the phrase 'pressure point'. Name the Drive area that asks the most of this person; do not call anything low.",
+  "coaching": "Their two lowest Drive sub-dimensions, formatted exactly as: PRIORITY 1: <name>\\n<2-3 sentences: what the gap looks like in practice + a concrete intervention>\\n\\nPRIORITY 2: <name>\\n<2-3 sentences>. Plain text, no markdown. No scores or numbers."
 }`;
 
   let r: Response;

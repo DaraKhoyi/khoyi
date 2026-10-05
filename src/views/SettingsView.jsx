@@ -33,11 +33,6 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
   const [displayName, setDisplayName] = useState(user?.user_metadata?.display_name || user?.user_metadata?.full_name?.split(/\s+/)[0] || '');
   const [savingName, setSavingName] = useState(false);
   const [nameMsg, setNameMsg] = useState('');
-  const [briefEnabled, setBriefEnabled] = useState(false);
-  const [briefHour, setBriefHour] = useState(7);
-  const [briefMsg, setBriefMsg] = useState('');
-  const [savingBrief, setSavingBrief] = useState(false);
-  const [briefAcct, setBriefAcct] = useState(null);
   const [pushOn, setPushOn] = useState(false);
   const [pushMsg, setPushMsg] = useState('');
   const [pushOk, setPushOk] = useState(true);
@@ -118,7 +113,6 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
     }
   }, [userSettings]);
 
-  useEffect(() => { (async () => { try { const { data } = await supabase.from('ari_briefing_prefs').select('enabled,send_hour,delivery_account_id').eq('user_id', userId).maybeSingle(); if (data) { setBriefEnabled(!!data.enabled); setBriefHour(data.send_hour ?? 7); setBriefAcct(data.delivery_account_id ?? null); } } catch(e){} })(); }, []); // eslint-disable-line
   // "On" means a device that is not refusing alerts (see ../push.js), read from
   // the server — not "this browser has a subscription".
   async function refreshPush() { await resaveThisDevice(userId); const h = await pushHealth(userId); setPushHealthState(h); setPushOn(h.working > 0); }
@@ -135,14 +129,6 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
     const r = await sendTest(); setPushOk(r.ok); setPushMsg(r.message);
     await refreshPush().catch(() => {});
     setPushBusy(false);
-  }
-  async function saveBrief(nextEnabled, nextHour, nextAcct) {
-    setSavingBrief(true); setBriefMsg('');
-    const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'America/New_York';
-    const acct = (nextAcct === undefined ? briefAcct : nextAcct) || null;
-    const { error } = await supabase.from('ari_briefing_prefs').upsert({ user_id: userId, enabled: nextEnabled, send_hour: nextHour, tz, delivery_account_id: acct, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-    setSavingBrief(false);
-    setBriefMsg(error ? ('Error: ' + error.message) : 'Saved.');
   }
   async function handleNameSave(e) {
     e.preventDefault(); setSavingName(true); setNameMsg('');
@@ -286,7 +272,7 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
           <div>
             {[
               { id:'setup', icon:'🔌', label:'App Setup', desc:'Cloud storage, iPhone sharing, email, booking, modules' },
-              { id:'prefs', icon:'⚙️', label:'Preferences', desc:'Profile, learning pace, tasks, briefings, tax' },
+              { id:'prefs', icon:'⚙️', label:'Preferences', desc:'Profile, learning pace, tasks, tax' },
               { id:'ai', icon:'✦', label:'AI & Usage', desc:'Claude API key, research model, monthly cost' },
               { id:'account', icon:'👤', label:'Account', desc:'Sign-in, password, about' },
             ].map(cat => (
@@ -458,31 +444,10 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
           </div>
         </div>
         <div className="panel" style={{marginBottom:'18px'}}>
-          <div className="panel-header"><h3>Ari Briefing Delivery</h3></div>
+          <div className="panel-header"><h3>Phone notifications</h3></div>
           <div className="panel-body">
-            {briefMsg&&<div className={briefMsg.startsWith('Error')?'auth-error':'auth-success'} style={{marginBottom:'12px'}}>{briefMsg}</div>}
-            <label style={{display:'flex',alignItems:'center',gap:'10px',cursor:'pointer',marginBottom:'14px'}}>
-              <input type="checkbox" checked={briefEnabled} onChange={e=>{ setBriefEnabled(e.target.checked); saveBrief(e.target.checked, briefHour); }}/>
-              <span style={{fontSize:'14px',fontWeight:600}}>Email me my briefing every morning</span>
-            </label>
-            <div className="form-group" style={{opacity:briefEnabled?1:0.5}}>
-              <label className="form-label">Deliver from / to</label>
-              <select className="form-select" value={briefAcct||''} disabled={!briefEnabled||savingBrief} onChange={e=>{ const v=e.target.value||null; setBriefAcct(v); saveBrief(briefEnabled, briefHour, v); }}>
-                {!briefAcct && <option value="">Default (first email account)</option>}
-                {(emailAccounts||[]).map(a=><option key={a.id} value={a.id}>{a.email_address||a.email}</option>)}
-              </select>
-              <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'4px'}}>The morning briefing (and its voicemail) is emailed from and to this connected account.</div>
-            </div>
-            <div className="form-group" style={{opacity:briefEnabled?1:0.5}}>
-              <label className="form-label">Delivery time</label>
-              <select className="form-select" value={briefHour} disabled={!briefEnabled||savingBrief} onChange={e=>{ const h=parseInt(e.target.value,10); setBriefHour(h); saveBrief(briefEnabled,h); }}>
-                {[5,6,7,8,9,10,11].map(h=><option key={h} value={h}>{h}:00 AM</option>)}
-              </select>
-              <p style={{fontSize:'12px',color:'var(--text-2)',marginTop:'8px',lineHeight:1.5}}>Each morning at this time, Ari generates your briefing and emails it to your connected inbox &mdash; your reach-outs, tasks, and calendar in one note, with a spoken “voicemail” recording attached. Open the app to send the drafted replies. Uses your current time zone.</p>
-            </div>
-            <div style={{borderTop:'1px solid var(--border)',marginTop:'16px',paddingTop:'16px'}}>
-              <div style={{fontSize:'14px',fontWeight:600,marginBottom:'4px'}}>Phone notifications</div>
-              <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 12px',lineHeight:1.5}}>New-lead alerts and your morning brief come to your phone as notifications. {pushHealthState == null ? '' : pushOn ? `Working on ${pushHealthState.working} device${pushHealthState.working === 1 ? '' : 's'}.` : pushHealthState.devices > 0 ? 'Your saved device is refusing alerts \u2014 reconnect it below.' : 'Not connected yet \u2014 alerts can\u2019t reach you.'}</p>
+            <div>
+              <p style={{fontSize:'12px',color:'var(--text-2)',margin:'0 0 12px',lineHeight:1.5}}>New-lead alerts and your morning note come to your phone as notifications. {pushHealthState == null ? '' : pushOn ? `Working on ${pushHealthState.working} device${pushHealthState.working === 1 ? '' : 's'}.` : pushHealthState.devices > 0 ? 'Your saved device is refusing alerts \u2014 reconnect it below.' : 'Not connected yet \u2014 alerts can\u2019t reach you.'}</p>
               {pushHealthState && pushHealthState.missed7d > 0 && <div style={{fontSize:'12px',color:'var(--red)',marginBottom:'10px'}}>{pushHealthState.missed7d} alert{pushHealthState.missed7d === 1 ? '' : 's'} this week reached none of your devices.</div>}
               {pushMsg && <div style={{fontSize:'12px',color:pushOk?'var(--green)':'var(--red)',marginBottom:'10px'}}>{pushMsg}</div>}
               <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>

@@ -157,22 +157,8 @@ const PROOF = {
     what: 'the Gold Report import wrote rows within the last 26 hours',
     sql: `select count(*) n from public.brokerage_transactions where imported_at > now() - interval '26 hours'`,
   },
-  // The morning briefing reached Dara on 3 of 10 mornings while every run
-  // "succeeded" (26 Sep). Proof here is the DELIVERY: once a user's catch-up
-  // window (send_hour + 4h) has closed, today must be stamped delivered. This
-  // one counts FAILURES, so it passes at zero and names who missed and why.
-  'ari-briefing-deliver-hourly': {
-    what: 'every enabled morning briefing delivered once its window has closed',
-    missing: `select coalesce(string_agg(coalesce(u.email, p.user_id::text) || ': ' || coalesce(p.last_result, 'never attempted'), '; '), '') who, count(*) n
-      from public.ari_briefing_prefs p left join auth.users u on u.id = p.user_id
-      where p.enabled
-        and extract(hour from now() at time zone coalesce(p.tz, 'America/New_York')) >= coalesce(p.send_hour, 7) + 4
-        and coalesce(p.last_delivered_date, date '1900-01-01') < (now() at time zone coalesce(p.tz, 'America/New_York'))::date
-        -- a user with no way to receive it is a setup fact, not a delivery failure —
-        -- but only if TODAY's run actually looked and said so
-        and not (coalesce(p.last_result, '') like 'no delivery channel%'
-                 and (p.last_attempt_at at time zone coalesce(p.tz, 'America/New_York'))::date = (now() at time zone coalesce(p.tz, 'America/New_York'))::date)`,
-  },
+  // (The long email briefing and its hourly delivery job were retired on 5 Oct
+  // 2026 at Dara's decision; the short morning note is the one morning message.)
 };
 
 const failing = await q(`select * from public.workers_failing_every_run(interval '60 minutes')`);

@@ -657,8 +657,8 @@ async function syncOneAccount(supabase, account, opts) {
           // Quiet hours, in the user's own zone, and at most one an hour.
           let tz = "America/New_York";
           try {
-            const { data: prof } = await supabase.from("ari_briefing_prefs").select("tz").eq("user_id", account.user_id).maybeSingle();
-            if (prof?.tz) tz = prof.tz;
+            const { data: prof } = await supabase.from("user_settings").select("timezone").eq("user_id", account.user_id).maybeSingle();
+            if (prof?.timezone) tz = prof.timezone;
           } catch (_) {}
           const localHour = parseInt(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hour12: false }).format(new Date()), 10);
 

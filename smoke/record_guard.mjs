@@ -23,6 +23,7 @@ expect(/rpc\('the_record'/.test(page) && /'the_record_undo'/.test(page) && /'the
 expect(!/second_look\.length\}|items\.length\} (set|left|thing)/.test(page), 'the record page renders a total');
 const sql = read('supabase/sql/2026-10-04b_the_record.sql');
 expect(/if v_uid is null then return/.test(sql), 'the_record no longer refuses a signed-out caller first');
+expect(/Kept for a year, then removed/.test(page) && /select 365/.test(readFileSync('supabase/sql/2026-10-05_item18_decisions.sql', 'utf8')), 'the record no longer says how long set-aside items are kept');
 
 const URL_ = process.env.SUPABASE_URL, SVC = process.env.SUPABASE_SERVICE_KEY, ANON = process.env.SUPABASE_ANON_KEY;
 if (URL_ && SVC && ANON) {
@@ -41,7 +42,18 @@ if (URL_ && SVC && ANON) {
     const d = await ins('dropped_suggestions', { user_id: uid, owner: 'them', owner_name: 'Smoke Person', title: 'Smoke: send the staging quote over', quote: 'if I get it I will send it', reason: 'conditional', dedupe_key: 'smoke-' + Date.now() });
     const plain = await ins('dropped_suggestions', { user_id: uid, owner: 'them', title: 'Smoke: an ordinary thing to remove later', quote: 'I will check right now', reason: 'in_the_moment', dedupe_key: 'smoke2-' + Date.now() });
 
-    let rec = await rpc('the_record', { p_limit: 8, p_before: null, p_second: 5 });
+    // Dara, 5 Oct 2026: kept for a year, then removed — and the removal is said.
+    const old = await ins('commitments', { user_id: uid, owner: 'me', title: 'Smoke: set aside thirteen months ago', quote: 'old', status: 'expired', fuse: 'near', created_at: new Date(Date.now() - 400 * 864e5).toISOString(), auto_expired_at: new Date(Date.now() - 366 * 864e5).toISOString() });
+    const young = await ins('commitments', { user_id: uid, owner: 'me', title: 'Smoke: set aside eleven months ago', quote: 'young', status: 'expired', fuse: 'near', created_at: new Date(Date.now() - 360 * 864e5).toISOString(), auto_expired_at: new Date(Date.now() - 330 * 864e5).toISOString() });
+    await fetch(`${URL_}/rest/v1/rpc/remove_old_set_aside`, { method: 'POST', headers: H, body: '{}' });
+    const left = await get(`commitments?user_id=eq.${uid}&select=id`);
+    expect(!left.some((x) => x.id === old.id), 'a follow-up set aside more than a year ago was not removed');
+    expect(left.some((x) => x.id === young.id) && left.some((x) => x.id === c.id), 'the yearly removal took something set aside less than a year ago');
+    const anonTry = await fetch(`${URL_}/rest/v1/rpc/remove_old_set_aside`, { method: 'POST', headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }, body: '{}' });
+    expect(!anonTry.ok, 'a signed-in person can run the yearly removal themselves');
+
+    let rec = await rpc('the_record', { p_limit: 20, p_before: null, p_second: 5 });
+    expect((rec.items || []).some((x) => x.src === 'tidy' && /set aside more than a year ago/.test(x.what)), 'the yearly removal happened without a line in the record');
     const has = (list, id) => (list || []).some((x) => x.id === id);
     expect(has(rec.items, c.id) && has(rec.items, d.id), 'the record does not list a set-aside follow-up and a left-out suggestion');
     expect((rec.items || []).every((x) => x.what && x.why && x.at), 'a record line is missing what, why or when');

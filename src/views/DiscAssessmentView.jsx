@@ -139,11 +139,11 @@ function computeValidityFlag(style, anchor) {
   if (anchor === null || anchor === undefined) return null;
   const gaps = ['D','I','S','C'].map(k => Math.abs(style.adaptive[k] - style.natural[k]));
   const maxGap = Math.max(...gaps);
-  if (anchor === 0 && maxGap >= 25) return { type:'stress', headline:'Stress signal — unrecognized adaptation', detail:`You reported being "essentially the same" at work vs. off-duty, but the data shows a ${maxGap}-point gap on at least one DISC dimension. You're operating in a significantly adapted mode without fully realizing it — a textbook burnout precursor worth surfacing in coaching.` };
-  if (anchor === 3 && maxGap < 10) return { type:'coaching', headline:'Self-perception mismatch — overstated adaptation', detail:`You reported being "a completely different person" at work, but the data shows only a ${maxGap}-point max gap. Either you feel more strain than the role requires, or the work/off-duty line blurred while answering. Worth a short conversation to clarify.` };
-  if (anchor === 1 && maxGap >= 30) return { type:'stress', headline:'Underreported adaptation', detail:`You reported being "a little different" at work, but the data shows a ${maxGap}-point gap. The strain is bigger than you recognize — worth noting.` };
+  if (anchor === 0 && maxGap >= 25) return { type:'stress', headline:'Stress signal — unrecognized adaptation', detail:`You reported being "essentially the same" at work vs. off-duty, but the data shows a wide gap on at least one DISC dimension. You're operating in a significantly adapted mode without fully realizing it — a textbook burnout precursor worth surfacing in coaching.` };
+  if (anchor === 3 && maxGap < 10) return { type:'coaching', headline:'Self-perception mismatch — overstated adaptation', detail:`You reported being "a completely different person" at work, but the data shows only a small gap. Either you feel more strain than the role requires, or the work/off-duty line blurred while answering. Worth a short conversation to clarify.` };
+  if (anchor === 1 && maxGap >= 30) return { type:'stress', headline:'Underreported adaptation', detail:`You reported being "a little different" at work, but the data shows a wide gap. The strain is bigger than you recognize — worth noting.` };
   if ((anchor === 3 && maxGap >= 25) || (anchor === 0 && maxGap < 10) || (anchor === 2 && maxGap >= 15 && maxGap < 30) || (anchor === 1 && maxGap < 20))
-    return { type:'aligned', headline:'Self-awareness aligned', detail:`Your self-report (${VALIDITY_ANCHOR_OPTIONS[anchor].label.toLowerCase()}) matches the measured gap (${maxGap} points max). That accurate self-perception is itself a strength.` };
+    return { type:'aligned', headline:'Self-awareness aligned', detail:`Your self-report (${VALIDITY_ANCHOR_OPTIONS[anchor].label.toLowerCase()}) matches the measured gap. That accurate self-perception is itself a strength.` };
   return null;
 }
 function styleLabel(adaptive) {
@@ -183,22 +183,22 @@ function buildReadout({ name, style, drive, styleLbl, validityFlag }){
 
   let p1 = `You read as a ${styleLbl}. At work, your strongest gears are ${LETTER_NAME[t1]} and ${LETTER_NAME[t2]} — ${LETTER_BLURB[t1]}, and ${LETTER_BLURB[t2]}. `;
   if (maxGap >= 15) {
-    p1 += `There's a real gap between how you show up at work and who you are off-duty — about ${maxGap} points on ${LETTER_NAME[maxGapObj.k]}. That much adaptation is effort you're spending every day, and over time it taxes you. `;
+    p1 += `There's a real gap between how you show up at work and who you are off-duty — widest on ${LETTER_NAME[maxGapObj.k]}. That much adaptation is effort you're spending every day, and over time it taxes you. `;
   } else {
     p1 += `Your work self and your off-duty self line up closely, which means the way you operate costs you very little to sustain — a quiet advantage. `;
   }
   if (validityFlag && validityFlag.type !== 'aligned') p1 += validityFlag.detail + ' ';
   else if (validityFlag && validityFlag.type === 'aligned') p1 += validityFlag.detail;
 
-  let p2 = `Your overall Drive sits at ${drive.overall} out of 100. The honest pressure point is ${DIM_NAME[low1[0]]} (${low1[1]}) — your ${DIM_DESC[low1[0]]}. `;
+  let p2 = `Of the four Drive areas, the one that asks the most of you is ${DIM_NAME[low1[0]]} — your ${DIM_DESC[low1[0]]}. `;
   p2 += {
     E:'On a Tuesday at 2pm that looks like a half-worked strategy you\'re already itching to replace. ',
     R:'On a Tuesday at 2pm after a rough week, that looks like a quiet phone and a to-do list you keep "getting to." ',
     D:'On a Tuesday at 2pm when motivation dips, that looks like the calls that were scheduled but never dialed. ',
     F:'On a Tuesday at 2pm that looks like a new tool open in a tab while last month\'s plan goes cold. ',
   }[low1[0]];
-  p2 += `${DIM_NAME[low2[0]]} (${low2[1]}) is the second thing to watch. `;
-  if (drive.distortionHits >= 3) p2 += `Note: your self-awareness answers came back unusually flawless — that often means a little self-protection crept in, so read these scores as a floor, not a ceiling. `;
+  p2 += `${DIM_NAME[low2[0]]} is the second thing to watch. `;
+  if (drive.distortionHits >= 3) p2 += `Note: your self-awareness answers came back unusually flawless — that often means a little self-protection crept in, so read this as a floor, not a ceiling. `;
 
   let p3 = `Put together: as a ${styleLbl} you win where your top gears do — `;
   p3 += (t1==='D'||t2==='D') ? 'taking decisive action and driving deals to a close' : (t1==='I'||t2==='I') ? 'opening doors and winning people quickly' : (t1==='S'||t2==='S') ? 'earning trust and keeping clients for the long haul' : 'getting the details right and being the agent who never drops the ball';
@@ -477,10 +477,10 @@ function DriveScreen({ driveIndex, setDriveIndex, driveAnswers, setDriveAnswers,
 }
 
 /* ---------- Results ---------- */
-function Bar({ letter, adapt, nat }) {
+function Bar({ letter, adapt, nat, nums }) {
   return (
     <div className="fsa-bar">
-      <div className="fsa-bar-top"><span className="fsa-bar-letter">{letter} · {LETTER_NAME[letter]}</span><span className="fsa-bar-nums">{adapt}<span className="fsa-bar-nat"> / {nat}</span></span></div>
+      <div className="fsa-bar-top"><span className="fsa-bar-letter">{letter} · {LETTER_NAME[letter]}</span>{nums && <span className="fsa-bar-nums">{adapt}<span className="fsa-bar-nat"> / {nat}</span></span>}</div>
       <div className="fsa-track"><div className="fsa-fill nat" style={{ width:`${nat}%` }} /></div>
       <div className="fsa-track"><div className="fsa-fill adapt" style={{ width:`${adapt}%` }} /></div>
     </div>
@@ -494,18 +494,36 @@ function DriveBar({ code, val }) {
     </div>
   );
 }
+// Words first; the numbers only when the person asks for them (Dara, 5 Oct 2026).
+// No score is shown as a verdict: the Drive areas are named in the order they
+// come to this person, strongest first, and nothing is called low.
+function DriveWords({ sub }) {
+  const order = ['E','R','D','F'].filter(k => typeof sub?.[k] === 'number').sort((x, y) => sub[y] - sub[x]);
+  if (!order.length) return null;
+  return (
+    <div data-testid="drive-words">
+      {order.map((k, i) => (
+        <div className="fsa-dbar" key={k}>
+          <div className="fsa-bar-top"><span className="fsa-bar-letter">{DIM_NAME[k]}</span><span className="fsa-bar-nat" style={{ fontSize:12 }}>{i === 0 ? 'Comes most naturally to you' : i === order.length - 1 ? 'Asks the most of you' : ''}</span></div>
+          <p className="fsa-prose" style={{ margin:'2px 0 10px' }}>Your {DIM_DESC[k]}.</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 function Results({ res, onRetake, onRemove, saving }) {
   const a = res.style.adaptive, n = res.style.natural;
   const flag = res.validityFlag;
+  const [nums, setNums] = useState(false);
   return (
     <div className="fsa-results">
       <div className="fsa-eyebrow">Full Spectrum readout</div>
       <h2 className="fsa-name">{res.name || 'Your'} Profile</h2>
-      <div className="fsa-label">{res.styleLabel} <span>· Drive {res.drive?.overall}/100</span></div>
+      <div className="fsa-label">{res.styleLabel}</div>
 
       <div className="fsa-card">
         <div className="fsa-card-h">Style — DISC <span>natural · adaptive</span></div>
-        {['D','I','S','C'].map(L => <Bar key={L} letter={L} adapt={a[L]} nat={n[L]} />)}
+        {['D','I','S','C'].map(L => <Bar key={L} letter={L} adapt={a[L]} nat={n[L]} nums={nums} />)}
       </div>
 
       {flag && (
@@ -516,9 +534,10 @@ function Results({ res, onRetake, onRemove, saving }) {
       )}
 
       <div className="fsa-card">
-        <div className="fsa-card-h">Drive — Grit <span>{res.drive?.overall}/100 overall</span></div>
-        {['E','R','D','F'].map(k => <DriveBar key={k} code={k} val={res.drive?.sub?.[k]} />)}
-        {res.drive?.distortionHits >= 3 && <div className="fsa-distort">Self-awareness answers came back unusually flawless ({res.drive.distortionHits}/4) — read the Drive scores as a floor.</div>}
+        <div className="fsa-card-h">Drive — Grit{nums ? <span data-testid="drive-overall">{res.drive?.overall}/100 overall</span> : null}</div>
+        {nums ? ['E','R','D','F'].map(k => <DriveBar key={k} code={k} val={res.drive?.sub?.[k]} />) : <DriveWords sub={res.drive?.sub} />}
+        {res.drive?.distortionHits >= 3 && <div className="fsa-distort">Self-awareness answers came back unusually flawless — read this as a floor.</div>}
+        <button type="button" className="fsa-btn2" data-testid="show-my-numbers" style={{ marginTop:10 }} onClick={() => setNums(v => !v)}>{nums ? 'Hide my numbers' : 'Show my numbers'}</button>
       </div>
 
       <div className="fsa-card">

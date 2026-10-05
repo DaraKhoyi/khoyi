@@ -25,6 +25,14 @@ for (const f of readdirSync('src/views').filter((x) => /\.jsx?$/.test(x))) {
   const t = read('src/views/' + f).split('\n').filter((l) => !/^\s*(\/\/|\*|\{\/\*)/.test(l)).join('\n');
   if (/low[- ]grit|low drive|lacks? grit/i.test(t)) problems.push(`${f} labels a person by their Drive result`);
 }
+// Dara, 5 Oct 2026: the results page says it in words; the numbers only on request.
+expect(/data-testid="show-my-numbers"/.test(test) && /function DriveWords/.test(test), 'the results page no longer offers the numbers on request');
+expect(!/Drive \{res\.drive\?\.overall\}\/100<\/span><\/div>/.test(test) && /\{nums \? <span data-testid="drive-overall">/.test(test), 'the results page shows the Drive number without being asked');
+{ const ro = test.slice(test.indexOf('function buildReadout'), test.indexOf('COMPONENT'));
+  expect(!/out of 100|pressure point|\$\{low1\[1\]\}|\$\{low2\[1\]\}|\$\{drive\.overall\}|\$\{maxGap\}/.test(ro), 'the written read states a score or names a "pressure point"');
+  expect(/never state a score/.test(read('supabase/functions/disc-readout/index.ts')), 'the AI-written read is no longer told to leave the numbers out'); }
+const guessSql = read('supabase/sql/2026-10-05_item18_decisions.sql');
+expect(!/drive|overall/i.test(guessSql.slice(guessSql.indexOf('create or replace function public.apply_presentation_guess'), guessSql.indexOf('revoke all on function public.apply_presentation_guess')).split('\n').filter((l) => !/^\s*--/.test(l)).join('\n')), 'the starting guess reads the Drive result again');
 const panel = read('src/views/PresentationPanel.jsx');
 expect(/not a finding/.test(panel) && /your choice always wins/i.test(panel), 'the settings no longer say the tuning is a guess the person can override');
 expect(!/drive|grit|\bDISC\b|overall/i.test(panel.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n')), 'the presentation settings name a score or a trait');
@@ -72,7 +80,8 @@ if (URL_ && SVC && ANON && PAT) {
     expect(g.guessed === true && g.basis === 'style', 'results were saved and no starting guess was made');
     expect(g.tips_pace === 'balanced', 'the guess did not fill in a setting the person had not touched');
     expect(g.today_items === 3, 'a later guess MOVED a setting the person had set by hand');
-    expect(g.daily_goal_count === 2, 'the guess did not offer smaller days where the results suggested it');
+    // Dara, 5 Oct 2026: Drive results change nothing about how much a person is shown.
+    expect(g.daily_goal_count === 3 && g.today_items === 3, 'a Drive result changed how many goals or items a person is shown');
     await rpc(a.tok, 'set_presentation', { p_key: 'daily_goal_count', p_value: '4' });
     g = await rpc(a.tok, 'apply_presentation_guess');
     expect(g.daily_goal_count === 4, 'the person chose four goals and a guess changed it back');
