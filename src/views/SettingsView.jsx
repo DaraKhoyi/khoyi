@@ -23,6 +23,7 @@ import CloudStorageSettings from './CloudStorageSettings';
 import AdminLicensingPanel from './AdminLicensingPanel';
 import RedeemCodeBox from './RedeemCodeBox';
 import SimplifyPanel from './SimplifyPanel';
+import MoneyModeSetting from './MoneyModeSetting';
 const QuarterlyTaxBanner = lazy(() => import('./QuarterlyTaxBanner'));
 
 export default function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false, entitlements = null, reloadEntitlements = null, licensingEnforced = false }) {
@@ -271,7 +272,7 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
         {settingsTab === null ? (
           <div>
             {[
-              { id:'setup', icon:'🔌', label:'App Setup', desc:'Cloud storage, iPhone sharing, email, booking, modules' },
+              { id:'setup', icon:'🔌', label:'App Setup', desc:'Cloud storage, iPhone sharing, email, booking, Money view, modules' },
               { id:'prefs', icon:'⚙️', label:'Preferences', desc:'Profile, learning pace, tasks, tax' },
               { id:'ai', icon:'✦', label:'AI & Usage', desc:'Claude API key, research model, monthly cost' },
               { id:'account', icon:'👤', label:'Account', desc:'Sign-in, password, about' },
@@ -367,6 +368,7 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
             {showBookings && <BookingsManagerModal userId={userId} slug={bookingSlug} onClose={()=>setShowBookings(false)} />}
           </div>
         </div>
+        <MoneyModeSetting userId={userId} />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Simplify PrismOS</h3></div>
           <div className="panel-body">

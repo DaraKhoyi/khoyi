@@ -60,9 +60,10 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
   // an icon name does not exist or two entries draw the same thing.
   return [
     { label: 'Today', view: 'today', icon: 'sun' },
-    // Money opens the Finance Dashboard; its arrow opens the rest of the room.
-    { label: 'Money', view: 'finance', icon: 'dollar', children: [
-      { label: 'Finance Dashboard', view: 'finance', icon: 'finance' },
+    // Money opens the check register (My Transactions); its arrow opens the
+    // rest of the room. Dara, 5 Oct 2026. smoke/money_register_guard.mjs pins it.
+    { label: 'Money', view: 'finance', sub: 'ledger', icon: 'dollar', children: [
+      { label: 'Finance Dashboard', view: 'finance', sub: 'dashboard', icon: 'finance' },
       { label: 'Data Entry', view: 'finance', sub: 'ledger', icon: 'edit' },
       { label: 'Blueprint (Budget)', view: 'finance', sub: 'blueprint', icon: 'scale' },
       { label: 'Financial Records', view: 'finance', sub: 'reports', icon: 'archive' },

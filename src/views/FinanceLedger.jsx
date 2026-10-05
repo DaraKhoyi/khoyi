@@ -19,7 +19,7 @@ import { useBackClose } from '../backClose';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSD, fmtUSDCents, fmtPct, fmtHours, normalizePayee, buildSuggester } from '../financeUtils';
 import { KpiBox, KpiTile } from './FinanceTiles';
-import { HeaderSearchIcon, HeaderSearchInput } from './SharedUi';
+import { MoneyRegister } from './MoneyRegister';
 
 // Lazy on purpose: the importer is ~1,100 lines used a few times a year.
 const CsvImportModal = React.lazy(() => import('./CsvImportModal').then(m => ({ default: m.CsvImportModal })));
@@ -28,37 +28,10 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
   const [ledgerMode, setLedgerMode] = useState('transactions');  // 'transactions' | 'recurring'
   const [showModal, setShowModal] = useState(false);
   const [editTx, setEditTx] = useState(null);
-  const [period, setPeriod] = useState('ytd');
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [scopeFilter, setScopeFilter] = useState('business');
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editRecurring, setEditRecurring] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
-  useEffect(() => {
-    const open = () => { setEditTx(null); setShowModal(true); };
-    window.addEventListener('prism:new-transaction', open);
-    return () => window.removeEventListener('prism:new-transaction', open);
-  }, []);
   const [showBulkCategorize, setShowBulkCategorize] = useState(false);
-
-  useEffect(() => { if (!trackPersonal) setScopeFilter('business'); }, [trackPersonal]);
-
-  const filtered = useMemo(() => {
-    const now = new Date();
-    let cutoff = null;
-    if (period === 'month') cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
-    else if (period === 'ytd') cutoff = new Date(now.getFullYear(), 0, 1);
-    let result = cutoff ? transactions.filter(t => new Date(t.date) >= cutoff) : transactions;
-    if (!trackPersonal || scopeFilter === 'business') result = result.filter(t => t.scope === 'business');
-    else if (scopeFilter === 'personal') result = result.filter(t => t.scope === 'personal');
-    const q = (search || '').trim().toLowerCase();
-    if (q) result = result.filter(t =>
-      (t.payee || '').toLowerCase().includes(q) ||
-      (t.description || '').toLowerCase().includes(q) ||
-      (t.account || '').toLowerCase().includes(q));
-    return result;
-  }, [transactions, period, search, scopeFilter, trackPersonal]);
 
   function onSaved(saved) {
     if (editTx) setTransactions(prev => prev.map(t => t.id === saved.id ? saved : t));
@@ -67,29 +40,23 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
   }
   async function deleteTx(tx) {
     if (!await confirmDialog(`Delete this transaction? (${fmtUSDCents(tx.amount)} to ${tx.payee || 'no payee'})`)) return;
-    await supabase.from('transactions').update({ is_archived: true }).eq('id', tx.id);
+    const { error } = await supabase.from('transactions').update({ is_archived: true }).eq('id', tx.id);
+    if (error) { notifyError('That did not delete: ' + error.message); return; }
     setTransactions(prev => prev.filter(t => t.id !== tx.id));
     setShowModal(false); setEditTx(null);
   }
 
-  const totalIn  = filtered.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
-  const totalOut = filtered.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0);
+  // Backlog is backlog whatever the register is showing: this year's business
+  // entries that have no category yet.
+  const uncatYear = todayNY().slice(0, 4);
+  const uncategorizedCount = transactions.filter(t =>
+    t.scope === 'business' && !t.tax_category_id && !t.is_archived && String(t.date || '').slice(0, 4) === uncatYear).length;
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-      {/* Mode tabs */}
-      <div style={{display:'flex',gap:'4px',background:'var(--bg-hover)',padding:'3px',borderRadius:'8px',width:'fit-content'}}>
-        <button onClick={() => setLedgerMode('transactions')}
-          style={{padding:'6px 14px',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:700,cursor:'pointer',
-            background: ledgerMode === 'transactions' ? 'var(--accent)' : 'transparent',
-            color: ledgerMode === 'transactions' ? 'var(--bg-base)' : 'var(--text-2)',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="notes" size={13} /> Transactions</button>
-        <button onClick={() => setLedgerMode('recurring')}
-          style={{padding:'6px 14px',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:700,cursor:'pointer',
-            background: ledgerMode === 'recurring' ? 'var(--accent)' : 'transparent',
-            color: ledgerMode === 'recurring' ? 'var(--bg-base)' : 'var(--text-2)',display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="repeat" size={13} /> Recurring{(recurringTemplates?.length || 0) > 0 ? ` · ${recurringTemplates.length}` : ''}</button>
-      </div>
-
       {ledgerMode === 'recurring' ? (
+        <>
+        <button type="button" className="btn btn-ghost" style={{alignSelf:'flex-start',minHeight:'44px'}} onClick={() => setLedgerMode('transactions')}>Back to the register</button>
         <RecurringList
           userId={userId} recurringTemplates={recurringTemplates || []}
           setRecurringTemplates={setRecurringTemplates}
@@ -98,113 +65,19 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
           onAdd={() => { setEditRecurring(null); setShowRecurringModal(true); }}
           onEdit={(r) => { setEditRecurring(r); setShowRecurringModal(true); }}
         />
+        </>
       ) : (
-      <>
-      <div style={{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}}>
-        {[
-          { id: 'month', label: 'This month' },
-          { id: 'ytd',   label: 'YTD' },
-          { id: 'all',   label: 'All' },
-        ].map(p => (
-          <button key={p.id} onClick={() => setPeriod(p.id)}
-            style={{padding:'6px 12px',border:'none',borderRadius:'999px',fontSize:'12px',fontWeight:600,
-              background: period === p.id ? 'var(--accent)' : 'var(--bg-hover)',
-              color: period === p.id ? 'var(--bg-base)' : 'var(--text-2)',cursor:'pointer'}}>{p.label}</button>
-        ))}
-        {trackPersonal && (
-          <>
-            <span style={{color:'var(--text-3)',fontSize:'11px',margin:'0 4px'}}>·</span>
-            {['business','personal','all'].map(s => (
-              <button key={s} onClick={() => setScopeFilter(s)}
-                style={{padding:'6px 10px',border:'1px solid var(--border)',borderRadius:'999px',fontSize:'11px',fontWeight:600,
-                  background: scopeFilter === s ? 'var(--bg-hover)' : 'transparent',
-                  color: scopeFilter === s ? 'var(--text-1)' : 'var(--text-3)',cursor:'pointer',textTransform:'capitalize'}}>{s}</button>
-            ))}
-          </>
-        )}
-        <div style={{flex:1}}/>
-        <HeaderSearchIcon value={search} open={searchOpen} onToggle={() => setSearchOpen(o => !o)} />
-        {!readOnly && (() => {
-          // Count uncategorized in the current scope (independent of period
-          // filter — backlog is backlog regardless of which month you're viewing)
-          const effectiveScope = (!trackPersonal || scopeFilter === 'business') ? 'business' :
-                                 scopeFilter === 'personal' ? 'personal' : 'business';
-          const uncatYear = new Date().getFullYear();
-          const uncategorizedCount = transactions.filter(t =>
-            t.scope === effectiveScope && !t.tax_category_id && !t.is_archived &&
-            t.date && Number(String(t.date).slice(0, 4)) === uncatYear
-          ).length;
-          if (uncategorizedCount === 0) return null;
-          return (
-            <button onClick={() => setShowBulkCategorize(true)}
-              title={`Categorize ${uncategorizedCount} uncategorized ${effectiveScope} transactions`}
-              style={{padding:'5px 10px',background:'rgba(245,158,11,0.10)',border:'1px solid #f59e0b',borderRadius:'6px',color:'#f59e0b',cursor:'pointer',fontSize:'11px',fontWeight:700,whiteSpace:'nowrap'}}>
-              <span style={{display:'inline-flex',alignItems:'center',gap:'5px'}}><Icon name="tag" size={13} /> Categorize {uncategorizedCount}</span>
-            </button>
-          );
-        })()}
-        {!readOnly && (
-          <button onClick={() => setShowImportModal(true)} title="Import CSV from bank/credit card" aria-label="Import CSV"
-            style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border)',borderRadius:'6px',color:'var(--text-2)',cursor:'pointer',fontSize:'11px',fontWeight:700,whiteSpace:'nowrap'}}>
-            ⬆ Import
-          </button>
-        )}
-              </div>
-
-      {searchOpen && (
-        <HeaderSearchInput value={search} onChange={setSearch} placeholder="🔍 Search payee / description / account…" onClose={() => setSearchOpen(false)} />
-      )}
-
-      <div className="panel" style={{padding:'10px 14px',display:'flex',justifyContent:'space-around',gap:'12px',fontVariantNumeric:'tabular-nums'}}>
-        <div style={{textAlign:'center'}}>
-          <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>In</div>
-          <div style={{fontSize:'16px',color:'var(--green)',fontWeight:700}}>{fmtUSD(totalIn)}</div>
-        </div>
-        <div style={{textAlign:'center'}}>
-          <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Out</div>
-          <div style={{fontSize:'16px',color:'var(--red)',fontWeight:700}}>{fmtUSD(totalOut)}</div>
-        </div>
-        <div style={{textAlign:'center'}}>
-          <div style={{fontSize:'10px',color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700}}>Net</div>
-          <div style={{fontSize:'16px',color:(totalIn+totalOut)>=0?'var(--green)':'var(--red)',fontWeight:700}}>{fmtUSD(totalIn + totalOut)}</div>
-        </div>
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="panel"><div className="panel-body"><div className="empty-state" style={{padding:'40px 20px',textAlign:'center'}}>
-          <div className="empty-icon"><Icon name="notes" size={28} /></div>
-          <p style={{fontSize:'14px',color:'var(--text-1)',marginBottom:'4px'}}>No transactions in this period.</p>
-          {!readOnly && <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>+ Add transaction</button>}
-        </div></div></div>
-      ) : (
-        <div className="panel"><div className="panel-body" style={{padding:0}}>
-          {filtered.map(t => {
-            const cat = taxCategories.find(c => c.id === t.tax_category_id);
-            const sys = systems.find(s => s.id === t.lead_gen_system_id);
-            const pcat = (personalBudget || []).find(p => p.id === t.personal_budget_line_id);
-            return (
-              <div key={t.id} onClick={() => { if (!readOnly) { setEditTx(t); setShowModal(true); } }}
-                style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderBottom:'1px solid var(--border)',cursor:readOnly?'default':'pointer'}}>
-                <div style={{minWidth:0,flex:1}}>
-                  <div style={{fontSize:'14px',color:'var(--text-1)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                    {t.payee || t.description || '(no payee)'}
-                  </div>
-                  <div style={{fontSize:'11px',color:'var(--text-3)',display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'2px'}}>
-                    <span>{t.date}</span>
-                    {cat && <span style={{padding:'2px 6px',borderRadius:'3px',background:`${cat.color}22`,color:cat.color,fontSize:'10px',fontWeight:600}}>{cat.name}</span>}
-                    {sys && t.scope === 'business' && <span style={{padding:'2px 6px',borderRadius:'3px',background:`${sys.color}22`,color:sys.color,fontSize:'10px',fontWeight:600}}>{sys.name}</span>}
-                    {t.scope === 'personal' && (
-                      pcat
-                        ? <span style={{padding:'2px 6px',borderRadius:'3px',background:'rgba(59,130,246,0.15)',color:'#3b82f6',fontSize:'10px',fontWeight:600}}>{pcat.category}</span>
-                        : <span style={{padding:'2px 6px',borderRadius:'3px',background:'var(--bg-hover)',color:'var(--text-3)',fontSize:'10px',fontWeight:600}}>personal</span>
-                    )}
-                  </div>
-                </div>
-                <span style={{fontSize:'15px',fontWeight:700,color:Number(t.amount)>=0?'var(--green)':'var(--text-1)',flexShrink:0,fontVariantNumeric:'tabular-nums'}}>{fmtUSDCents(t.amount)}</span>
-              </div>
-            );
-          })}
-        </div></div>
+        <MoneyRegister
+          userId={userId} transactions={transactions} setTransactions={setTransactions}
+          taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
+          trackPersonal={trackPersonal} readOnly={readOnly}
+          recurringCount={recurringTemplates?.length || 0} uncategorizedCount={uncategorizedCount}
+          onEdit={(t) => { setEditTx(t); setShowModal(true); }}
+          onSnap={() => { setEditTx(null); setShowModal(true); }}
+          onImport={() => setShowImportModal(true)}
+          onRecurring={() => setLedgerMode('recurring')}
+          onCategorize={() => setShowBulkCategorize(true)}
+        />
       )}
 
       {showModal && (
@@ -215,8 +88,6 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
           onSaved={onSaved}
           onDelete={editTx ? () => deleteTx(editTx) : null}
         />
-      )}
-      </>
       )}
 
       {showRecurringModal && (
@@ -260,7 +131,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
           setTransactions={setTransactions}
           taxCategories={taxCategories}
           systems={systems}
-          scope={(!trackPersonal || scopeFilter === 'business') ? 'business' : scopeFilter === 'personal' ? 'personal' : 'business'}
+          scope="business"
           onClose={() => setShowBulkCategorize(false)}
         />
       )}
@@ -502,16 +373,16 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
           {scope === 'business' && (
             <>
               <div className="form-group">
-                <label className="form-label">Lead-gen system</label>
+                <label className="form-label">Lead source</label>
                 <select className="form-input" value={systemId} onChange={e => onSystemChange(e.target.value)}>
                   {systems.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_overhead?' (default)':''}</option>)}
                 </select>
                 <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>
-                  Picking a system other than Overhead auto-suggests "Advertising & Marketing" as the tax category.
+                  Choosing a lead source other than Overhead suggests "Advertising & Marketing" as the category.
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Tax category (Schedule C bucket)</label>
+                <label className="form-label">Category</label>
                 <select className="form-input" value={taxCategoryId} onChange={e => setTaxCategoryId(e.target.value)}>
                   {taxCategories.map(c => <option key={c.id} value={c.id}>{c.name} ({c.schedule_c_line})</option>)}
                 </select>
@@ -1062,7 +933,7 @@ export function RecurringTemplateModal({ userId, initial, taxCategories, systems
           {scope === 'business' && (
             <>
               <div className="form-group">
-                <label className="form-label">Lead-gen system</label>
+                <label className="form-label">Lead source</label>
                 <select className="form-input" value={systemId} onChange={e => onSystemChange(e.target.value)}>
                   {systems.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_overhead?' (default)':''}</option>)}
                 </select>

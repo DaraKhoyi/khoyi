@@ -43,7 +43,8 @@ const BUDGETS = {
   // that way — the file only reached 6,745 because nothing measured it, and the
   // pieces will drift back together the same way if nothing measures them either.
   "src/views/AccountingViews.jsx": 700,
-  "src/views/FinanceLedger.jsx": 1150,
+  // 1150 -> 990 on 2026-10-05: the transaction list moved to MoneyRegister.jsx.
+  "src/views/FinanceLedger.jsx": 990,
   "src/views/TaxReports.jsx": 1400,
   "src/views/BudgetForecast.jsx": 1550,
   "src/views/CsvImportModal.jsx": 1200,

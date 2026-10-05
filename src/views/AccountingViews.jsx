@@ -46,7 +46,7 @@ function computeTier(ytdGCI, settings, factor = 1) {
 // annual targets/budgets/time-commitments and the pace clock are scaled to the
 // slice of the year the agent is actually active. Off by default -> no change.
 function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
-  const [subView, setSubView] = useState(initialSub || 'dashboard');
+  const [subView, setSubView] = useState(initialSub || 'ledger')   // Money opens on the register (Dara, 5 Oct 2026);
   useEffect(() => { if (initialSub) setSubView(initialSub); }, [initialSub, subNonce]);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState(null);
@@ -124,22 +124,16 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
 
   if (loading) return <div className="loading-screen"><div className="spinner"/></div>;
 
-  async function changeUserMode(newMode) {
-    await supabase.from('finance_settings').update({ user_mode: newMode }).eq('user_id', userId);
-    setSettings(prev => ({ ...prev, user_mode: newMode }));
-  }
-
-  // One cohesive segmented-control language for both the mode switch and the
-  // Mode switch + sub-tabs share one segmented-control language (see .seg-track
-  // / .seg-btn in index.css): a recessed track with a gold-gradient active pill,
-  // hover lift, and press feedback — so both controls read as a matched set.
+  // The Agent / Partner / Coach switch is not on this screen: it is a setting,
+  // chosen once, and lives in Settings under "Money view" (MoneyModeSetting).
+  const onLedger = subView === 'ledger';
 
   return (
     <div className="view ww-prism">
       <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .seg-track{background:#18130D;border:1px solid rgba(203,163,92,.18);} .ww-prism .seg-btn{color:#C8BFAE;} .ww-prism .seg-btn.active{background:linear-gradient(180deg,#EBCB82,#CBA35C)!important;color:#1a1409!important;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
       {readOnly && (
         <div style={{padding:'8px 12px',background:'rgba(59,130,246,0.15)',border:'1px solid rgba(59,130,246,0.4)',borderRadius:'8px',marginBottom:'10px',fontSize:'12px',color:'var(--text-1)'}}>
-          <Icon name="eye" size={13} style={{verticalAlign:'-2px'}} /> <strong>Partner mode</strong> — accountability view, read-only. Switch back in the mode pills above.
+          <Icon name="eye" size={13} style={{verticalAlign:'-2px'}} /> <strong>Partner mode</strong> — accountability view, read-only. Change it in Settings, under Money view.
         </div>
       )}
       {isCoach && (
@@ -149,12 +143,6 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
       )}
 
       <div className="view-header" style={{display:'flex',flexDirection:'column',gap:'12px',marginBottom:'14px'}}>
-        {subView === 'ledger' && !readOnly && (
-          <div style={{display:'flex',justifyContent:'flex-end'}}>
-            <button className="btn-add-circle" title="New transaction" aria-label="New transaction"
-              onClick={() => { try { window.dispatchEvent(new CustomEvent('prism:new-transaction')); } catch (_) {} }}>+</button>
-          </div>
-        )}
         <div>
           <h2 style={{margin:0,display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
             <span style={{display:'inline-flex',alignItems:'center',gap:'9px'}}><Icon name="finance" size={22} style={{color:'var(--accent)'}} /> {
@@ -162,31 +150,19 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
             : subView === 'blueprint' ? 'My Blueprint'
             : subView === 'reports'   ? 'Reports'
             : 'My Dashboard'}</span>
-            {settings && (
+            {settings && !onLedger && (
               <span className="fin-badge" style={{background:`${tier.color}1f`, color:tier.color, border:`1px solid ${tier.color}59`}}>{tier.label}</span>
             )}
-            {settings?.current_prospecting_streak > 0 && (
+            {settings?.current_prospecting_streak > 0 && !onLedger && (
               <span className="fin-badge" title={`Best ever: ${settings.best_prospecting_streak}`}
                 style={{background:'rgba(239,68,68,0.13)', color:'#f06b6b', border:'1px solid rgba(239,68,68,0.4)', textTransform:'none', letterSpacing:'0.02em'}}>🔥 {settings.current_prospecting_streak}-day streak</span>
             )}
           </h2>
-          <span style={{fontSize:'12px',color:'var(--text-3)',display:'inline-block',marginTop:'5px'}}>
+          {!onLedger && <span style={{fontSize:'12px',color:'var(--text-3)',display:'inline-block',marginTop:'5px'}}>
             YTD: <strong style={{color:ytdNet>=0?'var(--green)':'var(--red)'}}>{fmtUSD(ytdNet)}</strong> net
             {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(ytdIncome)} in</span>
             {' · '}<span style={{color:'var(--text-2)'}}>{fmtUSD(-ytdExpense)} out</span>
-          </span>
-        </div>
-
-        {/* Mode switch — full-width segmented control */}
-        <div className="seg-track" role="tablist" aria-label="Finance mode">
-          {['agent','partner','coach'].map(m => (
-            <button key={m} type="button" onClick={() => changeUserMode(m)}
-              className={`seg-btn${userMode===m?' active':''}`}
-              aria-selected={userMode===m}
-              title={m === 'agent' ? 'Your full workspace' : m === 'partner' ? 'Read-only accountability view' : 'Coach: unlocks system limits + extra reports'}>
-              <span style={{textTransform:'capitalize'}}>{m}</span>
-            </button>
-          ))}
+          </span>}
         </div>
 
         {/* Sub-tabs — same segmented language, equal segments (no clipping) */}

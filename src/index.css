@@ -2001,3 +2001,70 @@ body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-
 /* Tips: a quiet note, not a framed banner. */
 .prism-tip { background: rgba(246, 241, 231, 0.035) !important; border: none !important; }
 .prism-tip-eye { text-transform: none !important; letter-spacing: 0 !important; font-family: 'Manrope', sans-serif !important; font-size: 13px !important; }
+
+/* ── Money: the check register (src/views/MoneyRegister.jsx) ────────────────
+   One calm entry form, then a ruled journal. Every control is at least 44px
+   tall. Dara, 5 Oct 2026: "welcoming, instead of cluttered". */
+.mr { display: flex; flex-direction: column; gap: 14px; max-width: 720px; }
+.mr-lead { margin: 0; font-size: 14px; color: var(--text-2); line-height: 1.5; }
+.mr-card, .mr-start { background: #17130D; border: 1px solid #3A3222; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.mr-dir { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; background: #0D0B08; border: 1px solid #3A3222; border-radius: 12px; }
+.mr-dir button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: #CFC5AE; font: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+.mr-dir button.on { background: #C5A95E; color: #14110C; }
+.mr-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mr-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12.5px; font-weight: 600; color: #B8AE9A; }
+.mr-f.gold { color: #D9BE78; }
+.mr-f input, .mr-f select, .mr-search { min-height: 46px; box-sizing: border-box; width: 100%; min-width: 0; background: #0D0B08; border: 1px solid #4A4130; border-radius: 10px; padding: 0 12px; color: #F6F1E7; font: inherit; font-size: 16px; font-weight: 400; -webkit-appearance: none; appearance: none; }
+.mr-f input:focus, .mr-f select:focus, .mr-search:focus { outline: none; border-color: #C5A95E; }
+.mr-f input.amt { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mr-f input.gold { border: 2px solid #C5A95E; }
+.mr-f input[type="date"] { color-scheme: dark; }
+.mr-note { font-size: 13px; color: #B8AE9A; line-height: 1.45; margin-top: -6px; }
+.mr-note.stuck, .mr-filled { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 0; background: #2A2314; border: 1px solid #5A4E2E; border-radius: 10px; padding: 6px 12px; color: #F6F1E7; font-size: 13.5px; line-height: 1.4; }
+.mr-note.stuck > span, .mr-filled > span { flex: 1 1 180px; min-width: 0; }
+.mr-note.stuck button, .mr-filled button, .mr-sum button { min-height: 44px; padding: 0 8px; border: 0; background: transparent; color: #D9BE78; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.mr-offer { background: #221C12; border: 1px solid #5A4E2E; border-radius: 12px; overflow: hidden; margin-top: -6px; }
+.mr-offer-h { padding: 8px 12px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #D9BE78; }
+.mr-offer button { display: flex; width: 100%; min-height: 56px; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 0; border-top: 1px solid #3A3222; background: transparent; color: #F6F1E7; font: inherit; text-align: left; cursor: pointer; }
+.mr-offer button:first-of-type { background: #2E2616; }
+.mr-offer button.plain { min-height: 48px; color: #CFC5AE; font-size: 13.5px; background: transparent; }
+.mr-offer .who { min-width: 0; }
+.mr-offer .who b { display: block; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.mr-offer .who i { display: block; font-style: normal; font-size: 12.5px; color: #CFC5AE; }
+.mr-offer .use { flex-shrink: 0; font-size: 13px; font-weight: 700; color: #D9BE78; }
+.mr-go { display: flex; gap: 10px; flex-wrap: wrap; }
+.mr-go .save { flex: 1 1 180px; min-height: 48px; border: 0; border-radius: 12px; background: #C5A95E; color: #14110C; font: inherit; font-size: 15.5px; font-weight: 700; cursor: pointer; }
+.mr-go .save:disabled { opacity: 0.6; }
+.mr-go .clear, .mr-ways button, .mr-older { min-height: 48px; padding: 0 16px; border: 1px solid #4A4130; border-radius: 12px; background: transparent; color: #CFC5AE; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.mr-ways { display: flex; gap: 8px; flex-wrap: wrap; }
+.mr-ways button { min-height: 44px; padding: 0 12px; font-size: 13px; border-radius: 999px; }
+.mr-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.mr-head h3 { margin: 0; font-size: 22px; }
+.mr-head span { font-size: 12.5px; color: #B8AE9A; }
+.mr-accts { display: flex; gap: 8px; flex-wrap: wrap; }
+.mr-accts button { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; min-height: 52px; max-width: 100%; padding: 6px 14px; border: 1px solid #4A4130; border-radius: 12px; background: #17130D; color: #F6F1E7; font: inherit; text-align: left; cursor: pointer; }
+.mr-accts button.on { border-color: #C5A95E; background: #2A2314; }
+.mr-accts b { font-size: 12.5px; font-weight: 600; color: #CFC5AE; overflow-wrap: anywhere; }
+.mr-accts span { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mr-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.mr-chips button { min-height: 44px; padding: 0 14px; border: 1px solid #4A4130; border-radius: 999px; background: transparent; color: #CFC5AE; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.mr-chips button.on { background: #C5A95E; border-color: #C5A95E; color: #14110C; }
+.mr-sum { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; font-size: 13px; color: #B8AE9A; font-variant-numeric: tabular-nums; }
+.mr-empty { padding: 28px 16px; text-align: center; font-size: 14px; color: #B8AE9A; background: #17130D; border: 1px solid #3A3222; border-radius: 16px; }
+/* The register itself: light paper, dark ink, ruled lines. */
+.mr-book { background: #F7F1E3; color: #1F1A12; border-radius: 14px; overflow: hidden; border: 1px solid #C9BC9C; }
+.mr-cols, .mr-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; }
+.mr-cols { padding: 9px 12px; background: #E9DFC8; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5C5140; }
+.mr-cols span:last-child { text-align: right; }
+.mr-month { padding: 7px 12px; background: #EFE6D2; border-top: 1px solid #D6CAAD; font-size: 12.5px; font-weight: 700; color: #4A4030; }
+.mr-row { width: 100%; min-height: 56px; padding: 8px 12px; border: 0; border-top: 1px solid #DDD2B8; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mr-row:disabled { cursor: default; color: inherit; opacity: 1; }
+.mr-row .d { font-size: 13px; font-weight: 600; color: #4A4030; font-variant-numeric: tabular-nums; }
+.mr-row .p { min-width: 0; }
+.mr-row .p b { display: block; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.mr-row .p i { display: block; font-style: normal; font-size: 12.5px; color: #5C5140; overflow-wrap: anywhere; }
+.mr-row .a { text-align: right; font-variant-numeric: tabular-nums; }
+.mr-row .a b { display: block; font-size: 15px; font-weight: 700; white-space: nowrap; }
+.mr-row .a.in b { color: #1F6B3A; }
+.mr-row .a i { display: block; font-style: normal; font-size: 12px; color: #5C5140; white-space: nowrap; }
+.mr-older { display: block; width: 100%; border: 0; border-top: 1px solid #D6CAAD; border-radius: 0; background: #EFE6D2; color: #4A4030; }
