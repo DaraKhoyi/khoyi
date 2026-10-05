@@ -8,6 +8,26 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# ── WHICH CHECK? (Dara, 5 Oct 2026: "Yes, add a fast lane") ───────────────────
+# smoke/lane.mjs reads what actually changed. Only wording, layout, comments or
+# the version label → fast. Anything else, or anything it cannot read → full.
+# Nobody can ask for the fast lane; GATE_LANE=full forces the full check.
+# FAST still runs: every static check, the code-reading half of the live
+# checks, the fresh-account walk, every screen mounting, and the large-font
+# layout check. FAST skips: checks that only read the live database (nothing
+# there changed), the functional walk, and the mutation check.
+LANE="$(node smoke/lane.mjs)"; [ "$LANE" = fast ] || LANE=full
+echo "→ release check lane: $LANE"
+# guard <name> [static] — a live check. In the fast lane only the ones that have
+# a code-reading half run, with database access withheld so only that half runs.
+guard() {
+  if [ "$LANE" = full ]; then node "smoke/$1.mjs" || exit 1
+  elif [ "${2:-}" = static ]; then SUPABASE_SERVICE_KEY= SUPABASE_PAT= node "smoke/$1.mjs" || exit 1
+  fi
+}
+# The lane rule cannot be fooled into carrying a change to logic. Both lanes.
+node smoke/lane_test.mjs
+
 # Static guard: no React hooks after the App-shell guards (React #310 protection)
 echo "→ static hooks-order check"
 python3 smoke/hooks_check.py
@@ -38,35 +58,35 @@ node smoke/version_bump.mjs
 # the next throwaway account is created.
 if [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then node smoke/test_hygiene.mjs || exit 1; fi
 
-if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi
+if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/stale_readers.mjs; fi
 
 # Scheduled jobs: errored, gone quiet, or "succeeded" while the HTTP call behind
 # them failed. Also needs the Management API.
-if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/cron_health.mjs; fi
+if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/cron_health.mjs; fi
 
 # Parts of the schema the app stopped using. Reports, never blocks — drift is a
 # decision, and "keep it, we need it next quarter" is a legitimate answer.
-if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/schema_drift.mjs; fi
+if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/schema_drift.mjs; fi
 
 # One-off backup tables belong in the `archive` schema, never next to the live
 # tables where a report can count them twice. BLOCKS. (Panel, 26 Sep: eleven
 # snapshots had piled up in public, one of them financial.)
-if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/snapshot_quarantine.mjs; fi
+if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/snapshot_quarantine.mjs; fi
 
 # Definer functions whose owner check a signed-out caller skips ("auth.uid() is
 # not null and ..."), and sensitive columns on tables other agents can read
 # through sharing, and credentials (Google tokens, iCloud password) readable by
 # the browser. BLOCKS. (27 Sep: set_tax_id + merge_contacts; the panel's
 # contacts.tax_id_last4 and iCloud key.) Its static half runs without a PAT.
-node smoke/definer_guard.mjs
+if [ "$LANE" = full ]; then node smoke/definer_guard.mjs; else SUPABASE_PAT= node smoke/definer_guard.mjs; fi
 
 # Every deployed edge function has source here, and config.toml's verify_jwt
 # matches live — or the next deploy flips it and locks out a cron caller. BLOCKS.
-if [ -n "${SUPABASE_PAT:-}" ]; then node smoke/function_config.mjs; fi
+if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/function_config.mjs; fi
 
 # Crash-shaped and orphaned records in live data. BLOCKS. HANDOFF.md listed this
 # as a gate guard for weeks while nothing here ran it — wired in 26 Sep.
-if [ -n "${SUPABASE_PAT:-}" ]; then SUPA_PAT="$SUPABASE_PAT" node smoke/data_integrity.mjs; fi
+if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then SUPA_PAT="$SUPABASE_PAT" node smoke/data_integrity.mjs; fi
 
 # Static guard: no undefined identifiers. The runtime smoke check proves views
 # MOUNT; it cannot prove every branch inside them runs, because the throwaway
@@ -142,67 +162,67 @@ node smoke/no_forced_update.mjs || exit 1
 # On 27 Sep five database functions handed out agents' response records,
 # testers' contact details and the company's financials. Calls every exposed
 # function as anon; any real data in the answer blocks the push.
-node smoke/anon_exposure.mjs || exit 1
+guard anon_exposure
 
 # The PrismOS connector for Claude (prism-mcp): signs in the way Claude does,
 # calls the tools as a throwaway user, and proves RLS and every gate still hold.
-node smoke/mcp_connector.mjs || exit 1
+guard mcp_connector
 
 # Talk to Prism (the home-screen voice screen's brain): answers from the
 # person's own data, refuses strangers, and never changes anything without a yes.
-node smoke/talk_to_prism.mjs || exit 1
+guard talk_to_prism
 
 # Where closings came from (closing_attribution): plants known closings in 1999
 # and checks each is tied to the right client, source and speed to lead.
-node smoke/lead_attribution.mjs || exit 1
+guard lead_attribution
 
 # Brokerage-wide sender mutes: the browser cannot set one; one agent or a
 # lead-source address is refused; every live one meets the gate.
-node smoke/brokerage_mute_guard.mjs || exit 1
+guard brokerage_mute_guard
 
 # Suggestions never pile up: stale call suggestions are set aside on schedule,
 # one Chief of Staff list at a time (panel, 29 Sep).
-node smoke/close_the_loop.mjs || exit 1
+guard close_the_loop
 
 # An email deleted in Gmail or in PrismOS stops asking for a reply (Josh, 29 Sep).
-node smoke/deleted_email.mjs || exit 1
-node smoke/open_reads.mjs || exit 1
+guard deleted_email
+guard open_reads
 # A lead alert reaches a phone, or that person is skipped; a Gmail answer counts (Marguerite, 29 Sep).
-node smoke/lead_reaches_a_person.mjs || exit 1
+guard lead_reaches_a_person
 # Every AI call names who (or which deal) it was about (Archivist + Merchant, 30 Sep).
-node smoke/ai_subject_guard.mjs || exit 1
+guard ai_subject_guard
 # A lead card knows who just asked the moment it lands (Simplifier + Marguerite + Newcomer, 30 Sep).
-node smoke/who_just_asked.mjs || exit 1
+guard who_just_asked
 # No SSN, tax ID, card or bank number reaches an AI model (Sentinel + Fiduciary, 30 Sep).
-node smoke/ai_guard.mjs || exit 1
+guard ai_guard static
 # A successful Google reconnect clears "needs reconnecting" at once (Dara, 30 Sep).
-node smoke/reconnect_clears.mjs || exit 1
+guard reconnect_clears static
 # "Can they transact?" from their own words, with receipts (Marguerite, 30 Sep).
-node smoke/can_they_transact.mjs || exit 1
+guard can_they_transact
 # A "whole brokerage" library file opens for every agent (Dara, 30 Sep).
-node smoke/library_shared.mjs || exit 1
+guard library_shared
 # "What did I say last time" — plainly; never elapsed time or a score (Ray, 30 Sep).
-node smoke/last_time.mjs || exit 1
+guard last_time
 # A follow-up from a call is never set aside without one chance to keep it (Marguerite + Skeptic, 1 Oct).
-node smoke/warn_before_set_aside.mjs || exit 1
+guard warn_before_set_aside static
 # What is at stake decides whether a follow-up may be hidden; high stakes is never 'immediate' (Skeptic + Ray, 2 Oct).
-node smoke/stakes_guard.mjs || exit 1
+guard stakes_guard
 # One agent can never reach another agent's mailbox: owner-only policies, proven with two logins (Sentinel, 1 Oct).
-node smoke/credential_scope.mjs || exit 1
+guard credential_scope
 # Nothing an agent sees counts what they did not do (Ray, 1 Oct).
-node smoke/no_failure_ledger.mjs || exit 1
+guard no_failure_ledger static
 # Nothing disappears without a line the person can read and undo (Dara + Ray, 4 Oct).
-node smoke/record_guard.mjs || exit 1
+guard record_guard static
 # A level is only offered where a job obeys it (Dara, 4 Oct).
-node smoke/dial_guard.mjs || exit 1
+guard dial_guard static
 # The day's goals belong to the person and are never a score (Dara, 4 Oct).
-node smoke/goals_guard.mjs || exit 1
+guard goals_guard static
 # One gate for every notification; what PrismOS learns can be read, forgotten and reset (Dara, 4 Oct).
-node smoke/triage_guard.mjs || exit 1
+guard triage_guard static
 # The morning note is short and never a count (Dara, 4 Oct: "overwhelmed by all the stuff").
-node smoke/morning_note_guard.mjs || exit 1
+guard morning_note_guard static
 # The PRISM Edge is a starting guess the person can see and change; never a verdict (decisions 1, 2, 3, 9).
-node smoke/prism_edge_guard.mjs || exit 1
+guard prism_edge_guard static
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
@@ -313,7 +333,7 @@ SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWOR
 # The mount checks above prove views RENDER. This proves core features WORK, as a
 # logged-in agent, across iPhone/Android/tablet/desktop viewports — the gap that
 # let a broken research flow ship green and embarrass the beta.
-echo "→ running functional gate (multi-device)"
+[ "$LANE" = full ] && echo "→ running functional gate (multi-device)"
 # Can a thumb hit it? REPORTS, does not block — yet.
 #
 # It found 111 real controls under 44px and that part works. What does not, yet,
@@ -326,6 +346,7 @@ echo "→ running functional gate (multi-device)"
 # So it prints every run and blocks none. Drop the `|| true` once the baseline is
 # identical in both places — the list is in smoke/touch_budget.json and the
 # failure mode to fix is which controls differ, not how many.
+if [ "$LANE" = fast ]; then echo "→ fast lane: the functional walk and the mutation check are skipped (no logic changed)"; echo "==== RELEASE CHECK: fast lane passed ===="; exit 0; fi
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/touch_targets.mjs || true
 
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/functional.mjs
