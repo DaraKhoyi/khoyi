@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../dataService';
+import { layoutLanes } from '../calendarLanes';
 import { Icon } from '../icons';
 import { modal, pad2, ymd } from '../helpers';
 import { emailAssignTask } from './SharedUi';
@@ -1035,6 +1036,8 @@ function FlexibleHoursModal({ date, userId, onClose, onApplied }) {
 
 // MONTH — 6-row grid of 7 days
 
+const laneVars = (l) => (l && l.lanes > 1 ? { '--lane': l.lane, '--lanes': l.lanes } : null);
+
 function MonthGrid({ cells, month, today, eventsForDay, onDayClick, onEventClick }) {
   return (
     <>
@@ -1142,21 +1145,21 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
                   <div key={h} className="week-hour-cell" style={{height: `${HOUR_PX}px`}}
                     onClick={()=>{ const nd = new Date(d); nd.setHours(h,0,0,0); onCellClick(nd); }} />
                 ))}
-                {dayEv.map(ev => {
+                {(() => { const lanes = layoutLanes(dayEv.map(ev => ({ id: ev.id, ...evPosition(ev) }))); return dayEv.map(ev => {
                   const {top, height} = evPosition(ev);
                   const isBlock = ev.event_kind === 'task_block';
                   const isPersonal = ev.event_kind === 'icloud_personal';
                   const overdue = isBlock && (ev.category === 'task_overdue' || (ev.end_at && new Date(ev.end_at) < today));
                   return (
                     <div key={ev.id} className={`week-event-block${isBlock?' task-block':''}${isPersonal?' icloud-personal':''}${overdue?' overdue':''}`}
-                      style={{top: `${top}px`, height: `${height}px`}}
+                      style={{top: `${top}px`, height: `${height}px`, ...laneVars(lanes[ev.id])}}
                       onClick={(e)=>{e.stopPropagation(); if(isBlock && onEditTask) onEditTask(ev); else onEventClick(ev);}}
                       title={ev.title}>
                       <div className="week-event-time">{isBlock?'🗓 ':''}{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>
                       <div className="week-event-title">{ev.title}</div>
                     </div>
                   );
-                })}
+                }); })()}
               </div>
             );
           })}
@@ -1170,7 +1173,7 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
 // A single auto-scheduled task block on the day timeline.
 // Long-press → pin/unpin · drag vertically → reschedule (snaps to 15 min).
 
-function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hourEnd, date, timelineRef, onToggleComplete, onMove, onTogglePin, onTap }) {
+function DayTaskBlock({ ev, task, top, height, lane, overdue, HOUR_PX, hourStart, hourEnd, date, timelineRef, onToggleComplete, onMove, onTogglePin, onTap }) {
   const [dragging, setDragging] = useState(false);
   const [dragTop, setDragTop] = useState(top);
   const press = useRef({ startY:0, origTop:top, moved:false, longPressed:false, pointerId:null, timer:null });
@@ -1234,7 +1237,7 @@ function DayTaskBlock({ ev, task, top, height, overdue, HOUR_PX, hourStart, hour
   const curTop = dragging ? dragTop : top;
   return (
     <div className={`day-event-block task-block${overdue?' overdue':''}${pinned?' pinned':''}${dragging?' dragging':''}`}
-      style={{top: `${curTop}px`, height: `${height}px`, touchAction:'pan-x'}}
+      style={{top: `${curTop}px`, height: `${height}px`, touchAction:'pan-x', ...laneVars(lane)}}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPress} onPointerCancel={endPress}
       title={pinned ? 'Pinned · long-press to unpin · drag to move' : 'Long-press to pin · drag to reschedule'}>
       <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
@@ -1269,6 +1272,8 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
     return { top: (startMin/60)*HOUR_PX, height: Math.max(22, ((endMin - startMin)/60)*HOUR_PX) };
   }
 
+  const dayLanes = layoutLanes(nonAllDay.map(ev => ({ id: ev.id, ...evPosition(ev) })));
+
   async function toggleTask(task) {
     if (!setTasks) return;
     const { data: u } = await supabase.from('tasks').update({ completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null }).eq('id', task.id).select().single();
@@ -1299,11 +1304,12 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
             ))}
             {nonAllDay.map(ev => {
               const {top, height} = evPosition(ev);
+              const lane = dayLanes[ev.id];
               if (ev.event_kind === 'task_block') {
                 const overdue = ev.category === 'task_overdue' || (ev.end_at && new Date(ev.end_at) < today);
                 const t = (tasks || []).find(x => x.id === ev.task_id);
                 return (
-                  <DayTaskBlock key={ev.id} ev={ev} task={t} top={top} height={height}
+                  <DayTaskBlock key={ev.id} ev={ev} task={t} top={top} height={height} lane={lane}
                     overdue={overdue} HOUR_PX={HOUR_PX} hourStart={hourStart} hourEnd={hourEnd}
                     date={date} timelineRef={timelineRef}
                     onToggleComplete={()=>{ if(t) toggleTask(t); }}
@@ -1311,8 +1317,8 @@ function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, 
                 );
               }
               return (
-                <div key={ev.id} className={`day-event-block${ev.event_kind==='icloud_personal'?' icloud-personal':''}`}
-                  style={{top: `${top}px`, height: `${height}px`}}
+                <div key={ev.id} className={`day-event-block${ev.event_kind==='icloud_personal'?' icloud-personal':''}${height < 40 ? ' short' : ''}`}
+                  style={{top: `${top}px`, height: `${height}px`, ...laneVars(lane)}}
                   onClick={(e)=>{e.stopPropagation();onEventClick(ev);}}
                   title={ev.title}>
                   <div className="day-event-time">{pad2(new Date(ev.start_at).getHours())}:{pad2(new Date(ev.start_at).getMinutes())}</div>

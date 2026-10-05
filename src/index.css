@@ -811,7 +811,11 @@ body {
 .week-date { font-size: 16px; font-weight: 700; color: var(--text-1); }
 .week-day-header.today .week-date { color: var(--accent); }
 .week-allday-chip { font-size: 10px; padding: 2px 5px; border-radius: 3px; background: var(--accent-dim); color: var(--text-1); border-left: 2px solid var(--accent); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.week-grid-scroll { flex: 1; overflow-y: auto; max-height: 82vh; }
+/* One scroller, not two (5 Oct 2026). These were boxes that scrolled inside the
+   page, 82vh tall: on a phone the bottom of the box sat under the bottom bar and
+   the finger moved the page or the box, never both — Dara could not get past
+   5 PM without swiping to another day first. The whole day is now on the page. */
+.week-grid-scroll { flex: 1; }
 .week-grid { display: grid; grid-template-columns: 48px repeat(7, 1fr); position: relative; }
 .week-time-gutter-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--bg-card); }
 .week-time-cell { display: flex; align-items: flex-start; justify-content: flex-end; padding: 2px 6px; font-size: 10px; color: var(--text-3); border-bottom: 1px solid var(--border); }
@@ -820,7 +824,7 @@ body {
 .week-hour-cell { border-bottom: 1px solid var(--border); cursor: pointer; }
 @media (hover: hover) and (pointer: fine) {
 .week-hour-cell:hover { background: var(--bg-hover); }}
-.week-event-block { position: absolute; left: 2px; right: 2px; background: var(--event-bg, rgba(203,163,92,.34)); border-left: 3px solid var(--accent); border-radius: 4px; padding: 3px 5px; overflow: hidden; cursor: pointer; z-index: 1; transition: transform 0.1s; }
+.week-event-block { position: absolute; left: calc(2px + (100% - 4px) * var(--lane, 0) / var(--lanes, 1)); width: calc((100% - 4px) / var(--lanes, 1) - 1px); box-sizing: border-box; background: var(--event-bg, rgba(203,163,92,.34)); border-left: 3px solid var(--accent); border-radius: 4px; padding: 3px 5px; overflow: hidden; cursor: pointer; z-index: 1; transition: transform 0.1s; }
 @media (hover: hover) and (pointer: fine) {
 .week-event-block:hover { transform: scale(1.02); z-index: 5; }}
 .week-event-time { font-size: 9px; color: var(--text-on-accent, #E4DCCB); }
@@ -834,14 +838,21 @@ body {
 .day-col-header > :last-child { color: var(--text-1) !important; opacity: 0.7; font-weight: 600; }
 .day-allday-row { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .day-allday-chip { font-size: 11px; padding: 3px 6px; background: var(--accent-dim); color: var(--text-1); border-left: 2px solid var(--accent); border-radius: 3px; cursor: pointer; }
-.day-timeline-scroll { flex: 1; overflow-y: auto; max-height: 82vh; }
+.day-timeline-scroll { flex: 1; }
 .day-timeline { position: relative; }
 .day-hour-row { display: flex; border-bottom: 1px solid var(--border); cursor: pointer; }
 @media (hover: hover) and (pointer: fine) {
 .day-hour-row:hover { background: var(--bg-hover); }}
 .day-hour-label { width: 40px; font-size: 10px; color: var(--text-3); padding: 3px 4px; flex-shrink: 0; border-right: 1px solid var(--border); text-align: right; }
-.day-event-block { position: absolute; left: 44px; right: 4px; background: var(--event-bg, rgba(203,163,92,.34)); border-left: 3px solid var(--accent); border-radius: 5px; padding: 4px 7px; overflow: hidden; cursor: pointer; z-index: 1; }
+.day-timeline { --gutter: 44px; }
+/* --lane / --lanes are set only when blocks share the same minutes (layoutLanes). */
+.day-event-block { position: absolute; left: calc(var(--gutter) + (100% - var(--gutter) - 4px) * var(--lane, 0) / var(--lanes, 1)); width: calc((100% - var(--gutter) - 4px) / var(--lanes, 1) - 2px); box-sizing: border-box; background: var(--event-bg, rgba(203,163,92,.34)); border-left: 3px solid var(--accent); border-radius: 5px; padding: 4px 7px; overflow: hidden; cursor: pointer; z-index: 1; }
 .day-event-time { font-size: 10px; color: var(--text-on-accent, #E4DCCB); }
+/* A half-hour block is too low for two lines: time and title share one. */
+.day-event-block.short { display: flex; align-items: baseline; gap: 6px; padding-top: 3px; padding-bottom: 3px; }
+.day-event-block.short .day-event-time { flex-shrink: 0; }
+.day-event-block.short .day-event-title { min-width: 0; flex: 1; }
+.day-event-block.short .day-event-loc { display: none !important; }
 .day-event-title { font-size: 12px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day-event-loc { font-size: 10px; color: var(--text-on-accent, #E4DCCB); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -883,7 +894,7 @@ body {
   .day-task-text { font-size: 12px; }
   .day-event-title { font-size: 11px; }
   .day-hour-label { width: 36px; font-size: 9px; }
-  .day-event-block { left: 40px; }
+  .day-timeline { --gutter: 40px; }
 }
 
 /* Spinning refresh icon */

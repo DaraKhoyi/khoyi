@@ -47,68 +47,77 @@
 // Overnight Review and Goals & Pace here, shipped them, and Dara could not find
 // either — because neither ever rendered. Brokerage entries belong in App.js.
 export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, setSidebarOpen, enterMode }) {
-  // ── FIVE, THEN MORE (1 Oct 2026) ─────────────────────────────────────────
-  // Josh: "Looking at the menu, all the different functions it does, and not
-  // being able to collapse it… That's not lightening your work, that's giving
-  // you another job to manage." Dara: "I was feeling the same."
+  // ── EIGHT, THEN MORE (Dara, 5 Oct 2026) ──────────────────────────────────
+  // On 1 Oct the menu was cut to five and More, after Josh: "all the different
+  // functions it does, and not being able to collapse it… that's giving you
+  // another job to manage." On 5 Oct Dara set the order himself, from using it:
+  // Today, Money, Contacts, Phone & Text, Calendar, Tasks, Email, Journal — then
+  // More, with everything else exactly as it was. The principle stands: a short
+  // fixed list of the day's screens, and one home for everything else. The list
+  // is HIS; smoke/calm_guard.mjs pins these eight names in this order.
   //
-  // The menu opens on the five screens a working day is made of. Everything
-  // else is under More — still one home per destination, still reachable, just
-  // pushed down where you can get to it when you need it. Phone & Text leads
-  // More because it is the most-used thing there, and it is also one tap from
-  // every contact.
+  // Every entry has its own picture: smoke/menu_icons.mjs fails the release if
+  // an icon name does not exist or two entries draw the same thing.
   return [
-    { label: 'Today', view: 'today', icon: 'sparkles' },
-    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
-    { label: 'Inbox', view: 'inbox', icon: 'inbox' },
-    { label: 'Calendar', view: 'calendar', icon: 'calendar' },
+    { label: 'Today', view: 'today', icon: 'sun' },
+    // Money opens the Finance Dashboard; its arrow opens the rest of the room.
+    { label: 'Money', view: 'finance', icon: 'dollar', children: [
+      { label: 'Finance Dashboard', view: 'finance', icon: 'finance' },
+      { label: 'Data Entry', view: 'finance', sub: 'ledger', icon: 'edit' },
+      { label: 'Blueprint (Budget)', view: 'finance', sub: 'blueprint', icon: 'scale' },
+      { label: 'Financial Records', view: 'finance', sub: 'reports', icon: 'archive' },
+      { label: 'Mileage', view: 'mileage', icon: 'car' },
+    ] },
     { label: 'Contacts', view: 'contacts', icon: 'contacts' },
-    { label: 'More', icon: 'compass', children: [
     { label: 'Phone & Text', view: 'quo', icon: 'quo' },
+    { label: 'Calendar', view: 'calendar', icon: 'calendar' },
+    { label: 'Tasks', view: 'tasks', icon: 'tasks' },
+    { label: 'Email', view: 'inbox', icon: 'mail' },
+    { label: 'Journal', view: 'journal', icon: 'journal' },
+    { label: 'More', icon: 'compass', children: [
     { label: 'Done for you', view: 'chief', icon: 'sparkles' },
     // Nerve Center is a ROOM, not a screen, so it is an action node rather than a
     // view node: enterMode() applies the room's resume rule — Contacts on the
     // first visit each day, then wherever you left off.
-    { label: 'Nerve Center', icon: 'contacts',
+    { label: 'Nerve Center', icon: 'zap',
       action: () => { setSidebarOpen(false); enterMode('relationships'); } },
-    { label: 'Daily Journal', view: 'journal', icon: 'journal' },
-    { label: 'Plan My Day', view: 'briefing', icon: 'sun' },
+    { label: 'Plan My Day', view: 'briefing', icon: 'briefing' },
     { label: 'Launchers', view: 'launchers', icon: 'link' },
     { label: 'Rank', view: 'scoreboard', icon: 'trophy' },
 
     // ── Autonomous — the screens that go and do the work ──────────────────────
-    { label: 'Autonomous', icon: 'sparkles', ai: true, children: [
-      { label: 'Why It\u2019s Not Selling', view: 'unstuck', icon: 'properties', ai: true },
-      { label: 'Listing Presentation', view: 'listing_presentation', icon: 'properties' },
-      { label: 'The Correspondent', view: 'correspondent', icon: 'notes', ai: true },
-      { label: 'Ask Ari', view: 'chat', icon: 'chat', ai: true },
+    { label: 'Autonomous', icon: 'cpu', ai: true, children: [
+      { label: 'Why It\u2019s Not Selling', view: 'unstuck', icon: 'search', ai: true },
+      { label: 'Listing Presentation', view: 'listing_presentation', icon: 'monitor' },
+      { label: 'The Correspondent', view: 'correspondent', icon: 'feather', ai: true },
+      { label: 'Ask Ari', view: 'chat', icon: 'message', ai: true },
     ] },
 
     // ── People work that is not the contact list itself ───────────────────────
     // Who to Contact Next, the investor book and the Google import all answer
     // "who do I talk to". They were three separate top-level entries.
-    { label: 'Relationships', icon: 'contacts', children: [
+    { label: 'Relationships', icon: 'heart', children: [
       { label: 'Who to Contact Next', view: 'cadence_review', icon: 'clock' },
-      { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'building' },
-      { label: 'Group Message', view: 'group_message', icon: 'chat' },
-      { label: 'Import from Google', view: 'google_contacts', icon: 'contacts' },
-      { label: 'Manage Tags', view: 'tags', icon: 'notes' },
+      { label: 'Investor Pipeline', view: 'investor_pipeline', icon: 'cart' },
+      { label: 'Group Message', view: 'group_message', icon: 'replyAll' },
+      { label: 'Import from Google', view: 'google_contacts', icon: 'download' },
+      { label: 'Manage Tags', view: 'tags', icon: 'tag' },
       // DISC profiles across the whole sphere. It was routed but reachable from
       // NOWHERE — no menu entry, no admin group, no setView anywhere in src/.
       // 578 lines of working screen that no agent could open.
       { label: 'DISC Profiles', view: 'prism', icon: 'prism' },
-      ...(isAdmin ? [{ label: 'Agent Departures', view: 'investor_transition', icon: 'building' }] : []),
+      ...(isAdmin ? [{ label: 'Agent Departures', view: 'investor_transition', icon: 'logout' }] : []),
     ] },
 
     // ── Winning work ──────────────────────────────────────────────────────────
-    { label: 'Prospecting & Growth', icon: 'target', children: [
+    { label: 'Prospecting & Growth', icon: 'arrowUp', children: [
       { label: 'Prospecting', view: 'prospecting', icon: 'prospecting' },
       { label: 'Lead-Gen Systems', view: 'prospecting', sub: 'systems', icon: 'signal' },
-      { label: 'How I\u2019m Doing', view: 'scoreboard', icon: 'target' },
-      { label: 'My Stats', view: 'numbers', icon: 'chart' },
-      { label: 'People You Know', view: 'uncarded', icon: 'users' },
-      { label: 'Lead Notifications', view: 'lead_notify', icon: 'inbox' },
-      { label: 'Growth', view: 'growth', icon: 'chart' },
+      { label: 'How I\u2019m Doing', view: 'scoreboard', icon: 'chart' },
+      { label: 'My Stats', view: 'numbers', icon: 'hash' },
+      { label: 'People You Know', view: 'uncarded', icon: 'userCheck' },
+      { label: 'Lead Notifications', view: 'lead_notify', icon: 'bell' },
+      { label: 'Growth', view: 'growth', icon: 'investments' },
       ...(isAdmin ? [{ label: 'Recruiting', view: 'recruiting', icon: 'recruiting' }] : []),
     ] },
 
@@ -116,55 +125,44 @@ export function buildMenu({ isAdmin, isTeamLeader, brokerageGroup, teamGroup, se
     // One word for one concept: the file is a TRANSACTION, the view of many is
     // the PIPELINE. "Deals" and "Contract Management" were two more words for the
     // same thing and are gone.
-    { label: 'Transactions & Property', icon: 'briefcase', children: [
+    { label: 'Transactions & Property', icon: 'key', children: [
       { label: 'My Transactions', view: 'deals', icon: 'deals' },
-      { label: 'Transaction Pipeline', view: 'pipeline', icon: 'chart' },
+      { label: 'Transaction Pipeline', view: 'pipeline', icon: 'filter' },
       { label: 'All Transactions', view: 'tracker', icon: 'tracker' },
-      { label: 'Transaction Documents', view: 'files', icon: 'folder', ai: true },
+      { label: 'Transaction Documents', view: 'files', icon: 'paperclip', ai: true },
       { label: 'Documents', view: 'documents', icon: 'folder' },
       { label: 'Residential', view: 'properties', icon: 'properties' },
       { label: 'My Investments', view: 'investments', icon: 'building' },
     ] },
 
-    // ── Money ─────────────────────────────────────────────────────────────────
-    // Finance was reachable five ways. One way now, with its sub-views as
-    // children rather than as siblings of themselves.
-    { label: 'Money', icon: 'coin', children: [
-      { label: 'Finance Dashboard', view: 'finance', icon: 'coin' },
-      { label: 'Data Entry', view: 'finance', sub: 'ledger', icon: 'coin' },
-      { label: 'Blueprint (Budget)', view: 'finance', sub: 'blueprint', icon: 'chart' },
-      { label: 'Financial Records', view: 'finance', sub: 'reports', icon: 'folder' },
-      { label: 'Mileage', view: 'mileage', icon: 'car' },
-    ] },
-
     // ── Knowing things ────────────────────────────────────────────────────────
     // "Library" and "AI Notes" were one screen under two names in two groups.
-    { label: 'Library & Learning', icon: 'notes', ai: true, children: [
+    { label: 'Library & Learning', icon: 'library', ai: true, children: [
       { label: 'Library', view: 'notes', icon: 'notes', ai: true },
-      { label: 'Knowledge', view: 'knowledge', icon: 'library' },
+      { label: 'Knowledge', view: 'knowledge', icon: 'info' },
       { label: 'Brain', view: 'brain', icon: 'brain' },
-      { label: 'Playbooks', view: 'playbooks', icon: 'playbooks' },
-      { label: 'Learn', view: 'learn', icon: 'library' },
-      { label: 'Coach', view: 'coach', icon: 'target' },
+      { label: 'Playbooks', view: 'playbooks', icon: 'map' },
+      { label: 'Learn', view: 'learn', icon: 'school' },
+      { label: 'Coach', view: 'coach', icon: 'flame' },
     ] },
 
     // ── Things running on their own ───────────────────────────────────────────
-    { label: 'Automations', icon: 'sparkles', ai: true, children: [
-      { label: 'Prepared by AI', view: 'agentruns', icon: 'sparkles' },
-      { label: 'Agent Activity', view: 'agent_activity', icon: 'chart' },
+    { label: 'Automations', icon: 'repeat', ai: true, children: [
+      { label: 'Prepared by AI', view: 'agentruns', icon: 'clipboard' },
+      { label: 'Agent Activity', view: 'agent_activity', icon: 'systems' },
     ] },
 
     // ── Me and the system ─────────────────────────────────────────────────────
     { label: 'Settings & Systems', icon: 'settings', children: [
-      { label: 'Settings', view: 'settings', icon: 'settings' },
-      { label: 'My Prism Profile', view: 'my_prism', icon: 'prism' },
-      { label: 'DISC / Grit Test', view: 'disc_test', icon: 'target' },
+      { label: 'Settings', view: 'settings', icon: 'sliders' },
+      { label: 'My Prism Profile', view: 'my_prism', icon: 'user' },
+      { label: 'DISC / Grit Test', view: 'disc_test', icon: 'ruler' },
       { label: 'My Voice', view: 'myvoice', icon: 'mic' },
-      { label: 'Someday / Maybe', view: 'someday', icon: 'sparkles' },
-      { label: 'System Health', view: 'app_health', icon: 'health' },
+      { label: 'Someday / Maybe', view: 'someday', icon: 'cloud' },
+      { label: 'System Health', view: 'app_health', icon: 'shield' },
       // Also unreachable before this: 287 lines showing per-integration status.
       // Distinct from App Health, which is the client-error view.
-      { label: 'Integrations Status', view: 'systems', icon: 'health' },
+      { label: 'Integrations Status', view: 'systems', icon: 'wifi' },
     ] },
 
     ...(isAdmin ? [brokerageGroup] : isTeamLeader ? [teamGroup] : []),

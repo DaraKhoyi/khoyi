@@ -8,7 +8,7 @@
 // back to a badge, a seventh item on the menu, "Worth a look" without its
 // seven-day window. This check holds the line. BLOCKS.
 //
-//   1. The menu opens on five screens and More — never the full list again.
+//   1. The menu opens on Dara's eight screens and More — never the full list again.
 //   2. No badge is a count of how much exists (contacts.length, unread totals).
 //      A badge is a dot that means "this needs you".
 //   3. Today shows at most three queue items, has no "1 / N" counter, no floating
@@ -26,9 +26,12 @@ const problems = [];
 // 1 — the menu
 const mc = read('src/menuConfig.js');
 const top = mc.slice(mc.indexOf('  return ['), mc.indexOf("{ label: 'More'"));
-const topCount = (top.match(/\{ label: '/g) || []).length;
+// Dara set this list himself on 5 Oct 2026 (it was five on 1 Oct). The rule is
+// unchanged in kind: a short FIXED list, then More. It grows only when he says.
+const topNames = [...top.matchAll(/^    \{ label: '([^']+)'/gm)].map((m) => m[1]);
+const WANT = ['Today', 'Money', 'Contacts', 'Phone & Text', 'Calendar', 'Tasks', 'Email', 'Journal'];
 if (!/\{ label: 'More'/.test(mc)) problems.push('menu: the More group is gone — the full list is back at the top');
-else if (topCount > 5) problems.push(`menu: ${topCount} entries above More — the rule is five`);
+else if (topNames.join(' | ') !== WANT.join(' | ')) problems.push(`menu: above More is "${topNames.join(', ')}" — Dara's list is "${WANT.join(', ')}"`);
 
 // 2 — badges
 const app = read('src/App.js');
@@ -105,7 +108,7 @@ if (PAT) {
 } else if (!process.env.CI) problems.push('set SUPABASE_PAT to check the live queue');
 
 if (!problems.length) {
-  console.log('==== CALM: clean — five and More; dots not counts; three on Today; this week in the Inbox; importance before any nudge ====');
+  console.log('==== CALM: clean — eight and More; dots not counts; three on Today; this week in the Inbox; importance before any nudge ====');
   process.exit(0);
 }
 console.log(`==== CALM: ${problems.length} problem(s) ====`);

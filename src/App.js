@@ -1710,37 +1710,37 @@ function AppMain() {
   const fin = (sub, label) => ({ label, view: 'finance', sub });
   // Role-gated branches. Broker tab = admins/owner only. Team tab = team leaders only.
   // Agents see neither. (Mirrors the approved agent-centric menu IA.)
-  const brokerageGroup = { label: 'Brokerage', icon: 'building', children: [
-    { label: 'Overnight Review', view: 'night_review', icon: 'sparkle' },
-    { label: 'Goals & Pace', view: 'goal_roster', icon: 'target' },
+  const brokerageGroup = { label: 'Brokerage', icon: 'bank', children: [
+    { label: 'Overnight Review', view: 'night_review', icon: 'moon' },
+    { label: 'Goals & Pace', view: 'goal_roster', icon: 'flag' },
     { label: 'Announcements', view: 'announcements', icon: 'megaphone' }, { label: 'Team Dashboard', view: 'agents', icon: 'dashboard' },
-    { label: 'Team Sharing', view: 'team', icon: 'users' }, { label: 'Adoption', view: 'adoption', icon: 'signal' },
-    { label: 'Agent Roster', view: 'agents', icon: 'users', children: [
-      { label: 'Add Agent', view: 'agents', icon: 'recruiting' },
-      { label: 'Set Up Agent', view: 'agents', icon: 'clipboard' },
-      { label: 'Commission Plan & GCI', built: false, icon: 'target' },
-      { label: 'Commission On Track?', view: 'production', icon: 'chart' },
-      { label: 'DISC & Systems Deployed', built: false, icon: 'signal' },
-      { label: 'Company Leads', built: false, icon: 'gift' },
+    { label: 'Team Sharing', view: 'team', icon: 'share' }, { label: 'Adoption', view: 'adoption', icon: 'layers' },
+    { label: 'Agent Roster', view: 'agents', icon: 'list', children: [
+      { label: 'Add Agent', view: 'agents', icon: 'plusCircle' },
+      { label: 'Set Up Agent', view: 'agents', icon: 'save' },
+      { label: 'Commission Plan & GCI', built: false, icon: 'percent' },
+      { label: 'Commission On Track?', view: 'production', icon: 'checkCircle' },
+      { label: 'DISC & Systems Deployed', built: false, icon: 'code' },
+      { label: 'Company Leads', built: false, icon: 'inbox' },
       { label: 'Oversight Accountability', built: false, icon: 'eye' },
     ] },
     { label: 'Agent DISC Read', view: 'disc_roster', icon: 'bulb' },
-    { label: 'Agent Voice Cards', view: 'voice_roster', icon: 'mic' },
-    { label: 'Contact Types', view: 'contact_types', icon: 'clipboard' },
-    { label: 'Brokerage Dashboard', view: 'finance', sub: 'dashboard', icon: 'dashboard' },
+    { label: 'Agent Voice Cards', view: 'voice_roster', icon: 'volume' },
+    { label: 'Contact Types', view: 'contact_types', icon: 'pin' },
+    { label: 'Brokerage Dashboard', view: 'finance', sub: 'dashboard', icon: 'pie' },
     { label: 'Transactions', view: 'transactions', icon: 'file' },
-    { label: 'Brokerage Financials', view: 'finance', sub: 'reports', icon: 'finance' },
-    { label: 'Teams', view: 'teams', icon: 'users' },
-    ...(!isImpersonating ? [{ label: 'Act as a User', view: 'actas', icon: 'users' }] : []),
+    { label: 'Brokerage Financials', view: 'finance', sub: 'reports', icon: 'creditCard' },
+    { label: 'Teams', view: 'teams', icon: 'star' },
+    ...(!isImpersonating ? [{ label: 'Act as a User', view: 'actas', icon: 'forward' }] : []),
   ] };
-  const teamGroup = { label: 'Team', icon: 'users', children: [
+  const teamGroup = { label: 'Team', icon: 'star', children: [
     { label: 'Announcements', view: 'announcements', icon: 'megaphone' },
     { label: 'Team Dashboard', view: 'agents', icon: 'dashboard' },
     { label: 'Recruiting', view: 'recruiting', icon: 'recruiting' },
-    { label: 'Team Roster', view: 'agents', icon: 'users', children: [
-      { label: 'Commission On Track?', built: false, icon: 'chart' },
-      { label: 'DISC & Systems Deployed', built: false, icon: 'signal' },
-      { label: 'Company Leads', built: false, icon: 'gift' },
+    { label: 'Team Roster', view: 'agents', icon: 'list', children: [
+      { label: 'Commission On Track?', built: false, icon: 'checkCircle' },
+      { label: 'DISC & Systems Deployed', built: false, icon: 'code' },
+      { label: 'Company Leads', built: false, icon: 'inbox' },
       { label: 'Oversight Accountability', built: false, icon: 'eye' },
     ] },
   ] };
