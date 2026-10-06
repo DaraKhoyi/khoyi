@@ -31,7 +31,8 @@ const code = (p) => read(p).split('\n').filter((l) => !/^\s*\/\//.test(l)).join(
 
 // Every table that holds accounting data. A new one MUST be added here (the
 // live half fails on a book_id table it has not been told about).
-const TABLES = ['books', 'book_access', 'book_log', 'transactions', 'tax_categories', 'money_accounts', 'recurring_transactions', 'accounting_access', 'book_category_templates', 'ledger_accounts', 'gl_entries', 'gl_lines', 'gl_live'];
+const TABLES = ['books', 'book_access', 'book_log', 'transactions', 'tax_categories', 'money_accounts', 'recurring_transactions', 'accounting_access', 'book_category_templates', 'ledger_accounts', 'gl_entries', 'gl_lines', 'gl_live',
+  'statement_imports', 'statement_lines', 'payee_rules', 'statement_layouts'];
 
 // ── static: the thinking ───────────────────────────────────────────────────
 const own = { id: 'p', kind: 'personal', is_mine: true, role: 'owner', label: 'Avery' };

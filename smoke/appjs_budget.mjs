@@ -47,7 +47,7 @@ const BUDGETS = {
   "src/views/FinanceLedger.jsx": 990,
   "src/views/TaxReports.jsx": 1400,
   "src/views/BudgetForecast.jsx": 1550,
-  "src/views/CsvImportModal.jsx": 1200,
+  "src/views/CsvImportModal.jsx": 910,   // 1200 -> 910 on 2026-10-06: its parsing moved to src/statementParse.js
   "src/views/FinanceReports.jsx": 750,
   "src/views/ProspectingView.jsx": 950,   // being split — drop hard as it shrinks
   "src/views/InboxView.jsx": 3450,

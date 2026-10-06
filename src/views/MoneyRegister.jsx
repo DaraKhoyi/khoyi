@@ -341,7 +341,7 @@ export function MoneyRegister({ userId, book = null, own = true, names: who = nu
                 const n = names(t), moved = isTransfer(t), amt = amountFor(t, picked), income = amt > 0 && (!moved || !!account);
                 const way = !moved ? '' : !account ? `${t.account} to ${t.transfer_account}` : accountKey(t.account) === picked ? `to ${t.transfer_account}` : `from ${t.account}`;
                 const by = who && t.entered_by && who[t.entered_by] ? 'by ' + who[t.entered_by] : '';
-                const sub = [moved ? way : t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', !account && !moved ? t.account : '', n.system, by].filter(Boolean).join(' · ');
+                const sub = [moved ? way : t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', t.split_group ? 'part of a split' : '', !account && !moved ? t.account : '', n.system, by].filter(Boolean).join(' · ');
                 return (
                   <button type="button" key={t.id} className="mr-row" disabled={readOnly} onClick={() => onEdit(t)} data-testid="money-row">
                     <span className="d">{shortDate(t.date)}</span>

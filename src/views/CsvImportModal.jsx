@@ -14,106 +14,11 @@ import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSD, fmtUSDCents, fmtPct } from '../financeUtils';
 import { normalizePayee, buildSuggester } from '../financeUtils';
 import { inBook, stamp } from '../books';
+import { parseCSV, parseAmount, parseFlexibleDate, guessColumn } from '../statementParse';
 
-export function parseCSV(text) {
-  // Strip UTF-8 BOM
-  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-  const rows = [];
-  let row = [], cell = '', i = 0, inQuotes = false;
-  const len = text.length;
-  while (i < len) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"' && text[i+1] === '"') { cell += '"'; i += 2; continue; }
-      if (ch === '"') { inQuotes = false; i++; continue; }
-      cell += ch; i++; continue;
-    }
-    if (ch === '"' && cell === '') { inQuotes = true; i++; continue; }
-    if (ch === ',') { row.push(cell); cell = ''; i++; continue; }
-    if (ch === '\r') { i++; continue; }
-    if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; i++; continue; }
-    cell += ch; i++;
-  }
-  if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
-  // Drop blank trailing rows
-  while (rows.length && rows[rows.length-1].every(c => c.trim() === '')) rows.pop();
-  if (rows.length === 0) return { headers: [], rows: [] };
-  const headers = rows[0].map(h => h.trim());
-  const dataRows = rows.slice(1).map(r => {
-    const obj = {};
-    headers.forEach((h, idx) => { obj[h] = (r[idx] || '').trim(); });
-    return obj;
-  });
-  return { headers, rows: dataRows };
-}
-
-// Best-effort date parser. Banks use MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD,
-// MM-DD-YY, etc. We try a few patterns in order of US-bank prevalence
-// and return ISO YYYY-MM-DD or null.
-
-export function parseAmount(raw) {
-  if (raw == null || raw === '') return 0;
-  let s = String(raw).trim();
-  let negative = false;
-  if (s.startsWith('(') && s.endsWith(')')) { negative = true; s = s.slice(1, -1); }
-  s = s.replace(/[$,\s]/g, '');
-  if (s.startsWith('-')) { negative = !negative; s = s.slice(1); }
-  const n = parseFloat(s);
-  if (!Number.isFinite(n)) return 0;
-  return negative ? -n : n;
-}
-
-// Heuristic to auto-pick a column when first opening the modal.
-// Looks for header strings that commonly mean date/payee/amount across
-// banks (BofA, Chase, Wells Fargo, Capital One, Amex, Citi, etc.).
-
-export function parseFlexibleDate(raw, formatHint) {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  // ISO already (YYYY-MM-DD)
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
-  // US format MM/DD/YYYY or MM/DD/YY
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-  if (m && formatHint !== 'dmy') {
-    let yr = m[3]; if (yr.length === 2) yr = (parseInt(yr) > 50 ? '19' : '20') + yr;
-    return `${yr}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
-  }
-  // DD/MM/YYYY (European)
-  if (m && formatHint === 'dmy') {
-    let yr = m[3]; if (yr.length === 2) yr = (parseInt(yr) > 50 ? '19' : '20') + yr;
-    return `${yr}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-  }
-  // MM-DD-YYYY with dashes
-  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})/);
-  if (m) {
-    let yr = m[3]; if (yr.length === 2) yr = (parseInt(yr) > 50 ? '19' : '20') + yr;
-    return `${yr}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
-  }
-  // Last resort: native Date parse
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return null;
-}
-
-// Parse a money string ($, commas, parens-for-negative). Returns a Number.
-
-export function guessColumn(headers, kind) {
-  const lc = headers.map(h => h.toLowerCase());
-  const patterns = {
-    date: [/^date$/, /trans.*date/, /posting.*date/, /^post.*date/, /eff.*date/, /trade.*date/],
-    payee: [/^description$/, /^payee$/, /^merchant$/, /^name$/, /^detail/, /^memo$/, /transaction/],
-    amount: [/^amount$/, /^total$/, /^debit.*credit/, /^transaction.*amount/],
-    debit: [/^debit$/, /^withdraw/, /^charges$/, /^outflow/, /^paid out/, /^payments$/],
-    credit: [/^credit$/, /^deposit/, /^inflow/, /^paid in/, /^payments rec/],
-    description: [/^memo$/, /^note$/, /^category$/, /^description$/],
-    external_id: [/^reference/, /^transaction.*id$/, /^txn.*id$/, /^id$/, /^check.*number/],
-  };
-  for (const re of (patterns[kind] || [])) {
-    for (let i = 0; i < lc.length; i++) if (re.test(lc[i])) return headers[i];
-  }
-  return '';
-}
+// The parsing itself lives in ../statementParse (one place, shared with the
+// statement review that is replacing this screen).
+export { parseCSV, parseAmount, parseFlexibleDate, guessColumn };
 
 export function CsvImportModal({ userId, book = null, existingTransactions, taxCategories, trackPersonal, onClose, onImported, onBatchRevoked }) {
 

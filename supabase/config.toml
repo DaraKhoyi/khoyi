@@ -372,3 +372,9 @@ verify_jwt = false
 
 [functions.contact-transact]
 verify_jwt = false
+
+[functions.read-statement]
+verify_jwt = false
+
+[functions.suggest-categories]
+verify_jwt = false

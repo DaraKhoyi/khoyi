@@ -30,7 +30,7 @@ export async function findContactId(payee) {
 
 const dayText = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? `${+m[2]}/${+m[3]}/${m[1]}` : ''; };
 
-export function EntryTags({ book, value, onChange, payee }) {
+export function EntryTags({ book, value, onChange, payee, noTransfer = false }) {
   const [open, setOpen] = useState(!!(value.transfer_account || value.agent_id || value.closing_id));
   const [contact, setContact] = useState(null);       // { id, name } of the linked contact
   const [agents, setAgents] = useState([]);
@@ -77,12 +77,12 @@ export function EntryTags({ book, value, onChange, payee }) {
 
   const linkPayee = async () => { const id = await findContactId(payee); if (id) set({ contact_id: id }); else if (window.__notify) window.__notify('No single contact has exactly that name. Check the payee, or add them in Contacts.', 'info'); };
 
-  if (!open) return <button type="button" className="bk-link" onClick={() => setOpen(true)} data-testid="entry-more">More: transfer, contact, agent, closing</button>;
+  if (!open) return <button type="button" className="bk-link" onClick={() => setOpen(true)} data-testid="entry-more">{noTransfer ? 'Tags: contact, agent, closing' : 'More: transfer, contact, agent, closing'}</button>;
   return (
     <div className="mr-card" data-testid="entry-tags">
-      <label className="mr-f">Transfer to account (only when this moved money between these books&rsquo; own accounts)
+      {!noTransfer && <label className="mr-f">Transfer to account (only when this moved money between these books&rsquo; own accounts)
         <input type="text" autoComplete="off" value={value.transfer_account || ''} onChange={(e) => set({ transfer_account: e.target.value })} placeholder="Leave empty for income or spending" />
-      </label>
+      </label>}
       <div className="bk-row">
         <span className="n">Contact{contact ? <i>{contact.name}</i> : <i>Not linked</i>}</span>
         {contact ? <button type="button" className="bk-link" onClick={() => set({ contact_id: null })}>Unlink</button>

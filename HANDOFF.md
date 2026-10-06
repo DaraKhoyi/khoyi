@@ -925,9 +925,76 @@ top.** Nobody ever sees a debit or a credit unless they open an entry's history.
 - **Still not built:** splits (the journal can hold n lines; the checkbook entry
   is two-sided), per-owner / per-tenant escrow ledgers and the monthly three-way
   reconciliation, accrual basis (`books.basis` is recorded, not used), reports by
-  agent / closing (the tags are stored), statement scanning, sticky rules.
+  agent / closing (the tags are stored). (Splits, statement scanning and sticky
+  rules arrived in v1.16.11, below.)
 - SQL: `2026-10-06d_ledger.sql`, `2026-10-06e_escrow_opening.sql`. UI:
   `EntryTags.jsx` (More: transfer / contact / agent / closing; EntryHistory).
+
+**STATEMENTS: IMPORT, REVIEW, RULES THAT STICK (6 Oct, v1.16.11).** Dara, build
+prompt part 4: "Nothing imported touches the ledger directly. Every line lands in
+a holding area first."
+- **Tables:** `statement_imports` (one per upload: csv / ofx / scan; the original
+  is in the private `statements` bucket under `{book_id}/{import_id}/`),
+  `statement_lines` (THE HOLDING AREA; `result` null = waiting, else posted /
+  skipped / duplicate / dropped), `payee_rules`, `statement_layouts` (a bank's
+  CSV header row -> which column is which, per book). All read-only to the app;
+  every write is a definer function. `transactions` gained `statement_line_id`,
+  `rule_id`, `split_group`; `money_accounts.is_personal`.
+- **One door into the books:** `statement_post_line()`. It refuses when the
+  statement is blocked (`statement_blocked` / `statement_tie`: opening + lines =
+  closing; CSV/OFX with no balances is "unproven" and allowed, a scan must add up
+  or an owner/admin accepts THAT gap with `statement_accept_unproven`, logged),
+  when the line has unsure flags (`check`), an unanswered possible duplicate
+  (`twin`), or a hand-added line is still waiting. `statement_line_needs()` is
+  the single list of reasons a line needs a person.
+- **Only a rule a person confirmed posts on its own.** `statement_settle()` posts
+  lines whose rule is `trusted` and not `always_ask`, untouched, with no needs;
+  it re-proposes from the live rules first. A model suggestion is `proposed_by
+  'ai'`, which counts as nobody ('new'). A rule becomes trusted by being approved
+  in review; a correction made in the checkbook updates the rule but UN-trusts
+  it; a typed entry can start a rule, never change one. Venmo / Zelle / Cash App
+  / PayPal / checks start as always-ask (`payee_is_generic`). Rules remember
+  direction (`money_in`); a refund needs a look.
+- **`clean_payee()` is the one place bank text becomes a payee.** Rules are keyed
+  on `lower(clean_payee(raw))`, so changing it re-keys nothing retroactively:
+  add brand rows, do not reshuffle.
+- **Signed-in requests get 8 seconds** (`authenticated` role statement_timeout).
+  So staging never posts; `statement_settle_next`, `statement_approve_ready`
+  (120 lines) and `statement_take_back` (100 lines) work in batches and the
+  screen loops (`settleAll` in `src/statements.js`). Do not add an unbounded
+  loop to anything a person calls.
+- **Three triggers on `transactions` that every user's save passes through:**
+  `trg_book_4_unhook` (a hand re-filing drops `rule_id`; an entry leaving the
+  books reopens lines set aside as duplicates of it), `trg_book_95_learn_new` /
+  `_fix` (statement-level, learn only when exactly ONE row was written, 250 ms
+  lock timeout, wrapped so they can never fail a save). `set_config(
+  'prism.learning','off',true)` silences them inside the statement functions.
+- **`transactions_user_external_id_uniq` (user_id, external_id) is an OLD unique
+  index.** The bank's id is therefore carried by one entry only: the first part
+  of a split, and not at all when the person says a same-id line is different.
+- **Edge functions:** `read-statement` (PDF / photos -> lines, flags what it was
+  unsure of, never corrects; answers at once and reads in the background;
+  `statement_for_reading` refuses a second read within 4 minutes) and
+  `suggest-categories` (proposals only). Both on `ai_fn_not_about_a_person()`.
+  A scan sends the page images to the model as they are: aiGuard cannot strip a
+  number printed in an image. The import screen says so.
+- **Who gets it:** `book.statements` (set in `useBooks`): shared books always, a
+  person's own only when they are on `accounting_access` (server-side too, in
+  `statement_begin`). Everyone else still gets the old `CsvImportModal`.
+- **Splits:** several `transactions` rows sharing `split_group` (`entry_split`
+  for an entry already in the checkbook; `parts` on a line or a rule).
+- **Not built:** reports by agent / closing (Prompt 5), reconciliation against
+  the bank's balance (Prompt 5), receipts in the register for shared books (a
+  line's receipt is stored at `{book_id}/receipts/` in the statements bucket and
+  linked, but only the review screen opens it), editing a rule's split shares on
+  the Rules screen, removing originals from storage when a book is deleted.
+- Three independent reviews were run on the SQL before it was applied; the file
+  header lists the promises. `smoke/statements_guard.mjs` proves them live each
+  gate; `smoke/look_statements.mjs` screenshots the whole flow (set `LOOK_PDF`
+  to include one real read).
+- SQL: `2026-10-06f_statements.sql`. UI: `StatementsDoor.jsx` (banner + hub),
+  `StatementImport.jsx`, `StatementReview.jsx`, `PayeeRules.jsx`,
+  `EntrySplit.jsx`; `src/statementParse.js`, `src/statements.js`.
 
 ---
 

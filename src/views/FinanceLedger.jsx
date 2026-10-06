@@ -22,9 +22,13 @@ import { KpiBox, KpiTile } from './FinanceTiles';
 import { MoneyRegister } from './MoneyRegister';
 import { stamp } from '../books';
 import { EntryHistory, EntryTags, findContactId } from './EntryTags';
+import { SplitLink } from './EntrySplit';
+import { askAboutRule } from '../statements';
 
 // Lazy on purpose: the importer is ~1,100 lines used a few times a year.
 const CsvImportModal = React.lazy(() => import('./CsvImportModal').then(m => ({ default: m.CsvImportModal })));
+// Statements (upload, review, rules) for books that have them switched on; the importer above serves the rest.
+const StatementsDoor = React.lazy(() => import('./StatementsDoor'));
 
 export function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, recurringTemplates, setRecurringTemplates, trackPersonal, readOnly, book = null, own = true, names = null, onDenied = null }) {
   const [ledgerMode, setLedgerMode] = useState('transactions');  // 'transactions' | 'recurring'
@@ -35,9 +39,13 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
   const [showImportModal, setShowImportModal] = useState(false);
   const [showBulkCategorize, setShowBulkCategorize] = useState(false);
 
+  const statements = !!(book && book.statements);
+  // Rows that changed elsewhere (a split, or earlier entries a corrected rule re-filed) replace what is on screen.
+  const merge = (rows) => { if (rows.length) setTransactions(prev => { const by = new Map(rows.map(r => [r.id, r])); return [...rows.filter(r => !prev.some(t => t.id === r.id)), ...prev.map(t => by.get(t.id) || t)]; }); };
   function onSaved(saved) {
     if (editTx) setTransactions(prev => prev.map(t => t.id === saved.id ? saved : t));
     else setTransactions(prev => [saved, ...prev]);
+    if (editTx && statements) askAboutRule(saved.id).then(merge);      // "fix the earlier ones too?", asked once
     setShowModal(false); setEditTx(null);
   }
   async function deleteTx(tx) {
@@ -68,7 +76,9 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
           onEdit={(r) => { setEditRecurring(r); setShowRecurringModal(true); }}
         />
         </>
-      ) : (
+      ) : (<>
+        {statements && <React.Suspense fallback={null}><StatementsDoor userId={userId} book={book} taxCategories={taxCategories} readOnly={readOnly}
+          open={showImportModal} setOpen={setShowImportModal} setTransactions={setTransactions} /></React.Suspense>}
         <MoneyRegister
           userId={userId} book={book} own={own} names={names} onDenied={onDenied} transactions={transactions} setTransactions={setTransactions}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
@@ -80,14 +90,15 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
           onRecurring={() => setLedgerMode('recurring')}
           onCategorize={() => setShowBulkCategorize(true)}
         />
-      )}
+      </>)}
 
       {showModal && (
         <TransactionModal
           userId={userId} book={book} own={own} initial={editTx} trackPersonal={trackPersonal}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
           onClose={() => { setShowModal(false); setEditTx(null); }}
-          onSaved={onSaved}
+          onSaved={onSaved} onSplit={statements ? (rows) => { merge(rows); setShowModal(false); setEditTx(null); } : null}
+          splitWhole={editTx && editTx.split_group ? transactions.filter(t => t.split_group === editTx.split_group && !t.is_archived).reduce((n, t) => n + Number(t.amount), 0) : null}
           onDelete={editTx ? () => deleteTx(editTx) : null}
         />
       )}
@@ -105,24 +116,12 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
         />
       )}
 
-      {showImportModal && (
+      {showImportModal && !statements && (
         <React.Suspense fallback={null}><CsvImportModal
-          userId={userId} book={book}
-          existingTransactions={transactions}
-          taxCategories={taxCategories}
-          trackPersonal={trackPersonal}
+          userId={userId} book={book} existingTransactions={transactions} taxCategories={taxCategories} trackPersonal={trackPersonal}
           onClose={() => setShowImportModal(false)}
-          onImported={(rows) => {
-            setTransactions(prev => [...rows, ...prev]);
-            setShowImportModal(false);
-          }}
-          onBatchRevoked={(batchId) => {
-            // Mark the affected rows as archived so the ledger drops them
-            // from view without requiring a refresh.
-            setTransactions(prev => prev.map(t =>
-              t.import_batch_id === batchId ? { ...t, is_archived: true } : t
-            ));
-          }}
+          onImported={(rows) => { setTransactions(prev => [...rows, ...prev]); setShowImportModal(false); }}
+          onBatchRevoked={(batchId) => setTransactions(prev => prev.map(t => t.import_batch_id === batchId ? { ...t, is_archived: true } : t))}
         /></React.Suspense>
       )}
 
@@ -150,7 +149,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
 //   • trailing empty rows
 // Returns { headers, rows } where rows is an array of objects keyed by header.
 
-export function TransactionModal({ userId, book = null, own = true, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved, onDelete }) {
+export function TransactionModal({ userId, book = null, own = true, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved, onDelete, onSplit = null, splitWhole = null }) {
 
 
   useBackClose(onClose);
@@ -426,6 +425,7 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
             </div>
           </div>
           <EntryTags book={book} value={tags} onChange={setTags} payee={payee} />
+          {initial && onSplit && <SplitLink tx={initial} whole={splitWhole} categories={taxCategories} onDone={onSplit} />}
           {initial && <EntryHistory txId={initial.id} />}
           <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>

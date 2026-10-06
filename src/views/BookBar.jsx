@@ -22,7 +22,8 @@ export function useBooks(userId, want, nonce) {
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('my_books');
     if (error || !data) { setState({ ready: true, enabled: false, books: [], bookId: null }); return; }
-    const books = Array.isArray(data.books) ? data.books : [];
+    // Statements: shared books always; a person's own once accounting is switched on for them.
+    const books = (Array.isArray(data.books) ? data.books : []).map((b) => ({ ...b, statements: !b.is_mine || !!data.enabled }));
     const key = want ? `${want}:${nonce}` : null;
     const once = key && honoured.current !== key ? want : null;
     if (key) honoured.current = key;

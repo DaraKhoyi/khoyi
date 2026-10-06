@@ -240,6 +240,9 @@ guard books_guard static
 # Under the checkbook, a double-entry ledger: balanced or rejected by any path, whole cents, corrections keep
 # their history, nobody writes it directly, and every set of books ties out (Dara, 6 Oct, build prompt part 3).
 guard ledger_guard static
+# Statements: nothing imported reaches the books unapproved, a statement that is off posts nothing, duplicates are
+# shown, and only a rule a person confirmed files by itself (Dara, 6 Oct, build prompt part 4).
+guard statements_guard static
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
