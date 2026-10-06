@@ -18,6 +18,11 @@ const today = read('src/views/TodayView.jsx');
 expect(today.indexOf('<GoalsBand') > 0 && today.indexOf('<GoalsBand') < today.indexOf('<HandledLine') && today.indexOf('<GoalsBand') < today.indexOf('<LeadConcierge'), 'Goals for the Day is not above what is inbound on Today');
 const band = read('src/views/GoalsBand.jsx').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
 expect(!/\} of \{|\bstreak\b|done\.length\}\s*\/|#ef4444|var\(--red\)/i.test(band), 'the goals band renders a score, a streak or red');
+// Dara, 6 Oct 2026: a suggestion that is already done can be settled on the spot.
+for (const id of ['cand-add', 'cand-done', 'cand-delete', 'cand-not']) expect(band.includes(`data-testid="${id}"`), `a suggested goal lost its "${id}" answer — the person can only Add, even when it is already done`);
+expect(/c\.src !== 'task' && <button[^>]*data-testid="cand-not"/.test(band), '"Not a thing" is offered on the person\'s own tasks — it is only for follow-ups PrismOS heard on a call');
+expect(/dropped_at: now/.test(band) && !/from\('tasks'\)\.delete\(|from\('commitments'\)\.delete\(/.test(band), 'deleting a suggestion erases it — it must be let go and kept, so it can be undone');
+expect(/label: 'Undo'/.test(band), 'settling a suggestion can no longer be undone');
 expect(/rpc\('goal_candidates'/.test(band) && /rpc\('my_contract_deadlines'/.test(band), 'the goals band lost its short list or the contract-date band');
 expect(/data-testid="close-day"/.test(band) && /What got done today/.test(band), 'the end of the day no longer shows what got done first');
 const sql = read('supabase/sql/2026-10-04d_goals_for_the_day.sql');

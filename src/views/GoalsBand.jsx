@@ -186,13 +186,13 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
         </div>
       )}
 
-      {picking === 'today' && <Picker day={today} label="today" goals={mine} n={n} setN={setN} userId={userId} tasks={tasks} busyDay={(events || []).filter(e => e && e.start_at && !e.all_day && e.status !== 'cancelled' && new Date(e.start_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) === today).length >= 4} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />}
+      {picking === 'today' && <Picker day={today} label="today" goals={mine} n={n} setN={setN} userId={userId} tasks={tasks} setTasks={setTasks} busyDay={(events || []).filter(e => e && e.start_at && !e.all_day && e.status !== 'cancelled' && new Date(e.start_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) === today).length >= 4} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />}
 
       {closing && <CloseDay goals={mine} isDone={isDone} today={today} tomorrow={tomorrow} userId={userId} taskById={taskById} setTasks={setTasks} onChange={load} onClose={() => setClosing(false)} />}
 
       {hour >= 15 && evening && !compact && picking !== 'today' && !closing && (
         picking === 'tomorrow'
-          ? <Picker day={tomorrow} label="tomorrow" goals={next} n={n} setN={setN} userId={userId} tasks={tasks} busyDay={false} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />
+          ? <Picker day={tomorrow} label="tomorrow" goals={next} n={n} setN={setN} userId={userId} tasks={tasks} setTasks={setTasks} busyDay={false} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />
           : <div style={{ marginTop: 6 }}>
               <button type="button" data-testid="goals-tomorrow" style={calm.link} onClick={() => setPicking('tomorrow')}>
                 {next.length ? 'Tomorrow is chosen — look or change ›' : `Pick tomorrow’s ${n === 1 ? 'one' : WORD[n] || 'three'} ›`}
@@ -204,18 +204,19 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
 }
 
 // ── Choosing ─────────────────────────────────────────────────────────────────
-function Picker({ day, label, goals, n, setN, userId, tasks, busyDay, rolled, onChange, onClose }) {
+function Picker({ day, label, goals, n, setN, userId, tasks, setTasks, busyDay, rolled, onChange, onClose }) {
   const [cands, setCands] = useState([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [all, setAll] = useState(false);
   const [find, setFind] = useState('');
   const [editing, setEditing] = useState(null);   // { id, text, when_text }
+  const [tick, setTick] = useState(0);            // bumped when a suggestion is settled, so the next one is offered
   useEffect(() => {
     let go = true;
     (async () => { const { data, error } = await supabase.rpc('goal_candidates', { p_day: day }); if (go) setCands(error || !Array.isArray(data) ? [] : data); })();
     return () => { go = false; };
-  }, [day, goals.length]);
+  }, [day, goals.length, tick]);
   const full = goals.length >= n;
   const add = async (t, link = {}) => {
     const clean = String(t || '').trim(); if (!clean || busy) return;
@@ -225,6 +226,45 @@ function Picker({ day, label, goals, n, setN, userId, tasks, busyDay, rolled, on
     setBusy(false);
     if (error) { say('Could not add that: ' + error.message); return; }
     setText(''); await onChange();
+  };
+  // A suggestion that is not a goal for today can be settled where it stands
+  // (Dara, 6 Oct 2026: two of the offers were already done, and the only button
+  // was Add). The same three answers as everywhere else in PrismOS:
+  //   Done already — it happened. A task is completed; a follow-up is closed.
+  //   Delete       — not doing it. A task is let go (kept, never erased); a
+  //                  follow-up is dismissed. No judgement, nothing learned.
+  //   Not a thing  — PrismOS should not have raised it. Follow-ups heard on
+  //                  calls only; it is the lesson the call reader learns from.
+  // Every one can be undone from the notice, and the next suggestion moves up.
+  const settle = async (c, what) => {
+    if (busy) return;
+    setBusy(true);
+    const now = new Date().toISOString(), quoted = '\u201c' + String(c.title || '').slice(0, 60) + '\u201d';
+    const patchTask = (id, f) => { setTasks && setTasks(prev => prev.map(t => t.id === id ? { ...t, ...f } : t)); try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) { /* no listeners is fine */ } };
+    const steps = [];   // [table, id, change, how to put it back]
+    if (c.src === 'task') {
+      steps.push(what === 'done' ? ['tasks', c.id, { completed: true, completed_at: now }, { completed: false, completed_at: null }] : ['tasks', c.id, { dropped_at: now }, { dropped_at: null }]);
+    } else {
+      const { data: cm, error: rErr } = await supabase.from('commitments').select('id,status,task_id,contact_id,decided_at').eq('id', c.id).maybeSingle();
+      if (rErr || !cm) { setBusy(false); say('Could not open that follow-up: ' + (rErr ? rErr.message : 'it is no longer there')); return; }
+      steps.push(['commitments', c.id, { status: what === 'done' ? 'done' : 'dismissed', decided_at: now, not_a_thing_at: what === 'not' ? now : null }, { status: cm.status, decided_at: cm.decided_at, not_a_thing_at: null }]);
+      if (cm.task_id) steps.push(what === 'done' ? ['tasks', cm.task_id, { completed: true, completed_at: now }, { completed: false, completed_at: null }] : ['tasks', cm.task_id, { dropped_at: now }, { dropped_at: null }]);
+      if (what === 'not') { try { window.dispatchEvent(new CustomEvent('prism:scope-ask', { detail: { kind: 'not_a_thing', commitmentId: c.id, contactId: cm.contact_id || null, name: String(c.hint || '').split(' \u2014 ')[1] || '' } })); } catch (_) { /* the question is optional */ } }
+    }
+    const run = async (back) => {
+      for (const [table, id, f, undo] of steps) {
+        const { error } = await supabase.from(table).update(back ? undo : f).eq('id', id);
+        if (error) return error;
+        if (table === 'tasks') patchTask(id, back ? undo : f);
+      }
+      return null;
+    };
+    const error = await run(false);
+    setBusy(false);
+    if (error) { say('Could not save that: ' + error.message); setTick(t => t + 1); return; }
+    setTick(t => t + 1);
+    const said = what === 'done' ? 'Marked done \u2014 ' + quoted : what === 'not' ? 'Not a thing \u2014 PrismOS will learn from this. ' + quoted : 'Deleted \u2014 ' + quoted;
+    if (window.__notify) window.__notify(said, what === 'delete' ? 'info' : 'success', { label: 'Undo', onClick: async () => { const e = await run(true); if (e) say('Could not undo that: ' + e.message); setTick(t => t + 1); } });
   };
   const remove = async (g) => {
     const { error } = await supabase.from('day_goals').delete().eq('id', g.id);
@@ -291,7 +331,12 @@ function Picker({ day, label, goals, n, setN, userId, tasks, busyDay, rolled, on
             <div key={c.src + c.id} style={i ? calm.rowRule : calm.row}>
               <div style={calm.rowTitle}>{c.title}</div>
               <div style={calm.rowWhy}>{c.hint}</div>
-              <div style={calm.actions}><button type="button" disabled={busy} style={calm.btnQuiet} onClick={() => add(c.title, c.src === 'task' ? { task_id: c.id } : { commitment_id: c.id })}>Add</button></div>
+              <div style={calm.actions}>
+                <button type="button" disabled={busy} data-testid="cand-add" style={calm.btnQuiet} onClick={() => add(c.title, c.src === 'task' ? { task_id: c.id } : { commitment_id: c.id })}>Add</button>
+                <button type="button" disabled={busy} data-testid="cand-done" style={calm.btnQuiet} title="It already happened. You can undo." onClick={() => settle(c, 'done')}>Done already</button>
+                <button type="button" disabled={busy} data-testid="cand-delete" style={calm.btnQuiet} title="You are not doing this. It is kept, not erased, and you can undo." onClick={() => settle(c, 'delete')}>Delete</button>
+                {c.src !== 'task' && <button type="button" disabled={busy} data-testid="cand-not" style={calm.btnQuiet} title="PrismOS should not have raised this. It learns from it, and you can undo." onClick={() => settle(c, 'not')}>Not a thing</button>}
+              </div>
             </div>
           ))}
         </div>
