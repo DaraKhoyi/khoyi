@@ -31,7 +31,7 @@ const code = (p) => read(p).split('\n').filter((l) => !/^\s*\/\//.test(l)).join(
 
 // Every table that holds accounting data. A new one MUST be added here (the
 // live half fails on a book_id table it has not been told about).
-const TABLES = ['books', 'book_access', 'book_log', 'transactions', 'tax_categories', 'money_accounts', 'recurring_transactions', 'accounting_access', 'book_category_templates'];
+const TABLES = ['books', 'book_access', 'book_log', 'transactions', 'tax_categories', 'money_accounts', 'recurring_transactions', 'accounting_access', 'book_category_templates', 'ledger_accounts', 'gl_entries', 'gl_lines', 'gl_live'];
 
 // ── static: the thinking ───────────────────────────────────────────────────
 const own = { id: 'p', kind: 'personal', is_mine: true, role: 'owner', label: 'Avery' };
@@ -143,7 +143,7 @@ if (URL_ && SVC && ANON) {
     expect(shared.ok && row?.user_id === null && row?.entered_by === A.id && row?.scope === 'business', 'an entry in shared books is not held by the BOOK (user_id empty), signed by who entered it, as business money');
     await rpc(A.tok, 'set_book_account', { p_book: teamBook, p_account: 'Operating', p_amount: 1000, p_kind: 'bank' });
     const knownRows = async (tok, t) => rows(await rest(tok, 'GET', `${t}?select=*&limit=50`));
-    expect((await knownRows(A.tok, 'transactions')).length === 2 && (await knownRows(A.tok, 'books')).length === 2 && (await knownRows(A.tok, 'book_log')).length > 0 && (await knownRows(A.tok, 'money_accounts')).length === 1,
+    expect((await knownRows(A.tok, 'transactions')).length === 2 && (await knownRows(A.tok, 'books')).length === 2 && (await knownRows(A.tok, 'book_log')).length > 0 && (await knownRows(A.tok, 'money_accounts')).length >= 2 && (await knownRows(A.tok, 'gl_lines')).length >= 4 && (await knownRows(A.tok, 'gl_live')).length >= 2,
       'the owner cannot see their own books — the checks below would pass on an empty table and prove nothing');
 
     // THE WALL. Neither a Broker Admin with no seat, nor another agent, reads one row of any accounting table.
@@ -158,6 +158,7 @@ if (URL_ && SVC && ANON) {
       expect(rows(await rest(P.tok, 'PATCH', `transactions?id=eq.${row.id}`, { payee: 'changed by an outsider' })).length === 0, `${who} can change an entry in a book they are not on`);
       expect(!(await rest(P.tok, 'POST', 'book_access', { book_id: teamBook, user_id: P.id, role: 'owner' })).ok, `${who} can put themselves on a book's access list`);
       for (const fn of ['book_people', 'book_history', 'book_names']) expect(!(await rpc(P.tok, fn, { p_book: teamBook })).ok, `${who} can call ${fn} on a book they are not on`);
+      expect(rows(await rpc(P.tok, 'book_entry_history', { p_tx: row.id })).length === 0 && (((await rpc(P.tok, 'book_position', { p_book: teamBook })).json?.lines) || []).length === 0, `${who} can read a book's ledger history or where it stands`);
       expect(!(await rpc(P.tok, 'book_grant', { p_book: teamBook, p_email: P.email, p_name: 'Me', p_role: 'owner' })).ok, `${who} can grant themselves access`);
       expect(((await rpc(P.tok, 'book_summary', { p_book: teamBook })).json?.lines || []).length === 0 && rows(await rpc(P.tok, 'book_account_balances', { p_book: teamBook })).length === 0, `${who} can read a book's totals or balances`);
       expect(!(await rpc(P.tok, 'set_book_account', { p_book: teamBook, p_account: 'Operating', p_amount: 5 })).ok && !(await rpc(P.tok, 'book_set_closed_through', { p_book: teamBook, p_date: '2026-09-30' })).ok, `${who} can change a book's account settings or close it`);
@@ -211,7 +212,7 @@ if (URL_ && SVC && ANON) {
     // Structure: no accounting table this guard has not been told about, and each one locked.
     if (PAT) {
       const q = await fetch(`https://api.supabase.com/v1/projects/${new URL(URL_).hostname.split('.')[0]}/database/query`, { method: 'POST', headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json', 'User-Agent': 'KhoyiApp/1.0' },
-        body: JSON.stringify({ query: "select c.relname as t, c.relrowsecurity as rls from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and (c.relname = any (array['books','book_access','book_log','accounting_access','book_category_templates']) or exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'book_id' and not a.attisdropped))" }) });
+        body: JSON.stringify({ query: "select c.relname as t, c.relrowsecurity as rls from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and (c.relname = any (array['books','book_access','book_log','accounting_access','book_category_templates','ledger_accounts','gl_entries','gl_lines']) or exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'book_id' and not a.attisdropped))" }) });
       const tabs = await q.json();
       if (!Array.isArray(tabs)) problems.push('could not read the table list: ' + JSON.stringify(tabs).slice(0, 160));
       else for (const t of tabs) { expect(TABLES.includes(t.t), `table ${t.t} carries a book_id but this guard does not test it — add it to TABLES`); expect(t.rls === true, `table ${t.t} has row-level security switched off`); }

@@ -23,7 +23,7 @@ import { confirmDialog } from '../notify';
 import { fmtHours, fmtPct, fmtUSD, fmtUSDCents } from '../financeUtils';
 import { SysStat } from './FinanceSystems';
 import { BookBar, useBooks } from './BookBar';
-import { inBook, isOwnBook, showBookBar } from '../books';
+import { countsInProfit, inBook, isOwnBook, showBookBar } from '../books';
 // Someone else's books, and the list of who may open a set of books: opened by
 // a few people, a few times — lazy so they do not ride along on every visit.
 const BookRoom = React.lazy(() => import('./BookRoom'));
@@ -146,7 +146,9 @@ function OwnMoney({ userId, book = null, initialSub = null, subNonce = 0 }) {
   const maxSystems = settings?.max_systems_allowed || 5;
 
   const yearStart = new Date(new Date().getFullYear(), 0, 1);
-  const ytdTx = transactions.filter(t => new Date(t.date) >= yearStart);
+  // Income and spending only: a transfer, a draw or a tax payment is neither (the ledger files them elsewhere).
+  const kindOf = (id) => taxCategories.find(c => c.id === id)?.kind;
+  const ytdTx = transactions.filter(t => new Date(t.date) >= yearStart && countsInProfit(t, kindOf));
   const ytdIncome  = ytdTx.filter(t => t.scope === 'business' && Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0);
   const ytdExpense = ytdTx.filter(t => t.scope === 'business' && Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0);
   const ytdNet = ytdIncome + ytdExpense;

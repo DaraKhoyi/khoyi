@@ -237,6 +237,9 @@ guard prism_edge_guard static
 # Only the people on a book's list can read or change it; being Broker or Broker Admin opens nothing;
 # a switched-off assistant is out on their next tap. Proven with three sign-ins, for every accounting table (Dara, 6 Oct).
 guard books_guard static
+# Under the checkbook, a double-entry ledger: balanced or rejected by any path, whole cents, corrections keep
+# their history, nobody writes it directly, and every set of books ties out (Dara, 6 Oct, build prompt part 3).
+guard ledger_guard static
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

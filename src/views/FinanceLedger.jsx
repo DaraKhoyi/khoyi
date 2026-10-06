@@ -21,6 +21,7 @@ import { fmtUSD, fmtUSDCents, fmtPct, fmtHours, normalizePayee, buildSuggester }
 import { KpiBox, KpiTile } from './FinanceTiles';
 import { MoneyRegister } from './MoneyRegister';
 import { stamp } from '../books';
+import { EntryHistory, EntryTags, findContactId } from './EntryTags';
 
 // Lazy on purpose: the importer is ~1,100 lines used a few times a year.
 const CsvImportModal = React.lazy(() => import('./CsvImportModal').then(m => ({ default: m.CsvImportModal })));
@@ -166,6 +167,7 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
   const [payee, setPayee] = useState(initial?.payee || '');
   const [description, setDescription] = useState(initial?.description || '');
   const [account, setAccount] = useState(initial?.account || '');
+  const [tags, setTags] = useState({ transfer_account: initial?.transfer_account || '', contact_id: initial?.contact_id || null, agent_id: initial?.agent_id || null, closing_id: initial?.closing_id || null });
   const [saving, setSaving] = useState(false);
   // Receipt-parsing state
   const [receiptUrl, setReceiptUrl] = useState(initial?.receipt_url || null);
@@ -268,6 +270,8 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
       payee: payee.trim() || null,
       description: description.trim() || null,
       account: account.trim() || null,
+      transfer_account: tags.transfer_account.trim() || null, agent_id: tags.agent_id, closing_id: tags.closing_id,
+      contact_id: tags.contact_id || (initial ? null : await findContactId(payee)),
       receipt_url: receiptPath || (initial?.receipt_url ?? null),
       entered_via: enteredVia,
       ai_confidence: parseInfo?.confidence ?? initial?.ai_confidence ?? null,
@@ -421,6 +425,8 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
               <input className="form-input" type="text" value={account} onChange={e => setAccount(e.target.value)} placeholder="Biz Visa" />
             </div>
           </div>
+          <EntryTags book={book} value={tags} onChange={setTags} payee={payee} />
+          {initial && <EntryHistory txId={initial.id} />}
           <div className="modal-actions" style={{display:'flex',justifyContent:'flex-end',gap:'8px',marginTop:'14px'}}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : initial ? 'Save changes' : 'Add transaction'}</button>

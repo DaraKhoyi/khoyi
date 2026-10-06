@@ -12,7 +12,8 @@ import { todayNY } from '../clock';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSDCents } from '../financeUtils';
 import { bookTitle, can, duplicateSentence, inBook, isDenied, stamp } from '../books';
-import { accountKey, fillFrom, groupByMonth, longDate, matchesSearch, parseAmount, payeeMatches, readStickyDate, runningBalances, shortDate, sortNewest, writeStickyDate } from '../moneyRegister';
+import { accountKey, amountFor, fillFrom, groupByMonth, isTransfer, longDate, matchesSearch, parseAmount, payeeMatches, readStickyDate, runningBalances, shortDate, sortNewest, touches, writeStickyDate } from '../moneyRegister';
+import { findContactId } from './EntryTags';
 
 const PAGE = 500;      // how many entries the database hands over at a time
 const SHOW = 60;       // how many the register draws before "Show older entries"
@@ -25,6 +26,7 @@ function EntryCard({ userId, book, onDenied, transactions, taxCategories, system
   const [direction, setDirection] = useState('out');
   const [scope, setScope] = useState('business');
   const [account, setAccount] = useState('');
+  const [toAccount, setToAccount] = useState('');   // a transfer's other account
   const [f, setF] = useState(BLANK);
   const [filled, setFilled] = useState(null);       // { from: past entry, before: the form as it was }
   const [offer, setOffer] = useState(false);        // is the list of past payees open
@@ -35,26 +37,31 @@ function EntryCard({ userId, book, onDenied, transactions, taxCategories, system
   const matches = useMemo(() => (offer ? payeeMatches(transactions, f.payee) : []), [offer, transactions, f.payee]);
   const takeMatch = (m) => {
     const v = fillFrom(m.last);
-    setFilled({ from: m.last, before: { f, direction, scope, account } });
-    setDirection(v.direction); setScope(trackPersonal ? v.scope : 'business'); setAccount(v.account);
+    setFilled({ from: m.last, before: { f, direction, scope, account, toAccount } });
+    setDirection(v.direction); setScope(trackPersonal ? v.scope : 'business'); setAccount(v.account); setToAccount(v.transferAccount);
     setF({ amount: v.amount, payee: v.payee, taxCategoryId: v.taxCategoryId, personalBudgetLineId: v.personalBudgetLineId, description: v.description, systemId: v.systemId });
     setOffer(false);
   };
-  const undoFill = () => { const b = filled.before; setF(b.f); setDirection(b.direction); setScope(b.scope); setAccount(b.account); setFilled(null); };
+  const undoFill = () => { const b = filled.before; setF(b.f); setDirection(b.direction); setScope(b.scope); setAccount(b.account); setToAccount(b.toAccount); setFilled(null); };
   const clear = () => { setF(BLANK); setFilled(null); setOffer(false); };
 
   async function save(e) {
     e.preventDefault();
     const amt = parseAmount(f.amount);
     if (amt == null) { notifyError('Enter the amount, for example 89.00'); return; }
+    const moving = direction === 'transfer';
+    if (moving && (!account.trim() || !toAccount.trim())) { notifyError('A transfer needs both accounts: where the money left, and where it went'); return; }
+    if (moving && accountKey(account) === accountKey(toAccount)) { notifyError('A transfer needs two different accounts'); return; }
     setSaving(true);
-    const business = scope === 'business';
+    const business = scope === 'business' || moving;
     const row = {
-      ...stamp(book, userId), date, amount: direction === 'in' ? amt : -amt, scope,
-      tax_category_id: business ? (f.taxCategoryId || null) : null,
-      lead_gen_system_id: business ? (f.systemId || overhead?.id || null) : null,
+      ...stamp(book, userId), date, amount: direction === 'in' ? amt : -amt, scope: moving ? 'business' : scope,
+      tax_category_id: business && !moving ? (f.taxCategoryId || null) : null,
+      lead_gen_system_id: business && !moving ? (f.systemId || overhead?.id || null) : null,
       personal_budget_line_id: business ? null : (f.personalBudgetLineId || null),
       payee: f.payee.trim() || null, description: f.description.trim() || null, account: account.trim() || null,
+      transfer_account: moving ? toAccount.trim() : null,
+      contact_id: moving ? null : await findContactId(f.payee),      // the payee is a contact already: link it, no second address book
       entered_via: 'manual',
     };
     // "Did I already enter this?" Asked of the whole book, not just the entries on
@@ -87,9 +94,10 @@ function EntryCard({ userId, book, onDenied, transactions, taxCategories, system
 
   return (
     <form className="mr-card" onSubmit={save} data-testid="money-entry">
-      <div className="mr-dir" role="group" aria-label="Money out or money in">
+      <div className="mr-dir three" role="group" aria-label="Money out, money in, or a transfer between accounts">
         <button type="button" className={direction === 'out' ? 'on' : ''} aria-pressed={direction === 'out'} onClick={() => setDirection('out')}>Money out</button>
         <button type="button" className={direction === 'in' ? 'on' : ''} aria-pressed={direction === 'in'} onClick={() => setDirection('in')}>Money in</button>
+        <button type="button" className={direction === 'transfer' ? 'on' : ''} aria-pressed={direction === 'transfer'} onClick={() => setDirection('transfer')} data-testid="money-transfer">Transfer</button>
       </div>
       {filled && (
         <div className="mr-filled">
@@ -108,6 +116,21 @@ function EntryCard({ userId, book, onDenied, transactions, taxCategories, system
       {date === today
         ? <div className="mr-note">Today. Change the date and it stays there until you change it back.</div>
         : <div className="mr-note stuck"><span>Entering for {longDate(date)}.</span><button type="button" onClick={() => changeDate(today)}>Back to today</button></div>}
+      {direction === 'transfer' ? (<>
+        <div className="mr-note">Money moved between two of these books' own accounts, or a card payment. It is never counted as income or spending.</div>
+        <div className="mr-two">
+          <label className="mr-f">From account
+            <input type="text" list="mr-accounts" autoComplete="off" value={account} onChange={(e) => setAccount(e.target.value)} placeholder="Checking" data-testid="money-account" />
+          </label>
+          <label className="mr-f">To account
+            <input type="text" list="mr-accounts" autoComplete="off" value={toAccount} onChange={(e) => setToAccount(e.target.value)} placeholder="Biz Visa" data-testid="money-to-account" />
+          </label>
+        </div>
+        <datalist id="mr-accounts">{accounts.map((a) => <option key={a.account} value={a.account} />)}</datalist>
+        <label className="mr-f">Description
+          <input type="text" value={f.description} onChange={(e) => set({ description: e.target.value })} placeholder="What it was for" />
+        </label>
+      </>) : (<>
       <label className="mr-f">{direction === 'in' ? 'Received from' : 'Payee'}
         <input ref={payeeRef} type="text" autoComplete="off" value={f.payee} data-testid="money-payee"
           onChange={(e) => { set({ payee: e.target.value }); setOffer(true); }} placeholder={direction === 'in' ? 'Who paid you' : 'Who you paid'} />
@@ -165,6 +188,7 @@ function EntryCard({ userId, book, onDenied, transactions, taxCategories, system
           </select>
         </label>
       )}
+      </>)}
       <div className="mr-go">
         <button type="submit" className="save" disabled={saving} data-testid="money-save">{saving ? 'Saving…' : 'Save and add another'}</button>
         <button type="button" className="clear" onClick={clear}>Clear</button>
@@ -204,19 +228,21 @@ export function MoneyRegister({ userId, book = null, own = true, names: who = nu
   const account = accounts.find((a) => accountKey(a.account) === picked) || null;
   const rows = useMemo(() => {
     let r = sortNewest(transactions.filter((t) => !t.is_archived));
-    if (account) r = r.filter((t) => accountKey(t.account) === picked);
+    if (account) r = r.filter((t) => touches(t, picked));
     else if (!trackPersonal) r = r.filter((t) => t.scope === 'business');
-    if (chip === 'out') r = r.filter((t) => Number(t.amount) < 0);
-    else if (chip === 'in') r = r.filter((t) => Number(t.amount) > 0);
+    if (chip === 'out') r = r.filter((t) => amountFor(t, picked) < 0 && (account || !isTransfer(t)));
+    else if (chip === 'in') r = r.filter((t) => amountFor(t, picked) > 0 && (account || !isTransfer(t)));
     else if (chip === 'year') r = r.filter((t) => String(t.date || '').startsWith(year));
     else if (chip === 'business' || chip === 'personal') r = r.filter((t) => t.scope === chip);
     if (search.trim()) r = r.filter((t) => matchesSearch(t, search, names(t)));
     return r;
   }, [transactions, account, picked, trackPersonal, chip, search, names, year]);
   // A balance after each line only makes sense on one account's whole register.
-  const balances = useMemo(() => (account && chip === 'all' && !search.trim() ? runningBalances(rows, account.balance) : null), [account, chip, search, rows]);
-  const totalIn = rows.reduce((s, t) => s + (Number(t.amount) > 0 ? Number(t.amount) : 0), 0);
-  const totalOut = rows.reduce((s, t) => s + (Number(t.amount) < 0 ? -Number(t.amount) : 0), 0);
+  const balances = useMemo(() => (account && chip === 'all' && !search.trim() ? runningBalances(rows, account.balance, (t) => amountFor(t, picked)) : null), [account, chip, search, rows, picked]);
+  // With every account on screen a transfer is neither in nor out; in one account's register it is.
+  const counted = account ? rows : rows.filter((t) => !isTransfer(t));
+  const totalIn = counted.reduce((s, t) => s + Math.max(amountFor(t, picked), 0), 0);
+  const totalOut = counted.reduce((s, t) => s + Math.max(-amountFor(t, picked), 0), 0);
   const groups = groupByMonth(rows.slice(0, shown));
 
   async function loadOlder(all) {
@@ -312,14 +338,15 @@ export function MoneyRegister({ userId, book = null, own = true, names: who = nu
             <React.Fragment key={g.key}>
               <div className="mr-month">{g.label}</div>
               {g.rows.map((t) => {
-                const n = names(t), income = Number(t.amount) > 0;
+                const n = names(t), moved = isTransfer(t), amt = amountFor(t, picked), income = amt > 0 && (!moved || !!account);
+                const way = !moved ? '' : !account ? `${t.account} to ${t.transfer_account}` : accountKey(t.account) === picked ? `to ${t.transfer_account}` : `from ${t.account}`;
                 const by = who && t.entered_by && who[t.entered_by] ? 'by ' + who[t.entered_by] : '';
-                const sub = [t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', !account ? t.account : '', n.system, by].filter(Boolean).join(' · ');
+                const sub = [moved ? way : t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', !account && !moved ? t.account : '', n.system, by].filter(Boolean).join(' · ');
                 return (
                   <button type="button" key={t.id} className="mr-row" disabled={readOnly} onClick={() => onEdit(t)} data-testid="money-row">
                     <span className="d">{shortDate(t.date)}</span>
-                    <span className="p"><b>{t.payee || t.description || 'No payee'}</b><i>{sub || 'No category yet'}</i></span>
-                    <span className={'a' + (income ? ' in' : '')}><b>{income ? '+' : ''}{fmtUSDCents(Math.abs(Number(t.amount)))}</b>{balances && <i>{fmtUSDCents(balances.get(t.id))}</i>}</span>
+                    <span className="p"><b>{t.payee || t.description || (moved ? 'Transfer' : 'No payee')}</b><i>{sub || 'No category yet'}</i></span>
+                    <span className={'a' + (income ? ' in' : '')}><b>{income ? '+' : ''}{fmtUSDCents(Math.abs(amt))}</b>{balances && <i>{fmtUSDCents(balances.get(t.id))}</i>}</span>
                   </button>
                 );
               })}

@@ -39,10 +39,13 @@ try {
     ['2026-10-01', 4200, 'Sunrise Villas HOA', 'Management Fees', 'Operating Checking'], ['2026-10-02', -389.5, 'Buildium', 'Software & Subscriptions', 'Operating Checking'],
     ['2026-10-02', 2150, 'Rent - 1418 Oak Vine Dr', 'Rent Collected for Owners', 'Escrow'], ['2026-10-03', -1890, 'Owner payout - J. Suarez', 'Owner Payouts', 'Escrow'],
     ['2026-10-03', -212.4, 'Home Depot', null, 'Team Visa'], ['2026-09-28', 950, 'Leasing fee - 22 Palm Ct', 'Leasing Fees', 'Operating Checking'],
-    ['2026-09-21', -1200, 'Tina Danielson', 'Team Splits & Commissions Paid', 'Operating Checking'], ['2026-09-15', -640, 'Transfer to savings', 'Transfers & Card Payments', 'Operating Checking'],
+    ['2026-09-21', -1200, 'Tina Danielson', 'Team Splits & Commissions Paid', 'Operating Checking'],
   ].map(([date, amount, payee, c, account], i) => ({ book_id: bk.id, date, amount, payee, account, scope: 'business', tax_category_id: cat(c), entered_by: i % 2 ? b.id : a.id }));
   await svc('POST', 'transactions', rows);
-  await svc('POST', 'money_accounts', [{ book_id: bk.id, name: 'Escrow', starting_balance: 48000, kind: 'escrow' }, { book_id: bk.id, name: 'Operating Checking', starting_balance: 12500, kind: 'bank' }]);
+  await svc('POST', 'transactions', [{ book_id: bk.id, date: '2026-09-15', amount: -640, scope: 'business', account: 'Operating Checking', transfer_account: 'Team Visa', description: 'Card payment', entered_by: a.id }]);
+  // The accounts opened themselves when the entries named them; give two a starting balance.
+  await svc('PATCH', `money_accounts?book_id=eq.${bk.id}&name=eq.Escrow`, { starting_balance: 48000, kind: 'escrow' });
+  await svc('PATCH', `money_accounts?book_id=eq.${bk.id}&name=eq.Operating%20Checking`, { starting_balance: 12500 });
   await svc('POST', 'transactions', [{ user_id: a.id, date: '2026-10-02', amount: -42.18, payee: 'Shell', scope: 'business', account: 'Biz Visa' }]);
 
   const who = mode === 'helper' ? b : a;
@@ -65,7 +68,16 @@ try {
     await page.waitForSelector('[data-testid="money-register"]', { timeout: 20000 }); await shot('3_shared_register');
     await page.evaluate(() => window.scrollTo(0, 900)); const sc = await page.evaluate(() => { const el = document.querySelector('.main-content') || document.scrollingElement; el.scrollTop = 900; return el.className + ':' + el.scrollTop; });
     await shot('3b_scrolled_bar_still_there', false); console.log(pass.tag, 'scroller', sc, 'bar top', await page.evaluate(() => Math.round(document.querySelector('[data-testid="book-bar"]').getBoundingClientRect().top)));
+    if (mode === 'manager') {
+      await page.evaluate(() => { const el = document.querySelector('.main-content'); el.scrollTop = 0; });
+      await page.click('[data-testid="money-transfer"]'); await shot('3c_transfer_form', false);
+      await page.click('[data-testid="money-row"]:has-text("Buildium")'); await page.waitForSelector('[data-testid="entry-more"]');
+      await page.click('[data-testid="entry-more"]'); await page.click('[data-testid="entry-history-open"]'); await page.waitForSelector('[data-testid="entry-history"]');
+      await page.evaluate(() => { const m = document.querySelector('.modal'); m.scrollTop = m.scrollHeight; }); await shot('3d_entry_more_history', false);
+      await page.click('.modal button:has-text("Cancel")');
+    }
     await page.click('.seg-btn:has-text("Reports")'); await page.waitForSelector('[data-testid="book-summary"]'); await page.waitForTimeout(1500); await shot('4_reports');
+    await page.evaluate(() => { const el = document.querySelector('.main-content'); el.scrollTop = el.scrollHeight; }); await shot('4b_reports_where_things_stand', false);
     await page.click('.seg-btn:has-text("Setup")'); await page.waitForSelector('[data-testid="book-setup"]'); await page.waitForTimeout(1200); await shot('5_setup');
     if (mode === 'manager') {
       await page.click('[data-testid="book-people"]'); await page.waitForSelector('[data-testid="book-seat"]'); await shot('6_people', false);

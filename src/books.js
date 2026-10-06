@@ -159,5 +159,45 @@ export function duplicateSentence(d, fmt) {
   return [day, d.payee || 'no payee', fmt(Math.abs(Number(d.amount) || 0)), d.account].filter(Boolean).join(' · ');
 }
 
-export const CATEGORY_KINDS = [['income', 'Money in'], ['expense', 'Money out'], ['held', 'Held for others'], ['other', 'Neither (transfers, draws, tax)']];
+export const CATEGORY_KINDS = [['income', 'Money in'], ['expense', 'Money out'], ['held', 'Held for others'], ['asset', 'Owned, or owed to us'],
+  ['liability', 'Owed by us (loans)'], ['equity', 'Owners: draws, contributions, tax'], ['transfer', 'Transfers between our accounts'], ['other', 'Other']];
+
+// ── the ledger ─────────────────────────────────────────────────────────────
+// Underneath the checkbook the database keeps a double-entry journal
+// (supabase/sql/2026-10-06d_ledger.sql). Nothing here posts to it; these only
+// say how to read it back in plain words.
+
+// Does an entry belong in income and spending? A transfer between the book's
+// own accounts never does, nor anything filed under a category that is not
+// money in or money out (a loan, a draw, money held for someone else).
+const NOT_PROFIT = ['transfer', 'asset', 'liability', 'equity', 'held'];
+export const countsInProfit = (t, kindOf) => !t.transfer_account && !NOT_PROFIT.includes(kindOf ? kindOf(t.tax_category_id) : undefined);
+
+// book_position() hands back every account with a balance (debits less
+// credits). This turns it the right way up: what the books hold, what is owed,
+// what is held for others, and what is left for the owners.
+export function position(lines) {
+  const out = { hold: [], owe: [], held: [], owners: [], inTransit: 0 };
+  let earnings = 0;
+  for (const l of lines || []) {
+    const bal = cents(l.balance);
+    if (l.class === 'asset') { out.hold.push({ id: l.id, name: l.name, kind: l.account_kind || l.category_kind || '', amount: bal }); if (l.category_kind === 'transfer') out.inTransit = cents(out.inTransit + bal); }
+    else if (l.class === 'liability') (l.category_kind === 'held' || l.system_key === 'opening_held' ? out.held : out.owe).push({ id: l.id, name: bal > 0 && l.account_kind === 'card' ? `${l.name} (in credit)` : l.name, amount: cents(-bal) });
+    else if (l.class === 'equity') out.owners.push({ id: l.id, name: l.name, amount: cents(-bal) });
+    else earnings = cents(earnings - bal);           // income is a credit, spending a debit
+  }
+  if (earnings !== 0) out.owners.push({ id: 'earnings', name: 'Earned to date (money in less money out)', amount: earnings });
+  const sum = (rows) => cents(rows.reduce((s, r) => s + r.amount, 0));
+  out.totalHold = sum(out.hold); out.totalOwe = sum(out.owe); out.totalHeld = sum(out.held); out.totalOwners = sum(out.owners);
+  out.left = cents(out.totalHold - out.totalOwe - out.totalHeld);
+  out.balanced = out.left === out.totalOwners;       // assets = liabilities + equity, or something is wrong
+  out.empty = !(lines || []).length;
+  return out;
+}
+
+// One line of an entry's ledger history, in plain words.
+export function ledgerLine(h, fmt) {
+  const verb = h.what === 'reversed' ? 'Taken back' : h.what === 'corrected' ? 'Entered again, corrected' : 'Entered';
+  return `${verb}: ${fmt(h.amount)} to ${h.debit || 'an account'} from ${h.credit || 'an account'}`;
+}
 export const ACCOUNT_KINDS = [['bank', 'Bank account'], ['card', 'Credit card'], ['escrow', 'Escrow (held for others)'], ['cash', 'Cash'], ['other', 'Other']];

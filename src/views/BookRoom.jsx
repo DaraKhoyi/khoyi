@@ -20,7 +20,7 @@ import { Icon } from '../icons';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSDCents } from '../financeUtils';
 import { FinanceLedger } from './FinanceLedger';
-import { ACCOUNT_KINDS, CATEGORY_KINDS, PERIODS, bookTitle, can, isDenied, longDay, periodRange, stamp, summarize } from '../books';
+import { ACCOUNT_KINDS, CATEGORY_KINDS, PERIODS, bookTitle, can, isDenied, longDay, periodRange, position, stamp, summarize } from '../books';
 
 
 // ── Reports ────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ function SummaryRows({ title, rows, total, totalLabel, note }) {
       {note && <p className="bk-help">{note}</p>}
       {rows.map((r) => (
         <div className="bk-sum-row" key={r.id || r.name}>
-          <span className="n">{r.name}<i>{r.entries} {r.entries === 1 ? 'entry' : 'entries'}</i></span>
+          <span className="n">{r.name}{r.entries != null && <i>{r.entries} {r.entries === 1 ? 'entry' : 'entries'}</i>}</span>
           <span className="a">{fmtUSDCents(r.amount)}</span>
         </div>
       ))}
@@ -41,10 +41,34 @@ function SummaryRows({ title, rows, total, totalLabel, note }) {
   );
 }
 
+// Where the books stand on the last day of the period: read from the ledger.
+function Standing({ pos, asOf }) {
+  if (!pos || pos.empty) return null;
+  const rows = (list) => list.map((r) => ({ ...r, entries: null }));
+  return (
+    <div data-testid="book-position" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div className="mr-head"><h3>Where things stand</h3><span>{asOf ? 'On ' + longDay(asOf) : 'Today'}</span></div>
+      <SummaryRows title="What these books hold" rows={rows(pos.hold)} total={pos.totalHold} totalLabel="Total held" />
+      <SummaryRows title="What is owed" rows={rows(pos.owe)} total={pos.totalOwe} totalLabel="Total owed" />
+      <SummaryRows title="Held for others" note="Other people’s money these books are holding. It is owed back to them." rows={rows(pos.held)} total={pos.totalHeld} totalLabel="Total held for others" />
+      <SummaryRows title="What is left for the owners" note="What the books hold, less what is owed and what is held for others." rows={rows(pos.owners)} total={pos.left} totalLabel="Left for the owners" />
+      {pos.inTransit !== 0 && <p className="mr-note stuck"><span>{fmtUSDCents(Math.abs(pos.inTransit))} is sitting in a transfer category. One side of a transfer may not be entered yet.</span></p>}
+      {!pos.balanced && <p className="mr-note stuck"><span>These figures do not tie out. Tell Dara: the ledger needs a look before this report is relied on.</span></p>}
+    </div>
+  );
+}
+
 function BookSummary({ book }) {
   const [period, setPeriod] = useState('year');
   const [sum, setSum] = useState(null);
+  const [pos, setPos] = useState(null);
   const range = useMemo(() => periodRange(period, todayNY()), [period]);
+  const asOf = range.to && range.to < todayNY() ? range.to : null;
+  useEffect(() => {
+    let live = true;
+    supabase.rpc('book_position', { p_book: book.id, p_as_of: asOf }).then(({ data, error }) => { if (live) setPos(error ? null : position((data && data.lines) || [])); });
+    return () => { live = false; };
+  }, [book.id, asOf]);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -81,6 +105,7 @@ function BookSummary({ book }) {
             rows={sum.other.map((r) => ({ ...r, amount: r.money_in - r.money_out }))} />
         </>
       )}
+      <Standing pos={pos} asOf={asOf} />
     </div>
   );
 }
@@ -111,7 +136,7 @@ function CategoryRow({ cat, canWrite, onSave, onRemove }) {
   );
 }
 
-function AccountRow({ acct, canAccounts, onSave }) {
+function AccountRow({ acct, canAccounts, onSave, onRetire }) {
   const [edit, setEdit] = useState(null);       // { kind, start } while open
   const kindWord = (ACCOUNT_KINDS.find(([id]) => id === acct.kind) || [])[1] || acct.kind;
   if (!edit) {
@@ -128,10 +153,11 @@ function AccountRow({ acct, canAccounts, onSave }) {
       <label className="mr-f">Kind of account
         <select value={edit.kind} onChange={(e) => setEdit({ ...edit, kind: e.target.value })}>{ACCOUNT_KINDS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
       </label>
-      <label className="mr-f">What it held before its first entry here
+      <label className="mr-f">{edit.kind === 'card' ? 'What was owed on it before its first entry here, as a minus (for example -350.00)' : 'What it held before its first entry here'}
         <input type="text" inputMode="decimal" autoComplete="off" className="amt" value={edit.start} onChange={(e) => setEdit({ ...edit, start: e.target.value })} />
       </label>
-      <div className="mr-go"><button type="submit" className="save">Save</button><button type="button" className="clear" onClick={() => setEdit(null)}>Cancel</button></div>
+      <div className="mr-go"><button type="submit" className="save">Save</button><button type="button" className="clear" onClick={() => setEdit(null)}>Cancel</button>
+        <button type="button" className="clear" onClick={() => onRetire(acct)}>Stop using</button></div>
     </form>
   );
 }
@@ -182,6 +208,13 @@ function BookSetup({ book, userId, taxCategories, setTaxCategories, onBookChange
     if (error) { notifyError('That did not save: ' + error.message); return false; }
     await loadAccounts(); return true;
   }
+  // An account with entries is never deleted. Retired, it drops off the list once it holds nothing.
+  async function retireAccount(acct) {
+    if (!await confirmDialog(`Stop using "${acct.account}"? Its entries and history stay. ${Number(acct.balance) !== 0 ? 'It still holds ' + fmtUSDCents(acct.balance) + ', so it stays on the list until that is moved out with a transfer.' : 'It comes back if an entry names it again.'}`, { confirmLabel: 'Stop using' })) return;
+    const { error } = await supabase.rpc('retire_book_account', { p_book: book.id, p_account: acct.account, p_retire: true });
+    if (error) { notifyError(error.message); return; }
+    await loadAccounts();
+  }
   async function addAccount(e) {
     e.preventDefault();
     if (!newAcct.name.trim()) { notifyError('Give the account a name, for example Operating Checking'); return; }
@@ -222,9 +255,9 @@ function BookSetup({ book, userId, taxCategories, setTaxCategories, onBookChange
       )}
 
       <div className="mr-head"><h3>Accounts</h3><span>{accounts.length || 'None yet'}</span></div>
-      {accounts.length === 0 && <p className="bk-help">An account appears here the first time an entry names it. Name one now to give it a starting balance.</p>}
+      {accounts.length === 0 && <p className="bk-help">An account opens the first time an entry names it. Name one now to give it a starting balance.</p>}
       <div className="bk-list">
-        {accounts.map((a) => <AccountRow key={a.account} acct={a} canAccounts={canAccounts} onSave={saveAccount} />)}
+        {accounts.map((a) => <AccountRow key={a.account} acct={a} canAccounts={canAccounts} onSave={saveAccount} onRetire={retireAccount} />)}
       </div>
       {canAccounts ? (
         <form className="mr-card" onSubmit={addAccount}>

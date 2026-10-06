@@ -874,6 +874,61 @@ own books are the agent's — **being Broker or Broker Admin opens nobody's book
   SQL: `supabase/sql/2026-10-06b_books.sql`. A new accounting table goes in the
   guard's `TABLES`.
 
+**THE LEDGER: DOUBLE ENTRY UNDER THE CHECKBOOK (6 Oct, v1.16.10).** Dara was
+asked directly (his Prompt 1 edit said "no double entry", Prompt 3 said "real
+double-entry underneath") and chose: **double-entry underneath, checkbook on
+top.** Nobody ever sees a debit or a credit unless they open an entry's history.
+- `transactions` is still the checkbook entry people type, import and edit.
+  Trigger `trg_book_7_post` (`ledger_on_entry`) POSTS each one into the journal:
+  `ledger_accounts` (chart: one per money account, one per category, plus the
+  books' own: opening_equity, opening_held, uncategorized_income/_expense,
+  personal, no_account), `gl_entries`, `gl_lines` (integer cents, debit/credit).
+  **The names are `gl_*` because `journal_entries` is the Journal feature's
+  table** — `create table if not exists journal_entries` silently did nothing in
+  the first trial run. Check a name is free before using it.
+- **Balanced or rejected:** deferred constraint triggers `gl_balanced` on both
+  tables, at commit, for every writer. **Never edited or deleted:** `gl_locked`;
+  no role (service key included) has insert/update/delete/truncate; lines can
+  only be written in the same transaction as their entry. A change to a checkbook
+  entry posts a REVERSAL (same date, `reverses_id`) and a NEW entry
+  (`replaces_id`); wording-only changes post nothing. `gl_live` = entries that
+  stand. In a trial run inside one transaction, run `set constraints all
+  immediate` to make the balance check fire (and back to deferred after).
+- **Read from the ledger:** `book_account_balances`, `book_summary`,
+  `book_position` (where the books stand: hold / owe / held for others / left for
+  the owners), `book_entry_history`. A person's own older reports still read
+  `transactions`; `countsInProfit()` in `src/books.js` keeps transfers, draws and
+  held money out of their income and spending.
+- **A transfer is ONE entry:** `transactions.transfer_account` (money leaves
+  `account`, arrives there). `ledger_entry_shape` files it under the book's
+  transfer category so old readers skip it. It shows in both accounts' registers
+  (`amountFor`, `touches` in `src/moneyRegister.js`).
+- **Accounts open by being named** on an entry (`ledger_money_account`; a name
+  with visa/credit/amex/card opens as a card). An account or category with
+  entries cannot be deleted or renamed (the name IS the account); retire it
+  (`retire_book_account`, `tax_categories.is_archived`). Category kinds now
+  include asset / liability / equity / transfer. An ESCROW account's starting
+  balance posts against "Held for others at the start", not the owners' share.
+- **Tags** on an entry: `contact_id` (linked without asking when the payee is
+  exactly one contact the person can see — `findContactId`), `agent_id`,
+  `closing_id` (brokerage_transactions), `property_id`, `team_id`. They live on
+  the transaction, not the lines; join through `gl_entries.transaction_id`.
+- **Standing checks:** `ledger_health()` (service key only) returns one row per
+  fault across ALL books: unbalanced entry, trial balance, checkbook entry not
+  posted exactly once for its amount and date, journal entry for a removed
+  entry, account balance ≠ starting + entries, orphan account, wrong account.
+  `smoke/ledger_guard.mjs` runs it every gate (known-answer: a planted one-dollar
+  drift is reported).
+- **Do not re-run `2026-10-06b_books.sql` by hand:** it would restore the
+  checkbook-reading `book_account_balances` / `book_summary` and reset the
+  template kinds. (apply-sql never re-runs a file.)
+- **Still not built:** splits (the journal can hold n lines; the checkbook entry
+  is two-sided), per-owner / per-tenant escrow ledgers and the monthly three-way
+  reconciliation, accrual basis (`books.basis` is recorded, not used), reports by
+  agent / closing (the tags are stored), statement scanning, sticky rules.
+- SQL: `2026-10-06d_ledger.sql`, `2026-10-06e_escrow_opening.sql`. UI:
+  `EntryTags.jsx` (More: transfer / contact / agent / closing; EntryHistory).
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"

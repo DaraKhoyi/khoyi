@@ -2011,7 +2011,8 @@ body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-
 .mr-lead { margin: 0; font-size: 14px; color: var(--text-2); line-height: 1.5; }
 .mr-card, .mr-start { background: #17130D; border: 1px solid #3A3222; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 .mr-dir { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; background: #0D0B08; border: 1px solid #3A3222; border-radius: 12px; }
-.mr-dir button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: #CFC5AE; font: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+.mr-dir.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mr-dir button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: #CFC5AE; font: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer; padding: 0 4px; }
 .mr-dir button.on { background: #C5A95E; color: #14110C; }
 .mr-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .mr-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12.5px; font-weight: 600; color: #B8AE9A; }

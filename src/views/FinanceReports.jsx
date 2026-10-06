@@ -14,6 +14,7 @@ import { canHover, modal, money, num, todayISO, today_ymd, ymd } from '../helper
 import { useBackClose } from '../backClose';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSD, fmtUSDCents, fmtPct, fmtHours, getProrata } from '../financeUtils';
+import { countsInProfit } from '../books';
 import { KpiBox, KpiTile } from './FinanceTiles';
 // SysStat moved to FinanceSystems during the Prospecting split. Imported rather
 // than re-declared — a second copy is exactly the drift this refactor exists to
@@ -692,7 +693,7 @@ export function FinanceReports({ userId, settings, transactions, taxCategories, 
 
       {reportType === 'business' && (
         <BusinessReport
-          transactions={transactions.filter(t => t.scope === 'business' && inPeriod(t.date))}
+          transactions={transactions.filter(t => t.scope === 'business' && inPeriod(t.date) && countsInProfit(t, (id) => taxCategories.find(c => c.id === id)?.kind))}
           taxCategories={taxCategories} systems={systems} recruitingSystems={recruitingSystems}
           advExpanded={advExpanded} setAdvExpanded={setAdvExpanded}
           isCoach={isCoach}
@@ -706,7 +707,7 @@ export function FinanceReports({ userId, settings, transactions, taxCategories, 
       )}
       {reportType === 'roi' && (
         <ROIReport
-          transactions={transactions.filter(t => t.scope === 'business' && inPeriod(t.date))}
+          transactions={transactions.filter(t => t.scope === 'business' && inPeriod(t.date) && countsInProfit(t, (id) => taxCategories.find(c => c.id === id)?.kind))}
           timeEntries={timeEntries.filter(te => inPeriod(te.occurred_at))}
           deals={deals || []}
           systems={systems} settings={settings} period={period}

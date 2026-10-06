@@ -60,7 +60,8 @@ export function payeeMatches(transactions, typed, limit = 4) {
 // person's own and stays where they put it.
 export function fillFrom(tx) {
   return {
-    direction: Number(tx.amount) > 0 ? 'in' : 'out',
+    direction: tx.transfer_account ? 'transfer' : Number(tx.amount) > 0 ? 'in' : 'out',
+    transferAccount: tx.transfer_account || '',
     amount: Math.abs(Number(tx.amount) || 0).toFixed(2),
     payee: String(tx.payee || '').trim(),
     scope: tx.scope === 'personal' ? 'personal' : 'business',
@@ -79,7 +80,7 @@ export function matchesSearch(t, query, names = {}) {
   if (!words.length) return true;
   const p = parts(t.date);
   const abs = Math.abs(Number(t.amount) || 0), fixed = abs.toFixed(2), whole = String(Math.trunc(abs));
-  const text = [t.payee, t.description, t.account, names.category, names.system, names.personal, t.scope,
+  const text = [t.payee, t.description, t.account, t.transfer_account, t.transfer_account ? 'transfer' : '', names.category, names.system, names.personal, t.scope,
     Number(t.amount) > 0 ? 'income in deposit' : 'expense out',
     p ? `${MONTHS[p.m - 1]} ${p.y} ${t.date} ${p.m}/${p.d} ${p.m}/${p.d}/${p.y}` : ''].filter(Boolean).join(' ').toLowerCase();
   return words.every((w) => {
@@ -92,10 +93,20 @@ export function matchesSearch(t, query, names = {}) {
 // For ONE account's entries, newest first: what the account held after each.
 // Worked backwards from today's balance, so it is right even when older
 // entries are not loaded.
-export function runningBalances(rowsNewestFirst, balanceNow) {
+export function runningBalances(rowsNewestFirst, balanceNow, amountOf = (t) => t.amount) {
   const out = new Map(); let bal = Number(balanceNow) || 0;
-  for (const t of rowsNewestFirst) { out.set(t.id, Math.round(bal * 100) / 100); bal -= Number(t.amount) || 0; }
+  for (const t of rowsNewestFirst) { out.set(t.id, Math.round(bal * 100) / 100); bal -= Number(amountOf(t)) || 0; }
   return out;
+}
+
+// A transfer is ONE entry between two of the book's own accounts: money leaves
+// `account` and arrives in `transfer_account`. So it belongs in both accounts'
+// registers, with the opposite sign in the one it arrived in.
+export const isTransfer = (t) => !!String(t.transfer_account || '').trim();
+export const touches = (t, key) => accountKey(t.account) === key || (isTransfer(t) && accountKey(t.transfer_account) === key);
+export function amountFor(t, key) {
+  const a = Number(t.amount) || 0;
+  return key && isTransfer(t) && accountKey(t.transfer_account) === key && accountKey(t.account) !== key ? -a : a;
 }
 
 export function groupByMonth(rows) {
