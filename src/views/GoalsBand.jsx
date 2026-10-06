@@ -236,6 +236,24 @@ function Picker({ day, label, goals, n, setN, userId, tasks, setTasks, busyDay, 
   //   Not a thing  — PrismOS should not have raised it. Follow-ups heard on
   //                  calls only; it is the lesson the call reader learns from.
   // Every one can be undone from the notice, and the next suggestion moves up.
+  // Not today — real, but not for this day. Nothing about the task or the
+  // follow-up changes; it is only left off this day's short list (kept in
+  // goal_not_today so the next suggestion moves up) and is offered again
+  // tomorrow. Dara, 6 Oct 2026.
+  const notToday = async (c) => {
+    if (busy) return;
+    setBusy(true);
+    const row = { user_id: userId, day, src: c.src === 'task' ? 'task' : 'promise', ref_id: c.id };
+    const { error } = await supabase.from('goal_not_today').upsert(row, { onConflict: 'user_id,day,src,ref_id' });
+    setBusy(false);
+    if (error) { say('Could not save that: ' + error.message); return; }
+    setTick(t => t + 1);
+    if (window.__notify) window.__notify(`Not ${label} \u2014 \u201c${String(c.title || '').slice(0, 60)}\u201d. It will be offered again another day.`, 'info', { label: 'Undo', onClick: async () => {
+      const { error: uErr } = await supabase.from('goal_not_today').delete().eq('user_id', userId).eq('day', day).eq('src', row.src).eq('ref_id', c.id);
+      if (uErr) say('Could not undo that: ' + uErr.message);
+      setTick(t => t + 1);
+    } });
+  };
   const settle = async (c, what) => {
     if (busy) return;
     setBusy(true);
@@ -334,6 +352,7 @@ function Picker({ day, label, goals, n, setN, userId, tasks, setTasks, busyDay, 
               <div style={calm.actions}>
                 <button type="button" disabled={busy} data-testid="cand-add" style={calm.btnQuiet} onClick={() => add(c.title, c.src === 'task' ? { task_id: c.id } : { commitment_id: c.id })}>Add</button>
                 <button type="button" disabled={busy} data-testid="cand-done" style={calm.btnQuiet} title="It already happened. You can undo." onClick={() => settle(c, 'done')}>Done already</button>
+                <button type="button" disabled={busy} data-testid="cand-later" style={calm.btnQuiet} title="Leave it as it is and stop offering it for this day. You can undo." onClick={() => notToday(c)}>Not {label}</button>
                 <button type="button" disabled={busy} data-testid="cand-delete" style={calm.btnQuiet} title="You are not doing this. It is kept, not erased, and you can undo." onClick={() => settle(c, 'delete')}>Delete</button>
                 {c.src !== 'task' && <button type="button" disabled={busy} data-testid="cand-not" style={calm.btnQuiet} title="PrismOS should not have raised this. It learns from it, and you can undo." onClick={() => settle(c, 'not')}>Not a thing</button>}
               </div>

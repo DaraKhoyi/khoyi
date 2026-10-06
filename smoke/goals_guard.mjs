@@ -22,6 +22,10 @@ expect(!/\} of \{|\bstreak\b|done\.length\}\s*\/|#ef4444|var\(--red\)/i.test(ban
 for (const id of ['cand-add', 'cand-done', 'cand-delete', 'cand-not']) expect(band.includes(`data-testid="${id}"`), `a suggested goal lost its "${id}" answer — the person can only Add, even when it is already done`);
 expect(/c\.src !== 'task' && <button[^>]*data-testid="cand-not"/.test(band), '"Not a thing" is offered on the person\'s own tasks — it is only for follow-ups PrismOS heard on a call');
 expect(/dropped_at: now/.test(band) && !/from\('tasks'\)\.delete\(|from\('commitments'\)\.delete\(/.test(band), 'deleting a suggestion erases it — it must be let go and kept, so it can be undone');
+// "Not today" (6 Oct 2026): set aside for the day, nothing about the item changed.
+expect(band.includes('data-testid="cand-later"') && /from\('goal_not_today'\)\.upsert\(/.test(band) && /from\('goal_not_today'\)\.delete\(\)/.test(band), 'a suggested goal lost "Not today", or it can no longer be undone');
+{ const nt = band.slice(band.indexOf('const notToday'), band.indexOf('const settle')); expect(nt.length > 0 && !/from\('(tasks|commitments)'\)/.test(nt), '"Not today" changes the task or the follow-up — it must only leave it off this day\'s list'); }
+{ const q = read('supabase/sql/2026-10-06_goal_not_today.sql'); expect(/using \(user_id = auth\.uid\(\)\) with check \(user_id = auth\.uid\(\)\)/.test(q) && (q.match(/from skip s where/g) || []).length === 2 && /revoke all on function public\.goal_candidates\(date\) from public, anon/.test(q), 'the "Not today" list is not the person\'s alone, or the short list stopped leaving those items out'); }
 expect(/label: 'Undo'/.test(band), 'settling a suggestion can no longer be undone');
 expect(/rpc\('goal_candidates'/.test(band) && /rpc\('my_contract_deadlines'/.test(band), 'the goals band lost its short list or the contract-date band');
 expect(/data-testid="close-day"/.test(band) && /What got done today/.test(band), 'the end of the day no longer shows what got done first');
