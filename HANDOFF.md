@@ -858,9 +858,11 @@ own books are the agent's — **being Broker or Broker Admin opens nobody's book
   income, but there is no per-owner/per-tenant ledger or monthly three-way
   reconciliation. Do not tell anyone the escrow side is audit-ready.
 - Seeds: brokerage book (Dara owner, Josh + Alexander admin); "Team Blue Koala"
-  (property-management categories; Dara owner and the one nobody can remove;
-  Tina Danielson owner, waiting for her sign-in and Dara's switch; Myra Torres
-  assistant, waiting for an email). `books.team_id` is NULL on Blue Koala — if a
+  (property-management categories; three equal owners: Dara, Alexander and
+  Tina Danielson — Dara is the one nobody else can switch off or remove; Tina's
+  seat waits for her sign-in and an owner's switch; Myra Torres assistant,
+  waiting for an email). Alexander's Broker Admin role and his Blue Koala seat
+  are separate facts; Tina has no seat on the brokerage's books. `books.team_id` is NULL on Blue Koala — if a
   `teams` row is ever made for it, set `team_id` or `team_book_sync` makes a
   second book.
 - Found on the way: `transactions_entered_via_check` refused `'deal_close'` and
