@@ -4,6 +4,7 @@
 // cancel/reschedule link.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { busyIntervals } from "../_shared/busy.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -114,22 +115,30 @@ serve(async (req) => {
     else if (type.needsAddress) { if (!address) return json({ ok: false, error: "address_required" }, 400); location = address; }
     else location = type.label;
 
-    // re-check the slot is still free (prevent double-booking)
-    const { data: clash } = await admin.from("events").select("id")
-      .eq("user_id", userId).neq("status", "cancelled").eq("all_day", false)
-      .lt("start_at", endIso).gt("end_at", startIso).limit(1);
-    if (clash && clash.length) return json({ ok: false, error: "slot_taken" }, 409);
+    // re-check the slot is still free (prevent double-booking). Repeating
+    // meetings count (_shared/busy.ts); the booking being moved does not.
+    let ownEventId: string | null = null;
+    const replaces = String(b.replaces || "").trim();
+    if (replaces) {
+      const { data: old } = await admin.from("bookings").select("event_id, user_id, status").eq("cancel_token", replaces).maybeSingle();
+      if (old && old.user_id === userId && old.status !== "cancelled") ownEventId = old.event_id;
+    }
+    const taken = await busyIntervals(admin, userId, startMs, startMs + duration * 60000, tz, ownEventId);
+    if (taken.length) return json({ ok: false, error: "slot_taken" }, 409);
 
     const desc = `Booked via your Prism booking page.\nClient: ${name}\nEmail: ${email}\nPhone: ${phone}` + (notes ? `\nNotes: ${notes}` : "");
 
     // 1) calendar event
-    const { data: ev } = await admin.from("events").insert({
+    const { data: ev, error: evErr } = await admin.from("events").insert({
       user_id: userId, title: `${meetingLabel} with ${name}`,
       start_at: startIso, end_at: endIso, all_day: false,
       location, description: desc, event_kind: "appointment",
       category: "appointment", sync_status: "pending_push", status: "confirmed",
     }).select("id").maybeSingle();
-    const eventId = ev?.id || null;
+    // No calendar event means no booking: telling the client "You're booked!"
+    // with nothing on the agent's calendar is the worst outcome this page has.
+    if (evErr || !ev?.id) return json({ ok: false, error: "could_not_save" }, 500);
+    const eventId = ev.id;
 
     // Google Meet: create the event directly in Google to mint a Meet link.
     let meetLink = "";
@@ -195,12 +204,15 @@ serve(async (req) => {
 
     // 3) booking row
     const cancelToken = rand();
-    await admin.from("bookings").insert({
+    const { error: bkErr } = await admin.from("bookings").insert({
       user_id: userId, slug, client_name: name, client_email: email, client_phone: phone,
       notes, meeting_type, location, duration_minutes: duration,
       start_at: startIso, end_at: endIso, status: "confirmed",
       event_id: eventId, contact_id: contactId, cancel_token: cancelToken, ip: ip || null,
     });
+    // Without its booking row the cancel link cannot work and the agent's list
+    // never shows it. Undo the calendar event and say it did not go through.
+    if (bkErr) { await admin.from("events").delete().eq("id", eventId); return json({ ok: false, error: "could_not_save" }, 500); }
 
     // 4) confirmation email to the client (from the agent's Gmail) w/ .ics + cancel link
     let emailed = false;

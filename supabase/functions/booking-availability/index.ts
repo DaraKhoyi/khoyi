@@ -4,6 +4,7 @@
 // POST { slug, from?: 'YYYY-MM-DD', days?: number, duration?: number }
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { busyIntervals } from "../_shared/busy.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -70,13 +71,16 @@ serve(async (req) => {
     // busy events across the whole range
     const rangeStartUtc = wallToUtc(+startDate.slice(0, 4), +startDate.slice(5, 7), +startDate.slice(8, 10), 0, 0, tz);
     const rangeEndUtc = rangeStartUtc + days * 86400000 + 86400000;
-    const { data: evs } = await admin.from("events").select("start_at, end_at, all_day, status")
-      .eq("user_id", userId).gte("start_at", new Date(rangeStartUtc - 86400000).toISOString()).lte("start_at", new Date(rangeEndUtc).toISOString());
-    const busy = (evs || []).filter((e: any) => e.start_at && e.end_at && e.status !== "cancelled")
-      .map((e: any) => {
-        if (e.all_day) return null; // all-day: treated as free for bookings unless it's a block; skip
-        return { s: new Date(e.start_at).getTime() - buffer, e: new Date(e.end_at).getTime() + buffer };
-      }).filter(Boolean) as { s: number; e: number }[];
+    // The booking being moved (reschedule link): its own old time is not "taken".
+    let ownEventId: string | null = null;
+    const replaces = String(body.replaces || "").trim();
+    if (replaces) {
+      const { data: old } = await admin.from("bookings").select("event_id, user_id, status").eq("cancel_token", replaces).maybeSingle();
+      if (old && old.user_id === userId && old.status !== "cancelled") ownEventId = old.event_id;
+    }
+    // One answer for "taken", repeats included: _shared/busy.ts.
+    const busy = (await busyIntervals(admin, userId, rangeStartUtc, rangeEndUtc, tz, ownEventId))
+      .map((x) => ({ s: x.s - buffer, e: x.e + buffer }));
 
     // flexible-hours overrides in range
     const { data: flex } = await admin.from("flexible_hours").select("date, rules").eq("user_id", userId)

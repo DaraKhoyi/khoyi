@@ -8,6 +8,8 @@ import TaskModal from './TaskModal';
 import { useBackClose } from '../backClose';
 import { Tip, TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
+import { loadEvents } from '../eventsLoad';
+import { allDayStart, allDayEndShown, allDayRange, followStart, eventFormProblem, stepMonth } from '../calendarDates';
 
 function startOfMonthGrid(year, month) {
   // month: 0-indexed. Returns the Sunday on/before the 1st.
@@ -122,13 +124,15 @@ function TimePicker({ value, onChange }) {
   );
 }
 
-function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, contacts, properties = [] }) {
+function EventModal({ onClose, onSave, onDelete, initial, defaultDate, defaultHour = 9, brain, contacts, properties = [] }) {
 
 
   useBackClose(onClose);
   const init = initial || {};
-  const startInit = init.start_at ? new Date(init.start_at) : (defaultDate ? new Date(defaultDate + 'T09:00:00') : new Date());
-  const endInit = init.end_at ? new Date(init.end_at) : new Date(startInit.getTime() + 60*60*1000);
+  // An all-day event is a DATE, kept as midnight London time. Read as a moment
+  // it is 8 PM the evening before in Tampa, so it has to be read as a date.
+  const startInit = init.start_at ? (init.all_day ? allDayStart(init.start_at) : new Date(init.start_at)) : (defaultDate ? new Date(`${defaultDate}T${pad2(defaultHour)}:00:00`) : new Date());
+  const endInit = init.all_day ? allDayEndShown(init.start_at, init.end_at) : (init.end_at ? new Date(init.end_at) : new Date(startInit.getTime() + 60*60*1000));
   const [title, setTitle] = useState(init.title || '');
   const [allDay, setAllDay] = useState(init.all_day || false);
   const [startDate, setStartDate] = useState(ymd(startInit));
@@ -145,18 +149,28 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
   const [recurFreq, setRecurFreq] = useState(init.recur_freq || 'none');
   const [recurInterval, setRecurInterval] = useState(init.recur_interval || 1);
   const [recurUntil, setRecurUntil] = useState(init.recur_until || '');
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState('');
+  // Moving the start carries the end with it, so the event keeps its length
+  // and can never be left ending before it begins.
+  const moveStart = (date, time) => {
+    const next = followStart({ startDate, startTime, endDate, endTime }, { startDate: date, startTime: time });
+    setStartDate(date); setStartTime(time); setEndDate(next.endDate); setEndTime(next.endTime); setProblem('');
+  };
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!title.trim()) return;
-    const start_at = allDay ? `${startDate}T00:00:00` : `${startDate}T${startTime}:00`;
-    const end_at = allDay ? `${endDate}T00:00:00` : `${endDate}T${endTime}:00`;
+    if (saving) return;
+    const why = eventFormProblem({ title, allDay, startDate, startTime, endDate, endTime });
+    if (why) { setProblem(why); return; }
+    const range = allDay ? allDayRange(startDate, endDate || startDate) : { start_at: new Date(`${startDate}T${startTime}:00`).toISOString(), end_at: new Date(`${endDate || startDate}T${endTime}:00`).toISOString() };
     const repeats = recurFreq !== 'none';
-    onSave({
+    setSaving(true);
+    try { await onSave({
       title: title.trim(),
       all_day: allDay,
-      start_at: new Date(start_at).toISOString(),
-      end_at: new Date(end_at).toISOString(),
+      start_at: range.start_at,
+      end_at: range.end_at,
       location: location.trim() || null,
       description: description.trim() || null,
       contact_id: contactId || null,
@@ -168,7 +182,9 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
       recur_freq: repeats ? recurFreq : null,
       recur_interval: repeats ? Math.max(1, Number(recurInterval) || 1) : 1,
       recur_until: repeats && recurUntil ? recurUntil : null,
-    });
+    }); }
+    catch (err) { setProblem('That did not save: ' + String((err && err.message) || err)); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -189,12 +205,12 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
             </label>
           </div>
           <div className="form-row">
-            <div className="form-group" style={{flex:1}}><label className="form-label">Start date</label><input className="form-input" type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} required /></div>
-            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">Start time</label><TimePicker value={startTime} onChange={setStartTime} /></div>}
+            <div className="form-group" style={{flex:1}}><label className="form-label">Start date</label><input className="form-input" type="date" value={startDate} onChange={e=>{ if (e.target.value) moveStart(e.target.value, startTime); }} required /></div>
+            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">Start time</label><TimePicker value={startTime} onChange={(t)=>moveStart(startDate, t)} /></div>}
           </div>
           <div className="form-row">
-            <div className="form-group" style={{flex:1}}><label className="form-label">End date</label><input className="form-input" type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} /></div>
-            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">End time</label><TimePicker value={endTime} onChange={setEndTime} /></div>}
+            <div className="form-group" style={{flex:1}}><label className="form-label">End date</label><input className="form-input" type="date" value={endDate} onChange={e=>{ setEndDate(e.target.value || startDate); setProblem(''); }} /></div>
+            {!allDay && <div className="form-group" style={{flex:1}}><label className="form-label">End time</label><TimePicker value={endTime} onChange={(t)=>{ setEndTime(t); setProblem(''); }} /></div>}
           </div>
           <div className="form-group"><label className="form-label">Location</label><input className="form-input" value={location} onChange={e=>setLocation(e.target.value)} placeholder="Optional" /></div>
 
@@ -286,9 +302,10 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, brain, co
             </div>
           )}
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={description} onChange={e=>setDescription(e.target.value)} placeholder="Optional details…" /></div>
+          {problem && <div role="alert" data-testid="event-problem" style={{margin:'0 0 12px',padding:'10px 12px',borderRadius:'8px',background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',color:'var(--text-1)',fontSize:'13.5px',lineHeight:1.45}}>{problem}</div>}
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Save Event</button>
+            <button type="submit" className="btn btn-primary" disabled={saving} data-testid="event-save">{saving ? 'Saving…' : 'Save Event'}</button>
           </div>
         </form>
       </div>
@@ -303,6 +320,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   const [showModal, setShowModal] = useState(false);
   const [editEvent, setEditEvent] = useState(null);
   const [modalDate, setModalDate] = useState(null);
+  const [modalHour, setModalHour] = useState(9);
   const [syncing, setSyncing] = useState(false);
   const [flash, setFlash] = useState(null);
   // View mode — sticky in localStorage. 'month' | 'week' | 'day' | 'year'
@@ -312,12 +330,13 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
       return ['month','week','day','year'].includes(saved) ? saved : 'month';
     } catch(_) { return 'month'; }
   });
-  function changeViewMode(m) {
+  function changeViewMode(m, keepDate = false) {
     if (m === viewMode) return;
     setViewMode(m);
     try { localStorage.setItem('calendar_view_mode', m); } catch(_) {}
-    // Switching to Day or Week always snaps to today (per UX spec)
-    if (m==='day' || m==='week') {
+    // Switching to Day or Week snaps to today (per UX spec) — unless a day was
+    // tapped to get here: tapping 14 December in the year view opens 14 December.
+    if (!keepDate && (m==='day' || m==='week')) {
       setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
     }
   }
@@ -326,11 +345,12 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   const VIEW_HOUR_START = 6;   // 6 AM
   const VIEW_HOUR_END   = 23;  // 11 PM (exclusive)
   function shiftCursor(delta) {
-    const d = new Date(cursor);
-    if (viewMode === 'month') d.setMonth(d.getMonth() + delta);
+    let d = new Date(cursor);
+    // stepMonth: on the 31st, "next month" used to skip a month (31 Oct -> 1 Dec).
+    if (viewMode === 'month') d = stepMonth(d, delta);
     else if (viewMode === 'week') d.setDate(d.getDate() + 7*delta);
     else if (viewMode === 'day') d.setDate(d.getDate() + delta);
-    else if (viewMode === 'year') d.setMonth(d.getMonth() + 6*delta); // ±6 months
+    else if (viewMode === 'year') d = stepMonth(d, 6*delta); // ±6 months
     setCursor(d);
   }
 
@@ -393,7 +413,10 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     const winStart = new Date(cursor.getFullYear(), cursor.getMonth() - 13, 1);
     const winEnd   = new Date(cursor.getFullYear(), cursor.getMonth() + 14, 0, 23, 59, 59);
     const out = [];
-    for (const ev of (events || [])) {
+    for (const raw of (events || [])) {
+      // All-day events are placed on their DATE (see calendarDates.js). Until
+      // 6 Oct 2026 every birthday and holiday from Google sat a day early.
+      const ev = raw.all_day && raw.start_at ? (() => { const s0 = allDayStart(raw.start_at), e0 = allDayEndShown(raw.start_at, raw.end_at); e0.setHours(23, 59, 0, 0); return { ...raw, start_at: s0.toISOString(), end_at: e0.toISOString() }; })() : raw;
       if (!ev.recur_freq) { out.push(ev); continue; }
       const start = new Date(ev.start_at);
       const dur = (ev.end_at ? new Date(ev.end_at) : new Date(start.getTime() + 3600000)) - start;
@@ -510,7 +533,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
       });
       if (error || data?.error) throw new Error(error?.message || data?.error);
       // Reload events
-      const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+      const { data: fresh } = await loadEvents();
       if (fresh) setEvents(fresh);
       if (!silent) {
         setFlash({ type:'ok', text:`Synced · ${data.pulled} in, ${data.pushed} out${data.deleted?`, ${data.deleted} removed`:''}` });
@@ -556,7 +579,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
       const { error } = await supabase.functions.invoke('task-autoschedule', { body: {} });
       if (error) throw error;
       // refetch events so new task blocks appear
-      const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+      const { data: fresh } = await loadEvents();
       if (fresh) setEvents(fresh);
       setFlash({ type:'success', text:'Schedule refreshed.' });
     } catch (e) {
@@ -656,7 +679,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     await supabase.from('tasks').delete().eq('id', t.id);
     if (setTasks) setTasks(prev => prev.filter(x => x.id !== t.id));
     setEditingTask(null);
-    const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+    const { data: fresh } = await loadEvents();
     if (fresh) setEvents(fresh);
   }
 
@@ -718,7 +741,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
               <Icon name="link" size={16} />
             </button>
           )}
-          <button className="btn-add-circle btn-add-circle-sm" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setShowModal(true);}} title="New Event" aria-label="New Event">+</button>
+          <button className="btn-add-circle btn-add-circle-sm" onClick={()=>{setEditEvent(null);setModalDate(ymd(today));setModalHour(9);setShowModal(true);}} title="New Event" aria-label="New Event">+</button>
         </div>
         <div style={{marginBottom:'2px'}}><span className="gold-move" style={{fontFamily:"'Barlow Condensed',sans-serif",textTransform:'uppercase',letterSpacing:'.22em',fontSize:'11px',fontWeight:700}}>Calendar</span></div>
         <h2 style={{display:'flex',alignItems:'center',gap:'10px',margin:'0',minWidth:0,fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'30px',letterSpacing:'-0.02em'}}><Icon name="calendar" size={24} style={{color:'var(--room-accent, var(--accent))',flexShrink:0}} /><span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>My Schedule.</span></h2>
@@ -743,9 +766,9 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
 
       {flash && (
         <div style={{padding:'10px 14px',marginBottom:'14px',borderRadius:'8px',
-          background: flash.type==='ok'?'rgba(34,197,94,0.12)':'rgba(239,68,68,0.12)',
-          border:`1px solid ${flash.type==='ok'?'#22c55e':'#ef4444'}`,
-          color: flash.type==='ok'?'#22c55e':'#ef4444', fontSize:'13px'}}>{flash.text}</div>
+          background: (flash.type==='ok'||flash.type==='success')?'rgba(34,197,94,0.12)':'rgba(239,68,68,0.12)',
+          border:`1px solid ${(flash.type==='ok'||flash.type==='success')?'#22c55e':'#ef4444'}`,
+          color: (flash.type==='ok'||flash.type==='success')?'#22c55e':'#ef4444', fontSize:'13px'}}>{flash.text}</div>
       )}
 
       {!hasCalendarScope && (
@@ -792,7 +815,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
           {viewMode==='month' && <MonthGrid
             cells={cells} month={month} today={today}
             eventsForDay={eventsForDay}
-            onDayClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
+            onDayClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setModalHour(9);setShowModal(true);}}
             onEventClick={openEditEvent}
           />}
           {viewMode==='week' && <WeekTimeline
@@ -800,7 +823,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             today={today}
             hourStart={VIEW_HOUR_START} hourEnd={VIEW_HOUR_END}
             events={displayEvents}
-            onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
+            onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setModalHour(d.getHours());setShowModal(true);}}
             onEventClick={openEditEvent}
             onEditTask={openTaskFromBlock}
           />}
@@ -809,7 +832,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             hourStart={VIEW_HOUR_START} hourEnd={VIEW_HOUR_END}
             events={eventsForDay(cursor)}
             tasks={tasks} setTasks={setTasks}
-            onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setShowModal(true);}}
+            onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setModalHour(d.getHours());setShowModal(true);}}
             onEventClick={openEditEvent}
             onBlockMove={moveTaskBlock}
             onTogglePin={toggleBlockPin}
@@ -820,7 +843,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             today={today}
             events={displayEvents}
             onMonthClick={(d)=>{setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); changeViewMode('month');}}
-            onDayClick={(d)=>{setCursor(d); changeViewMode('day');}}
+            onDayClick={(d)=>{setCursor(d); changeViewMode('day', true);}}
           />}
         </div>
       </div>
@@ -869,7 +892,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
         onSave={handleSave}
         onDelete={handleDelete}
         initial={editEvent}
-        defaultDate={modalDate}
+        defaultDate={modalDate} defaultHour={modalHour}
         brain={brain}
         contacts={contacts}
         properties={properties}

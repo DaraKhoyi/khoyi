@@ -16,9 +16,12 @@ export default function BookingsManagerModal({ userId, slug, onClose }) {
   React.useEffect(() => { load(); }, [load]);
   const cancelOne = async (bk) => {
     setBusy(b => ({ ...b, [bk.id]: true }));
-    try { await supabase.functions.invoke('booking-cancel', { body: { cancel_token: bk.cancel_token } }); } catch (_) {}
+    // Say "cancelled" only when it was. This used to announce success whatever happened.
+    let failed = '';
+    try { const { data, error } = await supabase.functions.invoke('booking-cancel', { body: { cancel_token: bk.cancel_token } }); if (error || !data || !data.ok) failed = (error && error.message) || (data && data.error) || 'no answer'; }
+    catch (e) { failed = String((e && e.message) || e); }
     setBusy(b => { const n = { ...b }; delete n[bk.id]; return n; });
-    if (window.__notify) window.__notify('Booking cancelled', 'success');
+    if (window.__notify) window.__notify(failed ? 'That booking was NOT cancelled (' + failed + '). Try again.' : 'Booking cancelled', failed ? 'error' : 'success');
     load();
   };
   const copyResched = (bk) => { try { navigator.clipboard.writeText(`https://darasapp.com/book/${bk.slug || slug}?cancel=${bk.cancel_token}`); if (window.__notify) window.__notify('Reschedule link copied — send it to the client', 'success'); } catch (_) {} };

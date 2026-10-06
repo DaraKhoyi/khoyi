@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, SUPABASE_URL, ensureFreshSession } from './dataService';
+import { loadEvents } from './eventsLoad';
 import { useConnectionHealth } from './connection';
 import { useReturnBookmark } from './returnBookmark';
 import { useNbaSkips, SnoozeMenu } from './nbaSkips';
@@ -1353,8 +1354,6 @@ function AppMain() {
     //   notes capped (500), contacts capped (1000), email_threads unread count only
     // - Switched to Promise.allSettled so a single query failure doesn't block the rest
     const now = new Date();
-    const eventsLowerBound = new Date(now.getTime() - 180 * 86400000).toISOString();
-    const eventsUpperBound = new Date(now.getTime() + 540 * 86400000).toISOString();
 
     const queries = [
       ['tasks',          supabase.from('tasks').select('*').is('archived_at', null).eq('someday', false).order('created_at', { ascending: false }).limit(500)],
@@ -1367,9 +1366,7 @@ function AppMain() {
       ['mileageEntries', supabase.from('mileage_entries').select('*').order('date', { ascending: false }).limit(1000)],
       ['investments',    supabase.from('investments').select('*').order('created_at', { ascending: false })],
       ['brain',          supabase.from('brain').select('*').order('created_at', { ascending: false }).limit(500)],
-      ['events',         supabase.from('events').select('*')
-                            .gte('start_at', eventsLowerBound).lte('start_at', eventsUpperBound)
-                            .order('start_at', { ascending: true })],
+      ['events',         loadEvents()],   // paged, and every repeating event whenever it began: src/eventsLoad.js
       ['playbookSteps',  supabase.from('playbook_steps').select('*').order('step_order', { ascending: true })],
       ['playbookRuns',   supabase.from('playbook_runs').select('*').order('created_at', { ascending: false }).limit(50)],
       ['profiles',       supabase.from('profiles').select('*').order('created_at', { ascending: true })],
@@ -1485,7 +1482,7 @@ function AppMain() {
           supabase.functions.invoke('calendar-sync', {
             body: { user_id: session.user.id, direction: 'both' }
           }).then(async () => {
-            const { data: fresh } = await supabase.from('events').select('*').order('start_at', { ascending: true });
+            const { data: fresh } = await loadEvents();
             if (fresh) setEvents(fresh);
           }).catch(()=>{});
         }

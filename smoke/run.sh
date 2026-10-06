@@ -129,6 +129,8 @@ node smoke/menu_icons.mjs || exit 1
 node smoke/calendar_guard.mjs || exit 1
 # Money opens on the check register; payee match, sticky date, search, balances.
 node smoke/money_register_guard.mjs || exit 1
+# The public booking page can always be finished (Josh, 6 Oct 2026).
+node smoke/booking_guard.mjs || exit 1
 
 # Static guard: a component defined INSIDE another is a new type every render, so
 # React remounts its subtree. With a text input inside, the caret jumps to 0 after

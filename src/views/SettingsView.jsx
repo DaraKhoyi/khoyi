@@ -341,7 +341,12 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
               <label className="form-label">Callback number <span style={{color:'var(--text-3)', fontWeight:400}}>(for phone meetings)</span></label>
               <input className="form-input" value={bookingPhone} onChange={e=>setBookingPhone(e.target.value)} placeholder="e.g. (813) 555-0123" />
             </div>
-            <div style={{fontSize:'11.5px', color:'var(--text-3)', marginBottom:'14px', lineHeight:1.5}}>Your <b>office address</b> (for office meetings) is set under “About you” above. Google Meet links are generated automatically.</div>
+            <div className="form-group">
+              <label className="form-label">Office address <span style={{color:'var(--text-3)', fontWeight:400}}>(for office meetings)</span></label>
+              <input className="form-input" data-testid="booking-office-address" value={officeAddress} onChange={e=>setOfficeAddress(e.target.value)} placeholder="e.g. 123 Main St, Suite 200, Lutz, FL 33549" />
+              {bkTypes.includes('office') && !officeAddress.trim() && <div style={{fontSize:'12.5px', color:'var(--accent)', marginTop:'6px', lineHeight:1.45}}>You offer office meetings but have no office address here. Until you add one, clients are told the address will be confirmed later.</div>}
+            </div>
+            <div style={{fontSize:'11.5px', color:'var(--text-3)', marginBottom:'14px', lineHeight:1.5}}>Google Meet links are generated automatically. Tap <b>Save booking settings</b> below to keep changes.</div>
 
             <div style={{height:1, background:'var(--border)', margin:'4px 0 14px'}} />
             <label className="form-label">Meeting types you offer</label>

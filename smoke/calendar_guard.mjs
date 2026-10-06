@@ -40,5 +40,28 @@ check('back to back', [{ id: 'a', top: 0, height: 52 }, { id: 'b', top: 52, heig
 check('alone', [{ id: 'a', top: 100, height: 52 }], { a: 1 });
 expect(Object.keys(layoutLanes([])).length === 0, 'an empty day breaks the layout');
 
+// ── 6 Oct 2026: dates. Run in Tampa time, where the faults showed.
+process.env.TZ = 'America/New_York';
+const D = await import('../src/calendarDates.js');
+const ymdL = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+expect(ymdL(D.allDayStart('2026-10-06T00:00:00+00:00')) === '2026-10-06', 'an all-day event from Google sits a day early again (a birthday on the 6th shows on the 5th)');
+expect(ymdL(D.allDayStart('2026-10-06T04:00:00.000Z')) === '2026-10-06', 'an all-day event made in the app before 6 Oct 2026 moved to the wrong day');
+expect(ymdL(D.allDayEndShown('2026-10-06T00:00:00Z', '2026-10-07T00:00:00Z')) === '2026-10-06', 'a one-day all-day event reads as two days');
+expect(ymdL(D.allDayEndShown('2026-12-24T00:00:00Z', '2026-12-27T00:00:00Z')) === '2026-12-26', 'a three-day all-day event shows the wrong last day');
+{ const r = D.allDayRange('2026-10-06', '2026-10-06'); expect(r.start_at === '2026-10-06T00:00:00.000Z' && r.end_at === '2026-10-07T00:00:00.000Z', 'an all-day event is not stored as its date (start) and the day after (end) — Google will not take it'); }
+{ const f = D.followStart({ startDate: '2026-10-06', startTime: '09:00', endDate: '2026-10-06', endTime: '10:00' }, { startDate: '2026-10-09', startTime: '14:00' }); expect(f.endDate === '2026-10-09' && f.endTime === '15:00', `moving the start left the end behind (${JSON.stringify(f)}) — the event would end before it begins`); }
+{ const f = D.followStart({ startDate: '2026-10-06', startTime: '22:00', endDate: '2026-10-06', endTime: '23:30' }, { startDate: '2026-10-06', startTime: '23:00' }); expect(f.endDate === '2026-10-07' && f.endTime === '00:30', 'an event moved to late evening does not carry its end past midnight'); }
+const form = { title: 'Lunch', allDay: false, startDate: '2026-10-06', startTime: '14:00', endDate: '2026-10-06', endTime: '15:00' };
+expect(D.eventFormProblem(form) === '', 'a good event form is refused');
+expect(/ends before it starts/.test(D.eventFormProblem({ ...form, endTime: '09:00' })), 'an event that ends before it starts can be saved (Google refuses these and they never sync)');
+expect(D.eventFormProblem({ ...form, endDate: '' }) === '', 'clearing the end date makes Save do nothing, silently');
+expect(/title/.test(D.eventFormProblem({ ...form, title: '   ' })), 'a blank title makes Save do nothing, silently');
+expect(ymdL(D.stepMonth(new Date(2026, 9, 31), 1)) === '2026-11-30' && ymdL(D.stepMonth(new Date(2026, 2, 31), -1)) === '2026-02-28', 'stepping a month from the 31st skips a month');
+expect(/allDayStart\(raw\.start_at\)/.test(view) && /eventFormProblem\(/.test(view) && /disabled=\{saving\}/.test(view) && /stepMonth\(d, delta\)/.test(view), 'the calendar screen stopped using the date rules in src/calendarDates.js');
+// ── one way to read the calendar, paged
+const load = fs.readFileSync('src/eventsLoad.js', 'utf8');
+expect(/\.range\(from, from \+ PAGE - 1\)/.test(load) && /not\('recur_freq', 'is', null\)/.test(load), 'the calendar loader no longer pages, or no longer brings every repeating event');
+for (const f of ['src/App.js', 'src/views/CalendarView.jsx']) expect(!/from\('events'\)\.select\('\*'\)/.test(fs.readFileSync(f, 'utf8')), `${f} reads the whole events table directly again — past 1,000 events the newest silently disappear; use loadEvents()`);
+
 if (problems.length) { console.error(`\n==== CALENDAR: ${problems.length} problem(s) ====`); for (const p of problems) console.error('  ✗ ' + p); process.exit(1); }
 console.log('==== CALENDAR: clean — one scroller, and same-time events sit side by side ====');
