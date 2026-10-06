@@ -20,11 +20,12 @@ import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSD, fmtUSDCents, fmtPct, fmtHours, normalizePayee, buildSuggester } from '../financeUtils';
 import { KpiBox, KpiTile } from './FinanceTiles';
 import { MoneyRegister } from './MoneyRegister';
+import { stamp } from '../books';
 
 // Lazy on purpose: the importer is ~1,100 lines used a few times a year.
 const CsvImportModal = React.lazy(() => import('./CsvImportModal').then(m => ({ default: m.CsvImportModal })));
 
-export function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, recurringTemplates, setRecurringTemplates, trackPersonal, readOnly }) {
+export function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, recurringTemplates, setRecurringTemplates, trackPersonal, readOnly, book = null, own = true, names = null, onDenied = null }) {
   const [ledgerMode, setLedgerMode] = useState('transactions');  // 'transactions' | 'recurring'
   const [showModal, setShowModal] = useState(false);
   const [editTx, setEditTx] = useState(null);
@@ -68,7 +69,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
         </>
       ) : (
         <MoneyRegister
-          userId={userId} transactions={transactions} setTransactions={setTransactions}
+          userId={userId} book={book} own={own} names={names} onDenied={onDenied} transactions={transactions} setTransactions={setTransactions}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
           trackPersonal={trackPersonal} readOnly={readOnly}
           recurringCount={recurringTemplates?.length || 0} uncategorizedCount={uncategorizedCount}
@@ -82,7 +83,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
 
       {showModal && (
         <TransactionModal
-          userId={userId} initial={editTx} trackPersonal={trackPersonal}
+          userId={userId} book={book} own={own} initial={editTx} trackPersonal={trackPersonal}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
           onClose={() => { setShowModal(false); setEditTx(null); }}
           onSaved={onSaved}
@@ -105,7 +106,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
 
       {showImportModal && (
         <React.Suspense fallback={null}><CsvImportModal
-          userId={userId}
+          userId={userId} book={book}
           existingTransactions={transactions}
           taxCategories={taxCategories}
           trackPersonal={trackPersonal}
@@ -148,7 +149,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
 //   • trailing empty rows
 // Returns { headers, rows } where rows is an array of objects keyed by header.
 
-export function TransactionModal({ userId, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved, onDelete }) {
+export function TransactionModal({ userId, book = null, own = true, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved, onDelete }) {
 
 
   useBackClose(onClose);
@@ -159,7 +160,7 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
   const [amount, setAmount] = useState(initial ? Math.abs(Number(initial.amount)) : '');
   const [direction, setDirection] = useState(initial && Number(initial.amount) > 0 ? 'in' : 'out');
   const [scope, setScope] = useState(initial?.scope || 'business');
-  const [taxCategoryId, setTaxCategoryId] = useState(initial?.tax_category_id || taxCategories[0]?.id || '');
+  const [taxCategoryId, setTaxCategoryId] = useState(initial?.tax_category_id || (own ? taxCategories[0]?.id : '') || '');
   const [systemId, setSystemId] = useState(initial?.lead_gen_system_id || overheadSystem?.id || '');
   const [personalBudgetLineId, setPersonalBudgetLineId] = useState(initial?.personal_budget_line_id || personalCats[0]?.id || '');
   const [payee, setPayee] = useState(initial?.payee || '');
@@ -260,7 +261,7 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
     setSaving(true);
     const signedAmount = direction === 'in' ? Math.abs(Number(amount)) : -Math.abs(Number(amount));
     const payload = {
-      user_id: userId, date, amount: signedAmount, scope,
+      date, amount: signedAmount, scope,
       tax_category_id: scope === 'business' ? (taxCategoryId || null) : null,
       lead_gen_system_id: scope === 'business' ? (systemId || overheadSystem?.id || null) : null,
       personal_budget_line_id: scope === 'personal' ? (personalBudgetLineId || null) : null,
@@ -276,7 +277,7 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
       if (error) { if (window.__notify) window.__notify('Save failed: ' + error.message, 'error'); setSaving(false); return; }
       onSaved(data);
     } else {
-      const { data, error } = await supabase.from('transactions').insert(payload).select().single();
+      const { data, error } = await supabase.from('transactions').insert({ ...stamp(book, userId), ...payload }).select().single();
       if (error) { if (window.__notify) window.__notify('Save failed: ' + error.message, 'error'); setSaving(false); return; }
       onSaved(data);
     }
@@ -291,8 +292,8 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
           {onDelete && <button onClick={onDelete} title="Delete" style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:'4px 8px'}}><Icon name="trash" size={16} /></button>}
         </div>
 
-        {/* Receipt capture — only on new transactions */}
-        {!initial && (
+        {/* Receipt capture — only on new transactions, and only in a person's own books: a receipt is stored in their private folder */}
+        {!initial && own && (
           <div style={{marginBottom:'14px'}}>
             {!receiptUrl && !parsing && (
               <button type="button"
@@ -372,7 +373,7 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
 
           {scope === 'business' && (
             <>
-              <div className="form-group">
+              {systems.length > 0 && <div className="form-group">
                 <label className="form-label">Lead source</label>
                 <select className="form-input" value={systemId} onChange={e => onSystemChange(e.target.value)}>
                   {systems.map(s => <option key={s.id} value={s.id}>{s.name}{s.is_overhead?' (default)':''}</option>)}
@@ -380,11 +381,12 @@ export function TransactionModal({ userId, initial, taxCategories, systems, pers
                 <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:'4px',fontStyle:'italic'}}>
                   Choosing a lead source other than Overhead suggests "Advertising & Marketing" as the category.
                 </div>
-              </div>
+              </div>}
               <div className="form-group">
                 <label className="form-label">Category</label>
                 <select className="form-input" value={taxCategoryId} onChange={e => setTaxCategoryId(e.target.value)}>
-                  {taxCategories.map(c => <option key={c.id} value={c.id}>{c.name} ({c.schedule_c_line})</option>)}
+                  {!own && <option value="">No category yet</option>}
+                  {taxCategories.map(c => <option key={c.id} value={c.id}>{c.name}{c.schedule_c_line && c.schedule_c_line !== '—' ? ` (${c.schedule_c_line})` : ''}</option>)}
                 </select>
               </div>
             </>

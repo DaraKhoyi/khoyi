@@ -809,6 +809,69 @@ the phone; each model call goes to `ai_usage_log`, each tool call to
 gates, a real answer from the person's own data, and the no-yes rule (about
 five cents of AI per gate run).
 
+**THE BOOKS: WHO MAY SEE WHICH MONEY (6 Oct, v1.16.08).** Dara: he, Josh and
+Alexander keep the brokerage's books in PrismOS; each person keeps their own; a
+team's leader controls the team's, with an assistant who can be switched on and
+off. "We don't want a double entry system ... checkbook style." And: an agent's
+own books are the agent's — **being Broker or Broker Admin opens nobody's books.**
+- **One ledger.** No second transactions table. A *book* (`public.books`: personal
+  | team | brokerage) is one separate set of accounts, and every row of
+  `transactions`, `tax_categories`, `money_accounts`, `recurring_transactions` has
+  a `book_id`. Personal rows keep `user_id` = the owner, so every older reader
+  that asks for "my rows" is unchanged. **Shared-book rows have `user_id` NULL**,
+  so no personal report or tax form can pick them up. Trigger `book_row_stamp`
+  sets both on every write whatever the caller sends (a phone on an old version
+  sends `user_id` only and still lands in the right book).
+- **Access is a list:** `book_access` (owner / admin / assistant / read_only,
+  `is_active` = the switch). Policies ask `my_books_readable()` /
+  `_writable()` / `_manageable()`; they were ADDED beside the old "own rows"
+  rules, never instead. Off takes effect on the next request. Never gate a book
+  on `is_brokerage_staff()` — `smoke/books_guard.mjs` fails on it.
+- **Client: `src/books.js`** — `inBook(query, book, userId)` and
+  `stamp(book, userId)` are the ONLY way a Money screen reads or files entries;
+  `can(book, what)` decides which buttons draw. `BookBar.jsx` (name of the open
+  book, sticky, + switcher), `BookAccess.jsx` (the list, the switch, the record),
+  `BookRoom.jsx` (Money for a book that is not your own: Add / Reports / Setup).
+  `FinanceView` → `OwnMoney` (the old room) or `BookRoom`. Menu "Brokerage
+  Financials" opens the brokerage's books (`sub: 'brokerage'`).
+- **Released to three people:** `accounting_access` (Dara, Josh, Alexander).
+  Everyone else sees Money as before unless put on someone's book. Switch a person
+  on: `insert into accounting_access (user_id, note) values (...)`, then they get
+  the starter categories on their next visit (`book_category_templates`, one set
+  per kind of book; seeding runs once per book, `books.seeded_at`).
+- **The record:** `book_log` — every entry added/changed/removed (who, before,
+  after), every access change, every category/account change, closing and
+  reopening. Append-only even for the service key (trigger `book_log_locked`).
+  `transactions.entered_by` / `updated_by` sign each entry.
+- **Closing:** `books.closed_through`; entries dated on or before it cannot be
+  added, changed or deleted (`book_entry_guard`), nor a category they use deleted.
+- **A waiting seat** (named before the person has a sign-in) binds at their first
+  visit with that email CONFIRMED. Assistant / read-only named in the last 30 days
+  opens by itself; an owner/admin seat or an older one binds switched OFF until
+  an owner switches it on (a mistyped or recycled address must not open books).
+- **Not built yet, on purpose:** repeating entries and receipts in shared books
+  (`run-recurring-transactions` files whatever it can see as the caller's, so the
+  recurring table has NO book policies — teach the function about `book_id` first;
+  receipts live in the uploader's private folder); statement scanning, sticky
+  rules, bank reconciliation, 1099s; and **audit-grade escrow accounting** — an
+  account can be marked `escrow` and "held for others" categories stay out of
+  income, but there is no per-owner/per-tenant ledger or monthly three-way
+  reconciliation. Do not tell anyone the escrow side is audit-ready.
+- Seeds: brokerage book (Dara owner, Josh + Alexander admin); "Team Blue Koala"
+  (property-management categories; Dara owner and the one nobody can remove;
+  Tina Danielson owner, waiting for her sign-in and Dara's switch; Myra Torres
+  assistant, waiting for an email). `books.team_id` is NULL on Blue Koala — if a
+  `teams` row is ever made for it, set `team_id` or `team_book_sync` makes a
+  second book.
+- Found on the way: `transactions_entered_via_check` refused `'deal_close'` and
+  `'ari'`, which the app has been writing — commission income on deal close and
+  entries added by voice were being rejected. Widened.
+- `smoke/books_guard.mjs` (three real sign-ins, every accounting table; known-
+  answer tested: planting a seat for the outsider fails it 12 ways) and
+  `smoke/look_books.mjs` (screenshots of the book screens; not in the gate).
+  SQL: `supabase/sql/2026-10-06b_books.sql`. A new accounting table goes in the
+  guard's `TABLES`.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"

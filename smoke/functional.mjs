@@ -144,7 +144,8 @@ for (const dev of want) {
     await login(page);
     record(dev, 'login + boot', true);
   } catch (e) {
-    record(dev, 'login + boot', false, String(e).slice(0, 80));
+    // Say what the sign-in service answered: a refused sign-in and a slow boot are different faults.
+    record(dev, 'login + boot', false, String(e).slice(0, 80) + ' | auth said: ' + (page.__auth.slice(-4).join(' ; ') || 'nothing'));
     await ctx.close();
     continue;
   }

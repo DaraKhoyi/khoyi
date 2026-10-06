@@ -22,6 +22,12 @@ import { Tip } from '../tipsUi';
 import { confirmDialog } from '../notify';
 import { fmtHours, fmtPct, fmtUSD, fmtUSDCents } from '../financeUtils';
 import { SysStat } from './FinanceSystems';
+import { BookBar, useBooks } from './BookBar';
+import { inBook, isOwnBook, showBookBar } from '../books';
+// Someone else's books, and the list of who may open a set of books: opened by
+// a few people, a few times — lazy so they do not ride along on every visit.
+const BookRoom = React.lazy(() => import('./BookRoom'));
+const BookAccess = React.lazy(() => import('./BookAccess'));
 
 const TIER_BANDS = [
   { id: 'rookie',       label: 'Rookie',       color: '#cd7f32' },
@@ -45,7 +51,30 @@ function computeTier(ytdGCI, settings, factor = 1) {
 // partial year. With pro-rata on (and an activation date inside the current year),
 // annual targets/budgets/time-commitments and the pace clock are scaled to the
 // slice of the year the agent is actually active. Off by default -> no change.
+// FinanceView — the Money room. It first asks whose books are open (BookBar /
+// useBooks), keeps that name on screen, and then draws either the person's own
+// Money room (OwnMoney, everything that was here before) or, for the
+// brokerage's, a team's or someone else's books, the BookRoom.
+// A menu entry may ask for the brokerage's books: sub 'brokerage'.
+const MONEY_SKIN = `.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .seg-track{background:#18130D;border:1px solid rgba(203,163,92,.18);} .ww-prism .seg-btn{color:#C8BFAE;} .ww-prism .seg-btn.active{background:linear-gradient(180deg,#EBCB82,#CBA35C)!important;color:#1a1409!important;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`;
 function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
+  const want = initialSub === 'brokerage' ? 'brokerage' : null;
+  const bk = useBooks(userId, want, subNonce);
+  const [people, setPeople] = useState(false);
+  if (!bk.ready) return <div className="loading-screen"><div className="spinner"/></div>;
+  return (
+    <div className="view ww-prism">
+      <style>{MONEY_SKIN}</style>
+      {showBookBar(bk) && <BookBar books={bk.books} book={bk.book} onPick={bk.pick} onPeople={() => setPeople(true)} />}
+      {isOwnBook(bk.book)
+        ? <OwnMoney userId={userId} book={bk.book} initialSub={want ? null : initialSub} subNonce={subNonce} />
+        : <React.Suspense fallback={<div className="loading-screen"><div className="spinner"/></div>}><BookRoom key={bk.book.id} userId={userId} book={bk.book} onReload={bk.reload} /></React.Suspense>}
+      {people && bk.book && <React.Suspense fallback={null}><BookAccess book={bk.book} onClose={() => setPeople(false)} onChanged={bk.reload} /></React.Suspense>}
+    </div>
+  );
+}
+
+function OwnMoney({ userId, book = null, initialSub = null, subNonce = 0 }) {
   const [subView, setSubView] = useState(initialSub || 'ledger')   // Money opens on the register (Dara, 5 Oct 2026);
   useEffect(() => { if (initialSub) setSubView(initialSub); }, [initialSub, subNonce]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +90,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
   const [templates, setTemplates] = useState([]);
   const [recurringTemplates, setRecurringTemplates] = useState([]);
   const recurringRanRef = useRef(false);
+  const bookId = book ? book.id : null;
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -82,10 +112,10 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
 
     const [s, tc, pb, sys, tx, comp, te, tmpl, rec, rsys, dl] = await Promise.all([
       supabase.from('finance_settings').select('*').eq('user_id', userId).maybeSingle(),
-      supabase.from('tax_categories').select('*').eq('user_id', userId).eq('is_archived', false).order('sort_order'),
+      inBook(supabase.from('tax_categories').select('*'), book, userId).eq('is_archived', false).order('sort_order'),
       supabase.from('personal_budget_lines').select('*').eq('user_id', userId).eq('is_archived', false).order('sort_order'),
       supabase.from('lead_gen_systems').select('*').eq('user_id', userId).eq('is_active', true).order('is_overhead', { ascending: false }).order('name'),
-      supabase.from('transactions').select('*').eq('user_id', userId).eq('is_archived', false).order('date', { ascending: false }).limit(500),
+      inBook(supabase.from('transactions').select('*'), book, userId).eq('is_archived', false).order('date', { ascending: false }).limit(500),
       supabase.from('prospecting_completions').select('*').eq('user_id', userId).gte('date', last30.toISOString().slice(0,10)).order('date', { ascending: false }),
       supabase.from('time_entries').select('*').eq('user_id', userId).gte('occurred_at', yearStart).order('occurred_at', { ascending: false }),
       supabase.from('lead_gen_system_templates').select('*').order('system_number'),
@@ -105,7 +135,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
     setRecurringTemplates(rec.data || []);
     setDeals(dl.data || []);
     setLoading(false);
-  }, [userId]);
+  }, [userId, bookId]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -129,8 +159,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
   const onLedger = subView === 'ledger';
 
   return (
-    <div className="view ww-prism">
-      <style>{`.ww-prism{--bg-base:#100D09;--bg-card:#1B1610;--bg-hover:#221B10;--border:rgba(203,163,92,.20);--border-strong:rgba(203,163,92,.40);--accent:#CBA35C;--accent-2:#EBCB82;--accent-dim:rgba(203,163,92,.45);--accent-glow:rgba(203,163,92,.14);--text-1:#F6F1E7;--text-2:#C8BFAE;--text-3:#8C8475;font-family:Manrope,sans-serif;background:radial-gradient(120% 30% at 50% -6%, rgba(203,163,92,.09), transparent 60%), #100D09;min-height:100%;} .ww-prism .ww-eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:#CBA35C;} .ww-prism h2,.ww-prism h3{font-family:'Fraunces',serif;font-weight:300;letter-spacing:-.02em;} .ww-prism .panel{background:linear-gradient(180deg,#18130D,#100D09);border:1px solid rgba(203,163,92,.20);border-radius:16px;} .ww-prism .seg-track{background:#18130D;border:1px solid rgba(203,163,92,.18);} .ww-prism .seg-btn{color:#C8BFAE;} .ww-prism .seg-btn.active{background:linear-gradient(180deg,#EBCB82,#CBA35C)!important;color:#1a1409!important;} .ww-prism .btn-ghost{border:1px solid rgba(203,163,92,.30);color:#C8BFAE;} .ww-prism .btn-ghost:hover{border-color:#CBA35C;color:#EBCB82;} .ww-prism .btn-primary{background:#EBCB82;color:#1a1409;border:none;} .ww-prism .empty-state{color:#8C8475;} .ww-prism .empty-icon{color:#CBA35C;}`}</style>
+    <>
       {readOnly && (
         <div style={{padding:'8px 12px',background:'rgba(59,130,246,0.15)',border:'1px solid rgba(59,130,246,0.4)',borderRadius:'8px',marginBottom:'10px',fontSize:'12px',color:'var(--text-1)'}}>
           <Icon name="eye" size={13} style={{verticalAlign:'-2px'}} /> <strong>Partner mode</strong> — accountability view, read-only. Change it in Settings, under Money view.
@@ -207,7 +236,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
       )}
       {subView === 'ledger' && (
         <FinanceLedger
-          userId={userId} transactions={transactions} setTransactions={setTransactions}
+          userId={userId} book={book} transactions={transactions} setTransactions={setTransactions}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
           recurringTemplates={recurringTemplates} setRecurringTemplates={setRecurringTemplates}
           trackPersonal={trackPersonal} readOnly={readOnly}
@@ -222,7 +251,7 @@ function FinanceView({ userId, initialSub = null, subNonce = 0 }) {
           trackPersonal={trackPersonal} isCoach={isCoach}
         />
       )}
-    </div>
+    </>
   );
 }
 

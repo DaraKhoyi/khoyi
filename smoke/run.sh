@@ -234,6 +234,9 @@ guard triage_guard static
 guard morning_note_guard static
 # The PRISM Edge is a starting guess the person can see and change; never a verdict (decisions 1, 2, 3, 9).
 guard prism_edge_guard static
+# Only the people on a book's list can read or change it; being Broker or Broker Admin opens nothing;
+# a switched-off assistant is out on their next tap. Proven with three sign-ins, for every accounting table (Dara, 6 Oct).
+guard books_guard static
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

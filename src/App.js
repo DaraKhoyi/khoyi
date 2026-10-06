@@ -1726,7 +1726,7 @@ function AppMain() {
     { label: 'Contact Types', view: 'contact_types', icon: 'pin' },
     { label: 'Brokerage Dashboard', view: 'finance', sub: 'dashboard', icon: 'pie' },
     { label: 'Transactions', view: 'transactions', icon: 'file' },
-    { label: 'Brokerage Financials', view: 'finance', sub: 'reports', icon: 'creditCard' },
+    { label: 'Brokerage Financials', view: 'finance', sub: 'brokerage', icon: 'creditCard' },
     { label: 'Teams', view: 'teams', icon: 'star' },
     ...(!isImpersonating ? [{ label: 'Act as a User', view: 'actas', icon: 'forward' }] : []),
   ] };

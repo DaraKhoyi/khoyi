@@ -13,6 +13,7 @@ import { useBackClose } from '../backClose';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSD, fmtUSDCents, fmtPct } from '../financeUtils';
 import { normalizePayee, buildSuggester } from '../financeUtils';
+import { inBook, stamp } from '../books';
 
 export function parseCSV(text) {
   // Strip UTF-8 BOM
@@ -114,7 +115,7 @@ export function guessColumn(headers, kind) {
   return '';
 }
 
-export function CsvImportModal({ userId, existingTransactions, taxCategories, trackPersonal, onClose, onImported, onBatchRevoked }) {
+export function CsvImportModal({ userId, book = null, existingTransactions, taxCategories, trackPersonal, onClose, onImported, onBatchRevoked }) {
 
 
   useBackClose(onClose);
@@ -158,6 +159,7 @@ export function CsvImportModal({ userId, existingTransactions, taxCategories, tr
   const [recentBatches, setRecentBatches] = useState([]);
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [revokingBatchId, setRevokingBatchId] = useState(null);
+  const [known, setKnown] = useState(existingTransactions);   // what is already in these books, for the duplicate check
 
   useEffect(() => {
     let cancelled = false;
@@ -173,9 +175,8 @@ export function CsvImportModal({ userId, existingTransactions, taxCategories, tr
   // Load recent import batches by aggregating transactions with import_batch_id
   async function loadRecentBatches() {
     setLoadingBatches(true);
-    const { data } = await supabase.from('transactions')
-      .select('import_batch_id, import_source, imported_at, amount, is_archived')
-      .eq('user_id', userId)
+    const { data } = await inBook(supabase.from('transactions')
+      .select('import_batch_id, import_source, imported_at, amount, is_archived'), book, userId)
       .not('import_batch_id', 'is', null)
       .order('imported_at', { ascending: false })
       .limit(500);
@@ -376,9 +377,8 @@ export function CsvImportModal({ userId, existingTransactions, taxCategories, tr
     const confirmMsg = `Archive all ${batch.activeRowCount} active transactions from "${batch.source || 'this import'}"? They'll disappear from the Ledger but can be restored from Supabase if needed.`;
     if (!await confirmDialog(confirmMsg)) return;
     setRevokingBatchId(batchId);
-    const { error: err } = await supabase.from('transactions')
-      .update({ is_archived: true })
-      .eq('user_id', userId).eq('import_batch_id', batchId).eq('is_archived', false);
+    const { error: err } = await inBook(supabase.from('transactions')
+      .update({ is_archived: true }), book, userId).eq('import_batch_id', batchId).eq('is_archived', false);
     setRevokingBatchId(null);
     if (err) {
       if (window.__notify) window.__notify('Revoke failed: ' + err.message, 'error');
@@ -435,11 +435,11 @@ export function CsvImportModal({ userId, existingTransactions, taxCategories, tr
   //      Cleaners" while accepting occasional false negatives.
   function findDuplicate(parsed) {
     if (parsed.externalId) {
-      const m = existingTransactions.find(t => t.external_id === parsed.externalId);
+      const m = known.find(t => t.external_id === parsed.externalId);
       if (m) return { match: m, reason: 'matched external_id' };
     }
     const ap = (parsed.payee || '').toLowerCase();
-    for (const t of existingTransactions) {
+    for (const t of known) {
       if (t.date !== parsed.date) continue;
       if (Math.abs(Number(t.amount) - parsed.amount) > 0.005) continue;
       const tp = (t.payee || '').toLowerCase();
@@ -450,21 +450,32 @@ export function CsvImportModal({ userId, existingTransactions, taxCategories, tr
     return null;
   }
 
-  function proceedToPreview() {
+  async function proceedToPreview() {
     if (!dateCol || !payeeCol) { setError('Date and payee columns are required.'); return; }
     if (amountMode === 'single' && !amountCol) { setError('Pick an amount column.'); return; }
     if (amountMode === 'debit_credit' && (!debitCol || !creditCol)) { setError('Pick both debit and credit columns.'); return; }
     setError('');
     const out = generatePreview();
+    // Duplicates are judged against everything already in these books for the
+    // statement's dates, not just the newest entries this phone has loaded: an
+    // entry typed in by hand months ago must still be recognised.
+    const days = out.filter(p => p.valid).map(p => p.date).sort();
+    if (days.length) {
+      const { data, error: e } = await inBook(supabase.from('transactions').select('id, date, amount, payee, external_id'), book, userId)
+        .eq('is_archived', false).gte('date', days[0]).lte('date', days[days.length - 1]).limit(5000);
+      if (e) { setError('Could not check these lines against what is already entered: ' + e.message); return; }
+      const have = new Set(existingTransactions.map(t => t.id));
+      setKnown([...existingTransactions, ...(data || []).filter(t => !have.has(t.id))]);
+    }
     setParsedRows(out);
-    // Pre-select rows that are valid AND not duplicates
-    const sel = new Set();
-    out.forEach(p => {
-      if (p.valid && !findDuplicate(p)) sel.add(p.rowIndex);
-    });
-    setSelectedRowIds(sel);
     setStep('preview');
   }
+  // Pre-select the lines that are valid and not already entered, once the check above has what it needs.
+  useEffect(() => {
+    if (step !== 'preview') return;
+    setSelectedRowIds(new Set(parsedRows.filter(p => p.valid && !findDuplicate(p)).map(p => p.rowIndex)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, parsedRows, known]);
 
   function toggleRow(rowIndex) {
     setSelectedRowIds(prev => {
@@ -482,7 +493,7 @@ export function CsvImportModal({ userId, existingTransactions, taxCategories, tr
     const toInsert = parsedRows
       .filter(p => selectedRowIds.has(p.rowIndex) && p.valid)
       .map(p => ({
-        user_id: userId,
+        ...stamp(book, userId),
         date: p.date,
         amount: p.amount,
         payee: p.payee,

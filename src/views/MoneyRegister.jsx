@@ -9,15 +9,16 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { todayNY } from '../clock';
-import { notify, notifyError } from '../notify';
+import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSDCents } from '../financeUtils';
+import { bookTitle, can, duplicateSentence, inBook, isDenied, stamp } from '../books';
 import { accountKey, fillFrom, groupByMonth, longDate, matchesSearch, parseAmount, payeeMatches, readStickyDate, runningBalances, shortDate, sortNewest, writeStickyDate } from '../moneyRegister';
 
 const PAGE = 500;      // how many entries the database hands over at a time
 const SHOW = 60;       // how many the register draws before "Show older entries"
 const BLANK = { amount: '', payee: '', taxCategoryId: '', personalBudgetLineId: '', description: '', systemId: '' };
 
-function EntryCard({ userId, transactions, taxCategories, systems, personalBudget, trackPersonal, accounts, onSaved }) {
+function EntryCard({ userId, book, onDenied, transactions, taxCategories, systems, personalBudget, trackPersonal, accounts, onSaved }) {
   const today = todayNY();
   const overhead = systems.find((s) => s.is_overhead);
   const [date, setDate] = useState(() => readStickyDate(today));
@@ -49,18 +50,31 @@ function EntryCard({ userId, transactions, taxCategories, systems, personalBudge
     setSaving(true);
     const business = scope === 'business';
     const row = {
-      user_id: userId, date, amount: direction === 'in' ? amt : -amt, scope,
+      ...stamp(book, userId), date, amount: direction === 'in' ? amt : -amt, scope,
       tax_category_id: business ? (f.taxCategoryId || null) : null,
       lead_gen_system_id: business ? (f.systemId || overhead?.id || null) : null,
       personal_budget_line_id: business ? null : (f.personalBudgetLineId || null),
       payee: f.payee.trim() || null, description: f.description.trim() || null, account: account.trim() || null,
       entered_via: 'manual',
     };
+    // "Did I already enter this?" Asked of the whole book, not just the entries on
+    // this phone: the same amount within three days, the same payee or none.
+    // If the question itself fails, the entry is still saved: never block the work.
+    if (book) {
+      const dup = await supabase.rpc('book_possible_duplicates', { p_book: book.id, p_date: date, p_amount: row.amount, p_payee: row.payee });
+      if (!dup.error && (dup.data || []).length) {
+        const ok = await confirmDialog(`This looks like an entry already in these books: ${duplicateSentence(dup.data[0], fmtUSDCents)}. Save it again?`, { confirmLabel: 'Save it again', cancelLabel: 'Do not save' });
+        if (!ok) { setSaving(false); return; }
+      }
+    }
     const { data, error } = await supabase.from('transactions').insert(row).select().single();
     setSaving(false);
-    if (error) { notifyError('That did not save: ' + error.message); return; }
+    if (error) {
+      if (isDenied(error) && onDenied) { onDenied(); return; }      // switched off since this screen opened
+      notifyError('That did not save: ' + error.message); return;
+    }
     onSaved(data);
-    notify(`Saved: ${data.payee || 'entry'}, ${fmtUSDCents(Math.abs(Number(data.amount)))}`, 'success');
+    notify(`Saved${book && !book.is_mine ? ' to ' + bookTitle(book) : ''}: ${data.payee || 'entry'}, ${fmtUSDCents(Math.abs(Number(data.amount)))}`, 'success');
     clear();                                    // the date, the account and money in/out stay for the next one
     if (payeeRef.current) payeeRef.current.focus();
   }
@@ -134,7 +148,7 @@ function EntryCard({ userId, transactions, taxCategories, systems, personalBudge
               <option value="personal">Personal</option>
             </select>
           </label>
-        ) : (
+        ) : leadSources.length > 0 && (
           <label className="mr-f">Lead source (optional)
             <select value={f.systemId && f.systemId !== overhead?.id ? f.systemId : ''} onChange={(e) => set({ systemId: e.target.value })} data-testid="money-lead">
               <option value="">None</option>
@@ -143,7 +157,7 @@ function EntryCard({ userId, transactions, taxCategories, systems, personalBudge
           </label>
         )}
       </div>
-      {trackPersonal && scope === 'business' && (
+      {trackPersonal && scope === 'business' && leadSources.length > 0 && (
         <label className="mr-f">Lead source (optional)
           <select value={f.systemId && f.systemId !== overhead?.id ? f.systemId : ''} onChange={(e) => set({ systemId: e.target.value })} data-testid="money-lead">
             <option value="">None</option>
@@ -159,7 +173,7 @@ function EntryCard({ userId, transactions, taxCategories, systems, personalBudge
   );
 }
 
-export function MoneyRegister({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, trackPersonal, readOnly, recurringCount = 0, uncategorizedCount = 0, onEdit, onSnap, onImport, onRecurring, onCategorize }) {
+export function MoneyRegister({ userId, book = null, own = true, names: who = null, onDenied = null, transactions, setTransactions, taxCategories, systems, personalBudget, trackPersonal, readOnly, recurringCount = 0, uncategorizedCount = 0, onEdit, onSnap, onImport, onRecurring, onCategorize }) {
   const [accounts, setAccounts] = useState([]);
   const [picked, setPicked] = useState('');          // the account whose register is open, by key
   const [search, setSearch] = useState('');
@@ -169,11 +183,13 @@ export function MoneyRegister({ userId, transactions, setTransactions, taxCatego
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [startText, setStartText] = useState(null);  // the starting balance being typed, or null when closed
 
+  // One book's balances. Without a book list (an older database), the person's own.
+  const bookId = book ? book.id : null;
   const loadBalances = useCallback(async () => {
-    const { data, error } = await supabase.rpc('my_account_balances');
-    if (error) { notifyError('Account balances did not load: ' + error.message); return; }
+    const { data, error } = bookId ? await supabase.rpc('book_account_balances', { p_book: bookId }) : await supabase.rpc('my_account_balances');
+    if (error) { if (!isDenied(error)) notifyError('Account balances did not load: ' + error.message); return; }
     setAccounts(data || []);
-  }, []);
+  }, [bookId]);
   // Re-add whenever the book changes: a new, edited, imported or removed entry.
   const bookMark = useMemo(() => transactions.map((t) => `${t.id}|${t.amount}|${t.account || ''}|${t.is_archived ? 1 : 0}`).join(','), [transactions]);
   useEffect(() => { loadBalances(); }, [loadBalances, bookMark]);
@@ -208,7 +224,7 @@ export function MoneyRegister({ userId, transactions, setTransactions, taxCatego
     let have = transactions, got = 0, again = true;
     for (let i = 0; again && i < (all ? 20 : 1); i++) {
       const oldest = have.reduce((m, t) => (t.date && (!m || t.date < m) ? t.date : m), '');
-      const { data, error } = await supabase.from('transactions').select('*').eq('user_id', userId).eq('is_archived', false)
+      const { data, error } = await inBook(supabase.from('transactions').select('*'), book, userId).eq('is_archived', false)
         .lte('date', oldest || todayNY()).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(PAGE);
       if (error) { notifyError('Older entries did not load: ' + error.message); again = false; break; }
       const ids = new Set(have.map((t) => t.id)), fresh = (data || []).filter((t) => !ids.has(t.id));
@@ -225,7 +241,8 @@ export function MoneyRegister({ userId, transactions, setTransactions, taxCatego
     e.preventDefault();
     const text = String(startText).replace(/[$,\s]/g, '');
     if (!/^-?\d+(\.\d{0,2})?$/.test(text)) { notifyError('Enter the starting balance as a number, for example 2500.00'); return; }
-    const { error } = await supabase.rpc('set_account_starting_balance', { p_account: account.account, p_amount: Number(text) });
+    const { error } = book ? await supabase.rpc('set_book_account', { p_book: book.id, p_account: account.account, p_amount: Number(text) })
+      : await supabase.rpc('set_account_starting_balance', { p_account: account.account, p_amount: Number(text) });
     if (error) { notifyError('That did not save: ' + error.message); return; }
     setStartText(null); loadBalances();
   }
@@ -237,12 +254,12 @@ export function MoneyRegister({ userId, transactions, setTransactions, taxCatego
     <div className="mr" data-testid="money-register">
       {!readOnly && (<>
         <p className="mr-lead">Enter it once, here. It takes a few seconds.</p>
-        <EntryCard userId={userId} transactions={transactions} taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
+        <EntryCard userId={userId} book={book} onDenied={onDenied} transactions={transactions} taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
           trackPersonal={trackPersonal} accounts={accounts} onSaved={(row) => setTransactions((prev) => [row, ...prev])} />
         <div className="mr-ways">
-          <button type="button" onClick={onSnap}>Snap a receipt</button>
+          {own && <button type="button" onClick={onSnap}>Snap a receipt</button>}
           <button type="button" onClick={onImport}>Import a statement</button>
-          <button type="button" onClick={onRecurring}>Repeating entries{recurringCount ? ` (${recurringCount})` : ''}</button>
+          {own && <button type="button" onClick={onRecurring}>Repeating entries{recurringCount ? ` (${recurringCount})` : ''}</button>}
         </div>
       </>)}
 
@@ -262,7 +279,7 @@ export function MoneyRegister({ userId, transactions, setTransactions, taxCatego
       {account && (startText == null ? (
         <div className="mr-note stuck">
           <span>{account.account} holds {fmtUSDCents(account.balance)}: a starting balance of {fmtUSDCents(account.starting_balance)} plus {account.entries} {account.entries === 1 ? 'entry' : 'entries'}.</span>
-          {!readOnly && <button type="button" onClick={() => setStartText(Number(account.starting_balance).toFixed(2))}>Set starting balance</button>}
+          {!readOnly && can(book, 'accounts') && <button type="button" onClick={() => setStartText(Number(account.starting_balance).toFixed(2))}>Set starting balance</button>}
         </div>
       ) : (
         <form className="mr-start" onSubmit={saveStart}>
@@ -287,7 +304,7 @@ export function MoneyRegister({ userId, transactions, setTransactions, taxCatego
       )}
 
       {rows.length === 0 ? (
-        <div className="mr-empty">{filtering || account ? 'Nothing in the register matches that.' : 'Your register is empty. The first entry you save above appears here.'}</div>
+        <div className="mr-empty">{filtering || account ? 'Nothing in the register matches that.' : readOnly ? 'This register is empty.' : 'Your register is empty. The first entry you save above appears here.'}</div>
       ) : (
         <div className="mr-book">
           <div className="mr-cols"><span>Date</span><span>Payee and category</span><span>{balances ? 'Amount and balance' : 'Amount'}</span></div>
@@ -296,7 +313,8 @@ export function MoneyRegister({ userId, transactions, setTransactions, taxCatego
               <div className="mr-month">{g.label}</div>
               {g.rows.map((t) => {
                 const n = names(t), income = Number(t.amount) > 0;
-                const sub = [t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', !account ? t.account : '', n.system].filter(Boolean).join(' · ');
+                const by = who && t.entered_by && who[t.entered_by] ? 'by ' + who[t.entered_by] : '';
+                const sub = [t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', !account ? t.account : '', n.system, by].filter(Boolean).join(' · ');
                 return (
                   <button type="button" key={t.id} className="mr-row" disabled={readOnly} onClick={() => onEdit(t)} data-testid="money-row">
                     <span className="d">{shortDate(t.date)}</span>

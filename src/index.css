@@ -2070,3 +2070,67 @@ body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-
 .mr-row .a.in b { color: #1F6B3A; }
 .mr-row .a i { display: block; font-style: normal; font-size: 12px; color: #5C5140; white-space: nowrap; }
 .mr-older { display: block; width: 100%; border: 0; border-top: 1px solid #D6CAAD; border-radius: 0; background: #EFE6D2; color: #4A4030; }
+
+/* ── Money: whose books (src/views/BookBar.jsx, BookAccess.jsx, BookRoom.jsx) ─
+   The bar names the open set of books and stays on screen while Money scrolls,
+   so nobody posts brokerage money into their own books. Shared books wear a
+   gold edge; a person's own books stay quiet. Every control is 44px or taller. */
+.bk-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; margin: 0 0 14px; padding: 8px 12px; background: #17130D; border: 1px solid #3A3222; border-radius: 14px; box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45); max-width: 720px; box-sizing: border-box; }
+/* A curtain above the bar: once it is stuck, nothing scrolls past in the gap between it and the header. */
+.bk-bar::before { content: ''; position: absolute; left: -16px; right: -16px; bottom: 100%; height: 56px; background: #100D09; pointer-events: none; }
+.bk-bar.shared { background: #2A2314; border-color: #C5A95E; border-left-width: 5px; }
+.bk-bar-who { display: flex; flex-direction: column; gap: 0; min-width: 0; flex: 1 1 140px; }
+.bk-eye { font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #D9BE78; }
+.bk-name { font-family: 'Fraunces', serif; font-weight: 400; font-size: 17px; line-height: 1.25; color: #F6F1E7; overflow-wrap: anywhere; }
+.bk-role { font-size: 12.5px; color: #CFC5AE; overflow-wrap: anywhere; }
+.bk-bar-go { display: flex; gap: 8px; flex-wrap: wrap; }
+.bk-bar-go button { min-height: 44px; padding: 0 12px; border: 1px solid #5A4E2E; border-radius: 999px; background: #0D0B08; color: #F6F1E7; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.bk-sheet { display: flex; flex-direction: column; gap: 14px; max-width: 520px; }
+.bk-sheet h3 { margin: 0; font-family: 'Fraunces', serif; font-weight: 300; font-size: 24px; color: #F6F1E7; }
+.bk-help { margin: 0; font-size: 13.5px; line-height: 1.5; color: #B8AE9A; }
+.bk-help b { color: #F6F1E7; font-weight: 700; }
+.bk-picks, .bk-seats { display: flex; flex-direction: column; gap: 8px; }
+.bk-pick { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 60px; padding: 10px 14px; border: 1px solid #4A4130; border-radius: 12px; background: #17130D; color: #F6F1E7; font: inherit; text-align: left; cursor: pointer; }
+.bk-pick.on { border-color: #C5A95E; background: #2A2314; }
+.bk-pick .who, .bk-seat .who, .bk-row .n, .bk-sum-row .n { min-width: 0; }
+.bk-pick .who b, .bk-seat .who b { display: block; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.bk-pick .who i, .bk-seat .who i, .bk-row .n i, .bk-sum-row .n i { display: block; font-style: normal; font-size: 12.5px; font-weight: 400; color: #CFC5AE; overflow-wrap: anywhere; }
+.bk-pick .here { flex-shrink: 0; font-size: 12.5px; font-weight: 700; color: #D9BE78; }
+.bk-quiet, .bk-link { min-height: 44px; padding: 0 14px; border: 1px solid #4A4130; border-radius: 12px; background: transparent; color: #CFC5AE; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.bk-quiet.danger { color: #E7A08F; border-color: #6B3B31; }
+.bk-link { border: 0; padding: 0 6px; color: #D9BE78; font-weight: 700; text-align: left; }
+.bk-seat { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: #17130D; border: 1px solid #3A3222; border-radius: 14px; }
+.bk-seat.off { border-style: dashed; }
+.bk-seat.off .who b { color: #B8AE9A; }
+.bk-seat-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bk-seat .who i.mail { color: #8C8475; }
+.bk-seat-edit { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.bk-seat-edit .mr-f { flex: 1 1 170px; }
+.bk-switch { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: #CFC5AE; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+.bk-switch .track { position: relative; display: block; width: 52px; height: 30px; border-radius: 30px; background: #3A3222; transition: background 0.15s; }
+.bk-switch .knob { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #B8AE9A; transition: left 0.15s, background 0.15s; }
+.bk-switch.on { color: #F6F1E7; }
+.bk-switch.on .track { background: #C5A95E; }
+.bk-switch.on .knob { left: 25px; background: #14110C; }
+.bk-switch:disabled { opacity: 0.6; }
+.bk-record { display: flex; flex-direction: column; gap: 0; padding: 12px 14px; background: #0D0B08; border: 1px solid #3A3222; border-radius: 14px; }
+.bk-record-line { display: flex; flex-direction: column; gap: 1px; padding: 8px 0; border-top: 1px solid #2A2418; font-size: 13.5px; color: #F6F1E7; }
+.bk-record-line i { font-style: normal; font-size: 12px; color: #8C8475; }
+.bk-list { display: flex; flex-direction: column; background: #17130D; border: 1px solid #3A3222; border-radius: 14px; overflow: hidden; }
+.bk-list:empty { display: none; }
+.bk-list-h { padding: 8px 14px; background: #221C12; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #D9BE78; }
+.bk-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 6px 14px; border-top: 1px solid #2A2418; font-size: 15px; font-weight: 600; color: #F6F1E7; }
+.bk-list .mr-card { border-radius: 0; border-width: 1px 0 0; }
+.bk-net { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.bk-net > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px; background: #17130D; border: 1px solid #3A3222; border-radius: 14px; }
+.bk-net span { font-size: 12px; font-weight: 600; color: #B8AE9A; }
+.bk-net b { font-size: 16px; font-weight: 700; color: #F6F1E7; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.bk-net .net { border-color: #C5A95E; background: #2A2314; }
+.bk-sum { display: flex; flex-direction: column; background: #F7F1E3; color: #1F1A12; border: 1px solid #C9BC9C; border-radius: 14px; overflow: hidden; }
+.bk-sum-h { padding: 9px 12px; background: #E9DFC8; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5C5140; }
+.bk-sum .bk-help { padding: 8px 12px 0; color: #5C5140; }
+.bk-sum-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 6px 12px; border-top: 1px solid #DDD2B8; font-size: 15px; font-weight: 600; }
+.bk-sum-row .n i { color: #5C5140; }
+.bk-sum-row .a { flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bk-sum-row.total { background: #EFE6D2; font-weight: 700; }
+@media (max-width: 420px) { .bk-net { grid-template-columns: minmax(0, 1fr); gap: 6px; } .bk-net > div { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; } }
