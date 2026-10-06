@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { enqueue } from '../outbox';
 import { todayNY } from '../clock';
+import { onDay } from '../occurrences';
 import { supabase } from '../dataService';
 import { pushHealth, resaveThisDevice, connectThisDevice, pushSupported, isIOS, isStandalone } from '../push';
 import { CallFollowupsPanel } from './ReviewPanels';
@@ -55,31 +56,12 @@ export default function TodayView({
 
   // The next thing on today's calendar — the first thing a person wants to know.
   const next = useMemo(() => {
-    const now = Date.now(); const today = todayNY();
-    // An event that repeats is stored once; place today's occurrence on today.
-    const ymd = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-    const lands = (e) => {
-      const first = ymd(e.start_at);
-      if (!e.recur_freq) return first === today;
-      if (first > today || (e.recur_until && String(e.recur_until).slice(0, 10) < today)) return false;
-      const a = new Date(first + 'T12:00:00Z'), b = new Date(today + 'T12:00:00Z'), n = Math.max(1, e.recur_interval || 1);
-      const days = Math.round((b - a) / 864e5);
-      if (e.recur_freq === 'daily') return days % n === 0;
-      if (e.recur_freq === 'weekly') return days % (7 * n) === 0;
-      const months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth();
-      if (e.recur_freq === 'monthly') return a.getUTCDate() === b.getUTCDate() && months % n === 0;
-      if (e.recur_freq === 'yearly') return a.getUTCDate() === b.getUTCDate() && a.getUTCMonth() === b.getUTCMonth() && (months / 12) % n === 0;
-      return false;
-    };
-    const onToday = (e) => {
-      if (!e.recur_freq || ymd(e.start_at) === today) return e;
-      const shift = Math.round((new Date(today + 'T12:00:00Z') - new Date(ymd(e.start_at) + 'T12:00:00Z')) / 864e5) * 864e5;
-      return { ...e, start_at: new Date(new Date(e.start_at).getTime() + shift).toISOString(), end_at: e.end_at ? new Date(new Date(e.end_at).getTime() + shift).toISOString() : e.end_at };
-    };
-    const todays = (events || []).filter(e => e && e.start_at && !e.all_day && e.status !== 'cancelled' && e.event_kind !== 'task_block' && lands(e))
-      .map(onToday)
-      .filter(e => new Date(e.end_at || e.start_at).getTime() >= now)
-      .sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+    const now = Date.now();
+    // Today's events by the one shared rule (src/occurrences.js): repeats
+    // expanded, each occurrence at its own time. This screen used to work
+    // repeats out for itself and knew only "every N days/weeks/months".
+    const todays = onDay(events, new Date()).filter(e => !e.all_day && e.status !== 'cancelled' && e.event_kind !== 'task_block')
+      .filter(e => new Date(e.end_at || e.start_at).getTime() >= now);
     return { first: todays[0] || null, more: Math.max(0, todays.length - 1) };
   }, [events]);
 

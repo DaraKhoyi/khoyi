@@ -66,7 +66,7 @@
 </style></head>
 <body><div class="card" id="app"><div class="big"><p>Loading…</p></div></div>
 <script>
-const VER="v210";
+const VER="v211";
 const SUPA="https://xlgfspnojjgvkuitcoaf.supabase.co";
 const ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsZ2ZzcG5vampndmt1aXRjb2FmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTk1NzksImV4cCI6MjA5NDk3NTU3OX0.t6stnTptCp6T7YC-ogUKA9OP5YXhCf5Zm-0-WLkEnm0";
 // Never throws and never hangs: a dropped connection used to leave the button
@@ -223,7 +223,7 @@ async function submit(){
     // A time that has gone needs a fresh list of times, with what was typed kept.
     if(res&&(res.error==="slot_taken"||res.error==="too_soon")){keep();S.selIso=null;S.notice=why;const again=await loadWeek();if(again){render();const e2=document.getElementById("err");if(e2)try{e2.scrollIntoView({block:"center"});}catch(e){}}return;}
     btn.disabled=false;btn.textContent=S.reschedToken?"Reschedule":"Confirm booking";return show(why);}
-  if(S.reschedToken){try{await api("booking-cancel",{cancel_token:S.reschedToken});}catch(e){}}
+  if(S.reschedToken){await api("booking-cancel",{cancel_token:S.reschedToken,rescheduled:true});}
   const wasResched=!!S.reschedToken;
   const whenLocal=new Date(res.when).toLocaleString("en-US",{timeZone:CTZ,weekday:"long",month:"long",day:"numeric",hour:"numeric",minute:"2-digit"});
   const whenET=new Date(res.when).toLocaleString("en-US",{timeZone:"America/New_York",weekday:"long",month:"long",day:"numeric",hour:"numeric",minute:"2-digit"});
@@ -255,7 +255,10 @@ async function cancelFlow(){
     const res=await loadWeek();if(res)render();
   };
   document.getElementById("doCancel").onclick=async()=>{
+    const btnC=document.getElementById("doCancel");btnC.disabled=true;btnC.textContent="Cancelling…";
     const r=await api("booking-cancel",{cancel_token:CANCEL});
+    // Say "cancelled" only when it was.
+    if(!r||!r.ok){btnC.disabled=false;btnC.textContent="Cancel booking";let m=document.getElementById("cerr");if(!m){m=document.createElement("div");m.id="cerr";m.className="err";m.setAttribute("role","alert");m.style.marginTop="14px";btnC.parentNode.appendChild(m);}m.textContent=r&&r.error==="not_found"?"We could not find that booking. It may already have been cancelled.":"That did not go through, and the booking is NOT cancelled. Check your connection and try again.";return;}
     app.innerHTML=`<div class="hdr"><div class="wm">REALTY <span class="o">ONE</span> GROUP <span class="a">Advantage</span></div></div>
     <div class="big"><div class="chk">✓</div><h2>Booking cancelled</h2><p>That time is now open again.</p>
     <div style="margin-top:16px"><button class="cta" id="rebook" style="width:auto;padding:13px 22px">Book a new time</button></div></div>`;

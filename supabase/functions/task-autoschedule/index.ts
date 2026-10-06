@@ -9,6 +9,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isServiceCaller } from "../_shared/serviceCaller.ts";
 import { dialLevel } from "../_shared/dial.ts";
+// @ts-ignore plain JavaScript shared with the app
+import { expand } from "../_shared/recurrence.js";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
@@ -292,6 +294,19 @@ async function scheduleUser(userId, now) {
       start: s,
       end: en
     });
+  }
+  // Repeating meetings. A repeat is stored once, on its first date, so the
+  // query above (by start date) never saw one that began before yesterday:
+  // task blocks were being placed on top of every weekly meeting. Expanded by
+  // the one shared rule (_shared/recurrence.js). 6 Oct 2026.
+  {
+    const { data: series, error: sErr } = await admin.from("events").select("start_at,end_at,all_day,status,event_kind,recur_freq,recur_interval,recur_until,recur_count,recur_rule,recur_exdates")
+      .eq("user_id", userId).or("recur_freq.not.is.null,recur_rule.not.is.null").lte("start_at", new Date(horizonEnd).toISOString());
+    if (sErr) console.error("task-autoschedule: repeating events could not be read", sErr.message);
+    for (const e of series || []) {
+      if (e.all_day || e.status === "cancelled" || e.event_kind === "task_block") continue;
+      for (const o of expand(e, now - 86_400_000, horizonEnd, "America/New_York")) busy.push({ start: o.s - bufferMs, end: o.e + bufferMs });
+    }
   }
   // flexible hours
   const { data: flex } = await admin.from("flexible_hours").select("*").eq("user_id", userId).gte("date", new Date(now - 86_400_000).toISOString().slice(0, 10));

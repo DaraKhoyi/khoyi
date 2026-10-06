@@ -1941,7 +1941,7 @@ function AppMain() {
           userId={user.id} name={(robots && robots[0] && robots[0].name) || 'Ari'}
           setView={setView} oweReplyMap={oweReplyMap}
           onOpenTask={(t)=>{ if (setFocusTaskId) setFocusTaskId(t.id); setView('tasks'); }}
-          setTasks={setTasks}
+          setTasks={setTasks} setEvents={setEvents}
           onClose={()=>setPlanOpen(false)}
         />
       )}

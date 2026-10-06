@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../dataService';
 import { todayNY } from '../clock';
+import { onDay } from '../occurrences';
 import { calm } from '../calm';
 
 // ── GOALS FOR THE DAY (4 Oct 2026) ──────────────────────────────────────────
@@ -186,7 +187,7 @@ export default function GoalsBand({ userId, tasks = [], setTasks, events = [], s
         </div>
       )}
 
-      {picking === 'today' && <Picker day={today} label="today" goals={mine} n={n} setN={setN} userId={userId} tasks={tasks} setTasks={setTasks} busyDay={(events || []).filter(e => e && e.start_at && !e.all_day && e.status !== 'cancelled' && new Date(e.start_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) === today).length >= 4} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />}
+      {picking === 'today' && <Picker day={today} label="today" goals={mine} n={n} setN={setN} userId={userId} tasks={tasks} setTasks={setTasks} busyDay={onDay(events, new Date()).filter(e => !e.all_day && e.status !== 'cancelled' && e.event_kind !== 'task_block').length >= 4} rolled={rolled} onChange={load} onClose={() => setPicking(null)} />}
 
       {closing && <CloseDay goals={mine} isDone={isDone} today={today} tomorrow={tomorrow} userId={userId} taskById={taskById} setTasks={setTasks} onChange={load} onClose={() => setClosing(false)} />}
 

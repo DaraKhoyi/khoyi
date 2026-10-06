@@ -1,6 +1,7 @@
 // BookingsManagerModal — settings panel extracted from App.js (strangle).
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../dataService';
+import { confirmDialog } from '../notify';
 
 export default function BookingsManagerModal({ userId, slug, onClose }) {
   const [rows, setRows] = React.useState(null);
@@ -15,13 +16,16 @@ export default function BookingsManagerModal({ userId, slug, onClose }) {
   }, [userId]);
   React.useEffect(() => { load(); }, [load]);
   const cancelOne = async (bk) => {
+    // Cancelling emails the client. Say so before it happens: nothing goes out
+    // in the agent's name without a yes.
+    if (!await confirmDialog(`Cancel ${bk.client_name}'s booking on ${fmt(bk.start_at)}? An email saying it is cancelled, with your link to book another time, will be sent to ${bk.client_email}.`)) return;
     setBusy(b => ({ ...b, [bk.id]: true }));
     // Say "cancelled" only when it was. This used to announce success whatever happened.
-    let failed = '';
-    try { const { data, error } = await supabase.functions.invoke('booking-cancel', { body: { cancel_token: bk.cancel_token } }); if (error || !data || !data.ok) failed = (error && error.message) || (data && data.error) || 'no answer'; }
+    let failed = '', told = null;
+    try { const { data, error } = await supabase.functions.invoke('booking-cancel', { body: { cancel_token: bk.cancel_token } }); if (error || !data || !data.ok) failed = (error && error.message) || (data && data.error) || 'no answer'; else told = data.told; }
     catch (e) { failed = String((e && e.message) || e); }
     setBusy(b => { const n = { ...b }; delete n[bk.id]; return n; });
-    if (window.__notify) window.__notify(failed ? 'That booking was NOT cancelled (' + failed + '). Try again.' : 'Booking cancelled', failed ? 'error' : 'success');
+    if (window.__notify) window.__notify(failed ? 'That booking was NOT cancelled (' + failed + '). Try again.' : (told && told.client ? 'Booking cancelled. ' + bk.client_name + ' has been emailed.' : 'Booking cancelled. The email to ' + bk.client_name + ' could NOT be sent: please tell them yourself.'), failed ? 'error' : (told && told.client ? 'success' : 'info'));
     load();
   };
   const copyResched = (bk) => { try { navigator.clipboard.writeText(`https://darasapp.com/book/${bk.slug || slug}?cancel=${bk.cancel_token}`); if (window.__notify) window.__notify('Reschedule link copied — send it to the client', 'success'); } catch (_) {} };

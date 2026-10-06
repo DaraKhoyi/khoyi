@@ -1,6 +1,8 @@
 // PlanMyDayModal — builds the user's plan for the day (AI-ordered tasks +
 // calendar) as a reviewable timeline. Extracted from App.js (strangle).
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { onDay } from '../occurrences';
+import { loadEvents } from '../eventsLoad';
 import { supabase } from '../dataService';
 import { logJournalEntry } from '../lib/journalLog';
 import { buildGrowthMoves } from '../../supabase/functions/robot-chat/nba.js';
@@ -10,7 +12,12 @@ import { useBackClose } from '../backClose';
 import PlanTimeline from './PlanTimeline';
 import PrismThinking from './PrismThinking';
 
-export default function PlanMyDayModal({ tasks, events, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, onClose, oweReplyMap = {} }) {
+export default function PlanMyDayModal({ tasks, events: allEvents, contacts = [], properties = [], userId, name, setView, onOpenTask, setTasks, setEvents, onClose, oweReplyMap = {} }) {
+  // Today's events as the calendar shows them: repeating meetings included,
+  // all-day events on their own date (src/occurrences.js). Until 6 Oct 2026 this
+  // screen read only each event's first date, so it planned over every weekly
+  // meeting and took tomorrow's birthday for today's.
+  const events = useMemo(() => onDay(allEvents, new Date()), [allEvents]);
 
   useBackClose(onClose);
   const [state, setState] = useState({ loading: true });
@@ -40,7 +47,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
     (tasks || []).filter(t => isTopPriority(t)).forEach(t => { if (!sel.has(t.id)) sel.set(t.id, t); });
     const tpart = Array.from(sel.values()).map(t => `${t.id}:${t.due_date || ''}:${priorityLabel(t)}`).sort().join(',');
     const td = new Date();
-    const epart = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === td.toDateString()).map(e => `${e.title}|${e.start_at}|${e.end_at || ''}`).sort().join(',');
+    const epart = (events || []).map(e => `${e.title}|${e.start_at}|${e.end_at || ''}`).sort().join(',');
     return `T[${tpart}]E[${epart}]`;
   };
 
@@ -59,7 +66,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
       tasks.filter(t => !t.completed && isTopPriority(t)).forEach(t => { if (!tsel.has(t.id)) tsel.set(t.id, t); });
       const payloadTasks = Array.from(tsel.values()).slice(0, 30).map((t, i) => { const id = `t${i + 1}`; tmap.set(id, t); return { id, title: t.title, due_date: t.due_date || null, priority: priorityLabel(t) }; });
       const localHHMM = (iso) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-      const ev = (events || []).filter(e => e.start_at && new Date(e.start_at).toDateString() === today.toDateString()).map(e => e.all_day ? ({ title: e.title, all_day: true }) : ({ title: e.title, start: localHHMM(e.start_at), end: e.end_at ? localHHMM(e.end_at) : null }));
+      const ev = (events || []).map(e => e.all_day ? ({ title: e.title, all_day: true }) : ({ title: e.title, start: localHHMM(e.start_at), end: e.end_at ? localHHMM(e.end_at) : null }));
       const nowMs = Date.now();
       const relAge = (ts) => { if (!ts) return 'never'; const d = Math.floor((nowMs - new Date(ts).getTime()) / 86400000); if (d <= 0) return 'today'; if (d === 1) return '1d ago'; if (d < 7) return d + 'd ago'; if (d < 30) return Math.floor(d / 7) + 'w ago'; if (d < 365) return Math.floor(d / 30) + 'mo ago'; return Math.floor(d / 365) + 'y ago'; };
       const lastTouch = (c) => { const a = [c.last_contact_at, c.last_inbound_at, c.last_outbound_at].filter(Boolean).map(t => new Date(t).getTime()); return a.length ? Math.max(...a) : null; };
@@ -264,20 +271,28 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
       const items = plan.map(p => { const cRef = (p.refs || []).find(r => mapsRef.current.contacts.has(r)); const cc = cRef ? mapsRef.current.contacts.get(cRef) : null; return { title: p.title, when: p.when, start: p.start || null, end: p.end || null, why: p.why, kind: p.kind, refs: p.refs || [], taskId: p.taskId || null, contactId: cc ? cc.id : null }; });
       await supabase.from('day_plans').upsert({ user_id: userId, plan_date: tISO, summary: state.summary, items, inputs_sig: inputsSig(), updated_at: new Date().toISOString() }, { onConflict: 'user_id,plan_date' });
       // #6 — calendar write-back: drop the timed focus blocks onto the calendar (pushes to Google on next sync)
-      let calN = 0;
+      let calN = 0, calError = '';
       if (pushCal) {
         try {
           const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
           const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
-          // Clear prior Plan-my-day blocks for today to avoid duplicates on re-accept
-          await supabase.from('events').delete().eq('user_id', userId).eq('category', 'Plan my day').gte('start_at', startOfDay.toISOString()).lte('start_at', endOfDay.toISOString()).in('sync_status', ['local', 'pending_push']);
+          // Clear EVERY prior Plan-my-day block for today before adding the new
+          // ones. This used to clear only blocks that had not yet reached Google,
+          // so after a sync the old blocks stayed, here and in Google, and each
+          // re-plan added another set.
+          const { data: old, error: oErr } = await supabase.from('events').select('id, google_event_id').eq('user_id', userId).eq('category', 'Plan my day').gte('start_at', startOfDay.toISOString()).lte('start_at', endOfDay.toISOString());
+          if (oErr) throw oErr;
+          for (const o of old || []) { if (o.google_event_id) { const { error: gErr } = await supabase.functions.invoke('calendar-delete', { body: { event_id: o.id } }); if (gErr) console.warn('Plan my day: an old block could not be removed from Google', gErr.message); } }
+          if ((old || []).length) { const { error: dErr } = await supabase.from('events').delete().in('id', old.map(o => o.id)); if (dErr) throw dErr; }
           const mk = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); const d = new Date(); d.setHours(h, m || 0, 0, 0); return d.toISOString(); };
           const evRows = plan.filter(p => p.start && p.end).map(p => ({ user_id: userId, title: p.title, description: `From Plan my day${p.why ? ` — ${p.why}` : ''}`, start_at: mk(p.start), end_at: mk(p.end), all_day: false, category: 'Plan my day', color: '#c5a95e', sync_status: 'pending_push' }));
-          if (evRows.length) { await supabase.from('events').insert(evRows); calN = evRows.length; }
-        } catch (_e) {}
+          if (evRows.length) { const { error: iErr } = await supabase.from('events').insert(evRows); if (iErr) throw iErr; calN = evRows.length; }
+          // Show them on the calendar now, not after the next reload.
+          if (setEvents) { const { data: fresh } = await loadEvents(); if (fresh) setEvents(fresh); }
+        } catch (e) { calError = String((e && e.message) || e); }
       }
       if (setTasks) setTasks(prev => [...prev.map(t => pullIds.includes(t.id) ? { ...t, due_date: tISO } : t), ...inserted]);
-      if (mounted.current) setState(s => ({ ...s, mode: 'saved', plan: items, justAccepted: pullIds.length + inserted.length, calN }));
+      if (mounted.current) setState(s => ({ ...s, mode: 'saved', plan: items, justAccepted: pullIds.length + inserted.length, calN, calError }));
     } catch (e) { if (mounted.current) setState(s => ({ ...s, acceptError: String(e.message || e) })); }
     setAccepting(false);
   };
@@ -628,7 +643,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
                 const out = [];
                 // a) calendar double-booking among today's timed events
                 const td = new Date();
-                const evs = (events || []).filter(e => e.start_at && !e.all_day && new Date(e.start_at).toDateString() === td.toDateString())
+                const evs = (events || []).filter(e => !e.all_day)
                   .map(e => ({ title: e.title, s: new Date(e.start_at).getTime(), e: e.end_at ? new Date(e.end_at).getTime() : new Date(e.start_at).getTime() + 3600000 }))
                   .sort((a, b) => a.s - b.s);
                 for (let i = 1; i < evs.length; i++) { if (evs[i].s < evs[i - 1].e) { out.push({ level: 'risk', text: `Calendar conflict: “${evs[i - 1].title}” overlaps “${evs[i].title}.”` }); break; } }
@@ -696,7 +711,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
                 const mode = viewMode || (hasTimed ? 'timeline' : 'list');
                 const localHHMM = (iso) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
                 const td = new Date();
-                const eventsToday = (events || []).filter(e => e.start_at && !e.all_day && new Date(e.start_at).toDateString() === td.toDateString()).map(e => ({ title: e.title, start: localHHMM(e.start_at), end: e.end_at ? localHHMM(e.end_at) : null }));
+                const eventsToday = (events || []).filter(e => !e.all_day).map(e => ({ title: e.title, start: localHHMM(e.start_at), end: e.end_at ? localHHMM(e.end_at) : null }));
                 if (plan.length === 0) { const moves=buildGrowthMoves({contacts,deals:[],gciGoal:0,now:Date.now()}); return (
                   <div style={{ padding:'6px 0' }}>
                     <div style={{ fontSize:13.5, color:'var(--text-1)', fontWeight:700, marginBottom:3 }}>Nothing urgent to sequence — nice.</div>
@@ -757,7 +772,7 @@ export default function PlanMyDayModal({ tasks, events, contacts = [], propertie
                       <button onClick={() => setReviewing(true)} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', borderRadius: 11, padding: '11px', fontSize: 13.5, marginTop: 11 }}>
                         {review.saved ? '✓ View end-of-day review' : '🌙 End-of-day review'}
                       </button>
-                      {state.justAccepted != null && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 7 }}>Saved to today. Check items off here or in Tasks — this plan will be waiting when you reopen.{state.calN ? ` ${state.calN} time block${state.calN === 1 ? '' : 's'} added to your calendar — open Calendar to sync to Google.` : ''}</div>}
+                      {state.justAccepted != null && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 7 }}>Saved to today. Check items off here or in Tasks — this plan will be waiting when you reopen.{state.calError ? ` The time blocks could NOT be put on your calendar (${state.calError}).` : ''}{state.calN ? ` ${state.calN} time block${state.calN === 1 ? '' : 's'} added to your calendar — open Calendar to sync to Google.` : ''}</div>}
                     </>
                   ) : (
                     <>

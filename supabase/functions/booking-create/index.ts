@@ -139,6 +139,16 @@ serve(async (req) => {
     // with nothing on the agent's calendar is the worst outcome this page has.
     if (evErr || !ev?.id) return json({ ok: false, error: "could_not_save" }, 500);
     const eventId = ev.id;
+    // Two clients can pass the check above in the same second. Look again now
+    // that this one is on the calendar: if another event is on the same time,
+    // the later of the two steps back.
+    {
+      const { data: rivals } = await admin.from("events").select("id, created_at").eq("user_id", userId).neq("id", eventId).neq("status", "cancelled").eq("all_day", false)
+        .eq("event_kind", "appointment").lt("start_at", endIso).gt("end_at", startIso);
+      const { data: mine } = await admin.from("events").select("created_at").eq("id", eventId).maybeSingle();
+      const lost = (rivals || []).some((r: any) => r.id !== ownEventId && (r.created_at < (mine?.created_at || "") || (r.created_at === mine?.created_at && r.id < eventId)));
+      if (lost) { await admin.from("events").delete().eq("id", eventId); return json({ ok: false, error: "slot_taken" }, 409); }
+    }
 
     // Google Meet: create the event directly in Google to mint a Meet link.
     let meetLink = "";

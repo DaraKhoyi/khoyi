@@ -37,8 +37,9 @@ async function pages(build) {
 export async function loadEvents() {
   const { lower, upper } = eventsWindow();
   const [once, repeating] = await Promise.all([
-    pages(() => supabase.from('events').select('*').is('recur_freq', null).gte('start_at', lower).lte('start_at', upper)),
-    pages(() => supabase.from('events').select('*').not('recur_freq', 'is', null).lte('start_at', upper)),
+    pages(() => supabase.from('events').select('*').is('recur_freq', null).is('recur_rule', null).gte('start_at', lower).lte('start_at', upper)),
+    // a repeat is one made here (recur_freq) or one kept as Google's own rule (recur_rule)
+    pages(() => supabase.from('events').select('*').or('recur_freq.not.is.null,recur_rule.not.is.null').lte('start_at', upper)),
   ]);
   if (once.error || repeating.error) return { data: null, error: once.error || repeating.error };
   const data = [...once.data, ...repeating.data].sort((a, b) => String(a.start_at).localeCompare(String(b.start_at)));

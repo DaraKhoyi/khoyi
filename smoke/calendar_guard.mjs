@@ -21,7 +21,8 @@ for (const cls of ['day-timeline-scroll', 'week-grid-scroll']) {
 }
 expect(/\.day-event-block\s*\{[^}]*var\(--lanes, 1\)/.test(css) && /\.week-event-block\s*\{[^}]*var\(--lanes, 1\)/.test(css), 'event blocks no longer take their width from their lane — same-time events will overlap');
 const view = fs.readFileSync('src/views/CalendarView.jsx', 'utf8');
-expect((view.match(/layoutLanes\(/g) || []).length >= 2 && (view.match(/laneVars\(/g) || []).length >= 3, 'the day or week view no longer lays its blocks out in lanes');
+// (the task block moved to its own file on 6 Oct 2026; it must still take its lane)
+expect((view.match(/layoutLanes\(/g) || []).length >= 2 && ((view + fs.readFileSync('src/views/DayTaskBlock.jsx', 'utf8')).match(/laneVars\(/g) || []).length >= 3, 'the day or week view no longer lays its blocks out in lanes');
 
 const overlaps = (a, b) => a.top < b.top + b.height - 0.5 && b.top < a.top + a.height - 0.5;
 const check = (name, boxes, wantLanes) => {
@@ -57,10 +58,10 @@ expect(/ends before it starts/.test(D.eventFormProblem({ ...form, endTime: '09:0
 expect(D.eventFormProblem({ ...form, endDate: '' }) === '', 'clearing the end date makes Save do nothing, silently');
 expect(/title/.test(D.eventFormProblem({ ...form, title: '   ' })), 'a blank title makes Save do nothing, silently');
 expect(ymdL(D.stepMonth(new Date(2026, 9, 31), 1)) === '2026-11-30' && ymdL(D.stepMonth(new Date(2026, 2, 31), -1)) === '2026-02-28', 'stepping a month from the 31st skips a month');
-expect(/allDayStart\(raw\.start_at\)/.test(view) && /eventFormProblem\(/.test(view) && /disabled=\{saving\}/.test(view) && /stepMonth\(d, delta\)/.test(view), 'the calendar screen stopped using the date rules in src/calendarDates.js');
+expect(/allDayStart\(sIso\)/.test(fs.readFileSync('src/occurrences.js', 'utf8')) && /eventFormProblem\(/.test(view) && /disabled=\{saving\}/.test(view) && /stepMonth\(d, delta\)/.test(view), 'the calendar screen stopped using the date rules in src/calendarDates.js');
 // ── one way to read the calendar, paged
 const load = fs.readFileSync('src/eventsLoad.js', 'utf8');
-expect(/\.range\(from, from \+ PAGE - 1\)/.test(load) && /not\('recur_freq', 'is', null\)/.test(load), 'the calendar loader no longer pages, or no longer brings every repeating event');
+expect(/\.range\(from, from \+ PAGE - 1\)/.test(load) && /or\('recur_freq\.not\.is\.null,recur_rule\.not\.is\.null'\)/.test(load), 'the calendar loader no longer pages, or no longer brings every repeating event');
 for (const f of ['src/App.js', 'src/views/CalendarView.jsx']) expect(!/from\('events'\)\.select\('\*'\)/.test(fs.readFileSync(f, 'utf8')), `${f} reads the whole events table directly again — past 1,000 events the newest silently disappear; use loadEvents()`);
 
 if (problems.length) { console.error(`\n==== CALENDAR: ${problems.length} problem(s) ====`); for (const p of problems) console.error('  ✗ ' + p); process.exit(1); }

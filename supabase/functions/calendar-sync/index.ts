@@ -80,22 +80,47 @@ function parseRRule(recurrence: any): { recur_freq: string|null; recur_interval:
   return { recur_freq, recur_interval, recur_until, recur_count };
 }
 
-function toGoogleEvent(ev: any) {
+// `isUpdate`: the event already exists in Google and is being changed.
+function toGoogleEvent(ev: any, tz: string, isUpdate: boolean) {
   const g: any = {
     summary: ev.title,
     description: ev.description || undefined,
     location: ev.location || undefined,
   };
   if (ev.all_day) {
-    g.start = { date: ev.start_at.slice(0, 10) };
-    g.end = { date: (ev.end_at || ev.start_at).slice(0, 10) };
+    // Stored as dates in UTC: start = first day, end = the day after the last.
+    const first = new Date(ev.start_at).toISOString().slice(0, 10);
+    let after = new Date(ev.end_at || ev.start_at).toISOString().slice(0, 10);
+    if (after <= first) after = new Date(Date.parse(first + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);   // Google refuses an all-day event that ends on its own first day
+    g.start = { date: first };
+    g.end = { date: after };
+    // "Free" unless the person closed the day to bookings in PrismOS.
+    g.transparency = ev.blocks_time === true ? "opaque" : "transparent";
   } else {
-    g.start = { dateTime: new Date(ev.start_at).toISOString() };
-    g.end = { dateTime: new Date(ev.end_at || ev.start_at).toISOString() };
+    // Google requires a named timezone on a repeating event, and it is what
+    // keeps "10:00 every Tuesday" at 10:00 when the clocks change.
+    g.start = { dateTime: new Date(ev.start_at).toISOString(), timeZone: tz };
+    g.end = { dateTime: new Date(ev.end_at || ev.start_at).toISOString(), timeZone: tz };
   }
-  const rr = toRRule(ev);
-  if (rr) g.recurrence = rr;
+  // The repeat rule. When PrismOS holds Google's own rule (recur_rule), a
+  // change to the event must NOT send a rule at all: PrismOS only knows the
+  // plain form (how often, until when), and sending that replaced "Monday,
+  // Wednesday and Friday" with "weekly" in Google. Leaving the field out of an
+  // update keeps Google's rule. A rule is sent only when the person set the
+  // repeat here (the app clears recur_rule when they do).
+  if (Array.isArray(ev.recur_rule) && ev.recur_rule.length) { if (!isUpdate) g.recurrence = ev.recur_rule; }
+  else { const rr = toRRule(ev); if (rr) g.recurrence = rr; else if (isUpdate) g.recurrence = []; }
   return g;
+}
+
+// Why Google refused, in a person's words, and whether trying again can help.
+function pushProblem(status: number, body: string, isUpdate: boolean): { why: string; give_up: boolean } {
+  const reason = (() => { try { const j = JSON.parse(body); return String(j?.error?.errors?.[0]?.reason || j?.error?.message || ""); } catch (_) { return ""; } })();
+  if (status === 403 && /forbiddenForNonOrganizer|forbidden/i.test(reason + body)) return { why: "Google did not accept this change: the event belongs to someone else's calendar, and only they can change it.", give_up: true };
+  if ((status === 404 || status === 410) && isUpdate) return { why: "This event no longer exists in Google Calendar, so the change could not be sent.", give_up: true };
+  if (status === 400) return { why: "Google did not accept this event (" + (reason || "it was not valid") + "). Open it, check the dates and times, and save it again.", give_up: true };
+  if (status === 401 || status === 403) return { why: "Google would not let PrismOS write to the calendar. Reconnect the calendar account in Settings.", give_up: false };
+  return { why: "Google Calendar did not answer (" + status + "). PrismOS will try again.", give_up: false };
 }
 
 // Convert a Google event to Supabase fields
@@ -104,7 +129,13 @@ function fromGoogleEvent(g: any, userId: string, calendarId: string) {
   const startAt = allDay ? `${g.start.date}T00:00:00Z` : g.start?.dateTime;
   const endAt = allDay ? `${g.end?.date || g.start.date}T00:00:00Z` : g.end?.dateTime;
   const rec = parseRRule(g.recurrence);
+  // Keep Google's own lines (RRULE, EXDATE) exactly; src/recurrence.js reads them.
+  const rule = Array.isArray(g.recurrence) && g.recurrence.some((r: any) => typeof r === "string" && /^RRULE:/i.test(r)) ? g.recurrence.filter((r: any) => typeof r === "string") : null;
   return {
+    recur_rule: rule,
+    push_error: null,
+    // An all-day "out of office" closes the day; nothing else all-day does unless ticked in PrismOS.
+    ...(allDay && g.eventType === "outOfOffice" ? { blocks_time: true } : {}),
     user_id: userId,
     title: g.summary || "(no title)",
     description: g.description || null,
@@ -223,10 +254,13 @@ serve(async (req) => {
         .eq("id", account.id);
     }
 
+    const { data: tzRow } = await supabase.from("user_settings").select("timezone").eq("user_id", user_id).maybeSingle();
+    const tz = (tzRow && tzRow.timezone) || "America/New_York";
+
     const gcalBase = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar_id)}/events`;
     const authHeaders = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
 
-    let pushed = 0, pulled = 0, deleted = 0;
+    let pushed = 0, pulled = 0, deleted = 0, failed = 0;
 
     // ---------- PUSH ----------
     if (direction === "both" || direction === "push") {
@@ -237,29 +271,38 @@ serve(async (req) => {
         .eq("sync_status", "pending_push");
 
       for (const ev of pendingEvents || []) {
+        // A change that does not reach Google is SAID, on the event. Until
+        // 6 Oct 2026 a refusal was skipped in silence and the row stayed
+        // "pending" for good: it never went up, and because pending rows are
+        // protected from the pull, Google's later changes never came down.
+        const isUpdate = !!ev.google_event_id;
+        let problem: { why: string; give_up: boolean } | null = null;
         try {
-          const gEvent = toGoogleEvent(ev);
-          let resp;
-          if (ev.google_event_id) {
-            resp = await fetch(`${gcalBase}/${ev.google_event_id}`, {
-              method: "PATCH", headers: authHeaders, body: JSON.stringify(gEvent),
-            });
-          } else {
-            resp = await fetch(gcalBase, {
-              method: "POST", headers: authHeaders, body: JSON.stringify(gEvent),
-            });
-          }
+          const gEvent = toGoogleEvent(ev, tz, isUpdate);
+          const resp = isUpdate
+            ? await fetch(`${gcalBase}/${ev.google_event_id}`, { method: "PATCH", headers: authHeaders, body: JSON.stringify(gEvent) })
+            : await fetch(gcalBase, { method: "POST", headers: authHeaders, body: JSON.stringify(gEvent) });
           if (resp.ok) {
             const created = await resp.json();
-            await supabase.from("events").update({
+            const { error: upErr } = await supabase.from("events").update({
               google_event_id: created.id,
+              google_calendar_id: ev.google_calendar_id || calendar_id,
               google_etag: created.etag,
               sync_status: "synced",
+              push_error: null,
               last_synced_at: new Date().toISOString(),
             }).eq("id", ev.id);
+            if (upErr) console.error("calendar-sync: pushed but could not mark synced", ev.id, upErr.message);
             pushed++;
+            continue;
           }
-        } catch (_) { /* skip individual failures */ }
+          problem = pushProblem(resp.status, (await resp.text()).slice(0, 600), isUpdate);
+        } catch (e) { problem = { why: "Google Calendar could not be reached (" + String((e as Error)?.message || e).slice(0, 80) + "). PrismOS will try again.", give_up: false }; }
+        failed++;
+        // give_up: trying again cannot help, so stop holding the row as pending.
+        // Otherwise it stays pending (and is retried) with the reason shown.
+        const { error: fErr } = await supabase.from("events").update({ push_error: problem!.why, ...(problem!.give_up ? { sync_status: "push_failed" } : {}) }).eq("id", ev.id);
+        if (fErr) console.error("calendar-sync: could not record a failed push", ev.id, fErr.message);
       }
 
       // Handle local deletes flagged as pending (title prefix convention not used; rely on a tombstone table later)
@@ -277,8 +320,16 @@ serve(async (req) => {
 
       let pageToken: string | undefined;
       let nextSyncToken: string | undefined;
-      let useSyncToken = syncState?.sync_token || undefined;
-      let fullResync = false;
+      // RULES_VERSION: raise it when the pull starts keeping something new, and
+      // every calendar is re-read in full once so rows already here get it.
+      //   2 (6 Oct 2026): Google's own repeat rule, and single occurrences
+      //   cancelled or moved out of a series.
+      const RULES_VERSION = 2;
+      const behind = (syncState?.rules_version ?? 0) < RULES_VERSION;
+      let useSyncToken = behind ? undefined : (syncState?.sync_token || undefined);
+      let fullResync = behind;
+      // Single occurrences taken out of their series: master google id -> start times.
+      const lifted = new Map<string, string[]>();
 
       do {
         const params = new URLSearchParams();
@@ -311,6 +362,13 @@ serve(async (req) => {
         const listData = await listResp.json();
 
         for (const g of listData.items || []) {
+          // One occurrence of a repeating event that was cancelled or moved.
+          // The series must stop showing it at its original time; a moved one
+          // is then kept below as an event of its own.
+          if (g.recurringEventId) {
+            const orig = g.originalStartTime?.dateTime || (g.originalStartTime?.date ? `${g.originalStartTime.date}T00:00:00Z` : null);
+            if (orig) lifted.set(g.recurringEventId, [...(lifted.get(g.recurringEventId) || []), new Date(orig).toISOString()]);
+          }
           if (g.status === "cancelled") {
             // Deleted in Google — remove locally
             const { error: delErr } = await supabase
@@ -323,10 +381,6 @@ serve(async (req) => {
             continue;
           }
           if (!g.start) continue; // skip malformed
-          // Skip modified single instances of a recurring series — PrismOS
-          // tracks the series at the master level and doesn't model per-instance
-          // exceptions yet. (These items carry a recurringEventId.)
-          if (g.recurringEventId) continue;
           const row = fromGoogleEvent(g, user_id, calendar_id);
           // Upsert on (user_id, google_calendar_id, google_event_id)
           const { data: existing } = await supabase
@@ -339,12 +393,12 @@ serve(async (req) => {
           if (existing) {
             // Don't clobber a local pending_push edit
             if (existing.sync_status !== "pending_push") {
-              await supabase.from("events").update(row).eq("id", existing.id);
-              pulled++;
+              const { error: uErr } = await supabase.from("events").update(row).eq("id", existing.id);
+              if (uErr) console.error("calendar-sync: pull update failed", g.id, uErr.message); else pulled++;
             }
           } else {
-            await supabase.from("events").insert(row);
-            pulled++;
+            const { error: iErr } = await supabase.from("events").insert(row);
+            if (iErr) console.error("calendar-sync: pull insert failed", g.id, iErr.message); else pulled++;
           }
         }
 
@@ -352,12 +406,26 @@ serve(async (req) => {
         if (listData.nextSyncToken) nextSyncToken = listData.nextSyncToken;
       } while (pageToken);
 
+      // Take the lifted occurrences out of their series (after every page is
+      // in, so the series row exists whichever order Google sent them in).
+      for (const [masterGid, times] of lifted) {
+        const { data: master } = await supabase.from("events").select("id, recur_exdates")
+          .eq("user_id", user_id).eq("google_calendar_id", calendar_id).eq("google_event_id", masterGid).maybeSingle();
+        if (!master) continue;
+        const have = new Set((master.recur_exdates || []).map((t: string) => new Date(t).getTime()));
+        const add = times.filter((t) => !have.has(new Date(t).getTime()));
+        if (!add.length) continue;
+        const { error: xErr } = await supabase.from("events").update({ recur_exdates: [...(master.recur_exdates || []), ...add] }).eq("id", master.id);
+        if (xErr) console.error("calendar-sync: could not lift an occurrence", masterGid, xErr.message);
+      }
+
       // Persist syncToken
       if (nextSyncToken) {
         const upsert = {
           user_id,
           google_calendar_id: calendar_id,
           sync_token: nextSyncToken,
+          rules_version: RULES_VERSION,
           last_incremental_sync_at: new Date().toISOString(),
           ...(fullResync || !syncState ? { last_full_sync_at: new Date().toISOString() } : {}),
         };
@@ -386,7 +454,7 @@ serve(async (req) => {
       autolinked = Array.isArray(al) ? al[0] : al;
     } catch (_) { /* non-fatal */ }
 
-    return new Response(JSON.stringify({ ok: true, pushed, pulled, deleted, autolinked }), {
+    return new Response(JSON.stringify({ ok: true, pushed, pulled, deleted, failed, autolinked }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

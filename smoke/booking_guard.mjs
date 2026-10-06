@@ -14,7 +14,6 @@
 //   • A booking that failed to save was still announced as "You're booked!".
 // Static, no credentials. BLOCKS.
 import fs from 'node:fs';
-import { transformSync } from 'esbuild';
 const problems = [];
 const expect = (ok, what) => { if (!ok) problems.push(what); };
 const read = (p) => fs.readFileSync(p, 'utf8');
@@ -36,16 +35,7 @@ const settings = read('src/views/SettingsView.jsx');
 expect(/data-testid="booking-office-address"/.test(settings) && !/is set under “About you” above/.test(settings), 'the booking settings lost their office address box, or point to another page for it again');
 expect(/NOT cancelled/.test(read('src/views/BookingsManagerModal.jsx')), 'cancelling a booking reports success even when it failed');
 
-// ── repeats count as busy, in Tampa time across the clock change
-const js = transformSync(read('supabase/functions/_shared/busy.ts'), { loader: 'ts', format: 'esm' }).code;
-const { occurrences } = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
-const tz = 'America/New_York', t = (s) => new Date(s).getTime(), at = (a) => a.map((x) => new Date(x.s).toISOString().slice(0, 16)).join(',');
-const weekly = { id: 'a', start_at: '2025-01-07T15:00:00Z', end_at: '2025-01-07T16:00:00Z', recur_freq: 'weekly', recur_interval: 1 };   // Tuesdays 10:00 in Tampa
-expect(at(occurrences(weekly, t('2026-10-04T04:00:00Z'), t('2026-10-11T04:00:00Z'), tz)) === '2026-10-06T14:00', 'a weekly meeting that began last year is not counted as busy this week (or is counted at the wrong hour after the clock change)');
-expect(occurrences({ ...weekly, recur_until: '2026-09-30' }, t('2026-10-04T04:00:00Z'), t('2026-10-11T04:00:00Z'), tz).length === 0, 'a repeating meeting that has ended still blocks time');
-expect(occurrences({ ...weekly, recur_freq: 'daily', recur_count: 3 }, t('2025-01-01T00:00:00Z'), t('2025-02-01T00:00:00Z'), tz).length === 3, 'a repeat with a set number of times is miscounted');
-expect(at(occurrences({ ...weekly, recur_freq: 'yearly', recur_interval: 2 }, t('2027-01-01T05:00:00Z'), t('2027-02-01T05:00:00Z'), tz)) === '2027-01-07T15:00', 'an every-other-year repeat is miscounted');
-expect(occurrences({ id: 'b', start_at: '2026-10-06T14:00:00Z', end_at: '2026-10-06T13:00:00Z', recur_freq: null }, t('2026-10-06T14:30:00Z'), t('2026-10-06T15:00:00Z'), tz).length === 1, 'an event with a broken end time blocks nothing');
+// Repeats counting as busy, and what closes a day, are checked in smoke/recurrence_guard.mjs.
 
 if (problems.length) { console.error(`\n==== BOOKING: ${problems.length} problem(s) ====`); for (const p of problems) console.error('  ✗ ' + p); process.exit(1); }
 console.log('==== BOOKING: clean — an office meeting can be booked, typed details are kept, repeats count as busy ====');

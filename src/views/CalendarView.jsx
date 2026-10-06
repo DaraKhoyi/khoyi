@@ -9,6 +9,9 @@ import { useBackClose } from '../backClose';
 import { Tip, TipFor } from '../tipsUi';
 import { confirmDialog, notify } from '../notify';
 import { loadEvents } from '../eventsLoad';
+import DayTaskBlock from './DayTaskBlock';
+import { occurrencesBetween, indexByDay, dayKey, repeats } from '../occurrences';
+import { describeRule } from '../recurrence';
 import { allDayStart, allDayEndShown, allDayRange, followStart, eventFormProblem, stepMonth } from '../calendarDates';
 
 function startOfMonthGrid(year, month) {
@@ -149,6 +152,12 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, defaultHo
   const [recurFreq, setRecurFreq] = useState(init.recur_freq || 'none');
   const [recurInterval, setRecurInterval] = useState(init.recur_interval || 1);
   const [recurUntil, setRecurUntil] = useState(init.recur_until || '');
+  // A repeat that came from Google can be richer than the plain choices here
+  // ("Monday, Wednesday and Friday"). It is shown in words and left alone
+  // unless the person chooses to change it.
+  const googleRule = Array.isArray(init.recur_rule) && init.recur_rule.length ? describeRule(init) : '';
+  const [changeRepeat, setChangeRepeat] = useState(!googleRule);
+  const [blocks, setBlocks] = useState(init.blocks_time === true);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState('');
   // Moving the start carries the end with it, so the event keeps its length
@@ -179,9 +188,13 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, defaultHo
       is_appointment: contactId ? (isAppt === undefined ? null : isAppt) : null,
       brain_entry_id: brainEntryId || null,
       property_id: propertyId || null,
-      recur_freq: repeats ? recurFreq : null,
-      recur_interval: repeats ? Math.max(1, Number(recurInterval) || 1) : 1,
-      recur_until: repeats && recurUntil ? recurUntil : null,
+      blocks_time: allDay ? blocks : null,
+      ...(changeRepeat ? {
+        recur_rule: null,
+        recur_freq: repeats ? recurFreq : null,
+        recur_interval: repeats ? Math.max(1, Number(recurInterval) || 1) : 1,
+        recur_until: repeats && recurUntil ? recurUntil : null,
+      } : {}),
     }); }
     catch (err) { setProblem('That did not save: ' + String((err && err.message) || err)); }
     finally { setSaving(false); }
@@ -198,11 +211,22 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, defaultHo
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <form onSubmit={handleSubmit}>
+          {init.push_error && (
+            <div role="status" data-testid="event-push-error" style={{margin:'0 0 12px',padding:'10px 12px',borderRadius:'8px',background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',color:'var(--text-1)',fontSize:'13px',lineHeight:1.45}}>
+              <b>This is not in Google Calendar as shown here.</b> {init.push_error}
+            </div>
+          )}
           <div className="form-group"><label className="form-label">Title</label><input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="What's happening?" autoFocus required /></div>
           <div className="form-group">
             <label className="form-label" style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
               <input type="checkbox" checked={allDay} onChange={e=>setAllDay(e.target.checked)} /> All-day
             </label>
+            {allDay && (
+              <label style={{display:'flex',alignItems:'flex-start',gap:'8px',cursor:'pointer',marginTop:'10px',fontSize:'13.5px',color:'var(--text-1)',lineHeight:1.4}}>
+                <input type="checkbox" checked={blocks} onChange={e=>setBlocks(e.target.checked)} data-testid="event-blocks" style={{marginTop:'3px'}} />
+                <span>Keep {startDate === endDate ? 'this day' : 'these days'} closed to bookings<span style={{display:'block',fontSize:'12px',color:'var(--text-3)'}}>For a trip or a day off. Leave it off for birthdays and reminders: clients can still book.</span></span>
+              </label>
+            )}
           </div>
           <div className="form-row">
             <div className="form-group" style={{flex:1}}><label className="form-label">Start date</label><input className="form-input" type="date" value={startDate} onChange={e=>{ if (e.target.value) moveStart(e.target.value, startTime); }} required /></div>
@@ -215,7 +239,17 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, defaultHo
           <div className="form-group"><label className="form-label">Location</label><input className="form-input" value={location} onChange={e=>setLocation(e.target.value)} placeholder="Optional" /></div>
 
           {/* Recurrence */}
-          <div className="form-group">
+          {!changeRepeat && (
+            <div className="form-group">
+              <label className="form-label">Repeat</label>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',flexWrap:'wrap',fontSize:'14px',color:'var(--text-1)'}}>
+                <span data-testid="event-rule">{googleRule}</span>
+                <button type="button" className="btn btn-ghost btn-sm" style={{minHeight:'44px'}} onClick={()=>setChangeRepeat(true)}>Change the repeat</button>
+              </div>
+              <div style={{fontSize:'12px',color:'var(--text-3)',marginTop:'4px',lineHeight:1.4}}>Set in Google Calendar. It stays exactly as it is unless you change it here, where the choices are simpler.</div>
+            </div>
+          )}
+          <div className="form-group" style={changeRepeat ? undefined : {display:'none'}}>
             <label className="form-label">Repeat</label>
             <select className="form-select" value={recurFreq} onChange={e=>setRecurFreq(e.target.value)}>
               <option value="none">Does not repeat</option>
@@ -225,7 +259,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, defaultHo
               <option value="yearly">Yearly</option>
             </select>
           </div>
-          {recurFreq !== 'none' && (
+          {changeRepeat && recurFreq !== 'none' && (
             <div className="form-row">
               <div className="form-group" style={{flex:1}}>
                 <label className="form-label">Every</label>
@@ -246,7 +280,7 @@ function EventModal({ onClose, onSave, onDelete, initial, defaultDate, defaultHo
               </div>
             </div>
           )}
-          {recurFreq !== 'none' && initial && (
+          {changeRepeat && recurFreq !== 'none' && initial && (
             <div style={{fontSize:'11px',color:'var(--text-3)',marginTop:'-6px',marginBottom:'10px',fontStyle:'italic'}}>
               Edits and deletes apply to the whole series.
             </div>
@@ -399,52 +433,16 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   // Events with recur_freq are stored once (the master). For display we expand
   // them into virtual occurrences within a window around the cursor. Virtual
   // instances carry _masterId so edits/clicks resolve back to the real row.
-  function advanceDate(d, freq, interval) {
-    const n = new Date(d);
-    if (freq === 'daily') n.setDate(n.getDate() + interval);
-    else if (freq === 'weekly') n.setDate(n.getDate() + 7 * interval);
-    else if (freq === 'monthly') n.setMonth(n.getMonth() + interval);
-    else if (freq === 'yearly') n.setFullYear(n.getFullYear() + interval);
-    return n;
-  }
+  // One rule for when a repeat happens (src/recurrence.js) and one for which
+  // day an event belongs to (src/occurrences.js). 6 Oct 2026.
   const displayEvents = React.useMemo(() => {
     // Window: 13 months back to 14 months forward of the cursor — covers
     // month/week/day and the ±6-month year view comfortably.
     const winStart = new Date(cursor.getFullYear(), cursor.getMonth() - 13, 1);
     const winEnd   = new Date(cursor.getFullYear(), cursor.getMonth() + 14, 0, 23, 59, 59);
-    const out = [];
-    for (const raw of (events || [])) {
-      // All-day events are placed on their DATE (see calendarDates.js). Until
-      // 6 Oct 2026 every birthday and holiday from Google sat a day early.
-      const ev = raw.all_day && raw.start_at ? (() => { const s0 = allDayStart(raw.start_at), e0 = allDayEndShown(raw.start_at, raw.end_at); e0.setHours(23, 59, 0, 0); return { ...raw, start_at: s0.toISOString(), end_at: e0.toISOString() }; })() : raw;
-      if (!ev.recur_freq) { out.push(ev); continue; }
-      const start = new Date(ev.start_at);
-      const dur = (ev.end_at ? new Date(ev.end_at) : new Date(start.getTime() + 3600000)) - start;
-      const interval = Math.max(1, ev.recur_interval || 1);
-      const until = ev.recur_until ? new Date(ev.recur_until + 'T23:59:59') : null;
-      const maxCount = ev.recur_count || 100000;
-      let occ = new Date(start), i = 0, guard = 0;
-      while (i < maxCount && guard < 6000) {
-        guard++;
-        if (occ > winEnd) break;
-        if (until && occ > until) break;
-        if (occ >= winStart) {
-          const oStart = new Date(occ);
-          out.push({
-            ...ev,
-            id: i === 0 ? ev.id : `${ev.id}__r${i}`,
-            start_at: oStart.toISOString(),
-            end_at: new Date(oStart.getTime() + dur).toISOString(),
-            _masterId: ev.id,
-            _recurInstance: i > 0,
-          });
-        }
-        occ = advanceDate(occ, ev.recur_freq, interval);
-        i++;
-      }
-    }
-    return out;
+    return occurrencesBetween(events, winStart, winEnd);
   }, [events, cursor]);
+  const byDay = React.useMemo(() => indexByDay(displayEvents), [displayEvents]);
 
   // Resolve a (possibly virtual) event to its real master row before editing.
   useEffect(() => { if (focusEventId && events && events.length) { const ev = events.find(x => x.id === focusEventId); if (ev) { openEditEvent(ev); setFocusEventId && setFocusEventId(null); } } }, [focusEventId, events]); // eslint-disable-line
@@ -460,13 +458,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
     setShowModal(true);
   }
 
-  function eventsForDay(d) {
-    const key = ymd(d);
-    return displayEvents.filter(ev => {
-      const s = new Date(ev.start_at);
-      return ymd(s) === key;
-    }).sort((a,b) => new Date(a.start_at) - new Date(b.start_at));
-  }
+  function eventsForDay(d) { return byDay.get(dayKey(d)) || []; }
 
   const googleAccounts = (emailAccounts || []).filter(a => a.provider === 'google' && a.is_active);
   // The calendar account: one tagged with 'calendar' purpose, or any with calendar scope
@@ -485,16 +477,26 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
   }
 
   async function handleSave(data) {
-    const payload = { ...data, user_id: userId, sync_status: hasCalendarScope ? 'pending_push' : 'local' };
+    const wants = hasCalendarScope ? 'pending_push' : 'local';
     if (editEvent) {
-      const { data: u, error } = await supabase.from('events').update({ ...data, sync_status: editEvent.google_event_id ? 'pending_push' : (hasCalendarScope ? 'pending_push' : 'local') }).eq('id', editEvent.id).select().single();
-      if (error) { notify("Couldn't save event. Try again.", 'error'); return; }
+      // Only a change Google would see is queued for Google. Linking a contact
+      // or a property is PrismOS's own business; queueing those sent an edit to
+      // Google for events the person was only invited to, which Google refuses.
+      const sameMoment = (a, b) => (a ? new Date(a).getTime() : null) === (b ? new Date(b).getTime() : null);
+      const changed = ['title', 'description', 'location', 'all_day', 'blocks_time', 'recur_freq', 'recur_interval', 'recur_until', 'recur_rule']
+        .some(k => k in data && JSON.stringify(data[k] ?? null) !== JSON.stringify(editEvent[k] ?? null))
+        || !sameMoment(data.start_at, editEvent.start_at) || !sameMoment(data.end_at, editEvent.end_at);
+      const patch = changed ? { ...data, sync_status: wants, push_error: null } : data;
+      const { data: u, error } = await supabase.from('events').update(patch).eq('id', editEvent.id).select().single();
+      if (error) { notify("Couldn't save event: " + error.message, 'error'); return; }
       if (u) setEvents(prev => prev.map(e => e.id === u.id ? u : e));
-    } else {
-      const { data: c, error } = await supabase.from('events').insert(payload).select().single();
-      if (error) { notify("Couldn't create event. Try again.", 'error'); return; }
-      if (c) setEvents(prev => [...prev, c]);
+      setShowModal(false); setEditEvent(null);
+      if (hasCalendarScope && changed) syncCalendar('push', true);
+      return;
     }
+    const { data: c, error } = await supabase.from('events').insert({ ...data, user_id: userId, sync_status: wants }).select().single();
+    if (error) { notify("Couldn't create event: " + error.message, 'error'); return; }
+    if (c) setEvents(prev => [...prev, c]);
     setShowModal(false); setEditEvent(null);
     // Auto-push to Google if connected
     if (hasCalendarScope) syncCalendar('push', true);
@@ -822,7 +824,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
             startDate={startOfWeek(cursor)}
             today={today}
             hourStart={VIEW_HOUR_START} hourEnd={VIEW_HOUR_END}
-            events={displayEvents}
+            events={displayEvents} eventsForDay={eventsForDay}
             onCellClick={(d)=>{setEditEvent(null);setModalDate(ymd(d));setModalHour(d.getHours());setShowModal(true);}}
             onEventClick={openEditEvent}
             onEditTask={openTaskFromBlock}
@@ -871,7 +873,7 @@ function CalendarView({ events, setEvents, userId, brain, contacts, emailAccount
                     </div>
                     <span className="task-text">
                       {ev.title}
-                      {ev.recur_freq && <span title="Repeats" style={{marginLeft:'6px',fontSize:'11px',color:'var(--text-3)'}}>↻</span>}
+                      {ev.push_error && <span title={ev.push_error} style={{marginLeft:'6px',fontSize:'11px',color:'var(--accent)'}}>not in Google</span>}{repeats(ev) && <span title="Repeats" style={{marginLeft:'6px',fontSize:'11px',color:'var(--text-3)'}}>↻</span>}
                       {ev.google_event_id && <span title="Synced with Google" style={{marginLeft:'6px',fontSize:'10px',color:'var(--accent)'}}>●</span>}
                       {ev.location && <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'var(--text-3)'}}><Icon name="pin" size={11} style={{flexShrink:0}} /> {ev.location}</span>}
                     </span>
@@ -1105,17 +1107,17 @@ function MonthGrid({ cells, month, today, eventsForDay, onDayClick, onEventClick
 
 // WEEK — 7 day columns × hourly rows. Events absolutely positioned by start/end.
 
-function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClick, onEventClick, onEditTask }) {
+function WeekTimeline({ startDate, today, hourStart, hourEnd, eventsForDay, onCellClick, onEventClick, onEditTask }) {
   const HOUR_PX = 44;
   const hours = []; for (let h = hourStart; h < hourEnd; h++) hours.push(h);
   const days = []; for (let i = 0; i < 7; i++) { const d = new Date(startDate); d.setDate(d.getDate()+i); days.push(d); }
   function evForDay(d) {
     const key = ymd(d);
-    return events.filter(ev => ymd(new Date(ev.start_at)) === key && !ev.all_day);
+    return eventsForDay(d).filter(ev => !ev.all_day);
   }
   function allDayForDay(d) {
     const key = ymd(d);
-    return events.filter(ev => ymd(new Date(ev.start_at)) === key && ev.all_day);
+    return eventsForDay(d).filter(ev => ev.all_day);
   }
   function evPosition(ev) {
     const s = new Date(ev.start_at);
@@ -1193,90 +1195,6 @@ function WeekTimeline({ startDate, today, hourStart, hourEnd, events, onCellClic
 }
 
 // DAY — Hour timeline + tasks panel (tasks panel 60% / events 40%, per request)
-// A single auto-scheduled task block on the day timeline.
-// Long-press → pin/unpin · drag vertically → reschedule (snaps to 15 min).
-
-function DayTaskBlock({ ev, task, top, height, lane, overdue, HOUR_PX, hourStart, hourEnd, date, timelineRef, onToggleComplete, onMove, onTogglePin, onTap }) {
-  const [dragging, setDragging] = useState(false);
-  const [dragTop, setDragTop] = useState(top);
-  const press = useRef({ startY:0, origTop:top, moved:false, longPressed:false, pointerId:null, timer:null });
-  const pinned = !!task?.pin_at;
-  const SNAP_MIN = 15;
-  const spanPx = (hourEnd - hourStart) * HOUR_PX;
-
-  function topToDate(px) {
-    const clamped = Math.max(0, Math.min(px, spanPx - 8));
-    let mins = (clamped / HOUR_PX) * 60;
-    mins = Math.round(mins / SNAP_MIN) * SNAP_MIN;
-    const total = hourStart * 60 + mins;
-    const d = new Date(date);
-    d.setHours(Math.floor(total / 60), total % 60, 0, 0);
-    return d;
-  }
-  function liveLabel(px) {
-    const d = topToDate(px);
-    let h = d.getHours(); const m = d.getMinutes();
-    const ap = h < 12 ? 'AM' : 'PM'; let hh = h % 12; if (hh === 0) hh = 12;
-    return `${hh}:${pad2(m)} ${ap}`;
-  }
-
-  function onPointerDown(e) {
-    if (e.target.closest('.task-block-check, .task-block-pin')) return; // let those handle themselves
-    const p = press.current;
-    p.startY = e.clientY; p.origTop = top; p.moved = false; p.longPressed = false; p.pointerId = e.pointerId;
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    p.timer = setTimeout(() => {
-      if (!p.moved) { p.longPressed = true; navigator.vibrate?.(15); onTogglePin?.(ev); }
-    }, 480);
-  }
-  function onPointerMove(e) {
-    const p = press.current;
-    if (p.pointerId == null) return;
-    const dy = e.clientY - p.startY;
-    if (!p.moved && Math.abs(dy) > 6) {
-      p.moved = true; clearTimeout(p.timer); setDragging(true);
-    }
-    if (p.moved) {
-      e.preventDefault();
-      setDragTop(Math.max(0, Math.min(p.origTop + dy, spanPx - 8)));
-    }
-  }
-  function endPress(e) {
-    const p = press.current;
-    clearTimeout(p.timer);
-    try { e.currentTarget.releasePointerCapture?.(p.pointerId); } catch { /* noop */ }
-    if (p.moved) {
-      const newStart = topToDate(dragTop);
-      const cur = new Date(ev.start_at);
-      if (newStart.getTime() !== cur.getTime()) onMove?.(ev, newStart);
-    } else if (!p.longPressed && p.pointerId != null) {
-      // a plain tap (no drag, no long-press) → open the task editor
-      onTap?.(ev);
-    }
-    p.pointerId = null; p.moved = false;
-    setDragging(false);
-  }
-
-  const curTop = dragging ? dragTop : top;
-  return (
-    <div className={`day-event-block task-block${overdue?' overdue':''}${pinned?' pinned':''}${dragging?' dragging':''}`}
-      style={{top: `${curTop}px`, height: `${height}px`, touchAction:'pan-x', ...laneVars(lane)}}
-      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPress} onPointerCancel={endPress}
-      title={pinned ? 'Pinned · long-press to unpin · drag to move' : 'Long-press to pin · drag to reschedule'}>
-      <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-        <span className="task-block-check" onPointerDown={e=>e.stopPropagation()}
-          onClick={(e)=>{e.stopPropagation(); onToggleComplete?.();}}>{task?.completed?'☑':'☐'}</span>
-        <span className="day-event-title" style={{textDecoration:task?.completed?'line-through':'none'}}>{ev.title}</span>
-        {pinned && <span className="task-block-pin" onPointerDown={e=>e.stopPropagation()}
-          onClick={(e)=>{e.stopPropagation(); onTogglePin?.(ev);}} title="Unpin"><Icon name="pin" size={12} /></span>}
-      </div>
-      <div className="day-event-time">
-        {dragging ? `→ ${liveLabel(dragTop)}` : `${overdue?'⚠ overdue · ':''}${pad2(new Date(ev.start_at).getHours())}:${pad2(new Date(ev.start_at).getMinutes())}${ev.description && ev.description.includes('part') ? ' · '+ev.description.replace('Auto-scheduled · ','') : ''}`}
-      </div>
-    </div>
-  );
-}
-
 
 function DayTimelineWithTasks({ date, today, hourStart, hourEnd, events, tasks, setTasks, onCellClick, onEventClick, onBlockMove, onTogglePin, onEditTask }) {
   const HOUR_PX = 52;

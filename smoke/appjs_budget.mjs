@@ -78,7 +78,8 @@ const BUDGETS = {
   "src/views/ContactsView.jsx": 2115,
   "src/views/ContactDetailModal.jsx": 2000,
   "src/views/TasksView.jsx": 1550,
-  "src/views/CalendarView.jsx": 1450,
+  // 1450 -> 1360 on 2026-10-06: the task block and its gesture moved to DayTaskBlock.jsx.
+  "src/views/CalendarView.jsx": 1360,
   // Crossed ~1,000 lines and were unguarded. Added BEFORE they become the next
   // AccountingViews — that file only reached 6,745 because nothing measured it.
   "src/views/AriBriefingView.jsx": 1150,
