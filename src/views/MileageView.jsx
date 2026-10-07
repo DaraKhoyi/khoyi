@@ -7,6 +7,8 @@ import SingleContactPicker from './SingleContactPicker';
 import { useBackClose } from '../backClose';
 import { confirmDialog } from '../notify';
 import { modal } from '../helpers';
+import { mileageTable } from '../bookReports';
+const ExportBar = React.lazy(() => import('./BookReports').then((m) => ({ default: m.ExportBar })));
 
 const MILEAGE_CATEGORIES = [
   { id: 'business', label: 'Business',  color: 'var(--accent)' },
@@ -194,6 +196,9 @@ function MileageView({ mileageEntries, setMileageEntries, deals, contacts, setCo
         <div style={{fontFamily:'Fraunces, serif',fontWeight:300,fontSize:'46px',letterSpacing:'-0.02em',color:'#F6F1E7',lineHeight:1.02,margin:'8px 0 4px'}}>${Math.round(kpis.ytdDeduction).toLocaleString()}</div>
         <div style={{fontSize:'13px',color:'#C8BFAE'}}>{Math.round(kpis.ytdMiles).toLocaleString()} business miles · {kpis.count} trips</div>
       </div>
+
+      {/* The year's log, priced at that year's IRS rate, to print or hand to a CPA (Dara, 6 Oct 2026) */}
+      {mileageEntries.length > 0 && <React.Suspense fallback={null}><ExportBar name={`Mileage log ${currentYear}`} heading={`Mileage log · ${currentYear}`} tables={mileageTable(mileageEntries, currentYear, rates)} /></React.Suspense>}
 
       {/* KPI strip */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'8px',marginBottom:'14px'}}>

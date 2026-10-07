@@ -84,6 +84,7 @@ try {
       untracked: [{ label: 'Sam Okafor', agent_id: 'a3', contact_id: null, paid: 46227.5, entries: 6 }] });
     if (/rpc\/book_account_balances/.test(url)) return json(route, [{ account: 'Operating Checking 4411', entries: 0, starting_balance: 0, balance: 0, kind: 'bank' }, { account: 'X9577', entries: 1, starting_balance: 0, balance: -373.99, kind: 'card' }]);
     if (/tax_categories/.test(url)) return json(route, [{ id: 'c1', name: 'Commission Income', kind: 'income' }, { id: 'c2', name: 'Agent Commissions Paid', kind: 'expense' }, { id: 'c3', name: 'Contract Labor', kind: 'expense' }, { id: 'c4', name: 'Referral Fees Paid', kind: 'expense' }, { id: 'c5', name: 'Payroll & Staff', kind: 'expense' }]);
+    if (/rpc\/book_recurring_watch/.test(url)) return json(route, [{ key: 'bay office park', payee: 'Bay Office Park', kind: 'missing', usual: 4200, now: 0, by_day: 3, month: '2026-10-01' }, { key: 'buildium', payee: 'Buildium', kind: 'changed', usual: 389.5, now: 429.5, by_day: 10, month: '2026-10-01' }]);
     if (/rpc\/statement_overview/.test(url)) return json(route, { waiting: 0, imports: [] });
     if (/rpc\//.test(url)) return json(route, {});
     return json(route, []);
@@ -100,6 +101,7 @@ try {
   await page.click('[data-testid="arrival"]:has-text("34 Palmetto") [data-testid="arrival-accept"]'); await shot('3_arrival_added');
   // the brokerage's side, on the stand-in
   await page.click('[data-testid="book-switch"]'); await page.click('[data-testid="book-pick"]:has-text("Stand-in Brokerage")');
+  await page.waitForSelector('[data-testid="recurring-notice"]'); await shot('3b_recurring_notices');
   await page.click('.seg-btn:has-text("Closings")'); await page.waitForSelector('[data-testid="closings-settings"]'); await shot('4_closings_off');
   await page.selectOption('[data-testid="closings-deposit"]', 'Operating Checking 4411'); await shot('5_closings_choose');
   await page.click('[data-testid="closings-turn-on"]'); await page.waitForTimeout(600); await shot('6_closings_confirm');

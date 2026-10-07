@@ -283,7 +283,7 @@ export function MoneyRegister({ userId, book = null, own = true, names: who = nu
         <EntryCard userId={userId} book={book} onDenied={onDenied} transactions={transactions} taxCategories={taxCategories} systems={systems} personalBudget={personalBudget}
           trackPersonal={trackPersonal} accounts={accounts} onSaved={(row) => setTransactions((prev) => [row, ...prev])} />
         <div className="mr-ways">
-          {own && <button type="button" onClick={onSnap}>Snap a receipt</button>}
+          {(own || (book && book.statements)) && <button type="button" onClick={onSnap}>Snap a receipt</button>}
           <button type="button" onClick={onImport}>Import a statement</button>
           {own && <button type="button" onClick={onRecurring}>Repeating entries{recurringCount ? ` (${recurringCount})` : ''}</button>}
         </div>
@@ -341,7 +341,7 @@ export function MoneyRegister({ userId, book = null, own = true, names: who = nu
                 const n = names(t), moved = isTransfer(t), amt = amountFor(t, picked), income = amt > 0 && (!moved || !!account);
                 const way = !moved ? '' : !account ? `${t.account} to ${t.transfer_account}` : accountKey(t.account) === picked ? `to ${t.transfer_account}` : `from ${t.account}`;
                 const by = who && t.entered_by && who[t.entered_by] ? 'by ' + who[t.entered_by] : '';
-                const sub = [moved ? way : t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', t.split_group ? 'part of a split' : '', !account && !moved ? t.account : '', n.system, by].filter(Boolean).join(' · ');
+                const sub = [moved ? way : t.scope === 'personal' ? (n.personal || 'Personal') : n.category, t.payee && t.description ? t.description : '', t.split_group ? 'part of a split' : '', t.receipt_url ? 'receipt' : '', !account && !moved ? t.account : '', n.system, by].filter(Boolean).join(' · ');
                 return (
                   <button type="button" key={t.id} className="mr-row" disabled={readOnly} onClick={() => onEdit(t)} data-testid="money-row">
                     <span className="d">{shortDate(t.date)}</span>

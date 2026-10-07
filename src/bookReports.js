@@ -168,3 +168,15 @@ export function tableRows(t) {
   for (const r of t.rows) out.push(r.kind === 'head' ? [String(r.cells[0]).toUpperCase()] : r.cells);
   return out;
 }
+
+// The year's drives, each priced as it was saved (the IRS rate for its year).
+export function mileageTable(entries, year, rates) {
+  const list = (entries || []).filter((e) => String(e.date || '').startsWith(String(year))).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const miles = (e) => (Number(e.miles) || 0) * (e.is_round_trip ? 2 : 1);
+  const rate = (rates || []).find((r) => Number(r.year) === Number(year));
+  const round = (n) => Math.round(n * 100) / 100;
+  const rows = list.map((e) => ({ kind: 'row', cells: [dayText(e.date), e.purpose || '', [e.from_address, e.to_address].filter(Boolean).join(' to '), e.category || 'business', round(miles(e)), Number(e.computed_deduction) || 0] }));
+  rows.push({ kind: 'total', cells: ['Total', '', '', '', round(list.reduce((s, e) => s + miles(e), 0)), round(list.reduce((s, e) => s + (Number(e.computed_deduction) || 0), 0))] });
+  if (rate) rows.push({ kind: 'note', cells: [`IRS standard mileage rates for ${year}: ${(Number(rate.business_rate) * 100).toFixed(1)} cents a business mile, ${(Number(rate.medical_rate) * 100).toFixed(1)} medical, ${(Number(rate.charity_rate) * 100).toFixed(1)} charity. Personal miles carry no deduction.`] });
+  return { title: `Mileage log ${year}`, subtitle: 'Date, purpose and miles for each drive, as the IRS asks a log to show', wide: true, plain: [4], empty: !list.length, columns: ['Date', 'Purpose', 'Where', 'Kind', 'Miles', 'Deduction'], rows };
+}

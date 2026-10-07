@@ -1122,6 +1122,46 @@ this one line crosses."
   `Closings.jsx`, `BookArrivals.jsx`, `Payees1099.jsx`, `AgentAccounts.jsx`;
   `src/closings.js`, `src/payees.js`.
 
+**RECEIPTS, THE RECURRING WATCH, THE HOLD-BACK, THE MILEAGE RATE (6 Oct,
+v1.16.14).** Dara, build prompt part 5.
+- **v1.16.13 never published.** Its commit is on main, but I applied the NEXT
+  file of SQL to the live database while its deploy was still running, the
+  deploy's own gate saw a table it had not been told about, and stopped.
+  v1.16.14 carries both. **Do not apply the next change's SQL until the
+  previous deploy shows `deploy: <sha>` on gh-pages.**
+- **Receipts:** `src/receipts.js` is the one place a receipt is stored, read
+  and matched (`snapReceipt`). In books that use statements the file goes to
+  `{book_id}/receipts/` in the private `statements` bucket (so a seat on the
+  book opens it); otherwise the person's own `receipts/{uid}/` as before.
+  `transactions.receipt_url` holds the PATH; `receiptBucket(path)` tells the
+  two apart. `parse-receipt` takes an optional `book_id` and asks
+  `my_books_writable()` AS THE CALLER before reading a book's receipt.
+  `receipt_attach()` attaches only when exactly ONE entry in the book has that
+  amount (from 3 days before to 10 after) and no receipt; two or more are
+  offered to the person; none falls back to one waiting statement line, else a
+  new entry as before.
+- **Recurring watch:** `book_recurring_watch(book)` only READS. A payee is
+  "expected" when the books show money out to it in each of the last three
+  full months, once or twice a month. `missing` = nothing this month and it is
+  five days past the latest day it has gone out; `changed` = this month's
+  total is outside the last three months' range by more than 5% (and $1).
+  Dismissals: `recurring_watch_seen` (per payee, per month). The older
+  `recurring_transactions` (entries PrismOS adds on a schedule, own books
+  only) is a different thing and is untouched.
+- **Hold-back:** `src/taxSetAside.js` = tax on (year's profit + this
+  commission) minus tax on the year's profit, using `taxMath.js` (so it cannot
+  disagree with the quarterly report). Shown on each commission waiting from
+  the brokerage. It always ends "an estimate, not tax advice".
+- **Mileage:** `mileage_rates` for 2026 was a 70-cent placeholder; it is now
+  72.5 / 20.5 / 14 (IRS Notice 2026-10, checked 6 Oct 2026). No drive had been
+  priced with the placeholder. The guard fails when the current year's rate is
+  missing or its note still says "placeholder". **Every January: set the new
+  year's rate from irs.gov.** My Drives has Print / Excel / CSV for the year.
+- `BookArrivals.jsx` now exports `BookNotices` (arrivals + the watch), shown
+  above the checkbook when `book.statements`.
+- Guard `smoke/receipts_guard.mjs`; trial `smoke/receipts_trial.sql`. SQL:
+  `2026-10-07d_receipts_recurring.sql`.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"

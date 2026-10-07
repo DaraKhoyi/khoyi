@@ -102,8 +102,19 @@ Deno.serve(async (req)=>{
     if (userErr || !user) return jsonResponse({
       error: 'Not authenticated'
     }, 401);
-    // Defense in depth: receipt_path must start with this user's id
-    if (!receiptPath.startsWith(`${user.id}/`)) {
+    // Where the receipt may live. A person's own folder, as always; or, when a
+    // set of books is named (Dara, 6 Oct 2026: receipts in shared books), under
+    // THAT book, and only if the caller keeps those books. my_books_writable()
+    // runs as the caller, so the database's own rule decides.
+    const bookId: string | null = typeof body?.book_id === 'string' && /^[0-9a-f-]{36}$/i.test(body.book_id) ? body.book_id : null;
+    const bucket = bookId ? 'statements' : 'receipts';
+    if (bookId) {
+      const { data: mine } = await userClient.rpc('my_books_writable');
+      const ok = Array.isArray(mine) && mine.some((b: any) => (typeof b === 'string' ? b : b?.my_books_writable) === bookId);
+      if (!ok || !receiptPath.startsWith(`${bookId}/receipts/`) || receiptPath.includes('..')) {
+        return jsonResponse({ error: 'Forbidden: that receipt is not in books you keep' }, 403);
+      }
+    } else if (!receiptPath.startsWith(`${user.id}/`)) {
       return jsonResponse({
         error: 'Forbidden: path must be under your user folder'
       }, 403);
@@ -112,11 +123,16 @@ Deno.serve(async (req)=>{
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
     // 1. Fetch user's tax categories + lead-gen systems for context
     const [{ data: taxCats }, { data: systems }] = await Promise.all([
-      adminClient.from('tax_categories').select('id,name,schedule_c_line,description').eq('user_id', user.id).eq('is_archived', false).order('sort_order'),
-      adminClient.from('lead_gen_systems').select('id,name,is_overhead').eq('user_id', user.id).eq('is_active', true).order('name')
+      // The categories of the books the receipt belongs to (a shared book has its own).
+      bookId
+        ? adminClient.from('tax_categories').select('id,name,schedule_c_line,description').eq('book_id', bookId).eq('is_archived', false).order('sort_order')
+        : adminClient.from('tax_categories').select('id,name,schedule_c_line,description').eq('user_id', user.id).eq('is_archived', false).order('sort_order'),
+      bookId
+        ? Promise.resolve({ data: [] as any[] })
+        : adminClient.from('lead_gen_systems').select('id,name,is_overhead').eq('user_id', user.id).eq('is_active', true).order('name')
     ]);
     // 2. Download the receipt image
-    const { data: file, error: dlErr } = await adminClient.storage.from('receipts').download(receiptPath);
+    const { data: file, error: dlErr } = await adminClient.storage.from(bucket).download(receiptPath);
     if (dlErr || !file) return jsonResponse({
       error: 'Could not download receipt: ' + dlErr?.message
     }, 500);
@@ -238,7 +254,7 @@ Mapping rules:
       suggestedSysId = sys?.id || null;
     }
     // 7. Build a signed URL (1 hour) so the client can preview the image
-    const { data: signed } = await adminClient.storage.from('receipts').createSignedUrl(receiptPath, 3600);
+    const { data: signed } = await adminClient.storage.from(bucket).createSignedUrl(receiptPath, 3600);
     return jsonResponse({
       vendor: parsed.vendor || null,
       date: parsed.date || new Date().toISOString().slice(0, 10),

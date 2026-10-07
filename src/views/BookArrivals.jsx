@@ -13,17 +13,31 @@ import { supabase } from '../dataService';
 import { notify, notifyError } from '../notify';
 import { fmtUSDCents } from '../financeUtils';
 import { closingDay } from '../closings';
+import { todayNY } from '../clock';
+import { setAsideSentence } from '../taxSetAside';
 
-export default function BookArrivals({ book, onAdded }) {
+function Arrivals({ book, onAdded }) {
   const [rows, setRows] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [account, setAccount] = useState('');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tax, setTax] = useState(null);       // { profit, settings } for the hold-back estimate
   const bookId = book.id;
+  // The year's profit so far and how they file: what the hold-back estimate rests on.
+  useEffect(() => {
+    if (!open || tax) return;
+    const today = todayNY();
+    Promise.all([supabase.rpc('book_pnl', { p_book: bookId, p_from: today.slice(0, 4) + '-01-01', p_to: today, p_by: null }),
+      supabase.from('user_tax_settings').select('filing_status, estimated_other_income').maybeSingle()]).then(([pnl, st]) => {
+      const lines = (pnl.data && pnl.data.lines) || [];
+      const profit = lines.reduce((s, l) => s + (l.class === 'income' ? Number(l.amount) : l.class === 'expense' ? -Number(l.amount) : 0), 0);
+      setTax({ profit, settings: { filingStatus: (st.data && st.data.filing_status) || 'single', otherIncome: Number(st.data && st.data.estimated_other_income) || 0 } });
+    });
+  }, [open, tax, bookId]);
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('arrivals_waiting', { p_book: bookId });
-    if (!error) setRows(data || []);
+    if (!error) setRows(Array.isArray(data) ? data : []);
   }, [bookId]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -73,6 +87,7 @@ export default function BookArrivals({ book, onAdded }) {
       {rows.map((r) => (
         <div className="cl-part" key={r.id} data-testid="arrival">
           <div className="cl-part-h"><span>{r.memo || 'Commission'}<i> · {closingDay(r.date)}</i></span><b className="in">{fmtUSDCents(r.amount)}</b></div>
+          {tax && <p className="bk-help" data-testid="arrival-set-aside">{setAsideSentence(r.amount, tax.profit, tax.settings, todayNY())}</p>}
           {(r.twins || []).map((t) => (
             <div className="cl-twin" key={t.id}><span>Already in your books? {t.payee || 'No payee'} · {closingDay(t.date)}{t.account ? ' · ' + t.account : ''}</span>
               <button type="button" className="bk-link" disabled={busy} onClick={() => answer(r, 'already', { p_transaction: t.id })}>It is this one</button></div>
@@ -86,4 +101,40 @@ export default function BookArrivals({ book, onAdded }) {
       <button type="button" className="bk-link" onClick={() => setOpen(false)}>Close</button>
     </div>
   );
+}
+
+// ── Recurring entries, watched ─────────────────────────────────────────────
+// Dara, 6 Oct 2026: "Rent, software and franchise fees expected each month;
+// PrismOS notices when one is missing or its amount changed." Nothing is set
+// up by anyone: "expected" is what the books show in each of the last three
+// full months. This only reads; it never adds an entry.
+function RecurringWatch({ book, canWrite }) {
+  const [rows, setRows] = useState([]);
+  const bookId = book.id;
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc('book_recurring_watch', { p_book: bookId, p_today: null });
+    if (!error) setRows(Array.isArray(data) ? data : []);
+  }, [bookId]);
+  useEffect(() => { load(); }, [load]);
+  const dismiss = async (r) => {
+    const { error } = await supabase.rpc('recurring_watch_dismiss', { p_book: bookId, p_key: r.key, p_month: r.month });
+    if (error) notifyError(error.message); else setRows((prev) => prev.filter((x) => x.key !== r.key));
+  };
+  return rows.slice(0, 4).map((r) => (
+    <p className="mr-note stuck" key={r.key} data-testid="recurring-notice">
+      <span>{r.kind === 'missing'
+        ? `${r.payee} is usually paid by the ${ordinal(r.by_day)} (about ${fmtUSDCents(r.usual)}). Nothing to them is in the books this month.`
+        : `${r.payee} is usually ${fmtUSDCents(r.usual)} a month. This month it is ${fmtUSDCents(r.now)}.`}</span>
+      {canWrite && <button type="button" onClick={() => dismiss(r)}>That is right</button>}
+    </p>
+  ));
+}
+const ordinal = (n) => { const d = Number(n) || 1; const s = d % 100 >= 11 && d % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][d % 10] || 'th'; return d + s; };
+
+// What the checkbook should mention before anything is typed.
+export default function BookNotices({ book, own, readOnly, onAdded }) {
+  return (<>
+    {own && !readOnly && <Arrivals book={book} onAdded={onAdded} />}
+    <RecurringWatch book={book} canWrite={!readOnly} />
+  </>);
 }

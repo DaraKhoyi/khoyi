@@ -28,6 +28,7 @@ import { askAboutRule } from '../statements';
 // Lazy on purpose: the importer is ~1,100 lines used a few times a year.
 const CsvImportModal = React.lazy(() => import('./CsvImportModal').then(m => ({ default: m.CsvImportModal })));
 // Statements (upload, review, rules) for books that have them switched on; the importer above serves the rest.
+import { attachReceiptTo, attachSentence, openReceipt, snapReceipt } from '../receipts';
 const StatementsDoor = React.lazy(() => import('./StatementsDoor'));
 const BookArrivals = React.lazy(() => import('./BookArrivals'));
 
@@ -80,7 +81,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
       ) : (<>
         {statements && <React.Suspense fallback={null}><StatementsDoor userId={userId} book={book} taxCategories={taxCategories} readOnly={readOnly}
           open={showImportModal} setOpen={setShowImportModal} setTransactions={setTransactions} /></React.Suspense>}
-        {statements && own && !readOnly && !showImportModal && <React.Suspense fallback={null}><BookArrivals book={book} onAdded={(tx) => merge([tx])} /></React.Suspense>}
+        {statements && !showImportModal && <React.Suspense fallback={null}><BookArrivals book={book} own={own} readOnly={readOnly} onAdded={(tx) => merge([tx])} /></React.Suspense>}
         <MoneyRegister
           userId={userId} book={book} own={own} names={names} onDenied={onDenied} transactions={transactions} setTransactions={setTransactions}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}
@@ -152,6 +153,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
 // Returns { headers, rows } where rows is an array of objects keyed by header.
 
 export function TransactionModal({ userId, book = null, own = true, initial, taxCategories, systems, personalBudget, trackPersonal, onClose, onSaved, onDelete, onSplit = null, splitWhole = null }) {
+  const statements = !!(book && book.statements);
 
 
   useBackClose(onClose);
@@ -175,6 +177,7 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
   const [receiptPath, setReceiptPath] = useState(null);
   const [parsing, setParsing] = useState(false);
   const [parseInfo, setParseInfo] = useState(null);  // { confidence, vendor, notes }
+  const [choices, setChoices] = useState([]);        // entries the receipt might belong to, when more than one fits
   const [enteredVia, setEnteredVia] = useState(initial?.entered_via || 'manual');
   const fileInputRef = useRef(null);
 
@@ -189,36 +192,15 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
   // ── Photo-receipt capture flow ────────────────────────────────────
   async function handleReceiptPicked(file) {
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      if (window.__notify) window.__notify('Image too large (10MB max)', 'error');
-      return;
-    }
     setParsing(true);
     setParseInfo(null);
     try {
-      // 1. Upload to storage under {userId}/{timestamp}.{ext}
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('receipts').upload(path, file, {
-        contentType: file.type || 'image/jpeg',
-        upsert: false,
-      });
-      if (upErr) throw new Error('Upload failed: ' + upErr.message);
-      setReceiptPath(path);
-
-      // 2. Get a temporary URL for preview
-      const { data: signed } = await supabase.storage.from('receipts').createSignedUrl(path, 3600);
-      if (signed?.signedUrl) setReceiptUrl(signed.signedUrl);
-
-      // 3. Call parse-receipt
-      const { data, error } = await supabase.functions.invoke('parse-receipt', {
-        body: { receipt_path: path },
-      });
-      if (error) throw new Error('Parse failed: ' + error.message);
-      if (data?.error) throw new Error(data.error);
-
-      // 4. Pre-fill form fields with what Claude extracted
-      const extracted = data;
+      // Stored under its books, read, and matched to the entry it belongs to (src/receipts.js).
+      const snap = await snapReceipt({ file, book, userId });
+      setReceiptPath(snap.path); if (snap.url) setReceiptUrl(snap.url);
+      if (snap.attach && snap.attach.attached) { if (window.__notify) window.__notify(attachSentence(snap.attach), 'success'); attached(snap.attach); return; }
+      setChoices((snap.attach && snap.attach.choices) || []);
+      const extracted = snap.extracted;
       if (extracted.amount) setAmount(Math.abs(Number(extracted.amount)));
       if (extracted.date) setDate(extracted.date);
       if (extracted.vendor) setPayee(extracted.vendor);
@@ -249,8 +231,12 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
     }
   }
 
+  // The receipt belongs to an entry already in the books: show that entry, changed, and close.
+  async function attached(a) {
+    if (a.attached === 'entry' && onSplit) { const { data } = await supabase.from('transactions').select('*').eq('id', a.id).maybeSingle(); onSplit(data ? [data] : []); } else onClose();
+  }
   function clearReceipt() {
-    setReceiptUrl(null);
+    setReceiptUrl(null); setChoices([]);
     setReceiptPath(null);
     setParseInfo(null);
     if (enteredVia === 'photo') setEnteredVia('manual');
@@ -297,9 +283,14 @@ export function TransactionModal({ userId, book = null, own = true, initial, tax
           {onDelete && <button onClick={onDelete} title="Delete" style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:'4px 8px'}}><Icon name="trash" size={16} /></button>}
         </div>
 
-        {/* Receipt capture — only on new transactions, and only in a person's own books: a receipt is stored in their private folder */}
-        {!initial && own && (
+        {/* Receipt capture, on a new entry. In books that use statements the file is kept under the book; otherwise in the person's own folder. */}
+        {initial && initial.receipt_url && <button type="button" className="bk-link" style={{marginBottom:'10px'}} onClick={() => openReceipt(initial.receipt_url)}>Open the receipt</button>}
+        {!initial && (own || statements) && (
           <div style={{marginBottom:'14px'}}>
+            {choices.map((c) => (
+              <div className="cl-twin" key={c.id} style={{marginBottom:'8px'}}><span>Is it this one? {c.payee || 'No payee'} · {c.date} · {c.account || ''}</span>
+                <button type="button" className="bk-link" onClick={async () => { const a = await attachReceiptTo(book, receiptPath, c.id); if (a) attached(a); }}>Attach to it</button></div>
+            ))}
             {!receiptUrl && !parsing && (
               <button type="button"
                 onClick={() => fileInputRef.current?.click()}
