@@ -2251,3 +2251,4 @@ body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-
 /* Five sections (Setup, for people keeping full books): the words must still fit a phone. */
 .seg-track.five .seg-btn { flex: 1 1 auto; min-width: 0; font-size: 12.5px; padding-left: 6px; padding-right: 6px; letter-spacing: 0; }
 .seg-track.five .seg-btn > span { overflow: visible; text-overflow: clip; }
+.cl-part-h b.todo { color: #EBD9A6; font-weight: 600; }

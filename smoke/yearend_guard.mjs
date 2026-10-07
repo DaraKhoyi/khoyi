@@ -17,6 +17,7 @@
 // which unpacks it and lists what is inside.
 import { readFileSync } from 'node:fs';
 import { entriesRows, readMe, scheduleCTable } from '../src/yearEndTables.js';
+import { goLiveCount, goLiveItems } from '../src/goLive.js';
 const problems = [];
 const expect = (ok, what) => { if (!ok) problems.push(what); };
 const read = (p) => readFileSync(p, 'utf8');
@@ -44,6 +45,22 @@ expect(/drop policy if exists receipts_delete_own on storage\.objects/.test(sql)
 expect(/security invoker/.test(sql) && /revoke all on function public\.book_start_status\(uuid\) from public, anon/.test(sql), 'the start-up checklist does not run under the book\'s own rules');
 expect(/BookStart/.test(code('src/views/BookRoom.jsx')) && /book\.statements \? \[\{ id: 'setup'/.test(code('src/views/AccountingViews.jsx')), 'the start-up checklist or the Setup tab for a person\'s own books is gone');
 
+// The definition of done, read from the books (build prompt part 6).
+{ const base = { book: { kind: 'team', starts_on: '2026-01-01' }, people: [{ who: 'A', role: 'owner', on: true, signed_in: true, has_email: true }], accounts: [], both_ways: [], rules: { confirmed: 0, filed_for_you: 0 }, waiting: { statement_lines: 0, no_category: 0, closings: 0 }, closings_on: null, ledger_faults: 0, entries: 0 };
+  const item = (d, key) => goLiveItems(d, '2026-10-07').find((i) => i.key === key);
+  expect(goLiveItems(base, '2026-10-07').filter((i) => i.ok).map((i) => i.key).join() === 'people,balanced', `empty books are told they are ready: ${goLiveItems(base, '2026-10-07').filter((i) => i.ok).map((i) => i.key)}`);
+  expect(!item(base, 'closings') && !!item({ ...base, book: { kind: 'brokerage' } }, 'closings'), 'only the brokerage is asked about closings');
+  const full = { ...base, entries: 40, people: [...base.people, { who: 'CPA', role: 'read_only', on: true, signed_in: true, has_email: true }], accounts: [{ account: 'Checking', kind: 'bank', statements: 9, reconciled_through: '2026-09-30' }],
+    both_ways: [{ account: 'Checking', from: '2026-08-01', to: '2026-08-31', caught: 41, added_twice: 0 }], rules: { confirmed: 12, filed_for_you: 30 } };
+  expect(goLiveCount(goLiveItems(full, '2026-10-07')).done === goLiveItems(full, '2026-10-07').length, `books that meet every test are not told so: ${goLiveItems(full, '2026-10-07').filter((i) => !i.ok).map((i) => i.key)}`);
+  expect(!item({ ...full, both_ways: [{ ...full.both_ways[0], added_twice: 2 }] }, 'both_ways').ok && /added 2 lines/.test(item({ ...full, both_ways: [{ ...full.both_ways[0], added_twice: 2 }] }, 'both_ways').detail), 'a month that doubled when brought in twice is passed');
+  expect(!item({ ...full, both_ways: [{ ...full.both_ways[0], caught: 0 }] }, 'both_ways').ok, 'bringing a month in twice counts as proven with nothing caught');
+  expect(!item({ ...full, accounts: [{ ...full.accounts[0], reconciled_through: '2026-07-31' }] }, 'reconciled').ok && !item({ ...full, ledger_faults: 1 }, 'balanced').ok && !item({ ...full, waiting: { statement_lines: 3, no_category: 0, closings: 0 } }, 'waiting').ok, 'a stale reconciliation, a ledger fault or waiting lines still read as done');
+  const t = item({ ...base, people: [...base.people, { who: 'Myra Torres', role: 'assistant', on: true, signed_in: false, has_email: false }] }, 'people');
+  expect(!t.ok && /Myra Torres/.test(t.detail) && /no email/.test(t.detail), 'a seat that cannot open is not pointed out'); }
+const gl = code('supabase/sql/2026-10-07g_go_live_balance.sql');
+expect(/my_books_manageable\(\)/.test(gl) && /revoke all on function public\.book_go_live\(uuid\) from public, anon/.test(gl) && !/insert into|update public|delete from/.test(gl), 'the go-live reading is open to more than the people who run the books, or it writes');
+
 const URL_ = process.env.SUPABASE_URL, SVC = process.env.SUPABASE_SERVICE_KEY, ANON = process.env.SUPABASE_ANON_KEY;
 if (process.argv[2] !== 'static' && URL_ && SVC && ANON) {
   const H = { apikey: SVC, Authorization: `Bearer ${SVC}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
@@ -68,6 +85,9 @@ if (process.argv[2] !== 'static' && URL_ && SVC && ANON) {
     const acct = (st?.accounts || []).find((x) => x.account === 'Gate Checking');
     expect(acct && Number(acct.starting_balance) === 1250.5 && acct.entries === 1 && acct.first_entry === '2026-02-03' && acct.statements === 0 && acct.reconciled_through === null, `the start-up checklist misreports an account: ${JSON.stringify(acct)}`);
     expect((await b.rest('POST', 'rpc/book_start_status', { p_book: bookId })).json == null, 'a stranger can read another person\'s start-up checklist');
+    const go = (await rest('POST', 'rpc/book_go_live', { p_book: bookId })).json;
+    expect(go && go.entries === 1 && go.ledger_faults === 0 && (go.accounts || []).some((x) => x.account === 'Gate Checking' && x.statements === 0) && go.people.length === 1 && go.people[0].signed_in, `the go-live reading misreports the books: ${JSON.stringify(go).slice(0, 300)}`);
+    expect(!(await b.rest('POST', 'rpc/book_go_live', { p_book: bookId })).ok, 'a stranger can read whether someone else\'s books are ready, and who is on them');
   } catch (e) { problems.push('live check could not run: ' + String(e && e.stack || e).slice(0, 300)); }
   finally { for (const id of made) await fetch(`${URL_}/auth/v1/admin/users/${id}`, { method: 'DELETE', headers: H }).catch(() => {}); }
 } else console.log('yearend_guard: live check not run (static only, or SUPABASE_URL / SUPABASE_SERVICE_KEY / SUPABASE_ANON_KEY missing)');

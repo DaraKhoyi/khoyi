@@ -1194,7 +1194,45 @@ v1.16.15).** Dara, build prompt part 5. This closes Prompt 5.
   inside (run it after touching the builder). SQL:
   `2026-10-07e_start_and_keep.sql`.
 
-**WHAT PROMPT 5 LEFT FOR DARA TO DECIDE (asked 6 Oct, not yet answered):**
+**THE DEFINITION OF DONE (7 Oct, v1.16.16).** Dara, build prompt part 6. The
+seven build phases are shipped except phase 7 (trust accounting per owner, and
+direct bank connections), which waits for his approval. The nine "done" tests:
+
+| # | Test | Where it stands |
+|---|------|-----------------|
+| 1 | Dara, Josh, Alex open the brokerage book and their own from a phone; neither can be mistaken | Seats exist and are on (checked in the database 7 Oct). The books bar names the book at all times. NOT watched on their phones by anyone. |
+| 2 | An assistant switched off is refused on the next tap | Held by `books_guard` every gate. |
+| 3 | Nobody reads a row of a book they are not on | Held by `books_guard` for every table that carries `book_id` (it fails if a new one is not listed). |
+| 4 | A real month by CSV and again by scan gives the same lines, duplicates caught | The logic is held by `statements_guard` with made-up statements. NOT DONE with a real statement: needs Dara's bank accounts. |
+| 5 | A payee corrected once is filed next time; the rule is visible | Held by `statements_guard`. |
+| 6 | That month reconciles to the cent | Held by `reports_guard` on made-up books. NOT DONE on real ones. |
+| 7 | A month-end matches the current system | There IS no current system (Dara: "Nothing is being done ... It's a mess"). Stands in for it: his CPA reviews the first month-end. Not done. |
+| 8 | Ledger checks pass for every book | `ledger_health()` in six guards, every gate. |
+| 9 | Every accounting screen passes large-font and touch-target checks on a Samsung and an iPhone | NEW: `smoke/accounting_screens.mjs`, BLOCKING. 34 screens x 2 phones. |
+
+- **`smoke/accounting_screens.mjs`** walks every accounting screen as a
+  throwaway person (own books, a team book they own, and the stand-in
+  brokerage book from `smoke/standin_brokerage.mjs`). Per screen: at ordinary
+  type every control inside an accounting screen is at least 44px both ways;
+  at 135% type nothing is cut off, off-screen, overlapping or scrolling
+  sideways. It plants a 20px button first and fails if it does not notice it.
+  It adds about six minutes to the gate. **A new accounting screen must be
+  added to its walk**, or it is not covered.
+- `smoke/layout_probe.mjs` is the layout measurement, moved out of
+  `largefont.mjs` unchanged so both suites share it. One change: a `sticky`
+  element is no longer counted as colliding with what scrolls under it.
+- **"Can these books be relied on yet?"** is a card at the top of Setup for
+  owners and admins: tests 1, 4, 5, 6, 8 and the practical ones (accounts
+  added, statements in, nothing waiting, closings on, a CPA seat), answered
+  from the books by `book_go_live()` and worded by `src/goLive.js`. A line is
+  done only when the books show it. Tests 4 and 6 will turn to Done by
+  themselves when Dara brings a real month in both ways and reconciles it.
+- `book_go_live()` makes its own two balance checks for the one book;
+  `ledger_health()` answers only the service (the first version called it and
+  an owner got "not allowed"; the guard caught it before release).
+- SQL: `2026-10-07f_go_live.sql`, `2026-10-07g_go_live_balance.sql`.
+
+**WHAT PROMPT 5 LEFT FOR DARA TO DECIDE (Dara, 6 Oct: hold all six "for later"):**
 1. Switch closings on for the brokerage books: which bank account do
    commissions land in, and from what day (the books start 1 Jan 2026)?
 2. Franchise fee: recorded when the bank shows it paid (built), or booked per

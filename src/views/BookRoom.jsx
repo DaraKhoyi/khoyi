@@ -23,6 +23,7 @@ import { FinanceLedger } from './FinanceLedger';
 // Every report beyond the summary, and reconciliation: opened now and then, so fetched when asked for.
 const BookReports = React.lazy(() => import('./BookReports'));
 const Closings = React.lazy(() => import('./Closings'));
+import { goLiveCount, goLiveItems } from '../goLive';
 import { ACCOUNT_KINDS, CATEGORY_KINDS, PERIODS, bookTitle, can, isDenied, longDay, periodRange, position, stamp, summarize } from '../books';
 
 
@@ -206,6 +207,36 @@ function BookStart({ book }) {
   );
 }
 
+// ── Can these books be relied on yet? ──────────────────────────────────────
+// Dara, accounting build prompt part 6: the definition of done. Each line is
+// one of its tests, answered from what is in the books (src/goLive.js). For
+// the people who run the books, because it names who is on the list.
+function GoLive({ book }) {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    supabase.rpc('book_go_live', { p_book: book.id }).then(({ data, error }) => { if (live && !error) setD(data); });
+    return () => { live = false; };
+  }, [book.id]);
+  if (!d) return null;
+  const items = goLiveItems(d, todayNY()), n = goLiveCount(items);
+  return (
+    <div className="mr-card" data-testid="go-live">
+      <button type="button" className="py-h" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="who"><b>Can these books be relied on yet?</b><i>{n.done} of {n.of} checks are met</i></span>
+        <span className={'st-chip ' + (n.done === n.of ? 'good' : 'plain')}>{open ? 'Hide' : 'Show'}</span>
+      </button>
+      {open && items.map((i) => (
+        <div className="cl-part" key={i.key} data-testid="go-live-item">
+          <div className="cl-part-h"><span>{i.title}</span><b className={i.ok ? 'in' : 'todo'}>{i.ok ? 'Done' : 'Not yet'}</b></div>
+          <p className="bk-help" style={{ margin: 0 }}>{i.detail}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function BookSetup({ book, userId, taxCategories, setTaxCategories, onBookChanged }) {
   const canWrite = can(book, 'write'), canAccounts = can(book, 'accounts'), canClose = can(book, 'close');
   const [accounts, setAccounts] = useState([]);
@@ -275,6 +306,7 @@ export function BookSetup({ book, userId, taxCategories, setTaxCategories, onBoo
   return (
     <div className="mr" data-testid="book-setup">
       <BookStart book={book} />
+      {canClose && <GoLive book={book} />}
       <div className="mr-head"><h3>Categories</h3><span>{taxCategories.length} in use</span></div>
       <div className="bk-list">
         {CATEGORY_KINDS.map(([kind, label]) => {

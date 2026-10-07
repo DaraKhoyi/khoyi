@@ -364,6 +364,14 @@ SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWOR
 echo "→ large-font layout check"
 SMOKE_URL="http://localhost:4173/" SMOKE_EMAIL="$EMAIL" SMOKE_PASSWORD="$PASSWORD" node smoke/largefont.mjs
 
+# Every ACCOUNTING screen, on a Samsung and an iPhone: every control a thumb can hit, nothing cut off at
+# large type. The two suites above sign in as someone outside the accounting group and cannot reach these
+# screens, so this walks them itself, as a throwaway person with their own books, a team's books and a
+# stand-in brokerage book (Dara, build prompt part 6: "Every accounting screen passes the large-font and
+# touch-target checks on a Samsung and an iPhone").
+echo "→ accounting screens on a Samsung and an iPhone"
+SMOKE_URL="http://localhost:4173/" node smoke/accounting_screens.mjs || exit 1
+
 # ── FUNCTIONAL gate (v1.04.98+) ──────────────────────────────────────────────
 # The mount checks above prove views RENDER. This proves core features WORK, as a
 # logged-in agent, across iPhone/Android/tablet/desktop viewports — the gap that
