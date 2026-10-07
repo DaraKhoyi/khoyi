@@ -2248,3 +2248,6 @@ body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-
 .py-h .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .py-h .who b { font-size: 16px; color: #F6F1E7; overflow-wrap: anywhere; }
 .py-h .who i { font-style: normal; font-size: 13px; color: #CFC5AE; }
+/* Five sections (Setup, for people keeping full books): the words must still fit a phone. */
+.seg-track.five .seg-btn { flex: 1 1 auto; min-width: 0; font-size: 12.5px; padding-left: 6px; padding-right: 6px; letter-spacing: 0; }
+.seg-track.five .seg-btn > span { overflow: visible; text-overflow: clip; }

@@ -165,7 +165,48 @@ function AccountRow({ acct, canAccounts, onSave, onRetire }) {
   );
 }
 
-function BookSetup({ book, userId, taxCategories, setTaxCategories, onBookChanged }) {
+// ── Getting the books started ──────────────────────────────────────────────
+// Dara, 6 Oct 2026 (accounting build, part 5): "Opening balances and history.
+// Guided import of starting balances and prior transactions, so the books are
+// whole from day one." Three steps, account by account, each showing whether
+// it is done: what the account held on the first day, the statements since,
+// and a reconciliation that proves the two agree.
+function BookStart({ book }) {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    supabase.rpc('book_start_status', { p_book: book.id }).then(({ data, error }) => { if (live && !error) setD(data); });
+    return () => { live = false; };
+  }, [book.id]);
+  if (!d) return null;
+  const start = d.starts_on, list = d.accounts || [];
+  const steps = (a) => [
+    Number(a.starting_balance) !== 0 || (a.first_entry && start && a.first_entry > start && a.statements === 0 && a.entries === 0) ? `Held ${fmtUSDCents(a.kind === 'card' ? -a.starting_balance : a.starting_balance)} at the start` : 'No starting balance entered (fine only if it really was zero)',
+    a.statements ? `Statements in from ${longDay(a.statements_from)} to ${longDay(a.statements_to)}` : 'No statements brought in yet',
+    a.reconciled_through ? `Reconciled through ${longDay(a.reconciled_through)}` : 'Never reconciled',
+  ];
+  const done = list.filter((a) => a.statements && a.reconciled_through).length;
+  return (
+    <div className="mr-card" data-testid="book-start">
+      <button type="button" className="py-h" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="who"><b>Getting these books started</b><i>{list.length ? `${done} of ${list.length} ${list.length === 1 ? 'account is' : 'accounts are'} brought in and reconciled` : 'No accounts yet'}</i></span>
+        <span className={'st-chip ' + (list.length && done === list.length ? 'good' : 'plain')}>{open ? 'Hide' : 'Show'}</span>
+      </button>
+      {open && (<>
+        <p className="bk-help">These books begin on {start ? longDay(start) : 'their first entry'}. For each bank account and card: 1. below, under Accounts, enter what it held (or what was owed on it) that morning; 2. on the Add tab, bring in its statements from that day to now, one file per month is fine; 3. under Reports, Reconcile, tick it against the latest statement. When the third step agrees to the cent, that account is whole.</p>
+        {list.map((a) => (
+          <div className="cl-part" key={a.account}>
+            <div className="cl-part-h"><span>{a.account}</span></div>
+            {steps(a).map((t, i) => <p className="bk-help" key={i} style={{ margin: 0 }}>{i + 1}. {t}</p>)}
+          </div>
+        ))}
+      </>)}
+    </div>
+  );
+}
+
+export function BookSetup({ book, userId, taxCategories, setTaxCategories, onBookChanged }) {
   const canWrite = can(book, 'write'), canAccounts = can(book, 'accounts'), canClose = can(book, 'close');
   const [accounts, setAccounts] = useState([]);
   const [newCat, setNewCat] = useState({ name: '', kind: 'expense' });
@@ -233,6 +274,7 @@ function BookSetup({ book, userId, taxCategories, setTaxCategories, onBookChange
 
   return (
     <div className="mr" data-testid="book-setup">
+      <BookStart book={book} />
       <div className="mr-head"><h3>Categories</h3><span>{taxCategories.length} in use</span></div>
       <div className="bk-list">
         {CATEGORY_KINDS.map(([kind, label]) => {

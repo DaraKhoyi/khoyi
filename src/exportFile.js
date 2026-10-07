@@ -36,7 +36,7 @@ export function downloadCsv(name, tables) {
 
 // One sheet per table. The spreadsheet library is large and rarely needed, so
 // it is fetched only when someone asks for an Excel file.
-export async function downloadXlsx(name, tables) {
+async function workbook(tables) {
   const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
   const used = new Set();
@@ -48,8 +48,19 @@ export async function downloadXlsx(name, tables) {
     used.add(sheet);
     XLSX.utils.book_append_sheet(wb, ws, sheet);
   }
+  return { XLSX, wb };
+}
+export async function downloadXlsx(name, tables) {
+  const { XLSX, wb } = await workbook(tables);
   XLSX.writeFile(wb, safeName(name) + '.xlsx');
 }
+// The same workbook as bytes, for putting inside a bundle.
+export async function workbookBytes(tables) {
+  const { XLSX, wb } = await workbook(tables);
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+}
+export const saveBlob = (blob, name) => save(blob, name);
+export const fileName = safeName;
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const money = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

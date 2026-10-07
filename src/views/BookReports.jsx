@@ -23,6 +23,7 @@ import { CLOSING_BREAKDOWNS, closingsTable } from '../closings';
 const Reconcile = React.lazy(() => import('./Reconcile'));
 const Payees1099 = React.lazy(() => import('./Payees1099'));
 const AgentAccounts = React.lazy(() => import('./AgentAccounts'));
+const YearEnd = React.lazy(() => import('./YearEnd'));
 const MyAgentStatement = React.lazy(() => import('./AgentAccounts').then((m) => ({ default: m.AgentStatement })));
 
 // One report, as rows. Wide ones scroll sideways with the names held in place.
@@ -76,9 +77,9 @@ export default function BookReports({ book, userId, summary = null }) {
   const asOf = range.to && range.to < today ? range.to : null;
   // The brokerage's books also get the closings as the Gold Report has them.
   const base = [...(book.kind === 'brokerage' ? [...KINDS.slice(0, 1), ['closings', 'Closings'], ['agents', 'Agents'], ...KINDS.slice(1)] : KINDS),
-    ['payees', '1099s'], ...(book.is_mine ? [['brokerage', 'From the brokerage']] : [])];
+    ['payees', '1099s'], ...(book.is_mine ? [['brokerage', 'From the brokerage']] : []), ['yearend', 'Year-end']];
   const kinds = summary ? [['summary', 'Summary'], ...base] : base;
-  const OWN_SCREEN = ['summary', 'reconcile', 'payees', 'agents', 'brokerage'];   // these draw themselves
+  const OWN_SCREEN = ['summary', 'reconcile', 'payees', 'agents', 'brokerage', 'yearend'];   // these draw themselves
 
   useEffect(() => {
     if (OWN_SCREEN.includes(kind)) return undefined;
@@ -133,6 +134,7 @@ export default function BookReports({ book, userId, summary = null }) {
       {kind === 'payees' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><Payees1099 book={book} /></React.Suspense>}
       {kind === 'agents' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><AgentAccounts book={book} /></React.Suspense>}
       {kind === 'brokerage' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><MyAgentStatement book={book} mine /></React.Suspense>}
+      {kind === 'yearend' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><YearEnd book={book} userId={userId} /></React.Suspense>}
       {dated && (<>
         <div className="mr-chips" role="group" aria-label="Period">
           {PERIODS.map(([id, label]) => <button type="button" key={id} className={period === id ? 'on' : ''} aria-pressed={period === id} onClick={() => setPeriod(id)}>{label}</button>)}

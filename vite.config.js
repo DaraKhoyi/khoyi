@@ -36,6 +36,8 @@ export default defineConfig({
             // xlsx parser on mobile data for a button they will never press.
             // Its own chunk keeps the dynamic import genuinely lazy.
             if (id.includes('xlsx')) return 'vendor-xlsx';
+            // The zip library is used only by the year-end package: its own chunk, fetched when asked for.
+            if (id.includes('jszip') || id.includes('pako')) return 'vendor-jszip';
             if (id.includes('react-dom')) return 'vendor-react-dom';
             if (id.includes('/react/') || id.includes('/react/jsx') || id.includes('scheduler')) return 'vendor-react';
             if (id.includes('@supabase') || id.includes('supabase')) return 'vendor-supabase';

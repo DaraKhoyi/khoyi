@@ -24,6 +24,7 @@ import { fmtHours, fmtPct, fmtUSD, fmtUSDCents } from '../financeUtils';
 import { SysStat } from './FinanceSystems';
 import { BookBar, useBooks } from './BookBar';
 import { countsInProfit, inBook, isOwnBook, showBookBar } from '../books';
+const BookSetup = React.lazy(() => import('./BookRoom').then((m) => ({ default: m.BookSetup })));
 // Someone else's books, and the list of who may open a set of books: opened by
 // a few people, a few times — lazy so they do not ride along on every visit.
 const BookRoom = React.lazy(() => import('./BookRoom'));
@@ -180,6 +181,7 @@ function OwnMoney({ userId, book = null, initialSub = null, subNonce = 0 }) {
               subView === 'ledger'    ? 'My Transactions'
             : subView === 'blueprint' ? 'My Blueprint'
             : subView === 'reports'   ? 'Reports'
+            : subView === 'setup'     ? 'Setup'
             : 'My Dashboard'}</span>
             {settings && !onLedger && (
               <span className="fin-badge" style={{background:`${tier.color}1f`, color:tier.color, border:`1px solid ${tier.color}59`}}>{tier.label}</span>
@@ -197,12 +199,14 @@ function OwnMoney({ userId, book = null, initialSub = null, subNonce = 0 }) {
         </div>
 
         {/* Sub-tabs — same segmented language, equal segments (no clipping) */}
-        <div className="seg-track" role="tablist" aria-label="Finance section">
+        <div className={'seg-track' + (book && book.statements ? ' five' : '')} role="tablist" aria-label="Finance section">
           {[
             { id: 'dashboard', label: 'Dashboard' },
             { id: 'blueprint', label: 'Blueprint' },
             { id: 'ledger',    label: 'Add' },
             { id: 'reports',   label: 'Reports' },
+            // Accounts, starting balances, categories and closing: for people keeping full books (Dara, 6 Oct 2026).
+            ...(book && book.statements ? [{ id: 'setup', label: 'Setup' }] : []),
           ].map(t => (
             <button key={t.id} type="button" onClick={() => setSubView(t.id)}
               className={`seg-btn${subView===t.id?' active':''}`}
@@ -244,6 +248,7 @@ function OwnMoney({ userId, book = null, initialSub = null, subNonce = 0 }) {
           trackPersonal={trackPersonal} readOnly={readOnly}
         />
       )}
+      {subView === 'setup' && book && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><BookSetup book={book} userId={userId} taxCategories={taxCategories} setTaxCategories={setTaxCategories} /></React.Suspense>}
       {subView === 'reports' && (
         <FinanceReports
           userId={userId} book={book}

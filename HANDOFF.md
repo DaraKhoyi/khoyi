@@ -1162,6 +1162,48 @@ v1.16.14).** Dara, build prompt part 5.
 - Guard `smoke/receipts_guard.mjs`; trial `smoke/receipts_trial.sql`. SQL:
   `2026-10-07d_receipts_recurring.sql`.
 
+**YEAR-END PACKAGE, FULL EXPORT, STARTING THE BOOKS, RETENTION (6 Oct,
+v1.16.15).** Dara, build prompt part 5. This closes Prompt 5.
+- **One bundle builder:** `src/yearEnd.js` `buildBundle({ book, year })`.
+  `year` = a number for the CPA's package, `null` for everything. It calls the
+  SAME report functions as the Reports screen and the SAME table builders,
+  writes `Reports.xlsx` (one sheet per report), each report as CSV,
+  `Entries.csv`, `receipts/`, `statements/<account>/`, and `READ ME.txt`.
+  Anything it could not fetch is pushed to `missing` and LISTED in the READ ME
+  and on screen; it never drops something silently. Zip is `jszip`, in its own
+  lazy chunk (`vendor-jszip` in vite.config.js), like `xlsx`.
+- **No whole tax ID is ever in a bundle.** The 1099 list in it shows four
+  digits. Whole tax IDs leave only through `book_1099_file()` (owner/admin,
+  recorded). The guard holds this.
+- **Schedule C mapping** (`src/yearEndTables.js`, pure): P&L expense lines
+  against `tax_categories.schedule_c_line`; what has no line is totalled in a
+  note, never hidden. Shared books have no lines, so everything lands there.
+- **Starting a set of books:** nothing new to learn, three things that already
+  existed (an account's starting balance in Setup, statements for any past
+  period, reconciliation). `book_start_status()` (reads only, runs as the
+  caller) reports them per account; the "Getting these books started" card at
+  the top of Setup shows it. A person's own books now have a **Setup** tab when
+  `book.statements` (`BookSetup` is exported from `BookRoom.jsx`).
+- **Retention:** an entry removed is archived; `book_log` (not editable) holds
+  every change, and the full row of anything deleted by a database function.
+  Statement files never had a delete rule; the `receipts_delete_own` storage
+  policy was DROPPED, so a stored receipt stays. Nothing in the app or in any
+  scheduled job deletes books data. Do not add one.
+- `smoke/yearend_guard.mjs` blocks; `smoke/look_yearend.mjs` builds a real
+  bundle in a browser for a throwaway person, unpacks it and prints what is
+  inside (run it after touching the builder). SQL:
+  `2026-10-07e_start_and_keep.sql`.
+
+**WHAT PROMPT 5 LEFT FOR DARA TO DECIDE (asked 6 Oct, not yet answered):**
+1. Switch closings on for the brokerage books: which bank account do
+   commissions land in, and from what day (the books start 1 Jan 2026)?
+2. Franchise fee: recorded when the bank shows it paid (built), or booked per
+   closing as owed to the franchisor (not built)?
+3. Direct bank connections (a per-account monthly cost): yes or no?
+4. Who else gets agent accounting, beyond Dara, Josh and Alex?
+5. The two held questions: Myra Torres's sign-in email; whether Tina has a
+   PrismOS sign-in coming.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"

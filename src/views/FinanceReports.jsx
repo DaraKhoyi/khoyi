@@ -39,7 +39,7 @@ export function ReportHeader({ reportType, setReportType, period, setPeriod, tra
   options.push({ id:'schedule_c', label:'📋 Schedule C' });
   options.push({ id:'quarterly', label:'💵 Quarterly Tax' });
   options.push({ id:'form_1099', label:'📑 1099s' });
-  if (books) options.push({ id:'books', label:'📒 Statements · Reconcile' });
+  if (books) options.push({ id:'books', label:'📒 The books · Reconcile · 1099s · Year-end' });
   // These five use their own period/year selectors, hide the shared period dropdown
   const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099' && reportType !== 'budgets' && reportType !== 'cashflow' && reportType !== 'books';
 

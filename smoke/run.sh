@@ -255,6 +255,9 @@ guard payees_guard static
 # A receipt attaches only where exactly one entry fits; a missing or changed monthly payment is noticed; the tax
 # hold-back is the quarterly report's own arithmetic and says it is an estimate (Dara, 6 Oct, build prompt part 5).
 guard receipts_guard static
+# The year-end bundle is the screen's own figures and says what it could not include; a stored receipt stays; the
+# start-up checklist reads each account (Dara, 6 Oct, build prompt part 5).
+guard yearend_guard static
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit
