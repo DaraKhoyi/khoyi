@@ -15,6 +15,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// A revoked Google grant cannot fix itself; only the person reconnecting can.
+function needsReauth(a: any): boolean {
+  if (a.reauth_required_at) return true;
+  const e = String(a.last_sync_error || "");
+  return e.startsWith("REAUTH_REQUIRED") || /invalid_grant/.test(e);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -36,7 +43,7 @@ serve(async (req) => {
   // Every active Google account that can do calendar.
   const { data: accounts, error } = await supabase
     .from("email_accounts")
-    .select("user_id, scopes, purposes, last_sync_error")
+    .select("user_id, scopes, purposes, last_sync_error, reauth_required_at")
     .eq("provider", "google")
     .eq("is_active", true);
   if (error) {
@@ -53,7 +60,15 @@ serve(async (req) => {
       )
       // Skip accounts already flagged as needing re-auth — nothing to do until the
       // user reconnects; avoids hammering Google with doomed refreshes every run.
-      .filter((a: any) => a.last_sync_error !== "REAUTH_REQUIRED")
+      // FIX 7 Oct 2026: this used to compare last_sync_error to the exact string
+      // "REAUTH_REQUIRED", which nothing ever writes. google-connection-watch
+      // writes "REAUTH_REQUIRED: <detail>" plus reauth_required_at, and gmail-sync
+      // then overwrites last_sync_error with "Error: Token refresh failed: 400
+      // invalid_grant". So two revoked accounts were retried every 2 minutes and
+      // made 28% of all calendar-sync calls return 500. reauth_required_at is the
+      // durable flag: connection-watch clears it when a probe succeeds and the
+      // OAuth callback clears it on reconnect, so sync resumes on its own.
+      .filter((a: any) => !needsReauth(a))
       .map((a: any) => a.user_id)
   )];
 

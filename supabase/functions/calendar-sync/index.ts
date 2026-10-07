@@ -31,8 +31,22 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
       grant_type: "refresh_token",
     }).toString(),
   });
-  if (!r.ok) throw new Error(`Token refresh failed: ${r.status} ${(await r.text()).slice(0,200)}`);
+  if (!r.ok) {
+    const text = (await r.text()).slice(0, 200);
+    // invalid_grant = the person revoked access or Google expired the grant.
+    // Retrying cannot help; only reconnecting can. Say so with a distinct error.
+    if (r.status === 400 && /invalid_grant/.test(text)) throw new ReauthRequired(text);
+    throw new Error(`Token refresh failed: ${r.status} ${text}`);
+  }
   return await r.json();
+}
+
+// Thrown when Google says the stored grant is dead (invalid_grant).
+class ReauthRequired extends Error {
+  constructor(detail: string) {
+    super(`Token refresh failed: 400 ${detail}`);
+    this.name = "ReauthRequired";
+  }
 }
 
 // Convert a Supabase event row to a Google Calendar event resource
@@ -458,6 +472,21 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
+    // FIX 7 Oct 2026: a revoked Google grant is the account's state, not a server
+    // fault. Answer 409 REAUTH_REQUIRED (the app shows the same "Sync failed"
+    // message for any non-2xx, so nothing changes on screen) so it no longer
+    // counts as a 500 in error-rate alarms. google-connection-watch already
+    // flags the account and pushes its owner, so this function writes nothing.
+    if (err instanceof ReauthRequired) {
+      console.warn("calendar-sync: reauth required (invalid_grant); reconnect needed");
+      return new Response(JSON.stringify({ error: "REAUTH_REQUIRED", message: "Reconnect this Google account in Settings." }), {
+        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    // Until 7 Oct 2026 a 500 left no trace in the function logs. Record why.
+    // Error text comes from our own throws or Google's error JSON; it never
+    // carries an access or refresh token.
+    console.error("calendar-sync failed:", String(err).slice(0, 300));
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

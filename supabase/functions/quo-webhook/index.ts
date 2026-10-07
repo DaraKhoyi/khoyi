@@ -1,8 +1,17 @@
 // quo-webhook
 // Public endpoint that Quo (OpenPhone) calls on every message, call, summary
-// and transcript event. Token-gated via the ?token= query param (matched against
-// QUO_WEBHOOK_TOKEN) since Quo can't send a Supabase JWT. Writes everything into
-// quo_messages / quo_calls under the workspace owner's user_id.
+// and transcript event. Writes everything into quo_messages / quo_calls under
+// the workspace owner's user_id.
+//
+// AUTH (changed 7 Oct 2026). It used to be gated only by a ?token= in the URL,
+// and Supabase writes every request URL into the edge logs. Quo signs every
+// delivery, so the signature is now the proof:
+//   - legacy (v1 webhooks): header openphone-signature: hmac;1;<ms>;<base64>,
+//     HMAC-SHA256 over "<ms>.<raw body>" with the base64-decoded signing key;
+//   - current API: webhook-id / webhook-timestamp / webhook-signature
+//     (Standard Webhooks), HMAC-SHA256 over "<id>.<ts>.<raw body>", key whsec_...
+// Keys: QUO_WEBHOOK_SIGNING_KEYS, comma-separated (each Quo webhook has its own).
+// The URL token still works during the cutover; QUO_ALLOW_URL_TOKEN=false ends it.
 //
 // Deploy with verify_jwt = false (external caller, no Supabase auth header).
 
@@ -13,12 +22,76 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const _digits = (s: any) => String(s || "").replace(/[^0-9]/g, "");
 const _last10 = (s: any) => { const d = _digits(s); return d.length >= 10 ? d.slice(-10) : d; };
 
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64.trim());
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function safeEqual(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
+  if (x.length !== y.length || x.length === 0) return false;
+  let d = 0;
+  for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i];
+  return d === 0;
+}
+async function hmacB64(keyBytes: Uint8Array, data: string): Promise<string> {
+  const k = await crypto.subtle.importKey("raw", keyBytes as BufferSource, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(data)));
+  let bin = ""; for (const c of sig) bin += String.fromCharCode(c);
+  return btoa(bin);
+}
+const MAX_SKEW_MS = 30 * 60 * 1000; // generous: Quo retries; a replay older than this is refused
+
+// Which door did this delivery come through? null = refused.
+async function authorize(req: Request, url: URL, raw: string): Promise<"signature" | "url-token" | null> {
+  const keys = (Deno.env.get("QUO_WEBHOOK_SIGNING_KEYS") || "").split(",").map((k) => k.trim()).filter(Boolean);
+  const now = Date.now();
+  if (keys.length) {
+    // Legacy OpenPhone scheme.
+    const legacy = req.headers.get("openphone-signature");
+    if (legacy) {
+      const [scheme, version, ts, sig] = legacy.split(";");
+      const tsMs = Number(ts);
+      if (scheme === "hmac" && version === "1" && sig && Number.isFinite(tsMs) && Math.abs(now - tsMs) <= MAX_SKEW_MS) {
+        // Quo's docs say the payload is signed compact; sign both forms so a
+        // whitespace difference can never refuse a real delivery.
+        let compact = raw; try { compact = JSON.stringify(JSON.parse(raw)); } catch { /* not JSON */ }
+        for (const k of keys) {
+          let kb: Uint8Array; try { kb = b64ToBytes(k.replace(/^whsec_/, "")); } catch { continue; }
+          for (const body of compact === raw ? [raw] : [raw, compact]) {
+            if (safeEqual(await hmacB64(kb, `${ts}.${body}`), sig)) return "signature";
+          }
+        }
+      }
+    }
+    // Current Quo API (Standard Webhooks).
+    const wid = req.headers.get("webhook-id"), wts = req.headers.get("webhook-timestamp"), wsig = req.headers.get("webhook-signature");
+    if (wid && wts && wsig && Math.abs(now - Number(wts) * 1000) <= MAX_SKEW_MS) {
+      const given = wsig.split(" ").map((p) => p.split(",")[1]).filter(Boolean);
+      for (const k of keys) {
+        let kb: Uint8Array; try { kb = b64ToBytes(k.replace(/^whsec_/, "")); } catch { continue; }
+        const want = await hmacB64(kb, `${wid}.${wts}.${raw}`);
+        if (given.some((g) => safeEqual(g, want))) return "signature";
+      }
+    }
+  }
+  const allowUrlToken = (Deno.env.get("QUO_ALLOW_URL_TOKEN") || "true").toLowerCase() !== "false";
+  const legacyToken = Deno.env.get("QUO_WEBHOOK_TOKEN") || "";
+  if (allowUrlToken && legacyToken && safeEqual(url.searchParams.get("token") || "", legacyToken)) return "url-token";
+  return null;
+}
+
 serve(async (req) => {
   const url = new URL(req.url);
-  const token = url.searchParams.get("token");
-  if (!token || token !== Deno.env.get("QUO_WEBHOOK_TOKEN")) {
+  // The signature covers the exact bytes, so read them before parsing.
+  const raw = await req.text();
+  const via = await authorize(req, url, raw);
+  if (!via) {
+    console.warn("quo-webhook: refused (no valid signature or URL token)");
     return new Response("forbidden", { status: 403 });
   }
+  console.log(`quo-webhook auth=${via}`);
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -26,7 +99,7 @@ serve(async (req) => {
   );
 
   let evt: any;
-  try { evt = await req.json(); } catch { return new Response("bad json", { status: 200 }); }
+  try { evt = JSON.parse(raw); } catch { return new Response("bad json", { status: 200 }); }
 
   const type: string = evt?.type || "";
   const o = evt?.data?.object || {};
@@ -92,6 +165,9 @@ serve(async (req) => {
         op_created_at: o.createdAt || new Date().toISOString(),
         raw: o,
       };
+      // Seen before? (Quo retries, and during the webhook cutover the old and the
+      // new webhook both deliver.) A repeat must not draft a second first reply.
+      const { data: seen } = await supabase.from("quo_messages").select("op_id").eq("op_id", o.id).maybeSingle();
       await supabase.from("quo_messages").upsert(row, { onConflict: "op_id" });
 
       // ── 5-Minute Lead Concierge ──────────────────────────────────────────
@@ -99,7 +175,7 @@ serve(async (req) => {
       // Fire the concierge: draft a first reply in the agent's voice + push them.
       // Only on genuine INCOMING messages, and only for numbers that aren't an
       // established contact (a known client texting isn't a "new lead").
-      if (row.direction === "incoming" && row.from_number) {
+      if (!seen && row.direction === "incoming" && row.from_number) {
         try {
           const last10 = String(row.from_number).replace(/\D/g, "").slice(-10);
           let contactId: string | null = null, leadName: string | null = null, isEstablished = false;
