@@ -243,6 +243,9 @@ guard ledger_guard static
 # Statements: nothing imported reaches the books unapproved, a statement that is off posts nothing, duplicates are
 # shown, and only a rule a person confirmed files by itself (Dara, 6 Oct, build prompt part 4).
 guard statements_guard static
+# Reconciliation finishes only at zero and then locks its entries; the reports add up and say the same thing on
+# screen, in the file and on paper (Dara, 6 Oct, build prompt part 5).
+guard reports_guard static
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

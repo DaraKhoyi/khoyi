@@ -246,7 +246,7 @@ function OwnMoney({ userId, book = null, initialSub = null, subNonce = 0 }) {
       )}
       {subView === 'reports' && (
         <FinanceReports
-          userId={userId}
+          userId={userId} book={book}
           settings={settings} transactions={transactions} taxCategories={taxCategories}
           systems={systems} recruitingSystems={recruitingSystems}
           personalBudget={personalBudget} timeEntries={timeEntries} deals={deals}

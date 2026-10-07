@@ -2070,6 +2070,30 @@ body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-
 .mr-row .a b { display: block; font-size: 15px; font-weight: 700; white-space: nowrap; }
 .mr-row .a.in b { color: #1F6B3A; }
 .mr-row .a i { display: block; font-style: normal; font-size: 12px; color: #5C5140; white-space: nowrap; }
+/* ── Reports and reconciliation (accounting build, part 5) ── */
+.rp-wrap { background: #F7F1E3; color: #1F1A12; border: 1px solid #C9BC9C; border-radius: 14px; overflow: hidden; }
+.rp-wrap.wide { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.rp { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.rp th, .rp td { padding: 9px 12px; text-align: left; vertical-align: top; border-top: 1px solid #DDD2B8; overflow-wrap: anywhere; }
+.rp thead th { border-top: 0; background: #E9DFC8; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5C5140; }
+.rp .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rp tr.h td { background: #EFE6D2; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5C5140; }
+.rp tr.total td { font-weight: 700; background: #F1E9D6; }
+.rp tr.note td { background: #F3E3B4; color: #4A3A0A; font-size: 13.5px; }
+.rp-wrap.wide .rp { min-width: 560px; }
+.rp-wrap.wide .rp th:first-child, .rp-wrap.wide .rp td:first-child { position: sticky; left: 0; background: #F7F1E3; min-width: 132px; max-width: 46vw; box-shadow: 1px 0 0 #DDD2B8; }
+.rp-wrap.wide .rp thead th:first-child { background: #E9DFC8; }
+.rp-wrap.wide .rp tr.total td:first-child { background: #F1E9D6; }
+.rp-wrap.wide .rp tr.h td { position: static; }
+.rc-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-height: 56px; padding: 8px 14px; border-top: 1px solid #2A2418; font-size: 15px; font-weight: 600; color: #F6F1E7; cursor: pointer; }
+.rc-row input { width: 24px; height: 24px; accent-color: #C5A95E; }
+.rc-row .n { min-width: 0; overflow-wrap: anywhere; }
+.rc-row .n i { display: block; font-style: normal; font-size: 12.5px; font-weight: 400; color: #CFC5AE; }
+.rc-row .a { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rc-row .a.in { color: #9AD3AE; }
+.rc-hist { width: 100%; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; font: inherit; font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
+.st-upload:disabled { opacity: 0.7; cursor: default; }
+.st-chip.plain { border-color: #5A4E2E; color: #EBCB82; }
 /* ── Statements: upload, review, rules (accounting build, part 4) ── */
 .st-hub { position: fixed; inset: 0; z-index: 900; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #100D09; color: #F6F1E7; font-family: Manrope, sans-serif;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(28px + env(safe-area-inset-bottom, 0px)); }

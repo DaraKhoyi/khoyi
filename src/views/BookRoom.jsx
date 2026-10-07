@@ -20,6 +20,8 @@ import { Icon } from '../icons';
 import { confirmDialog, notify, notifyError } from '../notify';
 import { fmtUSDCents } from '../financeUtils';
 import { FinanceLedger } from './FinanceLedger';
+// Every report beyond the summary, and reconciliation: opened now and then, so fetched when asked for.
+const BookReports = React.lazy(() => import('./BookReports'));
 import { ACCOUNT_KINDS, CATEGORY_KINDS, PERIODS, bookTitle, can, isDenied, longDay, periodRange, position, stamp, summarize } from '../books';
 
 
@@ -353,7 +355,7 @@ export default function BookRoom({ userId, book, onReload }) {
           trackPersonal={personal && !!book.track_personal} readOnly={readOnly}
         />
       )}
-      {tab === 'reports' && <BookSummary book={book} />}
+      {tab === 'reports' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><BookReports book={book} userId={userId} summary={<BookSummary book={book} />} /></React.Suspense>}
       {tab === 'setup' && <BookSetup book={book} userId={userId} taxCategories={taxCategories} setTaxCategories={setTaxCategories} onBookChanged={onReload} />}
     </>
   );

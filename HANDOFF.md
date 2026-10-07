@@ -996,6 +996,50 @@ a holding area first."
   `StatementImport.jsx`, `StatementReview.jsx`, `PayeeRules.jsx`,
   `EntrySplit.jsx`; `src/statementParse.js`, `src/statements.js`.
 
+**RECONCILIATION AND REPORTS (6 Oct, v1.16.12).** Dara, build prompt part 5,
+first phase: "Bank reconciliation: each month, per account ... It is the one
+control a CPA checks first." and "Reports ... the reason to keep books at all."
+- **Tables:** `book_reconciliations` (one per book + account + statement date;
+  at most one open per account; `summary` is the frozen answer once finished)
+  and `recon_marks` (which entries were ticked; `side` is `account` or
+  `transfer`, because a transfer is ONE row that touches two accounts). Both
+  read-only to the app; every write is a definer function.
+- **Functions:** `recon_start` (ticks what came in on that account's uploaded
+  statements, because the bank itself said so), `recon_mark`, `recon_detail`,
+  `recon_finish` (ONLY at a difference of exactly zero; logs
+  `account_reconciled`), `recon_reopen` (an open one: any writer discards it; a
+  finished one: owner/admin, the latest for that account only, logged),
+  `recon_list`. Card balances are stored negative and shown positive ("owed").
+- **`trg_book_5_reconciled` (`recon_entry_lock`):** an entry on a FINISHED
+  reconciliation keeps its amount, date and account and cannot be archived or
+  deleted until that reconciliation is reopened. Re-filing (category, tags,
+  note) is still allowed. If a save "does nothing" on an old entry, this is why.
+- **Reports are RPCs that run as the caller** (security invoker, so the book
+  policies decide): `book_pnl(book, from, to, by)` (`by` = null / month / agent /
+  team / closing / contact / property), `book_trial_balance`,
+  `book_general_ledger` (paged), `book_cash_flow`, `book_held_by_person` (who the
+  escrow money belongs to, against what the escrow accounts hold), plus the
+  older `book_position` and `book_summary`.
+- **One table shape, three outputs.** `src/bookReports.js` (pure) turns each
+  answer into `{title, subtitle, columns, rows:[{kind, cells}]}`;
+  `BookReports.jsx` draws it; `src/exportFile.js` writes the SAME table as CSV,
+  Excel (the `xlsx` library, fetched only when asked) or a printed page (hidden
+  frame; "Save as PDF" is the phone's own print sheet). CSV cells that start
+  with = + - @ are quoted so a payee cannot run as a formula. Numbers stay
+  numbers in the files. Use these two for any new report; do not write a
+  fourth exporter.
+- **Where it is:** Reports tab of a shared book (`BookRoom`), and the
+  "Statements · Reconcile" choice in a person's own Reports when
+  `book.statements`. `Reconcile.jsx` is lazy.
+- **Not built / not verified:** the printed page was not looked at on a real
+  phone (a headless browser cannot open the print sheet); the "this year
+  against last" column needs a from AND a to date (not offered on All time);
+  per-owner escrow sub-ledgers belong to the Buildium replacement.
+- `smoke/reports_guard.mjs` proves known answers and the two-person privacy
+  wall live each gate; `smoke/look_reports.mjs` screenshots every report and a
+  whole reconciliation.
+- SQL: `2026-10-07_reconcile_reports.sql`.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"

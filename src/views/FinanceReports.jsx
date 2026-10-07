@@ -27,8 +27,10 @@ const QuarterlyTaxReport = React.lazy(() => import('./TaxReports').then(m => ({ 
 const Form1099Report = React.lazy(() => import('./TaxReports').then(m => ({ default: m.Form1099Report })));
 const BudgetReport = React.lazy(() => import('./BudgetForecast').then(m => ({ default: m.BudgetReport })));
 const CashFlowForecast = React.lazy(() => import('./BudgetForecast').then(m => ({ default: m.CashFlowForecast })));
+// Profit and loss, balance sheet, cash flow, trial balance, general ledger and reconciliation, read from the ledger.
+const BookReports = React.lazy(() => import('./BookReports'));
 
-export function ReportHeader({ reportType, setReportType, period, setPeriod, trackPersonal }) {
+export function ReportHeader({ reportType, setReportType, period, setPeriod, trackPersonal, books = false }) {
   const options = [{ id:'business', label:'💼 Business · Tax' }];
   if (trackPersonal) options.push({ id:'personal', label:'🏠 Personal' });
   options.push({ id:'roi', label:'🎯 Operations · ROI' });
@@ -37,8 +39,9 @@ export function ReportHeader({ reportType, setReportType, period, setPeriod, tra
   options.push({ id:'schedule_c', label:'📋 Schedule C' });
   options.push({ id:'quarterly', label:'💵 Quarterly Tax' });
   options.push({ id:'form_1099', label:'📑 1099s' });
+  if (books) options.push({ id:'books', label:'📒 Statements · Reconcile' });
   // These five use their own period/year selectors, hide the shared period dropdown
-  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099' && reportType !== 'budgets' && reportType !== 'cashflow';
+  const showPeriod = reportType !== 'schedule_c' && reportType !== 'quarterly' && reportType !== 'form_1099' && reportType !== 'budgets' && reportType !== 'cashflow' && reportType !== 'books';
 
   return (
     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -666,7 +669,7 @@ export function ROIReport({ transactions, timeEntries, deals = [], systems, sett
   );
 }
 
-export function FinanceReports({ userId, settings, transactions, taxCategories, systems, recruitingSystems, personalBudget, timeEntries, deals, trackPersonal, isCoach }) {
+export function FinanceReports({ userId, book = null, settings, transactions, taxCategories, systems, recruitingSystems, personalBudget, timeEntries, deals, trackPersonal, isCoach }) {
   const [reportType, setReportType] = useState('business');
   const [period, setPeriod] = useState('ytd');
   const [advExpanded, setAdvExpanded] = useState(false);
@@ -689,7 +692,8 @@ export function FinanceReports({ userId, settings, transactions, taxCategories, 
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-      <ReportHeader reportType={reportType} setReportType={setReportType} period={period} setPeriod={setPeriod} trackPersonal={trackPersonal} />
+      <ReportHeader reportType={reportType} setReportType={setReportType} period={period} setPeriod={setPeriod} trackPersonal={trackPersonal} books={!!(book && book.statements)} />
+      {reportType === 'books' && book && <React.Suspense fallback={null}><BookReports book={book} userId={userId} /></React.Suspense>}
 
       {reportType === 'business' && (
         <BusinessReport
