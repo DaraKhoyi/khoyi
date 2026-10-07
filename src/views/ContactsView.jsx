@@ -1557,13 +1557,30 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
         <hr className="room-rule" />
       </div>
 
+      {/* 7 Oct (Dara): "You've taken away the two buttons … that allowed me to
+          switch between Prism and Google Contacts." The 1 Oct tidy moved the
+          switch into ⋯, where it could not be found. Two plain buttons, under
+          the subtitle and above the search, exactly where Dara marked them. */}
+      <div role="tablist" aria-label="Contact source" data-testid="contact-source" style={{display:'flex',gap:10,margin:'10px 0 12px'}}>
+        {[['prism','Prism'],['google','Google']].map(([id,label]) => {
+          const on = source===id;
+          return (
+            <button key={id} type="button" role="tab" aria-selected={on} onClick={()=>{ setShowTools(false); setSource(id); }}
+              style={{flex:1,minHeight:44,borderRadius:12,cursor:'pointer',fontFamily:'inherit',fontSize:15,fontWeight:on?800:600,
+                border:'1px solid '+(on?'var(--accent)':'var(--border)'),
+                background:on?'var(--accent)':'var(--bg-card)',color:on?'#0d0f14':'var(--text-2)'}}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* ⋯ — the occasional tools, in plain words. */}
       {showTools && (
         <div data-testid="contact-tools" style={{display:'flex',flexDirection:'column',margin:'10px 0 6px',borderTop:'1px solid rgba(246,241,231,0.07)'}}>
           {[
             source==='prism' && ['Select several to text, email or tag', ()=>{ setTagMode(true); }],
             source==='prism' && ['Add from a contact card (vCard)', ()=>setShowVCard(true)],
-            [source==='google' ? 'Back to my contacts' : 'Show my Google contacts', ()=>setSource(source==='google' ? 'prism' : 'google')],
             source==='prism' && ['Review people found in my email', ()=>setShowLinkReview(true)],
             source==='prism' && [scanning ? 'Scanning email…' : 'Match email senders to contacts', runEmailLinkScan],
             source==='prism' && [extractingPhones ? 'Reading signatures…' : 'Fill in phone numbers from email signatures', runPhoneExtraction],
@@ -1575,9 +1592,6 @@ function ContactsView({ contacts, setContacts, userId, profiles, setProfiles, ca
             </button>
           ))}
         </div>
-      )}
-      {source==='google' && !showTools && (
-        <button type="button" onClick={()=>setSource('prism')} style={{background:'none',border:'none',color:'var(--accent)',fontSize:14,fontWeight:600,cursor:'pointer',padding:'10px 0',minHeight:44}}>‹ Back to my contacts</button>
       )}
 
       {source==='google' && <GoogleContactsView userId={userId} />}
