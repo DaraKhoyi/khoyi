@@ -24,6 +24,7 @@ import AdminLicensingPanel from './AdminLicensingPanel';
 import RedeemCodeBox from './RedeemCodeBox';
 import SimplifyPanel from './SimplifyPanel';
 import MoneyModeSetting from './MoneyModeSetting';
+import McpKeysPanel from './McpKeysPanel';
 const QuarterlyTaxBanner = lazy(() => import('./QuarterlyTaxBanner'));
 
 export default function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false, entitlements = null, reloadEntitlements = null, licensingEnforced = false }) {
@@ -520,6 +521,7 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
         </div>
             </>}
             {settingsTab==='ai' && <>
+        <McpKeysPanel />
         <div className="panel" style={{marginBottom:'18px'}}>
           <div className="panel-header"><h3>Your Claude API key</h3></div>
           <div className="panel-body">

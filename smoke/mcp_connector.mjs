@@ -73,6 +73,8 @@ try {
   // 3a. Not on the list yet -> 403.
   let x = await rpc(token, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'gate', version: '1' } } });
   expect(x.status === 403, `a person NOT on mcp_access got ${x.status}, expected 403`);
+  // 5a. A person the connector is not on for cannot make a key either.
+  { const k0 = await person.rpc('create_mcp_key', { p_name: 'gate' }); expect(!!k0.error && !k0.data, 'a person NOT on mcp_access was given a connector key'); }
   await admin.from('mcp_access').insert({ user_id: uid, note: 'smoke gate — deleted after' });
 
   x = await rpc(token, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'gate', version: '1' } } });
@@ -108,6 +110,30 @@ try {
   expect(x.status === 401, `a forged token got ${x.status}`);
   x = await rpc(si.data.session.access_token, { jsonrpc: '2.0', id: 3, method: 'tools/list' });
   expect(x.status === 401, `an ordinary app session (not from the consent flow) got ${x.status}`);
+
+  // 5. CONNECTOR KEYS (7 Oct 2026, for assistants that only take a pasted key).
+  // A key is the same door with a different handle: same person, same RLS, same
+  // tools. Only its fingerprint is stored, and a revoked key stops at once.
+  const mk = await person.rpc('create_mcp_key', { p_name: 'gate key' });
+  const key = mk.data;
+  expect(!mk.error && /^prism_[0-9a-f]{64}$/.test(key || ''), `a connector key could not be made (${mk.error?.message || key})`);
+  const { data: stored } = await admin.from('mcp_keys').select('*').eq('user_id', uid);
+  expect((stored || []).length === 1 && !JSON.stringify(stored).includes(key) && stored[0].key_hash === crypto.createHash('sha256').update(key).digest('hex'), 'the connector key itself is stored, or its fingerprint is wrong — only a SHA-256 fingerprint may be kept');
+  { const peek = await person.from('mcp_keys').select('key_hash'); expect(!!peek.error, 'a signed-in browser can read key fingerprints'); }
+  { const mine = await person.from('mcp_keys').select('id, name, key_prefix, created_at, last_used_at, revoked_at'); expect(!mine.error && mine.data.length === 1, 'a person cannot see their own keys in Settings'); }
+  x = await rpc(key, { jsonrpc: '2.0', id: 11, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'gate-key', version: '1' } } });
+  expect(x.status === 200 && x.j?.result?.serverInfo?.name === 'prismos', `a valid connector key was refused (${x.status} ${x.text.slice(0, 120)})`);
+  x = await rpc(key, { jsonrpc: '2.0', id: 12, method: 'tools/list' });
+  const kNames = (x.j?.result?.tools || []).map((t) => t.name);
+  expect(kNames.includes('find_contacts') && !kNames.includes('brokerage_snapshot'), 'a connector key sees a different tool list from the person it stands for');
+  const viaKey = async (name, args = {}) => { const y = await rpc(key, { jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name, arguments: args } }); const res = y.j?.result; if (!res || res.isError) return { error: res?.content?.[0]?.text || y.text.slice(0, 160) }; try { return JSON.parse(res.content[0].text); } catch { return res.content[0].text; } };
+  { const own = await viaKey('find_contacts', { query: 'ZZ Gate' }); expect(Array.isArray(own) && own.some((f) => f.contact_id === c.id), 'a connector key cannot find its own person\'s contact'); }
+  { const leak2 = await viaKey('find_contacts', { query: BROKER_ONLY_NAME }); expect(Array.isArray(leak2) && leak2.length === 0, `RLS BROKEN: a stranger's connector key found ${Array.isArray(leak2) ? leak2.length : '?'} of the broker's contacts`); }
+  x = await rpc('prism_' + '0'.repeat(64), { jsonrpc: '2.0', id: 14, method: 'tools/list' });
+  expect(x.status === 401, `an unknown connector key got ${x.status}`);
+  { const rv = await person.rpc('revoke_mcp_key', { p_id: stored[0].id }); expect(!rv.error, `a key could not be switched off (${rv.error?.message})`); }
+  x = await rpc(key, { jsonrpc: '2.0', id: 15, method: 'tools/list' });
+  expect(x.status === 401, `a REVOKED connector key still works (${x.status})`);
 } catch (e) {
   problems.push('crashed: ' + (e?.message || e));
 } finally {
@@ -125,7 +151,7 @@ try {
 }
 
 if (!problems.length) {
-  console.log('==== MCP CONNECTOR: clean — Claude sign-in works end to end; RLS holds; no-token, forged, app-session and not-listed callers all refused ====');
+  console.log('==== MCP CONNECTOR: clean — Claude sign-in works end to end; RLS holds; no-token, forged, app-session and not-listed callers all refused; connector keys work, obey RLS, and stop when revoked ====');
   process.exit(0);
 }
 console.log(`==== MCP CONNECTOR: ${problems.length} problem(s) ====`);
