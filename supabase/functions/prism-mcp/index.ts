@@ -17,6 +17,13 @@
 //     trusted — the forged-token lesson of the same day (_shared/serviceCaller.ts).
 //   * Only tokens minted by the consent flow are accepted (they carry client_id),
 //     and only for people in mcp_access while the connector is new.
+//   * A SECOND DOOR, for assistants that can only take a pasted key (Dara,
+//     7 Oct 2026, for Grok): a connector key ("prism_…", table mcp_keys). The
+//     key stands for one person. It is checked by fingerprint (the key itself
+//     is never stored), then exchanged HERE for a real, short-lived PrismOS
+//     session for that person, so everything below is identical: the same
+//     row-level security, the same mcp_access switch, the same tools. A
+//     revoked key stops at once. A key opens nothing outside this connector.
 //   * v1 never sends anything to anyone — no email, no text. It reads, and it
 //     writes to PrismOS itself (tasks, notes, the call list), each an action
 //     Claude asks the person to approve.
@@ -40,7 +47,7 @@ const SERVER_VERSION = "1.0.0";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, mcp-protocol-version, mcp-session-id",
+  "Access-Control-Allow-Headers": "authorization, x-api-key, content-type, mcp-protocol-version, mcp-session-id",
   "Access-Control-Expose-Headers": "WWW-Authenticate, Mcp-Session-Id",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
@@ -50,6 +57,33 @@ const challenge = (why: string) => json({ error: "unauthorized", error_descripti
   { "WWW-Authenticate": `Bearer resource_metadata="${PRM_URL}"` });
 
 
+
+// ── connector keys ──────────────────────────────────────────────────────────
+// key id -> a session for that key's person, kept while this worker lives so a
+// session is not minted on every call. Revocation is still checked every call.
+const keySessions = new Map<string, { token: string; until: number }>();
+const sha256hex = async (t: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+// deno-lint-ignore no-explicit-any
+async function sessionForKey(admin: any, key: string): Promise<{ token: string; userId: string; label: string } | null> {
+  if (!/^prism_[0-9a-f]{64}$/.test(key)) return null;
+  const { data: row, error } = await admin.from("mcp_keys").select("id, user_id, name, key_prefix, revoked_at").eq("key_hash", await sha256hex(key)).maybeSingle();
+  if (error || !row || row.revoked_at) { if (row) keySessions.delete(row.id); return null; }
+  const label = `key:${row.key_prefix} (${row.name})`;
+  const had = keySessions.get(row.id);
+  if (had && had.until > Date.now() + 60000) return { token: had.token, userId: row.user_id, label };
+  // A real session for that person, made the way a one-time sign-in link is: no
+  // email is sent, and nothing about their other sign-ins changes.
+  const { data: who } = await admin.auth.admin.getUserById(row.user_id);
+  const email = who?.user?.email; if (!email) return null;
+  const { data: link, error: lErr } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+  const hash = link?.properties?.hashed_token; if (lErr || !hash) return null;
+  const anon = createClient(SUPABASE_URL, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: got, error: vErr } = await anon.auth.verifyOtp({ token_hash: hash, type: "magiclink" });
+  const token = got?.session?.access_token; if (vErr || !token || got?.user?.id !== row.user_id) return null;
+  keySessions.set(row.id, { token, until: Date.now() + Math.max(60, (got.session.expires_in || 3600) - 120) * 1000 });
+  admin.from("mcp_keys").update({ last_used_at: new Date().toISOString() }).eq("id", row.id).then(() => {}, () => {});
+  return { token, userId: row.user_id, label };
+}
 
 // ── the endpoint ────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
@@ -65,20 +99,28 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   // ── who is this? Verified by the auth server, never decoded and trusted.
-  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  if (!token) return challenge("Sign in to PrismOS to use this connector.");
+  // A key may also arrive as X-API-Key, or as ?key= for assistants that can only take a web address.
+  const presented = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim() || (req.headers.get("x-api-key") || "").trim() || (new URL(req.url).searchParams.get("key") || "").trim();
+  if (!presented) return challenge("Sign in to PrismOS to use this connector.");
   const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+  let token = presented, clientId: string | null = null, via = "Claude";
+  if (presented.startsWith("prism_")) {
+    const k = await sessionForKey(admin, presented);
+    if (!k) return json({ error: "unauthorized", error_description: "This PrismOS connector key is not valid, or has been revoked." }, 401);
+    token = k.token; clientId = k.label; via = k.label.replace(/^key:\S+ \((.*)\)$/, "$1") || "a connector key";
+  }
   const { data: u } = await admin.auth.getUser(token);
   if (!u?.user) return challenge("Your PrismOS sign-in has expired. Reconnect.");
-  // Only tokens from the consent flow (they name the OAuth client) — not a copied app session.
-  let clientId: string | null = null;
-  try { const seg = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"); clientId = JSON.parse(atob(seg + "===".slice((seg.length + 3) % 4))).client_id || null; } catch { /* no claim */ }
-  if (!clientId) return challenge("Connect through Claude's connector sign-in, not an app session.");
+  if (!clientId) {
+    // Only tokens from the consent flow (they name the OAuth client) — not a copied app session.
+    try { const seg = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"); clientId = JSON.parse(atob(seg + "===".slice((seg.length + 3) % 4))).client_id || null; } catch { /* no claim */ }
+    if (!clientId) return challenge("Connect through Claude's connector sign-in, not an app session.");
+  }
   const db = createClient(SUPABASE_URL, ANON, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } });
   const { data: allowed } = await db.rpc("mcp_access_allowed");
   if (allowed !== true) return json({ error: "forbidden", error_description: "The PrismOS connector is not switched on for your account yet. Ask Dara." }, 403);
   const { data: staff } = await db.rpc("is_brokerage_staff");
-  const ctx: Ctx = { db, admin, userId: u.user.id, staff: staff === true, via: "Claude" };
+  const ctx: Ctx = { db, admin, userId: u.user.id, staff: staff === true, via };
 
   let msg: any;
   try { msg = await req.json(); } catch { return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400); }
