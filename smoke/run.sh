@@ -246,6 +246,12 @@ guard statements_guard static
 # Reconciliation finishes only at zero and then locks its entries; the reports add up and say the same thing on
 # screen, in the file and on paper (Dara, 6 Oct, build prompt part 5).
 guard reports_guard static
+# Closings post themselves: a flawed sheet row waits with its reason, never guessed; what crosses to an agent is
+# one line, theirs alone to see and answer (Dara, 6 Oct, build prompt part 5).
+guard closings_guard static
+# Who is filed a 1099 follows the year's own IRS line; a tax ID is four digits to everyone but an owner or admin;
+# an account name carries no whole account number; agent accounts add up (Dara, 6 Oct, build prompt part 5).
+guard payees_guard static
 
 # Preflight: the browser must actually exist. Without this the node step dies with a
 # wall of stack trace, and if the CALLER pipes our output (e.g. `| tail`) the exit

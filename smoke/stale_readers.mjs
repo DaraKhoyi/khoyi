@@ -39,6 +39,21 @@ if (!PAT) {
 
 // value → why it is allowed to be absent. Keep the reason; a bare list rots.
 const STALE_OK = {
+  'brokerage_transactions.state=held':
+    'Misattribution, not a stale reader: closings_list() reads closing_postings c ' +
+    'WHERE c.state = held and LEFT JOINs brokerage_transactions b for the address. ' +
+    'brokerage_transactions.state is the US state of the property. closing_postings ' +
+    'holds no rows until closings are switched on for the brokerage books (7 Oct 2026).',
+  'brokerage_transactions.state=posted':
+    'Misattribution, not a stale reader: closings_list() reads closing_postings c ' +
+    'WHERE c.state = posted and LEFT JOINs brokerage_transactions b for the address. ' +
+    'brokerage_transactions.state is the US state of the property. closing_postings ' +
+    'holds no rows until closings are switched on for the brokerage books (7 Oct 2026).',
+  'brokerage_transactions.state=set_aside':
+    'Misattribution, not a stale reader: closings_list() reads closing_postings c ' +
+    'WHERE c.state = set_aside and LEFT JOINs brokerage_transactions b for the address. ' +
+    'brokerage_transactions.state is the US state of the property. closing_postings ' +
+    'holds no rows until closings are switched on for the brokerage books (7 Oct 2026).',
   'contacts.status=accepted':
     'Misattribution, not a stale reader: goal_candidates() reads commitments cm ' +
     'WHERE cm.status = accepted and LEFT JOINs contacts ct only for the name. This ' +

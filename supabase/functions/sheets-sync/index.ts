@@ -352,7 +352,15 @@ Deno.serve(async (req) => {
     }
 
     await supabase.from("commission_sheet_config").update({ last_synced_at: new Date().toISOString(), last_sync_result: summary }).eq("id", cfg.id);
-    return new Response(JSON.stringify({ ok: true, spreadsheet_id: cfg.spreadsheet_id, summary }), { headers: { ...cors, "Content-Type": "application/json" } });
+    // Closings post themselves: once the sheet is read, the brokerage's books
+    // are brought up to it (2026-10-07b_closings.sql). Rows that do not add up
+    // are held there for a person. A failure here never fails the sheet read.
+    let closings: unknown = null;
+    try {
+      const r = await supabase.rpc("closings_sync_all");
+      closings = r.error ? { error: r.error.message } : r.data;
+    } catch (e) { closings = { error: String(e) }; }
+    return new Response(JSON.stringify({ ok: true, spreadsheet_id: cfg.spreadsheet_id, summary, closings }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {
     return new Response(JSON.stringify({ ok: false, error: String(err) }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
   }

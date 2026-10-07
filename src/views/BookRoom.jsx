@@ -13,7 +13,7 @@
 //
 // What a person may do here comes from their seat on the book (../books.js
 // can()); the database enforces the same thing on every request.
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../dataService';
 import { todayNY } from '../clock';
 import { Icon } from '../icons';
@@ -22,6 +22,7 @@ import { fmtUSDCents } from '../financeUtils';
 import { FinanceLedger } from './FinanceLedger';
 // Every report beyond the summary, and reconciliation: opened now and then, so fetched when asked for.
 const BookReports = React.lazy(() => import('./BookReports'));
+const Closings = React.lazy(() => import('./Closings'));
 import { ACCOUNT_KINDS, CATEGORY_KINDS, PERIODS, bookTitle, can, isDenied, longDay, periodRange, position, stamp, summarize } from '../books';
 
 
@@ -305,6 +306,8 @@ export default function BookRoom({ userId, book, onReload }) {
   const [personalBudget, setPersonalBudget] = useState([]);
   const [names, setNames] = useState({});
   const personal = book.kind === 'personal';
+  const stale = useRef(false);
+  const markStale = useCallback(() => { stale.current = true; }, []);
   const bookId = book.id, ownerId = book.owner_user_id || null, title0 = bookTitle(book);
 
   // Switched off since the list was read: say so plainly and step back to their own books.
@@ -330,8 +333,11 @@ export default function BookRoom({ userId, book, onReload }) {
 
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
   const readOnly = !can(book, 'write');
-  const tabs = [['ledger', readOnly ? 'Register' : 'Add'], ['reports', 'Reports'], ['setup', 'Setup']];
-  const title = tab === 'ledger' ? 'Transactions' : tab === 'reports' ? 'Reports' : 'Setup';
+  // Closings come from the Gold Report, which is the brokerage's alone.
+  const tabs = [['ledger', readOnly ? 'Register' : 'Add'], ...(book.kind === 'brokerage' ? [['closings', 'Closings']] : []), ['reports', 'Reports'], ['setup', 'Setup']];
+  const title = tab === 'ledger' ? 'Transactions' : tab === 'reports' ? 'Reports' : tab === 'closings' ? 'Closings' : 'Setup';
+  // Closings entered while that tab was open show in the register when it is next opened.
+  const go = (id) => { if (id === 'ledger' && stale.current) { stale.current = false; load(); } setTab(id); };
 
   return (
     <>
@@ -341,7 +347,7 @@ export default function BookRoom({ userId, book, onReload }) {
         </h2>
         <div className="seg-track" role="tablist" aria-label="Section of these books">
           {tabs.map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setTab(id)} className={`seg-btn${tab === id ? ' active' : ''}`} aria-selected={tab === id}><span>{label}</span></button>
+            <button key={id} type="button" onClick={() => go(id)} className={`seg-btn${tab === id ? ' active' : ''}`} aria-selected={tab === id}><span>{label}</span></button>
           ))}
         </div>
       </div>
@@ -355,6 +361,7 @@ export default function BookRoom({ userId, book, onReload }) {
           trackPersonal={personal && !!book.track_personal} readOnly={readOnly}
         />
       )}
+      {tab === 'closings' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><Closings book={book} taxCategories={taxCategories} onChanged={markStale} /></React.Suspense>}
       {tab === 'reports' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><BookReports book={book} userId={userId} summary={<BookSummary book={book} />} /></React.Suspense>}
       {tab === 'setup' && <BookSetup book={book} userId={userId} taxCategories={taxCategories} setTaxCategories={setTaxCategories} onBookChanged={onReload} />}
     </>

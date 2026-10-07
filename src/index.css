@@ -2226,3 +2226,25 @@ body { font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, sans-
 .bk-sum-row .a { flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 .bk-sum-row.total { background: #EFE6D2; font-weight: 700; }
 @media (max-width: 420px) { .bk-net { grid-template-columns: minmax(0, 1fr); gap: 6px; } .bk-net > div { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; } }
+/* Closings that post themselves (Closings.jsx, BookArrivals.jsx) */
+.cl-card { gap: 12px; }
+.cl-h { display: flex; flex-direction: column; gap: 2px; }
+.cl-h b { font-size: 16.5px; color: #F6F1E7; overflow-wrap: anywhere; }
+.cl-h span { font-size: 13px; color: #CFC5AE; }
+.cl-part { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid #2A2418; }
+.cl-part-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 15px; font-weight: 600; color: #F6F1E7; }
+.cl-part-h i { font-style: normal; font-weight: 400; color: #CFC5AE; }
+.cl-part-h b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cl-part-h b.in { color: #9AD3AE; }
+.cl-why { margin: 0; font-size: 14px; line-height: 1.45; color: #EBD9A6; }
+.cl-twin { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #3A3222; border-radius: 12px; font-size: 14px; color: #F6F1E7; }
+.cl-twin span { min-width: 0; overflow-wrap: anywhere; }
+.cl-row .n { min-width: 0; overflow-wrap: anywhere; }
+.cl-row .cl-warn { color: #EBD9A6; }
+.cl-acts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 6px; }
+.cl-acts .bk-link, .cl-twin .bk-link { min-height: 44px; }
+.cl-twin .bk-link { white-space: nowrap; flex-shrink: 0; }
+.py-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0; background: transparent; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.py-h .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.py-h .who b { font-size: 16px; color: #F6F1E7; overflow-wrap: anywhere; }
+.py-h .who i { font-style: normal; font-size: 13px; color: #CFC5AE; }

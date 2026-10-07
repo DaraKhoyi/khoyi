@@ -26,6 +26,7 @@ const expect = (ok, what) => { if (!ok) problems.push(what); };
 
 // Shared reference data every signed-in agent may read, with the reason.
 const OPEN_TO_AGENTS = {
+  tax_year_figures: 'The IRS 1099 reporting line per tax year. Public figures from irs.gov, the same for everyone; nothing about a person.',
   mileage_rates: 'IRS mileage rates',
   txn_milestone_defs: 'standard transaction milestones',
   teaching_lessons: 'in-app lessons',

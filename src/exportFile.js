@@ -56,7 +56,7 @@ const money = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-U
 
 export function tableHtml(t) {
   const fig = t.columns.map((_, k) => k > 0 && t.rows.some((r) => typeof r.cells[k] === 'number'));
-  const cell = (c, i) => `<td class="${fig[i] ? 'n' : ''}">${typeof c === 'number' ? money(c) : esc(c)}</td>`;
+  const cell = (c, i) => `<td class="${fig[i] ? 'n' : ''}">${typeof c === 'number' ? ((t.plain || []).includes(i) ? String(c) : money(c)) : esc(c)}</td>`;
   const body = t.rows.map((r) => (r.kind === 'head' ? `<tr class="h"><td colspan="${t.columns.length}">${esc(r.cells[0])}</td></tr>`
     : r.kind === 'note' ? `<tr class="note"><td colspan="${t.columns.length}">${esc(r.cells[0])}</td></tr>`
       : `<tr class="${r.kind}">${r.cells.map(cell).join('')}</tr>`)).join('');

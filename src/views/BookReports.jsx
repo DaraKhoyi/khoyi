@@ -18,14 +18,18 @@ import { fmtUSDCents } from '../financeUtils';
 import { PERIODS, bookTitle, periodRange, position } from '../books';
 import { BREAKDOWNS, cashFlowTable, generalLedgerTable, heldTable, pnlTable, rangeText, standingTable, trialBalanceTable, yearBefore } from '../bookReports';
 import { downloadCsv, downloadXlsx, printTables } from '../exportFile';
+import { CLOSING_BREAKDOWNS, closingsTable } from '../closings';
 
 const Reconcile = React.lazy(() => import('./Reconcile'));
+const Payees1099 = React.lazy(() => import('./Payees1099'));
+const AgentAccounts = React.lazy(() => import('./AgentAccounts'));
+const MyAgentStatement = React.lazy(() => import('./AgentAccounts').then((m) => ({ default: m.AgentStatement })));
 
 // One report, as rows. Wide ones scroll sideways with the names held in place.
 export function ReportTable({ table }) {
   if (!table) return <div className="mr-empty">Adding it up.</div>;
   if (table.empty) return <div className="mr-empty">Nothing was entered for this period.</div>;
-  const n = table.columns.length;
+  const n = table.columns.length, plain = table.plain || [];   // plain: columns that are counts, not money
   // A column is figures when any row holds a number in it; words stay left.
   const fig = table.columns.map((_, k) => k > 0 && table.rows.some((r) => typeof r.cells[k] === 'number'));
   return (
@@ -35,7 +39,7 @@ export function ReportTable({ table }) {
         <tbody>
           {table.rows.map((r, i) => (r.kind === 'head' ? <tr key={i} className="h"><td colSpan={n}>{r.cells[0]}</td></tr>
             : r.kind === 'note' ? <tr key={i} className="note"><td colSpan={n}>{r.cells[0]}</td></tr>
-              : <tr key={i} className={r.kind}>{r.cells.map((c, k) => <td key={k} className={fig[k] ? 'n' : ''}>{typeof c === 'number' ? fmtUSDCents(c) : c}</td>)}</tr>))}
+              : <tr key={i} className={r.kind}>{r.cells.map((c, k) => <td key={k} className={fig[k] ? 'n' : ''}>{typeof c === 'number' ? (plain.includes(k) ? String(c) : fmtUSDCents(c)) : c}</td>)}</tr>))}
         </tbody>
       </table>
     </div>
@@ -64,15 +68,20 @@ export default function BookReports({ book, userId, summary = null }) {
   const [custom, setCustom] = useState({ from: '', to: '' });
   const [by, setBy] = useState('');
   const [compare, setCompare] = useState(false);
+  const [cby, setCby] = useState('agent');
   const [table, setTable] = useState(null);
   const today = todayNY();
   const range = useMemo(() => (period === 'custom' ? { from: custom.from || null, to: custom.to || null } : periodRange(period, today)), [period, custom, today]);
   const sub = `${bookTitle(book)} · ${rangeText(range.from, range.to)} · cash basis`;
   const asOf = range.to && range.to < today ? range.to : null;
-  const kinds = summary ? [['summary', 'Summary'], ...KINDS] : KINDS;
+  // The brokerage's books also get the closings as the Gold Report has them.
+  const base = [...(book.kind === 'brokerage' ? [...KINDS.slice(0, 1), ['closings', 'Closings'], ['agents', 'Agents'], ...KINDS.slice(1)] : KINDS),
+    ['payees', '1099s'], ...(book.is_mine ? [['brokerage', 'From the brokerage']] : [])];
+  const kinds = summary ? [['summary', 'Summary'], ...base] : base;
+  const OWN_SCREEN = ['summary', 'reconcile', 'payees', 'agents', 'brokerage'];   // these draw themselves
 
   useEffect(() => {
-    if (kind === 'summary' || kind === 'reconcile') return undefined;
+    if (OWN_SCREEN.includes(kind)) return undefined;
     let live = true;
     setTable(null);
     (async () => {
@@ -87,6 +96,9 @@ export default function BookReports({ book, userId, summary = null }) {
           err = b.error; before = (b.data && b.data.lines) || [];
         }
         if (!err) t = pnlTable((now.data && now.data.lines) || [], { by, before, subtitle: sub });
+      } else if (kind === 'closings') {
+        const r = await supabase.rpc('closings_report', { ...args, p_by: cby });
+        err = r.error; if (!err) t = closingsTable(r.data, { subtitle: `${bookTitle(book)} · ${rangeText(range.from, range.to)} · from the Gold Report` });
       } else if (kind === 'standing') {
         const r = await supabase.rpc('book_position', { p_book: book.id, p_as_of: asOf });
         err = r.error; if (!err) t = standingTable(position((r.data && r.data.lines) || []), { subtitle: `${bookTitle(book)} · ${asOf ? 'on ' + rangeText(null, asOf).replace('Through ', '') : 'today'}` });
@@ -108,9 +120,9 @@ export default function BookReports({ book, userId, summary = null }) {
       setTable(t);
     })();
     return () => { live = false; };
-  }, [kind, book.id, range.from, range.to, asOf, by, compare, sub]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [kind, book.id, range.from, range.to, asOf, by, compare, cby, sub]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const dated = kind !== 'summary' && kind !== 'reconcile';
+  const dated = !OWN_SCREEN.includes(kind);
   return (
     <div className="mr" data-testid="book-reports">
       <div className="mr-chips" role="tablist" aria-label="Report">
@@ -118,6 +130,9 @@ export default function BookReports({ book, userId, summary = null }) {
       </div>
       {kind === 'summary' && summary}
       {kind === 'reconcile' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><Reconcile book={book} userId={userId} /></React.Suspense>}
+      {kind === 'payees' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><Payees1099 book={book} /></React.Suspense>}
+      {kind === 'agents' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><AgentAccounts book={book} /></React.Suspense>}
+      {kind === 'brokerage' && <React.Suspense fallback={<div className="mr-empty">Opening.</div>}><MyAgentStatement book={book} mine /></React.Suspense>}
       {dated && (<>
         <div className="mr-chips" role="group" aria-label="Period">
           {PERIODS.map(([id, label]) => <button type="button" key={id} className={period === id ? 'on' : ''} aria-pressed={period === id} onClick={() => setPeriod(id)}>{label}</button>)}
@@ -136,6 +151,11 @@ export default function BookReports({ book, userId, summary = null }) {
             </label>
             {!by && range.from && range.to && <label className="st-check" style={{ alignSelf: 'end' }}><input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} /><span>Beside the same days a year before</span></label>}
           </div>
+        )}
+        {kind === 'closings' && (
+          <label className="mr-f">Show
+            <select value={cby} onChange={(e) => setCby(e.target.value)} data-testid="report-closings-by">{CLOSING_BREAKDOWNS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
+          </label>
         )}
         <p className="bk-help">{table && table.subtitle ? table.subtitle : sub}{kind === 'standing' || kind === 'trial' || kind === 'held' ? '. This report is as of the last day of the period.' : '.'}</p>
         <ReportTable table={table} />

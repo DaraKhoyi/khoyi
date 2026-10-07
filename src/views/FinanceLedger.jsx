@@ -29,6 +29,7 @@ import { askAboutRule } from '../statements';
 const CsvImportModal = React.lazy(() => import('./CsvImportModal').then(m => ({ default: m.CsvImportModal })));
 // Statements (upload, review, rules) for books that have them switched on; the importer above serves the rest.
 const StatementsDoor = React.lazy(() => import('./StatementsDoor'));
+const BookArrivals = React.lazy(() => import('./BookArrivals'));
 
 export function FinanceLedger({ userId, transactions, setTransactions, taxCategories, systems, personalBudget, recurringTemplates, setRecurringTemplates, trackPersonal, readOnly, book = null, own = true, names = null, onDenied = null }) {
   const [ledgerMode, setLedgerMode] = useState('transactions');  // 'transactions' | 'recurring'
@@ -79,6 +80,7 @@ export function FinanceLedger({ userId, transactions, setTransactions, taxCatego
       ) : (<>
         {statements && <React.Suspense fallback={null}><StatementsDoor userId={userId} book={book} taxCategories={taxCategories} readOnly={readOnly}
           open={showImportModal} setOpen={setShowImportModal} setTransactions={setTransactions} /></React.Suspense>}
+        {statements && own && !readOnly && !showImportModal && <React.Suspense fallback={null}><BookArrivals book={book} onAdded={(tx) => merge([tx])} /></React.Suspense>}
         <MoneyRegister
           userId={userId} book={book} own={own} names={names} onDenied={onDenied} transactions={transactions} setTransactions={setTransactions}
           taxCategories={taxCategories} systems={systems} personalBudget={personalBudget || []}

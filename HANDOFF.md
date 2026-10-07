@@ -1040,6 +1040,88 @@ control a CPA checks first." and "Reports ... the reason to keep books at all."
   whole reconciliation.
 - SQL: `2026-10-07_reconcile_reports.sql`.
 
+**CLOSINGS POST THEMSELVES; AGENT ACCOUNTS; 1099s (6 Oct, v1.16.13).** Dara, build
+prompt part 5: "A flawed sheet row is held for a person, not guessed." "Only
+this one line crosses."
+- **What the Gold Report means** (checked on all of 2026): gross commission =
+  paid to agent + GROSS office fee + referral + TC payment, and the franchise
+  cost ("ROG Corp. Cost") is INSIDE the office fee. 216 of 244 sales tie; the
+  rest carry real exceptions ("150 to josh", a date typed 1016-05-06).
+- **Cash basis decides what posts.** Per closing: commission received (+, on
+  Date Rcvd, into the deposit account), agent paid (-, on Date Paid). Referral
+  and TC parts are ALWAYS held (the sheet has no payee and usually no date).
+  `kind = 'fee'` rows are held for a category. The franchise cost is NOT posted
+  by a closing: it is paid to the franchisor later and is recorded when the
+  bank shows it. `closings_report()` shows it beside each closing ("Kept" =
+  office fee - franchise cost). If Dara wants it booked per closing, the clean
+  way is an "owed to franchisor" account handled like a card; not built.
+- **Tables:** `closing_settings` (one row for the brokerage book: on/off,
+  deposit account, pay account, start day; OFF until an owner or admin turns it
+  on in the Closings tab), `closing_postings` (one per closing x part; state
+  held / posted / set_aside; `reasons` text[]; `sheet_*` = what the sheet said,
+  the other columns = what was posted), `closing_seen` (hash per sheet row, so
+  only changed rows are re-read; `problem` = the row could not be read),
+  `book_arrivals` (the agent's side). Keyed on `closing_key` = `year-TransID`,
+  NOT on `brokerage_transactions.id`, because one importer can delete and
+  re-insert rows.
+- **Never doubles money:** before posting, `closing_twins()` looks for the same
+  amount, same account, within 7 days. Exactly one match that came from a bank
+  statement (or that a person tagged with that closing) is ADOPTED (filed, not
+  added). Anything else is held as `maybe_in_books`. The other direction:
+  `statement_find_twins()` was re-created here with one change, a 7-day window
+  for entries a closing made. A unique index stops one entry standing for two
+  closings.
+- **The sheet changing never rewrites the books.** A posted part whose sheet
+  figures (date, amount, agent) moved gets `sheet_changed`; a person accepts
+  or keeps. A row that left the sheet is flagged `gone`. An entry archived by
+  hand makes its posting `set_aside / removed_by_hand` (and comes back if the
+  entry is restored).
+- **`closings_sync(book, limit)`** is the bounded pass (60 per call for a
+  person, advisory lock per book, one bad row never stops the rest). The
+  Closings screen loops it; `sheets-sync` calls `closings_sync_all()` after
+  each nightly read. The year filter starts one year early on purpose (a
+  December closing paid in January).
+- **The agent's side:** when the "agent" part posts, `arrival_offer()` puts ONE
+  row (amount, day, address) in `book_arrivals` in that agent's personal book,
+  only if the agent has a sign-in AND is on `accounting_access`. A trigger on
+  `accounting_access` back-fills for someone added later. `arrival_decide()`
+  (accept / already / decline). The brokerage side has no way to read it.
+- **Agent accounts are memo, not ledger** (cash basis): `agent_fee_schedules`
+  (standing charges; `agent_id` NULL = every active agent), `agent_charges`
+  (generated idempotently by `agent_charges_run()`, or by hand; a credit is
+  negative). "Paid in" = money in under the category named exactly `Agent Fees`
+  tagged with the agent. `agent_statement()` for the brokerage's people,
+  `my_agent_statement()` for the agent's own (testing group only).
+- **1099s:** `tax_year_figures` holds the IRS line per year (2026 = $2,000,
+  from the IRS instructions Rev. Dec 2026, checked 6 Oct 2026; 2024-25 = $600).
+  **EVERY JANUARY: check irs.gov and add the new year's row. The guard fails
+  when the current year has none.** `book_payees` (per book; agent, contact or
+  payee text; tax_status unknown / us_person / corporation / foreign). Totals
+  come from the entries (`book_payee_entries`): money out to the payee in the
+  calendar year; paid from a `card` account is shown apart and left off the
+  form. A referral or TC part tagged with an agent is not counted as paid to
+  the agent.
+- **Tax IDs:** `book_payees.tin_enc` (pgp_sym_encrypt, Vault `tax_id_key`, the
+  same key contact tax IDs use). The app has column-level SELECT that excludes
+  it. `payee_reveal_tin()` and `book_1099_file()` are owner/admin only and
+  write `tax_id_seen` / `tax_file_taken` to `book_log`.
+- **Account names:** `trg_account_name_guard` on `money_accounts` and
+  `statement_imports` refuses seven or more digits in a row.
+- **Proof:** the posting runs on the one real brokerage book, so the gate
+  cannot exercise it. `smoke/closings_trial.sql` and `smoke/payees_trial.sql`
+  do, inside a transaction that is always rolled back; run them before any
+  change to this SQL. `smoke/closings_guard.mjs` and `smoke/payees_guard.mjs`
+  hold the words, the privacy walls and the arrivals / tax ID behaviour live.
+  `smoke/look_closings.mjs` shows the screens on a STAND-IN brokerage book
+  (answered from canned data) so a look never touches the real one.
+- **Known gaps:** the Gold Report importer keeps only the last row of a
+  duplicated Trans ID; a bank line that matches a closing still asks "same
+  one?" once per line in statement review; the existing personal
+  `Form1099Report` in TaxReports still uses its own payee match.
+- SQL: `2026-10-07b_closings.sql`, `2026-10-07c_agents_payees.sql`. UI:
+  `Closings.jsx`, `BookArrivals.jsx`, `Payees1099.jsx`, `AgentAccounts.jsx`;
+  `src/closings.js`, `src/payees.js`.
+
 ---
 
 ## 9. THE LIBRARY — "one store, many links"
