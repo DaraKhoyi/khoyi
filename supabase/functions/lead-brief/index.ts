@@ -23,6 +23,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { isServiceCaller } from "../_shared/serviceCaller.ts";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 // 30 Sep — RUNS ON ARRIVAL NOW. The panel (Simplifier + Marguerite + Newcomer):
 // "a lead arrives, no brief fires, nobody knows if the contact can transact."
@@ -67,6 +68,8 @@ Deno.serve(async (req) => {
     ownerId = user?.id || null;
   }
   if (!ownerId) return json({ error: "unauthorised" }, 401);
+  // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+  if (await isImpersonatedRequest(admin, req.headers.get("Authorization"))) return supportSessionResponse(CORS);
   const user = { id: ownerId };
 
   const { data: lead } = await admin

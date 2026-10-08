@@ -2,6 +2,7 @@ import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
@@ -111,6 +112,8 @@ serve(async (req)=>{
       });
       uid = user.id;
     }
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(createClient(SUPABASE_URL, SERVICE), req.headers.get("Authorization"))) return supportSessionResponse(cors);
     const today = body.today || new Date().toISOString().slice(0, 10);
     const regenerate = !!body.regenerate;
     const db = createClient(SUPABASE_URL, SERVICE);

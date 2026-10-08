@@ -13,6 +13,7 @@
 // recipient, so we group by the original Message-ID and accumulate the recipients.
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -220,6 +221,8 @@ serve(async (req) => {
     const anonClient = createClient(SUPABASE_URL, ANON, { global: { headers: { Authorization: req.headers.get("Authorization") || "" } } });
     const { data: { user } } = await anonClient.auth.getUser();
     if (!user) return json({ error: "Unauthorized" }, 401);
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(admin, req.headers.get("Authorization"))) return supportSessionResponse(CORS);
     const r = await scanUser(admin, user.id, days);
     return json({ ok: true, ...r });
   } catch (e) {

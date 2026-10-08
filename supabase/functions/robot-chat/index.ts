@@ -7,6 +7,7 @@ import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 // truth in _shared/nba.js — if this ever forks, the app and Ari start disagreeing
 // about what matters most, which is worse than Ari not answering at all.
 import { buildNextActions, buildGrowthMoves, bounceSignals, docSignals, txnSignals } from "./nba.js";
+import { isImpersonatedRequest } from "../_shared/impersonation.ts";
 
 const MAX_IMAGE_EDGE = 1568;
 const corsHeaders = {
@@ -668,7 +669,12 @@ serve(async (req) => {
     const messages = [...cleanHistory, { role: "user", content: currentTurnContent }];
 
     // ── Permissions → tools + capability description ──
-    const perms = robot.permissions || {};
+    // Act-as support sessions: the robot loses every tool that reads or acts on
+    // the agent's Gmail or Google Calendar (_shared/impersonation.ts).
+    const supportSession = await isImpersonatedRequest(supabase, req.headers.get("Authorization"));
+    const perms = supportSession
+      ? { ...(robot.permissions || {}), inbox_read: false, email_send: false, calendar_read: false, calendar_write: false }
+      : (robot.permissions || {});
     // A tool is exposed when its perm is explicitly on. `defaultOn` tools are also
     // exposed when the key was NEVER SET — absent is not the same as refused, and
     // agents who granted permissions before this tool existed shouldn't have to go

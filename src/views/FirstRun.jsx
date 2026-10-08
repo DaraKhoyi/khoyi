@@ -272,8 +272,15 @@ export default function FirstRun({ userId, userEmail, onDone }) {
               <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6 }}>
                 <div>• Your contacts and conversations become your database.</div>
                 <div>• New enquiries get spotted and brought to you.</div>
-                <div>• Your broker cannot read your mail. Only agent records shared with the
-                  brokerage are visible to anyone but you.</div>
+                {/* True since 8 Oct 2026: "Act as user" support sessions are blocked
+                    from Gmail, Google Calendar and Google Contacts by the database
+                    itself (supabase/sql/2026-10-08c), not just hidden on screen. */}
+                <div>• Your broker cannot read your mail. Your Google email, calendar and
+                  contacts are private to you, even when a team leader or admin opens a
+                  support session to help you.</div>
+                <div>• PrismOS asks Google for your mail, your calendar events and a
+                  read-only copy of your contacts. Nothing is sold, used for ads or used
+                  to train AI. <a href="/privacy/" target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>Privacy Policy</a></div>
               </div>
             </div>
             {err ? <p style={{ color: '#E4674F', fontSize: 13, margin: '0 0 10px' }}>{err}</p> : null}
