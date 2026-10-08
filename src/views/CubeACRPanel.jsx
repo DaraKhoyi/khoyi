@@ -13,6 +13,7 @@ export default function CubeACRPanel({ userId, emailAccounts }) {
   const [loaded, setLoaded] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [picker, setPicker] = useState(null); // { stack:[{id,name}], folders:[], loading, needsDrive, error }
+  const [driveMsg, setDriveMsg] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -40,6 +41,9 @@ export default function CubeACRPanel({ userId, emailAccounts }) {
     try {
       const { data, error } = await supabase.functions.invoke('google-oauth-start', { body: { return_to: window.location.origin + window.location.pathname, purpose: 'drive', login_hint: acct.email_address } });
       if (error) throw error;
+      // Drive is not in PrismOS's Google verification (8 Oct 2026); the server
+      // says so instead of opening a consent screen it should not show.
+      if (data?.drive_unavailable && !data?.url) { setDriveMsg(data.error || 'Google Drive import is not available yet.'); setConnecting(false); return; }
       if (data?.url) window.location.href = data.url;
     } catch (_e) { setConnecting(false); }
   };
@@ -101,6 +105,7 @@ export default function CubeACRPanel({ userId, emailAccounts }) {
                 <div style={{ background: 'var(--bg-base)', border: '1px solid var(--accent-dim)', borderRadius: 10, padding: '12px 14px' }}>
                   <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 10 }}>PrismOS needs read access to {acct.email_address}’s Google Drive to find your recordings. This is one-time and read-only.</div>
                   <button className="btn btn-primary btn-sm" disabled={connecting} onClick={connectDrive}>{connecting ? 'Opening Google…' : '+ Connect Google Drive'}</button>
+                  {driveMsg && <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, marginTop: 8 }}>{driveMsg}</div>}
                 </div>
               ) : (
                 <div>
