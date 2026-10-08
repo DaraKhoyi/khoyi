@@ -36,6 +36,13 @@ const QUO_BASE = "https://api.openphone.com";
 
 function isAllowed(method: string, path: string): boolean {
   if (!path.startsWith("/v1/")) return false;
+  // 8 Oct 2026: never the webhook list. Quo returns each webhook's signing KEY
+  // in it, and quo-webhook trusts that key — so any signed-in account could
+  // have forged a signed "new text" delivery. The app never reads webhooks.
+  // Plain paths only (no "..", "//", "%", "?"), so nothing can dress the
+  // webhook list up as something else.
+  if (!/^\/v1(\/[A-Za-z0-9_-]+)+$/.test(path)) return false;
+  if (/^\/v1\/webhooks(\/|$)/i.test(path)) return false;
   if (method === "GET") return true;
   if (method === "POST") {
     if (path === "/v1/messages") return true;
