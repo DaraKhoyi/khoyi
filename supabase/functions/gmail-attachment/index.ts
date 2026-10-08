@@ -4,6 +4,7 @@
 // (refreshed) access token. Returns base64url data for the client to save/open.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -17,15 +18,25 @@ serve(async (req) => {
     const { account_id, provider_message_id, provider_attachment_id } = await req.json();
     if (!account_id || !provider_message_id || !provider_attachment_id) return J({ ok: false, error: "missing params" }, 400);
 
-    // RLS-scoped client (caller's JWT) — only the owner can read this account.
+    // OWNERSHIP through the caller's JWT (RLS), TOKENS through the service role.
+    // The browser role cannot read the token columns (email_accounts_hide_tokens
+    // revoked them), so the old select("*") under the caller's JWT was refused
+    // outright and every attachment download failed. Ownership is still decided
+    // by RLS: the id-only read below returns a row only for the account's owner.
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL"),
       Deno.env.get("SUPABASE_ANON_KEY"),
       { global: { headers: { Authorization: req.headers.get("Authorization") || "" } } }
     );
-    const { data: account, error: aerr } = await supabase
-      .from("email_accounts").select("*").eq("id", account_id).maybeSingle();
-    if (aerr || !account) return J({ ok: false, error: "account not found or not yours" }, 404);
+    const { data: owned, error: aerr } = await supabase
+      .from("email_accounts").select("id").eq("id", account_id).maybeSingle();
+    if (aerr || !owned) return J({ ok: false, error: "account not found or not yours" }, 404);
+    const admin = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(admin, req.headers.get("Authorization"))) return supportSessionResponse(cors);
+    const { data: account } = await admin
+      .from("email_accounts").select("id, access_token, refresh_token, token_expires_at").eq("id", owned.id).maybeSingle();
+    if (!account) return J({ ok: false, error: "account not found or not yours" }, 404);
 
     // Refresh the access token (Google access tokens expire ~hourly).
     let accessToken = account.access_token;

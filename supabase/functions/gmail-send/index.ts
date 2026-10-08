@@ -17,6 +17,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -159,6 +160,8 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization") || "";
     const tokenStr = authHeader.replace("Bearer ", "");
     let user = (await supabase.auth.getUser(tokenStr)).data.user;
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(supabase, req.headers.get("Authorization"))) return supportSessionResponse(corsHeaders);
 
     // Internal (function-to-function / cron) calls.
     //
