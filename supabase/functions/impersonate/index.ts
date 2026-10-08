@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isImpersonatedRequest, sessionIdFromJwt } from "../_shared/impersonation.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 
 serve(async (req) => {
@@ -18,11 +19,22 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = body.action || "start";
 
-    // End an impersonation session (audit close-out)
+    // End an impersonation session (audit close-out). Only the supervisor who
+    // started it may close it, and the support session itself is revoked so its
+    // refresh token cannot be used again (8 Oct 2026).
     if (action === "end") {
-      if (body.log_id) await sb.from("impersonation_log").update({ ended_at: new Date().toISOString() }).eq("id", body.log_id);
+      if (body.log_id) {
+        const { data: row } = await sb.from("impersonation_log").select("id, actor_user_id, session_id").eq("id", body.log_id).maybeSingle();
+        if (row && row.actor_user_id === actor.id) {
+          await sb.from("impersonation_log").update({ ended_at: new Date().toISOString() }).eq("id", row.id);
+          if (row.session_id) { try { await sb.rpc("revoke_support_session", { p_session_id: row.session_id }); } catch (_) { /* best effort; the session stays marked either way */ } }
+        }
+      }
       return J({ ok: true });
     }
+
+    // A support session cannot start another one.
+    if (await isImpersonatedRequest(sb, token)) return J({ error: "You're already acting as someone. Return to your account first." }, 403);
 
     const target_user_id = body.target_user_id;
     if (!target_user_id) return J({ error: "target_user_id required" }, 400);
@@ -61,6 +73,25 @@ serve(async (req) => {
     const anon = createClient(URL, ANON);
     const { data: sess, error: vErr } = await anon.auth.verifyOtp({ type: "magiclink", token_hash: hashed });
     if (vErr || !sess?.session) return J({ error: "Could not verify session: " + (vErr?.message || "") }, 500);
+
+    // MARK THE SESSION AS A SUPPORT SESSION BEFORE ANYONE CAN USE IT (8 Oct 2026).
+    // Its session_id goes into impersonation_log; the database's restrictive
+    // policies and the Google edge functions hide the agent's Gmail, Google
+    // Calendar and Google Contacts from any token carrying that id (see
+    // _shared/impersonation.ts). If it cannot be recorded, the session is
+    // revoked and nothing is handed out: an unmarked support session would see
+    // the agent's mail.
+    const sessionId = sessionIdFromJwt(sess.session.access_token);
+    let marked = false;
+    if (sessionId && logRow?.id) {
+      const { error: mErr } = await sb.from("impersonation_log").update({ session_id: sessionId }).eq("id", logRow.id);
+      marked = !mErr;
+    }
+    if (!marked) {
+      try { await sb.auth.admin.signOut(sess.session.access_token, "local"); } catch (_) { /* revoke best effort */ }
+      if (sessionId) { try { await sb.rpc("revoke_support_session", { p_session_id: sessionId }); } catch (_) {} }
+      return J({ error: "Could not start a support session safely. Nothing was opened." }, 500);
+    }
 
     return J({ ok: true, access_token: sess.session.access_token, refresh_token: sess.session.refresh_token, target: { id: target_user_id, name: targetAgent.name || email, email }, log_id: logRow?.id || null });
   } catch (e) { return J({ error: String(e) }, 500); }

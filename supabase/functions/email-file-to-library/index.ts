@@ -18,6 +18,7 @@
 // the others.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +74,8 @@ Deno.serve(async (req) => {
     let user = (await admin.auth.getUser(tokenStr)).data.user;
     if (!user && tokenStr === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") && body.user_id) user = { id: body.user_id };
     if (!user) return new Response(JSON.stringify({ error: "Not authenticated" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(admin, req.headers.get("Authorization"))) return supportSessionResponse(corsHeaders);
 
     const { data: account } = await admin.from("email_accounts").select("*").eq("id", account_id).eq("user_id", user.id).maybeSingle();
     if (!account) throw new Error("Email account not found");

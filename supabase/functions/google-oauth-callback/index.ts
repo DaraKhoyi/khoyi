@@ -3,6 +3,11 @@
 // purposes (email/calendar) were actually granted from the returned scopes,
 // merges with any existing connection for the same address, and stores it.
 // Redirects back with ?google_connected=<email>&purpose=<purpose>.
+//
+// Google may reach this function directly (legacy redirect URI on supabase.co)
+// or through the relay page https://darasapp.com/oauth/google/callback, which
+// forwards the same ?code&state query string here (8 Oct 2026, verification:
+// the authorized redirect URI must be on a domain we can verify).
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -62,7 +67,10 @@ serve(async (req) => {
 
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
-    const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
+    // The token exchange must repeat the redirect_uri the consent URL used. It
+    // travels in the signed state (the darasapp.com relay or the legacy Supabase
+    // address); states issued before 8 Oct 2026 carry none and use the secret.
+    const redirectUri = verified.ru || Deno.env.get("GOOGLE_REDIRECT_URI");
     if (!clientId || !clientSecret || !redirectUri) {
       throw new Error("Google OAuth secrets not configured");
     }

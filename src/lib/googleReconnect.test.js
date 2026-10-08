@@ -22,6 +22,16 @@ describe('reconnectPurposes', () => {
   it('a calendar-only mailbox stays calendar-only', () => {
     expect(reconnectPurposes({ purposes: ['calendar'], scopes: [G + 'calendar.events'] })).toEqual(['calendar']);
   });
+  // 8 Oct 2026: the six verification scopes. A mailbox connected with ONLY the
+  // narrowed set must read exactly like one connected with the old wide set, or
+  // the 9 live accounts (old scopes) and every new one (narrow scopes) would be
+  // treated differently by Settings, the Inbox and the health checks.
+  it('the narrowed verification scopes still read as email + calendar + contacts', () => {
+    const narrow = { purposes: [], scopes: ['openid', G + 'userinfo.email', G + 'userinfo.profile', G + 'gmail.modify', G + 'calendar.events', G + 'contacts.readonly'] };
+    expect(reconnectPurposes(narrow)).toEqual(['email', 'calendar', 'contacts']);
+    const wide = { purposes: [], scopes: ['openid', G + 'gmail.readonly', G + 'gmail.send', G + 'gmail.modify', G + 'calendar', G + 'calendar.events', G + 'contacts'] };
+    expect(reconnectPurposes(wide)).toEqual(reconnectPurposes(narrow));
+  });
   it('falls back to email when nothing is known', () => {
     expect(reconnectPurposes({})).toEqual(['email']);
     expect(reconnectPurposes(null)).toEqual(['email']);

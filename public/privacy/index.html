@@ -86,9 +86,9 @@
   <tbody>
     <tr><td>Basic profile</td><td>Your Google email address, name and profile identifier.</td><td>To know which Google account is connected and to show it in your settings.</td></tr>
     <tr><td>Gmail</td><td>Email messages, threads, labels, attachments and send-as addresses. PrismOS can also send email, create replies and change labels (for example archive, mark as read, snooze or move to trash) when you ask it to.</td><td>To show your email inside PrismOS next to the right contact, lead or transaction; to recognize new leads and client messages; to prepare reply drafts for you to review; to send messages you write or approve, or schedule yourself; and to keep PrismOS and Gmail in step.</td></tr>
-    <tr><td>Google Calendar</td><td>Your calendars and events, including creating, updating and deleting events.</td><td>To show your schedule, sync appointments and showings both ways, power booking links, and help plan your day.</td></tr>
-    <tr><td>Google Contacts</td><td>Your contacts and their details.</td><td>To import your contacts into PrismOS and keep them matched to your clients and leads. PrismOS does not currently change anything in your Google Contacts.</td></tr>
-    <tr><td>Google Drive (read-only)</td><td>Only the specific files and folders you point PrismOS to, such as a call-recorder folder or the brokerage commission spreadsheet.</td><td>To import call recordings into PrismOS and to read the commission spreadsheet you select. PrismOS cannot change or delete anything in your Drive.</td></tr>
+    <tr><td>Google Calendar (events)</td><td>Your calendar events, including creating, updating and deleting events. PrismOS does not access your calendar settings or sharing.</td><td>To show your schedule, sync appointments and showings both ways, power booking links, and help plan your day.</td></tr>
+    <tr><td>Google Contacts (read-only)</td><td>Your saved contacts and their details.</td><td>To import your contacts into PrismOS and keep them matched to your clients and leads. PrismOS has read-only access and never changes anything in your Google Contacts.</td></tr>
+    <tr><td>Google Drive (read-only, optional)</td><td>Read access to your Drive files. This is never requested when agents connect Google; it is offered only to brokerage administrators who turn on call-recording import or the commission spreadsheet sync.</td><td>To import new call recordings from the folder you choose and to read the commission spreadsheet you select. PrismOS cannot change or delete anything in your Drive.</td></tr>
   </tbody>
 </table>
 <p>Gmail and Calendar changes are pushed to PrismOS through Google&rsquo;s own notification service (Google Cloud Pub/Sub), which tells PrismOS that something changed so it can sync.</p>
@@ -129,7 +129,7 @@
     <tr><td>Browser and phone push services (such as Apple, Google and Mozilla)</td><td>Delivering notifications you turn on. Notifications carry only a short alert.</td></tr>
   </tbody>
 </table>
-<p>Inside the brokerage, what you see is limited by your role. Your own email, calendar and messages are visible to you. Authorized brokerage administrators and team leaders can use an audited support feature to view PrismOS as a team member sees it, for example to help with a problem or set up an account; every such session is logged. We may also disclose information if required by law, to protect the rights, safety and security of our users and the public, or as part of a merger or sale of the business, subject to this policy.</p>
+<p>Inside the brokerage, what you see is limited by your role. Your Google email, Google Calendar events and Google contacts are visible only to you; they are never shown to your broker, team leaders or teammates. Authorized brokerage administrators and team leaders can use an audited support feature to view PrismOS as a team member sees it, for example to help with a problem or set up an account; every such session is logged, and support sessions cannot see your Google email, calendar or contacts. We may also disclose information if required by law, to protect the rights, safety and security of our users and the public, or as part of a merger or sale of the business, subject to this policy.</p>
 
 <h2>7. Human access to Google user data</h2>
 <p>No person at our brokerage reads your Google user data (such as the content of your emails) unless (a) you give your permission, for example by asking for help with a specific message; (b) it is necessary for security purposes, such as investigating abuse or a security incident; (c) it is necessary to comply with applicable law; or (d) the data has been aggregated and anonymized and is used for our internal operations.</p>
@@ -144,7 +144,7 @@
 <ul>
   <li>All information is stored with Supabase in the United States, in a database and file storage that are encrypted at rest (AES-256).</li>
   <li>All connections to PrismOS, to Google and to our providers use encryption in transit (HTTPS/TLS).</li>
-  <li>Database row-level security limits each person&rsquo;s synced email, calendar events, Google contacts, calls and texts to that person&rsquo;s own account. The only exception is the audited support feature described in section 6.</li>
+  <li>Database row-level security limits each person&rsquo;s synced email, calendar events, Google contacts, calls and texts to that person&rsquo;s own account. Support sessions described in section 6 cannot see this Google data either.</li>
   <li>Google access tokens are kept only on our servers, are never shown in the app, and are used only by PrismOS server functions to sync the services you connected.</li>
   <li>Administrative access to our systems is limited to a small number of authorized people, and secret keys are kept in protected server storage.</li>
 </ul>

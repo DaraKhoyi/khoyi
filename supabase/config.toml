@@ -35,7 +35,8 @@ verify_jwt = false
 # gmail-labels-sync, gmail-modify, gmail-send, gmail-sync, gmail-trash,
 # contact-extract-phones, contact-find-duplicates, contact-identify,
 # contact-link-emails, contact-research, disc-analyze, recording-transcribe,
-# robot-chat, google-oauth-start, gmail-oauth-start, email-intelligence.
+# robot-chat, google-oauth-start, email-intelligence. (gmail-oauth-start was
+# retired 8 Oct 2026; undeploy it from the dashboard after the merge.)
 # Gateway rejects requests without a valid JWT before they reach function
 # code. In-code auth (supabase.auth.getUser) remains the secondary check.
 
