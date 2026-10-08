@@ -27,8 +27,25 @@ import MoneyModeSetting from './MoneyModeSetting';
 import McpKeysPanel from './McpKeysPanel';
 const QuarterlyTaxBanner = lazy(() => import('./QuarterlyTaxBanner'));
 
-export default function SettingsView({ user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false, entitlements = null, reloadEntitlements = null, licensingEnforced = false }) {
-  const [settingsTab, setSettingsTab] = useState(null);
+// A deep link (?view=settings&tab=setup, or a "Reconnect now" banner) opens a
+// tab ONCE. Remembered at module level so coming back to Settings later shows
+// the normal category list instead of replaying the old link.
+let consumedLaunch = 0;
+
+export default function SettingsView({ launchTab = null, launchNonce = 0, user, priorityPref, onPriorityPrefChange, emailAccounts, setEmailAccounts, emailAliases, setEmailAliases, userId, userSettings, setUserSettings, isAdmin = false, entitlements = null, reloadEntitlements = null, licensingEnforced = false }) {
+  const [settingsTab, setSettingsTab] = useState(() => (launchNonce && launchNonce !== consumedLaunch ? launchTab : null));
+  const [flashGoogle, setFlashGoogle] = useState(false);
+  useEffect(() => {
+    if (!launchNonce || launchNonce === consumedLaunch) return;
+    consumedLaunch = launchNonce;
+    setSettingsTab(launchTab || null);
+    if (launchTab !== 'setup') return;
+    // Land ON the Google accounts panel and make it obvious for a moment. No
+    // cleanup on purpose: StrictMode's second effect pass would cancel these.
+    setFlashGoogle(true);
+    setTimeout(() => { try { const el = document.getElementById('settings-google-accounts'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} }, 120);
+    setTimeout(() => setFlashGoogle(false), 3200);
+  }, [launchNonce, launchTab]);
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -273,7 +290,7 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
         {settingsTab === null ? (
           <div>
             {[
-              { id:'setup', icon:'🔌', label:'App Setup', desc:'Cloud storage, iPhone sharing, email, booking, Money view, modules' },
+              { id:'setup', icon:'🔌', label:'App Setup', desc:'Google email, calendar & contacts, cloud storage, iPhone sharing, booking, modules' },
               { id:'prefs', icon:'⚙️', label:'Preferences', desc:'Profile, learning pace, tasks, tax' },
               { id:'ai', icon:'✦', label:'AI & Usage', desc:'Claude API key, research model, monthly cost' },
               { id:'account', icon:'👤', label:'Account', desc:'Sign-in, password, about' },
@@ -292,6 +309,12 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
           <div>
             <button onClick={()=>setSettingsTab(null)} className="btn btn-ghost btn-sm" style={{marginBottom:'14px'}}>← All settings</button>
             {settingsTab==='setup' && <>
+        {/* FIRST, at Dara's request (8 Oct 2026): email, calendar and contacts are
+            what everything else in PrismOS runs on, and this panel sat ninth of
+            eleven — people could not find it to reconnect. */}
+        <div id="settings-google-accounts" style={{ borderRadius: '16px', scrollMarginTop: '72px', boxShadow: flashGoogle ? '0 0 0 2px #EBCB82, 0 0 24px rgba(235,203,130,.35)' : 'none', transition: 'box-shadow .6s ease' }}>
+          <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
+        </div>
         <CloudStorageSettings userId={userId} />
         <IosSharingSettings userId={userId} />
         <div className="panel" style={{marginBottom:'18px', border:'1px solid var(--accent-dim)'}}>
@@ -400,7 +423,6 @@ export default function SettingsView({ user, priorityPref, onPriorityPrefChange,
           </div>
         </div>
         {isAdmin && <AdminLicensingPanel userId={userId} />}
-        <EmailAccountsPanel emailAccounts={emailAccounts || []} setEmailAccounts={setEmailAccounts} />
         <CubeACRPanel userId={userId} emailAccounts={emailAccounts || []} />
         <EmailAliasesPanel emailAliases={emailAliases || []} setEmailAliases={setEmailAliases} emailAccounts={emailAccounts || []} userId={userId} />
             </>}

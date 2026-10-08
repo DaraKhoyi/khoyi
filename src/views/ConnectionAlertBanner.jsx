@@ -118,7 +118,7 @@ export default function ConnectionAlertBanner({ setView }) {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => { try { setView && setView(act.view); } catch (_) {} }}
+              <button type="button" onClick={() => { try { if (act.view === 'settings' && window.__openSettings) window.__openSettings('setup'); else if (setView) setView(act.view); } catch (_) {} }}
                 style={{ background: '#EBCB82', color: '#1a1205', fontWeight: 700, fontSize: 12.5, border: 'none', borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>
                 {act.label}
               </button>

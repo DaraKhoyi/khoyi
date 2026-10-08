@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { confirmDialog } from '../notify';
 import { Icon } from '../icons';
+import { reconnectPurposes, legacyPurpose } from '../lib/googleReconnect';
 
 export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
   const [connecting, setConnecting] = useState(false);
@@ -78,7 +79,9 @@ export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) 
     setIcsBusy(false);
   }
 
-  async function startConnect(purpose = 'email', loginHint = '') {
+  // `purposes` (a list) is how a reconnect asks for everything the mailbox had;
+  // `purpose` stays for the single-purpose buttons and for an older function.
+  async function startConnect(purpose = 'email', loginHint = '', purposes = null) {
     setConnecting(true);
     setConnectingPurpose(purpose);
     setErr('');
@@ -86,7 +89,7 @@ export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not signed in.');
       const { data, error } = await supabase.functions.invoke('google-oauth-start', {
-        body: { return_to: window.location.origin + window.location.pathname, purpose, login_hint: loginHint },
+        body: { return_to: window.location.origin + window.location.pathname, purpose, login_hint: loginHint, ...(purposes ? { purposes } : {}) },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error + (data.details ? ` — ${data.details}` : ''));
@@ -131,7 +134,7 @@ export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) 
       <div className="panel-header"><h3><span style={{display:'inline-flex',alignItems:'center',gap:'6px'}}><Icon name="link" size={15} /> Connected Google Accounts</span></h3></div>
       <div className="panel-body">
         <p style={{fontSize:'13px',color:'var(--text-2)',margin:'0 0 14px',lineHeight:1.5}}>
-          Connect Google for email (Gmail) and/or calendar. You can connect different accounts for different purposes — for example, a work account for email and a personal account for calendar.
+          Connect Google for email (Gmail), calendar and contacts. You can connect different accounts for different purposes — for example, a work account for email and a personal account for calendar.
         </p>
         {emailAccounts.length === 0
           ? <p style={{fontSize:'13px',color:'var(--text-3)',marginBottom:'14px'}}>No accounts connected yet.</p>
@@ -153,7 +156,8 @@ export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) 
                       <div style={{marginTop:'6px',padding:'8px 10px',background:'rgba(245,158,11,0.12)',border:'1px solid var(--yellow)',borderRadius:'8px'}}>
                         <div style={{fontSize:'12px',color:'var(--yellow)',fontWeight:600,marginBottom:'6px'}}>⚠ Google ended this connection — reconnect to resume sync.</div>
                         <button className="btn btn-sm" style={{background:'var(--yellow)',color:'#1a1205',fontWeight:600}} disabled={connecting}
-                          onClick={()=>startConnect((a.purposes||[]).includes('calendar') ? 'calendar' : 'email')}>
+                          onClick={()=>{ const ps = reconnectPurposes(a); startConnect(legacyPurpose(ps), a.email_address, ps); }}
+                          title={`Reconnect ${a.email_address} — asks Google for everything it had: ${reconnectPurposes(a).join(', ')}`}>
                           {connecting ? 'Opening Google…' : 'Reconnect now'}
                         </button>
                       </div>

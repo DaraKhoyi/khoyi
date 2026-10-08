@@ -1,13 +1,14 @@
 // gmail-oauth-start
 // Returns the URL the user should be redirected to in order to grant
-// Gmail access. Stores a one-time state value in the auth user's row
-// so the callback can verify the request came from us.
+// Gmail access. Legacy: the app uses google-oauth-start. The state is signed
+// (_shared/oauthState.ts) so the callback can verify the request came from us.
 //
 // Body: { return_to?: string }
 // Returns: { url: string, state: string }
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { signState, safeReturnTo } from "../_shared/oauthState.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,11 +55,10 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const returnTo = (body && body.return_to) || "https://darasapp.com/";
+    const returnTo = safeReturnTo(body && body.return_to);
 
-    // Pack user id + return URL into state (verified on callback)
-    const stateObj = { uid: user.id, rt: returnTo, ts: Date.now() };
-    const state = btoa(JSON.stringify(stateObj));
+    // User id (from the JWT) + return URL, signed; verified on callback.
+    const state = await signState({ uid: user.id, rt: returnTo, purposes: ["email"] });
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -73,7 +73,7 @@ serve(async (req) => {
 
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 
-    return new Response(JSON.stringify({ url, state }), {
+    return new Response(JSON.stringify({ url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
