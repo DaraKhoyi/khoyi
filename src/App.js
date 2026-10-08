@@ -440,6 +440,11 @@ function AuthScreen() {
           </form>
           <div className="auth-switch"><button type="button" className="auth-link" onClick={()=>switchMode('login')}>Back to sign in</button></div>
         </>}
+        {/* Public legal pages (static HTML in public/privacy, public/terms). Google's
+            OAuth verification wants them linked from the app's home page. */}
+        <div className="auth-switch" style={{marginTop:14,fontSize:12,opacity:0.75}}>
+          <a href="/privacy/" style={{color:'inherit'}}>Privacy Policy</a> · <a href="/terms/" style={{color:'inherit'}}>Terms of Service</a>
+        </div>
       </div>
     </div>
   );
