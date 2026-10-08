@@ -14,7 +14,8 @@ for (const f of ['google-oauth-callback', 'gmail-oauth-callback']) {
   if (!/tokens\.refresh_token \? \{ reauth_required_at: null, reauth_notified_at: null, last_sync_error: null \}/.test(s))
     problems.push(`${f}: a successful reconnect no longer clears "needs reconnecting"`);
 }
-for (const f of ['google-oauth-start', 'gmail-oauth-start']) {
+// gmail-oauth-start was retired 8 Oct 2026 (Google verification: one OAuth entry point).
+for (const f of ['google-oauth-start']) {
   const s = readFileSync(`supabase/functions/${f}/index.ts`, 'utf8');
   if (!/access_type:\s*"offline"/.test(s) || !/prompt:\s*"consent"/.test(s))
     problems.push(`${f}: no longer asks Google for a fresh refresh token (access_type=offline, prompt=consent) — a reconnect would keep the dead one`);
