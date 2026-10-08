@@ -1,7 +1,7 @@
 // quo-webhook
 // Public endpoint that Quo (OpenPhone) calls on every message, call, summary
 // and transcript event. Writes everything into quo_messages / quo_calls under
-// the workspace owner's user_id.
+// the LINE owner's user_id (_shared/quoOwner.ts).
 //
 // AUTH (changed 7 Oct 2026). It used to be gated only by a ?token= in the URL,
 // and Supabase writes every request URL into the edge logs. Quo signs every
@@ -10,13 +10,21 @@
 //     HMAC-SHA256 over "<ms>.<raw body>" with the base64-decoded signing key;
 //   - current API: webhook-id / webhook-timestamp / webhook-signature
 //     (Standard Webhooks), HMAC-SHA256 over "<id>.<ts>.<raw body>", key whsec_...
-// Keys: QUO_WEBHOOK_SIGNING_KEYS, comma-separated (each Quo webhook has its own).
+// Keys, in order:
+//   1) QUO_WEBHOOK_SIGNING_KEYS, comma-separated (each Quo webhook has its own);
+//   2) if that secret is empty (v26, 8 Oct 2026): fetched at runtime from Quo's
+//      legacy webhook list (GET /v1/webhooks, which returns each hook's `key`)
+//      with QUO_API_KEY, keeping only hooks whose URL is this function's address.
+//      Held in memory for 10 min; refreshed once on a signature mismatch (at most
+//      once a minute, so forged requests can't make us hammer Quo's API).
+//      Keys are never logged or returned — only their count.
 // The URL token still works during the cutover; QUO_ALLOW_URL_TOKEN=false ends it.
 //
 // Deploy with verify_jwt = false (external caller, no Supabase auth header).
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { QuoOwners } from "../_shared/quoOwner.ts";
 
 // Normalize phone numbers to last-10-digits for matching against contacts.
 const _digits = (s: any) => String(s || "").replace(/[^0-9]/g, "");
@@ -43,42 +51,111 @@ async function hmacB64(keyBytes: Uint8Array, data: string): Promise<string> {
 }
 const MAX_SKEW_MS = 30 * 60 * 1000; // generous: Quo retries; a replay older than this is refused
 
-// Which door did this delivery come through? null = refused.
-async function authorize(req: Request, url: URL, raw: string): Promise<"signature" | "url-token" | null> {
-  const keys = (Deno.env.get("QUO_WEBHOOK_SIGNING_KEYS") || "").split(",").map((k) => k.trim()).filter(Boolean);
+// ── Signing keys from Quo's API (only when QUO_WEBHOOK_SIGNING_KEYS is empty) ──
+const QUO_API = "https://api.openphone.com";
+const KEY_TTL_MS = 10 * 60 * 1000;      // normal cache life
+const MIN_REFETCH_MS = 60 * 1000;       // floor between fetches (mismatch refresh or failure retry)
+let apiKeys: string[] = [];
+let apiKeysAt = 0;                      // when the last successful fetch landed
+let lastFetchTry = 0;                   // when we last tried at all (success or not)
+
+function normUrl(u: string): string {
+  try { const x = new URL(u); return `${x.protocol}//${x.host.toLowerCase()}${x.pathname.replace(/\/+$/, "")}`; }
+  catch { return ""; }
+}
+export function hookAddress(): string {
+  return normUrl(`${Deno.env.get("SUPABASE_URL") || ""}/functions/v1/quo-webhook`);
+}
+async function fetchApiKeys(): Promise<void> {
+  lastFetchTry = Date.now();
+  const apiKey = Deno.env.get("QUO_API_KEY") || "";
+  if (!apiKey) { console.warn("quo-webhook keys: QUO_API_KEY missing; signature check unavailable"); return; }
+  try {
+    const r = await fetch(`${QUO_API}/v1/webhooks`, {
+      headers: { Authorization: apiKey, "User-Agent": "KhoyiApp/1.0" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) { try { await r.body?.cancel(); } catch { /* */ } console.warn(`quo-webhook keys: Quo list returned ${r.status}; keeping ${apiKeys.length} cached`); return; }
+    const j: any = await r.json().catch(() => null);
+    const mine = hookAddress();
+    const keys = (Array.isArray(j?.data) ? j.data : [])
+      .filter((w: any) => w && typeof w.key === "string" && w.key && normUrl(String(w.url || "")) === mine)
+      .map((w: any) => String(w.key).trim());
+    apiKeys = [...new Set(keys)] as string[];
+    apiKeysAt = Date.now();
+    console.log(`quo-webhook keys: loaded ${apiKeys.length} from Quo API`);
+  } catch (e) {
+    console.warn(`quo-webhook keys: Quo list failed (${(e as Error)?.name || "error"}); keeping ${apiKeys.length} cached`);
+  }
+}
+// force=true: a signature didn't match; refresh unless we fetched very recently.
+async function getApiKeys(force = false): Promise<{ keys: string[]; refreshed: boolean }> {
   const now = Date.now();
-  if (keys.length) {
-    // Legacy OpenPhone scheme.
-    const legacy = req.headers.get("openphone-signature");
-    if (legacy) {
-      const [scheme, version, ts, sig] = legacy.split(";");
-      const tsMs = Number(ts);
-      if (scheme === "hmac" && version === "1" && sig && Number.isFinite(tsMs) && Math.abs(now - tsMs) <= MAX_SKEW_MS) {
-        // Quo's docs say the payload is signed compact; sign both forms so a
-        // whitespace difference can never refuse a real delivery.
-        let compact = raw; try { compact = JSON.stringify(JSON.parse(raw)); } catch { /* not JSON */ }
-        for (const k of keys) {
-          let kb: Uint8Array; try { kb = b64ToBytes(k.replace(/^whsec_/, "")); } catch { continue; }
-          for (const body of compact === raw ? [raw] : [raw, compact]) {
-            if (safeEqual(await hmacB64(kb, `${ts}.${body}`), sig)) return "signature";
-          }
+  const stale = !apiKeysAt || now - apiKeysAt > KEY_TTL_MS;
+  const allowed = now - lastFetchTry >= MIN_REFETCH_MS;
+  if ((stale || force) && (allowed || !lastFetchTry)) { await fetchApiKeys(); return { keys: apiKeys, refreshed: true }; }
+  return { keys: apiKeys, refreshed: false };
+}
+// Test hook only: lets the offline tests start each case with an empty cache.
+export function _resetKeyCache() { apiKeys = []; apiKeysAt = 0; lastFetchTry = 0; }
+
+async function signatureMatches(req: Request, raw: string, keys: string[]): Promise<boolean> {
+  if (!keys.length) return false;
+  const now = Date.now();
+  // Legacy OpenPhone scheme.
+  const legacy = req.headers.get("openphone-signature");
+  if (legacy) {
+    const [scheme, version, ts, sig] = legacy.split(";");
+    const tsMs = Number(ts);
+    if (scheme === "hmac" && version === "1" && sig && Number.isFinite(tsMs) && Math.abs(now - tsMs) <= MAX_SKEW_MS) {
+      // Quo's docs say the payload is signed compact; sign both forms so a
+      // whitespace difference can never refuse a real delivery.
+      let compact = raw; try { compact = JSON.stringify(JSON.parse(raw)); } catch { /* not JSON */ }
+      // "Future versions may include multiple signatures separated by commas."
+      const given = sig.split(",").map((s) => s.trim()).filter(Boolean);
+      for (const k of keys) {
+        let kb: Uint8Array; try { kb = b64ToBytes(k.replace(/^whsec_/, "")); } catch { continue; }
+        for (const body of compact === raw ? [raw] : [raw, compact]) {
+          const want = await hmacB64(kb, `${ts}.${body}`);
+          if (given.some((g) => safeEqual(want, g))) return true;
         }
       }
     }
-    // Current Quo API (Standard Webhooks).
-    const wid = req.headers.get("webhook-id"), wts = req.headers.get("webhook-timestamp"), wsig = req.headers.get("webhook-signature");
-    if (wid && wts && wsig && Math.abs(now - Number(wts) * 1000) <= MAX_SKEW_MS) {
-      const given = wsig.split(" ").map((p) => p.split(",")[1]).filter(Boolean);
-      for (const k of keys) {
-        let kb: Uint8Array; try { kb = b64ToBytes(k.replace(/^whsec_/, "")); } catch { continue; }
-        const want = await hmacB64(kb, `${wid}.${wts}.${raw}`);
-        if (given.some((g) => safeEqual(g, want))) return "signature";
+  }
+  // Current Quo API (Standard Webhooks).
+  const wid = req.headers.get("webhook-id"), wts = req.headers.get("webhook-timestamp"), wsig = req.headers.get("webhook-signature");
+  if (wid && wts && wsig && Math.abs(now - Number(wts) * 1000) <= MAX_SKEW_MS) {
+    const given = wsig.split(" ").map((p) => p.split(",")[1]).filter(Boolean);
+    for (const k of keys) {
+      let kb: Uint8Array; try { kb = b64ToBytes(k.replace(/^whsec_/, "")); } catch { continue; }
+      const want = await hmacB64(kb, `${wid}.${wts}.${raw}`);
+      if (given.some((g) => safeEqual(g, want))) return true;
+    }
+  }
+  return false;
+}
+
+type Via = "signature" | "url-token";
+// Which door did this delivery come through? null = refused.
+async function authorize(req: Request, url: URL, raw: string): Promise<{ via: Via; keys?: "env" | "api" } | null> {
+  const hasSig = !!(req.headers.get("openphone-signature") || req.headers.get("webhook-signature"));
+  if (hasSig) {
+    const envKeys = (Deno.env.get("QUO_WEBHOOK_SIGNING_KEYS") || "").split(",").map((k) => k.trim()).filter(Boolean);
+    if (envKeys.length) {
+      if (await signatureMatches(req, raw, envKeys)) return { via: "signature", keys: "env" };
+    } else {
+      const first = await getApiKeys(false);
+      if (await signatureMatches(req, raw, first.keys)) return { via: "signature", keys: "api" };
+      // Mismatch: a webhook may have been created since we cached. Refresh once.
+      if (!first.refreshed) {
+        const again = await getApiKeys(true);
+        if (again.refreshed && await signatureMatches(req, raw, again.keys)) return { via: "signature", keys: "api" };
       }
     }
   }
   const allowUrlToken = (Deno.env.get("QUO_ALLOW_URL_TOKEN") || "true").toLowerCase() !== "false";
   const legacyToken = Deno.env.get("QUO_WEBHOOK_TOKEN") || "";
-  if (allowUrlToken && legacyToken && safeEqual(url.searchParams.get("token") || "", legacyToken)) return "url-token";
+  if (allowUrlToken && legacyToken && safeEqual(url.searchParams.get("token") || "", legacyToken)) return { via: "url-token" };
   return null;
 }
 
@@ -86,12 +163,15 @@ serve(async (req) => {
   const url = new URL(req.url);
   // The signature covers the exact bytes, so read them before parsing.
   const raw = await req.text();
-  const via = await authorize(req, url, raw);
-  if (!via) {
+  const auth = await authorize(req, url, raw);
+  if (!auth) {
     console.warn("quo-webhook: refused (no valid signature or URL token)");
     return new Response("forbidden", { status: 403 });
   }
-  console.log(`quo-webhook auth=${via}`);
+  // url=token|bare says which webhook delivered it (the token's VALUE is never logged).
+  // keys=env|api says where the signing key came from. Both drive the cutover checks.
+  const urlKind = url.searchParams.has("token") ? "token" : "bare";
+  console.log(`quo-webhook auth=${auth.via}${auth.keys ? ` keys=${auth.keys}` : ""} url=${urlKind}`);
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -105,45 +185,17 @@ serve(async (req) => {
   const o = evt?.data?.object || {};
 
   // Resolve owner by the phone LINE the event actually happened on — NOT by
-  // "whoever touched settings last". OpenPhone sends phoneNumberId on every
-  // message/call; the owner is the user who has that line selected in their
-  // quo_settings. This is what prevents one agent's calls/recordings from being
-  // filed under another agent's account on a shared workspace.
-  //
-  // ORDER MATTERS. QUO_OWNER_USER_ID used to be read FIRST, which silently
-  // defeated all of the per-line logic below — every event on every line landed
-  // in one account no matter whose line it was. It is now the LAST resort, used
-  // only when we genuinely cannot tell which line an event came in on (e.g.
-  // traffic from a line that has since been deleted from the workspace, which
-  // has really happened here). Per-line attribution wins whenever it can answer.
-  let owner: string | null = null;
+  // "whoever touched settings last" and never by who happens to be signed in.
+  // One rule shared with quo-sync (_shared/quoOwner.ts, 8 Oct 2026): the user
+  // who has the line selected in quo_settings, then a saved active_number
+  // match, then QUO_OWNER_USER_ID. A row that already exists keeps its owner
+  // (the quo_keep_owner trigger refuses to change user_id on update).
   const pnId: string | null = o.phoneNumberId || null;
-  if (pnId) {
-    const { data: byLine } = await supabase.from("quo_settings")
-      .select("user_id").eq("active_phone_number_id", pnId).limit(1).maybeSingle();
-    owner = byLine?.user_id || null;
-  }
-  // Fallback: match by the actual phone NUMBER on the event (from/to) against
-  // any user's saved active_number, in case phoneNumberId isn't present.
-  if (!owner) {
-    const cand = _last10(o.from) || _last10((Array.isArray(o.to) ? o.to[0] : o.to));
-    if (cand) {
-      const { data: rows } = await supabase.from("quo_settings").select("user_id, active_number");
-      const hit = (rows || []).find((r: any) => _last10(r.active_number) === cand);
-      owner = hit?.user_id || null;
-    }
-  }
-  // Configured fallback — an explicit "when in doubt, file it here" for a single
-  // -operator workspace. Logged loudly, because if this fires often it means a
-  // line needs mapping in quo_settings, not that the fallback is doing its job.
-  if (!owner) {
-    owner = Deno.env.get("QUO_OWNER_USER_ID") || null;
-    if (owner) console.warn("quo-webhook: no line mapping for phoneNumberId=", pnId, "— falling back to QUO_OWNER_USER_ID. Map this line in quo_settings.");
-  }
+  const who = await new QuoOwners(supabase).resolve(pnId, [o.from, Array.isArray(o.to) ? o.to[0] : o.to]);
+  const owner = who.owner;
+  if (who.via === "fallback") console.warn("quo-webhook: no line mapping for phoneNumberId=", pnId, "— falling back to QUO_OWNER_USER_ID. Map this line in quo_settings.");
   // Last resort: if we still can't tell whose line it is, DROP the event rather
-  // than misattribute it to an arbitrary account. Silent misfiling (the old
-  // "most recent quo_settings" behaviour) is exactly the cross-account leak we're
-  // fixing — better to skip than to file a recording under the wrong person.
+  // than misattribute it to an arbitrary account.
   if (!owner) {
     console.error("quo-webhook: could not resolve owner for phoneNumberId=", pnId, "— dropping event to avoid misattribution");
     return new Response("no owner for this line — skipped", { status: 200 });
@@ -167,8 +219,22 @@ serve(async (req) => {
       };
       // Seen before? (Quo retries, and during the webhook cutover the old and the
       // new webhook both deliver.) A repeat must not draft a second first reply.
-      const { data: seen } = await supabase.from("quo_messages").select("op_id").eq("op_id", o.id).maybeSingle();
-      await supabase.from("quo_messages").upsert(row, { onConflict: "op_id" });
+      // v26: decided by the database, atomically. During the swap the old and the
+      // new webhook deliver the SAME event within milliseconds; the v25 "select,
+      // then upsert" let both see "not seen" and could draft two replies. Insert
+      // with ON CONFLICT DO NOTHING: exactly one delivery gets the row back.
+      let seen = false;
+      const ins = await supabase.from("quo_messages").upsert(row, { onConflict: "op_id", ignoreDuplicates: true }).select("op_id");
+      if (ins.error) {
+        // Fall back to the v25 path rather than lose the message.
+        const { data: s } = await supabase.from("quo_messages").select("op_id").eq("op_id", o.id).maybeSingle();
+        seen = !!s;
+        await supabase.from("quo_messages").upsert(row, { onConflict: "op_id" });
+      } else if (!ins.data || ins.data.length === 0) {
+        seen = true;
+        // Already there (retry, overlap, or backfill): refresh its fields as v25 did.
+        await supabase.from("quo_messages").upsert(row, { onConflict: "op_id" });
+      }
 
       // ── 5-Minute Lead Concierge ──────────────────────────────────────────
       // A brand-new inbound (a lead reaching out) is the speed-to-lead moment.
