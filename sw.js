@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-2ddc186e'
+const VERSION = 'prismos-cae59891'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -113,6 +113,11 @@ self.addEventListener('fetch', (event) => {
 
   // Only handle GET — never cache auth/POST/PATCH calls
   if (req.method !== 'GET') return;
+
+  // Public legal pages (/privacy, /terms) are plain static HTML that Google's
+  // OAuth reviewer and the public read directly. Never intercept them, so a
+  // browser with this worker installed can never get the app shell instead.
+  if (/^\/(privacy|terms)(\/.*|\.html)?$/.test(new URL(req.url).pathname)) return;
 
   // Navigations (page loads) — network-first, fall back to cached index.html
   // when offline so the PWA still opens to a usable shell.
